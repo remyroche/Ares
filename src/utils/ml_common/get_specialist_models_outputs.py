@@ -476,8 +476,108 @@ def get_specialist_models_outputs(
                             "⚠️ ML Risk 1h training block aligned to training_index is all-NaN. "
                             "Check risk_training timestamps and values."
                         )
+
+            if config.get("enable_risk_hmm_specialist", True):
+                try:
+                    risk_hmm_ctx = {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": base_timeframe,
+                        "direction": direction,
+                        "model": "regime_risk_hmm",
+                        "step_name": "ml_risk_regime_step_hmm",
+                    }
+
+                    risk_hmm_artifact = f"ml_risk_hmm_training_data_{base_timeframe}"
+                    risk_hmm_training = artifact_router.load(
+                        artifact_name=risk_hmm_artifact,
+                        artifact_type="data",
+                        data_category="features",
+                        context=risk_hmm_ctx,
+                    )
+
+                    if risk_hmm_training is not None and not getattr(
+                        risk_hmm_training, "empty", True
+                    ):
+                        if not isinstance(risk_hmm_training, pd.DataFrame):
+                            risk_hmm_training = pd.DataFrame(risk_hmm_training)
+                        risk_hmm_training = _standardize_index(risk_hmm_training)
+
+                        hmm_cols = [
+                            c
+                            for c in ("risk_score", "risk_regime")
+                            if c in risk_hmm_training.columns
+                        ]
+
+                        already_has_risk_score = any(
+                            "risk_score" in getattr(b, "columns", []) for b in blocks
+                        )
+
+                        if hmm_cols and not already_has_risk_score:
+                            before_block = risk_hmm_training[hmm_cols].copy()
+                            nnz_before = int(before_block.notna().sum().sum())
+                            block = before_block.shift(1).fillna(method="ffill")
+                            block = block.reindex(training_index, method="ffill")
+                            nnz_after = int(block.notna().sum().sum())
+                            blocks.append(block)
+                            log_success(
+                                "✅ Added ML Risk HMM specialist block from '%s': shape=%s, non_null_before=%d, non_null_after=%d"
+                                % (risk_hmm_artifact, block.shape, nnz_before, nnz_after)
+                            )
+                except Exception as hmm_exc:
+                    log_warning(
+                        f"⚠️ Failed to load ML Risk HMM specialist outputs: {hmm_exc}"
+                    )
     except Exception as e:
         log_warning(f"⚠️ Failed to load ML Risk specialist outputs: {e}")
+
+        if config.get("enable_risk_hmm_specialist", True):
+            try:
+                risk_hmm_ctx = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": base_timeframe,
+                    "direction": direction,
+                    "model": "regime_risk_hmm",
+                    "step_name": "ml_risk_regime_step_hmm",
+                }
+
+                risk_hmm_artifact = f"ml_risk_hmm_training_data_{base_timeframe}"
+                risk_hmm_training = artifact_router.load(
+                    artifact_name=risk_hmm_artifact,
+                    artifact_type="data",
+                    data_category="features",
+                    context=risk_hmm_ctx,
+                )
+
+                if risk_hmm_training is not None and not getattr(
+                    risk_hmm_training, "empty", True
+                ):
+                    if not isinstance(risk_hmm_training, pd.DataFrame):
+                        risk_hmm_training = pd.DataFrame(risk_hmm_training)
+                    risk_hmm_training = _standardize_index(risk_hmm_training)
+
+                    hmm_cols = [
+                        c
+                        for c in ("risk_score", "risk_regime")
+                        if c in risk_hmm_training.columns
+                    ]
+                    already_has_risk_score = any(
+                        "risk_score" in getattr(b, "columns", []) for b in blocks
+                    )
+                    if hmm_cols and not already_has_risk_score:
+                        before_block = risk_hmm_training[hmm_cols].copy()
+                        nnz_before = int(before_block.notna().sum().sum())
+                        block = before_block.shift(1).fillna(method="ffill")
+                        block = block.reindex(training_index, method="ffill")
+                        nnz_after = int(block.notna().sum().sum())
+                        blocks.append(block)
+                        log_success(
+                            "✅ Added ML Risk HMM specialist block from '%s': shape=%s, non_null_before=%d, non_null_after=%d"
+                            % (risk_hmm_artifact, block.shape, nnz_before, nnz_after)
+                        )
+            except Exception as hmm_exc:
+                log_warning(f"⚠️ Failed to load ML Risk HMM specialist outputs: {hmm_exc}")
 
     # ------------------------------------------------------------------
     # 3) Liquidity regimes – 15m probabilities
@@ -772,6 +872,85 @@ def get_specialist_models_outputs(
     except Exception as e:
         log_warning(f" Failed to load Breakout/Bounce specialist outputs: {e}")
 
+        if base_timeframe != "1h" and config.get("enable_breakout_specialist", True):
+            try:
+                breakout_context = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": "1h",
+                    "direction": direction,
+                    "model": "breakout_bounce",
+                    "step_name": "ml_breakout_bounce_regime_step",
+                }
+
+                breakout_artifact_name = "ml_breakout_bounce_training_data_1h"
+                breakout_training = artifact_router.load(
+                    artifact_name=breakout_artifact_name,
+                    artifact_type="data",
+                    data_category="features",
+                    context=breakout_context,
+                )
+
+                if breakout_training is not None and not getattr(
+                    breakout_training, "empty", True
+                ):
+                    if not isinstance(breakout_training, pd.DataFrame):
+                        breakout_training = pd.DataFrame(breakout_training)
+                    breakout_training = _standardize_index(breakout_training)
+
+                    breakout_candidate_cols = [
+                        "breakout_regime_0_prob",
+                        "breakout_regime_1_prob",
+                        "breakout_regime_2_prob",
+                        "resistance_scalar",
+                        "breakout_scalar_resistance",
+                        "support_scalar",
+                        "breakout_scalar_support",
+                        "breakout_long_edge_score",
+                        "breakout_short_edge_score",
+                        "is_resistance",
+                        "is_support",
+                        "breakout_success_prob",
+                        "breakout_high_conf_signal",
+                    ]
+                    breakout_cols = [
+                        c
+                        for c in breakout_candidate_cols
+                        if c in breakout_training.columns
+                    ]
+
+                    if breakout_cols:
+                        before_block = breakout_training[breakout_cols].copy()
+
+                        if "breakout_scalar_support" in before_block.columns and "support_scalar" not in before_block.columns:
+                            before_block["support_scalar"] = before_block["breakout_scalar_support"]
+                        if "breakout_scalar_resistance" in before_block.columns and "resistance_scalar" not in before_block.columns:
+                            before_block["resistance_scalar"] = before_block["breakout_scalar_resistance"]
+
+                        alias_drop = [
+                            c
+                            for c in ("breakout_scalar_support", "breakout_scalar_resistance")
+                            if c in before_block.columns
+                        ]
+                        if alias_drop:
+                            before_block = before_block.drop(columns=alias_drop)
+
+                        overlap = before_block.index.intersection(training_index)
+                        if not overlap.empty:
+                            nnz_before = int(before_block.notna().sum().sum())
+                            block = before_block.shift(1).fillna(method="ffill")
+                            block = block.reindex(training_index, method="ffill")
+                            nnz_after = int(block.notna().sum().sum())
+                            blocks.append(block)
+                            log_success(
+                                " Added Breakout/Bounce specialist block from 'ml_breakout_bounce_training_data_1h': "
+                                f"shape={block.shape}, non_null_before={nnz_before}, non_null_after={nnz_after}"
+                            )
+            except Exception as breakout_fallback_exc:
+                log_warning(
+                    f" Failed to load Breakout/Bounce specialist outputs (1h fallback): {breakout_fallback_exc}"
+                )
+
     # ------------------------------------------------------------------
     # 5) Path regimes – HMM Path specialist (optional)
     # ------------------------------------------------------------------
@@ -849,6 +1028,45 @@ def get_specialist_models_outputs(
                     )
     except Exception as e:
         log_warning(f" Failed to load Path specialist outputs: {e}")
+
+        try:
+            path_probs = artifact_router.load(
+                artifact_name="ml_path_regime_probabilities_15m",
+                artifact_type="data",
+                data_category="features",
+                context=None,
+            )
+
+            if path_probs is not None and not getattr(path_probs, "empty", True):
+                if not isinstance(path_probs, pd.DataFrame):
+                    path_probs = pd.DataFrame(path_probs)
+                path_probs = _standardize_index(path_probs)
+
+                cols = []
+                if "risk_regime" in path_probs.columns:
+                    cols.append("risk_regime")
+                if "risk_regime_directional" in path_probs.columns:
+                    cols.append("risk_regime_directional")
+
+                if cols:
+                    before_block = path_probs[cols].copy()
+                    before_block = before_block.rename(
+                        columns={
+                            "risk_regime": "path_regime",
+                            "risk_regime_directional": "path_regime_directional",
+                        }
+                    )
+                    nnz_before = int(before_block.notna().sum().sum())
+                    block = before_block.shift(1).fillna(method="ffill")
+                    block = block.reindex(training_index, method="ffill")
+                    nnz_after = int(block.notna().sum().sum())
+                    blocks.append(block)
+                    log_success(
+                        " Added Path specialist block from 'ml_path_regime_probabilities_15m': "
+                        f"shape={block.shape}, non_null_before={nnz_before}, non_null_after={nnz_after}"
+                    )
+        except Exception as path_pickle_exc:
+            log_warning(f" Failed to load Path specialist outputs (pickle fallback): {path_pickle_exc}")
 
     # ------------------------------------------------------------------
     # 6) Macro Trend specialist – macro regime alpha signal from xgb_macro_regime
@@ -1261,6 +1479,60 @@ def get_specialist_models_outputs(
                     )
     except Exception as e:
         log_warning(f" Failed to load SMC specialist outputs: {e}")
+
+        if regime_timeframe != "1h":
+            try:
+                smc_context = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": "1h",
+                    "direction": direction,
+                    "model": "smc_regime",
+                    "step_name": "ml_smc_regime_step",
+                }
+
+                smc = artifact_router.load(
+                    artifact_name="smc_predictions_with_confidence",
+                    artifact_type="data",
+                    data_category="predictions",
+                    context=smc_context,
+                )
+
+                if smc is not None and not getattr(smc, "empty", True):
+                    if not isinstance(smc, pd.DataFrame):
+                        smc = pd.DataFrame(smc)
+                    smc = _standardize_index(smc)
+
+                    smc_cols: List[str] = []
+                    if "predicted" in smc.columns:
+                        smc_cols.append("predicted")
+                    extra_smc = [
+                        c
+                        for c in smc.columns
+                        if c != "predicted" and (c.startswith("prob_") or c.startswith("confidence_"))
+                    ]
+                    smc_cols.extend(extra_smc)
+
+                    if smc_cols:
+                        before_block = smc[smc_cols].copy()
+                        nnz_before = int(before_block.notna().sum().sum())
+                        block = before_block.reindex(training_index, method="ffill")
+                        block = block.add_prefix("smc_")
+                        nnz_after = int(block.notna().sum().sum())
+                        blocks.append(block)
+                        if nnz_after == 0:
+                            log_warning(
+                                " SMC block aligned to training_index is all-NaN. "
+                                "Keeping SMC specialist features, but they will be effectively missing; "
+                                "check SMC timestamps, index alignment, and values."
+                            )
+                        else:
+                            log_success(
+                                " Added SMC specialist block from 'smc_predictions_with_confidence' (1h fallback): "
+                                f"shape={block.shape}, non_null_before={nnz_before}, non_null_after={nnz_after}"
+                            )
+            except Exception as smc_fallback_exc:
+                log_warning(f" Failed to load SMC specialist outputs (1h fallback): {smc_fallback_exc}")
 
     # Mean-reversion specialist block: mr_* features from MLMeanReversionRegimeStep
     try:

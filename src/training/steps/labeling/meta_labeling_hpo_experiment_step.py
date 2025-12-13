@@ -363,7 +363,7 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     attach_rolling_hmm_regimes_to_market_data,
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
 )
-from src.training.steps.labeling import FeatureSetPersistence
+from .lgbm_feature_selection import FeatureSetPersistence
 from src.training.steps.labeling.label_config import (
     build_label_config,
     compute_label_config_id,

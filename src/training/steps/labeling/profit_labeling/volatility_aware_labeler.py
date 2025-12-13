@@ -410,7 +410,7 @@ class VolatilityConfig:
         self.enabled = True
         self.window = 20  # Window for raw volatility calculation
         self.vol_ema_span = 100  # EMA span for smoothing volatility baseline
-        self.sensitivity = 1.0  # Tunable parameter for volatility sensitivity
+        self.sensitivity = 1.2  # Increased from 1.0 for stronger volatility response
         self.alpha = 1.0  # Nonlinear sensitivity exponent (1.0 = linear, <1.0 = dampened)
         self.volatility_estimator = 'log_returns'  # 'log_returns', 'atr', or 'realized'
         self.percentile_clipping = False  # Use percentile-based clipping instead of fixed bounds

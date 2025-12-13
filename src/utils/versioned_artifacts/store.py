@@ -86,6 +86,135 @@ class VersionedArtifactStore:
         # Logger
         self.logger = logging.getLogger(f"VersionedArtifactStore.{self.store_path.name}")
 
+    def _validate_data_quality(
+        self,
+        data: pd.DataFrame,
+        version_name: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Validate data quality before storing.
+
+        Checks for:
+        - Missing/zero weights in sample weights
+        - Gaps in meta_probability columns
+        - Schema consistency for labeled data
+
+        Args:
+            data: DataFrame to validate
+            version_name: Version name for context
+            metadata: Optional metadata
+
+        Raises:
+            ValueError: If validation fails
+        """
+        from src.utils.tprint import tprint, tprint_warning, tprint_error
+
+        validation_errors = []
+        validation_warnings = []
+
+        # ------------------------------------------------------------------
+        # 1. Sample weight validation
+        # ------------------------------------------------------------------
+        weight_columns = [col for col in data.columns if 'weight' in col.lower()]
+        if weight_columns:
+            event_mask = None
+            try:
+                # Many labeled datasets store weights only for event rows and
+                # use 0.0 for non-event rows. Validate weight quality on event
+                # rows when a binary label is present.
+                if 'binary_label' in data.columns:
+                    event_mask = ~data['binary_label'].isna()
+                    if not bool(event_mask.any()):
+                        event_mask = None
+            except Exception:
+                event_mask = None
+            for weight_col in weight_columns:
+                weights = data[weight_col]
+                weights_to_check = weights
+                if event_mask is not None:
+                    weights_to_check = weights[event_mask]
+
+                if weights_to_check.isna().any():
+                    validation_errors.append(
+                        f"Missing values in weight column '{weight_col}': {int(weights_to_check.isna().sum())} NaNs"
+                    )
+
+                zero_weights = (weights_to_check == 0).sum()
+                if zero_weights > 0:
+                    pct_zero = zero_weights / max(1, len(weights_to_check)) * 100
+                    if pct_zero > 50:  # More than 50% zeros is concerning
+                        validation_errors.append(f"Excessive zero weights in '{weight_col}': {zero_weights} ({pct_zero:.1f}%)")
+                    else:
+                        validation_warnings.append(f"Zero weights in '{weight_col}': {zero_weights} ({pct_zero:.1f}%)")
+
+                negative_weights = (weights_to_check < 0).sum()
+                if negative_weights > 0:
+                    validation_errors.append(f"Negative weights in '{weight_col}': {negative_weights}")
+
+        # ------------------------------------------------------------------
+        # 2. Meta-probability validation
+        # ------------------------------------------------------------------
+        meta_prob_columns = [col for col in data.columns if 'meta_probability' in col.lower()]
+        if meta_prob_columns:
+            for meta_col in meta_prob_columns:
+                probs = data[meta_col]
+                probs_numeric = probs
+                if not pd.api.types.is_numeric_dtype(probs_numeric):
+                    probs_numeric = pd.to_numeric(probs_numeric, errors='coerce')
+                nan_count = probs.isna().sum()
+                if nan_count > 0:
+                    pct_nan = nan_count / len(probs) * 100
+                    # Meta-probabilities can be intentionally sparse (e.g. only
+                    # computed for event rows). Treat missingness as a warning
+                    # unless the column is effectively empty.
+                    if pct_nan > 95:
+                        validation_errors.append(
+                            f"Meta-probabilities are almost entirely missing in '{meta_col}': {nan_count} ({pct_nan:.1f}%)"
+                        )
+                    else:
+                        validation_warnings.append(
+                            f"Missing meta-probabilities in '{meta_col}': {nan_count} ({pct_nan:.1f}%)"
+                        )
+
+                # Check for out-of-bounds probabilities
+                if probs_numeric.notna().any():
+                    invalid_probs = ((probs_numeric < 0) | (probs_numeric > 1)).sum()
+                    if invalid_probs > 0:
+                        validation_errors.append(f"Invalid probabilities in '{meta_col}': {invalid_probs} values outside [0,1]")
+
+                # Check for constant probabilities (poor model)
+                if probs_numeric.notna().sum() > 10:
+                    unique_probs = probs_numeric.dropna().nunique()
+                    if unique_probs <= 2:  # Only 1-2 unique values
+                        validation_warnings.append(f"Very low probability diversity in '{meta_col}': only {unique_probs} unique values")
+
+        # ------------------------------------------------------------------
+        # 3. Labeled data schema validation
+        # ------------------------------------------------------------------
+        if 'labeled_data_schema_version' in data.columns:
+            schema_versions = data['labeled_data_schema_version'].dropna().unique()
+            if len(schema_versions) > 1:
+                validation_warnings.append(f"Multiple schema versions in data: {list(schema_versions)}")
+
+        # ------------------------------------------------------------------
+        # 4. Return validation results
+        # ------------------------------------------------------------------
+        # Log warnings
+        for warning in validation_warnings:
+            tprint_warning(f"   ⚠️  {warning}")
+
+        # Raise errors for critical issues
+        if validation_errors:
+            error_msg = f"Data validation failed for version '{version_name}':\n" + "\n".join(f"  - {err}" for err in validation_errors)
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+
+        if validation_warnings:
+            tprint("✅ Data validation passed (with warnings)", "SUCCESS")
+        else:
+            tprint("✅ Data validation passed", "SUCCESS")
+
         # Metadata
         from src.utils.tprint import tprint
         tprint(f"🐛 DEBUG: Loading metadata from {self.metadata_file}", "INFO")
@@ -245,6 +374,11 @@ class VersionedArtifactStore:
         """
         if not isinstance(data, pd.DataFrame):
             raise ValueError("Data must be a pandas DataFrame")
+
+        # ------------------------------------------------------------------
+        # Data Quality Validation
+        # ------------------------------------------------------------------
+        self._validate_data_quality(data, version_name, metadata)
 
         # Get context string for logging
         from src.utils.tprint import tprint
@@ -1010,6 +1144,70 @@ class VersionedArtifactStore:
         tprint(f"✅ Replaced {len(row_indices)} rows | {context_str}")
 
         return self.get_view(version_name)
+
+    def prune_versions(self, keep_per_base: int = 5) -> Dict[str, int]:
+        """
+        Prune old versions, keeping only the most recent ones.
+        
+        Args:
+            keep_per_base: Number of most recent versions to keep.
+            
+        Returns:
+            Summary of actions taken.
+        """
+        from src.utils.tprint import tprint
+        
+        versions = self.list_versions()
+        if len(versions) <= keep_per_base:
+            return {'versions_pruned': 0, 'h5_only_removed': 0, 'meta_only_removed': 0}
+            
+        # Sort versions by creation time (descending)
+        version_details = []
+        for v in versions:
+            meta = self._metadata['versions'].get(v, {})
+            created_at = meta.get('created_at', '')
+            version_details.append({'name': v, 'created_at': created_at})
+            
+        # Sort descending by created time
+        version_details.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        versions_to_delete = [v['name'] for v in version_details[keep_per_base:]]
+        
+        pruned_count = 0
+        h5_removed = 0
+        
+        with h5py.File(self.h5_file, 'a') as f:
+            versions_group = f['versions']
+            for v_name in versions_to_delete:
+                # Remove from HDF5
+                if v_name in versions_group:
+                    del versions_group[v_name]
+                    h5_removed += 1
+                
+                # Remove from metadata
+                if v_name in self._metadata['versions']:
+                    del self._metadata['versions'][v_name]
+                
+                pruned_count += 1
+                tprint(f"🗑️ Pruned version '{v_name}'", "INFO")
+
+        self._save_metadata()
+        
+        # Record change
+        if pruned_count > 0:
+            self.changelog.record_change(
+                change_type=ChangeType.DELETE_VERSION,
+                version_name="multiple",
+                affected_rows=0,
+                affected_columns=[],
+                metadata={'pruned_count': pruned_count}
+            )
+        
+        return {
+            'versions_pruned': pruned_count,
+            'h5_only_removed': h5_removed,
+            'meta_only_removed': 0
+        }
 
     def get_statistics(self) -> Dict[str, Any]:
         """

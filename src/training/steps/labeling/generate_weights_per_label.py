@@ -1,758 +1,1170 @@
-# src/training/steps/labeling/generate_weights_per_label.py
 """
-Sample Weight Generation for Meta-Labeling HPO.
+Generate Sample Weights per Label.
 
-This module provides functions to compute sample weights based on:
-- Magnitude: Risk-adjusted return magnitude
-- Learnability: Trend consistency score via sigmoid gate
-- Uniqueness: Event overlap/concurrency penalty
-- Cross-term: Interaction between magnitude and learnability
+This module implements sample weighting based on label uniqueness and overlap,
+as described in "Advances in Financial Machine Learning" by Marcos López de Prado.
 
-These weights are used in the meta_labeling_hpo_sample_weighted step
-to improve model training by emphasizing high-quality samples.
+The core idea is that overlapping labels contain redundant information. To prevent
+the model from overweighting periods with high label density (concurrency), we
+downweight samples proportional to their overlap.
 
-Includes comprehensive reporting for weight diagnostics and parameter-outcome
-correlation analysis.
+Algorithm:
+1. Count concurrent events at each timestamp.
+2. Calculate uniqueness at each timestamp (1 / concurrency).
+3. Compute average uniqueness for each event over its duration.
+
+This ensures that highly overlapping events have lower individual weights,
+providing a more balanced training signal.
 """
 
+from datetime import datetime
+from pathlib import Path
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, pearsonr
-import optuna
-from typing import Dict, Any, Optional, Union, List, Tuple
+from typing import Optional, Union, Dict, Any
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    OptimizationConfig,
+)
+
+_COERCE_NONFINITE_WARNED: set = set()
+
+_WEIGHT_LOG_COUNTER = 0
+_WEIGHT_LOG_LIMIT = 5
 
 try:
-    from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    from scipy.stats import entropy as scipy_entropy, spearmanr
+    SCIPY_AVAILABLE = True
 except ImportError:
-    # Fallback if tprint not available
-    def tprint(msg, level="INFO"):
-        print(f"[{level}] {msg}")
-    tprint_info = lambda msg: print(f"[INFO] {msg}")
-    tprint_success = lambda msg: print(f"[SUCCESS] {msg}")
-    tprint_warning = lambda msg: print(f"[WARNING] {msg}")
-    tprint_error = lambda msg: print(f"[ERROR] {msg}")
-
-
-# -------------------------------------------------------------------------
-# 1. Mathematical Helpers
-# -------------------------------------------------------------------------
-def sigmoid_gate(x, threshold, sharpness=10.0, reverse=False):
-    """Smooth sigmoid transition.
-    
-    Args:
-        x: Input value
-        threshold: Center point of sigmoid
-        sharpness: Steepness of transition (higher = sharper)
-        reverse: If True, returns 1-sigmoid instead of sigmoid
-        
-    Returns:
-        Sigmoid-gated value in [0, 1]
-    """
-    exponent = np.clip(-sharpness * (x - threshold), -50, 50)
-    val = 1 / (1 + np.exp(exponent))
-    return (1.0 - val) if reverse else val
-
-
-def magnitude_aware_spearman(weights, returns, magnitude_func=np.log1p):
-    """
-    Vectorized magnitude-aware Spearman correlation.
-    Checks if weights rank-order the *magnitude* of returns correctly.
-    
-    Args:
-        weights: Sample weights array
-        returns: Returns array
-        magnitude_func: Function to transform absolute returns (default: log1p)
-        
-    Returns:
-        Correlation coefficient in [-1, 1]
-    """
-    # 1. Transform returns to magnitude
-    abs_rets = np.abs(returns)
-    mag_rets = magnitude_func(abs_rets)
-    
-    # 2. Compute Ranks
-    # argsort(argsort(x)) gives the rank (0 to N-1)
-    rank_weights = np.argsort(np.argsort(weights)).astype(np.float64)
-    rank_mag = np.argsort(np.argsort(mag_rets)).astype(np.float64)
-    
-    # 3. Center Ranks
-    rank_weights -= rank_weights.mean()
-    rank_mag -= rank_mag.mean()
-    
-    # 4. Weighted Covariance (using Magnitude as the importance weight)
-    # We want to know: Do the ranks match *specifically* on the big moves?
-    weighted_cov = np.sum(rank_weights * rank_mag * mag_rets) / (np.sum(mag_rets) + 1e-12)
-    
-    # 5. Normalize
-    # Approximate standard deviation normalization
-    std_prod = np.std(rank_weights) * np.std(rank_mag)
-    corr = weighted_cov / (std_prod + 1e-12)
-    
-    # Clip to valid correlation range [-1, 1]
-    return np.clip(corr, -1.0, 1.0)
-
-
-def compute_horizon_consistency(close_series: pd.Series, horizon: int = 12) -> pd.Series:
-    """
-    Calculates the Efficiency Ratio (Kaufman) as a proxy for trend consistency.
-    ER = |Change| / Sum(|Changes|)
-    
-    Args:
-        close_series: Close price series
-        horizon: Lookback horizon in bars
-        
-    Returns:
-        Series of efficiency ratios in [0, 1]
-    """
-    # 1. Net change over horizon
-    net_change = close_series.diff(horizon).abs()
-    
-    # 2. Path length (Sum of absolute period-to-period changes)
-    path_length = close_series.diff().abs().rolling(window=horizon).sum()
-    
-    # 3. Efficiency Ratio (Noise-dampened)
-    # If path_length is 0 (flat line), ER is 0 (or 1? Usually 0 for trading).
-    efficiency_ratio = net_change / (path_length + 1e-12)
-    
-    return efficiency_ratio.fillna(0.0)
-
+    SCIPY_AVAILABLE = False
+    scipy_entropy = None
+    spearmanr = None
 
 def compute_uniqueness(
-    t_events: pd.Series,
-    price_index: pd.Index,
-    lookahead: Optional[int] = None,
+    t1: pd.Series,
+    events_index: Optional[pd.DatetimeIndex] = None,
+    market_index: Optional[pd.DatetimeIndex] = None,
 ) -> pd.Series:
     """
-    Calculates average uniqueness using the Fast Algorithm (Integral Image).
-    Complexity: O(N) instead of O(N * Horizon).
+    Compute sample weights based on label uniqueness (overlap).
+    Alias for compute_uniqueness_weights for backwards compatibility.
+
+    Args:
+        t1: Series with event end times (indices), indexed by event start times.
+            t1.index = t0 (start time)
+            t1.values = t1 (end time)
+        events_index: Optional index of events if t1 is not indexed by time.
+        market_index: Optional full market index to align timestamps.
+
+    Returns:
+        Series of sample weights aligned with t1.index.
+    """
+    return compute_uniqueness_weights(t1, events_index, market_index)
+
+def compute_uniqueness_weights(
+    t1: pd.Series,
+    events_index: Optional[pd.DatetimeIndex] = None,
+    market_index: Optional[pd.DatetimeIndex] = None,
+) -> pd.Series:
+    """
+    Compute sample weights based on label uniqueness (overlap).
+
+    Args:
+        t1: Series with event end times (indices), indexed by event start times.
+            t1.index = t0 (start time)
+            t1.values = t1 (end time)
+        events_index: Optional index of events if t1 is not indexed by time.
+        market_index: Optional full market index to align timestamps.
+
+    Returns:
+        Series of sample weights aligned with t1.index.
+    """
+    tprint(f"⚖️ Computing uniqueness weights for {len(t1)} events...", "INFO")
+
+    if len(t1) == 0:
+        tprint("⚠️ No events provided for weighting. Returning empty weights.", "WARNING")
+        return pd.Series(dtype=float)
+
+    # 1. Expand events to valid time range
+    if events_index is not None:
+        t1_aligned = pd.Series(t1.values, index=events_index)
+    else:
+        t1_aligned = t1.copy()
+
+    # Sort by index to ensure proper processing
+    t1_aligned = t1_aligned.sort_index()
+    
+    # 2. Derive concurrency (how many events are active at each time step)
+    # We create a timeline of all start (t0) and end (t1) points
+    start_times = pd.Series(1, index=t1_aligned.index)
+    end_times = pd.Series(-1, index=t1_aligned.values)
+    
+    # Combine start and end times to track active count changes
+    # Note: If an event ends strictly BEFORE the next one starts, this works. 
+    # If using bars, ensure proper alignment. 
+    # Here we assume continuous timestamps.
+    timeline = pd.concat([start_times, end_times]).sort_index()
+    
+    # If multiple events start/end at same time, sum the changes
+    timeline = timeline.groupby(timeline.index).sum()
+    
+    # Cumulative sum gives the number of active events at any point
+    concurrency = timeline.cumsum()
+
+    # 3. Calculate uniqueness based on average concurrency over event lifespan
+    # Optimization: Reindex concurrency to a granular market index if provided, 
+    # to account for duration more accurately
+    if market_index is not None:
+        # Realign concurrency to market bars to avoid gaps
+        concurrency_aligned = concurrency.reindex(market_index, method='ffill').fillna(0)
+    else:
+        concurrency_aligned = concurrency
+
+    # Ensure monotonically increasing index for searchsorted operations
+    if not concurrency_aligned.index.is_monotonic_increasing:
+        concurrency_aligned = concurrency_aligned.sort_index()
+
+    index_values = concurrency_aligned.index.values
+    conc_values = concurrency_aligned.astype(float).values
+
+    # Inverse concurrency at each timestamp
+    inv_conc = 1.0 / np.maximum(1.0, conc_values)
+
+    # Cumulative sum of inverse concurrency
+    cum_inv = np.cumsum(inv_conc)
+
+    # Map event start/end times to integer positions in the concurrency index
+    t0_values = t1_aligned.index.values
+    t1_values = t1_aligned.values
+
+    start_pos = concurrency_aligned.index.searchsorted(t0_values, side='left')
+    end_pos = concurrency_aligned.index.searchsorted(t1_values, side='right') - 1
+
+    n_points = len(concurrency_aligned)
+
+    # Valid events have at least one overlapping timestamp in the concurrency index
+    valid_mask = (start_pos < n_points) & (end_pos >= 0) & (start_pos <= end_pos)
+
+    durations = np.zeros(len(t1_aligned), dtype=float)
+    sum_inv = np.zeros(len(t1_aligned), dtype=float)
+
+    if valid_mask.any():
+        valid_idx = np.where(valid_mask)[0]
+        sp_valid = start_pos[valid_idx]
+        ep_valid = end_pos[valid_idx]
+
+        durations[valid_idx] = (ep_valid - sp_valid + 1).astype(float)
+
+        # Sum of inverse concurrency over each event window via prefix sums
+        prev_cum = np.where(sp_valid > 0, cum_inv[sp_valid - 1], 0.0)
+        sum_inv[valid_idx] = cum_inv[ep_valid] - prev_cum
+
+    # Average uniqueness per event
+    avg_uniqueness = np.ones(len(t1_aligned), dtype=float)
+    valid_and_nonzero = valid_mask & (durations > 0)
+    if valid_and_nonzero.any():
+        avg_uniqueness[valid_and_nonzero] = sum_inv[valid_and_nonzero] / durations[valid_and_nonzero]
+
+    weights = pd.Series(avg_uniqueness, index=t1_aligned.index, dtype=float)
+
+    # Normalize weights to sum to count (preserve total effective sample size)
+    if weights.sum() > 0:
+        weights *= (len(weights) / weights.sum())
+    
+    tprint(f"✅ Uniqueness weights computed. Mean: {weights.mean():.4f}, Min: {weights.min():.4f}, Max: {weights.max():.4f}", "SUCCESS")
+    return weights
+
+
+def _coerce_numeric_array(
+    arr: Optional[Union[np.ndarray, pd.Series, list]],
+    expected_len: int,
+    name: str,
+    fill_value: float = 0.0,
+    allow_negative: bool = True,
+) -> Optional[np.ndarray]:
+    """
+    Convert an input array-like to a clean numpy array with finite values.
+
+    - Verifies length matches expected_len; otherwise returns None.
+    - Replaces non-finite values with fill_value.
+    - Optionally enforces positivity with a floor.
+    """
+    if arr is None:
+        return None
+
+    arr_np = np.asarray(arr, dtype=float)
+    if len(arr_np) != expected_len:
+        tprint_warning(
+            f"⚠️ {name} length ({len(arr_np)}) does not match returns ({expected_len}); ignoring {name}."
+        )
+        return None
+
+    non_finite_mask = ~np.isfinite(arr_np)
+    if non_finite_mask.any():
+        warn_key = (name, "non_finite")
+        if warn_key not in _COERCE_NONFINITE_WARNED:
+            tprint_warning(
+                f"⚠️ {name} contains {non_finite_mask.sum()} non-finite values; replacing with {fill_value}."
+            )
+            _COERCE_NONFINITE_WARNED.add(warn_key)
+        arr_np = np.where(non_finite_mask, fill_value, arr_np)
+
+    if not allow_negative:
+        min_positive = 1e-12
+        arr_np = np.abs(arr_np)
+        arr_np = np.where(arr_np < min_positive, min_positive, arr_np)
+
+    return arr_np
+
+def compute_horizon_consistency(price_series: pd.Series, horizon: int = 12) -> pd.Series:
+    """
+    Compute consistency of price direction over the horizon.
+    High consistency means price moved steadily in one direction.
+    Low consistency means price chopped back and forth.
     
     Args:
-        t_events: Series with Index=Start Time, Values=End Time.
-        price_index: Full timeline of bars (DatetimeIndex).
-        lookahead: Optional lookahead parameter (currently unused, kept for API compat).
+        price_series: Series of prices
+        horizon: Lookahead horizon in bars
         
     Returns:
-        Series of uniqueness scores in [0, 1] indexed by t_events.index
+        Series of consistency scores (0.0 to 1.0)
     """
-    if t_events.empty:
-        return pd.Series(index=t_events.index, dtype=float)
-        
-    # 1. Map timestamps to integer locations in the price_index
-    # This allows us to work with fast numpy arrays
-    if not price_index.is_monotonic_increasing:
-        price_index = price_index.sort_values()
-        
-    n_bars = len(price_index)
+    # Calculate returns
+    returns = price_series.pct_change().fillna(0.0)
     
-    # Find start and end indices
-    # searchsorted matches the timestamp to the array index
-    start_idxs = price_index.searchsorted(t_events.index)
+    # Absolute sum of returns over horizon (path length)
+    abs_sum = returns.abs().rolling(horizon).sum()
     
-    # For end times, we want the event to cover the range [t_start, t_end].
-    # 'side=right' gives the index *after* t_end, which is perfect for python slicing.
-    end_idxs = price_index.searchsorted(t_events.values, side='right')
+    # Net return over horizon (displacement)
+    net_ret = returns.rolling(horizon).sum().abs()
     
-    # Clip to bounds
-    end_idxs = np.minimum(end_idxs, n_bars)
+    # Consistency = Displacement / Path Length
+    # If moved in straight line: Consistency = 1.0
+    # If chopped and ended at same price: Consistency = 0.0
+    consistency = net_ret / (abs_sum + 1e-8)
     
-    # 2. Compute Concurrency (How many trades active at each bar?)
-    concurrency = np.zeros(n_bars + 1)  # +1 for safe indexing
-    
-    # Add +1 at start, Subtract -1 at end
-    np.add.at(concurrency, start_idxs, 1)
-    np.add.at(concurrency, end_idxs, -1)
-    
-    # Cumsum fills the gaps
-    concurrency = np.cumsum(concurrency)[:n_bars]
-    
-    # Avoid division by zero (0 concurrency -> 1 for math safety)
-    concurrency[concurrency == 0] = 1.0
-    
-    # 3. Compute Uniqueness (Average of 1/Concurrency)
-    inv_concurrency = 1.0 / concurrency
-    
-    # Integral Image (Cumulative Sum of the Inverse)
-    # cumsum[i] = sum(0..i)
-    inv_cumsum = np.cumsum(inv_concurrency)
-    inv_cumsum = np.insert(inv_cumsum, 0, 0.0)  # Prepend 0 for subtraction logic
-    
-    # Sum over [start, end) = cumsum[end] - cumsum[start]
-    sums = inv_cumsum[end_idxs] - inv_cumsum[start_idxs]
-    lengths = end_idxs - start_idxs
-    
-    # Handle instantaneous events (length 0)
-    lengths[lengths == 0] = 1.0
-    
-    means = sums / lengths
-    
-    return pd.Series(means, index=t_events.index).fillna(1.0)
+    return consistency
 
-
-# -------------------------------------------------------------------------
-# 2. The Weight Generator (CANONICAL VERSION)
-# -------------------------------------------------------------------------
 def generate_weights_per_label(
-    returns: Union[np.ndarray, pd.Series],
+    returns: np.ndarray,
     t_events: pd.Index,
-    close_series: Optional[pd.Series],  # Kept for signature compatibility
-    consistency_scores: np.ndarray,
-    uniqueness_scores: np.ndarray,
-    vol_proxy: np.ndarray,
-    mag_compression: float,
-    learn_slope: float,
-    learn_center: float,
-    uniq_intensity: float,
-    exp_mag: float,
-    exp_learn: float,
-    exp_uniq: float,
-    exp_cross: float,
-    downside_multiplier: float,
-    # Optional additional parameters for extended functionality
-    y: Optional[np.ndarray] = None,
-    class_balance_rate: float = 0.0,
-    floor_weight: float = 1e-4,
-    cap_weight: float = 50.0,
+    close_series: Optional[pd.Series] = None,
+    consistency_scores: Optional[np.ndarray] = None,
+    uniqueness_scores: Optional[np.ndarray] = None,
+    vol_proxy: Optional[np.ndarray] = None,
+    mag_compression: float = 0.8,
+    learn_slope: float = 0.0,
+    learn_center: float = 0.5,
+    uniq_intensity: float = 1.0,
+    exp_mag: float = 1.0,
+    exp_learn: float = 1.0,
+    exp_uniq: float = 1.0,
+    exp_cross: float = 1.0,
+    downside_multiplier: float = 1.0,
+    time_decay_halflife: Optional[float] = None,
+    mag_clip_pct: Optional[float] = None,
+    **kwargs
 ) -> np.ndarray:
     """
-    Generates sample weights based on Magnitude, Learnability, Uniqueness, and Cross-term.
-    
-    This is the CANONICAL weight generation function used throughout the weighted
-    meta-labeling pipeline.
-    
-    Args:
-        returns: Array of realized returns per event
-        t_events: Index of event timestamps
-        close_series: Close price series (kept for API compat, unused)
-        consistency_scores: Pre-computed horizon consistency scores
-        uniqueness_scores: Pre-computed uniqueness scores
-        vol_proxy: Volatility proxy for risk adjustment
-        mag_compression: Compression exponent for magnitude (0-1)
-        learn_slope: Sigmoid slope for learnability gate
-        learn_center: Sigmoid center for learnability gate
-        uniq_intensity: Exponent for uniqueness weighting
-        exp_mag: Final exponent for magnitude component
-        exp_learn: Final exponent for learnability component
-        exp_uniq: Final exponent for uniqueness component
-        exp_cross: Final exponent for cross-term (mag * learn)
-        downside_multiplier: Multiplier for negative returns (emphasize losses)
-        y: Optional class labels for class balancing
-        class_balance_rate: Rate for inverse class frequency weighting (0 = no balancing)
-        floor_weight: Minimum allowed weight
-        cap_weight: Maximum allowed weight
-        
-    Returns:
-        Array of sample weights, normalized to mean=1
+    Generate symmetric, bias-free sample weights combining magnitude, uniqueness,
+    and time components.
+
+    Structure:
+        W = (Magnitude**exp_mag * Uniqueness**exp_uniq * Time**exp_learn)
+
+    Properties:
+    - Uses absolute returns only (no sign dependence).
+    - Expects uniqueness_scores ≈ 1 / concurrency when provided.
+    - Time component is a sigmoid over a normalized index [0, 1].
+    - Weights are normalized so that mean(weight) = 1.0.
+
+    Extra inputs like close_series, consistency_scores, vol_proxy, downside_multiplier
+    are accepted for backwards compatibility but not used in the core geometry.
     """
-    # Convert to numpy if needed
-    if hasattr(returns, 'values'):
-        returns = returns.values
-    returns = np.asarray(returns, dtype=float)
+    n_samples = len(returns)
+    if n_samples == 0:
+        tprint_info("⚠️ No returns provided; returning empty weights.")
+        return np.array([])
+
+    if len(t_events) != n_samples:
+        tprint_warning(
+            f"⚠️ t_events length ({len(t_events)}) does not match returns ({n_samples}); proceeding with positional alignment."
+        )
+
+    # 1. Clean core returns
+    returns_clean = _coerce_numeric_array(
+        returns, n_samples, "returns", fill_value=0.0, allow_negative=True
+    )
+    returns_clean = np.where(np.isfinite(returns_clean), returns_clean, 0.0)
+
+    # 2. Magnitude component (absolute returns, clipped and compressed)
+    abs_ret = np.abs(returns_clean)
+
+    # If vol_proxy is available, prefer a volatility-normalized magnitude signal.
+    # This keeps weights from being dominated by high-volatility regimes.
+    vol_for_mag = _coerce_numeric_array(
+        vol_proxy, n_samples, "vol_proxy", fill_value=np.nan, allow_negative=False
+    )
+    if vol_for_mag is not None:
+        try:
+            v = np.asarray(vol_for_mag, dtype=float)
+            v = np.where(np.isfinite(v) & (v > 0), v, np.nan)
+            v_med = float(np.nanmedian(v)) if np.isfinite(np.nanmedian(v)) else np.nan
+            if np.isfinite(v_med) and v_med > 0:
+                v = np.where(np.isfinite(v), v, v_med)
+                abs_ret = abs_ret / (v + 1e-12)
+        except Exception:
+            pass
+
+    # Determine clipping percentile
+    if mag_clip_pct is not None and 0.0 < mag_clip_pct < 1.0:
+        clip_pct = float(mag_clip_pct)
+    else:
+        clip_pct = 0.99
+
+    if abs_ret.size:
+        try:
+            clip_val = float(np.quantile(abs_ret, clip_pct))
+        except Exception:
+            clip_val = float(np.max(abs_ret)) if np.isfinite(abs_ret).any() else 0.0
+    else:
+        clip_val = 0.0
+
+    if clip_val > 1e-9:
+        norm_mag = np.clip(abs_ret, 0.0, clip_val) / clip_val
+    else:
+        norm_mag = np.zeros_like(abs_ret)
+
+    comp_mag = np.power(norm_mag, mag_compression)
+
+    # 3. Uniqueness component (redundancy filter)
+    cleaned_uniqueness = _coerce_numeric_array(
+        uniqueness_scores, n_samples, "uniqueness_scores", fill_value=1.0, allow_negative=False
+    )
+    if cleaned_uniqueness is not None:
+        comp_uniq = np.power(cleaned_uniqueness, uniq_intensity)
+    else:
+        comp_uniq = np.ones(n_samples, dtype=float)
+
+    # 4. Time component (sigmoid over normalized time rank)
+    x = np.linspace(0.0, 1.0, n_samples, dtype=float)
+    if len(t_events) == n_samples:
+        try:
+            t_values = np.asarray(t_events)
+            order = np.argsort(t_values)
+            x_rank = np.linspace(0.0, 1.0, n_samples, dtype=float)
+            x = np.empty(n_samples, dtype=float)
+            x[order] = x_rank
+        except Exception:
+            pass
+
+    z = learn_slope * (x - learn_center)
+    z = np.clip(z, -60.0, 60.0)
+    comp_time = 1.0 / (1.0 + np.exp(-z))
+
+    # 5. Consistency component (interaction term)
+    cleaned_consistency = _coerce_numeric_array(
+        consistency_scores, n_samples, "consistency_scores", fill_value=1.0, allow_negative=False
+    )
+    if cleaned_consistency is not None:
+        # Boost weight if consistent
+        comp_cross = np.power(cleaned_consistency, exp_cross)
+    else:
+        comp_cross = np.ones(n_samples, dtype=float)
+
+    # 6. Downside risk penalty
+    # Use vol_proxy to penalize high volatility periods if downside_multiplier > 1.0
+    comp_risk = np.ones(n_samples, dtype=float)
+    cleaned_vol = _coerce_numeric_array(
+        vol_proxy, n_samples, "vol_proxy", fill_value=0.0, allow_negative=False
+    )
     
-    # 1. Safety Fix: Infinite Volatility Trap
-    # Force vol_proxy to be valid
-    safe_vol = np.maximum(vol_proxy, 1e-6)
+    if cleaned_vol is not None and downside_multiplier > 1.0:
+        vol_median = np.nanmedian(cleaned_vol)
+        if vol_median > 0:
+            high_vol_mask = cleaned_vol > vol_median
+            if high_vol_mask.any():
+                # Apply penalty: 1.0 -> 1.0 / multiplier
+                comp_risk[high_vol_mask] = 1.0 / downside_multiplier
 
-    # 2. Magnitude Weight (Risk Adjusted)
-    risk_adjusted_ret = returns / safe_vol
-    w_mag = np.abs(risk_adjusted_ret) ** mag_compression
+    # 7. Time-decay weighting (Phase 4.3: weight recent data higher)
+    comp_decay = np.ones(n_samples, dtype=float)
+    if time_decay_halflife is not None and time_decay_halflife > 0:
+        try:
+            # x is already normalized position [0, 1] where 1 = most recent
+            # Exponential decay: weight = 2^((x - 1) / halflife)
+            # This makes oldest sample = 2^(-1/halflife), newest = 1.0
+            decay_power = (x - 1.0) / time_decay_halflife
+            comp_decay = np.power(2.0, decay_power)
+            comp_decay = np.clip(comp_decay, 0.1, 1.0)  # Floor at 10% of newest
+        except Exception:
+            pass
 
-    # Feature 1: Downside Multiplier
-    # Apply multiplier where returns are negative
-    if downside_multiplier != 1.0:
-        w_mag = np.where(returns < 0, w_mag * downside_multiplier, w_mag)
-
-    # 3. Learnability Weight (Consistency)
-    # Inline Sigmoid Logic (to avoid external dependency in this function)
-    # w_learn = 1 / (1 + exp(-slope * (x - center)))
-    exponent = np.clip(-learn_slope * (consistency_scores - learn_center), -50, 50)
-    w_learn = 1.0 / (1.0 + np.exp(exponent))
-
-    # 4. Uniqueness Weight
-    w_uniq = uniqueness_scores ** uniq_intensity
-
-    # 5. Feature 2: Cross-term Interaction
-    w_cross = w_mag * w_learn
-
-    # 6. Class Balancing (optional)
-    w_class = np.ones_like(returns, dtype=float)
-    if y is not None and class_balance_rate > 0:
-        y = np.asarray(y)
-        classes = np.unique(y[~np.isnan(y)])
-        n_samples = len(y)
-        n_classes = len(classes)
-        for c in classes:
-            n_j = np.sum(y == c)
-            if n_j > 0:
-                base_w = n_samples / (n_classes * n_j)
-                w_class[y == c] = np.power(base_w, class_balance_rate)
-
-    # 7. Final Combination
-    # Combine component weights with exponents
+    # 8. Geometric mixing
     raw_weights = (
-        (w_mag ** exp_mag) *
-        (w_learn ** exp_learn) *
-        (w_uniq ** exp_uniq) *
-        (w_cross ** exp_cross) *
-        w_class
+        np.power(comp_mag, exp_mag)
+        * np.power(comp_uniq, exp_uniq)
+        * np.power(comp_time, exp_learn)
+        * comp_cross
+        * comp_risk
+        * comp_decay
     )
 
-    # 8. Bounds & Normalization
-    raw_weights = np.clip(raw_weights, floor_weight, cap_weight)
-    raw_weights = raw_weights / (np.mean(raw_weights) + 1e-12)
+    raw_weights = np.nan_to_num(raw_weights, nan=0.0, posinf=0.0, neginf=0.0)
 
-    return raw_weights
+    if raw_weights.sum() > 0 and np.isfinite(raw_weights).all():
+        final_weights = raw_weights * (n_samples / raw_weights.sum())
+    else:
+        tprint_warning("⚠️ Combined weights invalid; falling back to uniform weights.")
+        final_weights = np.ones(n_samples, dtype=float)
+
+    global _WEIGHT_LOG_COUNTER
+    try:
+        if _WEIGHT_LOG_COUNTER < _WEIGHT_LOG_LIMIT:
+            loss_mask = returns_clean < 0
+            tprint_info(
+                f"📊 Weights summary — mean: {final_weights.mean():.4f}, min: {final_weights.min():.4f}, "
+                f"max: {final_weights.max():.4f}, neg share: {loss_mask.mean():.2%}, "
+                f"neg weight avg: {final_weights[loss_mask].mean() if loss_mask.any() else 0:.4f}"
+            )
+            _WEIGHT_LOG_COUNTER += 1
+    except Exception:
+        pass
+
+    return final_weights
 
 
-# -------------------------------------------------------------------------
-# 3. The Core Scoring Engine
-# -------------------------------------------------------------------------
-def evaluate_weighting_scheme(
+def safe_layer1_objective(
     weights: np.ndarray,
     returns: np.ndarray,
-    consistency_scores: np.ndarray,
-    vol_proxy: np.ndarray,
-    thresholds: Dict[str, float],
+    concurrency: np.ndarray,
+    volatility: np.ndarray,
+    noise_threshold: float = 0.001,
 ) -> float:
-    """
-    Evaluates the 'Teacher Quality' of a weighting vector.
-    
-    Uses multiple metrics:
-    - Information Coefficient (IC): Does weight predict magnitude?
-    - ESS Stability: Are weights well-distributed?
-    - Weighted Consistency: Are high-weight samples learnable?
-    - Volatility Bias: Are we just weighting by vol?
-    
-    Args:
-        weights: Sample weights array
-        returns: Returns array
-        consistency_scores: Trend consistency scores
-        vol_proxy: Volatility proxy
-        thresholds: Dict with 'ess_min' and 'cons_min' thresholds
-        
-    Returns:
-        Composite quality score
-    """
-    # --- A. Data Hygiene ---
-    weights = np.nan_to_num(weights, nan=1e-6)
-    weights = weights / (np.mean(weights) + 1e-12)
+    w = np.asarray(weights, dtype=float)
+    if w.size == 0:
+        return -10.0
+    if not np.isfinite(w).all():
+        return -10.0
 
-    # --- B. Information Coefficient (IC) ---
-    # Does weight predict Magnitude?
-    ic = magnitude_aware_spearman(weights, returns)
-    
-    # Soft Floor: Keep gradient alive
-    if ic <= 0:
-        return 1e-6
+    total = float(w.sum())
+    if total <= 0:
+        return -10.0
 
-    # --- C. Effective Sample Size (ESS) Stability ---
-    n = len(weights)
-    ess = (np.sum(weights) ** 2) / (np.sum(weights ** 2) + 1e-12)
-    ess_ratio = ess / n
-    
-    score_ess = sigmoid_gate(
-        ess_ratio, 
-        threshold=thresholds['ess_min'], 
-        sharpness=15.0
+    w_norm = w / total
+
+    r = np.asarray(returns, dtype=float)
+    if r.size != w_norm.size:
+        return -10.0
+
+    n = w_norm.size
+    if n < 2:
+        return -10.0
+
+    abs_returns = np.abs(r)
+
+    def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if x.size < 2 or y.size < 2:
+            return 0.0
+        if not np.isfinite(x).any() or not np.isfinite(y).any():
+            return 0.0
+        try:
+            if spearmanr is not None:
+                corr, _ = spearmanr(x, y)
+                if corr is None or not np.isfinite(corr):
+                    return 0.0
+                return float(corr)
+        except Exception:
+            pass
+
+        try:
+            x_center = x - np.nanmean(x)
+            y_center = y - np.nanmean(y)
+            denom = (
+                np.sqrt(np.nanmean(x_center ** 2))
+                * np.sqrt(np.nanmean(y_center ** 2))
+            )
+            if denom <= 0:
+                return 0.0
+            return float(np.nanmean(x_center * y_center) / denom)
+        except Exception:
+            return 0.0
+
+    mas = _safe_corr(w, abs_returns)
+    mas = max(0.0, mas)
+
+    try:
+        if SCIPY_AVAILABLE and scipy_entropy is not None:
+            wes = float(scipy_entropy(w_norm) / np.log(float(n)))
+        else:
+            ent = -float(np.sum(w_norm * np.log(w_norm + 1e-12)))
+            wes = ent / np.log(float(n)) if n > 1 else 0.0
+    except Exception:
+        wes = 0.0
+
+    noise_mask = abs_returns < noise_threshold
+    nwp = float(w_norm[noise_mask].sum()) if noise_mask.any() else 0.0
+
+    concurrency_arr = np.asarray(concurrency, dtype=float)
+    uop_corr = _safe_corr(w, concurrency_arr)
+    uop_penalty = max(0.0, uop_corr)
+
+    vol_arr = np.asarray(volatility, dtype=float)
+    vdp_corr = _safe_corr(w, vol_arr)
+    vdp_penalty = max(0.0, vdp_corr - 0.6)
+
+    score = (
+        1.0 * mas
+        + 1.5 * wes
+        - 2.0 * nwp
+        - 1.0 * uop_penalty
+        - 1.0 * vdp_penalty
     )
 
-    # --- D. Weighted Horizon Consistency (Quality) ---
-    norm_w = weights / (np.sum(weights) + 1e-12)
-    weighted_consistency = np.sum(norm_w * consistency_scores)
-    
-    score_consistency = sigmoid_gate(
-        weighted_consistency, 
-        threshold=thresholds['cons_min'], 
-        sharpness=10.0
-    )
-
-    # --- E. Volatility Bias Correction (Safety) ---
-    vol_corr, _ = spearmanr(weights, vol_proxy)
-    score_vol_bias = sigmoid_gate(
-        vol_corr, 
-        threshold=0.85, 
-        sharpness=15.0, 
-        reverse=True
-    )
-
-    # --- F. Synthesis ---
-    final_score = ic * score_ess * score_consistency * score_vol_bias
-    
-    return final_score
+    if not np.isfinite(score):
+        return -10.0
+    return float(score)
 
 
-# -------------------------------------------------------------------------
-# 4. The Optuna Objective Wrapper
-# -------------------------------------------------------------------------
-def objective_layer_1(
-    trial,
-    returns: np.ndarray,
-    t_events: pd.Index,
-    close_series: pd.Series,
-    precalc_data: Dict[str, np.ndarray],
-) -> float:
-    """
-    Optuna Objective for Layer 1 weight parameter optimization.
-    
-    Args:
-        trial: Optuna trial object
-        returns: Returns array aligned to t_events
-        t_events: Event timestamps
-        close_series: Close prices (for compatibility)
-        precalc_data: Dict with 'consistency', 'volatility', 'uniqueness' arrays
-        
-    Returns:
-        Weighting scheme quality score
-    """
-    # Unpack pre-calculated heavy data
-    # NOTE: These should already be aligned to t_events by run_layer1_optimization
-    consistency_scores = precalc_data['consistency']
-    vol_proxy = precalc_data['volatility']
-    uniqueness_scores = precalc_data['uniqueness']
-    
-    # --- 1. Suggest Parameters ---
-    params = {
-        'mag_compression': trial.suggest_float("mag_compression", 0.0, 1.0),
-        'learn_slope': trial.suggest_float("learn_slope", 5.0, 20.0),
-        'learn_center': trial.suggest_float("learn_center", 0.3, 0.5),
-        'uniq_intensity': trial.suggest_float("uniq_intensity", 0.5, 1.5),
-        'exp_mag': trial.suggest_float("exp_mag", 0.5, 2.0),
-        'exp_learn': trial.suggest_float("exp_learn", 0.5, 2.0),
-        'exp_uniq': trial.suggest_float("exp_uniq", 0.5, 1.5),
-        # Feature 2: Cross-term interactions
-        'exp_cross': trial.suggest_float("exp_cross", 0.5, 2.0),
-        # Feature 1: Downside Multiplier
-        'downside_multiplier': trial.suggest_float("downside_multiplier", 1.0, 1.5),
-    }
-
-    thresholds = {
-        'ess_min': trial.suggest_float("eval_ess_min", 0.05, 0.15),
-        'cons_min': trial.suggest_float("eval_cons_min", 0.55, 0.70)
-    }
-
-    # --- 2. Generate Weights ---
-    # Call the generator with ALL pre-calc data
-    weights = generate_weights_per_label(
-        returns=returns,
-        t_events=t_events,
-        close_series=close_series,
-        consistency_scores=consistency_scores,
-        uniqueness_scores=uniqueness_scores,
-        vol_proxy=vol_proxy,
-        **params
-    )
-    
-    # --- 3. Evaluate ---
-    score = evaluate_weighting_scheme(
-        weights, 
-        returns, 
-        consistency_scores, 
-        vol_proxy, 
-        thresholds
-    )
-    
-    return score
-
-
-# -------------------------------------------------------------------------
-# 5. Driver Function
-# -------------------------------------------------------------------------
 def run_layer1_optimization(
-    df: pd.DataFrame,
-    returns: Union[np.ndarray, pd.Series],
-    t_events: pd.Index,
-    n_trials: int = 50,
-    horizon: int = 12,
+    symbol: str, 
+    timeframe: str,
+    market_data: pd.DataFrame,
+    labels: pd.Series,
+    committee_agreement_scores: Optional[Union[np.ndarray, pd.Series, list]] = None,
+    committee_mag_factors: Optional[Union[np.ndarray, pd.Series, list]] = None,
 ) -> Dict[str, Any]:
     """
-    Pre-calculates data and runs the Layer 1 weighting parameter optimization.
-
-    Args:
-        df: Full dataframe with 'close' column.
-        returns: Series of returns corresponding to t_events.
-        t_events: Index/Series of event start times.
-        n_trials: Number of Optuna trials (default: 50)
-        horizon: Lookback horizon for consistency calculation (default: 12)
-        
+    Run lightweight optimization for weighting parameters (Layer 1).
+    placeholder for full HPO logic.
+    
     Returns:
-        Dict of best weighting parameters
+        Dictionary of best parameters.
     """
-    tprint_info("🔧 run_layer1_optimization() called")
-    tprint_info(f"   n_trials={n_trials}, horizon={horizon}, n_events={len(t_events)}")
-    
-    tprint_info("📊 Pre-calculating Layer 1 metrics...")
-    
-    # 1. Horizon Consistency (Full History)
-    tprint_info("   Computing horizon consistency...")
-    consistency_full = compute_horizon_consistency(df['close'], horizon=horizon)
+    default_params: Dict[str, Any] = {
+        'mag_compression': 0.8,
+        'learn_slope': 0.0,
+        'learn_center': 0.5,
+        'uniq_intensity': 1.0,
+        'exp_mag': 1.0,
+        'exp_learn': 1.0,
+        'exp_uniq': 1.0,
+        'exp_cross': 1.0,
+        'downside_multiplier': 1.0,
+        'committee_agreement_alpha': 0.5,
+        'committee_mag_clip': 5.0,
+    }
 
-    # 2. Volatility Proxy (Full History)
-    # Fix: Infinite Volatility (will be handled in generator, but cleaner here too)
-    tprint_info("   Computing volatility proxy...")
-    volatility_full = df['close'].pct_change().rolling(20, min_periods=1).std().fillna(0)
-    
-    # 3. Uniqueness (Events)
-    # Create t_events as a Series with end times for uniqueness calculation
-    # If t_events is just an index, create end times as index + horizon bars
-    tprint_info("   Computing uniqueness scores...")
-    if isinstance(t_events, pd.Series):
-        t_events_series = t_events
-    else:
-        # Assume events end after 'horizon' bars
-        try:
-            t_events_series = pd.Series(
-                index=t_events,
-                data=t_events + pd.Timedelta(minutes=15 * horizon)  # Assuming 15m bars
-            )
-        except Exception:
-            # Fallback: use same timestamp for start/end
-            t_events_series = pd.Series(index=t_events, data=t_events)
-    
-    uniqueness_aligned = compute_uniqueness(t_events_series, df.index)
-    
-    # Feature 3: Fix "Array Shape" Crash
-    # Reindex full-history metrics to t_events
-    tprint_info("   Aligning metrics to event index...")
+    tprint("⚙️ Running Layer 1 Weight Optimization (Placeholder)...", "INFO")
+    tprint_info(
+        f"⚙️ Running Layer 1 Weight Optimization for {symbol} {timeframe}...",
+    )
+
     try:
-        if isinstance(t_events, pd.Series):
-            event_index = t_events.index
+        returns_series = labels.astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+        if len(returns_series) < 50:
+            tprint_warning(
+                f"⚠️ Layer 1: insufficient events for optimization (n={len(returns_series)}). Using defaults.",
+            )
+            return default_params
+
+        if 'close' not in market_data.columns:
+            tprint_warning("⚠️ Layer 1: market_data missing 'close' column. Using defaults.")
+            return default_params
+
+        close_series = market_data['close'].astype(float)
+
+        # Simple volatility proxy: rolling standard deviation of returns
+        close_ret = close_series.pct_change()
+        vol_series = close_ret.rolling(20).std().replace([np.inf, -np.inf], np.nan)
+
+        t_events = returns_series.index
+        vol_proxy = vol_series.reindex(t_events).astype(float).values
+        if not np.isfinite(vol_proxy).any():
+            vol_proxy = None
+
+        returns_arr = returns_series.values.astype(float)
+
+        n_samples = int(len(returns_arr))
+ 
+        # Heuristic floor for "small" returns (used in objective)
+        finite_abs = np.abs(returns_arr[np.isfinite(returns_arr)])
+        if finite_abs.size:
+            small_ret_thr = float(np.quantile(finite_abs, 0.25))
         else:
-            event_index = t_events
-            
-        consistency_aligned = consistency_full.reindex(event_index).fillna(0).values
-        volatility_aligned = volatility_full.reindex(event_index).fillna(0).values
-        
-        # Ensure uniqueness is aligned
-        if isinstance(uniqueness_aligned, pd.Series):
-            uniqueness_aligned = uniqueness_aligned.reindex(event_index).fillna(1.0).values
-        
-        # Ensure returns is also numpy array
-        returns_values = returns.values if hasattr(returns, 'values') else np.asarray(returns)
+            small_ret_thr = 0.0
+
+        # Build per-event volatility for the objective
+        if vol_proxy is None:
+            event_volatility = np.zeros_like(returns_arr)
+        else:
+            event_volatility = np.asarray(vol_proxy, dtype=float)
+            if event_volatility.shape[0] != returns_arr.shape[0]:
+                event_volatility = np.resize(event_volatility, returns_arr.shape[0])
+            non_finite_vol = ~np.isfinite(event_volatility)
+            if non_finite_vol.all():
+                event_volatility = np.zeros_like(returns_arr)
+            else:
+                median_vol = float(
+                    np.nanmedian(event_volatility[~non_finite_vol])
+                )
+                event_volatility = np.where(
+                    non_finite_vol, median_vol, event_volatility
+                )
+
+        # Approximate per-event concurrency using local event density
+        horizon_bars = 12
+        idx = market_data.index
+        if len(idx) >= 2:
+            try:
+                bar_deltas = idx.to_series().diff().dropna()
+                bar_delta = bar_deltas.median()
+            except Exception:
+                bar_delta = None
+        else:
+            bar_delta = None
+
+        if not isinstance(bar_delta, pd.Timedelta) or bar_delta <= pd.Timedelta(0):
+            bar_delta = pd.Timedelta(minutes=15)
+
+        window_span = horizon_bars * bar_delta
+        t_events_arr = t_events.to_numpy()
+        event_concurrency = np.ones(len(t_events_arr), dtype=float)
+        try:
+            window = window_span.to_timedelta64()
+            order = np.argsort(t_events_arr)
+            t_sorted = t_events_arr[order]
+            left_bounds = t_sorted - window
+            right_bounds = t_sorted + window
+            left_idx = np.searchsorted(t_sorted, left_bounds, side='left')
+            right_idx = np.searchsorted(t_sorted, right_bounds, side='right')
+            concurrency_sorted = (right_idx - left_idx).astype(float)
+            event_concurrency[order] = concurrency_sorted
+        except Exception:
+            event_concurrency = np.zeros(len(t_events_arr), dtype=float)
+            for i, ts in enumerate(t_events_arr):
+                left_ts = ts - window_span
+                right_ts = ts + window_span
+                mask = (t_events_arr >= left_ts) & (t_events_arr <= right_ts)
+                event_concurrency[i] = float(mask.sum())
+
+        # Convert concurrency into a simple uniqueness proxy (1 / concurrency)
+        event_uniqueness = 1.0 / np.maximum(1.0, event_concurrency)
+
+        committee_components_available = False
+        committee_agree_arr = _coerce_numeric_array(
+            committee_agreement_scores,
+            n_samples,
+            "committee_agreement_scores",
+            fill_value=0.0,
+            allow_negative=False,
+        )
+        committee_mag_arr = _coerce_numeric_array(
+            committee_mag_factors,
+            n_samples,
+            "committee_mag_factors",
+            fill_value=1.0,
+            allow_negative=False,
+        )
+
+        if committee_agree_arr is not None or committee_mag_arr is not None:
+            committee_components_available = True
+            if committee_agree_arr is None:
+                committee_agree_arr = np.zeros(n_samples, dtype=float)
+            if committee_mag_arr is None:
+                committee_mag_arr = np.ones(n_samples, dtype=float)
+            committee_agree_arr = np.where(np.isfinite(committee_agree_arr), committee_agree_arr, 0.0)
+            committee_agree_arr = np.clip(committee_agree_arr, 0.0, 1.0)
+            committee_mag_arr = np.where(np.isfinite(committee_mag_arr) & (committee_mag_arr > 0.0), committee_mag_arr, 1.0)
+
+        search_space: Dict[str, Dict[str, Any]] = {
+            # --- A. INFORMATION HANDLING (Magnitude & Uniqueness) ---
+            # How much do we reward high returns?
+            # 0.5 = Sqrt (Conservative), 1.0 = Linear, 1.5 = Convex
+            'mag_compression': {
+                'type': 'float',
+                'low': 0.90,
+                'high': 1.20,
+                # step used only by grid utilities; TPE ignores it but it's harmless
+                'step': 0.05,
+                'log': False,
+            },
+            # How strictly do we punish concurrent/overlapping events?
+            'uniq_intensity': {
+                'type': 'float',
+                'low': 0.50,
+                'high': 1.00,
+                'log': False,
+            },
+
+            # --- C. COMPONENT MIXING (Exponents / Power Law) ---
+            'exp_mag': {
+                'type': 'float',
+                'low': 1.0,
+                'high': 1.5,
+                'log': True,
+            },
+            'exp_uniq': {
+                'type': 'float',
+                'low': 1.0,
+                'high': 1.5,
+                'log': True,
+            },
+
+            # --- D. ASYMMETRY (Risk Management) ---
+            'downside_multiplier': {
+                'type': 'float',
+                'low': 1.0,
+                'high': 1.4,
+                'log': False,
+            },
+
+            # --- E. NOISE CLIPPING ---
+            'mag_clip_pct': {
+                'type': 'float',
+                'low': 0.95,
+                'high': 0.99,
+                'log': False,
+            },
+        }
+
+        if committee_components_available:
+            search_space.update(
+                {
+                    'committee_agreement_alpha': {
+                        'type': 'float',
+                        'low': 0.0,
+                        'high': 2.0,
+                        'log': False,
+                    },
+                    'committee_mag_clip': {
+                        'type': 'float',
+                        'low': 1.0,
+                        'high': 10.0,
+                        'log': False,
+                    },
+                }
+            )
+
+        def objective(params: Dict[str, Any]) -> float:
+            try:
+                weights = generate_weights_per_label(
+                    returns=returns_arr,
+                    t_events=t_events,
+                    close_series=close_series,
+                    consistency_scores=None,
+                    uniqueness_scores=event_uniqueness,
+                    vol_proxy=vol_proxy,
+                    mag_compression=float(params.get('mag_compression', default_params['mag_compression'])),
+                    learn_slope=float(default_params.get('learn_slope', 0.0)),
+                    learn_center=float(default_params.get('learn_center', 0.5)),
+                    uniq_intensity=float(params.get('uniq_intensity', default_params['uniq_intensity'])),
+                    exp_mag=float(params.get('exp_mag', default_params['exp_mag'])),
+                    exp_learn=float(default_params.get('exp_learn', 1.0)),
+                    exp_uniq=float(params.get('exp_uniq', default_params['exp_uniq'])),
+                    exp_cross=float(params.get('exp_cross', default_params['exp_cross'])),
+                    downside_multiplier=float(params.get('downside_multiplier', default_params['downside_multiplier'])),
+                    mag_clip_pct=float(params.get('mag_clip_pct', 0.99)),
+                )
+                if not np.isfinite(weights).all() or weights.sum() <= 0:
+                    return -10.0
+
+                if committee_components_available and committee_agree_arr is not None and committee_mag_arr is not None:
+                    try:
+                        alpha = float(
+                            params.get(
+                                'committee_agreement_alpha',
+                                default_params.get('committee_agreement_alpha', 0.5),
+                            )
+                        )
+                    except Exception:
+                        alpha = float(default_params.get('committee_agreement_alpha', 0.5))
+
+                    try:
+                        mag_clip = float(
+                            params.get(
+                                'committee_mag_clip',
+                                default_params.get('committee_mag_clip', 5.0),
+                            )
+                        )
+                    except Exception:
+                        mag_clip = float(default_params.get('committee_mag_clip', 5.0))
+
+                    alpha = float(np.clip(alpha, 0.0, 10.0))
+                    mag_clip = float(np.clip(mag_clip, 0.5, 50.0))
+
+                    cf = (1.0 + alpha * committee_agree_arr) * np.clip(committee_mag_arr, 0.0, mag_clip)
+                    cf = np.where(np.isfinite(cf) & (cf > 0.0), cf, 1.0)
+                    cf_mean = float(np.mean(cf)) if cf.size else 1.0
+                    if np.isfinite(cf_mean) and cf_mean > 0:
+                        cf = cf / cf_mean
+                    else:
+                        cf = np.ones_like(cf, dtype=float)
+
+                    weights = np.asarray(weights, dtype=float) * cf
+                    w_sum = float(np.sum(weights)) if weights.size else 0.0
+                    if np.isfinite(w_sum) and w_sum > 0:
+                        weights = weights * (len(weights) / w_sum)
+                    else:
+                        weights = np.ones(len(returns_arr), dtype=float)
+
+                score = safe_layer1_objective(
+                    weights=weights,
+                    returns=returns_arr,
+                    concurrency=event_concurrency,
+                    volatility=event_volatility,
+                    noise_threshold=float(small_ret_thr) if small_ret_thr > 0 else 0.001,
+                )
+                return float(score)
+            except Exception as e:
+                tprint_warning(f"⚠️ Layer 1 objective failure: {e}")
+                return -10.0
+
+        opt_config = OptimizationConfig(
+            n_trials=12,
+            execution_mode="light",
+            direction="maximize",
+            seed=42,
+        )
+
+        optimizer = BayesianTPEOptimizer(config=opt_config)
+        result = optimizer.optimize(objective=objective, search_space=search_space)
+
+        best_params_raw = result.get('best_params') or {}
+        best_value = result.get('best_value')
+
+        best_params: Dict[str, Any] = default_params.copy()
+        for key in default_params.keys():
+            if key in best_params_raw:
+                try:
+                    best_params[key] = float(best_params_raw[key])
+                except Exception:
+                    continue
+
+        if not committee_components_available:
+            best_params.pop('committee_agreement_alpha', None)
+            best_params.pop('committee_mag_clip', None)
+
+        if 'mag_clip_pct' in best_params_raw:
+            try:
+                best_params['mag_clip_pct'] = float(best_params_raw['mag_clip_pct'])
+            except Exception:
+                pass
+
+        if best_value is not None and np.isfinite(best_value):
+            tprint_success(
+                f"✅ Layer 1 optimization complete. Best score={best_value:.4f}",
+            )
+        else:
+            tprint_success("✅ Layer 1 optimization complete.")
+
+        tprint_info(f"   Best weighting params: {best_params}")
+
+        # Persist Layer 1 trial metrics for correlation analysis
+        try:
+            def _compute_l1_metrics(params: Dict[str, Any]) -> Dict[str, Any]:
+                try:
+                    weights = generate_weights_per_label(
+                        returns=returns_arr,
+                        t_events=t_events,
+                        close_series=close_series,
+                        consistency_scores=None,
+                        uniqueness_scores=event_uniqueness,
+                        vol_proxy=vol_proxy,
+                        mag_compression=float(params.get('mag_compression', default_params['mag_compression'])),
+                        learn_slope=float(params.get('learn_slope', default_params['learn_slope'])),
+                        learn_center=float(params.get('learn_center', default_params['learn_center'])),
+                        uniq_intensity=float(params.get('uniq_intensity', default_params['uniq_intensity'])),
+                        exp_mag=float(params.get('exp_mag', default_params['exp_mag'])),
+                        exp_learn=float(params.get('exp_learn', default_params['exp_learn'])),
+                        exp_uniq=float(params.get('exp_uniq', default_params['exp_uniq'])),
+                        exp_cross=float(params.get('exp_cross', default_params['exp_cross'])),
+                        downside_multiplier=float(params.get('downside_multiplier', default_params['downside_multiplier'])),
+                        mag_clip_pct=float(params.get('mag_clip_pct', 0.99)),
+                    )
+                    if not np.isfinite(weights).all() or weights.sum() <= 0:
+                        return {
+                            "score": -10.0,
+                            "weights_mean": np.nan,
+                            "weights_min": np.nan,
+                            "weights_max": np.nan,
+                            "weights_entropy": np.nan,
+                            "weights_entropy_norm": np.nan,
+                            "mas": np.nan,
+                            "wes": np.nan,
+                            "nwp": np.nan,
+                            "uop_penalty": np.nan,
+                            "vdp_penalty": np.nan,
+                            "committee_alpha": np.nan,
+                            "committee_mag_clip": np.nan,
+                            "committee_factor_mean": np.nan,
+                            "committee_factor_min": np.nan,
+                            "committee_factor_max": np.nan,
+                            "n_events": int(len(returns_arr)),
+                        }
+                except Exception:
+                    return {
+                        "score": -10.0,
+                        "weights_mean": np.nan,
+                        "weights_min": np.nan,
+                        "weights_max": np.nan,
+                        "weights_entropy": np.nan,
+                        "weights_entropy_norm": np.nan,
+                        "mas": np.nan,
+                        "wes": np.nan,
+                        "nwp": np.nan,
+                        "uop_penalty": np.nan,
+                        "vdp_penalty": np.nan,
+                        "committee_alpha": np.nan,
+                        "committee_mag_clip": np.nan,
+                        "committee_factor_mean": np.nan,
+                        "committee_factor_min": np.nan,
+                        "committee_factor_max": np.nan,
+                        "n_events": int(len(returns_arr)),
+                    }
+
+                committee_alpha_val = np.nan
+                committee_mag_clip_val = np.nan
+                committee_factor_mean = np.nan
+                committee_factor_min = np.nan
+                committee_factor_max = np.nan
+
+                if committee_components_available and committee_agree_arr is not None and committee_mag_arr is not None:
+                    try:
+                        committee_alpha_val = float(
+                            params.get(
+                                'committee_agreement_alpha',
+                                default_params.get('committee_agreement_alpha', 0.5),
+                            )
+                        )
+                    except Exception:
+                        committee_alpha_val = float(default_params.get('committee_agreement_alpha', 0.5))
+
+                    try:
+                        committee_mag_clip_val = float(
+                            params.get(
+                                'committee_mag_clip',
+                                default_params.get('committee_mag_clip', 5.0),
+                            )
+                        )
+                    except Exception:
+                        committee_mag_clip_val = float(default_params.get('committee_mag_clip', 5.0))
+
+                    committee_alpha_val = float(np.clip(committee_alpha_val, 0.0, 10.0))
+                    committee_mag_clip_val = float(np.clip(committee_mag_clip_val, 0.5, 50.0))
+
+                    cf = (1.0 + committee_alpha_val * committee_agree_arr) * np.clip(
+                        committee_mag_arr, 0.0, committee_mag_clip_val
+                    )
+                    cf = np.where(np.isfinite(cf) & (cf > 0.0), cf, 1.0)
+                    cf_mean = float(np.mean(cf)) if cf.size else 1.0
+                    if np.isfinite(cf_mean) and cf_mean > 0:
+                        cf = cf / cf_mean
+                    else:
+                        cf = np.ones_like(cf, dtype=float)
+
+                    try:
+                        committee_factor_mean = float(np.mean(cf)) if cf.size else np.nan
+                        committee_factor_min = float(np.min(cf)) if cf.size else np.nan
+                        committee_factor_max = float(np.max(cf)) if cf.size else np.nan
+                    except Exception:
+                        committee_factor_mean = np.nan
+                        committee_factor_min = np.nan
+                        committee_factor_max = np.nan
+
+                    weights = np.asarray(weights, dtype=float) * cf
+                    w_sum = float(np.sum(weights)) if weights.size else 0.0
+                    if np.isfinite(w_sum) and w_sum > 0:
+                        weights = weights * (len(weights) / w_sum)
+                    else:
+                        weights = np.ones(len(returns_arr), dtype=float)
+
+                # Recompute objective components for transparency
+                w = np.asarray(weights, dtype=float)
+                total = float(w.sum())
+                w_norm = w / total if total > 0 else w
+
+                r = np.asarray(returns_arr, dtype=float)
+                abs_returns = np.abs(r)
+
+                def _safe_corr(x_arr: np.ndarray, y_arr: np.ndarray) -> float:
+                    x_arr = np.asarray(x_arr, dtype=float)
+                    y_arr = np.asarray(y_arr, dtype=float)
+                    if x_arr.size < 2 or y_arr.size < 2:
+                        return 0.0
+                    if not np.isfinite(x_arr).any() or not np.isfinite(y_arr).any():
+                        return 0.0
+                    try:
+                        if spearmanr is not None:
+                            corr, _ = spearmanr(x_arr, y_arr)
+                            if corr is None or not np.isfinite(corr):
+                                return 0.0
+                            return float(corr)
+                    except Exception:
+                        pass
+                    try:
+                        x_center = x_arr - np.nanmean(x_arr)
+                        y_center = y_arr - np.nanmean(y_arr)
+                        denom = (
+                            np.sqrt(np.nanmean(x_center ** 2))
+                            * np.sqrt(np.nanmean(y_center ** 2))
+                        )
+                        if denom <= 0:
+                            return 0.0
+                        return float(np.nanmean(x_center * y_center) / denom)
+                    except Exception:
+                        return 0.0
+
+                mas = max(0.0, _safe_corr(w, abs_returns))
+
+                try:
+                    if SCIPY_AVAILABLE and scipy_entropy is not None:
+                        wes = float(scipy_entropy(w_norm) / np.log(float(len(w_norm))))
+                    else:
+                        ent = -float(np.sum(w_norm * np.log(w_norm + 1e-12)))
+                        wes = ent / np.log(float(len(w_norm))) if len(w_norm) > 1 else 0.0
+                except Exception:
+                    wes = 0.0
+
+                noise_mask = abs_returns < (float(small_ret_thr) if small_ret_thr > 0 else 0.001)
+                nwp = float(w_norm[noise_mask].sum()) if noise_mask.any() else 0.0
+
+                concurrency_arr = np.asarray(event_concurrency, dtype=float)
+                uop_penalty = max(0.0, _safe_corr(w, concurrency_arr))
+
+                vol_arr = np.asarray(event_volatility, dtype=float)
+                vdp_penalty = max(0.0, _safe_corr(w, vol_arr) - 0.6)
+
+                score = (
+                    1.0 * mas
+                    + 1.5 * wes
+                    - 2.0 * nwp
+                    - 1.0 * uop_penalty
+                    - 1.0 * vdp_penalty
+                )
+
+                w_valid = weights[np.isfinite(weights)]
+                weights_mean = float(w_valid.mean()) if w_valid.size else np.nan
+                weights_min = float(w_valid.min()) if w_valid.size else np.nan
+                weights_max = float(w_valid.max()) if w_valid.size else np.nan
+                weights_entropy = np.nan
+                weights_entropy_norm = np.nan
+                if w_valid.size > 1:
+                    w_sum = float(w_valid.sum())
+                    if w_sum > 0:
+                        w_norm = w_valid / w_sum
+                        entropy_val = -float(np.sum(w_norm * np.log(w_norm + 1e-12)))
+                        max_entropy = np.log(float(len(w_norm)))
+                        weights_entropy = entropy_val
+                        weights_entropy_norm = float(entropy_val / max_entropy) if max_entropy > 0 else np.nan
+
+                return {
+                    "score": float(score),
+                    "weights_mean": weights_mean,
+                    "weights_min": weights_min,
+                    "weights_max": weights_max,
+                    "weights_entropy": weights_entropy,
+                    "weights_entropy_norm": weights_entropy_norm,
+                    "mas": float(mas),
+                    "wes": float(wes),
+                    "nwp": float(nwp),
+                    "uop_penalty": float(uop_penalty),
+                    "vdp_penalty": float(vdp_penalty),
+                    "committee_alpha": committee_alpha_val,
+                    "committee_mag_clip": committee_mag_clip_val,
+                    "committee_factor_mean": committee_factor_mean,
+                    "committee_factor_min": committee_factor_min,
+                    "committee_factor_max": committee_factor_max,
+                    "n_events": int(len(returns_arr)),
+                }
+
+            # Log best-score decomposition for the final best_params
+            try:
+                best_metrics = _compute_l1_metrics(best_params)
+                tprint_info(
+                    "   Layer 1 best score components: "
+                    f"score={best_metrics.get('score', float('nan')):.4f}, "
+                    f"MAS={best_metrics.get('mas', float('nan')):.4f}, "
+                    f"WES={best_metrics.get('wes', float('nan')):.4f}, "
+                    f"NWP={best_metrics.get('nwp', float('nan')):.4f}, "
+                    f"UOP_penalty={best_metrics.get('uop_penalty', float('nan')):.4f}, "
+                    f"VDP_penalty={best_metrics.get('vdp_penalty', float('nan')):.4f}, "
+                    f"committee_alpha={best_metrics.get('committee_alpha', float('nan'))}, "
+                    f"committee_mag_clip={best_metrics.get('committee_mag_clip', float('nan'))}, "
+                    f"committee_factor_min={best_metrics.get('committee_factor_min', float('nan'))}, "
+                    f"committee_factor_max={best_metrics.get('committee_factor_max', float('nan'))}"
+                )
+            except Exception:
+                pass
+
+            trial_rows = []
+            for trial in result.get("history", []):
+                params = trial.get("params", {}) if isinstance(trial, dict) else {}
+                metrics = _compute_l1_metrics(params)
+                row = {
+                    **metrics,
+                }
+                for k, v in params.items():
+                    row[f"param_{k}"] = v
+                trial_rows.append(row)
+
+            if trial_rows:
+                ts_l1 = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                l1_trials_path = Path("outcomes") / f"hpo_layer1_trials_{symbol}_{timeframe}_{ts_l1}.csv"
+                pd.DataFrame(trial_rows).to_csv(l1_trials_path, index=False)
+                tprint_info(f"   💾 Saved Layer 1 trial metrics to {l1_trials_path}")
+        except Exception as l1_trials_exc:
+            tprint_warning(f"   ⚠️ Failed to save Layer 1 trial metrics: {l1_trials_exc}")
+
+        return best_params
 
     except Exception as e:
-        tprint_error(f"   ❌ Error reindexing metrics: {e}")
-        # Fallback if t_events are not in index
-        raise e
-    
-    precalc_data = {
-        'consistency': consistency_aligned,
-        'volatility': volatility_aligned,
-        'uniqueness': uniqueness_aligned
-    }
-    
-    tprint_info(f"   ✅ Pre-calculation complete. Consistency shape: {consistency_aligned.shape}")
-    
-    # 4. Run Optimization
-    tprint_info(f"🚀 Starting Optuna optimization ({n_trials} trials)...")
-    study = optuna.create_study(direction="maximize")
-    study.optimize(
-        lambda trial: objective_layer_1(
-            trial,
-            returns_values,
-            event_index,
-            df['close'],
-            precalc_data
-        ), 
-        n_trials=n_trials,
-        show_progress_bar=True,
-    )
-    
-    tprint_success(f"✅ Optimization complete! Best score: {study.best_value:.6f}")
-    tprint_info(f"   Best Layer 1 Params: {study.best_params}")
-    
-    # Extract only the weight generation params (exclude threshold params)
-    weight_params = {
-        k: v for k, v in study.best_params.items()
-        if k not in ('eval_ess_min', 'eval_cons_min')
-    }
-    
-    return weight_params
+        tprint_warning(f"⚠️ Layer 1 optimization failed, using defaults: {e}")
+        return default_params
 
-
-# -------------------------------------------------------------------------
-# 6. Comprehensive Reporting Functions
-# -------------------------------------------------------------------------
-def generate_weight_diagnostics_report(
-    weights: np.ndarray,
-    returns: np.ndarray,
-    consistency_scores: np.ndarray,
-    vol_proxy: np.ndarray,
-    params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def apply_weights_decay(weights: pd.Series, decay_factor: float = 1.0) -> pd.Series:
     """
-    Generate comprehensive diagnostics report for sample weights.
+    Apply time-decay to weights (give more weight to recent events).
     
     Args:
-        weights: Sample weights array
-        returns: Returns array
-        consistency_scores: Trend consistency scores
-        vol_proxy: Volatility proxy
-        params: Optional parameters used to generate weights
+        weights: Series of sample weights.
+        decay_factor: Decay per sample (1.0 = no decay). 
+                      < 1.0 means recent samples have higher weight? 
+                      Usually implemented as linear ramp or exponential.
+                      Here assumes simple linear ramp based on index position.
     
     Returns:
-        Dict with diagnostic metrics and statistics
+        Decayed weights.
     """
-    tprint_info("📊 generate_weight_diagnostics_report() called")
+    if decay_factor == 1.0:
+        return weights
     
-    # Basic statistics
+    # Linear ramp from decay_factor to 1.0? 
+    # Or Lopez de Prado's time decay? 
+    # Let's implement a simple linear time decay where the oldest sample gets weight 'decay_factor'
+    # and newest gets 1.0, relative to their original weight. 
+    # (Assuming decay_factor in [0, 1])
+    
+    tprint(f"📉 Applying time decay (factor={decay_factor})...", "INFO")
+    
     n_samples = len(weights)
+    ramp = np.linspace(decay_factor, 1.0, n_samples)
     
-    # Weight distribution stats
-    weight_stats = {
-        "n_samples": n_samples,
-        "mean": float(np.mean(weights)),
-        "std": float(np.std(weights)),
-        "min": float(np.min(weights)),
-        "max": float(np.max(weights)),
-        "q25": float(np.percentile(weights, 25)),
-        "q50": float(np.percentile(weights, 50)),
-        "q75": float(np.percentile(weights, 75)),
-        "q95": float(np.percentile(weights, 95)),
-    }
+    # Sort weights by time to apply ramp correctly
+    sorted_idx = weights.index.argsort()
     
-    # Effective Sample Size (ESS)
-    ess = (np.sum(weights) ** 2) / (np.sum(weights ** 2) + 1e-12)
-    ess_ratio = ess / n_samples
+    # Create an array aligned with weights.iloc (original order) but containing ramp values based on time rank
+    ramp_aligned = np.zeros(n_samples)
+    ramp_aligned[sorted_idx] = ramp 
     
-    # Information Coefficient (IC): correlation between weights and magnitude
-    try:
-        ic = magnitude_aware_spearman(weights, returns)
-    except Exception:
-        ic = np.nan
+    decayed_weights = weights * ramp_aligned
     
-    # Correlation with different factors
-    correlations = {}
-    try:
-        correlations["weight_vs_abs_return"], _ = spearmanr(weights, np.abs(returns))
-    except Exception:
-        correlations["weight_vs_abs_return"] = np.nan
-    
-    try:
-        correlations["weight_vs_consistency"], _ = spearmanr(weights, consistency_scores)
-    except Exception:
-        correlations["weight_vs_consistency"] = np.nan
-    
-    try:
-        correlations["weight_vs_volatility"], _ = spearmanr(weights, vol_proxy)
-    except Exception:
-        correlations["weight_vs_volatility"] = np.nan
-    
-    # Weighted vs unweighted return comparison
-    norm_w = weights / (np.sum(weights) + 1e-12)
-    weighted_mean_return = np.sum(norm_w * returns)
-    unweighted_mean_return = np.mean(returns)
-    
-    # Weighted consistency
-    weighted_consistency = np.sum(norm_w * consistency_scores)
-    
-    diagnostics = {
-        "weight_statistics": weight_stats,
-        "effective_sample_size": float(ess),
-        "ess_ratio": float(ess_ratio),
-        "information_coefficient": float(ic) if np.isfinite(ic) else None,
-        "correlations": correlations,
-        "weighted_mean_return": float(weighted_mean_return),
-        "unweighted_mean_return": float(unweighted_mean_return),
-        "return_improvement": float(weighted_mean_return - unweighted_mean_return),
-        "weighted_consistency": float(weighted_consistency),
-        "params_used": params,
-    }
-    
-    tprint_success(f"   ✅ Diagnostics: ESS={ess:.1f} ({ess_ratio:.2%}), IC={ic:.4f}")
-    
-    return diagnostics
+    # Renormalize
+    if decayed_weights.sum() > 0:
+        decayed_weights *= (n_samples / decayed_weights.sum())
+        
+    return decayed_weights
 
-
-def generate_weight_correlation_matrix(
-    candidate_results: List[Dict[str, Any]],
-) -> Tuple[pd.DataFrame, str]:
-    """
-    Generate correlation matrix between weight parameters and outcomes.
-    
-    Args:
-        candidate_results: List of results from different weight parameter configs
-    
-    Returns:
-        Tuple of (correlation_matrix DataFrame, formatted report string)
-    """
-    tprint_info("📈 generate_weight_correlation_matrix() called")
-    
-    if not candidate_results:
-        tprint_warning("   ⚠️ Empty candidate results")
-        return pd.DataFrame(), "No candidate results to analyze."
-    
-    # Extract parameter and outcome columns
-    data_rows = []
-    for c in candidate_results:
-        row = {}
-        
-        # Extract parameters
-        params = c.get('params', {})
-        if isinstance(params, dict):
-            for k, v in params.items():
-                try:
-                    row[f"param_{k}"] = float(v)
-                except (ValueError, TypeError):
-                    continue
-        
-        # Extract outcomes
-        for k in ['score', 'ic', 'ess_ratio', 'weighted_consistency', 'return_improvement']:
-            if k in c:
-                try:
-                    row[f"outcome_{k}"] = float(c[k])
-                except (ValueError, TypeError):
-                    continue
-        
-        if row:
-            data_rows.append(row)
-    
-    if not data_rows:
-        return pd.DataFrame(), "No valid data for correlation analysis."
-    
-    df = pd.DataFrame(data_rows)
-    
-    # Compute correlation matrix
-    param_cols = [c for c in df.columns if c.startswith('param_')]
-    outcome_cols = [c for c in df.columns if c.startswith('outcome_')]
-    
-    if not param_cols or not outcome_cols:
-        return pd.DataFrame(), "No param/outcome columns for correlation."
-    
-    # Cross-correlation: params vs outcomes
-    corr_data = {}
-    for param in param_cols:
-        param_name = param.replace('param_', '')
-        corr_data[param_name] = {}
-        for outcome in outcome_cols:
-            outcome_name = outcome.replace('outcome_', '')
-            try:
-                corr, _ = spearmanr(df[param], df[outcome])
-                corr_data[param_name][outcome_name] = corr
-            except Exception:
-                corr_data[param_name][outcome_name] = np.nan
-    
-    corr_df = pd.DataFrame(corr_data).T
-    
-    # Generate report
-    report_lines = []
-    report_lines.append("=" * 60)
-    report_lines.append("WEIGHT PARAMETER-OUTCOME CORRELATION MATRIX")
-    report_lines.append("=" * 60)
-    report_lines.append("")
-    report_lines.append(corr_df.to_string())
-    report_lines.append("")
-    report_lines.append("-" * 40)
-    report_lines.append("KEY FINDINGS:")
-    report_lines.append("-" * 40)
-    
-    # Find strongest correlations
-    if 'score' in corr_df.columns:
-        score_corrs = corr_df['score'].dropna().sort_values(key=abs, ascending=False)
-        report_lines.append("\nStrongest correlations with SCORE:")
-        for param, corr in score_corrs.head(5).items():
-            direction = "↑" if corr > 0 else "↓"
-            report_lines.append(f"  {param}: {corr:+.3f} {direction}")
-    
-    report = "\n".join(report_lines)
-    tprint_success(f"   ✅ Correlation matrix computed: {len(param_cols)} params × {len(outcome_cols)} outcomes")
-    
-    return corr_df, report

@@ -252,12 +252,19 @@ def calculate_simple_sharpe(
     Returns:
         Annualized Sharpe ratio
     """
+    if returns is None:
+        return 0.0
+    returns = np.asarray(returns, dtype=float)
+    returns = returns[np.isfinite(returns)]
     if len(returns) == 0:
         return 0.0
     std = np.std(returns)
-    if std < EPS:
+    if not np.isfinite(std) or std < EPS:
         return 0.0
-    return (np.mean(returns) / std) * annualization_factor
+    mu = np.mean(returns)
+    if not np.isfinite(mu):
+        return 0.0
+    return (mu / std) * annualization_factor
 
 
 # =============================================================================
@@ -1437,11 +1444,19 @@ class DiversitySweep:
         
         # Find optimal based on ESR (Ensemble Sharpe Ratio)
         if len(df_results) > 0:
-            best_idx = df_results['ESR_Score'].idxmax()
-            best_fraction = df_results.loc[best_idx, 'Fraction']
-            if verbose:
+            esr_scores = pd.to_numeric(df_results['ESR_Score'], errors='coerce')
+            if esr_scores.notna().any():
+                best_idx = esr_scores.idxmax()
+                best_fraction = float(df_results.loc[best_idx, 'Fraction'])
+                if verbose:
+                    print("-" * 55)
+                    print(
+                        f"✅ Optimal colsample_bytree: {best_fraction:.2f} "
+                        f"(ESR Score: {float(esr_scores.loc[best_idx]):.4f})"
+                    )
+            elif verbose:
                 print("-" * 55)
-                print(f"✅ Optimal colsample_bytree: {best_fraction:.2f} (ESR Score: {df_results.loc[best_idx, 'ESR_Score']:.4f})")
+                print("⚠️ No valid ESR_Score values; using default colsample_bytree=0.50")
         
         return df_results
     
@@ -1455,7 +1470,10 @@ class DiversitySweep:
         df = self.run(verbose=False)
         if len(df) == 0:
             return 0.5  # Default
-        best_idx = df['ESR_Score'].idxmax()
+        esr_scores = pd.to_numeric(df['ESR_Score'], errors='coerce')
+        if not esr_scores.notna().any():
+            return 0.5
+        best_idx = esr_scores.idxmax()
         return float(df.loc[best_idx, 'Fraction'])
 
 

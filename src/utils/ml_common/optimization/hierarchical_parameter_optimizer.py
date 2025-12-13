@@ -167,6 +167,7 @@ class OptimizationStage(Enum):
     RANDOM = "random"  # Random search
     SMAC = "smac"  # Sequential Model-based Algorithm Configuration
     HYPEROPT = "hyperopt"  # HyperOpt TPE
+    SMART_WALKER = "smart_walker"  # Heuristic Line Search / "The Smart Walker"
 
 
 class OptimizationBackend(Enum):
@@ -442,6 +443,11 @@ class HierarchicalParameterOptimizer:
             ),
             OptimizationStage.RANDOM: StageConfig(
                 stage=OptimizationStage.RANDOM,
+                n_trials=50,
+                enable_pruning=False
+            ),
+            OptimizationStage.SMART_WALKER: StageConfig(
+                stage=OptimizationStage.SMART_WALKER,
                 n_trials=50,
                 enable_pruning=False
             )
@@ -928,6 +934,11 @@ class HierarchicalParameterOptimizer:
         elif stage == OptimizationStage.RANDOM:
             result = self._random_search(
                 group, X_train, y_train, X_val, y_val, model, fixed_params, stage_config
+            )
+        elif stage == OptimizationStage.SMART_WALKER:
+            result = self._smart_walker_optimization(
+                group, X_train, y_train, X_val, y_val, model, fixed_params,
+                current_best_params, stage_config
             )
         else:
             raise ValueError(f"Unsupported optimization stage: {stage}")
@@ -1442,6 +1453,171 @@ class HierarchicalParameterOptimizer:
             all_trials=all_trials
         )
     
+
+    
+    def _smart_walker_optimization(
+        self,
+        group: ParameterGroup,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: Optional[np.ndarray],
+        y_val: Optional[np.ndarray],
+        model: Optional[Any],
+        fixed_params: Dict[str, Any],
+        current_best_params: Dict[str, Any],
+        stage_config: StageConfig
+    ) -> OptimizationResult:
+        """
+        Perform 'Smart Walker' heuristic line search optimization.
+        
+        For each parameter in the group:
+        1. Start at anchor (or current best)
+        2. Walk in defined direction (geometric/arithmetic step)
+        3. Continue as long as score improves or stays stable
+        4. Stop when score drops (plateau reached)
+        """
+        logger.info(f"    Running Smart Walker optimization")
+        
+        all_trials = []
+        best_score = float('-inf') if self.direction == 'maximize' else float('inf')
+        
+        # Start with current best params or defaults
+        current_walker_params = current_best_params.copy() if current_best_params else {}
+        
+        # Ensure all group params have a value (use anchor/start if missing)
+        for param_name, param_config in group.params.items():
+            if param_name not in current_walker_params:
+                 # Check for 'anchor' in config, else fallback to low/start
+                 if 'anchor' in param_config:
+                     current_walker_params[param_name] = param_config['anchor']
+                 elif 'low' in param_config:
+                     current_walker_params[param_name] = param_config['low']
+                 else:
+                     # Fallback for choices or unknown types - take first
+                     if 'choices' in param_config:
+                         current_walker_params[param_name] = param_config['choices'][0]
+        
+        # Evaluate initial point
+        full_params = {**fixed_params, **current_walker_params}
+        start_score = self._evaluate_params(full_params, X_train, y_train, X_val, y_val, model)
+        
+        best_score = start_score
+        
+        all_trials.append({
+            'params': current_walker_params.copy(),
+            'score': start_score,
+            'trial_number': 0
+        })
+        
+        logger.info(f"    Walker Start: score={start_score:.6f}, params={current_walker_params}")
+
+        # Iterate through parameters sequentially (as defined in group)
+        for param_name, param_config in group.params.items():
+            if 'walker_type' not in param_config:
+                logger.info(f"    Skipping {param_name} (no walker_type defined)")
+                continue
+
+            walker_type = param_config.get('walker_type', 'arithmetic')
+            step_size = param_config.get('step', 1)
+            
+            logger.info(f"    Walking {param_name} ({walker_type}, step={step_size})...")
+            
+            current_val = current_walker_params[param_name]
+            best_val_for_param = current_val
+            best_score_for_param = best_score
+            
+            # Walk Loop
+            max_steps = 20 # Safety break
+            steps_taken = 0
+            
+            while steps_taken < max_steps:
+                steps_taken += 1
+                
+                # specific "Smart Walker" logic for next value
+                next_val = current_val
+                
+                if walker_type == 'geometric':
+                    # x1.5 logic
+                    next_val = int(current_val * step_size) if isinstance(current_val, int) else current_val * step_size
+                    # Avoid getting stuck if stuck at 0 or small int
+                    if next_val == current_val:
+                         # Force minimal step
+                        if isinstance(current_val, int): next_val += 1
+                        else: next_val += step_size
+                        
+                elif walker_type == 'arithmetic':
+                    # +1 or +0.01 logic
+                    next_val = current_val + step_size
+                    # Enforce integer if needed
+                    if isinstance(current_val, int) and isinstance(step_size, int):
+                         next_val = int(next_val)
+
+                elif walker_type == 'log_step': 
+                    if current_val == 0.0:
+                        # Special start from 0
+                        next_val = param_config.get('anchor', 0.01) # Default to 0.01 if 0 is true zero
+                        if next_val == 0.0: next_val = 0.01
+                    else:
+                        next_val = current_val * step_size
+                
+                # Bounds check
+                if 'high' in param_config and next_val > param_config['high']:
+                    logger.info(f"      Hit upper bound {param_config['high']}")
+                    break
+                    
+                # Update params
+                trial_params = current_walker_params.copy()
+                trial_params[param_name] = next_val
+                
+                # Evaluate
+                full_trial = {**fixed_params, **trial_params}
+                score = self._evaluate_params(full_trial, X_train, y_train, X_val, y_val, model)
+                
+                all_trials.append({
+                    'params': trial_params.copy(),
+                    'score': score,
+                    'trial_number': len(all_trials)
+                })
+
+                if _tprint_available:
+                     try:
+                        tprint_info(f"      Walk {param_name}={next_val}: score={score:.6f} (prev={best_score_for_param:.6f})")
+                     except: pass
+                
+                # Decision Rule: "increase as long as overall score improves"
+                improved = False
+                if self.direction == 'maximize':
+                    if score > best_score_for_param:
+                        improved = True
+                else:
+                    if score < best_score_for_param:
+                        improved = True
+                
+                if improved:
+                    # Keep going
+                    best_score_for_param = score
+                    best_val_for_param = next_val
+                    current_walker_params[param_name] = next_val # Commit this step
+                    current_val = next_val
+                    best_score = score # Update global best
+                else:
+                    # Stop and revert
+                    logger.info(f"      Score dropped/stable (score={score:.4f} vs best={best_score_for_param:.4f}). Reverting {param_name} to {best_val_for_param}")
+                    current_walker_params[param_name] = best_val_for_param
+                    break
+                    
+        logger.info(f"    Smart Walker complete. Best score: {best_score:.6f}")
+        
+        return OptimizationResult(
+            group_name=group.name,
+            stage=OptimizationStage.SMART_WALKER,
+            best_params=current_walker_params,
+            best_score=best_score,
+            n_trials=len(all_trials),
+            optimization_time=0.0,
+            all_trials=all_trials
+        )
+
     def _evaluate_params(
         self,
         params: Dict[str, Any],

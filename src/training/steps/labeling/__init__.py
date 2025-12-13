@@ -13,6 +13,10 @@ This module consolidates all labeling-specific functionality including:
 - Sample weighting for meta-labeling (2025-12-11)
 """
 
+from .feature_generation_data_validation_step import (
+    FeatureGenerationDataValidationStep,
+)
+
 from .labeling_components import (
     RegimeAwareLabeling,
 )
@@ -46,13 +50,20 @@ from .feature_generation_meta_labeling_step import (
     DEFAULT_TRANSACTION_COST,
 )
 
-# Sample weighting utilities (2025-12-11)
 from .generate_weights_per_label import (
     generate_weights_per_label,
     compute_horizon_consistency,
     compute_uniqueness,
     run_layer1_optimization,
 )
+
+# Sample weighting utilities (2025-12-11)
+# from .generate_weights_per_label import (
+#     generate_weights_per_label,
+#     compute_horizon_consistency,
+#     compute_uniqueness,
+#     run_layer1_optimization,
+# )
 
 # Meta-labeling HPO steps
 # CANONICAL: meta_labeling_hpo_sample_weighted is the primary HPO entry point
@@ -86,9 +97,7 @@ from .triple_barrier_validator import (
     ValidationReport,
 )
 
-from .feature_generation_data_validation_step import (
-    FeatureGenerationDataValidationStep,
-)
+
 
 from .meta_gated_backtest_step import (
     MetaGatedBacktestStep,

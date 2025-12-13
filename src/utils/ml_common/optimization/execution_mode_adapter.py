@@ -57,7 +57,18 @@ def adjust_hpo_params_for_mode(
         Tuple of (adjusted_n_trials, adjusted_cv_folds)
     """
     if execution_mode is None:
+        # Default to the global execution mode
         execution_mode = get_execution_mode()
+    else:
+        # Reconcile explicit mode with global mode to avoid stale overrides
+        global_mode = get_execution_mode()
+        # If a caller passes 'light' but the global mode is 'blank' or 'full',
+        # trust the global mode so that blank/full runs are not downscaled as light.
+        if execution_mode == 'light' and global_mode in ['blank', 'full']:
+            logger.info(
+                f"ℹ️ Overriding explicit LIGHT execution_mode with global {global_mode.upper()} mode"
+            )
+            execution_mode = global_mode
     
     if execution_mode == 'light':
         # Light mode: 10% iterations, 2 CV folds

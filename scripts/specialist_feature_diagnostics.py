@@ -138,8 +138,16 @@ async def _run_specialist_training(
             StepClass = step_registry.get_step(step_key)
             step_instance = StepClass(step_name=step_key)
 
-            # Run the step
-            result = await step_instance.run(config_base)
+            # Run the step (per-step overrides allowed)
+            step_config = dict(config_base)
+            if step_key == "ml_liquidity_regime_step":
+                # LiquidityClusterQualityAssessor is useful, but the generic
+                # ClusterQualityAssessor can be extremely slow on long histories
+                # and is not needed for this diagnostics pipeline.
+                step_config.setdefault("liquidity_quality_skip_generic_cluster_assessor", True)
+                step_config.setdefault("liquidity_quality_fast_mode", True)
+
+            result = await step_instance.run(step_config)
 
             if result.get("success"):
                 logger.info(f"✅ {step_key} completed successfully.")

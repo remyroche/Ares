@@ -18,21 +18,28 @@ After HPO completes, trains multiple ML models for SNR diagnostics:
 
 from __future__ import annotations
 
-import logging
+from src.training.steps.labeling.multi_label_voting_utils import (
+    TripleBarrierConfig,
+    compute_multi_triple_barrier_outcomes_vectorized,
+    compute_kalman_smoothed_price_and_volatility,
+)
+
+
 from typing import Any, Dict, List, Tuple, Optional
 import json
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, BaggingClassifier
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
 from sklearn.metrics import roc_auc_score
 from sklearn.inspection import permutation_importance
-from scipy.stats import spearmanr, pearsonr
+from scipy.stats import spearmanr, pearsonr, rankdata
 import lightgbm as lgb
 
 # Post-HPO evaluation imports
@@ -60,6 +67,414 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_rolling_quantile_labels_from_vol_scaled_returns,
     create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns,
 )
+from src.training.steps.labeling.mda_shap_feature_selection import (
+    run_mda_shap_feature_selection,
+)
+from src.training.steps.labeling.generate_weights_per_label import (
+    generate_weights_per_label,
+    compute_horizon_consistency,
+    compute_uniqueness,
+    run_layer1_optimization,
+)
+from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
+    HierarchicalParameterOptimizer,
+    OptimizationStage,
+    create_param_group,
+)
+
+
+def _subsample_rows_for_proxy(df: pd.DataFrame, max_rows: int, seed: int = 42) -> pd.DataFrame:
+    if max_rows <= 0:
+        return df
+    n_rows = len(df)
+    if n_rows <= max_rows:
+        return df
+    rng = np.random.default_rng(seed)
+    sample_idx = rng.choice(n_rows, size=max_rows, replace=False)
+    return df.iloc[sample_idx]
+
+
+def _rank_signature(
+    col_values: np.ndarray,
+    *,
+    n_bins: int = 64,
+) -> bytes:
+    if col_values.size == 0:
+        return b""
+
+    x = np.asarray(col_values, dtype=np.float32)
+    finite = np.isfinite(x)
+    n_finite = int(finite.sum())
+    if n_finite <= 1:
+        binned = np.zeros_like(x, dtype=np.uint8)
+    else:
+        x_f = x[finite]
+        ranks = rankdata(x_f, method="average").astype(np.float32)
+        denom = max(float(n_finite - 1), 1.0)
+        scaled = (ranks - 1.0) / denom
+        binned_f = np.clip(np.floor(scaled * float(n_bins)).astype(np.int32), 0, n_bins - 1).astype(np.uint8)
+        binned = np.zeros_like(x, dtype=np.uint8)
+        binned[finite] = binned_f
+        if not finite.all():
+            fill_bin = int(np.median(binned_f)) if binned_f.size else 0
+            binned[~finite] = np.uint8(fill_bin)
+
+    h = hashlib.blake2b(binned.tobytes(), digest_size=8)
+    return h.digest()
+
+
+def preprune_by_rank_signature(
+    df_features: pd.DataFrame,
+    quality_scores: Dict[str, float],
+    *,
+    target_n: int = 128,
+    max_rows: int = 5000,
+    n_bins: int = 64,
+    seed: int = 42,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    if df_features.empty:
+        return df_features, quality_scores
+    if len(df_features.columns) <= target_n:
+        return df_features, {c: quality_scores.get(c, 0.0) for c in df_features.columns}
+
+    df_sample = _subsample_rows_for_proxy(df_features, max_rows=max_rows, seed=seed)
+
+    bucket_best: Dict[bytes, str] = {}
+    for col in df_features.columns:
+        sig = _rank_signature(df_sample[col].values, n_bins=n_bins)
+        prev = bucket_best.get(sig)
+        if prev is None:
+            bucket_best[sig] = col
+        else:
+            if float(quality_scores.get(col, 0.0)) > float(quality_scores.get(prev, 0.0)):
+                bucket_best[sig] = col
+
+    candidates = list(bucket_best.values())
+    candidates_sorted = sorted(candidates, key=lambda c: float(quality_scores.get(c, 0.0)), reverse=True)
+    keep = candidates_sorted[: max(1, min(target_n, len(candidates_sorted)))]
+    return df_features[keep], {c: quality_scores.get(c, 0.0) for c in keep}
+
+
+def _standardize_matrix(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float32)
+    mu = np.nanmean(X, axis=0)
+    sig = np.nanstd(X, axis=0)
+    sig = np.where(sig > 1e-12, sig, 1.0)
+    Xz = (X - mu) / sig
+    return np.nan_to_num(Xz, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def select_by_anchor_farthest_first(
+    df_features: pd.DataFrame,
+    quality_scores: Dict[str, float],
+    *,
+    target_n: int = 70,
+    n_anchors: int = 64,
+    max_rows: int = 5000,
+    seed: int = 42,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    if df_features.empty:
+        return df_features, quality_scores
+
+    cols = list(df_features.columns)
+    if len(cols) <= target_n:
+        return df_features, {c: quality_scores.get(c, 0.0) for c in cols}
+
+    df_sample = _subsample_rows_for_proxy(df_features, max_rows=max_rows, seed=seed)
+
+    cols_sorted = sorted(cols, key=lambda c: float(quality_scores.get(c, 0.0)), reverse=True)
+    anchor_cols = cols_sorted[: max(2, min(n_anchors, len(cols_sorted)))]
+
+    X = _standardize_matrix(df_sample[cols_sorted].values)
+    Xa = _standardize_matrix(df_sample[anchor_cols].values)
+
+    n = float(max(X.shape[0] - 1, 1))
+    fp = (X.T @ Xa) / n
+    fp = np.nan_to_num(fp, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Farthest-first selection in fingerprint space (maximize min-distance to selected)
+    selected_idx: List[int] = []
+    selected_set: set = set()
+
+    # Seed with best-quality feature
+    seed_i = 0
+    selected_idx.append(seed_i)
+    selected_set.add(seed_i)
+
+    min_dist = np.full(fp.shape[0], np.inf, dtype=np.float32)
+    for _ in range(1, target_n):
+        last = selected_idx[-1]
+        d = np.linalg.norm(fp - fp[last:last + 1, :], axis=1)
+        min_dist = np.minimum(min_dist, d.astype(np.float32))
+        min_dist[list(selected_set)] = -1.0
+        nxt = int(np.argmax(min_dist))
+        if min_dist[nxt] < 0:
+            break
+        selected_idx.append(nxt)
+        selected_set.add(nxt)
+
+    selected_cols = [cols_sorted[i] for i in selected_idx]
+    return df_features[selected_cols], {c: quality_scores.get(c, 0.0) for c in selected_cols}
+
+
+def _find_latest_path(outcomes_dir: Path, pattern: str) -> Optional[Path]:
+    try:
+        candidates = list(outcomes_dir.glob(pattern))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    except Exception:
+        return None
+
+
+def _sanitize_json_value(obj: Any) -> Any:
+    if obj is None:
+        return None
+    try:
+        if isinstance(obj, (np.floating,)):
+            obj = float(obj)
+        if isinstance(obj, (np.integer,)):
+            obj = int(obj)
+    except Exception:
+        pass
+
+    if isinstance(obj, float):
+        return float(obj) if np.isfinite(obj) else None
+
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_json_value(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_json_value(v) for v in obj]
+
+    return obj
+
+
+def _write_hpo_stage_report(
+    *,
+    outcomes_dir: Path,
+    run_timestamp: str,
+    stage_id: str,
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    best_params: Optional[Dict[str, Any]] = None,
+    metrics: Optional[Dict[str, Any]] = None,
+    search_space: Optional[Dict[str, Any]] = None,
+    trials_csv_path: Optional[Path] = None,
+    history_json_path: Optional[Path] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+    best_params = _sanitize_json_value(best_params or {}) or {}
+    metrics = _sanitize_json_value(metrics or {}) or {}
+    search_space = _sanitize_json_value(search_space) if search_space is not None else None
+    extra = _sanitize_json_value(extra or {}) or {}
+
+    safe_stage = str(stage_id).lower().replace(" ", "_").replace("/", "_").replace("-", "_")
+
+    trials_summary: Dict[str, Any] = {}
+    if trials_csv_path is not None and trials_csv_path.exists():
+        try:
+            df = pd.read_csv(trials_csv_path)
+            trials_summary["n_trials"] = int(df.shape[0])
+
+            objective_candidates = [
+                "utility",
+                "score",
+                "best_value",
+                "mean_auc",
+                "auc",
+                "edge",
+                "combined",
+                "loss",
+            ]
+            objective_col = next((c for c in objective_candidates if c in df.columns), None)
+
+            numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+            metric_cols = [
+                c
+                for c in (
+                    "utility",
+                    "score",
+                    "mean_auc",
+                    "auc",
+                    "trades_per_day",
+                    "sharpe_mean",
+                    "sharpe_std",
+                    "loss",
+                    "valid_events",
+                    "valid_folds",
+                )
+                if c in df.columns and c in numeric_cols
+            ]
+
+            quantiles = [0.0, 0.05, 0.25, 0.5, 0.75, 0.95, 1.0]
+            trials_summary["metric_quantiles"] = {
+                c: {str(q): float(df[c].quantile(q)) for q in quantiles if np.isfinite(df[c].quantile(q))}
+                for c in metric_cols
+            }
+
+            # Full Spearman correlation matrix across all numeric columns (all trials)
+            try:
+                corr_df_full = df[numeric_cols].replace([np.inf, -np.inf], np.nan)
+                corr_df_full = corr_df_full.dropna(axis=1, how="all")
+                corr_cols_full = [
+                    c
+                    for c in corr_df_full.columns
+                    if int(corr_df_full[c].dropna().nunique()) > 1
+                ]
+                corr_df_full = corr_df_full[corr_cols_full]
+                if corr_df_full.shape[1] >= 2:
+                    corr_matrix = corr_df_full.corr(method="spearman", min_periods=5)
+                    counts_matrix = (
+                        corr_df_full.notna().astype(int).T.dot(corr_df_full.notna().astype(int)).astype(int)
+                    )
+
+                    corr_path = outcomes_dir / (
+                        f"hpo_stage_corr_spearman_{safe_stage}_{symbol}_{exchange}_{timeframe}_{direction}_{run_timestamp}.csv"
+                    )
+                    counts_path = outcomes_dir / (
+                        f"hpo_stage_corr_spearman_counts_{safe_stage}_{symbol}_{exchange}_{timeframe}_{direction}_{run_timestamp}.csv"
+                    )
+
+                    corr_matrix.to_csv(corr_path)
+                    counts_matrix.to_csv(counts_path)
+
+                    trials_summary["spearman_corr_matrix_csv"] = str(corr_path)
+                    trials_summary["spearman_corr_counts_csv"] = str(counts_path)
+
+                    try:
+                        corr_arr, p_arr = spearmanr(
+                            corr_df_full.to_numpy(dtype=float),
+                            axis=0,
+                            nan_policy="omit",
+                        )
+                        if (
+                            isinstance(p_arr, np.ndarray)
+                            and p_arr.ndim == 2
+                            and int(p_arr.shape[0]) == int(len(corr_cols_full))
+                        ):
+                            pvals_df = pd.DataFrame(p_arr, index=corr_cols_full, columns=corr_cols_full)
+                            pvals_path = outcomes_dir / (
+                                f"hpo_stage_corr_spearman_pvalues_{safe_stage}_{symbol}_{exchange}_{timeframe}_{direction}_{run_timestamp}.csv"
+                            )
+                            pvals_df.to_csv(pvals_path)
+                            trials_summary["spearman_corr_pvalues_csv"] = str(pvals_path)
+                    except Exception:
+                        pass
+            except Exception as corr_exc:
+                trials_summary["spearman_corr_error"] = str(corr_exc)
+
+            param_cols = [c for c in df.columns if str(c).startswith("param_")]
+            if not param_cols:
+                param_cols = [
+                    c
+                    for c in df.columns
+                    if c
+                    in (
+                        "kalman_Q",
+                        "kalman_R",
+                        "sl_atr_mult",
+                        "risk_reward_ratio",
+                        "trail_distance_atr_mult",
+                    )
+                    and c in numeric_cols
+                ]
+
+            if objective_col is not None and objective_col in numeric_cols:
+                df_corr = df[[objective_col] + [c for c in param_cols if c in numeric_cols]].copy()
+                df_corr = df_corr.replace([np.inf, -np.inf], np.nan).dropna(axis=0, how="any")
+                if df_corr.shape[0] >= 5 and df_corr.shape[1] >= 2:
+                    corr_series = df_corr.corr(method="spearman")[objective_col].drop(labels=[objective_col])
+                    corr_dict = {
+                        str(k): float(v)
+                        for k, v in corr_series.sort_values(ascending=False).items()
+                        if np.isfinite(v)
+                    }
+                    trials_summary["param_spearman"] = corr_dict
+
+                try:
+                    if objective_col != "loss":
+                        best_idx = int(df[objective_col].astype(float).idxmax())
+                    else:
+                        best_idx = int(df[objective_col].astype(float).idxmin())
+                    trials_summary["best_trial_row"] = _sanitize_json_value(df.loc[best_idx].to_dict())
+                except Exception:
+                    pass
+
+                try:
+                    sort_ascending = bool(objective_col == "loss")
+                    top_df = df.sort_values(objective_col, ascending=sort_ascending).head(20)
+                    trials_summary["top_trials"] = _sanitize_json_value(top_df.to_dict(orient="records"))
+                except Exception:
+                    pass
+        except Exception as e_trials:
+            trials_summary["error"] = str(e_trials)
+
+    trials_summary = _sanitize_json_value(trials_summary) or {}
+
+    payload: Dict[str, Any] = {
+        "stage_id": stage_id,
+        "run_timestamp": run_timestamp,
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "best_params": best_params,
+        "metrics": metrics,
+        "search_space": search_space,
+        "trials_csv": str(trials_csv_path) if trials_csv_path is not None else None,
+        "history_json": str(history_json_path) if history_json_path is not None else None,
+        "trials_summary": trials_summary,
+        "extra": extra,
+    }
+
+    payload = _sanitize_json_value(payload) or payload
+    json_path = outcomes_dir / (
+        f"hpo_stage_report_{safe_stage}_{symbol}_{exchange}_{timeframe}_{direction}_{run_timestamp}.json"
+    )
+    md_path = outcomes_dir / (
+        f"hpo_stage_report_{safe_stage}_{symbol}_{exchange}_{timeframe}_{direction}_{run_timestamp}.md"
+    )
+
+    with open(json_path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+
+    with open(md_path, "w") as f:
+        f.write(f"# HPO Stage Report: {stage_id}\\n\\n")
+        f.write(f"- symbol: {symbol}\\n")
+        f.write(f"- exchange: {exchange}\\n")
+        f.write(f"- timeframe: {timeframe}\\n")
+        f.write(f"- direction: {direction}\\n")
+        f.write(f"- run_timestamp: {run_timestamp}\\n\\n")
+
+        f.write("## Best params\\n")
+        f.write(f"```json\\n{json.dumps(best_params, indent=2, default=str)}\\n```\\n\\n")
+
+        f.write("## Metrics\\n")
+        f.write(f"```json\\n{json.dumps(metrics, indent=2, default=str)}\\n```\\n\\n")
+
+        if search_space is not None:
+            f.write("## Search space\\n")
+            f.write(f"```json\\n{json.dumps(search_space, indent=2, default=str)}\\n```\\n\\n")
+
+        f.write("## Trial artifacts\\n")
+        f.write(f"- trials_csv: {str(trials_csv_path) if trials_csv_path is not None else None}\\n")
+        f.write(f"- history_json: {str(history_json_path) if history_json_path is not None else None}\\n\\n")
+
+        if trials_summary:
+            f.write("## Trials summary\\n")
+            f.write(f"```json\\n{json.dumps(trials_summary, indent=2, default=str)[:20000]}\\n```\\n")
+
+    return {
+        "report_json": str(json_path),
+        "report_md": str(md_path),
+        "trials_csv": str(trials_csv_path) if trials_csv_path is not None else None,
+        "history_json": str(history_json_path) if history_json_path is not None else None,
+    }
 
 def compute_linear_regime_adaptive_threshold(
     base_threshold: float,
@@ -237,8 +652,187 @@ def compute_brier_and_ece(
 
     return brier, float(ece)
 
+
+def _cross_val_predict_proba_weighted(
+    estimator: BaseEstimator,
+    X: pd.DataFrame,
+    y: pd.Series,
+    sample_weight: np.ndarray,
+    n_splits: int,
+) -> np.ndarray:
+    """Time-series cross-validated predict_proba with sample_weight support.
+
+    This avoids relying on sklearn.cross_val_predict's fit_params API, which
+    is version-sensitive, by explicitly looping over TimeSeriesSplit folds.
+    """
+    cv = TimeSeriesSplit(n_splits=n_splits)
+
+    y_arr = y.values if hasattr(y, "values") else np.asarray(y)
+    w_arr = np.asarray(sample_weight) if sample_weight is not None else None
+    preds = np.zeros(len(y_arr), dtype=float)
+
+    for train_idx, test_idx in cv.split(X, y_arr):
+        est = clone(estimator)
+        fit_kwargs = {}
+        if w_arr is not None:
+            fit_kwargs["sample_weight"] = w_arr[train_idx]
+
+        est.fit(X.iloc[train_idx], y_arr[train_idx], **fit_kwargs)
+        prob = est.predict_proba(X.iloc[test_idx])[:, 1]
+        preds[test_idx] = prob
+
+    return preds
+
+
+def _cross_val_predict_proba_and_fold_sharpes_weighted(
+    *,
+    estimator: BaseEstimator,
+    X: pd.DataFrame,
+    y: pd.Series,
+    sample_weight: Optional[np.ndarray],
+    n_splits: int,
+    returns: np.ndarray,
+    direction: str,
+    prob_thr: float = 0.5,
+    use_calibration: bool = True,
+    enable_ev_gating: bool = False,
+    ev_margin: float = 0.0,
+) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
+    """TimeSeriesSplit CV that returns OOF probabilities, fold Sharpes (sized via calibrated probs), and calibration metrics."""
+    cv = TimeSeriesSplit(n_splits=n_splits)
+
+    y_arr = y.values if hasattr(y, "values") else np.asarray(y)
+    w_arr = np.asarray(sample_weight) if sample_weight is not None else None
+    ret_arr = np.asarray(returns, dtype=float)
+    preds = np.zeros(len(y_arr), dtype=float)
+    fold_sharpes: List[float] = []
+    fold_briers: List[float] = []
+    fold_eces: List[float] = []
+
+    from sklearn.isotonic import IsotonicRegression
+
+    for train_idx, test_idx in cv.split(X, y_arr):
+        est = clone(estimator)
+        fit_kwargs: Dict[str, Any] = {}
+        if w_arr is not None:
+            fit_kwargs["sample_weight"] = w_arr[train_idx]
+
+        est.fit(X.iloc[train_idx], y_arr[train_idx], **fit_kwargs)
+        prob_test = est.predict_proba(X.iloc[test_idx])[:, 1]
+
+        # Train-only calibration for sizing and calibration metrics
+        prob_test_cal = prob_test
+        if use_calibration:
+            try:
+                if len(np.unique(y_arr[train_idx])) >= 2:
+                    prob_train = est.predict_proba(X.iloc[train_idx])[:, 1]
+                    iso = IsotonicRegression(out_of_bounds='clip')
+                    iso.fit(prob_train, y_arr[train_idx])
+                    prob_test_cal = iso.predict(prob_test.astype(float))
+            except Exception:
+                prob_test_cal = prob_test
+
+        # Store calibrated probabilities for downstream gating/density calculations.
+        # Isotonic is monotonic so AUC is typically preserved, and this keeps
+        # the OOF probability stream consistent with sizing.
+        preds[test_idx] = prob_test_cal
+
+        ev_gate_enabled = bool(enable_ev_gating)
+        try:
+            ev_margin_f = float(ev_margin)
+        except Exception:
+            ev_margin_f = 0.0
+
+        e_win = None
+        e_loss = None
+        if ev_gate_enabled:
+            try:
+                y_tr = np.asarray(y_arr[train_idx], dtype=float)
+                r_tr = np.asarray(ret_arr[train_idx], dtype=float)
+
+                win_mask = (y_tr >= 0.5) & np.isfinite(r_tr)
+                loss_mask = (y_tr < 0.5) & np.isfinite(r_tr)
+
+                wins = r_tr[win_mask]
+                losses = r_tr[loss_mask]
+
+                if wins.size >= 5:
+                    e_win = float(np.mean(wins))
+                elif wins.size > 0:
+                    e_win = float(np.mean(wins))
+                else:
+                    e_win = None
+
+                if losses.size >= 5:
+                    neg_losses = losses[losses < 0]
+                    if neg_losses.size >= 5:
+                        e_loss = float(abs(np.mean(neg_losses)))
+                    else:
+                        e_loss = float(abs(np.mean(losses)))
+                elif losses.size > 0:
+                    e_loss = float(abs(np.mean(losses)))
+                else:
+                    e_loss = None
+
+                if e_win is not None and (not np.isfinite(e_win) or e_win <= 0.0):
+                    e_win = None
+                if e_loss is not None and (not np.isfinite(e_loss) or e_loss <= 0.0):
+                    e_loss = None
+            except Exception:
+                e_win = None
+                e_loss = None
+
+        # Sized returns for Sharpe (direction-aware)
+        sized = []
+        for p, r in zip(prob_test_cal, ret_arr[test_idx]):
+            if ev_gate_enabled and e_win is not None and e_loss is not None:
+                try:
+                    p_f = float(p)
+                    ev_hat = (p_f * float(e_win)) - ((1.0 - p_f) * float(e_loss))
+                    if not np.isfinite(ev_hat) or (ev_hat <= ev_margin_f):
+                        sized.append(0.0)
+                        continue
+                except Exception:
+                    pass
+            sz = directional_size_from_prob(
+                float(p),
+                direction=direction,
+                thr=prob_thr,
+                max_exposure=1.0,
+                scale=1.0,
+            )
+            sized.append(sz * float(r))
+        sized_arr = np.asarray(sized, dtype=float)
+        sized_arr = np.asarray(sized, dtype=float)
+        if sized_arr.size > 1:
+            m_val = float(np.mean(sized_arr))
+            s_val = float(np.std(sized_arr))
+            # Regularize to prevent infinite Sharpe on zero-variance folds
+            adj_std = max(s_val, 1e-5)
+            raw_sharpe = m_val / adj_std
+            # Cap to avoid artifacts dominating the mean
+            fold_sharpes.append(float(np.clip(raw_sharpe, -20.0, 20.0)))
+        else:
+            fold_sharpes.append(0.0)
+
+        # Calibration metrics on test fold (using calibrated probs)
+        try:
+            brier, ece = compute_brier_and_ece(y_arr[test_idx], prob_test_cal)
+            if brier is not None and np.isfinite(brier):
+                fold_briers.append(float(brier))
+            if ece is not None and np.isfinite(ece):
+                fold_eces.append(float(ece))
+        except Exception:
+            pass
+
+    mean_brier = float(np.mean(fold_briers)) if fold_briers else None
+    mean_ece = float(np.mean(fold_eces)) if fold_eces else None
+    return preds, np.asarray(fold_sharpes, dtype=float), mean_brier, mean_ece
+
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
+logger = system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
 
@@ -274,6 +868,10 @@ class TwoStageBaggedMetaModel(BaseEstimator, ClassifierMixin):
         #     self.base_params["class_weight"] = "balanced"
 
 
+        # Ensure random_state is set in base_params if not already present
+        if "random_state" not in self.base_params:
+            self.base_params["random_state"] = self.random_state
+        
         self.stage1_model: Optional[lgb.LGBMClassifier] = lgb.LGBMClassifier(**self.base_params)
         self.stage2_ensemble: Optional[BaggingClassifier] = BaggingClassifier(
             estimator=lgb.LGBMClassifier(**self.base_params),
@@ -379,7 +977,7 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     attach_rolling_hmm_regimes_to_market_data,
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
 )
-from src.training.steps.labeling import FeatureSetPersistence
+from src.training.steps.labeling.lgbm_feature_selection import FeatureSetPersistence
 from src.training.steps.labeling.label_config import (
     build_label_config,
     compute_label_config_id,
@@ -406,7 +1004,7 @@ from src.utils.ml_common.optimization.pareto import (
 )
 
 
-logger = system_logger.getChild("MetaLabelingHPOExperiment")
+
 
 # Optional diagnostics for the recommended configuration can be useful but are
 # not required for the HPO step to function. They have occasionally triggered
@@ -420,7 +1018,196 @@ GENERATE_RECOMMENDED_DIAGNOSTICS: bool = False
 ENABLE_UNDERFIT_DIAGNOSTICS: bool = True
 
 # Minimum sample requirements for HPO phases
-MIN_EVENTS_PHASE1 = 200  # Minimum events for Phase 1 (sample count optimization)
+MIN_EVENTS_PHASE1 = 200
+
+# ============================================================================
+# REPRODUCIBILITY & CONFIGURATION CONSTANTS
+# ============================================================================
+# Centralized random seed for all random operations to ensure reproducibility
+DEFAULT_RANDOM_SEED: int = 42
+
+# CV embargo period (bars) to prevent look-ahead bias in time-series splits
+# Default: 1 day worth of bars at 15m timeframe (~96 bars)
+DEFAULT_CV_EMBARGO_BARS: int = 96
+
+# Minimum gap between train/test splits to prevent leakage
+DEFAULT_CV_GAP_BARS: int = 24  # ~6 hours at 15m
+
+# ============================================================================
+# CACHING & PERFORMANCE HELPERS
+# ============================================================================
+class ObjectiveComputationCache:
+    """Cache for expensive computations in labeling_objective to avoid recomputation.
+    
+    Caches invariant computations that don't depend on HPO parameters:
+    - ATR series (depends only on market_data)
+    - Trend strength (depends only on market_data and config)
+    - Volatility baseline (for fixed vol_baseline_window)
+    - Primary signals (for default cusum_threshold)
+    """
+    def __init__(self):
+        self._atr_cache: Optional[pd.Series] = None
+        self._trend_strength_cache: Optional[pd.Series] = None
+        self._vol_baseline_cache: Dict[int, pd.Series] = {}  # key: vol_baseline_window
+        self._primary_signals_cache: Optional[pd.DataFrame] = None
+        self._default_cusum: float = 0.015
+        
+    def get_atr(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
+        """Get or compute ATR series."""
+        if self._atr_cache is None:
+            high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+            low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+            close_prices = market_data["close"]
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - close_prices.shift(1)).abs()
+            tr3 = (low_prices - close_prices.shift(1)).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            trend_atr_window = int(config.get("trend_strength_atr_window", 14))
+            self._atr_cache = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+        return self._atr_cache
+    
+    def get_trend_strength(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
+        """Get or compute trend strength series."""
+        if self._trend_strength_cache is None:
+            atr_series = self.get_atr(market_data, config)
+            close_prices = market_data["close"]
+            trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+            price_delta = close_prices.diff(trend_delta_lookback).abs()
+            trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+            trend_strength = trend_strength.clip(
+                lower=0.0,
+                upper=float(config.get("trend_strength_clip", 5.0)),
+            ).fillna(0.0)
+            self._trend_strength_cache = trend_strength
+        return self._trend_strength_cache
+    
+    def get_vol_baseline(self, volatility_1d: pd.Series, vol_baseline_window: int) -> pd.Series:
+        """Get or compute volatility baseline for given window."""
+        if vol_baseline_window not in self._vol_baseline_cache:
+            self._vol_baseline_cache[vol_baseline_window] = volatility_1d.rolling(vol_baseline_window).mean()
+        return self._vol_baseline_cache[vol_baseline_window]
+    
+    def get_primary_signals(self, market_data: pd.DataFrame, cusum_threshold: float, 
+                           target_signal_density: float, default_cusum: float = 0.015) -> pd.DataFrame:
+        """Get cached primary signals or regenerate if threshold differs."""
+        if abs(cusum_threshold - default_cusum) <= 0.001:
+            if self._primary_signals_cache is None:
+                from src.training.steps.labeling.feature_generation_meta_labeling_step import generate_primary_signals
+                self._primary_signals_cache = generate_primary_signals(
+                    market_data.copy(),
+                    cusum_threshold=default_cusum,
+                    target_trades_per_day=target_signal_density,
+                )
+            return self._primary_signals_cache
+        else:
+            # Regenerate for non-default threshold
+            from src.training.steps.labeling.feature_generation_meta_labeling_step import generate_primary_signals
+            return generate_primary_signals(
+                market_data.copy(),
+                cusum_threshold=cusum_threshold,
+                target_trades_per_day=target_signal_density,
+            )
+    
+    def clear(self):
+        """Clear all caches."""
+        self._atr_cache = None
+        self._trend_strength_cache = None
+        self._vol_baseline_cache.clear()
+        self._primary_signals_cache = None
+
+
+def safe_config_copy(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a deep copy of config to avoid mutating caller's dict.
+    
+    Args:
+        config: Original configuration dictionary
+        
+    Returns:
+        Deep copy of config that can be safely modified
+    """
+    import copy
+    return copy.deepcopy(config)
+
+
+def validate_sample_weight_alignment(
+    weights: Optional[np.ndarray],
+    labels: pd.Series,
+    indices: Optional[np.ndarray] = None,
+) -> bool:
+    """Validate that sample weights align with labels/index.
+    
+    Args:
+        weights: Sample weights array (can be None)
+        labels: Label series
+        indices: Optional index array for validation
+        
+    Returns:
+        True if alignment is valid, False otherwise
+    """
+    if weights is None:
+        return True
+    
+    if not isinstance(weights, np.ndarray):
+        return False
+    
+    expected_len = len(labels) if indices is None else len(indices)
+    if len(weights) != expected_len:
+        return False
+    
+    if not np.all(np.isfinite(weights)):
+        return False
+    
+    return True
+
+
+def create_time_aware_cv_splits(
+    n_splits: int,
+    n_samples: int,
+    embargo_bars: int = DEFAULT_CV_EMBARGO_BARS,
+    gap_bars: int = DEFAULT_CV_GAP_BARS,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Create time-aware CV splits with embargo to prevent look-ahead bias.
+    
+    Args:
+        n_splits: Number of CV folds
+        n_samples: Total number of samples
+        embargo_bars: Number of bars to embargo after test set
+        gap_bars: Minimum gap between train and test sets
+        
+    Returns:
+        List of (train_indices, test_indices) tuples
+    """
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    # Use TimeSeriesSplit which respects temporal order
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    splits = []
+    
+    for train_idx, test_idx in tscv.split(np.arange(n_samples)):
+        # Apply embargo: remove samples immediately after test set
+        if len(test_idx) > 0:
+            max_test_idx = test_idx.max()
+            embargo_end = min(max_test_idx + embargo_bars, n_samples)
+            # Remove embargoed samples from train set
+            train_idx = train_idx[train_idx < max_test_idx - gap_bars]
+        
+        splits.append((train_idx, test_idx))
+    
+    return splits
+
+
+def get_reproducible_random_state(base_seed: int = DEFAULT_RANDOM_SEED, 
+                                  offset: int = 0) -> int:
+    """Get a reproducible random state seed.
+    
+    Args:
+        base_seed: Base seed value
+        offset: Optional offset for different components
+        
+    Returns:
+        Reproducible random seed
+    """
+    return base_seed + offset  # Minimum events for Phase 1 (sample count optimization)
 MIN_EVENTS_PHASE2 = 300  # Minimum events for Phase 2 (edge refinement)
 
 # Multi-stage HPO configuration defaults
@@ -487,6 +1274,20 @@ STAGE_CONFIGS: List[OptimizationStage] = [
             "n_estimators": 200,
             "max_depth": 8,
             "learning_rate": 0.01,
+            "cv_splits": 3,
+            "use_feature_selection": True,
+            "use_resampling": True,
+        },
+    },
+    {
+        "name": "Stage 5 (Smart Walker - Model HPO)",
+        "complexity": "strong",
+        "n_trials": 100,  # Walker will stop early if needed
+        "top_k_to_pass": 1,
+        "phase": 2,
+        "min_events_required": MIN_EVENTS_PHASE2,
+        "optimization_stage": OptimizationStage.SMART_WALKER, # Explicitly use Smart Walker
+        "model_params": {
             "cv_splits": 3,
             "use_feature_selection": True,
             "use_resampling": True,
@@ -726,7 +1527,8 @@ def compute_learnability_with_calibration(
         try:
             # Train a quick fast model to get feature importance
             selector = lgb.LGBMClassifier(
-                n_estimators=50, max_depth=3, learning_rate=0.1, n_jobs=-1, random_state=42, verbose=-1
+                n_estimators=50, max_depth=3, learning_rate=0.1, n_jobs=-1, 
+                random_state=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=1), verbose=-1
             )
             selector.fit(X_clean, y_clean)
             importances = selector.feature_importances_
@@ -795,7 +1597,7 @@ def compute_learnability_with_calibration(
                 reg_lambda=0.1,        # Relaxed from 0.7
                 n_jobs=-1,
                 verbose=-1,
-                random_state=42,
+                random_state=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=2),
                 feature_pre_filter=False,
                 min_data_in_bin=1,
                 scale_pos_weight=scale_pos_weight,
@@ -815,11 +1617,11 @@ def compute_learnability_with_calibration(
                     min_child_samples=80,
                     reg_alpha=0.3,
                     reg_lambda=0.9,
-                    n_jobs=-1,
-                    verbose=-1,
-                    random_state=42,
-                    feature_pre_filter=False,
-                    min_data_in_bin=1,
+                n_jobs=-1,
+                verbose=-1,
+                random_state=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=3),
+                feature_pre_filter=False,
+                min_data_in_bin=1,
                 )
             ]
 
@@ -836,7 +1638,7 @@ def compute_learnability_with_calibration(
                         reg_lambda=0.8,
                         n_jobs=-1,
                         verbosity=0,
-                        random_state=42
+                        random_state=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=4)
                     ))
 
                 models.append(RandomForestClassifier(
@@ -880,7 +1682,8 @@ def compute_learnability_with_calibration(
     else:
         from sklearn.model_selection import KFold
 
-        kf = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+        kf = KFold(n_splits=cv_splits, shuffle=True, 
+                   random_state=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=6))
         cv_splits_indices = list(kf.split(X_clean))
 
     # Cost/return-aware sample weights with slight positive class bias (1.2x)
@@ -2003,6 +2806,223 @@ def compute_underfit_diagnostics(
         tprint(f"⚠️ Underfit diagnostics failed: {e}", "WARNING")
 
     return diagnostics
+
+
+def _label_terciles_causal(x: pd.Series, *, train_frac: float = 0.7) -> Tuple[pd.Series, Dict[str, float]]:
+    s = pd.to_numeric(x, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    non_null = s.dropna()
+    if non_null.empty:
+        return pd.Series(index=s.index, dtype=object), {"q33": float("nan"), "q67": float("nan")}
+
+    split_idx = int(max(1, min(len(non_null), round(len(non_null) * float(train_frac)))))
+    train_slice = non_null.iloc[:split_idx]
+    try:
+        q33 = float(train_slice.quantile(1.0 / 3.0))
+        q67 = float(train_slice.quantile(2.0 / 3.0))
+    except Exception:
+        q33 = float(non_null.quantile(1.0 / 3.0))
+        q67 = float(non_null.quantile(2.0 / 3.0))
+
+    labels = pd.Series(index=s.index, dtype=object)
+    try:
+        labels.loc[s <= q33] = "low"
+        labels.loc[(s > q33) & (s <= q67)] = "medium"
+        labels.loc[s > q67] = "high"
+    except Exception:
+        pass
+    return labels, {"q33": q33, "q67": q67}
+
+
+def _compute_volatility_1d_from_market(market_data: pd.DataFrame) -> pd.Series:
+    close = pd.to_numeric(market_data.get("close"), errors="coerce")
+    log_ret = np.log(close).diff()
+    return log_ret.rolling(window=96, min_periods=16).std()
+
+
+def _compute_trend_strength_from_market(market_data: pd.DataFrame, *, horizon_bars: int = 96) -> pd.Series:
+    close = pd.to_numeric(market_data.get("close"), errors="coerce")
+    horizon_bars = int(max(2, horizon_bars))
+    return close.pct_change(horizon_bars).abs()
+
+
+def _build_event_regime_labels(
+    *,
+    market_data: pd.DataFrame,
+    event_index: pd.Index,
+    config: Dict[str, Any],
+) -> Dict[str, pd.Series]:
+    train_frac = float(config.get("regime_label_train_frac", 0.7))
+    trend_h = int(config.get("trend_regime_horizon_bars", 96))
+
+    vol_1d = _compute_volatility_1d_from_market(market_data)
+    trend_strength = _compute_trend_strength_from_market(market_data, horizon_bars=trend_h)
+
+    vol_regime_all, _ = _label_terciles_causal(vol_1d, train_frac=train_frac)
+    trend_regime_all, _ = _label_terciles_causal(trend_strength, train_frac=train_frac)
+
+    vol_regime = vol_regime_all.reindex(event_index)
+    trend_regime = trend_regime_all.reindex(event_index)
+
+    combined = pd.Series(index=pd.Index(event_index), dtype=object)
+    try:
+        v = vol_regime.astype(object)
+        t = trend_regime.astype(object)
+        combined = ("vol_" + v.fillna("na").astype(str) + "__trend_" + t.fillna("na").astype(str)).astype(object)
+        combined.index = pd.Index(event_index)
+    except Exception:
+        pass
+
+    return {
+        "volatility_regime": vol_regime,
+        "trend_regime": trend_regime,
+        "combined_regime": combined,
+    }
+
+
+def _compute_fold_metrics_from_oof(
+    *,
+    X: pd.DataFrame,
+    y_true: np.ndarray,
+    probs: np.ndarray,
+    returns: np.ndarray,
+    threshold: float,
+    days_span: float,
+    transaction_cost: float,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    try:
+        cv = TimeSeriesSplit(n_splits=5)
+        for fold_idx, (_, te_idx) in enumerate(cv.split(X)):
+            try:
+                te_idx = np.asarray(te_idx, dtype=int)
+                p = np.asarray(probs, dtype=float)[te_idx]
+                y = np.asarray(y_true, dtype=float)[te_idx]
+                r = np.asarray(returns, dtype=float)[te_idx]
+                mask = np.isfinite(p) & np.isfinite(y) & np.isfinite(r)
+                if int(np.sum(mask)) < 20:
+                    continue
+                p = p[mask]
+                y = y[mask]
+                r = r[mask]
+                auc = float(roc_auc_score(y, p)) if len(np.unique(y)) >= 2 else None
+                trade_mask = p >= float(threshold)
+                n_trades = int(np.sum(trade_mask))
+                mean_ret = float(np.mean(r[trade_mask])) if n_trades > 0 else 0.0
+                net_mean_ret = float(mean_ret - float(transaction_cost)) if n_trades > 0 else 0.0
+                win_rate = float(np.mean(r[trade_mask] > 0.0)) if n_trades > 0 else 0.0
+                trades_per_day = float(n_trades) / float(max(days_span, 1.0))
+                out.append(
+                    {
+                        "fold": int(fold_idx),
+                        "auc": auc,
+                        "n_test": int(len(p)),
+                        "n_trades": int(n_trades),
+                        "trades_per_day": float(trades_per_day),
+                        "mean_return": float(mean_ret),
+                        "net_pnl_per_trade": float(net_mean_ret),
+                        "win_rate": float(win_rate),
+                    }
+                )
+            except Exception:
+                continue
+    except Exception:
+        return out
+    return out
+
+
+def _compute_metrics_by_regime(
+    *,
+    y_true: Optional[np.ndarray],
+    probs: Optional[np.ndarray],
+    returns: np.ndarray,
+    base_thr: float,
+    transaction_cost: float,
+    regime_labels: pd.Series,
+    days_span: float,
+) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    if regime_labels is None or regime_labels.empty:
+        return out
+
+    lab = regime_labels.astype(object)
+    for reg_val in pd.unique(lab.dropna()):
+        try:
+            mask = (lab == reg_val).to_numpy(dtype=bool)
+            n_events = int(np.sum(mask))
+            if n_events < 20:
+                continue
+
+            r_r = np.asarray(returns, dtype=float)[mask]
+            valid = np.isfinite(r_r)
+
+            y_r = None
+            p_r = None
+            if y_true is not None:
+                y_r = np.asarray(y_true, dtype=float)[mask]
+                valid = valid & np.isfinite(y_r)
+            if probs is not None:
+                p_r = np.asarray(probs, dtype=float)[mask]
+                valid = valid & np.isfinite(p_r)
+
+            if int(np.sum(valid)) < 20:
+                continue
+            r_r = r_r[valid]
+            if y_r is not None:
+                y_r = y_r[valid]
+            if p_r is not None:
+                p_r = p_r[valid]
+
+            trade_mask = np.full(len(r_r), True, dtype=bool)
+            if p_r is not None:
+                trade_mask = p_r >= float(base_thr)
+
+            n_trades = int(np.sum(trade_mask))
+            if n_trades <= 0:
+                out[str(reg_val)] = {"n_events": int(n_events), "n_trades": 0}
+                continue
+
+            trade_returns = r_r[trade_mask]
+            trade_returns = trade_returns[np.isfinite(trade_returns)]
+            if trade_returns.size <= 0:
+                out[str(reg_val)] = {"n_events": int(n_events), "n_trades": 0}
+                continue
+            mean_ret = float(np.mean(trade_returns))
+            net_mean_ret = float(mean_ret - float(transaction_cost))
+            win_rate = float(np.mean(trade_returns > 0.0))
+
+            sharpe = 0.0
+            if trade_returns.size > 1:
+                tr_std = float(np.std(trade_returns, ddof=1))
+                if tr_std > 0.0:
+                    trades_per_day = float(n_trades) / float(max(days_span, 1.0))
+                    trades_per_year = float(trades_per_day) * 365.0
+                    sharpe = float(mean_ret / (tr_std + 1e-8) * np.sqrt(max(trades_per_year, 1e-8)))
+            try:
+                sharpe = float(np.clip(float(sharpe), -20.0, 20.0))
+            except Exception:
+                sharpe = 0.0
+
+            auc_r = None
+            if y_r is not None and p_r is not None:
+                try:
+                    if len(np.unique(y_r)) >= 2:
+                        auc_r = float(roc_auc_score(y_r, p_r))
+                except Exception:
+                    auc_r = None
+
+            out[str(reg_val)] = {
+                "n_events": int(n_events),
+                "n_trades": int(n_trades),
+                "trades_per_day": float(n_trades) / float(max(days_span, 1.0)),
+                "mean_return": float(mean_ret),
+                "net_pnl_per_trade": float(net_mean_ret),
+                "win_rate": float(win_rate),
+                "sharpe": float(sharpe),
+                "auc": auc_r,
+            }
+        except Exception:
+            continue
+    return out
 
 
 def compute_filtering_inflation_diagnostics(
@@ -3346,11 +4366,13 @@ def lgbm_magnitude_sweep(
         tprint_warning(f"   ⚠️ Price column '{price_col}' not found, skipping magnitude sweep")
         return df_features
     
-    # Log returns for stability
-    log_ret = np.log(market_data[price_col] / market_data[price_col].shift(1))
+    # Target: The MAGNITUDE of the move over the next 'lookahead' bars (Cumulative)
+    # Corrected: Use cumulative return over N bars rather than return of the N-th bar
+    future_price = market_data[price_col].shift(-lookahead)
+    current_price = market_data[price_col]
     
-    # Target: The MAGNITUDE of the move 'lookahead' bars into the future
-    proxy_target = np.abs(log_ret.shift(-lookahead))
+    # abs(ln(P_{t+N} / P_t))
+    proxy_target = np.abs(np.log(future_price / current_price))
     
     # Align indices
     common_idx = df_features.index.intersection(proxy_target.dropna().index)
@@ -3401,22 +4423,36 @@ def lgbm_magnitude_sweep(
     
     # Normalize importance (0-100)
     importance_normalized = 100 * (importance / importance.max())
+    importance_df = pd.DataFrame(
+        {"feature": feature_names, "importance": importance_normalized}
+    ).sort_values("importance", ascending=False)
     
-    # 4. Filter: Keep features above threshold AND limit to max_features
-    # First filter by threshold
-    keep_mask = importance_normalized >= importance_threshold
-    useful_feats = feature_names[keep_mask]
-    useful_importance = importance_normalized[keep_mask]
+    keep_count = min(max_features, len(importance_df))
+    above_threshold = importance_df[importance_df["importance"] >= importance_threshold]
     
-    # Then limit to top max_features by importance
-    if len(useful_feats) > max_features:
-        top_indices = np.argsort(useful_importance)[::-1][:max_features]
-        useful_feats = useful_feats[top_indices]
+    if len(above_threshold) < keep_count:
+        tprint_warning(
+            f"   ⚠️ Only {len(above_threshold)} features meet the "
+            f"{importance_threshold:.2f}% importance threshold; keeping top {keep_count} instead"
+        )
+        keep_df = importance_df.head(keep_count)
+    else:
+        keep_df = above_threshold.head(keep_count)
     
+    useful_feats = keep_df["feature"].to_numpy()
     dropped_count = len(feature_names) - len(useful_feats)
+    min_kept_importance = float(keep_df["importance"].min()) if not keep_df.empty else 0.0
     
     tprint_info(f"   → Dropped {dropped_count} features that failed to predict market magnitude")
-    tprint_info(f"   → Kept {len(useful_feats)} structure-bearing features")
+    tprint_info(
+        f"   → Kept {len(useful_feats)} structure-bearing features "
+        f"(min kept importance {min_kept_importance:.2f}%)"
+    )
+    
+    top_preview = keep_df.head(10)
+    if not top_preview.empty:
+        preview_pairs = [f"{row.feature}:{row.importance:.1f}%" for row in top_preview.itertuples(index=False)]
+        tprint_info(f"   → Top features: {preview_pairs}")
     
     # Return only useful features (preserve original column order where possible)
     useful_feats_set = set(useful_feats)
@@ -3433,20 +4469,25 @@ def select_features_hierarchical(
     df_features: pd.DataFrame,
     quality_scores: Dict[str, float],
     target_n: int = 70,
+    target_series: Optional[Union[pd.Series, np.ndarray]] = None,
+    autocorr_penalty_weight: float = 0.3,
+    snr_weight: float = 0.2,
+    enable_snr_objective: bool = True,
 ) -> pd.DataFrame:
     """
-    De Prado's Hierarchical Feature Selection.
+    De Prado's Hierarchical Feature Selection (Optimized).
     
     Guarantees diversity by picking BEST-IN-CLASS from N DISTINCT clusters.
     This prevents concept dominance where correlated features crowd out
     diverse information sources.
     
     Algorithm:
-    1. Compute correlation matrix (Spearman for robustness)
-    2. Convert to distance: d = sqrt(2(1-|rho|))
-    3. Hierarchical clustering (Ward's method)
-    4. Cut tree into target_n clusters
-    5. Select highest-quality feature from each cluster
+    1. Pre-trim to max 5k features by quality (optimization)
+    2. Compute correlation matrix (Spearman for robustness, optimized)
+    3. Convert to distance: d = sqrt(2(1-|rho|))
+    4. Hierarchical clustering (Ward's method)
+    5. Cut tree into target_n clusters
+    6. Select highest-quality feature from each cluster
     
     Args:
         df_features: DataFrame with feature columns
@@ -3477,14 +4518,78 @@ def select_features_hierarchical(
         tprint_info(f"   Hierarchical: Only {n_features} features, keeping all")
         return df_clean
     
+    # OPTIMIZATION 1: Pre-trim to max 5k features by quality to reduce O(n^2) cost
+    MAX_FEATURES_FOR_CLUSTERING = 5000
+    if n_features > MAX_FEATURES_FOR_CLUSTERING:
+        if quality_scores:
+            # Sort by quality and keep top 5k
+            sorted_cols = sorted(
+                df_clean.columns, 
+                key=lambda c: quality_scores.get(c, 0.0), 
+                reverse=True
+            )
+            trimmed_cols = sorted_cols[:MAX_FEATURES_FOR_CLUSTERING]
+            df_clean = df_clean[trimmed_cols]
+            n_features = len(df_clean.columns)
+            tprint_info(f"   Pre-trimmed to top {n_features} features by quality (cap={MAX_FEATURES_FOR_CLUSTERING})")
+        else:
+            # No quality scores, just take first 5k
+            df_clean = df_clean.iloc[:, :MAX_FEATURES_FOR_CLUSTERING]
+            n_features = len(df_clean.columns)
+            tprint_info(f"   Pre-trimmed to first {n_features} features (no quality scores, cap={MAX_FEATURES_FOR_CLUSTERING})")
+    
     tprint_info(f"   Hierarchical clustering: {n_features} → {target_n} features")
     
-    # 1. Calculate Correlation Matrix (Spearman for non-linear relationships)
-    corr_matrix = df_clean.corr(method='spearman').fillna(0)
+    # OPTIMIZATION 2: Faster Spearman correlation using float32, rank-transform, optional row subsampling
+    # Subsample rows if > 20k for faster computation (approximation acceptable)
+    MAX_ROWS_FOR_CORR = 5000
+    n_rows = len(df_clean)
+    if n_rows > MAX_ROWS_FOR_CORR:
+        # Use random sampling to preserve distribution
+        np.random.seed(42)  # Reproducible
+        sample_idx = np.random.choice(n_rows, size=MAX_ROWS_FOR_CORR, replace=False)
+        df_sample = df_clean.iloc[sample_idx]
+        tprint_info(f"   Subsampled rows: {n_rows} → {MAX_ROWS_FOR_CORR} for correlation computation")
+    else:
+        df_sample = df_clean
+    
+    # Convert to float32 numpy array for memory efficiency
+    feature_array = df_sample.values.astype(np.float32)
+    n_cols = feature_array.shape[1]
+    
+    # Rank-transform each column (Spearman correlation = Pearson on ranks)
+    ranked_array = np.zeros_like(feature_array, dtype=np.float32)
+    for i in range(n_cols):
+        col_data = feature_array[:, i]
+        # Handle NaN/inf - replace with column mean for ranking
+        valid_mask = np.isfinite(col_data)
+        if valid_mask.sum() > 1:
+            # Rank valid values, fill invalid with mean rank
+            ranks = rankdata(col_data[valid_mask], method='average').astype(np.float32)
+            ranked_array[valid_mask, i] = ranks
+            if not valid_mask.all():
+                mean_rank = ranks.mean()
+                ranked_array[~valid_mask, i] = mean_rank
+        elif valid_mask.sum() == 1:
+            # Single valid value, set all to same rank
+            ranked_array[:, i] = 1.0
+        else:
+            # No valid values, set to 0 (will be handled in correlation)
+            ranked_array[:, i] = 0.0
+    
+    # Compute correlation matrix using np.corrcoef (faster than pandas)
+    corr_matrix = np.corrcoef(ranked_array.T)
+    
+    # Replace NaN/Inf with 0 (same as pandas fillna(0))
+    corr_matrix = np.nan_to_num(corr_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # Ensure symmetric and bounded [-1, 1]
+    corr_matrix = (corr_matrix + corr_matrix.T) / 2
+    corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
     
     # 2. Convert to Distance: d = sqrt(2(1-|rho|))
     # Clip to avoid negative values from float precision errors
-    dist_matrix = np.sqrt(np.clip(2 * (1 - np.abs(corr_matrix.values)), 0, None))
+    dist_matrix = np.sqrt(np.clip(2 * (1 - np.abs(corr_matrix)), 0, None))
     
     # Ensure diagonal is exactly 0
     np.fill_diagonal(dist_matrix, 0)
@@ -4140,11 +5245,12 @@ def select_features_with_quality(
     horizon_config: Dict[str, int] = None,
     enable_cross_features: bool = True,
     market_data: Optional[pd.DataFrame] = None,
+    config: Optional[Dict[str, Any]] = None,
     # New De Prado pipeline parameters
     use_hierarchical: bool = True,
     use_lgbm_sweep: bool = True,
     lgbm_lookahead: int = 4,
-    lgbm_max_features: int = 200,
+    lgbm_max_features: int = 300,
     quality_drop_percentile: float = 20.0,
     min_std_threshold: float = 1e-9,
     # Caching parameters
@@ -4188,7 +5294,7 @@ def select_features_with_quality(
         use_hierarchical: Use De Prado hierarchical selection (default True)
         use_lgbm_sweep: Use LGBM magnitude sweep pre-filter (default True)
         lgbm_lookahead: Bars to look ahead for magnitude proxy (default 4)
-        lgbm_max_features: Max features to keep after LGBM sweep (default 200)
+        lgbm_max_features: Max features to keep after LGBM sweep (default 300)
         quality_drop_percentile: Drop bottom X% by quality (default 20%)
         min_std_threshold: Drop features with std below this (default 1e-9)
         symbol: Trading symbol (for caching)
@@ -4201,23 +5307,22 @@ def select_features_with_quality(
         Tuple of (reduced_features_df, quality_scores_dict)
     """
     tprint_info("🔍 Starting De Prado feature selection pipeline...")
+
+    cfg = config if isinstance(config, dict) else {}
+    enable_proxy_two_stage = bool(cfg.get("feature_selection_proxy_two_stage", True))
+    proxy_stage1_target = int(cfg.get("feature_selection_proxy_stage1_target", 128))
+    proxy_signature_bins = int(cfg.get("feature_selection_proxy_signature_bins", 64))
+    proxy_anchor_count = int(cfg.get("feature_selection_proxy_anchor_count", 64))
+    proxy_max_rows = int(cfg.get("feature_selection_proxy_max_rows", 5000))
     
     # =========================================================================
-    # STEP 0: Check cache
+    # STEP 0: Check cache (load now, validate after expansion)
     # =========================================================================
+    cached = None
     if use_cache and not force_recompute and symbol and exchange and timeframe:
         cached = load_cached_feature_selection(symbol, exchange, timeframe)
         if cached:
-            selected_cols = cached['selected_features']
-            quality_scores = cached['quality_scores']
-            
-            # Verify all cached features exist in current data
-            available_cols = [c for c in selected_cols if c in df_features.columns]
-            if len(available_cols) >= target_n * 0.8:  # Allow 20% missing
-                tprint_success(f"✅ Using cached selection: {len(available_cols)} features")
-                return df_features[available_cols], {c: quality_scores.get(c, 0.0) for c in available_cols}
-            else:
-                tprint_warning(f"   ⚠️ Cache invalid: only {len(available_cols)}/{len(selected_cols)} features found")
+            tprint_info("   📦 Cached selection loaded; will validate after expansion")
     
     # =========================================================================
     # STEP 1: Generate multi-horizon features
@@ -4229,6 +5334,21 @@ def select_features_with_quality(
         tprint_info(f"         Expanded: {initial_cols} → {len(df_expanded.columns)} features")
     else:
         df_expanded = df_features.copy()
+    
+    # Validate cache against the expanded feature set (post-horizon generation).
+    if cached:
+        selected_cols = cached['selected_features']
+        quality_scores = cached['quality_scores']
+        available_cols = [c for c in selected_cols if c in df_expanded.columns]
+        if len(available_cols) >= target_n * 0.8:  # Allow 20% missing
+            tprint_success(f"✅ Using cached selection: {len(available_cols)} features")
+            return df_expanded[available_cols], {c: quality_scores.get(c, 0.0) for c in available_cols}
+        tprint_warning(f"   ⚠️ Cache invalid: only {len(available_cols)}/{len(selected_cols)} features found")
+        missing_cols = [c for c in selected_cols if c not in available_cols]
+        if missing_cols:
+            tprint_info(
+                f"   Missing cached features (sample): {missing_cols[:10]} (total missing={len(missing_cols)})"
+            )
     
     # =========================================================================
     # STEP 2: Generate cross-feature interactions
@@ -4265,10 +5385,12 @@ def select_features_with_quality(
     tprint_info(f"   [3/7] Dropping constant features (std < {min_std_threshold})...")
     col_stds = df_expanded.std()
     valid_std_cols = col_stds[col_stds >= min_std_threshold].index.tolist()
+    dropped_constant_cols = [c for c in df_expanded.columns if col_stds.get(c, 0.0) < min_std_threshold]
     
-    n_dropped_std = n_after_expansion - len(valid_std_cols)
+    n_dropped_std = len(dropped_constant_cols)
     if n_dropped_std > 0:
-        tprint_info(f"         Dropped {n_dropped_std} constant features")
+        sample_constant = dropped_constant_cols[:10]
+        tprint_info(f"         Dropped {n_dropped_std} constant features: {sample_constant}")
         df_expanded = df_expanded[valid_std_cols]
     
     # =========================================================================
@@ -4291,14 +5413,30 @@ def select_features_with_quality(
     tprint_info(f"   [5/7] Dropping bottom {quality_drop_percentile}% by quality...")
     
     if sorted_by_quality:
-        quality_values = [q for _, q in sorted_by_quality]
-        quality_threshold = np.percentile(quality_values, quality_drop_percentile)
-        
-        quality_filtered_cols = [col for col, q in quality_scores.items() if q > quality_threshold]
-        n_dropped_quality = len(df_expanded.columns) - len(quality_filtered_cols)
+        n_total = len(sorted_by_quality)
+        n_drop_target = int(np.floor(n_total * (quality_drop_percentile / 100.0)))
+
+        # Ensure we always keep at least one feature if any exist
+        n_drop_target = max(0, min(n_drop_target, n_total - 1))
+
+        if n_drop_target > 0:
+            kept_by_rank = sorted_by_quality[:-n_drop_target]
+            dropped_by_rank = sorted_by_quality[-n_drop_target:]
+            quality_filtered_cols = [col for col, _ in kept_by_rank]
+            quality_threshold = kept_by_rank[-1][1] if kept_by_rank else dropped_by_rank[-1][1]
+            n_dropped_quality = n_drop_target
+        else:
+            quality_filtered_cols = [col for col, _ in sorted_by_quality]
+            quality_threshold = sorted_by_quality[-1][1]
+            n_dropped_quality = 0
         
         if n_dropped_quality > 0:
-            tprint_info(f"         Dropped {n_dropped_quality} low-quality features (threshold={quality_threshold:.4f})")
+            dropped_quality_cols = [c for c, _ in dropped_by_rank]
+            sample_quality = [(c, quality_scores.get(c, 0.0)) for c in dropped_quality_cols[:10]]
+            tprint_info(
+                f"         Dropped {n_dropped_quality} low-quality features "
+                f"(threshold={quality_threshold:.4f}); sample={sample_quality}"
+            )
             df_expanded = df_expanded[quality_filtered_cols]
             quality_scores = {c: quality_scores[c] for c in quality_filtered_cols}
     
@@ -4320,6 +5458,46 @@ def select_features_with_quality(
             tprint_warning(f"         ⚠️ LGBM sweep failed: {e}")
     else:
         tprint_info(f"   [6/7] Skipping LGBM sweep (features={len(df_expanded.columns)} <= {lgbm_max_features})")
+
+    # =========================================================================
+    # OPTIONAL FAST PROXY SELECTION (Two-stage)
+    # =========================================================================
+    if enable_proxy_two_stage and len(df_expanded.columns) > target_n:
+        tprint_info(
+            f"   [7/7] Proxy selection (rank-signature→{proxy_stage1_target}, anchors→{target_n}; rows≤{proxy_max_rows})..."
+        )
+        try:
+            df_stage1, q_stage1 = preprune_by_rank_signature(
+                df_features=df_expanded,
+                quality_scores=quality_scores,
+                target_n=max(target_n, proxy_stage1_target),
+                max_rows=proxy_max_rows,
+                n_bins=proxy_signature_bins,
+                seed=42,
+            )
+            tprint_info(f"         Stage1 signatures: {len(df_expanded.columns)} → {len(df_stage1.columns)}")
+
+            df_reduced, selected_quality = select_by_anchor_farthest_first(
+                df_features=df_stage1,
+                quality_scores=q_stage1,
+                target_n=target_n,
+                n_anchors=proxy_anchor_count,
+                max_rows=proxy_max_rows,
+                seed=42,
+            )
+            tprint_success(f"✅ Proxy selection complete: {len(df_expanded.columns)} → {len(df_reduced.columns)}")
+            # Save to cache
+            if use_cache and symbol and exchange and timeframe:
+                save_feature_selection_cache(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    selected_features=list(df_reduced.columns),
+                    quality_scores=selected_quality,
+                )
+            return df_reduced, selected_quality
+        except Exception as proxy_exc:
+            tprint_warning(f"         ⚠️ Proxy selection failed: {proxy_exc}. Falling back to hierarchical/greedy.")
     
     # =========================================================================
     # STEP 7: Final Selection (Hierarchical or Greedy)
@@ -4331,6 +5509,8 @@ def select_features_with_quality(
                 df_features=df_expanded,
                 quality_scores=quality_scores,
                 target_n=target_n,
+                target_series=None,  # Target data not available at HPO level
+                autocorr_penalty_weight=0.0,  # Disable autocorr penalty at HPO level
             )
         except Exception as e:
             tprint_warning(f"         ⚠️ Hierarchical failed: {e}, falling back to greedy")
@@ -5058,12 +6238,12 @@ def trapezoidal_gate(x: float, lower: float, sweet_spot: tuple, upper: float) ->
         upper: Upper bound (above this = leakage/overfit territory)
     
     Returns:
-        Score in [0.01, 1.0]
+        Score in [0.2, 1.0]
     """
     s_min, s_max = sweet_spot
     
     if x < lower or x > upper:
-        return 0.01  # Soft floor to avoid log(0) errors if used later
+        return 0.2
     elif s_min <= x <= s_max:
         return 1.0
     elif lower <= x < s_min:
@@ -5072,7 +6252,7 @@ def trapezoidal_gate(x: float, lower: float, sweet_spot: tuple, upper: float) ->
     elif s_max < x <= upper:
         # Ramp down
         return (upper - x) / (upper - s_max)
-    return 0.01
+    return 0.2
 
 
 def calculate_hpo_utility(
@@ -5082,6 +6262,9 @@ def calculate_hpo_utility(
     lambda_vol: float = 1.2,
     w_auc: float = 1.0,
     w_den: float = 0.5,
+    calibration_brier: Optional[float] = None,
+    calibration_ece: Optional[float] = None,
+    w_cal: float = 0.0,
 ) -> float:
     """
     Compute a stable utility for HPO combining Sharpe stability, AUC gate, and trade density.
@@ -5097,38 +6280,157 @@ def calculate_hpo_utility(
     Returns:
         Utility score. Returns -1.0 for rejection.
     """
-    # 1. Stability-adjusted Sharpe (base)
-    avg_sharpe = float(np.mean(folds_sharpe))
-    # Safety check for single-fold runs
-    vol_sharpe = float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe) > 1 else 0.0
-    
-    # Penalize volatility across folds
-    base_score = avg_sharpe - (lambda_vol * vol_sharpe)
-
-    # Hard early reject for non-positive structural performance
-    if base_score <= 0.0:
+    sharpe_arr = np.asarray(folds_sharpe, dtype=float).reshape(-1)
+    sharpe_arr = sharpe_arr[np.isfinite(sharpe_arr)]
+    if sharpe_arr.size < 1:
         return -1.0
 
-    # Bound the base score (diminishing returns on super-high Sharpes)
-    base_norm = np.log1p(base_score)
+    avg_sharpe = float(np.mean(sharpe_arr))
+    vol_sharpe = float(np.std(sharpe_arr, ddof=1)) if sharpe_arr.size > 1 else 0.0
+    if not (np.isfinite(avg_sharpe) and np.isfinite(vol_sharpe)):
+        return -1.0
+
+    base_score = avg_sharpe - (lambda_vol * vol_sharpe)
+    try:
+        base_norm = float(np.sign(base_score) * np.log1p(abs(float(base_score))))
+    except Exception:
+        base_norm = 0.0
+    if not np.isfinite(base_norm):
+        base_norm = 0.0
 
     # 2. Auxiliary modifiers (0..1)
     
     # AUC Gate: Returns 0.01 to 1.0
-    # Strict penalty for leakage (AUC > 0.70) or randomness (AUC < 0.54)
-    phi_auc = trapezoidal_gate(auc, lower=0.54, sweet_spot=(0.58, 0.64), upper=0.70)
+    # Loosened band to reduce premature penalty and allow moderate gains
+    phi_auc = trapezoidal_gate(auc, lower=0.52, sweet_spot=(0.56, 0.66), upper=0.72)
 
-    # Density: Adjusted Sigmoid
-    # Shifted center to 1.0 so that at 2.0 trades/day, score is ~0.73
-    # At 3.0 trades/day, score is ~0.88. At 5.0, score is ~0.98.
-    phi_density = 1.0 / (1.0 + np.exp(-(trades_per_day - 1.0)))
+    # Density gate: penalize over-trading by ramping down above 5 trades/day
+    phi_density = trapezoidal_gate(
+        float(trades_per_day),
+        lower=0.5,
+        sweet_spot=(1.5, 5.0),
+        upper=8.0,
+    )
 
     # 3. Weighted Geometric Combination
     # If phi_auc is near 0 (leakage/random), the whole score collapses
-    modifier = (phi_auc ** w_auc) * (phi_density ** w_den)
+    try:
+        modifier = float((phi_auc ** w_auc) * (phi_density ** w_den))
+    except Exception:
+        modifier = 0.0
+    if not np.isfinite(modifier):
+        modifier = 0.0
 
-    utility = float(np.clip(base_norm * modifier, -1.0, 10.0))
-    return utility
+    # Optional: calibration quality modifier (model-dependent; useful for Layer 3)
+    if w_cal and w_cal > 0.0:
+        cal = None
+        if calibration_brier is not None and np.isfinite(calibration_brier):
+            cal = float(calibration_brier)
+        elif calibration_ece is not None and np.isfinite(calibration_ece):
+            cal = float(calibration_ece)
+        if cal is not None:
+            phi_cal = float(np.clip(1.0 - (cal / 1.0), 0.0, 1.0))
+            try:
+                modifier *= float(phi_cal) ** float(w_cal)
+            except Exception:
+                modifier *= 0.0
+
+    utility = float(np.clip(float(base_norm) * float(modifier), -1.0, 10.0))
+    if not np.isfinite(utility):
+        return -1.0
+    return float(utility)
+
+
+def _apply_hpo_quality_penalty(
+    *,
+    utility: float,
+    returns: np.ndarray,
+    labels: np.ndarray,
+    exit_reasons: Optional[np.ndarray] = None,
+    durations: Optional[np.ndarray] = None,
+    horizon: Optional[int] = None,
+    tx_cost: float = 0.0,
+    config: Optional[Dict[str, Any]] = None,
+) -> Tuple[float, Dict[str, Any]]:
+    cfg = config or {}
+    enabled = bool(cfg.get("hpo_quality_penalty_enabled", True))
+    if not enabled:
+        return utility, {"enabled": False}
+
+    if not np.isfinite(utility) or utility <= 0.0:
+        return utility, {"enabled": True, "skipped": True}
+
+    ret = np.asarray(returns, dtype=float)
+    y = np.asarray(labels, dtype=float)
+    mask = np.isfinite(ret) & np.isfinite(y)
+    if int(mask.sum()) < 20:
+        return utility, {"enabled": True, "skipped": True, "reason": "insufficient_samples"}
+
+    ret = ret[mask]
+    y = y[mask]
+
+    eps_mult = float(cfg.get("hpo_aleatoric_cost_multiplier", 1.0))
+    eps_add = float(cfg.get("hpo_aleatoric_cost_add", 0.0))
+    eps = float(abs(tx_cost) * eps_mult + eps_add)
+    if eps <= 0.0:
+        eps = float(abs(tx_cost))
+
+    aleatoric_rate = float((np.abs(ret) <= eps).mean())
+
+    timeout_rate = float("nan")
+    if exit_reasons is not None:
+        ex = np.asarray(exit_reasons).astype(object)
+        try:
+            ex_mask = ex[mask]
+            timeout_rate = float((pd.Series(ex_mask).astype(str).str.contains("timeout", case=False, na=False)).mean())
+        except Exception:
+            timeout_rate = float("nan")
+
+    if not np.isfinite(timeout_rate):
+        if durations is not None and horizon is not None:
+            try:
+                dur = np.asarray(durations, dtype=float)
+                dur = dur[mask]
+                timeout_rate = float((dur >= float(horizon)).mean())
+            except Exception:
+                timeout_rate = float("nan")
+
+    if not np.isfinite(timeout_rate):
+        timeout_rate = 0.0
+
+    pos_rate = float((y >= 0.5).mean())
+    target_center = float(cfg.get("hpo_target_pos_rate", 0.40))
+    target_band = float(cfg.get("hpo_target_pos_band", 0.10))
+    balance_dev = max(0.0, abs(pos_rate - target_center) - target_band)
+    balance_penalty = float(balance_dev / max(1e-9, (0.5 - target_band)))
+
+    w_aleatoric = float(cfg.get("hpo_penalty_w_aleatoric", 1.25))
+    w_timeout = float(cfg.get("hpo_penalty_w_timeout", 1.0))
+    w_balance = float(cfg.get("hpo_penalty_w_balance", 0.75))
+
+    q_aleatoric = float(np.clip(1.0 - aleatoric_rate, 0.0, 1.0)) ** w_aleatoric
+    q_timeout = float(np.clip(1.0 - timeout_rate, 0.0, 1.0)) ** w_timeout
+    q_balance = float(np.exp(-w_balance * balance_penalty))
+
+    quality_multiplier = float(np.clip(q_aleatoric * q_timeout * q_balance, 0.0, 1.0))
+    utility_adj = float(np.clip(utility * quality_multiplier, -1.0, 10.0))
+
+    details = {
+        "enabled": True,
+        "tx_cost": float(tx_cost),
+        "near_cost_threshold": float(eps),
+        "aleatoric_rate": aleatoric_rate,
+        "timeout_rate": float(timeout_rate),
+        "pos_rate": pos_rate,
+        "balance_penalty": balance_penalty,
+        "quality_multiplier": quality_multiplier,
+        "weights": {
+            "w_aleatoric": w_aleatoric,
+            "w_timeout": w_timeout,
+            "w_balance": w_balance,
+        },
+    }
+    return utility_adj, details
 
 
 def linear_size_from_prob(
@@ -5156,6 +6458,31 @@ def linear_size_from_prob(
     # clamp to allowed exposure
     size = np.clip(size, -max_exposure, max_exposure)
     return float(size)
+
+
+def directional_size_from_prob(
+    p: float,
+    *,
+    direction: str,
+    thr: float = 0.5,
+    max_exposure: float = 1.0,
+    scale: float = 1.0,
+) -> float:
+    d = str(direction or "").lower()
+    p = float(p)
+    thr = float(thr)
+    if d == "long":
+        # Long-only sizing
+        conf = (p - thr) / max(1e-12, (1.0 - thr))
+        size = max(0.0, conf)
+        return float(np.clip(scale * size, 0.0, max_exposure))
+    if d == "short":
+        # Short-only sizing (negative exposure)
+        conf = (thr - p) / max(1e-12, thr)
+        size = max(0.0, conf)
+        return float(-np.clip(scale * size, 0.0, max_exposure))
+    # Fallback: signed sizing
+    return linear_size_from_prob(p, max_exposure=max_exposure, min_prob=thr, scale=scale)
 
 
 def calibrate_probabilities_isotonic(
@@ -5644,8 +6971,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             return sub_feats, sub_targs
 
         except Exception as e:
-            tprint_error(
-                f"❌ Error in final FS subsampling: {e}; using full dataset"
+            tprint_warning(
+                f"⚠️ Error in final FS subsampling: {e}; using full dataset"
             )
             return features, targets
 
@@ -5658,6 +6985,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         - enable_labeling_hpo: if False, step exits early
         - execution_mode: 'full'/'light'/'blank' for data loading scope
         """
+        # Shared run timestamp for all stage artifacts (placed before early exits)
+        run_ts: str = config.setdefault(
+            "run_timestamp",
+            datetime.utcnow().strftime("%Y%m%d_%H%M%S"),
+        )
+
         if not config.get("enable_labeling_hpo", True):
             tprint("ℹ️ Labeling HPO disabled via config.enable_labeling_hpo", "INFO")
             return {"success": True, "metrics": {}, "artifacts": {}, "skipped": True}
@@ -5667,21 +7000,79 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         timeframe = config.get("timeframe", "15m")
         direction = config.get("direction", "long")
 
+        force_hpo = bool(config.get("force_hpo", False))
+        if force_hpo:
+            # Force full recomputation: disable caches for features/HPO
+            config["force_recompute_features"] = True
+            config["force_recompute"] = True
+            config["use_feature_selection_cache"] = False
+
+        start_at_raw = config.get("labeling_hpo_start_at")
+        start_at_norm = str(start_at_raw).strip().lower() if start_at_raw is not None else "layer0"
+        start_rank = 0
+        if start_at_norm in {"0", "stage0", "layer0", "kalman"}:
+            start_rank = 0
+        elif start_at_norm in {"1", "layer1", "weighting"}:
+            start_rank = 1
+        elif start_at_norm in {"2", "layer2", "trading"}:
+            start_rank = 2
+        elif start_at_norm in {"feature_selection", "fs", "feature-selection"}:
+            start_rank = 3
+        elif start_at_norm in {"3", "layer3", "model"}:
+            start_rank = 4
+        else:
+            tprint_warning(
+                f"⚠️ Unknown labeling_hpo_start_at='{start_at_raw}'. Defaulting to 'layer0'."
+            )
+            start_rank = 0
+
+        # Only allow full cached early-exit when starting from layer0.
+        if (not force_hpo) and (start_rank == 0):
+            try:
+                outcomes_dir = Path("outcomes")
+                if outcomes_dir.exists():
+                    pattern = f"hpo_multi_stage_best_params_{symbol}_*.json"
+                    candidates = sorted(outcomes_dir.glob(pattern))
+                    if candidates:
+                        latest = candidates[-1]
+                        with open(latest, "r") as f:
+                            cached_params = json.load(f)
+                        tprint_info(
+                            f"♻️ Reusing cached multi-stage HPO best params from {latest} "
+                            "(set config.force_hpo=True or use --force-hpo to recompute)."
+                        )
+                        metrics = {
+                            "best_params": cached_params,
+                            "hpo_cached": True,
+                            "best_params_path": str(latest),
+                        }
+                        return {
+                            "success": True,
+                            "metrics": metrics,
+                            "artifacts": {"best_params_json": str(latest)},
+                            "skipped": True,
+                        }
+            except Exception as e:
+                tprint_warning(
+                    f"⚠️ Failed to load cached multi-stage HPO params; running full HPO instead: {e}"
+                )
+
         hpo_feature_set: Optional[List[str]] = None
         try:
             persistence = FeatureSetPersistence()
             # Prefer the 70-feature production meta-labeling set when available.
-            feature_names_70 = persistence.get_feature_set(
-                symbol=symbol,
-                exchange=exchange,
-                family="meta_labeling",
-                size=70,
-            )
-            if feature_names_70:
-                hpo_feature_set = feature_names_70
-                tprint_info(
-                    f"📊 HPO: using precomputed LGBM meta-labeling feature set (70 features) for {symbol} on {exchange}"
+            if not force_hpo:
+                feature_names_70 = persistence.get_feature_set(
+                    symbol=symbol,
+                    exchange=exchange,
+                    family="meta_labeling",
+                    size=70,
                 )
+                if feature_names_70:
+                    hpo_feature_set = feature_names_70
+                    tprint_info(
+                        f"📊 HPO: using precomputed LGBM meta-labeling feature set (70 features) for {symbol} on {exchange}"
+                    )
         except Exception as e:
             tprint_warning(f"[HPO_FEATURES] Could not load precomputed feature set: {e}")
 
@@ -5696,6 +7087,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ------------------------------------------------------------------
         # 1) Load market data once and generate primary signals
         # ------------------------------------------------------------------
+        # Create safe copy of config to avoid mutating caller's dict
+        config = safe_config_copy(config)
+        
         pipeline_state: Dict[str, Any] = {}
         if config.get("execution_mode") == "full":
             # Force sufficient history for HPO in full mode
@@ -5739,6 +7133,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # Attach regimes (HMM + Volatility) to market data
         try:
             market_data_reg = attach_rolling_hmm_regimes_to_market_data(
+                step=self,
                 market_data=market_data,
                 config=config,
             )
@@ -5786,8 +7181,145 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         Layer 2: Trading Params Optimization (Dynamic events, dynamic weighting)
         Layer 3: Model Hyperparams Optimization
         """
-        self.logger.info(f"Starting Multi-Stage HPO for {symbol} {timeframe} {direction}")
-        config = config or {}
+        tprint_info(f"Starting Multi-Stage HPO for {symbol} {timeframe} {direction}")
+        # Create safe copy of config to avoid mutations
+        config = safe_config_copy(config) if config else {}
+
+        start_at_raw = config.get("labeling_hpo_start_at")
+        start_at_norm = str(start_at_raw).strip().lower() if start_at_raw is not None else "layer0"
+
+        stage_rank = {
+            "stage0": 0,
+            "layer1": 1,
+            "layer2": 2,
+            "feature_selection": 3,
+            "layer3": 4,
+        }
+
+        if start_at_norm in {"0", "stage0", "layer0", "kalman"}:
+            start_rank = 0
+            start_at_canonical = "layer0"
+        elif start_at_norm in {"1", "layer1", "weighting"}:
+            start_rank = 1
+            start_at_canonical = "layer1"
+        elif start_at_norm in {"2", "layer2", "trading"}:
+            start_rank = 2
+            start_at_canonical = "layer2"
+        elif start_at_norm in {"feature_selection", "fs", "feature-selection"}:
+            start_rank = 3
+            start_at_canonical = "feature_selection"
+        elif start_at_norm in {"3", "layer3", "model"}:
+            start_rank = 4
+            start_at_canonical = "layer3"
+        else:
+            start_rank = 0
+            start_at_canonical = "layer0"
+            tprint_warning(
+                f"⚠️ Unknown labeling_hpo_start_at='{start_at_raw}'. Defaulting to 'layer0'."
+            )
+
+        tprint_info(
+            f"🔁 HPO start control: start_at={start_at_canonical} (rank={start_rank})"
+        )
+
+        def _load_latest_json(path: Optional[Path]) -> Optional[Dict[str, Any]]:
+            if path is None:
+                return None
+            try:
+                if not path.exists():
+                    return None
+                with open(path, "r") as f:
+                    data = json.load(f)
+                return data if isinstance(data, dict) else None
+            except Exception:
+                return None
+
+        def _load_latest_multi_stage_best_params() -> Tuple[Dict[str, Any], Optional[Path]]:
+            try:
+                p = _find_latest_path(Path("outcomes"), f"hpo_multi_stage_best_params_{symbol}_*.json")
+                data = _load_latest_json(p)
+                if isinstance(data, dict):
+                    return data, p
+            except Exception:
+                pass
+            return {}, None
+
+        def _load_stage_best_params(stage: str) -> Tuple[Dict[str, Any], Optional[Path]]:
+            """Load latest best params for a stage from outcomes artifacts."""
+            outcomes = Path("outcomes")
+
+            multi_best, multi_path = _load_latest_multi_stage_best_params()
+
+            if stage == "stage0":
+                p = _find_latest_path(
+                    outcomes,
+                    f"hpo_stage_report_stage0_kalman_{symbol}_{exchange}_{timeframe}_{direction}_*.json",
+                )
+                data = _load_latest_json(p)
+                if isinstance(data, dict) and isinstance(data.get("best_params"), dict):
+                    return dict(data.get("best_params") or {}), p
+                # Fallback to multi-stage
+                return {
+                    "kalman_Q": multi_best.get("kalman_Q"),
+                    "kalman_R": multi_best.get("kalman_R"),
+                }, multi_path
+
+            if stage == "layer1":
+                p = _find_latest_path(outcomes, f"hpo_layer1_best_params_{symbol}_{timeframe}_*.json")
+                data = _load_latest_json(p)
+                if isinstance(data, dict) and isinstance(data.get("best_params"), dict):
+                    return dict(data.get("best_params") or {}), p
+                return {
+                    k: v
+                    for k, v in multi_best.items()
+                    if k
+                    in {
+                        "mag_compression",
+                        "learn_slope",
+                        "learn_center",
+                        "uniq_intensity",
+                        "exp_mag",
+                        "exp_learn",
+                        "exp_uniq",
+                        "exp_cross",
+                        "downside_multiplier",
+                        "time_decay_halflife",
+                        "mag_clip_pct",
+                    }
+                }, multi_path
+
+            if stage == "layer2":
+                p = _find_latest_path(outcomes, f"hpo_layer2_best_params_{symbol}_{timeframe}_*.json")
+                data = _load_latest_json(p)
+                if isinstance(data, dict) and isinstance(data.get("best_params"), dict):
+                    return dict(data.get("best_params") or {}), p
+                # Fallback to multi-stage
+                return {
+                    k: v
+                    for k, v in multi_best.items()
+                    if k
+                    in {
+                        "sl_atr_mult",
+                        "risk_reward_ratio",
+                        "trail_distance_atr_mult",
+                        "w_scalp",
+                        "w_swing",
+                        "w_trend",
+                        "consensus_threshold",
+                        "consensus_quantile",
+                        "horizon_bars",
+                        "min_event_spacing",
+                    }
+                }, multi_path
+
+            return {}, None
+        
+        # Initialize computation cache for expensive operations
+        computation_cache = ObjectiveComputationCache()
+        
+        # Extract configuration with defaults
+        stage1_enable_subsample = config.get("stage1_enable_subsample", False)
+        stage1_subsample_window_days = config.get("stage1_subsample_window_days", 180)
 
         # ------------------------------------------------------------------
         # 0. SETUP & PRE-CALCULATION
@@ -5819,6 +7351,38 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         tr3 = (low_prices - close_prices.shift(1)).abs()
         true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr_series = true_range.rolling(window=14, min_periods=1).mean()
+        atr_frac = (
+            atr_series / (close_series.abs() + 1e-8)
+        ).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+        try:
+            layer2_tp_target = float(config.get("layer2_tp_target", 0.015))
+        except Exception:
+            layer2_tp_target = 0.015
+        try:
+            layer2_sl_target = float(config.get("layer2_sl_target", 0.006))
+        except Exception:
+            layer2_sl_target = 0.006
+        try:
+            atr_ref = float(np.nanmedian(pd.to_numeric(atr_frac, errors="coerce").values))
+        except Exception:
+            atr_ref = 0.0
+        if (not np.isfinite(atr_ref)) or atr_ref <= 0.0:
+            atr_ref = float(np.nanmean(pd.to_numeric(atr_frac, errors="coerce").values))
+        if (not np.isfinite(atr_ref)) or atr_ref <= 0.0:
+            atr_ref = 1e-3
+        atr_scale = (atr_frac / (float(atr_ref) + 1e-12)).astype(float)
+        atr_scale = atr_scale.replace([np.inf, -np.inf], np.nan).fillna(1.0)
+        try:
+            atr_scale_min = float(config.get("layer2_atr_scale_min", 0.25))
+            atr_scale_max = float(config.get("layer2_atr_scale_max", 4.0))
+            if np.isfinite(atr_scale_min) and np.isfinite(atr_scale_max) and atr_scale_max > atr_scale_min > 0:
+                atr_scale = atr_scale.clip(lower=float(atr_scale_min), upper=float(atr_scale_max))
+        except Exception:
+            pass
+        min_profit_floor = float(DEFAULT_TRANSACTION_COST) * 1.05
+        fixed_layer2_profit_thr = (float(layer2_tp_target) * atr_scale).astype(float).clip(lower=min_profit_floor)
+        fixed_layer2_stop_thr = (float(layer2_sl_target) * atr_scale).astype(float).clip(lower=min_profit_floor / 2.0)
 
         stage1_market_data = market_data
         stage1_primary_signals = primary_signals
@@ -5869,7 +7433,44 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # Ensure index alignment
             common_idx = X_features.index.intersection(market_data.index)
             X_dummy = X_features.loc[common_idx]
-            # Ensure float32 for memory efficiency
+            # Ensure float32 for memory efficiency, filtering non-numeric cols first
+            numeric_cols = X_dummy.select_dtypes(include=[np.number]).columns
+            X_dummy = X_dummy[numeric_cols].astype("float32")
+            base_feat_count = X_dummy.shape[1]
+
+            # Expand with multi-horizon smoothed variants to mimic production breadth
+            try:
+                horizon_cfg = {"Short": 5, "Medium": 20, "Long": 60}
+                X_dummy = generate_multi_horizon_features(
+                    base_features=X_dummy,
+                    horizons=horizon_cfg,
+                    include_base=True,
+                )
+                tprint_info(
+                    f"   Multi-horizon expansion: {base_feat_count} → {X_dummy.shape[1]} cols "
+                    f"(horizons={list(horizon_cfg.keys())})"
+                )
+            except Exception as mh_exc:
+                tprint_warning(f"   ⚠️ Multi-horizon expansion failed: {mh_exc}")
+
+            # Add cross-feature interactions (base × Kalman / volatility-normalised)
+            try:
+                kalman_cols = [c for c in X_dummy.columns if str(c).startswith("KF_")]
+                base_cols = [c for c in X_dummy.columns if not str(c).startswith("KF_")]
+                kalman_df = X_dummy[kalman_cols] if kalman_cols else pd.DataFrame(index=X_dummy.index)
+                base_df = X_dummy[base_cols] if base_cols else pd.DataFrame(index=X_dummy.index)
+                cross_df = generate_cross_features(
+                    base_features=base_df,
+                    kalman_features=kalman_df,
+                    market_data=market_data if market_data is not None else pd.DataFrame(index=X_dummy.index),
+                )
+                if cross_df is not None and not cross_df.empty:
+                    X_dummy = pd.concat([X_dummy, cross_df], axis=1)
+                    tprint_info(f"   Added {len(cross_df.columns)} cross features")
+            except Exception as cross_exc:
+                tprint_warning(f"   ⚠️ Cross-feature generation failed: {cross_exc}")
+
+            # Final dtype cast and log
             X_dummy = X_dummy.astype("float32")
             tprint_success(f"✅ Generated {X_dummy.shape[1]} features (rows={len(X_dummy)})")
         except Exception as feat_e:
@@ -5891,7 +7492,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     "cusum_threshold": {
                         "type": "float",
                         "low": 0.010,
-                        "high": 0.035,
+                        "high": 0.06,
                     },
                     "target_signal_density": {
                         "type": "float",
@@ -5901,7 +7502,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     "min_event_spacing": {
                         "type": "int",
                         "low": 0,
-                        "high": 0,
+                        "high": 10,
                     },
                 },
                 priority=1,
@@ -5917,20 +7518,28 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         "high": 28,
                         "step": 2,
                     },
-                    "profit_thr_base": {
-                        "type": "float",
-                        "low": 0.010,
-                        "high": 0.025,
-                    },
-                    "stop_to_profit_ratio": {
-                        "type": "float",
-                        "low": 0.3,
-                        "high": 0.67,
-                    },
+                    # NOTE: profit_thr_base and stop_to_profit_ratio are now redundant
+                    # The Kalman multi-triple-barrier system handles multiple TP/SL configurations internally
+                    # "profit_thr_base": {
+                    #     "type": "float",
+                    #     "low": 0.010,
+                    #     "high": 0.025,
+                    # },
+                    # "stop_to_profit_ratio": {
+                    #     "type": "float",
+                    #     "low": 0.3,
+                    #     "high": 0.67,
+                    # },
                     "trail_distance": {
                         "type": "float",
                         "low": 0.6,
-                        "high": 1.2,
+                        "high": 3.0,
+                    },
+                    "consensus_threshold": {
+                        "type": "float",
+                        "low": 0.4,
+                        "high": 0.8,
+                        "step": 0.05,
                     },
                 },
                 priority=2,
@@ -6055,6 +7664,109 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 priority=6,
                 depends_on=["event_geometry"],
                 description="Kalman smoothing noise parameters",
+            ),
+            # Group 7: Model Hyperparameters (Smart Walker)
+            create_param_group(
+                name="model_hyperparameters",
+                params={
+                    "num_leaves": {
+                        "type": "int",
+                        "low": 16,
+                        "high": 256,
+                        "walker_type": "geometric",
+                        "step": 1.5,
+                        "anchor": 31,
+                    },
+                    "min_data_in_leaf": {
+                        "type": "int",
+                        "low": 10,
+                        "high": 200,
+                        "walker_type": "geometric",
+                        "step": 1.5,
+                        "anchor": 20,
+                    },
+                    "max_depth": {
+                        "type": "int",
+                        "low": 3,
+                        "high": 12,
+                        "walker_type": "arithmetic",
+                        "step": 1,
+                        "anchor": 6,
+                    },
+                    "min_gain_to_split": {
+                        "type": "float",
+                        "low": 0.0,
+                        "high": 1.0,
+                        "walker_type": "arithmetic",
+                        # Start from moderate split gain and walk in small steps
+                        "step": 0.05,
+                        "anchor": 0.1,
+                    },
+                    "lambda_l1": {
+                        "type": "float",
+                        "low": 0.0,
+                        "high": 10.0,
+                        "walker_type": "log_step",
+                        # Explore moderate L1 regularization: 0.1 → 0.3 → 0.9 → 2.7 → 8.1
+                        "step": 3.0,
+                        "anchor": 0.1,
+                    },
+                    "lambda_l2": {
+                        "type": "float",
+                        "low": 0.0,
+                        "high": 10.0,
+                        "walker_type": "log_step",
+                        # Same schedule as lambda_l1
+                        "step": 3.0,
+                        "anchor": 0.1,
+                    },
+                    "path_smooth": {
+                        "type": "float",
+                        "low": 0.0,
+                        "high": 10.0,
+                        "walker_type": "log_step",
+                        # Smoothing strength: prefer non-zero baseline and moderate growth
+                        "step": 3.0,
+                        "anchor": 0.1,
+                    },
+                    "learning_rate": {
+                        "type": "float",
+                        "low": 0.01,
+                        "high": 0.2,
+                        "walker_type": "log_step",
+                        "step": 2.0,
+                        "anchor": 0.05,
+                    },
+                    "subsample": {
+                        "type": "float",
+                        "low": 0.6,
+                        "high": 1.0,
+                        "walker_type": "arithmetic",
+                        "step": 0.1,
+                        "anchor": 0.8,
+                    },
+                    "colsample_bytree": {
+                        "type": "float",
+                        "low": 0.6,
+                        "high": 1.0,
+                        "walker_type": "arithmetic",
+                        "step": 0.1,
+                        "anchor": 0.8,
+                    },
+                    "n_estimators": {
+                        "type": "int",
+                        "low": 150,
+                        "high": 800,
+                        "walker_type": "arithmetic",
+                        "step": 50,
+                        "anchor": 300,
+                    },
+                },
+                priority=7,
+                # Independent of label defs, but affects modeling.
+                # Usually we want these after signal/targets are fixed.
+                depends_on=["target_engineering"], 
+                description="LGBM Model Hyperparameters (Smart Walker)",
             ),
         ]
 
@@ -6194,8 +7906,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         tprint_info("🧪 Stage 0: Optimizing Kalman Signal Parameters...")
 
         kalman_search_space = {
-            "kalman_Q": {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
-            "kalman_R": {"type": "float", "low": 1e-3, "high": 1e-1, "log": True},
+            # Widened to explore both smoother and more reactive regimes
+            "kalman_Q": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
+            "kalman_R": {"type": "float", "low": 1e-4, "high": 2e-1, "log": True},
         }
         def labeling_objective(
             params: Dict[str, Any],
@@ -6239,27 +7952,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             try:
                 nonlocal debug_sample_count, gate_stats
-                # Enforce profit >= 2x stop constraint. During stages that do not
-                # actively optimize profit_thr_base/stop_to_profit_ratio, fall back
-                # to conservative defaults.
-                profit_thr_base = float(params.get("profit_thr_base", 0.012))
-                stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
+                # NOTE: profit_thr_base/stop_to_profit_ratio constraints are now redundant
+                # The Kalman multi-triple-barrier system handles multiple TP/SL configurations internally
+                # Keeping only trail_distance for trailing profit parameters
                 trail_dist = float(params.get("trail_distance", 0.0))
 
-                # CONSTRAINT: Ensure profit is at least 2x stop (RR >= 2:1)
-                stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
-                if profit_thr_base < 2.0 * stop_thr_base:
-                    # Early exit: invalid RR geometry
-                    tprint_warning(
-                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 2x stop {stop_thr_base:.4f}"
-                    )
-                    gate_stats["rr_profit_vs_stop"] = gate_stats.get("rr_profit_vs_stop", 0) + 1
-                    return {
-                        'learnability': 0.0,
-                        'profitability': -1e9,
-                        'edge': -1e9,
-                        'combined': -1e9,
-                    }
+                # Removed profit/stop ratio constraints - handled by ensemble averaging
+                # if profit_thr_base < 1.5 * stop_thr_base:
+                #     # Early exit: invalid RR geometry
+                #     tprint_warning(
+                #         f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 2x stop {stop_thr_base:.4f}"
+                #     )
+                #     gate_stats["rr_profit_vs_stop"] = gate_stats.get("rr_profit_vs_stop", 0) + 1
+                #     return {
+                #         'learnability': 0.0,
+                #         'profitability': -1e9,
+                #         'edge': -1e9,
+                #         'combined': -1e9,
+                #     }
 
                 # Extract parameters
                 horizon = int(params["horizon_bars"])
@@ -6302,9 +8012,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
 
                 # Hard RR constraint: even in the worst-case (smallest profit, largest stop),
-                # require a minimum RR ~1.5 (after adaptive multipliers, ensures net positive expectancy).
+                # require a minimum RR ~1.2 (relaxed for better balance while maintaining positive expectancy).
                 worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
-                if worst_rr < 1.5:
+                if worst_rr < 1.2:
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
                             f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.5 "
@@ -6380,29 +8090,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 # - volatility_1d is backward-looking (rolling 96-bar std)
                 # - vol_baseline is backward-looking (rolling mean of past volatility)
                 # - vol_factor at time T uses only volatility from T-vol_baseline_window to T
-                vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
+                # Use cache for vol_baseline computation
+                vol_baseline = computation_cache.get_vol_baseline(volatility_1d, vol_baseline_window)
                 vol_factor = volatility_1d / (vol_baseline + 1e-8)
 
-                high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
-                low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
-                close_prices = market_data["close"]
-
-                tr1 = high_prices - low_prices
-                tr2 = (high_prices - close_prices.shift(1)).abs()
-                tr3 = (low_prices - close_prices.shift(1)).abs()
-                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
-                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
-
-                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
-                price_delta = close_prices.diff(trend_delta_lookback).abs()
-
-                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                trend_strength = trend_strength.clip(
-                    lower=0.0,
-                    upper=float(config.get("trend_strength_clip", 5.0)),
-                ).fillna(0.0)
+                # Use cache for ATR and trend strength (invariant to HPO params)
+                atr_series = computation_cache.get_atr(market_data, config)
+                trend_strength = computation_cache.get_trend_strength(market_data, config)
 
                 trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
                 trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
@@ -6421,19 +8115,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     upper=stop_thr_base * stop_mult_max,
                 )
 
-                # NEW: Regenerate primary signals if cusum_threshold differs from default
-                # This allows HPO to explore different signal densities
-                signals_to_use = primary_signals
+                # Use cache for primary signals (only regenerate if cusum_threshold differs)
                 default_cusum = 0.015
-                if abs(cusum_threshold - default_cusum) > 0.001:
-                    try:
-                        signals_to_use = generate_primary_signals(
-                            market_data.copy(),
-                            cusum_threshold=cusum_threshold,
-                            target_trades_per_day=target_signal_density,
-                        )
-                    except Exception:
-                        signals_to_use = primary_signals  # Fallback if regeneration fails
+                try:
+                    signals_to_use = computation_cache.get_primary_signals(
+                        market_data,
+                        cusum_threshold,
+                        target_signal_density,
+                        default_cusum=default_cusum,
+                    )
+                except Exception:
+                    signals_to_use = primary_signals  # Fallback if cache/regeneration fails
 
                 (
                     realized_returns,
@@ -6458,13 +8150,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
                 # Basic diagnostics on raw realized returns and labels before
                 # any vol-scaling or quantile-based relabeling.
+                # Reduced logging frequency to avoid noise in hot loop
                 n_raw_events = len(realized_returns)
                 n_raw_labeled = int((~binary_labels.isna()).sum())
-                if debug_sample_count < debug_sample_limit:
+                # Only log every 10th sample to reduce noise
+                if debug_sample_count < debug_sample_limit and debug_sample_count % 10 == 0:
                     tprint_info(
-                        f"[HPO_DEBUG_LABELS] raw_events={n_raw_events}, raw_labeled={n_raw_labeled}, "
-                        f"profit_thr_base={profit_thr_base:.6f}, stop_thr_base={stop_thr_base:.6f}, "
-                        f"econ_min_mult={econ_min_mult:.3f}, label_low_q={label_low_q:.3f}, label_high_q={label_high_q:.3f}",
+                        f"[HPO_DEBUG] events={n_raw_events}, labeled={n_raw_labeled}, "
+                        f"profit={profit_thr_base:.4f}, stop={stop_thr_base:.4f}",
                     )
 
                 # Replace legacy R-multiple based labels with quantile-based labels
@@ -6485,10 +8178,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 )
 
                 n_vol_scaled_events = int(vol_scaled_returns.dropna().size)
-                if debug_sample_count < debug_sample_limit:
-                    tprint_info(
-                        f"[HPO_DEBUG_LABELS] vol_scaled_events={n_vol_scaled_events}",
-                    )
+                # Reduced logging frequency
+                if debug_sample_count < debug_sample_limit and debug_sample_count % 10 == 0:
+                    tprint_info(f"[HPO_DEBUG] vol_scaled_events={n_vol_scaled_events}")
 
                 # Decide whether to use regime-aware quantiles based on the
                 # attached HMM regimes (typically 1h) on market_data.
@@ -6497,9 +8189,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     regimes_for_labeling = market_data["hmm_regime_label_1h"]
 
                 # Use rolling quantiles by default to match production and avoid look-ahead bias
+                # ENFORCE rolling quantiles for HPO to prevent leakage
                 use_rolling = config.get("use_rolling_quantiles", True)
+                if not use_rolling:
+                    tprint_warning(
+                        "⚠️ use_rolling_quantiles=False detected in HPO. "
+                        "Forcing rolling quantiles to prevent look-ahead bias."
+                    )
+                    use_rolling = True
                 rolling_lookback = int(config.get("rolling_quantile_lookback_bars", 3000))
                 rolling_min_periods = int(config.get("rolling_quantile_min_periods", 300))
+                
+                # Validate rolling parameters are reasonable
+                if rolling_lookback < 100:
+                    tprint_warning(
+                        f"⚠️ rolling_quantile_lookback_bars={rolling_lookback} is too small. "
+                        f"Using minimum of 100 bars."
+                    )
+                    rolling_lookback = max(100, rolling_lookback)
 
                 def _make_quantile_labels(vol_scaled_series: pd.Series) -> pd.Series:
                     """Helper to create (regime-aware) quantile labels from a score series."""
@@ -6611,43 +8318,160 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 return -10.0
 
         # Run Stage 0 optimization
-        kalman_optimizer = BayesianTPEOptimizer(
-            config=OptimizationConfig(n_trials=30, execution_mode="full", direction="maximize", seed=42)
-        )
-        kalman_result = kalman_optimizer.optimize(objective=kalman_objective, search_space=kalman_search_space)
-        best_kalman_params = kalman_result.get("best_params", {})
-        
+        kalman_loss: float = float("nan")
+        kalman_loss_details: Dict[str, Any] = {}
+
+        stage0_loaded_from: Optional[str] = None
+        if stage_rank["stage0"] < start_rank:
+            loaded_params, loaded_path = _load_stage_best_params("stage0")
+            best_kalman_params = dict(loaded_params or {})
+            stage0_loaded_from = str(loaded_path) if loaded_path is not None else None
+            if not best_kalman_params:
+                best_kalman_params = {"kalman_Q": 1e-4, "kalman_R": 0.01}
+            kalman_result = {"best_params": dict(best_kalman_params), "best_value": 0.0, "history": []}
+            tprint_info(
+                f"♻️ Stage 0 skipped (start_at={start_at_canonical}); loaded best params from {stage0_loaded_from}"
+            )
+        else:
+            kalman_optimizer = BayesianTPEOptimizer(
+                config=OptimizationConfig(
+                    n_trials=60,
+                    execution_mode="full",
+                    direction="maximize",
+                    seed=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=0)
+                )
+            )
+            kalman_result = kalman_optimizer.optimize(objective=kalman_objective, search_space=kalman_search_space)
+            best_kalman_params = kalman_result.get("best_params", {})
+
         # Log the results with loss details
-        best_Q = best_kalman_params.get('kalman_Q', 1e-4)
-        best_R = best_kalman_params.get('kalman_R', 0.01)
-        
+        best_Q = best_kalman_params.get("kalman_Q")
+        best_R = best_kalman_params.get("kalman_R")
+        try:
+            best_Q = float(best_Q) if best_Q is not None else float("nan")
+        except Exception:
+            best_Q = float("nan")
+        try:
+            best_R = float(best_R) if best_R is not None else float("nan")
+        except Exception:
+            best_R = float("nan")
+        if not np.isfinite(best_Q) or best_Q <= 0.0:
+            best_Q = 1e-4
+        if not np.isfinite(best_R) or best_R <= 0.0:
+            best_R = 0.01
         # Compute final loss details for logging
         try:
             final_smoothed, _ = rts_smoother_1d(close_series.values, Q=best_Q, R=best_R)
             final_loss, final_details = robust_labeling_loss(final_smoothed, close_series.values, is_acausal=True)
+            kalman_loss = float(final_loss)
+            kalman_loss_details = final_details or {}
             tprint_success(
                 f"✅ Stage 0 Complete. Loss: {final_loss:.4f} "
                 f"(smooth={final_details['smooth']:.4f}, track={final_details['track']:.4f}, "
                 f"amp={final_details['amp']:.4f}, amp_ratio={final_details['amp_ratio']:.3f})"
             )
         except Exception:
-            tprint_success(f"✅ Stage 0 Complete. Best Score: {kalman_result.get('best_value', 0):.4f}")
-        
+            try:
+                bv = kalman_result.get("best_value", 0.0) if isinstance(kalman_result, dict) else 0.0
+                bv = float(bv) if bv is not None and np.isfinite(float(bv)) else 0.0
+            except Exception:
+                bv = 0.0
+            tprint_success(f"✅ Stage 0 Complete. Best Score: {bv:.4f}")
+
         tprint_info(f"   Best RTS/Kalman Params: Q={best_Q:.2e}, R={best_R:.2e}")
         tprint_info("   Note: RTS (acausal) for labels, Kalman (causal) for live features")
+
+        hpo_stage_reports: Dict[str, Any] = {}
+
+        # Persist Stage 0 trial diagnostics for offline analysis
+        stage0_csv: Optional[Path] = None
+        try:
+            kalman_history = kalman_result.get("history", []) if isinstance(kalman_result, dict) else []
+            stage0_rows = []
+            for trial in kalman_history:
+                params = trial.get("params", {}) if isinstance(trial, dict) else {}
+                q_val = float(params.get("kalman_Q", 1e-4))
+                r_val = float(params.get("kalman_R", 0.01))
+
+                # Recompute loss components for this (Q, R) pair
+                try:
+                    smoothed_trial, _ = rts_smoother_1d(
+                        prices=close_series.values,
+                        Q=q_val,
+                        R=r_val,
+                        init_val=None,
+                        init_cov=1.0,
+                    )
+                    loss_trial, details_trial = robust_labeling_loss(
+                        smoothed=smoothed_trial,
+                        raw=close_series.values,
+                        is_acausal=True,
+                    )
+                except Exception:
+                    loss_trial, details_trial = float("nan"), {}
+
+                row = {
+                    "trial_number": trial.get("trial_number") if isinstance(trial, dict) else None,
+                    "kalman_Q": q_val,
+                    "kalman_R": r_val,
+                    "score": float(trial.get("value", float("nan"))) if isinstance(trial, dict) else float("nan"),
+                    "loss": float(loss_trial),
+                    "smooth": float(details_trial.get("smooth", float("nan"))),
+                    "track": float(details_trial.get("track", float("nan"))),
+                    "amp": float(details_trial.get("amp", float("nan"))),
+                    "amp_ratio": float(details_trial.get("amp_ratio", float("nan"))),
+                }
+                stage0_rows.append(row)
+
+            if stage0_rows:
+                ts_stage0 = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                stage0_csv = outcomes_dir / f"hpo_stage0_kalman_trials_{symbol}_{timeframe}_{ts_stage0}.csv"
+                pd.DataFrame(stage0_rows).to_csv(stage0_csv, index=False)
+                tprint_info(f"   💾 Saved Stage 0 Kalman trial diagnostics to {stage0_csv}")
+        except Exception as stage0_exc:
+            tprint_warning(f"   ⚠️ Failed to save Stage 0 Kalman trial diagnostics: {stage0_exc}")
+
+        try:
+            stage0_report = _write_hpo_stage_report(
+                outcomes_dir=outcomes_dir,
+                run_timestamp=str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")),
+                stage_id="stage0_kalman",
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                best_params=dict(best_kalman_params) if isinstance(best_kalman_params, dict) else {},
+                metrics={
+                    "best_value": kalman_result.get("best_value", None),
+                    "loss": kalman_loss,
+                    "loss_details": kalman_loss_details,
+                },
+                search_space=kalman_search_space,
+                trials_csv_path=stage0_csv,
+                history_json_path=None,
+            )
+            hpo_stage_reports["stage0"] = stage0_report
+        except Exception as stage0_report_exc:
+            tprint_warning(f"   ⚠️ Failed to write Stage 0 report: {stage0_report_exc}")
 
         # ------------------------------------------------------------------
         # 1. LAYER 1: WEIGHTING OPTIMIZATION
         # ------------------------------------------------------------------
         tprint_info("🧪 Layer 1: Optimizing Sample Weighting Parameters...")
 
+# ... (rest of the code remains the same)
         # Generate baseline events using defaults (as TBM params are Layer 2)
-        baseline_profit = pd.Series(np.maximum(0.008, atr_series * 2.0), index=market_data.index)
-        baseline_stop = pd.Series(np.maximum(0.004, atr_series * 1.0), index=market_data.index)
+        baseline_profit = (atr_frac * 2.0).astype(float).clip(lower=0.008)
+        baseline_stop = (atr_frac * 1.0).astype(float).clip(lower=0.004)
 
         (
             baseline_returns,
-            _, _, _, _, _, _, _
+            binary_labels_raw,
+            exit_reasons_raw,
+            event_durations_raw,
+            mfe_raw,
+            mae_raw,
+            _, _,
         ) = compute_realized_returns(
             market_data,
             primary_signals,
@@ -6658,77 +8482,576 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             min_event_spacing=2,
         )
 
+        # Create baseline quantile labels (outer-scope) so Layer 2 feature selection
+        # and post-HPO evaluation have a valid `binary_labels` series.
+        try:
+            label_low_q_baseline = float(config.get("label_low_q", 0.40))
+            label_high_q_baseline = float(config.get("label_high_q", 0.60))
+            vol_scaled_baseline = compute_vol_scaled_returns_for_events(
+                realized_returns=baseline_returns,
+                volatility=volatility_1d,
+                econ_min_return_multiple=float(config.get("econ_min_return_multiple", 1.0)),
+            )
+            binary_labels = create_rolling_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled_baseline,
+                low_q=label_low_q_baseline,
+                high_q=label_high_q_baseline,
+                lookback_bars=int(config.get("rolling_quantile_lookback_bars", 3000)),
+                min_periods=int(config.get("rolling_quantile_min_periods", 300)),
+            )
+        except Exception:
+            # Fallback: directional labels from returns when quantile labeling fails.
+            binary_labels = pd.Series(np.nan, index=baseline_returns.index)
+            mask_evt = ~baseline_returns.isna()
+            binary_labels.loc[mask_evt & (baseline_returns > 0)] = 1.0
+            binary_labels.loc[mask_evt & (baseline_returns <= 0)] = 0.0
+
         valid_mask = ~baseline_returns.isna()
         baseline_t_events = baseline_returns.index[valid_mask]
         baseline_returns_clean = baseline_returns[valid_mask]
 
-        if len(baseline_t_events) < 50:
-            tprint_warning(f"⚠️ Too few baseline events ({len(baseline_t_events)}) for Layer 1. Using defaults.")
-            best_weighting_params = {
-                'mag_compression': 0.8, 'learn_slope': 10.0, 'learn_center': 0.4,
-                'uniq_intensity': 1.0, 'exp_mag': 1.0, 'exp_learn': 1.0,
-                'exp_uniq': 1.0, 'exp_cross': 1.0, 'downside_multiplier': 1.0
-            }
-        else:
+        committee_agreement_scores_l1: Optional[np.ndarray] = None
+        committee_mag_factors_l1: Optional[np.ndarray] = None
+
+        try:
+            enable_committee_weight_factor_for_l1 = bool(
+                config.get("layer1_optimize_committee_weight_factor", True)
+            ) and bool(config.get("enable_committee_weight_factor", True))
+        except Exception:
+            enable_committee_weight_factor_for_l1 = False
+
+        if enable_committee_weight_factor_for_l1 and len(baseline_t_events) >= 50:
             try:
-                best_weighting_params = run_layer1_optimization(
-                    df=market_data,
-                    returns=baseline_returns_clean,
-                    t_events=baseline_t_events
+                best_Q_l1 = best_kalman_params.get('kalman_Q', 1e-4)
+                best_R_l1 = best_kalman_params.get('kalman_R', 0.01)
+
+                mk_data_voting_l1 = market_data.copy()
+                kalman_price_smooth_l1, kalman_vol_smooth_l1 = compute_kalman_smoothed_price_and_volatility(
+                    prices=market_data['close'],
+                    process_noise=best_Q_l1,
+                    measurement_noise=best_R_l1,
+                    vol_window=20,
                 )
-            except Exception as e:
-                tprint_warning(f"⚠️ Layer 1 optimization failed: {e}. Using defaults.")
+                mk_data_voting_l1['kalman_price'] = kalman_price_smooth_l1
+                mk_data_voting_l1['kalman_volatility'] = kalman_vol_smooth_l1
+
+                base_profiles_l1 = {
+                    "scalp": (1.2, 0.6, 8),
+                    "swing": (1.8, 0.9, 12),
+                    "trend": (2.4, 1.2, 24),
+                }
+                vol_scalars_l1 = {"lower": 0.8, "upper": 1.2}
+
+                committee_configs_l1: List[TripleBarrierConfig] = []
+                committee_names_l1: List[str] = []
+                for p_name, (tp_base, sl_base, h_base) in base_profiles_l1.items():
+                    for v_name, v_scalar in vol_scalars_l1.items():
+                        committee_configs_l1.append(
+                            TripleBarrierConfig(
+                                tp_multiplier=tp_base * v_scalar,
+                                sl_multiplier=sl_base * v_scalar,
+                                horizon=h_base,
+                            )
+                        )
+                        committee_names_l1.append(f"{p_name}_{v_name}")
+
+                committee_results_l1 = compute_multi_triple_barrier_outcomes_vectorized(
+                    market_data=mk_data_voting_l1,
+                    primary_signals=primary_signals,
+                    configs=committee_configs_l1,
+                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                )
+
+                event_mask_l1 = primary_signals['consensus'] != 0
+                event_idx_l1 = primary_signals[event_mask_l1].index
+                if len(event_idx_l1) > 0:
+                    label_matrix_l1 = np.zeros((len(event_idx_l1), len(committee_configs_l1)), dtype=np.int8)
+                    returns_matrix_l1 = np.full((len(event_idx_l1), len(committee_configs_l1)), np.nan, dtype=np.float32)
+
+                    for i, res in enumerate(committee_results_l1):
+                        lbls = res['labels'].reindex(event_idx_l1).fillna(0).values.astype(int)
+                        rets = res['returns'].reindex(event_idx_l1).values.astype(np.float32)
+                        label_matrix_l1[:, i] = lbls
+                        returns_matrix_l1[:, i] = rets
+
+                    fired_mask_l1 = (label_matrix_l1 != 0)
+                    ret_mat_l1 = np.asarray(returns_matrix_l1, dtype=float)
+                    ret_mat_l1 = np.where(fired_mask_l1, ret_mat_l1, np.nan)
+
+                    abs_ret_l1 = np.abs(ret_mat_l1)
+                    abs_ret_mean_l1 = np.nanmean(abs_ret_l1, axis=1)
+                    abs_ret_mean_l1 = np.where(np.isfinite(abs_ret_mean_l1), abs_ret_mean_l1, 0.0)
+
+                    positive_abs_l1 = abs_ret_mean_l1[abs_ret_mean_l1 > 0]
+                    abs_med_l1 = float(np.nanmedian(positive_abs_l1)) if positive_abs_l1.size > 0 else 0.0
+                    if np.isfinite(abs_med_l1) and abs_med_l1 > 0:
+                        mag_factor_l1 = abs_ret_mean_l1 / (abs_med_l1 + 1e-12)
+                    else:
+                        mag_factor_l1 = np.ones_like(abs_ret_mean_l1, dtype=float)
+
+                    sign_mat_l1 = np.asarray(label_matrix_l1, dtype=float)
+                    sign_mat_l1 = np.where(fired_mask_l1, np.sign(sign_mat_l1), np.nan)
+                    mean_sign_l1 = np.nanmean(sign_mat_l1, axis=1)
+                    agree_l1 = np.abs(mean_sign_l1)
+                    agree_l1 = np.where(np.isfinite(agree_l1), agree_l1, 0.0)
+                    agree_l1 = np.clip(agree_l1, 0.0, 1.0)
+
+                    committee_agreement_scores_l1 = (
+                        pd.Series(agree_l1, index=event_idx_l1)
+                        .reindex(baseline_t_events)
+                        .fillna(0.0)
+                        .values.astype(float)
+                    )
+                    committee_mag_factors_l1 = (
+                        pd.Series(mag_factor_l1, index=event_idx_l1)
+                        .reindex(baseline_t_events)
+                        .fillna(1.0)
+                        .values.astype(float)
+                    )
+            except Exception:
+                committee_agreement_scores_l1 = None
+                committee_mag_factors_l1 = None
+
+        layer1_loaded_from: Optional[str] = None
+        if stage_rank["layer1"] < start_rank:
+            loaded_params, loaded_path = _load_stage_best_params("layer1")
+            best_weighting_params = dict(loaded_params or {})
+            layer1_loaded_from = str(loaded_path) if loaded_path is not None else None
+            tprint_info(
+                f"♻️ Layer 1 skipped (start_at={start_at_canonical}); loaded best params from {layer1_loaded_from}"
+            )
+        else:
+            if len(baseline_t_events) < 50:
+                tprint_warning(f"⚠️ Too few baseline events ({len(baseline_t_events)}) for Layer 1. Using defaults.")
                 best_weighting_params = {
                     'mag_compression': 0.8, 'learn_slope': 10.0, 'learn_center': 0.4,
                     'uniq_intensity': 1.0, 'exp_mag': 1.0, 'exp_learn': 1.0,
                     'exp_uniq': 1.0, 'exp_cross': 1.0, 'downside_multiplier': 1.0
                 }
+            else:
+                try:
+                    from src.training.steps.labeling.generate_weights_per_label import run_layer1_optimization
+                    best_weighting_params = run_layer1_optimization(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        market_data=market_data,
+                        labels=baseline_returns_clean,
+                        committee_agreement_scores=committee_agreement_scores_l1,
+                        committee_mag_factors=committee_mag_factors_l1,
+                    )
+                except Exception as e:
+                    tprint_warning(f"⚠️ Layer 1 optimization failed: {e}. Using defaults.")
+                    best_weighting_params = {
+                        'mag_compression': 0.8, 'learn_slope': 10.0, 'learn_center': 0.4,
+                        'uniq_intensity': 1.0, 'exp_mag': 1.0, 'exp_learn': 1.0,
+                        'exp_uniq': 1.0, 'exp_cross': 1.0, 'downside_multiplier': 1.0
+                    }
 
         tprint_success(f"✅ Layer 1 Complete. Best Weighting Params: {best_weighting_params}")
 
-        # ------------------------------------------------------------------
-        # 2. LAYER 2: TRADING PARAMETER OPTIMIZATION
-        # ------------------------------------------------------------------
-        tprint_info("🧪 Layer 2: Optimizing Trading Parameters...")
+        # Persist Layer 1 params immediately
+        l1_path: Optional[Path] = None
+        try:
+            ts = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            l1_path = Path("outcomes") / f"hpo_layer1_best_params_{symbol}_{timeframe}_{ts}.json"
+            l1_payload = {
+                "best_params": best_weighting_params,
+                "timestamp": ts,
+            }
+            l1_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(l1_path, "w") as f:
+                json.dump(l1_payload, f, indent=2, default=str)
+            tprint_info(f"   💾 Saved Layer 1 best params to {l1_path}")
+        except Exception as l1_exc:
+            tprint_warning(f"   ⚠️ Failed to save Layer 1 params: {l1_exc}")
 
-        # Updated search space with Constructive Sampling
-        layer2_search_space = {
-            "sl_atr_mult": {"type": "float", "low": 0.5, "high": 2.5},
-            "risk_reward_ratio": {"type": "float", "low": 2.0, "high": 5.0}, # Constrains TP >= 2*SL
-            "trail_distance_atr_mult": {"type": "float", "low": 0.5, "high": 3.0},
-            # Kalman params are fixed from Stage 0
-        }
+        try:
+            l1_trials_csv = _find_latest_path(
+                outcomes_dir=outcomes_dir,
+                pattern=f"hpo_layer1_trials_{symbol}_{timeframe}_*.csv",
+            )
+            l1_report = _write_hpo_stage_report(
+                outcomes_dir=outcomes_dir,
+                run_timestamp=str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")),
+                stage_id="layer1_weighting",
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                best_params=dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {},
+                metrics={
+                    "best_params_path": str(l1_path) if l1_path is not None else None,
+                },
+                search_space=None,
+                trials_csv_path=l1_trials_csv,
+                history_json_path=None,
+            )
+            hpo_stage_reports["layer1"] = l1_report
+        except Exception as l1_report_exc:
+            tprint_warning(f"   ⚠️ Failed to write Layer 1 report: {l1_report_exc}")
+
+        enable_committee_voting_hpo = bool(config.get("enable_committee_voting_hpo", True))
+        enable_committee_weight_factor = bool(config.get("enable_committee_weight_factor", True))
+        allow_committee_fallback_to_standard = bool(
+            config.get("allow_committee_fallback_to_standard", False)
+        )
+        layer2_mode = "committee" if enable_committee_voting_hpo else "standard"
+        tprint_info(f"🔧 Layer 2 mode: {layer2_mode} (enable_committee_voting_hpo={enable_committee_voting_hpo})")
+
+        committee_weight_factor_series: Optional[pd.Series] = None
+
+        if enable_committee_voting_hpo or enable_committee_weight_factor:
+            if enable_committee_voting_hpo:
+                tprint_info("🧪 Layer 2: Optimizing Committee Consensus Weights...")
+
+            # A. PRE-COMPUTE COMMITTEE LABEL MATRIX (The "Expert Panel")
+            tprint_info("🏗️ Pre-computing Committee of 6 Label Matrix...")
+
+            # 1. Define the 6 Profiles
+            # Scalp: Tight (TP 1.2 / SL 0.6)
+            # Swing: Balanced (TP 2.0 / SL 1.0)
+            # Trend: Looser (TP 3.0 / SL 1.5)
+            # Multipliers: Lower (0.8x), Upper (1.2x)
+
+            # Base Multipliers (TP, SL)
+            # Scalp: 1.2/0.6
+            # Swing: 2.0/1.0
+            # Trend: 3.0/1.5
+            base_profiles = {
+                "scalp": (1.2, 0.6, 8),
+                "swing": (1.8, 0.9, 12),
+                "trend": (2.4, 1.2, 24),
+            }
+            vol_scalars = {"lower": 0.8, "upper": 1.2}
+
+            committee_configs = []
+            committee_names = []
+
+            for p_name, (tp_base, sl_base, h_base) in base_profiles.items():
+                for v_name, v_scalar in vol_scalars.items():
+                    config_id = f"{p_name}_{v_name}"
+                    # Scale multipliers (effectively scaling volatility assumption)
+                    committee_configs.append(
+                        TripleBarrierConfig(
+                            tp_multiplier=tp_base * v_scalar,
+                            sl_multiplier=sl_base * v_scalar,
+                            horizon=h_base,
+                        )
+                    )
+                    committee_names.append(config_id)
+
+            # 2. Vectorized computation of all 6 outcomes
+            try:
+                # Add Kalman columns if not present (Stage 0 result)
+                best_Q = best_kalman_params.get('kalman_Q', 1e-4)
+                best_R = best_kalman_params.get('kalman_R', 0.01)
+
+                # Re-compute Kalman smooth data for labeling (acausal/smooth for labeling)
+                # using the optimized parameters
+                kalman_price_smooth, kalman_vol_smooth = compute_kalman_smoothed_price_and_volatility(
+                    prices=market_data['close'],
+                    process_noise=best_Q,
+                    measurement_noise=best_R,
+                    vol_window=20
+                )
+
+                mk_data_voting = market_data.copy()
+                mk_data_voting['kalman_price'] = kalman_price_smooth
+                mk_data_voting['kalman_volatility'] = kalman_vol_smooth
+
+                committee_results = compute_multi_triple_barrier_outcomes_vectorized(
+                    market_data=mk_data_voting,
+                    primary_signals=primary_signals,
+                    configs=committee_configs,
+                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                )
+
+                # 3. Assemble Label Matrix (Rows=Events, Cols=6 Experts)
+                # Find common events (primary_signals != 0)
+                event_mask = primary_signals['consensus'] != 0
+                event_idx = primary_signals[event_mask].index
+
+                # Initialize matrices
+                label_matrix_values = np.zeros((len(event_idx), len(committee_configs)), dtype=np.int8)
+                returns_matrix_values = np.full((len(event_idx), len(committee_configs)), np.nan, dtype=np.float32)
+
+                for i, res in enumerate(committee_results):
+                    # align to event_idx
+                    lbls = res['labels'].reindex(event_idx).fillna(0).values.astype(int)
+                    rets = res['returns'].reindex(event_idx).values.astype(np.float32)
+
+                    label_matrix_values[:, i] = lbls
+                    returns_matrix_values[:, i] = rets
+
+                tprint_success(f"✅ Committee Matrices Built: {label_matrix_values.shape} (Events x Experts)")
+
+                try:
+                    n_ev = int(label_matrix_values.shape[0])
+                    for j, name in enumerate(list(committee_names)):
+                        col = np.asarray(label_matrix_values[:, j], dtype=float)
+                        if col.size <= 0:
+                            continue
+                        frac_pos = float(np.mean(col > 0.0))
+                        frac_neg = float(np.mean(col < 0.0))
+                        frac_zero = float(np.mean(col == 0.0))
+                        tprint_info(
+                            f"   [committee expert] {name}: +={frac_pos:.2%}, -={frac_neg:.2%}, 0={frac_zero:.2%} (n={n_ev})"
+                        )
+                except Exception:
+                    pass
+
+                try:
+                    fired_mask = (label_matrix_values != 0)
+                    ret_mat = np.asarray(returns_matrix_values, dtype=float)
+                    ret_mat = np.where(fired_mask, ret_mat, np.nan)
+
+                    abs_ret = np.abs(ret_mat)
+                    abs_ret_mean = np.nanmean(abs_ret, axis=1)
+                    abs_ret_mean = np.where(np.isfinite(abs_ret_mean), abs_ret_mean, 0.0)
+
+                    positive_abs = abs_ret_mean[abs_ret_mean > 0]
+                    abs_med = float(np.nanmedian(positive_abs)) if positive_abs.size > 0 else 0.0
+                    if np.isfinite(abs_med) and abs_med > 0:
+                        mag_factor = abs_ret_mean / (abs_med + 1e-12)
+                    else:
+                        mag_factor = np.ones_like(abs_ret_mean, dtype=float)
+
+                    sign_mat = np.asarray(label_matrix_values, dtype=float)
+                    sign_mat = np.where(fired_mask, np.sign(sign_mat), np.nan)
+                    mean_sign = np.nanmean(sign_mat, axis=1)
+                    agree = np.abs(mean_sign)
+                    agree = np.where(np.isfinite(agree), agree, 0.0)
+                    agree = np.clip(agree, 0.0, 1.0)
+
+                    alpha = float(
+                        best_weighting_params.get(
+                            "committee_agreement_alpha",
+                            config.get("committee_agreement_alpha", 0.5),
+                        )
+                    )
+                    mag_clip = float(
+                        best_weighting_params.get(
+                            "committee_mag_clip",
+                            config.get("committee_mag_clip", 5.0),
+                        )
+                    )
+                    mag_factor = np.where(np.isfinite(mag_factor), mag_factor, 1.0)
+                    mag_factor = np.clip(mag_factor, 0.0, mag_clip)
+
+                    factor = (1.0 + alpha * agree) * mag_factor
+                    factor_mean = float(np.nanmean(factor[np.isfinite(factor)])) if np.isfinite(factor).any() else 1.0
+                    if np.isfinite(factor_mean) and factor_mean > 0:
+                        factor = factor / factor_mean
+                    else:
+                        factor = np.ones_like(factor, dtype=float)
+
+                    committee_weight_factor_series = pd.Series(factor, index=event_idx)
+
+                    try:
+                        if bool(config.get("log_committee_weight_factor", True)):
+                            v = committee_weight_factor_series.values.astype(float)
+                            v = v[np.isfinite(v)]
+                            if v.size > 0:
+                                tprint_info(
+                                    "   [committee weight factor] "
+                                    f"n={int(v.size)}, mean={float(np.mean(v)):.4f}, min={float(np.min(v)):.4f}, max={float(np.max(v)):.4f}"
+                                )
+                    except Exception:
+                        pass
+                except Exception:
+                    committee_weight_factor_series = None
+
+            except Exception as e:
+                if allow_committee_fallback_to_standard:
+                    tprint_warning(
+                        f"⚠️ Committee pre-computation failed: {e}. Falling back to standard HPO."
+                    )
+                    layer2_mode = "standard"
+                else:
+                    tprint_error(
+                        f"❌ Committee pre-computation failed: {e}. Aborting (set allow_committee_fallback_to_standard=true to fallback)."
+                    )
+                    return {"success": False, "error": str(e)}
+
+        if layer2_mode == "committee":
+            # Updated search space for Consensus Voting
+            layer2_search_space = {
+                "w_scalp": {"type": "float", "low": 0.0, "high": 2.0},
+                "w_swing": {"type": "float", "low": 0.0, "high": 2.0},
+                "w_trend": {"type": "float", "low": 0.0, "high": 2.0},
+                "consensus_quantile": {"type": "float", "low": 0.50, "high": 0.85},
+            }
+        else:
+            tprint_info("🧪 Layer 2: Optimizing Trading Parameters...")
+            layer2_search_space = {
+                "trail_distance_atr_mult": {"type": "float", "low": 0.5, "high": 3.0},
+            }
+
+        if layer2_mode == "committee":
+            l2_trial_counter = 0
+
+            def layer2_objective(trial_params: Dict[str, Any]) -> float:
+                """
+                Layer 2 objective using Committee Voting:
+                - Optimizes weights for [Scalp, Swing, Trend] experts.
+                - Computes consensus score.
+                - Thresholds for binary labels.
+                """
+                nonlocal l2_trial_counter
+                l2_trial_counter += 1
+
+                w_scalp = trial_params["w_scalp"]
+                w_swing = trial_params["w_swing"]
+                w_trend = trial_params["w_trend"]
+                threshold = float(trial_params.get("consensus_threshold", 0.5))
+                cq = trial_params.get("consensus_quantile", None)
+
+                try:
+                    metrics_trial = _compute_layer2_metrics_committee(trial_params)
+                    utility = float(metrics_trial.get("utility", -1.0))
+                    if not np.isfinite(float(utility)):
+                        utility = -1.0
+                except Exception:
+                    metrics_trial = {}
+                    utility = -1.0
+
+                try:
+                    if bool(config.get("layer2_log_trials", True)):
+                        every = int(config.get("layer2_trial_log_every", 1))
+                        if every <= 0:
+                            every = 1
+                        if (l2_trial_counter % every) == 0:
+                            try:
+                                n_trades = int(metrics_trial.get("n_trades") or 0)
+                            except Exception:
+                                n_trades = 0
+
+                            try:
+                                trades_per_day = float(metrics_trial.get("trades_per_day"))
+                            except Exception:
+                                trades_per_day = float("nan")
+
+                            try:
+                                sharpe_mean = float(metrics_trial.get("sharpe_mean"))
+                            except Exception:
+                                sharpe_mean = float("nan")
+
+                            try:
+                                take_rate = float(metrics_trial.get("take_rate"))
+                            except Exception:
+                                take_rate = float("nan")
+
+                            try:
+                                cs_p50 = float(metrics_trial.get("consensus_p50"))
+                            except Exception:
+                                cs_p50 = float("nan")
+
+                            try:
+                                cs_p90 = float(metrics_trial.get("consensus_p90"))
+                            except Exception:
+                                cs_p90 = float("nan")
+
+                            try:
+                                trade_mean = float(metrics_trial.get("trade_mean_return"))
+                            except Exception:
+                                trade_mean = float("nan")
+
+                            try:
+                                trade_win = float(metrics_trial.get("trade_win_rate"))
+                            except Exception:
+                                trade_win = float("nan")
+
+                            tprint_info(
+                                "   [L2 committee trial] "
+                                f"trial={l2_trial_counter}, utility={utility:.4f}, sharpe={sharpe_mean:.4f}, "
+                                f"n_trades={n_trades}, tpd={trades_per_day:.2f}, "
+                                f"thr={threshold:.3f}, q={cq}, thr_eff={metrics_trial.get('consensus_threshold_effective')}, "
+                                f"w=({w_scalp:.3f},{w_swing:.3f},{w_trend:.3f}), "
+                                f"take_rate={take_rate:.3f}, cs_p50={cs_p50:.3f}, cs_p90={cs_p90:.3f}, "
+                                f"trade_mean={trade_mean:.4%}, win={trade_win:.2%}"
+                            )
+                except Exception:
+                    pass
+
+                return float(utility)
+
+        else:
+            def layer2_objective(trial_params: Dict[str, Any]) -> float:
+                try:
+                    metrics_trial = _compute_layer2_metrics(trial_params)
+                    return float(metrics_trial.get("utility", -1.0))
+                except Exception:
+                    return -1.0
 
         meta_feature_cfg = config.get("meta_feature_engineering", {})
         volume_available = "volume" in market_data.columns
 
-        # PRE-CALCULATE META-FEATURES ONCE (Performance Optimization)
-        # Use baseline returns/labels as proxy. The goal is to get X features.
-        # Note: If meta-features rely heavily on exact realized_return of the specific TBM,
-        # this is an approximation. But for HPO speed, it is necessary.
-        # Most features (technicals, regime, kalman) depend only on market_data/signals.
-        tprint_info("🏗️ Layer 2: Pre-calculating meta-features with optimized Kalman params...")
+        # ------------------------------------------------------------------
+        # OPTION: Use cached features from labeled_data artifact (Phase 3)
+        # ------------------------------------------------------------------
+        use_cached_features = bool(config.get("hpo_use_cached_features", False))
+        cached_features_loaded = False
+        
+        if use_cached_features:
+            try:
+                # Attempt to load features from labeled_data artifact
+                from src.artifacts.versioned_artifact_store import VersionedArtifactStore
+                store = VersionedArtifactStore()
+                labeled_data = store.get_artifact(
+                    f"labeled_data_{symbol}_{timeframe}",
+                    version="latest"
+                )
+                if labeled_data is not None and hasattr(labeled_data, 'columns'):
+                    # Extract feature columns (exclude label/return columns)
+                    exclude_cols = {
+                        'binary_label', 'realized_return', 'target', 'target_long', 'target_short',
+                        'meta_probability', 'meta_probability_ensemble', 'exit_reason', 'duration'
+                    }
+                    feature_cols = [c for c in labeled_data.columns if c not in exclude_cols]
+                    if len(feature_cols) > 10:
+                        meta_features_full = labeled_data[feature_cols].copy()
+                        cached_features_loaded = True
+                        tprint_success(f"✅ Loaded {len(feature_cols)} cached features from labeled_data artifact")
+            except Exception as cache_exc:
+                tprint_warning(f"⚠️ Failed to load cached features: {cache_exc}. Regenerating.")
+
+        if not cached_features_loaded:
+            # PRE-CALCULATE META-FEATURES ONCE (Performance Optimization)
+            # Use baseline returns/labels as proxy. The goal is to get X features.
+            # Note: If meta-features rely heavily on exact realized_return of the specific TBM,
+            # this is an approximation. But for HPO speed, it is necessary.
+            # Most features (technicals, regime, kalman) depend only on market_data/signals.
+            tprint_info("🏗️ Layer 2: Pre-calculating meta-features with optimized Kalman params...")
         mf_config_opt = meta_feature_cfg.copy()
+        try:
+            hpo_use_full_feature_set = bool(config.get("hpo_use_full_feature_set", True))
+            if hpo_use_full_feature_set:
+                mf_config_opt["enable_feature_selection"] = False
+                if "max_features" in mf_config_opt:
+                    mf_config_opt.pop("max_features", None)
+        except Exception:
+            pass
         mf_config_opt['kalman_Q'] = best_kalman_params.get('kalman_Q', 1e-4)
         mf_config_opt['kalman_R'] = best_kalman_params.get('kalman_R', 0.01)
 
         # Generate dummy stop threshold for feature generation (won't affect independent features)
-        dummy_stop_thr = np.maximum(0.002, atr_series * 1.0)
+        dummy_stop_thr = (atr_frac * 1.0).astype(float).clip(lower=0.002)
+        dummy_profit_thr = (atr_frac * 2.0).astype(float).clip(lower=0.008)
 
         _, meta_features_full, _, _ = build_meta_features_for_model(
             market_data=market_data,
             primary_signals=primary_signals,
-            realized_returns=baseline_returns, # Proxy
-            binary_labels=pd.Series(np.nan, index=market_data.index), # Proxy
-            event_durations=pd.Series(12, index=market_data.index), # Proxy
-            mfe_series=None,
-            mae_series=None,
-            adaptive_stop_threshold=dummy_stop_thr,
+            realized_returns=baseline_returns,
+            binary_labels=binary_labels,
+            event_durations=event_durations_raw,
+            mfe_series=mfe_raw,
+            mae_series=mae_raw,
+            adaptive_stop_threshold=baseline_stop.reindex(market_data.index),
             horizon=12,
             volume_available=volume_available,
             meta_feature_cfg=mf_config_opt,
         )
-        
+
         # ------------------------------------------------------------------
         # WEIGHTED PIPELINE: Add Kalman-based Features
         # ------------------------------------------------------------------
@@ -6759,6 +9082,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             tprint_warning(f"⚠️ Kalman feature generation failed: {kf_exc}. Continuing without Kalman features.")
         
         tprint_success(f"✅ Meta-features pre-calculated: {meta_features_full.shape[1]} columns")
+
+        meta_features_full_raw = meta_features_full.copy()
         
         # ------------------------------------------------------------------
         # QUALITY-BASED FEATURE SELECTION (After Layer 0, Before HPO Loop)
@@ -6778,7 +9103,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         use_hierarchical_selection = config.get("use_hierarchical_selection", True)
         use_lgbm_sweep = config.get("use_lgbm_sweep", True)
         lgbm_lookahead = int(config.get("lgbm_sweep_lookahead", 4))
-        lgbm_max_features = int(config.get("lgbm_max_features", 200))
+        lgbm_max_features = int(config.get("lgbm_max_features", 300))
         quality_drop_percentile = float(config.get("quality_drop_percentile", 20.0))
         use_feature_cache = config.get("use_feature_selection_cache", True)
         force_recompute_features = config.get("force_recompute_features", False)
@@ -6800,6 +9125,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 horizon_config=horizon_config,
                 enable_cross_features=enable_cross_features,
                 market_data=market_data,
+                config=config,
                 # De Prado pipeline parameters
                 use_hierarchical=use_hierarchical_selection,
                 use_lgbm_sweep=use_lgbm_sweep,
@@ -6821,32 +9147,172 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 f"✅ Feature selection complete: {len(meta_features_full.columns)} features "
                 f"(target={target_feature_count})"
             )
+
+            # Persist feature selection results immediately
+            try:
+                ts_fs = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                fs_artifact_path = Path("outcomes") / f"hpo_feature_selection_{symbol}_{timeframe}_{ts_fs}.json"
+                fs_payload = {
+                    "selected_features": list(meta_features_full.columns),
+                    "quality_scores": feature_quality_scores,
+                    "target": target_feature_count,
+                    "timestamp": ts_fs,
+                }
+                fs_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(fs_artifact_path, "w") as f:
+                    json.dump(fs_payload, f, indent=2, default=str)
+                tprint_info(f"   💾 Saved feature selection stage to {fs_artifact_path}")
+            except Exception as fs_save_exc:
+                tprint_warning(f"   ⚠️ Failed to save feature selection artifact: {fs_save_exc}")
         except Exception as fs_exc:
             tprint_warning(f"⚠️ Feature selection failed: {fs_exc}. Using all features.")
             self._feature_quality_scores = {}
+            meta_features_full = meta_features_full_raw
 
-        def layer2_objective(trial_params: Dict[str, Any]) -> float:
-            """
-            Layer 2 objective using stability-adjusted utility with:
-            - Pre-calibrated probabilities for position sizing
-            - Per-fold Sharpe stability assessment
-            - Trapezoidal AUC gate (penalizes leakage and randomness)
-            - Trade density modifier
-            """
-            # A. TBM SIMULATION (Constructive)
-            sl_mult = trial_params["sl_atr_mult"]
-            rr = trial_params["risk_reward_ratio"]
-            tp_mult = sl_mult * rr  # Guarantee: TP >= 2 * SL
+        if False:
+            # --- LEGACY RETENTION FOR INTERFACE COMPATIBILITY ---
+            # Construct dummy objects if needed by downstream
+            # Use Swing Upper (Index 3) as the " Representative" return for downstream analysis if needed,
+            # but the HPO was driven by the Weighted P&L.
+            l2_returns_clean = committee_results[3]['returns'].reindex(event_idx).fillna(0.0)
+            valid_idx = np.ones(len(pnl_series), dtype=bool) # All events valid
+            l2_labels_clean = pd.Series(l2_binary_labels, index=event_idx)
+            l2_t_events = event_idx
+            # ----------------------------------------------------
 
-            trail_dist = trial_params.get("trail_distance_atr_mult", 0.0)
 
-            prof_thr = np.maximum(0.008, atr_series * tp_mult)
-            stop_thr = np.maximum(0.002, atr_series * sl_mult)
+            # B. DYNAMIC WEIGHT GENERATION
+            # Construct t1 (end times) Series for compute_uniqueness
+            # Map start timestamps to integer locations
+            t0_locs = pd.Series(np.arange(len(market_data)), index=market_data.index)
+            start_locs = t0_locs.loc[l2_t_events].values
+            # Get durations for these specific events
+            dur_vals = l2_durations.loc[l2_t_events].values.astype(int)
+            end_locs = np.minimum(start_locs + dur_vals, len(market_data) - 1)
+            t1_vals = market_data.index[end_locs]
+            t1_series = pd.Series(t1_vals, index=l2_t_events)
+
+            batch_consistency = full_consistency.reindex(l2_t_events).fillna(1.0).values
+            batch_volatility = full_volatility.reindex(l2_t_events).fillna(0).values
+            batch_uniqueness = compute_uniqueness(t1_series, market_index=market_data.index)
+
+            sample_weights = generate_weights_per_label(
+                returns=l2_returns_clean.values,
+                t_events=l2_t_events,
+                close_series=None,
+                consistency_scores=batch_consistency,
+                uniqueness_scores=batch_uniqueness.values,
+                vol_proxy=batch_volatility,
+                **best_weighting_params
+            )
+
+            try:
+                if committee_weight_factor_series is not None:
+                    cf = committee_weight_factor_series.reindex(l2_t_events).fillna(1.0).values.astype(float)
+                    cf = np.where(np.isfinite(cf) & (cf > 0.0), cf, 1.0)
+                    sample_weights = np.asarray(sample_weights, dtype=float) * cf
+                    sw_mean = float(np.mean(sample_weights)) if sample_weights.size else 1.0
+                    if np.isfinite(sw_mean) and sw_mean > 0:
+                        sample_weights = sample_weights / sw_mean
+            except Exception:
+                pass
+
+            # C. SUBSET META-FEATURES (Fast)
+            X_trial = meta_features_full.loc[valid_idx].fillna(0)
+
+            # D. FAST MODEL TRAINING WITH CV
+            n_cv_folds = 5
+            fast_model = lgb.LGBMClassifier(
+                n_estimators=60, max_depth=3, learning_rate=0.1, n_jobs=-1, verbose=-1, random_state=42
+            )
+
+            try:
+                cv_preds, folds_sharpe, mean_brier, mean_ece = _cross_val_predict_proba_and_fold_sharpes_weighted(
+                    estimator=fast_model,
+                    X=X_trial,
+                    y=l2_labels_clean,
+                    sample_weight=sample_weights,
+                    n_splits=n_cv_folds,
+                    returns=l2_returns_clean.values.astype(float),
+                    direction=direction,
+                    prob_thr=0.5,
+                    use_calibration=True,
+                    enable_ev_gating=bool(config.get("enable_ev_gating", False)),
+                    ev_margin=config.get("ev_margin", 0.0),
+                )
+            except Exception:
+                return -1.0
+
+            # E. COMPUTE AUC (for trapezoidal gate)
+            try:
+                mean_auc = roc_auc_score(l2_labels_clean.values, cv_preds)
+            except Exception:
+                mean_auc = 0.5
+
+            y_true_arr = l2_labels_clean.values.astype(float)
+            returns_arr = l2_returns_clean.values.astype(float)
+
+            # G. COMPUTE TRADES PER DAY (from predicted trades, not event count)
+            # Use the same threshold as sizing to avoid density gate being constant.
+            try:
+                pred_trade_mask = np.asarray(cv_preds, dtype=float) >= 0.5
+                n_pred_trades = int(np.sum(pred_trade_mask))
+            except Exception:
+                n_pred_trades = int(len(l2_returns_clean))
+            trades_per_day = float(n_pred_trades) / float(max(days_span, 1))
+
+            # H. CALCULATE UTILITY (Trapezoidal Gate + Stability)
+            utility = calculate_hpo_utility(
+                folds_sharpe=folds_sharpe,
+                auc=mean_auc,
+                trades_per_day=trades_per_day,
+                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
+                w_auc=0.8,        # Slightly looser AUC weighting
+                w_den=0.5,        # Moderate density weight
+                calibration_brier=mean_brier,
+                calibration_ece=mean_ece,
+                w_cal=0.0,
+            )
+
+            try:
+                utility, q_details = _apply_hpo_quality_penalty(
+                    utility=utility,
+                    returns=l2_returns_clean.values,
+                    labels=l2_labels_clean.values,
+                    exit_reasons=l2_exit_reasons.loc[l2_t_events].values if l2_exit_reasons is not None else None,
+                    durations=l2_durations.loc[l2_t_events].values if l2_durations is not None else None,
+                    horizon=12,
+                    tx_cost=float(DEFAULT_TRANSACTION_COST),
+                    config=config,
+                )
+            except Exception:
+                q_details = {}
+
+            # Log objective components for traceability
+            try:
+                tprint_info(
+                    "   [L2 objective] "
+                    f"utility={utility:.4f}, auc={mean_auc:.4f}, "
+                    f"trades_per_day={trades_per_day:.2f}, "
+                    f"folds_sharpe_mean={float(np.mean(folds_sharpe)):.4f}, "
+                    f"folds_sharpe_std={float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe)>1 else 0.0:.4f}"
+                )
+            except Exception:
+                pass
+
+            return utility
+
+        def _compute_layer2_metrics(params: Dict[str, Any]) -> Dict[str, Any]:
+            """Single-shot computation of Layer 2 metrics for reporting."""
+            trail_dist = float(params.get("trail_distance_atr_mult", 0.0))
+
+            prof_thr = fixed_layer2_profit_thr
+            stop_thr = fixed_layer2_stop_thr
 
             (
                 l2_returns,
                 l2_labels,
-                _,
+                l2_exit_reasons,
                 l2_durations,
                 l2_mfe,
                 l2_mae,
@@ -6860,21 +9326,27 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 transaction_cost=DEFAULT_TRANSACTION_COST,
                 min_event_spacing=2,
                 trail_distance_atr_mult=trail_dist,
-                atr_series=atr_series  # Pass for trailing logic
+                atr_series=atr_series,
             )
 
             valid_idx = ~l2_labels.isna()
             if valid_idx.sum() < 50:
-                return -1.0
+                return {"valid_events": int(valid_idx.sum()), "utility": -1.0}
 
             l2_t_events = l2_returns.index[valid_idx]
             l2_returns_clean = l2_returns[valid_idx]
             l2_labels_clean = l2_labels[valid_idx]
 
-            # B. DYNAMIC WEIGHT GENERATION
-            batch_consistency = full_consistency.reindex(l2_t_events).fillna(0).values
+            t0_locs = pd.Series(np.arange(len(market_data)), index=market_data.index)
+            start_locs = t0_locs.loc[l2_t_events].values
+            dur_vals = l2_durations.loc[l2_t_events].values.astype(int)
+            end_locs = np.minimum(start_locs + dur_vals, len(market_data) - 1)
+            t1_vals = market_data.index[end_locs]
+            t1_series = pd.Series(t1_vals, index=l2_t_events)
+
+            batch_consistency = full_consistency.reindex(l2_t_events).fillna(1.0).values
             batch_volatility = full_volatility.reindex(l2_t_events).fillna(0).values
-            batch_uniqueness = compute_uniqueness(l2_t_events, market_data.index)
+            batch_uniqueness = compute_uniqueness(t1_series, market_index=market_data.index)
 
             sample_weights = generate_weights_per_label(
                 returns=l2_returns_clean.values,
@@ -6886,95 +9358,1120 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 **best_weighting_params
             )
 
-            # C. SUBSET META-FEATURES (Fast)
-            X_trial = meta_features_full.loc[valid_idx].fillna(0)
+            try:
+                if committee_weight_factor_series is not None:
+                    cf = committee_weight_factor_series.reindex(l2_t_events).fillna(1.0).values.astype(float)
+                    cf = np.where(np.isfinite(cf) & (cf > 0.0), cf, 1.0)
+                    sample_weights = np.asarray(sample_weights, dtype=float) * cf
+                    sw_mean = float(np.mean(sample_weights)) if sample_weights.size else 1.0
+                    if np.isfinite(sw_mean) and sw_mean > 0:
+                        sample_weights = sample_weights / sw_mean
+            except Exception:
+                pass
 
-            # D. FAST MODEL TRAINING WITH CV
+            X_trial = meta_features_full.loc[valid_idx].fillna(0)
             n_cv_folds = 5
             fast_model = lgb.LGBMClassifier(
                 n_estimators=60, max_depth=3, learning_rate=0.1, n_jobs=-1, verbose=-1, random_state=42
             )
 
             try:
-                cv_preds = cross_val_predict(
-                    fast_model, X_trial, l2_labels_clean, cv=n_cv_folds,
-                    method='predict_proba', fit_params={'sample_weight': sample_weights}, n_jobs=-1
-                )[:, 1]
+                cv_preds, folds_sharpe, mean_brier, mean_ece = _cross_val_predict_proba_and_fold_sharpes_weighted(
+                    estimator=fast_model,
+                    X=X_trial,
+                    y=l2_labels_clean,
+                    sample_weight=sample_weights,
+                    n_splits=n_cv_folds,
+                    returns=l2_returns_clean.values.astype(float),
+                    direction=direction,
+                    prob_thr=0.5,
+                    use_calibration=True,
+                    enable_ev_gating=bool(config.get("enable_ev_gating", False)),
+                    ev_margin=config.get("ev_margin", 0.0),
+                )
             except Exception:
-                return -1.0
+                return {"valid_events": int(valid_idx.sum()), "utility": -1.0}
 
-            # E. COMPUTE AUC (for trapezoidal gate)
             try:
                 mean_auc = roc_auc_score(l2_labels_clean.values, cv_preds)
             except Exception:
                 mean_auc = 0.5
 
-            # F. COMPUTE FOLD SHARPE RATIOS (with pre-calibration)
-            # Pre-calibrate probabilities using isotonic regression
             y_true_arr = l2_labels_clean.values.astype(float)
-            y_prob_arr = cv_preds.astype(float)
             returns_arr = l2_returns_clean.values.astype(float)
 
+            # Use predicted trade frequency (not raw event count) so density gating
+            # reflects actual model aggressiveness.
             try:
-                folds_sharpe = compute_fold_sharpe_ratios(
+                pred_trade_mask = np.asarray(cv_preds, dtype=float) >= 0.5
+                n_pred_trades = int(np.sum(pred_trade_mask))
+            except Exception:
+                n_pred_trades = int(len(l2_returns_clean))
+            trades_per_day = float(n_pred_trades) / float(max(days_span, 1))
+            lambda_vol = 1.2
+            w_auc = 1.0
+            w_den = 0.5
+
+            per_fold_metrics = []
+            try:
+                per_fold_metrics = _compute_fold_metrics_from_oof(
+                    X=X_trial,
                     y_true=y_true_arr,
-                    y_prob=y_prob_arr,
-                    returns=returns_arr,
-                    n_folds=n_cv_folds,
-                    use_calibration=True,  # Pre-calibrate before sizing
+                    probs=np.asarray(cv_preds, dtype=float),
+                    returns=np.asarray(returns_arr, dtype=float),
+                    threshold=0.5,
+                    days_span=float(days_span),
+                    transaction_cost=0.0,
                 )
             except Exception:
-                # Fallback to simple Sharpe if fold computation fails
-                simple_sharpe = np.mean(returns_arr) / (np.std(returns_arr) + 1e-9)
-                folds_sharpe = np.array([simple_sharpe])
+                per_fold_metrics = []
 
-            # G. COMPUTE TRADES PER DAY
-            trades_per_day = len(l2_returns_clean) / max(days_span, 1)
+            per_regime_metrics: Dict[str, Any] = {}
+            try:
+                regime_labels = _build_event_regime_labels(
+                    market_data=market_data,
+                    event_index=l2_t_events,
+                    config=config,
+                )
+                per_regime_metrics = {
+                    "volatility": _compute_metrics_by_regime(
+                        y_true=y_true_arr,
+                        probs=np.asarray(cv_preds, dtype=float),
+                        returns=np.asarray(returns_arr, dtype=float),
+                        base_thr=0.5,
+                        transaction_cost=0.0,
+                        regime_labels=regime_labels.get("volatility_regime"),
+                        days_span=float(days_span),
+                    ),
+                    "trend": _compute_metrics_by_regime(
+                        y_true=y_true_arr,
+                        probs=np.asarray(cv_preds, dtype=float),
+                        returns=np.asarray(returns_arr, dtype=float),
+                        base_thr=0.5,
+                        transaction_cost=0.0,
+                        regime_labels=regime_labels.get("trend_regime"),
+                        days_span=float(days_span),
+                    ),
+                    "combined": _compute_metrics_by_regime(
+                        y_true=y_true_arr,
+                        probs=np.asarray(cv_preds, dtype=float),
+                        returns=np.asarray(returns_arr, dtype=float),
+                        base_thr=0.5,
+                        transaction_cost=0.0,
+                        regime_labels=regime_labels.get("combined_regime"),
+                        days_span=float(days_span),
+                    ),
+                }
+            except Exception:
+                per_regime_metrics = {}
 
-            # H. CALCULATE UTILITY (Trapezoidal Gate + Stability)
+            avg_sharpe = float(np.mean(folds_sharpe))
+            vol_sharpe = float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe) > 1 else 0.0
+            base_score = avg_sharpe - (lambda_vol * vol_sharpe)
+            try:
+                base_norm = float(np.sign(base_score) * np.log1p(abs(float(base_score))))
+            except Exception:
+                base_norm = 0.0
+            if not np.isfinite(base_norm):
+                base_norm = 0.0
+            phi_auc = trapezoidal_gate(mean_auc, lower=0.52, sweet_spot=(0.56, 0.66), upper=0.72)
+            phi_density = trapezoidal_gate(
+                float(trades_per_day),
+                lower=0.5,
+                sweet_spot=(1.5, 5.0),
+                upper=8.0,
+            )
+            modifier = (phi_auc ** w_auc) * (phi_density ** w_den)
+
             utility = calculate_hpo_utility(
                 folds_sharpe=folds_sharpe,
                 auc=mean_auc,
                 trades_per_day=trades_per_day,
-                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
-                w_auc=1.0,        # Strict AUC gate
-                w_den=0.5,        # Moderate density weight
+                lambda_vol=lambda_vol,
+                w_auc=w_auc,
+                w_den=w_den,
+                calibration_brier=mean_brier,
+                calibration_ece=mean_ece,
+                w_cal=0.0,
             )
 
-            return utility
+            q_details: Dict[str, Any] = {}
+            try:
+                utility, q_details = _apply_hpo_quality_penalty(
+                    utility=float(utility),
+                    returns=returns_arr,
+                    labels=y_true_arr,
+                    exit_reasons=l2_exit_reasons.loc[l2_t_events].values if l2_exit_reasons is not None else None,
+                    durations=l2_durations.loc[l2_t_events].values if l2_durations is not None else None,
+                    horizon=12,
+                    tx_cost=float(DEFAULT_TRANSACTION_COST),
+                    config=config,
+                )
+            except Exception:
+                pass
 
-        l2_optimizer = BayesianTPEOptimizer(
-            config=OptimizationConfig(n_trials=40, execution_mode="full", direction="maximize", seed=42)
-        )
-        l2_result = l2_optimizer.optimize(objective=layer2_objective, search_space=layer2_search_space)
-        best_trading_params = l2_result.get("best_params", {})
-        best_l2_score = l2_result.get("best_value", 0.0)
+            return {
+                "valid_events": int(valid_idx.sum()),
+                "utility": float(utility),
+                "quality_penalty": q_details,
+                "auc": float(mean_auc),
+                "trades_per_day": float(trades_per_day),
+                "calibration_brier": float(mean_brier) if mean_brier is not None else None,
+                "calibration_ece": float(mean_ece) if mean_ece is not None else None,
+                "sharpe_mean": float(np.mean(folds_sharpe)),
+                "sharpe_std": float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe) > 1 else 0.0,
+                "sharpe_min": float(np.min(folds_sharpe)),
+                "sharpe_max": float(np.max(folds_sharpe)),
+                "folds_sharpe_values": [float(v) for v in folds_sharpe.tolist()] if isinstance(folds_sharpe, np.ndarray) else [],
+                "per_fold_metrics": per_fold_metrics,
+                "per_regime_metrics": per_regime_metrics,
+                "lambda_vol": lambda_vol,
+                "w_auc": w_auc,
+                "w_den": w_den,
+                "avg_sharpe": avg_sharpe,
+                "vol_sharpe": vol_sharpe,
+                "base_score": float(base_score),
+                "base_norm": float(base_norm) if np.isfinite(base_norm) else float("nan"),
+                "phi_auc": float(phi_auc),
+                "phi_density": float(phi_density),
+                "modifier": float(modifier),
+            }
+
+        def _compute_layer2_metrics_committee(params: Dict[str, Any]) -> Dict[str, Any]:
+            try:
+                w_scalp = float(params.get("w_scalp", 0.0))
+                w_swing = float(params.get("w_swing", 0.0))
+                w_trend = float(params.get("w_trend", 0.0))
+                threshold = float(params.get("consensus_threshold", 0.5))
+                consensus_quantile = params.get("consensus_quantile", None)
+                consensus_quantile = float(consensus_quantile) if consensus_quantile is not None else None
+            except Exception:
+                return {"valid_events": int(len(event_idx)), "utility": -1.0}
+
+            weights_vec = np.array(
+                [w_scalp, w_scalp, w_swing, w_swing, w_trend, w_trend],
+                dtype=float,
+            )
+            total_weight = float(np.sum(weights_vec)) + 1e-8
+            if (not np.isfinite(total_weight)) or (total_weight <= 1e-8):
+                return {"valid_events": int(len(event_idx)), "utility": -1.0}
+
+            consensus_score = label_matrix_values.dot(weights_vec) / total_weight
+            try:
+                cs = np.asarray(consensus_score, dtype=float)
+                cs = cs[np.isfinite(cs)]
+                consensus_mean = float(np.mean(cs)) if cs.size > 0 else float("nan")
+                consensus_std = float(np.std(cs, ddof=1)) if cs.size > 1 else 0.0
+                consensus_p10 = float(np.quantile(cs, 0.10)) if cs.size > 0 else float("nan")
+                consensus_p50 = float(np.quantile(cs, 0.50)) if cs.size > 0 else float("nan")
+                consensus_p90 = float(np.quantile(cs, 0.90)) if cs.size > 0 else float("nan")
+                consensus_p99 = float(np.quantile(cs, 0.99)) if cs.size > 0 else float("nan")
+                consensus_min = float(np.min(cs)) if cs.size > 0 else float("nan")
+                consensus_max = float(np.max(cs)) if cs.size > 0 else float("nan")
+                frac_pos = float(np.mean(cs > 0.0)) if cs.size > 0 else float("nan")
+                frac_neg = float(np.mean(cs < 0.0)) if cs.size > 0 else float("nan")
+            except Exception:
+                consensus_mean = float("nan")
+                consensus_std = float("nan")
+                consensus_p10 = float("nan")
+                consensus_p50 = float("nan")
+                consensus_p90 = float("nan")
+                consensus_p99 = float("nan")
+                consensus_min = float("nan")
+                consensus_max = float("nan")
+                frac_pos = float("nan")
+                frac_neg = float("nan")
+
+            thr_effective = float(threshold)
+            try:
+                cs_full = np.asarray(consensus_score, dtype=float)
+                cs_full = np.where(np.isfinite(cs_full), cs_full, -np.inf)
+                if consensus_quantile is not None and np.isfinite(consensus_quantile):
+                    q = float(np.clip(consensus_quantile, 0.0, 0.999999))
+                    n = int(cs_full.size)
+                    if n > 0:
+                        k = int(np.ceil((1.0 - q) * float(n)))
+                        k = int(np.clip(k, 1, n))
+                        top_idx = np.argpartition(cs_full, n - k)[n - k :]
+                        take_mask = np.zeros(n, dtype=bool)
+                        take_mask[top_idx] = True
+                        try:
+                            thr_effective = float(np.min(cs_full[top_idx])) if top_idx.size > 0 else float(threshold)
+                        except Exception:
+                            thr_effective = float(threshold)
+                    else:
+                        take_mask = np.zeros(0, dtype=bool)
+                else:
+                    take_mask = cs_full > float(threshold)
+            except Exception:
+                take_mask = np.asarray(consensus_score, dtype=float) > float(threshold)
+
+            n_trades = int(np.sum(take_mask))
+            take_rate = float(n_trades) / float(len(event_idx)) if len(event_idx) > 0 else 0.0
+            trades_per_day = float(n_trades) / float(max(days_span, 1))
+
+            committee_expert_stats: Dict[str, Any] = {}
+            sanity_checks: Dict[str, Any] = {"violations": [], "debug_tables": {}}
+            try:
+                ev_idx = pd.DatetimeIndex(event_idx)
+                consensus_arr = np.asarray(consensus_score, dtype=float)
+                for j, name in enumerate(list(committee_names)):
+                    lbl_col = np.asarray(label_matrix_values[:, j], dtype=float)
+                    ret_col = np.asarray(returns_matrix_values[:, j], dtype=float)
+                    fired = lbl_col != 0.0
+                    n_fired = int(np.sum(fired))
+                    pos_mask = lbl_col > 0.0
+                    neg_mask = lbl_col < 0.0
+                    out = {
+                        "n_events": int(lbl_col.size),
+                        "n_fired": int(n_fired),
+                        "frac_fired": float(n_fired) / float(max(int(lbl_col.size), 1)),
+                        "frac_pos": float(np.mean(pos_mask)) if lbl_col.size else 0.0,
+                        "frac_neg": float(np.mean(neg_mask)) if lbl_col.size else 0.0,
+                    }
+                    if n_fired > 0:
+                        r = ret_col[fired]
+                        r = r[np.isfinite(r)]
+                        out["mean_return_on_fired"] = float(np.mean(r)) if r.size else 0.0
+                        out["win_rate_on_fired"] = float(np.mean(r > 0.0)) if r.size else 0.0
+                    else:
+                        out["mean_return_on_fired"] = 0.0
+                        out["win_rate_on_fired"] = 0.0
+
+                    r_pos = ret_col[pos_mask]
+                    r_pos = r_pos[np.isfinite(r_pos)]
+                    out["n_pos"] = int(np.sum(pos_mask))
+                    out["mean_return_on_pos"] = float(np.mean(r_pos)) if r_pos.size else 0.0
+                    out["win_rate_on_pos"] = float(np.mean(r_pos > 0.0)) if r_pos.size else 0.0
+
+                    r_neg = ret_col[neg_mask]
+                    r_neg = r_neg[np.isfinite(r_neg)]
+                    out["n_neg"] = int(np.sum(neg_mask))
+                    out["mean_return_on_neg"] = float(np.mean(r_neg)) if r_neg.size else 0.0
+                    out["win_rate_on_neg"] = float(np.mean(r_neg > 0.0)) if r_neg.size else 0.0
+
+                    try:
+                        n_pos = int(out.get("n_pos", 0))
+                        n_neg = int(out.get("n_neg", 0))
+                        mean_pos = float(out.get("mean_return_on_pos", 0.0))
+                        mean_neg = float(out.get("mean_return_on_neg", 0.0))
+                        if n_pos >= 20 and n_neg >= 20 and np.isfinite(mean_pos) and np.isfinite(mean_neg) and mean_pos < mean_neg:
+                            sanity_checks["violations"].append(
+                                {
+                                    "expert": str(name),
+                                    "n_pos": int(n_pos),
+                                    "n_neg": int(n_neg),
+                                    "mean_return_on_pos": float(mean_pos),
+                                    "mean_return_on_neg": float(mean_neg),
+                                }
+                            )
+
+                            dbg_n = int(config.get("layer2_sanity_debug_rows", 15))
+                            bad_idx = np.where((lbl_col > 0.0) & np.isfinite(ret_col) & (ret_col < 0.0))[0]
+                            if bad_idx.size > 0:
+                                dbg_df = pd.DataFrame(
+                                    {
+                                        "timestamp": ev_idx[bad_idx].astype(str),
+                                        "consensus": consensus_arr[bad_idx].astype(float),
+                                        "realized_return": ret_col[bad_idx].astype(float),
+                                        "costs": float(DEFAULT_TRANSACTION_COST),
+                                    }
+                                )
+                                dbg_df = dbg_df.sort_values("realized_return", ascending=True).head(int(max(1, dbg_n)))
+                                sanity_checks["debug_tables"][str(name)] = dbg_df.to_dict(orient="records")
+                                try:
+                                    tprint_warning(
+                                        f"⚠️ Layer2 sanity: inverted pos/neg returns for expert={str(name)} "
+                                        f"mean_pos={mean_pos:.6f} < mean_neg={mean_neg:.6f}. Sample bad pos trades:\n"
+                                        + dbg_df.to_string(index=False)
+                                    )
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                    committee_expert_stats[str(name)] = out
+            except Exception:
+                committee_expert_stats = {}
+
+            committee_overlap: Dict[str, Any] = {}
+            try:
+                n_exp = int(label_matrix_values.shape[1])
+                for i in range(n_exp):
+                    for j in range(i + 1, n_exp):
+                        name_i = str(list(committee_names)[i])
+                        name_j = str(list(committee_names)[j])
+                        li = np.asarray(label_matrix_values[:, i], dtype=float)
+                        lj = np.asarray(label_matrix_values[:, j], dtype=float)
+                        fi = li != 0.0
+                        fj = lj != 0.0
+                        inter = fi & fj
+                        union = fi | fj
+                        n_inter = int(np.sum(inter))
+                        n_union = int(np.sum(union))
+                        jacc = float(n_inter) / float(max(n_union, 1))
+                        sign_agree = float(np.mean(np.sign(li[inter]) == np.sign(lj[inter]))) if n_inter > 0 else 0.0
+                        committee_overlap[f"{name_i}__{name_j}"] = {
+                            "n_intersection": int(n_inter),
+                            "n_union": int(n_union),
+                            "jaccard": float(jacc),
+                            "sign_agreement": float(sign_agree),
+                        }
+            except Exception:
+                committee_overlap = {}
+
+            committee_drivers: Dict[str, Any] = {}
+            try:
+                take_mask_arr = np.asarray(take_mask, dtype=bool)
+                for j, name in enumerate(list(committee_names)):
+                    lbl_col = np.asarray(label_matrix_values[:, j], dtype=float)
+                    pos_take = int(np.sum((lbl_col > 0.0) & take_mask_arr))
+                    neg_take = int(np.sum((lbl_col < 0.0) & take_mask_arr))
+                    fired_take = int(np.sum((lbl_col != 0.0) & take_mask_arr))
+                    committee_drivers[str(name)] = {
+                        "pos_on_taken": int(pos_take),
+                        "neg_on_taken": int(neg_take),
+                        "fired_on_taken": int(fired_take),
+                        "share_fired_on_taken": float(fired_take) / float(max(n_trades, 1)),
+                    }
+            except Exception:
+                committee_drivers = {}
+
+            try:
+                ret_mat = np.asarray(returns_matrix_values, dtype=float)
+                finite_mask = np.isfinite(ret_mat)
+
+                w_row = np.asarray(weights_vec, dtype=float).reshape(1, -1)
+                denom = np.sum(finite_mask * w_row, axis=1).astype(float) + 1e-8
+                numer = np.sum(np.where(finite_mask, ret_mat, 0.0) * w_row, axis=1).astype(float)
+                weighted_returns = numer / denom
+                weighted_returns = np.where(np.isfinite(weighted_returns), weighted_returns, 0.0)
+            except Exception:
+                weighted_returns = np.zeros(int(len(event_idx)), dtype=float)
+
+            trade_returns = np.asarray(weighted_returns, dtype=float)[np.asarray(take_mask, dtype=bool)]
+            trade_returns = trade_returns[np.isfinite(trade_returns)]
+
+            per_fold_metrics: List[Dict[str, Any]] = []
+            fold_sharpes: List[float] = []
+            fold_aucs: List[float] = []
+            try:
+                cv_local = TimeSeriesSplit(n_splits=5)
+                for fold_idx, (_, te_idx) in enumerate(cv_local.split(np.arange(len(event_idx)))):
+                    te_idx = np.asarray(te_idx, dtype=int)
+                    if te_idx.size <= 0:
+                        continue
+                    tr_mask = np.asarray(take_mask, dtype=bool)[te_idx]
+                    tr_returns = np.asarray(weighted_returns, dtype=float)[te_idx]
+                    tr_returns = tr_returns[np.isfinite(tr_returns)]
+                    n_trades_fold = int(np.sum(tr_mask))
+
+                    fold_auc = 0.5
+                    try:
+                        score_fold = np.asarray(consensus_score, dtype=float)[te_idx]
+                        ret_fold = np.asarray(weighted_returns, dtype=float)[te_idx]
+                        mm_auc = np.isfinite(score_fold) & np.isfinite(ret_fold)
+                        if int(np.sum(mm_auc)) >= 20:
+                            y_auc = (ret_fold[mm_auc] > 0.0).astype(int)
+                            if int(np.unique(y_auc).size) >= 2:
+                                fold_auc = float(roc_auc_score(y_auc, score_fold[mm_auc]))
+                    except Exception:
+                        fold_auc = 0.5
+
+                    days_span_fold = 1.0
+                    try:
+                        idx_fold = pd.DatetimeIndex(event_idx[te_idx])
+                        if len(idx_fold) >= 2:
+                            days_span_fold = max(
+                                1.0,
+                                float((idx_fold.max() - idx_fold.min()).total_seconds() / 86400.0),
+                            )
+                    except Exception:
+                        days_span_fold = float(max(days_span, 1))
+
+                    if n_trades_fold <= 0:
+                        per_fold_metrics.append(
+                            {
+                                "fold": int(fold_idx),
+                                "auc": float(fold_auc),
+                                "n_test": int(len(te_idx)),
+                                "n_trades": 0,
+                                "trades_per_day": 0.0,
+                                "mean_return": 0.0,
+                                "net_pnl_per_trade": 0.0,
+                                "win_rate": 0.0,
+                                "sharpe": 0.0,
+                            }
+                        )
+                        fold_aucs.append(float(fold_auc))
+                        fold_sharpes.append(0.0)
+                        continue
+
+                    fold_trade_returns = np.asarray(weighted_returns, dtype=float)[te_idx][tr_mask]
+                    fold_trade_returns = fold_trade_returns[np.isfinite(fold_trade_returns)]
+                    mean_ret = float(np.mean(fold_trade_returns)) if fold_trade_returns.size > 0 else 0.0
+                    win_rate = float(np.mean(fold_trade_returns > 0)) if fold_trade_returns.size > 0 else 0.0
+                    sharpe_fold = 0.0
+                    try:
+                        idx_te = pd.DatetimeIndex(event_idx[te_idx])
+                        idx_tr = idx_te[np.asarray(tr_mask, dtype=bool)]
+                        if fold_trade_returns.size > 0 and len(idx_tr) == int(fold_trade_returns.size):
+                            day_index = pd.date_range(
+                                start=idx_te.min().normalize(),
+                                end=idx_te.max().normalize(),
+                                freq="D",
+                            )
+                            daily_pnl = pd.Series(fold_trade_returns, index=idx_tr).groupby(idx_tr.normalize()).sum()
+                            daily_pnl = daily_pnl.reindex(day_index, fill_value=0.0)
+
+                            daily_log = np.log1p(daily_pnl.astype(float).values)
+                            daily_log = daily_log[np.isfinite(daily_log)]
+                            if int(daily_log.size) > 1:
+                                mu = float(np.mean(daily_log))
+                                sd = float(np.std(daily_log, ddof=1))
+                                if sd > 1e-12:
+                                    sharpe_fold = float(np.clip(mu / sd * np.sqrt(365.0), -20.0, 20.0))
+                    except Exception:
+                        sharpe_fold = 0.0
+
+                    per_fold_metrics.append(
+                        {
+                            "fold": int(fold_idx),
+                            "auc": float(fold_auc),
+                            "n_test": int(len(te_idx)),
+                            "n_trades": int(n_trades_fold),
+                            "trades_per_day": float(n_trades_fold) / float(max(days_span_fold, 1.0)),
+                            "mean_return": float(mean_ret),
+                            "net_pnl_per_trade": float(mean_ret),
+                            "win_rate": float(win_rate),
+                            "sharpe": float(sharpe_fold),
+                        }
+                    )
+                    fold_aucs.append(float(fold_auc))
+                    fold_sharpes.append(float(sharpe_fold))
+            except Exception:
+                per_fold_metrics = []
+                fold_sharpes = []
+                fold_aucs = []
+
+            per_regime_metrics: Dict[str, Any] = {}
+            try:
+                regime_labels = _build_event_regime_labels(
+                    market_data=market_data,
+                    event_index=event_idx,
+                    config=config,
+                )
+
+                def _by_regime(reg: pd.Series) -> Dict[str, Any]:
+                    out: Dict[str, Any] = {}
+                    if reg is None or reg.empty:
+                        return out
+                    lab = reg.astype(object)
+                    for rv in pd.unique(lab.dropna()):
+                        rm = (lab == rv).to_numpy(dtype=bool)
+                        n_events_r = int(np.sum(rm))
+                        if n_events_r < 20:
+                            continue
+                        tm = np.asarray(take_mask, dtype=bool) & rm
+                        n_trades_r = int(np.sum(tm))
+                        if n_trades_r <= 0:
+                            out[str(rv)] = {"n_events": n_events_r, "n_trades": 0}
+                            continue
+                        rvals = np.asarray(weighted_returns, dtype=float)[tm]
+                        rvals = rvals[np.isfinite(rvals)]
+                        if rvals.size <= 0:
+                            out[str(rv)] = {"n_events": n_events_r, "n_trades": 0}
+                            continue
+                        mean_r = float(np.mean(rvals))
+                        win_r = float(np.mean(rvals > 0.0))
+                        sharpe_r = 0.0
+                        try:
+                            idx_r = pd.DatetimeIndex(event_idx[tm])
+                            if int(rvals.size) > 0 and int(idx_r.size) == int(rvals.size):
+                                day_index_r = pd.date_range(
+                                    start=idx_r.min().normalize(),
+                                    end=idx_r.max().normalize(),
+                                    freq="D",
+                                )
+                                daily_pnl_r = pd.Series(rvals, index=idx_r).groupby(idx_r.normalize()).sum()
+                                daily_pnl_r = daily_pnl_r.reindex(day_index_r, fill_value=0.0)
+
+                                daily_log_r = np.log1p(daily_pnl_r.astype(float).values)
+                                daily_log_r = daily_log_r[np.isfinite(daily_log_r)]
+                                if int(daily_log_r.size) > 1:
+                                    mu_r = float(np.mean(daily_log_r))
+                                    sd_r = float(np.std(daily_log_r, ddof=1))
+                                    if sd_r > 1e-12:
+                                        sharpe_r = mu_r / sd_r * np.sqrt(365.0)
+                        except Exception:
+                            sharpe_r = 0.0
+                        out[str(rv)] = {
+                            "n_events": int(n_events_r),
+                            "n_trades": int(n_trades_r),
+                            "trades_per_day": float(n_trades_r) / float(max(days_span, 1.0)),
+                            "mean_return": float(mean_r),
+                            "net_pnl_per_trade": float(mean_r),
+                            "win_rate": float(win_r),
+                            "sharpe": float(sharpe_r),
+                        }
+                    return out
+
+                per_regime_metrics = {
+                    "volatility": _by_regime(regime_labels.get("volatility_regime")),
+                    "trend": _by_regime(regime_labels.get("trend_regime")),
+                    "combined": _by_regime(regime_labels.get("combined_regime")),
+                }
+            except Exception:
+                per_regime_metrics = {}
+
+            sharpe = 0.0
+            try:
+                tm_all = np.asarray(take_mask, dtype=bool)
+                wr_all = np.asarray(weighted_returns, dtype=float)
+                tm_fin = tm_all & np.isfinite(wr_all)
+                trade_idx_all = pd.DatetimeIndex(event_idx[tm_fin])
+                trade_ret_all = wr_all[tm_fin]
+                if int(trade_ret_all.size) > 0 and int(trade_idx_all.size) == int(trade_ret_all.size):
+                    day_index_all = pd.date_range(
+                        start=trade_idx_all.min().normalize(),
+                        end=trade_idx_all.max().normalize(),
+                        freq="D",
+                    )
+                    daily_pnl_all = pd.Series(trade_ret_all, index=trade_idx_all).groupby(trade_idx_all.normalize()).sum()
+                    daily_pnl_all = daily_pnl_all.reindex(day_index_all, fill_value=0.0)
+
+                    daily_log_all = np.log1p(daily_pnl_all.astype(float).values)
+                    daily_log_all = daily_log_all[np.isfinite(daily_log_all)]
+                    if int(daily_log_all.size) > 1:
+                        mu_all = float(np.mean(daily_log_all))
+                        sd_all = float(np.std(daily_log_all, ddof=1))
+                        if sd_all > 1e-12:
+                            sharpe = float(mu_all / sd_all * np.sqrt(365.0))
+            except Exception:
+                sharpe = 0.0
+            sharpe = float(np.clip(float(sharpe), -20.0, 20.0))
+
+            utility = float(sharpe) * float(np.log1p(n_trades)) if n_trades >= 50 else -1.0
+            if n_trades >= 50 and n_trades < 100:
+                utility = float(utility) * (float(n_trades) / 100.0)
+            if not np.isfinite(float(utility)):
+                utility = -1.0
+
+            try:
+                trade_mean = float(np.mean(trade_returns)) if trade_returns.size > 0 else 0.0
+                trade_win_rate = float(np.mean(trade_returns > 0.0)) if trade_returns.size > 0 else 0.0
+            except Exception:
+                trade_mean = 0.0
+                trade_win_rate = 0.0
+
+            auc_val = 0.5
+            try:
+                score_auc = np.asarray(consensus_score, dtype=float)
+                wr = np.asarray(weighted_returns, dtype=float)
+
+                m = np.isfinite(score_auc) & np.isfinite(wr)
+                if int(np.sum(m)) >= 20:
+                    y_true_auc = (wr[m] > 0.0).astype(int)
+                    if int(np.unique(y_true_auc).size) >= 2:
+                        auc_val = float(roc_auc_score(y_true_auc, score_auc[m]))
+                    else:
+                        auc_val = 0.5
+                else:
+                    auc_val = 0.5
+            except Exception:
+                auc_val = 0.5
+
+            mean_auc = float(auc_val)
+            try:
+                fau = np.asarray(fold_aucs, dtype=float)
+                fau = fau[np.isfinite(fau)]
+                if fau.size > 0:
+                    mean_auc = float(np.mean(fau))
+            except Exception:
+                pass
+
+            folds_sharpe_arr = np.asarray(fold_sharpes, dtype=float)
+            folds_sharpe_arr = folds_sharpe_arr[np.isfinite(folds_sharpe_arr)]
+            if folds_sharpe_arr.size <= 0:
+                folds_sharpe_arr = np.asarray([float(sharpe)], dtype=float)
+
+            lambda_vol = 1.2
+            w_auc = 1.0
+            w_den = 0.5
+
+            avg_sharpe = float(np.mean(folds_sharpe_arr))
+            vol_sharpe = float(np.std(folds_sharpe_arr, ddof=1)) if folds_sharpe_arr.size > 1 else 0.0
+            base_score = avg_sharpe - (lambda_vol * vol_sharpe)
+            try:
+                base_norm = float(np.sign(base_score) * np.log1p(abs(float(base_score))))
+            except Exception:
+                base_norm = 0.0
+            if not np.isfinite(base_norm):
+                base_norm = 0.0
+
+            phi_auc = trapezoidal_gate(mean_auc, lower=0.52, sweet_spot=(0.56, 0.66), upper=0.72)
+            phi_density = trapezoidal_gate(
+                float(trades_per_day),
+                lower=0.5,
+                sweet_spot=(1.5, 5.0),
+                upper=8.0,
+            )
+            try:
+                modifier = float((phi_auc ** w_auc) * (phi_density ** w_den))
+            except Exception:
+                modifier = 0.0
+            if not np.isfinite(modifier):
+                modifier = 0.0
+
+            return {
+                "valid_events": int(len(event_idx)),
+                "utility": float(utility),
+                "auc": float(mean_auc) if np.isfinite(float(mean_auc)) else 0.5,
+                "trades_per_day": float(trades_per_day),
+                "calibration_brier": None,
+                "calibration_ece": None,
+                "sharpe_mean": float(np.mean(folds_sharpe_arr)),
+                "sharpe_std": float(np.std(folds_sharpe_arr, ddof=1)) if folds_sharpe_arr.size > 1 else 0.0,
+                "sharpe_min": float(np.min(folds_sharpe_arr)),
+                "sharpe_max": float(np.max(folds_sharpe_arr)),
+                "folds_sharpe_values": [float(v) for v in folds_sharpe_arr.tolist()],
+                "per_fold_metrics": per_fold_metrics,
+                "per_regime_metrics": per_regime_metrics,
+                "n_trades": int(n_trades),
+                "trade_mean_return": float(trade_mean),
+                "trade_win_rate": float(trade_win_rate),
+                "take_rate": float(take_rate),
+                "consensus_mean": float(consensus_mean),
+                "consensus_std": float(consensus_std),
+                "consensus_p10": float(consensus_p10),
+                "consensus_p50": float(consensus_p50),
+                "consensus_p90": float(consensus_p90),
+                "consensus_p99": float(consensus_p99),
+                "consensus_min": float(consensus_min),
+                "consensus_max": float(consensus_max),
+                "consensus_frac_pos": float(frac_pos),
+                "consensus_frac_neg": float(frac_neg),
+                "consensus_threshold_effective": float(thr_effective),
+                "consensus_quantile": float(consensus_quantile) if consensus_quantile is not None else None,
+                "committee_expert_stats": committee_expert_stats,
+                "sanity_checks": sanity_checks,
+                "committee_overlap": committee_overlap,
+                "committee_drivers": committee_drivers,
+                "lambda_vol": float(lambda_vol),
+                "w_auc": float(w_auc),
+                "w_den": float(w_den),
+                "avg_sharpe": float(avg_sharpe),
+                "vol_sharpe": float(vol_sharpe),
+                "base_score": float(base_score),
+                "base_norm": float(base_norm),
+                "phi_auc": float(phi_auc),
+                "phi_density": float(phi_density),
+                "modifier": float(modifier),
+            }
+
+        layer2_loaded_from: Optional[str] = None
+        if stage_rank["layer2"] < start_rank:
+            loaded_params, loaded_path = _load_stage_best_params("layer2")
+            best_trading_params = dict(loaded_params or {})
+            layer2_loaded_from = str(loaded_path) if loaded_path is not None else None
+            l2_result = {"best_params": dict(best_trading_params), "best_value": None, "history": []}
+            best_l2_score = float("nan")
+            tprint_info(
+                f"♻️ Layer 2 skipped (start_at={start_at_canonical}); loaded best params from {layer2_loaded_from}"
+            )
+        else:
+            l2_optimizer = BayesianTPEOptimizer(
+                config=OptimizationConfig(
+                    n_trials=20,  # was 2; expand search
+                    execution_mode="full",
+                    direction="maximize",
+                    seed=42,
+                    enable_staged_optimization=False,
+                    enable_adaptive_grid_refinement=False,
+                    enable_adaptive_optimization=False,
+                    enable_vectorbt_optimization=False,
+                    enable_hardware_optimization=False,
+                    n_startup_trials=5,
+                    tpe_trials=20,
+                )
+            )
+            l2_result = l2_optimizer.optimize(objective=layer2_objective, search_space=layer2_search_space)
+            best_trading_params = l2_result.get("best_params", {})
+            best_l2_score = l2_result.get("best_value", 0.0)
+        ts_l2 = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        try:
+            if layer2_mode == "committee":
+                l2_metrics = _compute_layer2_metrics_committee(best_trading_params)
+            else:
+                l2_metrics = _compute_layer2_metrics(best_trading_params)
+            try:
+                if isinstance(l2_metrics, dict):
+                    l2_metrics["layer2_mode"] = layer2_mode
+            except Exception:
+                pass
+            tprint_info(
+                "   Layer 2 metrics: "
+                f"utility={l2_metrics.get('utility', 0.0):.4f}, "
+                f"auc={l2_metrics.get('auc', 0.0):.4f}, "
+                f"trades_per_day={l2_metrics.get('trades_per_day', 0.0):.2f}, "
+                f"sharpe_mean={l2_metrics.get('sharpe_mean', 0.0):.4f}, "
+                f"sharpe_std={l2_metrics.get('sharpe_std', 0.0):.4f}"
+            )
+            tprint_info(
+                "   Layer 2 gates: "
+                f"base_score={l2_metrics.get('base_score', 0.0):.4f}, "
+                f"phi_auc={l2_metrics.get('phi_auc', 0.0):.4f}, "
+                f"phi_density={l2_metrics.get('phi_density', 0.0):.4f}, "
+                f"modifier={l2_metrics.get('modifier', 0.0):.4f}"
+            )
+        except Exception as l2_diag_exc:
+            l2_metrics = {}
+            tprint_warning(f"   ⚠️ Failed to compute Layer 2 metrics breakdown: {l2_diag_exc}")
         tprint_success(f"✅ Layer 2 Complete. Best Score: {best_l2_score:.4f}")
         tprint_info(f"   Best Trading Params: {best_trading_params}")
+
+        # Persist Layer 2 params immediately
+        try:
+            l2_path = Path("outcomes") / f"hpo_layer2_best_params_{symbol}_{timeframe}_{ts_l2}.json"
+            l2_payload = {
+                "best_params": best_trading_params,
+                "best_score": best_l2_score,
+                "timestamp": ts_l2,
+            }
+            l2_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(l2_path, "w") as f:
+                json.dump(l2_payload, f, indent=2, default=str)
+            tprint_info(f"   💾 Saved Layer 2 best params to {l2_path}")
+        except Exception as l2_exc:
+            tprint_warning(f"   ⚠️ Failed to save Layer 2 params: {l2_exc}")
+
+        # Persist Layer 2 trial metrics for correlation analysis
+        l2_trials_path: Optional[Path] = None
+        try:
+            trial_rows = []
+            for trial in l2_result.get("history", []):
+                params = trial.get("params", {}) if isinstance(trial, dict) else {}
+                if layer2_mode == "committee":
+                    metrics_trial = _compute_layer2_metrics_committee(params)
+                else:
+                    metrics_trial = _compute_layer2_metrics(params)
+                row = {
+                    "valid_events": metrics_trial.get("valid_events"),
+                    "utility": metrics_trial.get("utility"),
+                    "auc": metrics_trial.get("auc"),
+                    "trades_per_day": metrics_trial.get("trades_per_day"),
+                    "calibration_brier": metrics_trial.get("calibration_brier"),
+                    "calibration_ece": metrics_trial.get("calibration_ece"),
+                    "sharpe_mean": metrics_trial.get("sharpe_mean"),
+                    "sharpe_std": metrics_trial.get("sharpe_std"),
+                    "sharpe_min": metrics_trial.get("sharpe_min"),
+                    "sharpe_max": metrics_trial.get("sharpe_max"),
+                    "n_trades": metrics_trial.get("n_trades"),
+                    "trade_mean_return": metrics_trial.get("trade_mean_return"),
+                    "trade_win_rate": metrics_trial.get("trade_win_rate"),
+                    "take_rate": metrics_trial.get("take_rate"),
+                    "consensus_mean": metrics_trial.get("consensus_mean"),
+                    "consensus_std": metrics_trial.get("consensus_std"),
+                    "consensus_p10": metrics_trial.get("consensus_p10"),
+                    "consensus_p50": metrics_trial.get("consensus_p50"),
+                    "consensus_p90": metrics_trial.get("consensus_p90"),
+                    # Optional per-fold Sharpe values for deeper correlation
+                    "folds_sharpe_values": json.dumps(metrics_trial.get("folds_sharpe_values", [])),
+                    "lambda_vol": metrics_trial.get("lambda_vol"),
+                    "w_auc": metrics_trial.get("w_auc"),
+                    "w_den": metrics_trial.get("w_den"),
+                    "avg_sharpe": metrics_trial.get("avg_sharpe"),
+                    "vol_sharpe": metrics_trial.get("vol_sharpe"),
+                    "base_score": metrics_trial.get("base_score"),
+                    "base_norm": metrics_trial.get("base_norm"),
+                    "phi_auc": metrics_trial.get("phi_auc"),
+                    "phi_density": metrics_trial.get("phi_density"),
+                    "modifier": metrics_trial.get("modifier"),
+                }
+                for k, v in params.items():
+                    row[f"param_{k}"] = v
+                trial_rows.append(row)
+
+            if trial_rows:
+                l2_trials_path = Path("outcomes") / f"hpo_layer2_trials_{symbol}_{timeframe}_{ts_l2}.csv"
+                pd.DataFrame(trial_rows).to_csv(l2_trials_path, index=False)
+                tprint_info(f"   💾 Saved Layer 2 trial metrics to {l2_trials_path}")
+        except Exception as l2_trials_exc:
+            tprint_warning(f"   ⚠️ Failed to save Layer 2 trial metrics: {l2_trials_exc}")
+
+        # ------------------------------------------------------------------
+        # Layer 2 Debug Diagnostics (single re-evaluation with best params)
+        # ------------------------------------------------------------------
+        try:
+            tprint_info("   🔍 Layer 2 debug: re-evaluating best params with diagnostics...")
+            debug_trail = float(best_trading_params.get("trail_distance_atr_mult", 0.0))
+            debug_prof_thr = fixed_layer2_profit_thr
+            debug_stop_thr = fixed_layer2_stop_thr
+            (
+                dbg_returns,
+                dbg_labels,
+                _,
+                dbg_durations,
+                dbg_mfe,
+                dbg_mae,
+                _, _
+            ) = compute_realized_returns(
+                market_data,
+                primary_signals,
+                profit_threshold=debug_prof_thr,
+                stop_threshold=debug_stop_thr,
+                horizon=12,
+                transaction_cost=DEFAULT_TRANSACTION_COST,
+                min_event_spacing=2,
+                trail_distance_atr_mult=debug_trail,
+                atr_series=atr_series,
+            )
+            dbg_valid_idx = ~dbg_labels.isna()
+            dbg_valid_events = int(dbg_valid_idx.sum())
+            if dbg_valid_events < 50:
+                tprint_info(
+                    f"   Layer 2 debug: valid_events={dbg_valid_events} (<50), "
+                    "objective would early-return -1.0"
+                )
+            else:
+                dbg_t_events = dbg_returns.index[dbg_valid_idx]
+                dbg_returns_clean = dbg_returns[dbg_valid_idx]
+                dbg_labels_clean = dbg_labels[dbg_valid_idx]
+                # Rebuild event horizons and uniqueness
+                t0_locs_dbg = pd.Series(np.arange(len(market_data)), index=market_data.index)
+                start_locs_dbg = t0_locs_dbg.loc[dbg_t_events].values
+                dur_vals_dbg = dbg_durations.loc[dbg_t_events].values.astype(int)
+                end_locs_dbg = np.minimum(start_locs_dbg + dur_vals_dbg, len(market_data) - 1)
+                t1_vals_dbg = market_data.index[end_locs_dbg]
+                t1_series_dbg = pd.Series(t1_vals_dbg, index=dbg_t_events)
+                batch_consistency_dbg = full_consistency.reindex(dbg_t_events).fillna(1.0).values
+                batch_volatility_dbg = full_volatility.reindex(dbg_t_events).fillna(0).values
+                batch_uniqueness_dbg = compute_uniqueness(t1_series_dbg, market_index=market_data.index)
+                sample_weights_dbg = generate_weights_per_label(
+                    returns=dbg_returns_clean.values,
+                    t_events=dbg_t_events,
+                    close_series=None,
+                    consistency_scores=batch_consistency_dbg,
+                    uniqueness_scores=batch_uniqueness_dbg.values,
+                    vol_proxy=batch_volatility_dbg,
+                    **best_weighting_params,
+                )
+                # Subset meta-features
+                X_dbg = meta_features_full.loc[dbg_valid_idx].fillna(0)
+                # Fast model + CV
+                n_cv_folds_dbg = 5
+                fast_model_dbg = lgb.LGBMClassifier(
+                    n_estimators=60,
+                    max_depth=3,
+                    learning_rate=0.1,
+                    n_jobs=-1,
+                    verbose=-1,
+                    random_state=42,
+                )
+                try:
+                    cv_preds_dbg, folds_sharpe_dbg, mean_brier_dbg, mean_ece_dbg = _cross_val_predict_proba_and_fold_sharpes_weighted(
+                        estimator=fast_model_dbg,
+                        X=X_dbg,
+                        y=dbg_labels_clean,
+                        sample_weight=sample_weights_dbg,
+                        n_splits=n_cv_folds_dbg,
+                        returns=dbg_returns_clean.values.astype(float),
+                        direction=direction,
+                        prob_thr=0.5,
+                        use_calibration=True,
+                        enable_ev_gating=bool(config.get("enable_ev_gating", False)),
+                        ev_margin=config.get("ev_margin", 0.0),
+                    )
+                except Exception as dbg_cv_exc:
+                    tprint_warning(f"   ⚠️ Layer 2 debug: CV failed: {dbg_cv_exc}")
+                    cv_preds_dbg = np.full(dbg_valid_events, 0.5, dtype=float)
+                    folds_sharpe_dbg = np.array([0.0], dtype=float)
+                    mean_brier_dbg = None
+                    mean_ece_dbg = None
+                # AUC
+                try:
+                    mean_auc_dbg = roc_auc_score(dbg_labels_clean.values, cv_preds_dbg)
+                except Exception:
+                    mean_auc_dbg = 0.5
+                trades_per_day_dbg = len(dbg_returns_clean) / max(days_span, 1)
+                # Reconstruct base_score as in calculate_hpo_utility
+                avg_sharpe_dbg = float(np.mean(folds_sharpe_dbg))
+                vol_sharpe_dbg = float(np.std(folds_sharpe_dbg, ddof=1)) if len(folds_sharpe_dbg) > 1 else 0.0
+                base_score_dbg = avg_sharpe_dbg - 1.2 * vol_sharpe_dbg
+                utility_dbg = calculate_hpo_utility(
+                    folds_sharpe=folds_sharpe_dbg,
+                    auc=mean_auc_dbg,
+                    trades_per_day=trades_per_day_dbg,
+                    lambda_vol=1.2,
+                    w_auc=1.0,
+                    w_den=0.5,
+                    calibration_brier=mean_brier_dbg,
+                    calibration_ece=mean_ece_dbg,
+                    w_cal=0.0,
+                )
+                tprint_info(
+                    "   Layer 2 debug: "
+                    f"valid_events={dbg_valid_events}, "
+                    f"AUC={mean_auc_dbg:.4f}, "
+                    f"trades_per_day={trades_per_day_dbg:.2f}"
+                )
+                tprint_info(
+                    "   Layer 2 debug: "
+                    f"folds_sharpe={folds_sharpe_dbg.tolist()}, "
+                    f"base_score={base_score_dbg:.4f}, "
+                    f"utility={utility_dbg:.4f}"
+                )
+        except Exception as dbg_exc:
+            tprint_warning(f"   ⚠️ Layer 2 debug diagnostics failed: {dbg_exc}")
+
+
+        # Save Layer 2 History
+        l2_history_path: Optional[Path] = None
+        try:
+            ts_l2_hist = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            l2_history_path = Path("outcomes") / f"hpo_layer2_history_{symbol}_{timeframe}_{ts_l2_hist}.json"
+            with open(l2_history_path, "w") as f:
+                json.dump(l2_result.get("history", []), f, default=str, indent=4)
+            tprint_info(f"   💾 Saved Layer 2 history to {l2_history_path}")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Failed to save Layer 2 history: {e}")
+
+        try:
+            l2_report = _write_hpo_stage_report(
+                outcomes_dir=outcomes_dir,
+                run_timestamp=str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")),
+                stage_id="layer2_trading",
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                best_params=dict(best_trading_params) if isinstance(best_trading_params, dict) else {},
+                metrics={
+                    "best_score": best_l2_score,
+                    **(l2_metrics if isinstance(l2_metrics, dict) else {}),
+                },
+                search_space=layer2_search_space,
+                trials_csv_path=l2_trials_path,
+                history_json_path=l2_history_path,
+            )
+            hpo_stage_reports["layer2"] = l2_report
+        except Exception as l2_report_exc:
+            tprint_warning(f"   ⚠️ Failed to write Layer 2 report: {l2_report_exc}")
 
         # ------------------------------------------------------------------
         # 3. LAYER 3: MODEL HYPERPARAMETER OPTIMIZATION
         # ------------------------------------------------------------------
         tprint_info("🧪 Layer 3: Optimizing Model Hyperparameters...")
 
-        # Reconstruct optimal TBM setup
-        final_sl_mult = best_trading_params["sl_atr_mult"]
-        final_rr = best_trading_params["risk_reward_ratio"]
-        final_tp_mult = final_sl_mult * final_rr
-        final_trail = best_trading_params.get("trail_distance_atr_mult", 0.0)
+        final_exit_reasons = None
+        final_mfe = None
+        final_mae = None
+        committee_gate_series_for_l3: Optional[pd.Series] = None
 
-        final_prof_thr = np.maximum(0.008, atr_series * final_tp_mult)
-        final_stop_thr = np.maximum(0.002, atr_series * final_sl_mult)
+        if isinstance(best_trading_params, dict) and layer2_mode != "committee":
+            final_trail = float(best_trading_params.get("trail_distance_atr_mult", 0.0))
 
-        (
-            final_returns, final_labels, _, final_durations, final_mfe, final_mae, _, _
-        ) = compute_realized_returns(
-            market_data, primary_signals,
-            profit_threshold=final_prof_thr, stop_threshold=final_stop_thr,
-            horizon=12, transaction_cost=DEFAULT_TRANSACTION_COST,
-            min_event_spacing=2, trail_distance_atr_mult=final_trail,
-            atr_series=atr_series
-        )
+            final_prof_thr = fixed_layer2_profit_thr.reindex(market_data.index).fillna(float(layer2_tp_target))
+            final_stop_thr = fixed_layer2_stop_thr.reindex(market_data.index).fillna(float(layer2_sl_target))
+
+            (
+                final_returns,
+                final_labels,
+                final_exit_reasons,
+                final_durations,
+                final_mfe,
+                final_mae,
+                _,
+                _,
+            ) = compute_realized_returns(
+                market_data,
+                primary_signals,
+                profit_threshold=final_prof_thr,
+                stop_threshold=final_stop_thr,
+                horizon=12,
+                transaction_cost=DEFAULT_TRANSACTION_COST,
+                min_event_spacing=2,
+                trail_distance_atr_mult=final_trail,
+                atr_series=atr_series,
+            )
+        else:
+            try:
+                w_scalp = float(best_trading_params.get("w_scalp", 0.0))
+                w_swing = float(best_trading_params.get("w_swing", 0.0))
+                w_trend = float(best_trading_params.get("w_trend", 0.0))
+                threshold = float(best_trading_params.get("consensus_threshold", 0.5))
+                consensus_quantile = best_trading_params.get("consensus_quantile", None)
+                consensus_quantile = float(consensus_quantile) if consensus_quantile is not None else None
+
+                weights_vec = np.array([w_scalp, w_scalp, w_swing, w_swing, w_trend, w_trend], dtype=float)
+                total_weight = float(weights_vec.sum()) + 1e-8
+
+                weighted_sum = label_matrix_values.dot(weights_vec)
+                consensus_score = weighted_sum / total_weight
+                scores_arr = np.asarray(consensus_score, dtype=float)
+                scores_arr = np.where(np.isfinite(scores_arr), scores_arr, -np.inf)
+
+                try:
+                    if consensus_quantile is not None and np.isfinite(consensus_quantile):
+                        q = float(np.clip(consensus_quantile, 0.0, 0.999999))
+                        n = int(scores_arr.size)
+                        if n > 0:
+                            k = int(np.ceil((1.0 - q) * float(n)))
+                            k = int(np.clip(k, 1, n))
+                            top_idx = np.argpartition(scores_arr, n - k)[n - k :]
+                            take_mask = np.zeros(n, dtype=bool)
+                            take_mask[top_idx] = True
+                        else:
+                            take_mask = np.zeros(0, dtype=bool)
+                    else:
+                        take_mask = scores_arr >= float(threshold)
+                except Exception:
+                    take_mask = scores_arr >= float(threshold)
+
+                final_t_events_all = pd.DatetimeIndex(event_idx)
+                committee_gate_series_for_l3 = pd.Series(np.asarray(take_mask, dtype=bool), index=final_t_events_all)
+
+                ret_mat = np.asarray(returns_matrix_values, dtype=float)
+                finite_mask = np.isfinite(ret_mat)
+
+                w_row = np.asarray(weights_vec, dtype=float).reshape(1, -1)
+                denom = np.sum(finite_mask * w_row, axis=1).astype(float) + 1e-8
+                numer = np.sum(np.where(finite_mask, ret_mat, 0.0) * w_row, axis=1).astype(float)
+                weighted_returns = numer / denom
+                weighted_returns = np.where(np.isfinite(weighted_returns), weighted_returns, 0.0)
+
+                try:
+                    require_hit = bool(config.get("layer3_committee_train_requires_barrier_hit", True))
+                except Exception:
+                    require_hit = True
+
+                train_mask = np.ones(len(final_t_events_all), dtype=bool)
+                try:
+                    take_mask_arr = np.asarray(take_mask, dtype=bool)
+                    if take_mask_arr.size == train_mask.size:
+                        train_mask = take_mask_arr
+                except Exception:
+                    pass
+
+                try:
+                    min_events_l3 = int(config.get("layer3_min_events", 500))
+                except Exception:
+                    min_events_l3 = 500
+                if int(np.sum(train_mask)) < int(min(50, max(10, min_events_l3))):
+                    train_mask = np.ones(len(final_t_events_all), dtype=bool)
+
+                final_returns = pd.Series(weighted_returns.astype(float), index=final_t_events_all).iloc[train_mask]
+                final_labels = pd.Series((weighted_returns > 0).astype(float), index=final_t_events_all).iloc[train_mask]
+
+                horizon_bars_l3 = int(best_trading_params.get("horizon_bars", 12))
+                final_durations = pd.Series(
+                    np.full(len(final_t_events_all), np.nan, dtype=float),
+                    index=final_t_events_all,
+                )
+                final_durations = final_durations.iloc[train_mask]
+            except Exception as committee_l3_exc:
+                tprint_warning(f"⚠️ Layer 3: failed to reconstruct committee returns/labels: {committee_l3_exc}")
+                return {"success": False}
 
         valid_final_mask = ~final_labels.isna()
         if valid_final_mask.sum() < 50:
@@ -6982,35 +10479,581 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             return {"success": False}
 
         final_t_events = final_returns.index[valid_final_mask]
-
-        batch_con_final = full_consistency.reindex(final_t_events).fillna(0).values
-        batch_vol_final = full_volatility.reindex(final_t_events).fillna(0).values
-        batch_uniq_final = compute_uniqueness(final_t_events, market_data.index)
-
-        final_weights = generate_weights_per_label(
-            returns=final_returns[valid_final_mask].values,
-            t_events=final_t_events,
-            close_series=None,
-            consistency_scores=batch_con_final,
-            uniqueness_scores=batch_uniq_final.values,
-            vol_proxy=batch_vol_final,
-            **best_weighting_params
-        )
-
-        mf_config_final = meta_feature_cfg.copy()
-        mf_config_final['kalman_Q'] = best_kalman_params.get('kalman_Q', 1e-4)
-        mf_config_final['kalman_R'] = best_kalman_params.get('kalman_R', 0.01)
-
-        _, final_meta_feats, _, _ = build_meta_features_for_model(
-            market_data=market_data, primary_signals=primary_signals,
-            realized_returns=final_returns, binary_labels=final_labels,
-            event_durations=final_durations, mfe_series=final_mfe, mae_series=final_mae,
-            adaptive_stop_threshold=final_stop_thr, horizon=12,
-            volume_available=volume_available, meta_feature_cfg=mf_config_final,
-        )
-
-        X_final = final_meta_feats.loc[valid_final_mask].fillna(0)
+        X_final = meta_features_full.reindex(final_t_events).fillna(0)
         y_final = final_labels[valid_final_mask]
+
+        committee_gate_arr_for_l3: Optional[np.ndarray] = None
+        try:
+            if committee_gate_series_for_l3 is not None:
+                committee_gate_arr_for_l3 = (
+                    committee_gate_series_for_l3.reindex(final_t_events).fillna(False).values.astype(bool)
+                )
+        except Exception:
+            committee_gate_arr_for_l3 = None
+
+        try:
+            x_idx = pd.DatetimeIndex(X_final.index)
+            y_idx = pd.DatetimeIndex(y_final.index)
+            common_idx = x_idx.intersection(y_idx)
+            if len(common_idx) < len(x_idx):
+                X_final = X_final.loc[common_idx]
+            if len(common_idx) < len(y_idx):
+                y_final = y_final.loc[common_idx]
+            final_t_events = common_idx
+        except Exception:
+            pass
+
+        # Explicitly define X_final_full for feature selection usage
+        X_final_full = X_final.copy()
+
+        # ------------------------------------------------------------------
+        # DIAGNOSTIC: Log HPO feature/label summary for comparison with SNR probe
+        # ------------------------------------------------------------------
+        try:
+            n_feat = int(X_final_full.shape[1])
+            n_samples = int(X_final_full.shape[0])
+            pos_rate = float(y_final.mean()) if len(y_final) > 0 else 0.0
+            n_pos = int((y_final == 1).sum())
+            n_neg = int((y_final == 0).sum())
+            sample_cols = list(X_final_full.columns[:10])
+            tprint_info("=" * 60)
+            tprint_info(f"📊 [HPO DIAGNOSTIC] Layer 3 Dataset Summary:")
+            tprint_info(f"   Features: {n_feat}, Samples: {n_samples}")
+            tprint_info(f"   Labels: pos={n_pos}, neg={n_neg}, pos_rate={pos_rate:.3f}")
+            tprint_info(f"   Sample cols: {sample_cols}")
+            tprint_info("=" * 60)
+        except Exception as diag_exc:
+            tprint_warning(f"⚠️ Diagnostic logging failed: {diag_exc}")
+
+        # ------------------------------------------------------------------
+        # SANITY AUC: Quick probe to verify HPO data can achieve similar AUC to SNR
+        # ------------------------------------------------------------------
+        try:
+            if len(y_final) >= 100 and len(np.unique(y_final)) >= 2:
+                from sklearn.model_selection import TimeSeriesSplit as _TimeSeriesSplit
+                sanity_kf = _TimeSeriesSplit(n_splits=3)
+                sanity_aucs = []
+                sanity_model = lgb.LGBMClassifier(
+                    n_estimators=50, max_depth=4, num_leaves=16,
+                    verbose=-1, n_jobs=-1, random_state=42
+                )
+                for tr_idx, te_idx in sanity_kf.split(X_final_full):
+                    X_tr, X_te = X_final_full.iloc[tr_idx], X_final_full.iloc[te_idx]
+                    y_tr, y_te = y_final.iloc[tr_idx], y_final.iloc[te_idx]
+                    if len(np.unique(y_tr)) < 2:
+                        continue
+                    sanity_model.fit(X_tr, y_tr)
+                    preds = sanity_model.predict_proba(X_te)[:, 1]
+                    try:
+                        from sklearn.metrics import roc_auc_score
+                        sanity_aucs.append(float(roc_auc_score(y_te, preds)))
+                    except Exception:
+                        pass
+                if sanity_aucs:
+                    sanity_mean_auc = float(np.mean(sanity_aucs))
+                    tprint_info(f"📊 [SANITY CHECK] Quick probe AUC (3-fold): {sanity_mean_auc:.4f}")
+                    if sanity_mean_auc < 0.55:
+                        tprint_warning(f"   ⚠️ SANITY FAIL: Probe AUC {sanity_mean_auc:.4f} < 0.55 — data may be misaligned!")
+                    elif sanity_mean_auc >= 0.70:
+                        tprint_success(f"   ✅ SANITY PASS: Probe AUC {sanity_mean_auc:.4f} >= 0.70 — data looks consistent.")
+        except Exception as sanity_exc:
+            tprint_warning(f"⚠️ Sanity AUC check failed: {sanity_exc}")
+
+        try:
+            t0_locs = pd.Series(np.arange(len(market_data)), index=market_data.index)
+            start_locs = t0_locs.loc[final_t_events].values
+            dur_vals = final_durations.loc[final_t_events].values.astype(int)
+            end_locs = np.minimum(start_locs + dur_vals, len(market_data) - 1)
+            t1_vals = market_data.index[end_locs]
+            t1_series = pd.Series(t1_vals, index=final_t_events)
+
+            batch_con_final = full_consistency.reindex(final_t_events).fillna(1.0).values
+            batch_vol_final = full_volatility.reindex(final_t_events).fillna(0).values
+            batch_uniq_final = compute_uniqueness(t1_series, market_index=market_data.index)
+
+            final_weights = generate_weights_per_label(
+                returns=final_returns[valid_final_mask].reindex(final_t_events).values,
+                t_events=final_t_events,
+                close_series=None,
+                consistency_scores=batch_con_final,
+                uniqueness_scores=batch_uniq_final.values,
+                vol_proxy=batch_vol_final,
+                **best_weighting_params
+            )
+
+            try:
+                if committee_weight_factor_series is not None:
+                    cf = committee_weight_factor_series.reindex(final_t_events).fillna(1.0).values.astype(float)
+                    cf = np.where(np.isfinite(cf) & (cf > 0.0), cf, 1.0)
+                    final_weights = np.asarray(final_weights, dtype=float) * cf
+                    fw_mean = float(np.mean(final_weights)) if final_weights.size else 1.0
+                    if np.isfinite(fw_mean) and fw_mean > 0:
+                        final_weights = final_weights / fw_mean
+            except Exception:
+                pass
+        except Exception:
+            final_weights = np.ones(len(final_t_events), dtype=float)
+
+        tprint_info(
+            f"[L3 data check] events={len(final_t_events)}, "
+            f"features={X_final.shape[1]}, labels_valid={valid_final_mask.sum()}"
+        )
+
+        l3_feature_selection_info: Dict[str, Any] = {
+            "enabled": bool(config.get("enable_mda_shap_selection_layer3", True)),
+            "selected_features": [],
+            "dropped_features": [],
+            "prefilter_counts": {},
+            "prefilter_features": [],
+            "n_features_before": 0,
+            "n_features_after": 0,
+            "artifact_path": None,
+        }
+
+        # Backward/alternate switch name support
+        disable_fs_alias = bool(config.get("disable_mda_shap_selection_layer3", False))
+        enable_fs = bool(config.get("enable_mda_shap_selection_layer3", True)) and (not disable_fs_alias)
+        try:
+            l3_feature_selection_info["enabled"] = bool(enable_fs)
+        except Exception:
+            pass
+
+        reuse_cached_fs = bool(enable_fs) and (stage_rank["feature_selection"] < start_rank)
+        if reuse_cached_fs:
+            try:
+                fs_path = _find_latest_path(
+                    Path("outcomes"),
+                    f"hpo_layer3_feature_selection_{symbol}_{timeframe}_*.json",
+                )
+                fs_data = _load_latest_json(fs_path)
+                cached_selected = None
+                if isinstance(fs_data, dict):
+                    cached_selected = fs_data.get("selected_features")
+                if isinstance(cached_selected, list) and cached_selected:
+                    cached_selected = [f for f in cached_selected if f in X_final_full.columns]
+                if isinstance(cached_selected, list) and cached_selected:
+                    before_n = int(X_final_full.shape[1])
+                    X_final = X_final_full[cached_selected].copy()
+                    l3_feature_selection_info["selected_features"] = list(cached_selected)
+                    l3_feature_selection_info["dropped_features"] = sorted(
+                        list(set(X_final_full.columns) - set(cached_selected))
+                    )
+                    l3_feature_selection_info["n_features_before"] = int(before_n)
+                    l3_feature_selection_info["n_features_after"] = int(len(cached_selected))
+                    l3_feature_selection_info["artifact_path"] = str(fs_path) if fs_path is not None else None
+                    tprint_info(
+                        f"♻️ Feature selection skipped (start_at={start_at_canonical}); "
+                        f"reusing cached selection {before_n} → {len(cached_selected)} from {fs_path}"
+                    )
+                    enable_fs = False
+            except Exception as reuse_fs_exc:
+                tprint_warning(f"⚠️ Failed to reuse cached feature selection: {reuse_fs_exc}")
+
+        # ------------------------------------------------------------------
+        # MDA/SHAP FEATURE SELECTION (between Layer 2 and Layer 3)
+        # ------------------------------------------------------------------
+        # Always record counts even if feature selection is disabled or skipped.
+        try:
+            l3_feature_selection_info["n_features_before"] = int(X_final_full.shape[1])
+            l3_feature_selection_info["n_features_after"] = int(X_final.shape[1])
+        except Exception:
+            pass
+
+        if enable_fs:
+            try:
+                min_events_fs = int(config.get("layer3_mda_shap_min_events", config.get("layer3_min_events", 500)))
+                try:
+                    l3_feature_selection_info["gate_min_events"] = int(min_events_fs)
+                    l3_feature_selection_info["gate_events"] = int(len(final_t_events))
+                    l3_feature_selection_info["gate_feature_count"] = int(X_final.shape[1])
+                except Exception:
+                    pass
+                try:
+                    tprint_info(
+                        f"   [Layer3 MDA/SHAP gate] events={int(len(final_t_events))}, min_events={int(min_events_fs)}, features={int(X_final.shape[1])}"
+                    )
+                except Exception:
+                    pass
+
+                gate_passed = bool(len(final_t_events) >= min_events_fs and X_final.shape[1] > 10)
+                try:
+                    l3_feature_selection_info["gate_passed"] = bool(gate_passed)
+                except Exception:
+                    pass
+
+                if gate_passed:
+                    try:
+                        use_full_scope = bool(config.get("layer3_mda_shap_use_full_feature_scope", True))
+                        if use_full_scope and 'X_dummy' in locals() and isinstance(X_dummy, pd.DataFrame) and not X_dummy.empty:
+                            X_final_full = X_dummy.reindex(final_t_events).fillna(0)
+                            try:
+                                l3_feature_selection_info["input_feature_scope"] = "create_meta_features_expanded"
+                            except Exception:
+                                pass
+                        elif use_full_scope and 'X_features' in locals() and isinstance(X_features, pd.DataFrame) and not X_features.empty:
+                            X_final_full = X_features.reindex(final_t_events).fillna(0)
+                            try:
+                                l3_feature_selection_info["input_feature_scope"] = "create_meta_features"
+                            except Exception:
+                                pass
+                        else:
+                            # Fallback: expand the meta feature scope (multi-horizon + cross)
+                            X_scope = meta_features_full_raw
+                            try:
+                                horizon_config = config.get(
+                                    "feature_horizon_config",
+                                    {
+                                        "Short": 5,
+                                        "Medium": 20,
+                                        "Long": 60,
+                                    },
+                                )
+                                X_scope = generate_multi_horizon_features(X_scope, horizon_config)
+                            except Exception:
+                                X_scope = meta_features_full_raw
+
+                            try:
+                                kalman_cols = [c for c in X_scope.columns if c.startswith("KF_")]
+                                base_cols = [c for c in X_scope.columns if not c.startswith("KF_")]
+                                kalman_features_df = X_scope[kalman_cols] if kalman_cols else pd.DataFrame(index=X_scope.index)
+                                base_features_df = X_scope[base_cols] if base_cols else pd.DataFrame(index=X_scope.index)
+                                cross_features_df = generate_cross_features(
+                                    base_features=base_features_df,
+                                    kalman_features=kalman_features_df,
+                                    market_data=market_data if market_data is not None else pd.DataFrame(index=X_scope.index),
+                                )
+                                if cross_features_df is not None and not cross_features_df.empty:
+                                    for col in cross_features_df.columns:
+                                        if col not in X_scope.columns:
+                                            X_scope[col] = cross_features_df[col]
+                            except Exception:
+                                pass
+
+                            X_final_full = X_scope.reindex(final_t_events).fillna(0)
+                            try:
+                                l3_feature_selection_info["input_feature_scope"] = "expanded_meta_features"
+                            except Exception:
+                                pass
+                    except Exception:
+                        X_final_full = X_final
+
+                    # Record pre-selection feature count (actual input to selector)
+                    try:
+                        l3_feature_selection_info["n_features_before"] = int(X_final_full.shape[1])
+                    except Exception:
+                        pass
+
+                    try:
+                        ts_l3_inputs = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                        l3_inputs_path = outcomes_dir / f"hpo_layer3_input_feature_names_{symbol}_{timeframe}_{ts_l3_inputs}.json"
+                        payload = {
+                            "n_features": int(X_final_full.shape[1]),
+                            "features": list(X_final_full.columns),
+                        }
+                        with open(l3_inputs_path, "w") as f:
+                            json.dump(payload, f, indent=2, default=str)
+                        l3_feature_selection_info["input_feature_names_path"] = str(l3_inputs_path)
+                        tprint_info(
+                            f"   [Layer3 MDA/SHAP input features] n={int(X_final_full.shape[1])}; "
+                            f"saved={l3_inputs_path}"
+                        )
+                    except Exception:
+                        pass
+
+                    tprint_info(
+                        f"   [Layer3 MDA/SHAP] Selecting features for Layer 3 "
+                        f"(events={len(final_t_events)}, features={int(X_final_full.shape[1])})"
+                    )
+
+                    provided_l3_cfg = isinstance(config.get("mda_shap_config_layer3"), dict)
+                    mda_shap_cfg = config.get(
+                        "mda_shap_config_layer3",
+                        {
+                            "model_type": "rf",
+                            "n_folds": int(config.get("cv_splits", 5)),
+                            "pre_filters": {
+                                "enable_lgbm_mdi_filter": True,
+                                "enable_correlation_filter": True,
+                                "enable_variance_filter": True,
+                                "enable_anova_filter": True,
+                            },
+                            "corr_threshold": 0.85,
+                            "top_clusters": 8,
+                            "shap_sample_size": min(1000, len(y_final)),
+                            "verbose": True,
+                        },
+                    )
+
+                    try:
+                        if isinstance(mda_shap_cfg, dict):
+                            extractor_cfg = (
+                                config.get("regime_leaf_extractor_config")
+                                if isinstance(config.get("regime_leaf_extractor_config"), dict)
+                                else {}
+                            )
+                            try:
+                                if isinstance(extractor_cfg, dict):
+                                    extractor_cfg.setdefault(
+                                        "enabled_targets",
+                                        [
+                                            "regime_liquidity",
+                                            "regime_volatility",
+                                            "regime_macro_trend",
+                                            "regime_trend_efficiency",
+                                            "regime_memory",
+                                        ],
+                                    )
+
+                                    rep_cfg = extractor_cfg.setdefault("reporting", {})
+                                    if isinstance(rep_cfg, dict):
+                                        rep_cfg["enabled"] = True
+
+                                    onehot_cfg = extractor_cfg.setdefault("onehot", {})
+                                    if isinstance(onehot_cfg, dict):
+                                        onehot_cfg.setdefault("enabled", False)
+
+                                    inter_cfg = extractor_cfg.setdefault("interaction_feature", {})
+                                    if isinstance(inter_cfg, dict):
+                                        inter_cfg.setdefault("enabled", True)
+                                        inter_cfg.setdefault("include_base", True)
+                            except Exception:
+                                pass
+
+                            mda_shap_cfg.setdefault(
+                                "regime_leaf_config",
+                                {
+                                    "enabled": bool(config.get("enable_regime_leaf_features", True)),
+                                    "market_data": market_data,
+                                    "X_base": None,
+                                    "extractor_config": extractor_cfg,
+                                    "random_state": int(config.get("random_state", 42)),
+                                    "verbose": True,
+                                },
+                            )
+
+                            # Raise elbow minimum base-feature selection for Layer3.
+                            mda_shap_cfg.setdefault("elbow_min_features", 40)
+
+                            if provided_l3_cfg:
+                                mda_shap_cfg.setdefault(
+                                    "enable_shap_interaction_features",
+                                    bool(config.get("enable_shap_interaction_features", False)),
+                                )
+                                mda_shap_cfg.setdefault(
+                                    "shap_interaction_config",
+                                    (
+                                        config.get("shap_interaction_config")
+                                        if isinstance(config.get("shap_interaction_config"), dict)
+                                        else {
+                                            "top_main_features": 25,
+                                            "max_pairs": 30,
+                                            "max_new_features": 20,
+                                            "transforms": ["prod"],
+                                            "fillna_value": 0.0,
+                                        }
+                                    ),
+                                )
+                            else:
+                                mda_shap_cfg["enable_shap_interaction_features"] = bool(
+                                    config.get("enable_shap_interaction_features", False)
+                                )
+                                if isinstance(config.get("shap_interaction_config"), dict):
+                                    mda_shap_cfg["shap_interaction_config"] = config.get("shap_interaction_config")
+                    except Exception:
+                        pass
+
+                    w_series = None
+                    try:
+                        w_series = pd.Series(final_weights, index=final_t_events).reindex(X_final_full.index).fillna(1.0)
+                    except Exception:
+                        w_series = None
+
+                    selected_feats_l3, selection_results_l3 = run_mda_shap_feature_selection(
+                        X=X_final_full,
+                        y=y_final,
+                        target_sample_weight=w_series,
+                        config=mda_shap_cfg,
+                        artifact_router=self.artifact_router,
+                        pipeline_context={
+                            "symbol": config.get("symbol"),
+                            "exchange": config.get("exchange"),
+                            "timeframe": config.get("timeframe"),
+                            "direction": config.get("direction"),
+                        },
+                    )
+
+                    try:
+                        shap_inter = (
+                            selection_results_l3.get("shap_interaction_features", {})
+                            if isinstance(selection_results_l3, dict)
+                            else {}
+                        )
+                        inter_defs = shap_inter.get("interaction_defs", []) if isinstance(shap_inter, dict) else []
+                        if inter_defs:
+                            from .shap_interaction_feature_mining import apply_interaction_definitions
+
+                            fillna_value = 0.0
+                            try:
+                                fillna_value = float(
+                                    (mda_shap_cfg.get("shap_interaction_config") or {}).get("fillna_value", 0.0)
+                                )
+                            except Exception:
+                                fillna_value = 0.0
+
+                            inter_df_full = apply_interaction_definitions(
+                                X_final_full,
+                                inter_defs,
+                                fillna_value=fillna_value,
+                            )
+                            if inter_df_full is not None and not inter_df_full.empty:
+                                X_final_full = pd.concat([X_final_full, inter_df_full], axis=1)
+                                tprint_info(f"   🧩 Added SHAP interaction features (Layer3): {int(inter_df_full.shape[1])}")
+                    except Exception:
+                        pass
+
+                    try:
+                        pre_counts = selection_results_l3.get("prefilter_counts", {}) if isinstance(selection_results_l3, dict) else {}
+                        if isinstance(pre_counts, dict) and pre_counts:
+                            tprint_info(
+                                "   [Layer3 MDA/SHAP prefilters] "
+                                + ", ".join([f"{k}={int(v)}" for k, v in pre_counts.items() if v is not None])
+                            )
+                    except Exception:
+                        pass
+
+                    try:
+                        if isinstance(selection_results_l3, dict):
+                            l3_feature_selection_info["prefilter_counts"] = selection_results_l3.get("prefilter_counts", {})
+                            l3_feature_selection_info["n_features_original"] = selection_results_l3.get("n_features_original")
+                            l3_feature_selection_info["n_features_after_prefilters"] = selection_results_l3.get("n_features_after_prefilters")
+                            l3_feature_selection_info["n_features_selected"] = selection_results_l3.get("n_features_selected")
+                            l3_feature_selection_info["prefilter_features"] = selection_results_l3.get("prefilter_features", [])
+
+                            rl = selection_results_l3.get("regime_leaf_features")
+                            if isinstance(rl, dict):
+                                l3_feature_selection_info["regime_leaf_features"] = rl
+                    except Exception:
+                        pass
+
+                    if selected_feats_l3:
+                        # The selector can internally append regime-leaf features for scoring/selection.
+                        # However, the pipeline's X_final_full does not include those columns unless we
+                        # explicitly extract and concat them here.
+                        try:
+                            missing = [
+                                f for f in list(selected_feats_l3)
+                                if isinstance(f, str) and f not in X_final_full.columns
+                            ]
+                            needs_regime = any(
+                                isinstance(f, str) and f.startswith("regime_leaf_") for f in missing
+                            )
+                            if needs_regime and isinstance(mda_shap_cfg, dict):
+                                rl_cfg = mda_shap_cfg.get("regime_leaf_config")
+                                if isinstance(rl_cfg, dict) and bool(rl_cfg.get("enabled", False)):
+                                    extractor_cfg = rl_cfg.get("extractor_config")
+                                    if isinstance(extractor_cfg, dict):
+                                        from .regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
+
+                                        rl_df = extract_regime_leaf_onehot_features(
+                                            X=X_final_full,
+                                            market_data=market_data,
+                                            config=extractor_cfg,
+                                            random_state=int(rl_cfg.get("random_state", 42)),
+                                            verbose=bool(rl_cfg.get("verbose", True)),
+                                        )
+                                        if rl_df is not None and not getattr(rl_df, "empty", True):
+                                            rl_df = rl_df.reindex(X_final_full.index).fillna(0.0)
+                                            X_final_full = pd.concat([X_final_full, rl_df], axis=1)
+                        except Exception:
+                            pass
+
+                        final_selected = [f for f in list(selected_feats_l3) if f in X_final_full.columns]
+
+                        before_n = int(X_final_full.shape[1])
+                        X_final = X_final_full[final_selected].copy()
+                        tprint_success(f"   Layer3 MDA/SHAP: {before_n} → {len(final_selected)} features")
+                        try:
+                            tprint_info(
+                                "   [Layer3 MDA/SHAP selected features] "
+                                + ", ".join(list(final_selected))
+                            )
+                        except Exception:
+                            pass
+
+                        try:
+                            l3_feature_selection_info["selected_features"] = list(final_selected)
+                            
+                            # Calculate dropped features (Input - Selected)
+                            input_set = set(X_final_full.columns)
+                            selected_set = set(final_selected)
+                            dropped_set = input_set - selected_set
+                            l3_feature_selection_info["dropped_features"] = sorted(list(dropped_set))
+                            
+                            l3_feature_selection_info["n_features_before"] = int(before_n)
+                            l3_feature_selection_info["n_features_after"] = int(len(final_selected))
+                        except Exception:
+                            pass
+                    else:
+                        tprint_warning("   ⚠️ Layer3 MDA/SHAP returned no features; keeping all")
+                        try:
+                            l3_feature_selection_info["n_features_before"] = int(X_final_full.shape[1])
+                            l3_feature_selection_info["n_features_after"] = int(X_final_full.shape[1])
+                            l3_feature_selection_info["dropped_features"] = []
+                        except Exception:
+                            pass
+                else:
+                    tprint_warning("   ⚠️ Layer3 MDA/SHAP skipped (insufficient events/features)")
+                    try:
+                        l3_feature_selection_info["skipped_reason"] = "insufficient_events_or_features"
+                    except Exception:
+                        pass
+            except Exception as e_l3mda:
+                tprint_warning(f"   ⚠️ Layer3 MDA/SHAP selection failed: {e_l3mda}")
+                try:
+                    l3_feature_selection_info["error"] = str(e_l3mda)
+                except Exception:
+                    pass
+                # Ensure counts remain coherent on failure
+                try:
+                    l3_feature_selection_info["n_features_before"] = int(X_final_full.shape[1])
+                    l3_feature_selection_info["n_features_after"] = int(X_final.shape[1])
+                except Exception:
+                    pass
+        else:
+            # Feature selection explicitly disabled
+            try:
+                l3_feature_selection_info["n_features_before"] = int(X_final_full.shape[1])
+                l3_feature_selection_info["n_features_after"] = int(X_final.shape[1])
+                l3_feature_selection_info["dropped_features"] = []
+            except Exception:
+                pass
+
+        try:
+            ts_l3_final_feats = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            l3_final_feats_path = outcomes_dir / f"hpo_layer3_feature_names_{symbol}_{timeframe}_{ts_l3_final_feats}.json"
+            payload = {
+                "n_features": int(X_final.shape[1]),
+                "features": list(X_final.columns),
+            }
+            with open(l3_final_feats_path, "w") as f:
+                json.dump(payload, f, indent=2, default=str)
+            l3_feature_selection_info["final_feature_names_path"] = str(l3_final_feats_path)
+        except Exception:
+            pass
+
+        try:
+            ts_l3_fs = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            l3_fs_path = outcomes_dir / f"hpo_layer3_feature_selection_{symbol}_{timeframe}_{ts_l3_fs}.json"
+            try:
+                l3_feature_selection_info["artifact_path"] = str(l3_fs_path)
+            except Exception:
+                pass
+            with open(l3_fs_path, "w") as f:
+                json.dump(l3_feature_selection_info, f, indent=2, default=str)
+        except Exception:
+            pass
+
+        target_sample_weight = final_weights
 
         layer3_search_space = {
             "n_estimators": {"type": "int", "low": 100, "high": 500},
@@ -7023,105 +11066,660 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
         }
 
-        # Precompute values needed for Layer 3 utility calculation
-        final_returns_arr = final_returns[valid_final_mask].values.astype(float)
+        # Precompute values needed for Layer 3 utility calculation (aligned to final_t_events)
+        final_returns_arr = final_returns.reindex(final_t_events).values.astype(float)
         final_labels_arr = y_final.values.astype(float)
+        final_exit_reasons_arr = None
+        try:
+            if final_exit_reasons is not None:
+                final_exit_reasons_arr = final_exit_reasons.loc[final_t_events].astype(object).values
+        except Exception:
+            final_exit_reasons_arr = None
+        final_durations_arr = None
+        try:
+            if final_durations is not None:
+                final_durations_arr = final_durations.loc[final_t_events].astype(float).values
+        except Exception:
+            final_durations_arr = None
+
+        def _compute_layer3_metrics(model_params: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
+            """Run Layer 3 CV and return utility plus component diagnostics.
+
+            Never surfaces -inf/inf: any failure is converted to a finite sentinel utility.
+            """
+            try:
+                model = lgb.LGBMClassifier(n_jobs=-1, verbose=-1, random_state=42, **model_params)
+
+                n_cv_folds = 5
+                kf = TimeSeriesSplit(n_splits=n_cv_folds)
+
+                fold_aucs: List[float] = []
+                fold_sharpes: List[float] = []
+                fold_briers: List[float] = []
+                fold_eces: List[float] = []
+
+                # Store OOF calibrated predictions for density reporting
+                oof_pred_cal = np.full(len(y_final), np.nan, dtype=float)
+                per_fold_metrics: List[Dict[str, Any]] = []
+
+                for fold_idx, (tr_idx, te_idx) in enumerate(kf.split(X_final)):
+                    X_tr, X_te = X_final.iloc[tr_idx], X_final.iloc[te_idx]
+                    y_tr, y_te = y_final.iloc[tr_idx], y_final.iloc[te_idx]
+                    w_tr = final_weights[tr_idx]
+
+                    # Handle degenerate folds (single-class train split) without crashing.
+                    # This can happen in time-series CV when positives are sparse.
+                    y_tr_unique = np.unique(y_tr.values)
+                    if len(y_tr_unique) < 2:
+                        try:
+                            prior = float(np.mean(y_tr.values.astype(float)))
+                        except Exception:
+                            prior = 0.5
+                        prior = float(np.clip(prior, 0.0, 1.0)) if np.isfinite(prior) else 0.5
+                        preds = np.full(int(len(X_te)), prior, dtype=float)
+                        preds_cal = preds
+                        try:
+                            oof_pred_cal[te_idx] = preds_cal
+                        except Exception:
+                            pass
+
+                        # Fold AUC: only meaningful if y_te has 2 classes.
+                        try:
+                            if len(np.unique(y_te.values)) >= 2:
+                                fold_auc_local = float(roc_auc_score(y_te, preds))
+                                fold_aucs.append(float(fold_auc_local))
+                            else:
+                                tprint_warning(f"   ⚠️ Fold {fold_idx}: Single class in test set (y_unique={np.unique(y_te.values)}). AUC undefined.")
+                        except Exception as auc_exc:
+                            tprint_warning(f"   ⚠️ Fold {fold_idx}: AUC calculation failed: {auc_exc}")
+                            pass
+
+                        # Sharpe from sized returns.
+                        try:
+                            ret_te = final_returns_arr[te_idx]
+                            gate_te = None
+                            try:
+                                if committee_gate_arr_for_l3 is not None:
+                                    gate_te = np.asarray(committee_gate_arr_for_l3, dtype=bool)[te_idx]
+                            except Exception:
+                                gate_te = None
+                            sized_returns = []
+                            for ii, (prob, ret) in enumerate(zip(preds_cal, ret_te)):
+                                size = directional_size_from_prob(
+                                    float(prob),
+                                    direction=direction,
+                                    thr=0.5,
+                                    max_exposure=1.0,
+                                    scale=1.0,
+                                )
+                                if gate_te is not None and (not bool(gate_te[ii])):
+                                    size = 0.0
+                                sized_returns.append(size * float(ret))
+                            sized_returns_arr = np.asarray(sized_returns, dtype=float)
+                            sized_returns_arr = sized_returns_arr[np.isfinite(sized_returns_arr)]
+                            if sized_returns_arr.size > 1 and float(np.std(sized_returns_arr)) > 1e-9:
+                                fold_sharpe = float(np.mean(sized_returns_arr) / np.std(sized_returns_arr))
+                            else:
+                                fold_sharpe = 0.0
+                            try:
+                                fold_sharpe = float(np.clip(float(fold_sharpe), -20.0, 20.0))
+                            except Exception:
+                                fold_sharpe = 0.0
+                            fold_sharpes.append(float(fold_sharpe))
+                        except Exception:
+                            fold_sharpes.append(0.0)
+
+                        # Per-fold metrics (trade stats).
+                        try:
+                            trade_mask_fold = np.asarray(preds_cal, dtype=float) >= 0.5
+                            try:
+                                if gate_te is not None:
+                                    trade_mask_fold = trade_mask_fold & np.asarray(gate_te, dtype=bool)
+                            except Exception:
+                                pass
+                            ret_te = np.asarray(final_returns_arr[te_idx], dtype=float)
+                            ret_sel = ret_te[trade_mask_fold]
+                            ret_sel = ret_sel[np.isfinite(ret_sel)]
+                            n_trades_fold = int(ret_sel.size)
+                            mean_ret_fold = float(np.mean(ret_sel)) if n_trades_fold > 0 else 0.0
+                            win_rate_fold = float(np.mean(ret_sel > 0.0)) if n_trades_fold > 0 else 0.0
+                            per_fold_metrics.append(
+                                {
+                                    "fold": int(fold_idx),
+                                    "auc": None,
+                                    "n_test": int(len(te_idx)),
+                                    "n_trades": int(n_trades_fold),
+                                    "trades_per_day": float(n_trades_fold) / float(max(days_span, 1.0)),
+                                    "mean_return": float(mean_ret_fold),
+                                    "net_pnl_per_trade": float(mean_ret_fold),
+                                    "win_rate": float(win_rate_fold),
+                                }
+                            )
+                        except Exception:
+                            pass
+
+                        # Skip calibration metrics for degenerate folds.
+                        continue
+
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    proba = model.predict_proba(X_te)
+                    proba_pos = None
+                    try:
+                        arr = np.asarray(proba)
+                        if arr.ndim == 2 and arr.shape[1] >= 2:
+                            proba_pos = arr[:, 1]
+                        elif arr.ndim == 2 and arr.shape[1] == 1:
+                            proba_pos = arr[:, 0]
+                        elif arr.ndim == 1:
+                            proba_pos = arr
+                    except Exception:
+                        proba_pos = None
+                    if proba_pos is None:
+                        proba_pos = np.full(int(len(X_te)), 0.5, dtype=float)
+                    preds = np.asarray(proba_pos, dtype=float)
+
+                    fold_auc_local = None
+                    try:
+                        if len(np.unique(y_te.values)) >= 2:
+                            fold_auc_local = float(roc_auc_score(y_te, preds))
+                            fold_aucs.append(float(fold_auc_local))
+                    except Exception:
+                        fold_auc_local = None
+
+                    try:
+                        preds_arr = preds.astype(float)
+                        ret_te = final_returns_arr[te_idx]
+
+                        gate_te = None
+                        try:
+                            if committee_gate_arr_for_l3 is not None:
+                                gate_te = np.asarray(committee_gate_arr_for_l3, dtype=bool)[te_idx]
+                        except Exception:
+                            gate_te = None
+
+                        from sklearn.isotonic import IsotonicRegression
+                        iso = IsotonicRegression(out_of_bounds='clip')
+                        train_proba = model.predict_proba(X_tr)
+                        train_pos = None
+                        try:
+                            train_arr = np.asarray(train_proba)
+                            if train_arr.ndim == 2 and train_arr.shape[1] >= 2:
+                                train_pos = train_arr[:, 1]
+                            elif train_arr.ndim == 2 and train_arr.shape[1] == 1:
+                                train_pos = train_arr[:, 0]
+                            elif train_arr.ndim == 1:
+                                train_pos = train_arr
+                        except Exception:
+                            train_pos = None
+                        if train_pos is None:
+                            train_pos = np.full(int(len(X_tr)), float(np.mean(y_tr.values.astype(float))), dtype=float)
+                        iso.fit(np.asarray(train_pos, dtype=float), y_tr.values)
+                        preds_cal = iso.predict(preds_arr)
+
+                        # Save calibrated OOF preds
+                        try:
+                            oof_pred_cal[te_idx] = preds_cal
+                        except Exception:
+                            pass
+
+                        try:
+                            trade_mask_fold = np.asarray(preds_cal, dtype=float) >= 0.5
+                            try:
+                                if gate_te is not None:
+                                    trade_mask_fold = trade_mask_fold & np.asarray(gate_te, dtype=bool)
+                            except Exception:
+                                pass
+                            ret_sel = np.asarray(ret_te, dtype=float)[trade_mask_fold]
+                            ret_sel = ret_sel[np.isfinite(ret_sel)]
+                            n_trades_fold = int(ret_sel.size)
+                            mean_ret_fold = float(np.mean(ret_sel)) if n_trades_fold > 0 else 0.0
+                            win_rate_fold = float(np.mean(ret_sel > 0.0)) if n_trades_fold > 0 else 0.0
+                            per_fold_metrics.append(
+                                {
+                                    "fold": int(fold_idx),
+                                    "auc": float(fold_auc_local) if fold_auc_local is not None else None,
+                                    "n_test": int(len(te_idx)),
+                                    "n_trades": int(n_trades_fold),
+                                    "trades_per_day": float(n_trades_fold) / float(max(days_span, 1.0)),
+                                    "mean_return": float(mean_ret_fold),
+                                    "net_pnl_per_trade": float(mean_ret_fold),
+                                    "win_rate": float(win_rate_fold),
+                                }
+                            )
+                        except Exception:
+                            pass
+
+                        # Track calibration metrics (model-dependent penalty)
+                        try:
+                            brier, ece = compute_brier_and_ece(y_te.values, preds_cal)
+                            if brier is not None and np.isfinite(brier):
+                                fold_briers.append(float(brier))
+                            if ece is not None and np.isfinite(ece):
+                                fold_eces.append(float(ece))
+                        except Exception:
+                            pass
+
+                        sized_returns = []
+                        for ii, (prob, ret) in enumerate(zip(preds_cal, ret_te)):
+                            size = directional_size_from_prob(
+                                float(prob),
+                                direction=direction,
+                                thr=0.5,
+                                max_exposure=1.0,
+                                scale=1.0,
+                            )
+                            if gate_te is not None and (not bool(gate_te[ii])):
+                                size = 0.0
+                            sized_returns.append(size * float(ret))
+
+                        sized_returns_arr = np.asarray(sized_returns, dtype=float)
+                        sized_returns_arr = sized_returns_arr[np.isfinite(sized_returns_arr)]
+                        if sized_returns_arr.size > 1 and float(np.std(sized_returns_arr)) > 1e-9:
+                            fold_sharpe = float(np.mean(sized_returns_arr) / np.std(sized_returns_arr))
+                        else:
+                            fold_sharpe = 0.0
+                        try:
+                            fold_sharpe = float(np.clip(float(fold_sharpe), -20.0, 20.0))
+                        except Exception:
+                            fold_sharpe = 0.0
+
+                        fold_sharpes.append(float(fold_sharpe))
+                    except Exception:
+                        pass
+
+                if len(fold_sharpes) < 2:
+                    # Not enough folds for stable Sharpe; still return a structured payload.
+                    return -1.0, {
+                        "valid_folds": int(len(fold_sharpes)),
+                        "fold_aucs": [float(v) for v in fold_aucs],
+                        "fold_sharpes": [float(v) for v in fold_sharpes],
+                        "per_fold_metrics": per_fold_metrics,
+                        "per_regime_metrics": {},
+                    }
+
+                mean_auc = float(np.mean(fold_aucs)) if fold_aucs else 0.5
+
+                # Predicted trade density (same threshold as sizing) for reporting.
+                try:
+                    pred_trade_mask = np.isfinite(oof_pred_cal) & (oof_pred_cal >= 0.5)
+                    try:
+                        if committee_gate_arr_for_l3 is not None:
+                            pred_trade_mask = pred_trade_mask & np.asarray(committee_gate_arr_for_l3, dtype=bool)
+                    except Exception:
+                        pass
+                    n_pred_trades = int(np.sum(pred_trade_mask))
+                except Exception:
+                    n_pred_trades = int(len(final_returns_arr))
+                trades_per_day = float(n_pred_trades) / float(max(days_span, 1))
+
+                mean_brier = float(np.mean(fold_briers)) if fold_briers else None
+                mean_ece = float(np.mean(fold_eces)) if fold_eces else None
+
+                per_regime_metrics: Dict[str, Any] = {}
+                try:
+                    regime_labels = _build_event_regime_labels(
+                        market_data=market_data,
+                        event_index=y_final.index,
+                        config=config,
+                    )
+                    per_regime_metrics = {
+                        "volatility": _compute_metrics_by_regime(
+                            y_true=final_labels_arr,
+                            probs=np.asarray(oof_pred_cal, dtype=float),
+                            returns=np.asarray(final_returns_arr, dtype=float),
+                            base_thr=0.5,
+                            transaction_cost=0.0,
+                            regime_labels=regime_labels.get("volatility_regime"),
+                            days_span=float(days_span),
+                        ),
+                        "trend": _compute_metrics_by_regime(
+                            y_true=final_labels_arr,
+                            probs=np.asarray(oof_pred_cal, dtype=float),
+                            returns=np.asarray(final_returns_arr, dtype=float),
+                            base_thr=0.5,
+                            transaction_cost=0.0,
+                            regime_labels=regime_labels.get("trend_regime"),
+                            days_span=float(days_span),
+                        ),
+                        "combined": _compute_metrics_by_regime(
+                            y_true=final_labels_arr,
+                            probs=np.asarray(oof_pred_cal, dtype=float),
+                            returns=np.asarray(final_returns_arr, dtype=float),
+                            base_thr=0.5,
+                            transaction_cost=0.0,
+                            regime_labels=regime_labels.get("combined_regime"),
+                            days_span=float(days_span),
+                        ),
+                    }
+                except Exception:
+                    per_regime_metrics = {}
+
+                sharpe_arr = np.asarray(fold_sharpes, dtype=float)
+                sharpe_mean = float(np.mean(sharpe_arr))
+                sharpe_std = float(np.std(sharpe_arr, ddof=1)) if len(sharpe_arr) > 1 else 0.0
+                sharpe_min = float(np.min(sharpe_arr))
+                sharpe_max = float(np.max(sharpe_arr))
+
+                lambda_vol = 1.2
+                w_auc = 1.0
+                w_den = 0.0
+                w_cal = 1.0
+
+                base_score = sharpe_mean - (lambda_vol * sharpe_std)
+                try:
+                    base_norm = float(np.sign(base_score) * np.log1p(abs(float(base_score))))
+                except Exception:
+                    base_norm = 0.0
+                if not np.isfinite(base_norm):
+                    base_norm = 0.0
+
+                # Keep this aligned with calculate_hpo_utility() so diagnostics match the optimized objective.
+                phi_auc = trapezoidal_gate(mean_auc, lower=0.52, sweet_spot=(0.56, 0.66), upper=0.72)
+                # Density term is constant w.r.t model params; disable it in objective.
+                phi_density = 1.0
+
+                # Calibration modifier for diagnostics (kept consistent with calculate_hpo_utility)
+                phi_cal = float("nan")
+                cal = None
+                if mean_brier is not None and np.isfinite(mean_brier):
+                    cal = float(mean_brier)
+                elif mean_ece is not None and np.isfinite(mean_ece):
+                    cal = float(mean_ece)
+                if cal is not None:
+                    phi_cal = float(np.clip(1.0 - (cal / 1.0), 0.0, 1.0))
+                modifier = (phi_auc ** w_auc) * ((phi_cal ** w_cal) if np.isfinite(phi_cal) else 1.0)
+
+                utility = calculate_hpo_utility(
+                    folds_sharpe=sharpe_arr,
+                    auc=mean_auc,
+                    trades_per_day=trades_per_day,
+                    lambda_vol=lambda_vol,
+                    w_auc=w_auc,
+                    w_den=w_den,
+                    calibration_brier=mean_brier,
+                    calibration_ece=mean_ece,
+                    w_cal=w_cal,
+                )
+
+                if not np.isfinite(float(utility)):
+                    utility = -1.0
+
+                q_details: Dict[str, Any] = {}
+                try:
+                    utility_adj, q_details = _apply_hpo_quality_penalty(
+                        utility=float(utility),
+                        returns=final_returns_arr,
+                        labels=final_labels_arr,
+                        exit_reasons=final_exit_reasons_arr,
+                        durations=final_durations_arr,
+                        horizon=12,
+                        tx_cost=float(DEFAULT_TRANSACTION_COST),
+                        config=config,
+                    )
+                    if bool(config.get("hpo_apply_quality_penalty_to_layer3", False)):
+                        utility = utility_adj
+                except Exception:
+                    pass
+
+                details = {
+                    "utility": float(utility),
+                    "quality_penalty": q_details,
+                    "mean_auc": mean_auc,
+                    "fold_aucs": fold_aucs,
+                    "fold_sharpes": fold_sharpes,
+                    "per_fold_metrics": per_fold_metrics,
+                    "per_regime_metrics": per_regime_metrics,
+                    "calibration_brier": mean_brier,
+                    "calibration_ece": mean_ece,
+                    "sharpe_mean": sharpe_mean,
+                    "sharpe_std": sharpe_std,
+                    "sharpe_min": sharpe_min,
+                    "sharpe_max": sharpe_max,
+                    "trades_per_day": trades_per_day,
+                    "valid_folds": min(len(fold_aucs), len(fold_sharpes)),
+                    "lambda_vol": lambda_vol,
+                    "w_auc": w_auc,
+                    "w_den": w_den,
+                    "w_cal": w_cal,
+                    "base_score": float(base_score),
+                    "phi_auc": float(phi_auc),
+                    "phi_density": float(phi_density),
+                    "phi_cal": float(phi_cal) if np.isfinite(phi_cal) else float("nan"),
+                    "modifier": float(modifier),
+                }
+                return float(utility), details
+            except Exception as exc:
+                try:
+                    tprint_warning(f"⚠️ Layer 3 metrics computation failed: {exc}")
+                except Exception:
+                    pass
+                return -1.0, {"error": str(exc), "utility": -1.0}
 
         def layer3_objective(model_params: Dict[str, Any]) -> float:
-            """
-            Layer 3 objective using stability-adjusted utility with:
-            - Pre-calibrated probabilities for position sizing
-            - Per-fold Sharpe stability assessment
-            - Trapezoidal AUC gate (penalizes leakage and randomness)
-            - Trade density modifier
-            """
-            model = lgb.LGBMClassifier(n_jobs=-1, verbose=-1, random_state=42, **model_params)
-            
-            n_cv_folds = 5
-            kf = TimeSeriesSplit(n_splits=n_cv_folds)
-            
-            # Collect per-fold predictions and metrics
-            all_preds = np.full(len(X_final), np.nan)
-            fold_aucs = []
-            fold_sharpes = []
-            
-            for fold_idx, (tr_idx, te_idx) in enumerate(kf.split(X_final)):
-                X_tr, X_te = X_final.iloc[tr_idx], X_final.iloc[te_idx]
-                y_tr, y_te = y_final.iloc[tr_idx], y_final.iloc[te_idx]
-                w_tr = final_weights[tr_idx]
-                
-                if len(np.unique(y_tr)) < 2:
-                    continue
-                
-                # Train model
-                model.fit(X_tr, y_tr, sample_weight=w_tr)
-                preds = model.predict_proba(X_te)[:, 1]
-                all_preds[te_idx] = preds
-                
-                # Compute fold AUC
-                try:
-                    fold_auc = roc_auc_score(y_te, preds)
-                    fold_aucs.append(fold_auc)
-                except Exception:
-                    pass
-                
-                # Calibrate predictions and compute fold Sharpe
-                try:
-                    y_te_arr = y_te.values.astype(float)
-                    preds_arr = preds.astype(float)
-                    ret_te = final_returns_arr[te_idx]
-                    
-                    # Isotonic calibration on this fold (using train data for calibrator)
-                    from sklearn.isotonic import IsotonicRegression
-                    iso = IsotonicRegression(out_of_bounds='clip')
-                    train_preds = model.predict_proba(X_tr)[:, 1]
-                    iso.fit(train_preds, y_tr.values)
-                    preds_cal = iso.predict(preds_arr)
-                    
-                    # Compute sized returns using calibrated probabilities
-                    sized_returns = []
-                    for prob, ret in zip(preds_cal, ret_te):
-                        size = linear_size_from_prob(prob, max_exposure=1.0, min_prob=0.5, scale=1.0)
-                        sized_returns.append(size * ret)
-                    
-                    sized_returns = np.array(sized_returns)
-                    if len(sized_returns) > 1 and np.std(sized_returns) > 1e-9:
-                        fold_sharpe = np.mean(sized_returns) / np.std(sized_returns)
-                    else:
-                        fold_sharpe = 0.0
-                    
-                    fold_sharpes.append(fold_sharpe)
-                except Exception:
-                    pass
-            
-            # Check minimum data quality
-            if len(fold_aucs) < 2 or len(fold_sharpes) < 2:
-                return -1.0
-            
-            # Compute mean AUC
-            mean_auc = float(np.mean(fold_aucs))
-            
-            # Compute trades per day
-            trades_per_day = len(final_returns_arr) / max(days_span, 1)
-            
-            # Calculate utility using trapezoidal gate
-            utility = calculate_hpo_utility(
-                folds_sharpe=np.array(fold_sharpes),
-                auc=mean_auc,
-                trades_per_day=trades_per_day,
-                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
-                w_auc=1.0,        # Strict AUC gate
-                w_den=0.5,        # Moderate density weight
-            )
-            
+            utility, _ = _compute_layer3_metrics(model_params)
             return utility
 
-        l3_optimizer = BayesianTPEOptimizer(
-            config=OptimizationConfig(n_trials=30, execution_mode="full", direction="maximize", seed=42)
-        )
-        l3_result = l3_optimizer.optimize(objective=layer3_objective, search_space=layer3_search_space)
-        best_model_params = l3_result.get("best_params", {})
-        tprint_success(f"✅ Layer 3 Complete. Best AUC: {l3_result.get('best_value', 0):.4f}")
+        # Wrapper to adapt layer3_objective to HierarchicalParameterOptimizer signature
+        def layer3_objective_wrapper(
+            params: Dict[str, Any],
+            X_train=None,
+            y_train=None,
+            X_val=None,
+            y_val=None,
+            model=None,
+            cv_folds: int = 1,
+            scoring_metric: str = "custom_balanced_score",
+            **kwargs,
+        ) -> float:
+            return layer3_objective(params)
+
+        tprint_info("🚀 Layer 3: Optimizing Model Hyperparameters using Smart Walker...")
+
+        # Find the Smart Walker parameter group
+        try:
+            model_group = next(g for g in param_groups if g.name == "model_hyperparameters")
+        except StopIteration:
+            tprint_warning("⚠️ 'model_hyperparameters' group not found. Fallback to default params.")
+            model_group = None
+
+        if model_group:
+            from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import StageConfig, OptimizationStage
+
+            # For the standalone Smart Walker call, use a dependency-free copy of
+            # the model_hyperparameters group so HierarchicalParameterOptimizer
+            # does not enforce the original depends_on=["target_engineering"].
+            walker_model_group = create_param_group(
+                name=model_group.name,
+                params=model_group.params,
+                priority=model_group.priority,
+                depends_on=[],
+                description=model_group.description,
+            )
+
+            # Configure Smart Walker stage
+            walker_stage_config = StageConfig(
+                stage=OptimizationStage.SMART_WALKER,
+                n_trials=150,
+                enable_pruning=False
+            )
+
+            # Instantiate HierarchicalParameterOptimizer
+            walker_optimizer = HierarchicalParameterOptimizer(
+                param_groups=[walker_model_group],
+                objective_func=layer3_objective_wrapper,
+                stages=[OptimizationStage.SMART_WALKER],
+                stage_configs={OptimizationStage.SMART_WALKER: walker_stage_config},
+                cv_folds=3,
+                direction="maximize",
+                n_rounds=2,
+                enable_final_refinement=False,
+                verbose=True,
+            )
+            
+            # Execute optimization
+            # We pass X_final/y_final for shape diagnostics, but objective uses closures internally
+            hpo_results = walker_optimizer.optimize(
+                X_train=X_final,
+                y_train=y_final,
+                X_val=None,
+                y_val=None,
+                model=None,
+            )
+            
+            # Extract results into compatible format
+            all_history = []
+            if hpo_results.group_results:
+                 for gr in hpo_results.group_results:
+                     all_history.extend(gr.all_trials)
+            
+            l3_result = {
+                "best_params": hpo_results.best_params,
+                "best_value": hpo_results.best_score,
+                "history": all_history
+            }
+            
+            best_model_params = l3_result.get("best_params", {})
+            try:
+                l3_best_value = float(l3_result.get("best_value", float("-inf")))
+                if not np.isfinite(l3_best_value):
+                    tprint_error(
+                        "❌ Layer 3 (Smart Walker) produced non-finite best utility; treating as failure "
+                        "(objective likely errored)."
+                    )
+                    return {"success": False, "error": "layer3_non_finite_utility"}
+            except Exception:
+                tprint_error(
+                    "❌ Layer 3 (Smart Walker) best utility could not be validated; treating as failure."
+                )
+                return {"success": False, "error": "layer3_best_value_validation_failed"}
+            tprint_success(
+                f"✅ Layer 3 (Smart Walker) Complete. Best utility: {l3_result.get('best_value', 0):.4f}"
+            )
+        else:
+             l3_result = {'best_value': -1.0, 'history': []}
+             best_model_params = {}
+
+        # Log component metrics for the best Layer 3 params
+        best_metrics: Dict[str, Any] = {}
+        try:
+            if best_model_params:
+                best_utility, best_metrics = _compute_layer3_metrics(best_model_params)
+                try:
+                    if not np.isfinite(float(best_utility)):
+                        tprint_error(
+                            "❌ Layer 3 best params produced non-finite utility during breakdown; treating as failure."
+                        )
+                        return {"success": False, "error": "layer3_best_params_non_finite"}
+                except Exception:
+                    tprint_error(
+                        "❌ Layer 3 best params utility could not be validated during breakdown; treating as failure."
+                    )
+                    return {"success": False, "error": "layer3_best_params_validation_failed"}
+                tprint_info(
+                    "   Layer 3 metrics: "
+                    f"utility={best_utility:.4f}, "
+                    f"auc={best_metrics.get('mean_auc', 0.0):.4f}, "
+                    f"folds={best_metrics.get('valid_folds', 0)}, "
+                    f"trades_per_day={best_metrics.get('trades_per_day', 0.0):.2f}"
+                )
+                tprint_info(
+                    "   Layer 3 Sharpe stats: "
+                    f"mean={best_metrics.get('sharpe_mean', 0.0):.4f}, "
+                    f"std={best_metrics.get('sharpe_std', 0.0):.4f}, "
+                    f"min={best_metrics.get('sharpe_min', 0.0):.4f}, "
+                    f"max={best_metrics.get('sharpe_max', 0.0):.4f}"
+                )
+                tprint_info(
+                    "   Layer 3 gates: "
+                    f"base_score={best_metrics.get('base_score', 0.0):.4f}, "
+                    f"phi_auc={best_metrics.get('phi_auc', 0.0):.4f}, "
+                    f"phi_density={best_metrics.get('phi_density', 0.0):.4f}, "
+                    f"phi_cal={best_metrics.get('phi_cal', float('nan')):.4f}, "
+                    f"modifier={best_metrics.get('modifier', 0.0):.4f}"
+                )
+                tprint_info(
+                    "   Layer 3 calibration: "
+                    f"brier={best_metrics.get('calibration_brier', float('nan'))}, "
+                    f"ece={best_metrics.get('calibration_ece', float('nan'))}"
+                )
+        except Exception as l3_diag_exc:
+            tprint_warning(f"   ⚠️ Failed to compute Layer 3 metrics breakdown: {l3_diag_exc}")
+
+        # Save Layer 3 History
+        l3_history_path: Optional[Path] = None
+        l3_trials_path: Optional[Path] = None
+        try:
+            ts_l3 = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            l3_history_path = Path("outcomes") / f"hpo_layer3_history_{symbol}_{timeframe}_{ts_l3}.json"
+            with open(l3_history_path, "w") as f:
+                json.dump(l3_result.get("history", []), f, default=str, indent=4)
+            tprint_info(f"   💾 Saved Layer 3 history to {l3_history_path}")
+
+            # Persist per-trial metrics for correlation analysis
+            try:
+                trial_rows = []
+                for trial in l3_result.get("history", []):
+                    params = trial.get("params", {}) if isinstance(trial, dict) else {}
+                    utility_t, metrics_t = _compute_layer3_metrics(params)
+                    row = {
+                        "utility": utility_t,
+                        "mean_auc": metrics_t.get("mean_auc"),
+                        "trades_per_day": metrics_t.get("trades_per_day"),
+                        "calibration_brier": metrics_t.get("calibration_brier"),
+                        "calibration_ece": metrics_t.get("calibration_ece"),
+                        "sharpe_mean": metrics_t.get("sharpe_mean"),
+                        "sharpe_std": metrics_t.get("sharpe_std"),
+                        "sharpe_min": metrics_t.get("sharpe_min"),
+                        "sharpe_max": metrics_t.get("sharpe_max"),
+                        "valid_folds": metrics_t.get("valid_folds"),
+                        "lambda_vol": metrics_t.get("lambda_vol"),
+                        "w_auc": metrics_t.get("w_auc"),
+                        "w_den": metrics_t.get("w_den"),
+                        "w_cal": metrics_t.get("w_cal"),
+                        "base_score": metrics_t.get("base_score"),
+                        "base_norm": metrics_t.get("base_norm"),
+                        "phi_auc": metrics_t.get("phi_auc"),
+                        "phi_density": metrics_t.get("phi_density"),
+                        "phi_cal": metrics_t.get("phi_cal"),
+                        "modifier": metrics_t.get("modifier"),
+                        "fold_aucs": json.dumps(metrics_t.get("fold_aucs", [])),
+                        "fold_sharpes": json.dumps(metrics_t.get("fold_sharpes", [])),
+                    }
+                    for k, v in params.items():
+                        row[f"param_{k}"] = v
+                    trial_rows.append(row)
+
+                if trial_rows:
+                    trials_df = pd.DataFrame(trial_rows)
+                    l3_trials_path = Path("outcomes") / f"hpo_layer3_trials_{symbol}_{timeframe}_{ts_l3}.csv"
+                    trials_df.to_csv(l3_trials_path, index=False)
+                    tprint_info(f"   💾 Saved Layer 3 trial metrics to {l3_trials_path}")
+            except Exception as l3_trial_exc:
+                tprint_warning(f"   ⚠️ Failed to save Layer 3 trial metrics: {l3_trial_exc}")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Failed to save Layer 3 history: {e}")
+
+        try:
+            l3_report = _write_hpo_stage_report(
+                outcomes_dir=outcomes_dir,
+                run_timestamp=str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")),
+                stage_id="layer3_model",
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                best_params=dict(best_model_params) if isinstance(best_model_params, dict) else {},
+                metrics={
+                    **(dict(best_metrics) if isinstance(best_metrics, dict) else {}),
+                    "feature_selection": dict(l3_feature_selection_info) if isinstance(l3_feature_selection_info, dict) else {},
+                },
+                search_space=layer3_search_space,
+                trials_csv_path=l3_trials_path,
+                history_json_path=l3_history_path,
+            )
+            hpo_stage_reports["layer3"] = l3_report
+        except Exception as l3_report_exc:
+            tprint_warning(f"   ⚠️ Failed to write Layer 3 report: {l3_report_exc}")
 
         # ------------------------------------------------------------------
         # 4. FINAL COMPILATION & REPORTING
@@ -7134,39 +11732,254 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         full_best_params["horizon_bars"] = 12
         full_best_params["min_event_spacing"] = 2
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        # Layer 1 weights diagnostics based on final weights used for model training
+        layer1_weights_mean = float("nan")
+        layer1_weights_min = float("nan")
+        layer1_weights_max = float("nan")
+        layer1_weights_entropy = float("nan")
+        layer1_weights_entropy_norm = float("nan")
+        try:
+            w_arr = np.asarray(final_weights, dtype=float)
+            valid_mask = np.isfinite(w_arr)
+            if valid_mask.any():
+                w_valid = w_arr[valid_mask]
+                layer1_weights_mean = float(w_valid.mean())
+                layer1_weights_min = float(w_valid.min())
+                layer1_weights_max = float(w_valid.max())
+                w_sum = float(w_valid.sum())
+                if w_sum > 0 and len(w_valid) > 1:
+                    w_norm = w_valid / w_sum
+                    entropy = -float(np.sum(w_norm * np.log(w_norm + 1e-12)))
+                    max_entropy = np.log(float(len(w_norm)))
+                    entropy_norm = float(entropy / max_entropy) if max_entropy > 0 else float("nan")
+                    layer1_weights_entropy = entropy
+                    layer1_weights_entropy_norm = entropy_norm
+            tprint_info(
+                "   Layer 1 weights diagnostics — "
+                f"mean={layer1_weights_mean:.4f}, min={layer1_weights_min:.4f}, "
+                f"max={layer1_weights_max:.4f}, entropy={layer1_weights_entropy:.4f}, "
+                f"entropy_norm={layer1_weights_entropy_norm:.4f}"
+            )
+        except Exception:
+            tprint_warning("⚠️ Failed to compute Layer 1 weights diagnostics.")
 
         summary_data = [
-            {"Layer": "0. Kalman", "Best Score": kalman_result.get("best_value", 0), "Params": str(best_kalman_params)},
-            {"Layer": "1. Weighting", "Best Score": "N/A", "Params": str(best_weighting_params)},
-            {"Layer": "2. Trading", "Best Score": best_l2_score, "Params": str(best_trading_params)},
-            {"Layer": "3. Model", "Best Score": l3_result.get("best_value", 0), "Params": str(best_model_params)}
+            {
+                "Layer": "0. Kalman",
+                "Score": kalman_result.get("best_value", 0),
+                "AUC": None,
+                "Trades/Day": None,
+                "SharpeMean": None,
+                "SharpeStd": None,
+                "Loss": kalman_loss,
+                "Params": str(best_kalman_params),
+            },
+            {
+                "Layer": "1. Weighting",
+                "Score": None,
+                "AUC": None,
+                "Trades/Day": None,
+                "SharpeMean": None,
+                "SharpeStd": None,
+                "Params": str(best_weighting_params),
+            },
+            {
+                "Layer": "2. Trading",
+                "Score": l2_metrics.get("utility", best_l2_score),
+                "AUC": l2_metrics.get("auc"),
+                "Trades/Day": l2_metrics.get("trades_per_day"),
+                "SharpeMean": l2_metrics.get("sharpe_mean"),
+                "SharpeStd": l2_metrics.get("sharpe_std"),
+                "Params": str(best_trading_params),
+            },
+            {
+                "Layer": "3. Model",
+                "Score": best_metrics.get("utility", l3_result.get("best_value", 0) if 'best_metrics' in locals() else 0),
+                "AUC": best_metrics.get("mean_auc", l3_result.get("best_value", 0) if 'best_metrics' in locals() else 0),
+                "Trades/Day": best_metrics.get("trades_per_day", None),
+                "SharpeMean": best_metrics.get("sharpe_mean", None),
+                "SharpeStd": best_metrics.get("sharpe_std", None),
+                "Params": str(best_model_params),
+            },
         ]
-        pd.DataFrame(summary_data).to_csv(outcomes_dir / f"hpo_multi_stage_summary_{symbol}_{timestamp}.csv", index=False)
+        ts_run = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        # Persist CSV/MD reports with richer metrics
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.to_csv(outcomes_dir / f"hpo_multi_stage_summary_{symbol}_{ts_run}.csv", index=False)
 
-        md_path = outcomes_dir / f"hpo_multi_stage_report_{symbol}_{timestamp}.md"
+        md_path = outcomes_dir / f"hpo_multi_stage_report_{symbol}_{ts_run}.md"
         with open(md_path, "w") as f:
             f.write(f"# Multi-Stage HPO Report: {symbol}\n\n")
-            f.write(f"**Stage 0 (Kalman):** Optimized signal features (IC={kalman_result.get('best_value', 0):.4f}).\n")
+            kalman_score = kalman_result.get("best_value", 0)
+            try:
+                kalman_score_str = f"{float(kalman_score):.4f}"
+            except Exception:
+                kalman_score_str = "n/a"
+            f.write(f"## Stage 0 (Kalman)\n")
+            f.write(f"- score (optimizer best_value = -loss+amp_bonus): {kalman_score_str}\n")
+            try:
+                kalman_loss_str = f"{float(kalman_loss):.4f}"
+            except Exception:
+                kalman_loss_str = "n/a"
+            f.write(f"- loss: {kalman_loss_str}\n")
+            f.write(
+                f"- smooth: {kalman_loss_details.get('smooth', float('nan')):.4f}, "
+                f"track: {kalman_loss_details.get('track', float('nan')):.4f}, "
+                f"amp: {kalman_loss_details.get('amp', float('nan')):.4f}, "
+                f"amp_ratio: {kalman_loss_details.get('amp_ratio', float('nan')):.3f}\n"
+            )
             f.write(f"```json\n{json.dumps(best_kalman_params, indent=2)}\n```\n\n")
-            f.write(f"**Layer 1 (Weighting):** Optimized sample weights.\n")
-            f.write(f"```json\n{json.dumps(best_weighting_params, indent=2)}\n```\n\n")
-            f.write(f"**Layer 2 (Trading):** Optimized TP/SL/Trail with dynamic TBM & Weighting.\n")
-            f.write(f"- Robust Edge Score: {best_l2_score:.4f}\n")
+
+            f.write(f"## Layer 1 (Weighting)\n")
+            f.write(f"```json\n{json.dumps(best_weighting_params, indent=2)}\n```\n")
+            f.write(
+                f"- weights_mean: {layer1_weights_mean:.4f}, "
+                f"min: {layer1_weights_min:.4f}, max: {layer1_weights_max:.4f}\n"
+            )
+            f.write(
+                f"- weights_entropy: {layer1_weights_entropy:.4f}, "
+                f"entropy_norm: {layer1_weights_entropy_norm:.4f}\n\n"
+            )
+
+            f.write(f"## Layer 2 (Trading)\n")
+            f.write(f"- utility: {l2_metrics.get('utility', best_l2_score):.4f}\n")
+            f.write(f"- auc: {l2_metrics.get('auc', 0.0):.4f}\n")
+            f.write(f"- trades_per_day: {l2_metrics.get('trades_per_day', 0.0):.2f}\n")
+            f.write(
+                f"- sharpe_mean: {l2_metrics.get('sharpe_mean', 0.0):.4f}, "
+                f"sharpe_std: {l2_metrics.get('sharpe_std', 0.0):.4f}, "
+                f"sharpe_min: {l2_metrics.get('sharpe_min', 0.0):.4f}, "
+                f"sharpe_max: {l2_metrics.get('sharpe_max', 0.0):.4f}\n"
+            )
             f.write(f"```json\n{json.dumps(best_trading_params, indent=2)}\n```\n\n")
-            f.write(f"**Layer 3 (Model):** Tuned LightGBM hyperparameters.\n")
-            f.write(f"- Mean AUC: {l3_result.get('best_value', 0):.4f}\n")
+
+            try:
+                pf = l2_metrics.get("per_fold_metrics")
+                if isinstance(pf, list) and pf:
+                    f.write("### Layer 2 - Per-fold metrics\n\n")
+                    f.write("| fold | auc | n_test | n_trades | trades_per_day | mean_return | win_rate | sharpe |\n")
+                    f.write("|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+                    for row in pf:
+                        if not isinstance(row, dict):
+                            continue
+                        f.write(
+                            f"| {int(row.get('fold', -1))} | "
+                            f"{row.get('auc', float('nan')) if row.get('auc') is not None else float('nan'):.4f} | "
+                            f"{int(row.get('n_test', 0))} | {int(row.get('n_trades', 0))} | "
+                            f"{float(row.get('trades_per_day', 0.0)):.3f} | {float(row.get('mean_return', 0.0)):.6f} | "
+                            f"{float(row.get('win_rate', 0.0)):.3f} | {float(row.get('sharpe', 0.0)):.3f} |\n"
+                        )
+                    f.write("\n")
+            except Exception:
+                pass
+
+            try:
+                prm = l2_metrics.get("per_regime_metrics")
+                if isinstance(prm, dict) and prm:
+                    for group_name in ["volatility", "trend", "combined"]:
+                        grp = prm.get(group_name)
+                        if not isinstance(grp, dict) or not grp:
+                            continue
+                        f.write(f"### Layer 2 - Per-regime ({group_name})\n\n")
+                        f.write("| regime | n_events | n_trades | trades_per_day | mean_return | win_rate | sharpe | auc |\n")
+                        f.write("|---|---:|---:|---:|---:|---:|---:|---:|\n")
+                        for reg, row in grp.items():
+                            if not isinstance(row, dict):
+                                continue
+                            auc_val = row.get('auc')
+                            auc_str = f"{float(auc_val):.4f}" if auc_val is not None and np.isfinite(float(auc_val)) else ""
+                            f.write(
+                                f"| {str(reg)} | {int(row.get('n_events', 0))} | {int(row.get('n_trades', 0))} | "
+                                f"{float(row.get('trades_per_day', 0.0)):.3f} | {float(row.get('mean_return', 0.0)):.6f} | "
+                                f"{float(row.get('win_rate', 0.0)):.3f} | {float(row.get('sharpe', 0.0)):.3f} | {auc_str} |\n"
+                            )
+                        f.write("\n")
+            except Exception:
+                pass
+
+            f.write(f"## Layer 3 (Model)\n")
+            f.write(
+                f"- utility: {best_metrics.get('utility', l3_result.get('best_value', 0)):.4f}\n"
+                f"- auc: {best_metrics.get('mean_auc', 0.0):.4f}\n"
+                f"- folds: {best_metrics.get('valid_folds', 0)}\n"
+                f"- trades_per_day: {best_metrics.get('trades_per_day', 0.0):.2f}\n"
+                f"- sharpe_mean: {best_metrics.get('sharpe_mean', 0.0):.4f}, "
+                f"sharpe_std: {best_metrics.get('sharpe_std', 0.0):.4f}, "
+                f"sharpe_min: {best_metrics.get('sharpe_min', 0.0):.4f}, "
+                f"sharpe_max: {best_metrics.get('sharpe_max', 0.0):.4f}\n"
+            )
+            try:
+                fs_info = l3_feature_selection_info if isinstance(l3_feature_selection_info, dict) else {}
+                f.write(
+                    f"- feature_selection_enabled: {bool(fs_info.get('enabled', False))}\n"
+                    f"- feature_selection_before: {int(fs_info.get('n_features_before', 0))}\n"
+                    f"- feature_selection_after: {int(fs_info.get('n_features_after', 0))}\n"
+                )
+                f.write(f"```json\n{json.dumps(fs_info, indent=2)}\n```\n\n")
+            except Exception:
+                pass
             f.write(f"```json\n{json.dumps(best_model_params, indent=2)}\n```\n\n")
 
-        json_path = outcomes_dir / f"hpo_multi_stage_best_params_{symbol}_{timestamp}.json"
+            try:
+                pf = best_metrics.get("per_fold_metrics")
+                if isinstance(pf, list) and pf:
+                    f.write("### Layer 3 - Per-fold metrics\n\n")
+                    f.write("| fold | auc | n_test | n_trades | trades_per_day | mean_return | win_rate |\n")
+                    f.write("|---:|---:|---:|---:|---:|---:|---:|\n")
+                    for row in pf:
+                        if not isinstance(row, dict):
+                            continue
+                        f.write(
+                            f"| {int(row.get('fold', -1))} | "
+                            f"{row.get('auc', float('nan')) if row.get('auc') is not None else float('nan'):.4f} | "
+                            f"{int(row.get('n_test', 0))} | {int(row.get('n_trades', 0))} | "
+                            f"{float(row.get('trades_per_day', 0.0)):.3f} | {float(row.get('mean_return', 0.0)):.6f} | "
+                            f"{float(row.get('win_rate', 0.0)):.3f} |\n"
+                        )
+                    f.write("\n")
+            except Exception:
+                pass
+
+            try:
+                prm = best_metrics.get("per_regime_metrics")
+                if isinstance(prm, dict) and prm:
+                    for group_name in ["volatility", "trend", "combined"]:
+                        grp = prm.get(group_name)
+                        if not isinstance(grp, dict) or not grp:
+                            continue
+                        f.write(f"### Layer 3 - Per-regime ({group_name})\n\n")
+                        f.write("| regime | n_events | n_trades | trades_per_day | mean_return | win_rate | sharpe | auc |\n")
+                        f.write("|---|---:|---:|---:|---:|---:|---:|---:|\n")
+                        for reg, row in grp.items():
+                            if not isinstance(row, dict):
+                                continue
+                            auc_val = row.get('auc')
+                            auc_str = f"{float(auc_val):.4f}" if auc_val is not None and np.isfinite(float(auc_val)) else ""
+                            f.write(
+                                f"| {str(reg)} | {int(row.get('n_events', 0))} | {int(row.get('n_trades', 0))} | "
+                                f"{float(row.get('trades_per_day', 0.0)):.3f} | {float(row.get('mean_return', 0.0)):.6f} | "
+                                f"{float(row.get('win_rate', 0.0)):.3f} | {float(row.get('sharpe', 0.0)):.3f} | {auc_str} |\n"
+                            )
+                        f.write("\n")
+            except Exception:
+                pass
+
+        json_path = outcomes_dir / f"hpo_multi_stage_best_params_{symbol}_{ts_run}.json"
         with open(json_path, "w") as f:
             json.dump(full_best_params, f, indent=2, default=str)
 
         metrics = {
             "layer0_ic": kalman_result.get("best_value", 0),
+            "layer1_weights_mean": layer1_weights_mean,
+            "layer1_weights_min": layer1_weights_min,
+            "layer1_weights_max": layer1_weights_max,
+            "layer1_weights_entropy": layer1_weights_entropy,
+            "layer1_weights_entropy_norm": layer1_weights_entropy_norm,
             "layer2_score": best_l2_score,
             "layer3_auc": l3_result.get("best_value", 0),
+            "layer3_feature_selection": l3_feature_selection_info,
             "best_params": full_best_params,
+            "stage_reports": hpo_stage_reports,
         }
 
         tprint_success(f"✅ Multi-Layer HPO Complete. Final metrics: {metrics}")
@@ -7284,8 +12097,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         #          profit_mult_min/max, stop_mult_min/max
         # Stage 2: kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max,
         #          stop_mult_min/max
-        # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio,
-        #          iso_min_prob, target_transform refinements, etc.)
+        # Stage 3: All parameters (iso_min_prob, target_transform refinements, etc.)
+        #          NOTE: profit_thr_base, stop_to_profit_ratio now handled by Kalman ensemble
         # Stage 4: Filtering parameters only (label_low_q, label_high_q, econ_min_return_multiple, etc.)
         #          with fixed structural parameters.
         #
@@ -7297,7 +12110,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             stage_1_params = [
                 'min_event_spacing',
                 'cusum_threshold', 'target_signal_density',
-                'profit_thr_base', 'stop_to_profit_ratio', 'trail_distance',
+                # 'profit_thr_base', 'stop_to_profit_ratio',  # Now handled by Kalman ensemble
+                'trail_distance', 'consensus_threshold',
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
@@ -7313,7 +12127,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             stage_1_params = [
                 'horizon_bars', 'min_event_spacing',
                 'cusum_threshold', 'target_signal_density',
-                'profit_thr_base', 'stop_to_profit_ratio', 'trail_distance',
+                # 'profit_thr_base', 'stop_to_profit_ratio',  # Now handled by Kalman ensemble
+                'trail_distance', 'consensus_threshold',
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
@@ -9294,8 +14109,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ===== SAVE BEST PARAMS JSON =====
         json_name = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{direction}_{timestamp}.json"
         json_path = outcomes_dir / json_name
+        standardized_json_path = None
 
         try:
+            # Also save a copy to standardized reports/post_hpo_evaluation for downstream consumers (e.g., meta_gated_backtest)
+            try:
+                from src.utils.pipeline_standards import PipelineStandards
+                base_dir = PipelineStandards.build_path('reports', exchange=exchange, asset=symbol)
+                standardized_dir = Path(base_dir) / "post_hpo_evaluation"
+                standardized_dir.mkdir(parents=True, exist_ok=True)
+                standardized_json_path = standardized_dir / json_name
+            except Exception as std_exc:
+                tprint_warning(f"⚠️ Failed to build standardized HPO output path: {std_exc}")
             # Get best edge from the best candidate
             best_candidate_edge = 0.0
             if candidate_pool:
@@ -9427,6 +14252,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             with open(json_path, "w") as f:
                 json.dump(output_dict, f, indent=2, default=str)
             tprint_success(f"💾 Saved best labeling HPO params to {json_path}")
+
+            if standardized_json_path is not None:
+                try:
+                    with open(standardized_json_path, "w") as f_std:
+                        json.dump(output_dict, f_std, indent=2, default=str)
+                    tprint_success(f"💾 Saved standardized best params to {standardized_json_path}")
+                except Exception as std_write_exc:
+                    tprint_warning(f"⚠️ Failed to save standardized best params copy: {std_write_exc}")
         except Exception as save_exc:
             tprint_warning(f"⚠️ Failed to save best_params JSON: {save_exc}")
             json_path = None
@@ -9957,13 +14790,54 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 X_eval = meta_features_diag.loc[labeled_mask_eval].fillna(0)
                 y_eval = binary_labels[labeled_mask_eval]
                 returns_eval = realized_returns[labeled_mask_eval]
+
+                t1_eval = None
+                try:
+                    if 'event_durations' in dir() and event_durations is not None:
+                        dur_eval = (
+                            event_durations.reindex(y_eval.index)
+                            .fillna(1)
+                            .astype(int)
+                            .clip(lower=1)
+                        )
+                        t0_locs_eval = pd.Series(np.arange(len(market_data)), index=market_data.index)
+                        start_locs_eval = t0_locs_eval.loc[y_eval.index].values
+                        end_locs_eval = np.minimum(start_locs_eval + dur_eval.values, len(market_data) - 1)
+                        t1_eval = pd.Series(market_data.index[end_locs_eval], index=y_eval.index)
+                except Exception:
+                    t1_eval = None
                 
-                # Sample weights if available
+                # Sample weights if available - validate alignment
                 weights_eval = None
                 if 'sample_weights' in dir() and sample_weights is not None:
                     try:
-                        weights_eval = sample_weights[labeled_mask_eval.values]
-                    except Exception:
+                        if isinstance(sample_weights, pd.Series):
+                            w_series = sample_weights
+                        else:
+                            w_series = None
+                            try:
+                                if 'l2_t_events' in dir() and l2_t_events is not None and len(sample_weights) == len(l2_t_events):
+                                    w_series = pd.Series(np.asarray(sample_weights, dtype=float), index=l2_t_events)
+                                elif 'final_t_events' in dir() and final_t_events is not None and len(sample_weights) == len(final_t_events):
+                                    w_series = pd.Series(np.asarray(sample_weights, dtype=float), index=final_t_events)
+                            except Exception:
+                                w_series = None
+
+                        if w_series is not None:
+                            weights_eval = w_series.reindex(y_eval.index).values
+                        elif isinstance(sample_weights, np.ndarray) and len(sample_weights) == len(y_eval):
+                            weights_eval = np.asarray(sample_weights, dtype=float)
+                        else:
+                            weights_eval = None
+
+                        if weights_eval is not None and not validate_sample_weight_alignment(weights_eval, y_eval):
+                            tprint_warning(
+                                "⚠️ Sample weights alignment validation failed in post-HPO evaluation. "
+                                "Using unweighted evaluation."
+                            )
+                            weights_eval = None
+                    except Exception as weight_exc:
+                        tprint_warning(f"⚠️ Failed to extract sample weights for post-HPO eval: {weight_exc}")
                         weights_eval = None
                 
                 post_hpo_evaluation_results = run_post_hpo_evaluation(
@@ -9971,13 +14845,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     y=y_eval,
                     realized_returns=returns_eval,
                     sample_weights=weights_eval,
+                    t1=t1_eval,
                     n_splits=config.get("cv_splits", 5),
                     n_bags=config.get("n_bags", 10),
                     probability_threshold=config.get("probability_threshold", 0.5),
                     symbol=symbol,
+                    exchange=exchange,
                     timeframe=timeframe,
                     direction=direction,
                     save_artifacts=True,
+                    optimize_thresholds=config.get("optimize_post_hpo_thresholds", True),
+                    enable_calibration=config.get("enable_post_hpo_calibration", True),
+                    transaction_cost=float(DEFAULT_TRANSACTION_COST),
                 )
                 
                 tprint_success("✅ Post-HPO model evaluation complete!")
@@ -9995,9 +14874,61 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         tprint_info("=" * 70)
         
         correlation_report = ""
+        backtest_metrics_dict = None
+        try:
+            # Try to load meta_gated_backtest results if available
+            tprint_info("🔍 Attempting to load meta_gated_backtest results for correlation...")
+            try:
+                from src.utils.pipeline_standards import PipelineStandards
+                base_dir = PipelineStandards.build_path('reports', exchange=exchange, asset=symbol)
+                backtest_dir = Path(base_dir) / "meta_gated_backtest"
+            except Exception:
+                backtest_dir = Path("outcomes")
+            
+            # Look for latest backtest metrics JSON
+            backtest_pattern = f"meta_gated_backtest_metrics_{symbol}_{exchange}_{timeframe}_{direction}_*.json"
+            backtest_files = sorted(backtest_dir.glob(backtest_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+            
+            if backtest_files:
+                latest_backtest = backtest_files[0]
+                tprint_info(f"   📂 Found backtest results: {latest_backtest.name}")
+                try:
+                    with open(latest_backtest, "r") as f:
+                        backtest_data = json.load(f)
+                    
+                    # Map backtest metrics to candidate configs
+                    # For now, we'll match the best candidate (since backtest uses best params)
+                    # In future, could match by params hash if multiple configs were backtested
+                    backtest_metrics_dict = {}
+                    best_candidate = max(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0))) if candidate_pool else None
+                    if best_candidate:
+                        config_id = best_candidate.get('config_id', 'best')
+                        backtest_metrics_dict[config_id] = {
+                            'sharpe_trade': backtest_data.get('sharpe_trade'),
+                            'mean_return_gated': backtest_data.get('mean_return_gated'),
+                            'max_drawdown_event_time': backtest_data.get('max_drawdown_event_time'),
+                            'hit_rate_gated': backtest_data.get('hit_rate_gated'),
+                            'trades_per_day': backtest_data.get('trades_per_day'),
+                            'coverage_gated': backtest_data.get('coverage_gated'),
+                            'cost_adjusted_sharpe': backtest_data.get('enhanced_backtest', {}).get('cost_adjusted_sharpe'),
+                            'cost_adjusted_return': backtest_data.get('enhanced_backtest', {}).get('cost_adjusted_return'),
+                            'snr_positive': backtest_data.get('enhanced_snr', {}).get('snr_positive'),
+                            'information_coefficient': backtest_data.get('enhanced_snr', {}).get('information_coefficient'),
+                        }
+                        tprint_success(f"   ✅ Loaded backtest metrics for correlation analysis")
+                except Exception as bt_load_exc:
+                    tprint_warning(f"   ⚠️ Failed to load backtest metrics: {bt_load_exc}")
+            else:
+                tprint_info("   ℹ️ No backtest results found (run meta_gated_backtest to enable correlation)")
+        except Exception as bt_search_exc:
+            tprint_warning(f"   ⚠️ Backtest search failed: {bt_search_exc}")
+        
         try:
             if candidate_pool:
-                corr_df, pval_df = compute_parameter_outcome_correlations(candidate_pool)
+                corr_df, pval_df = compute_parameter_outcome_correlations(
+                    candidate_pool,
+                    backtest_metrics=backtest_metrics_dict
+                )
                 
                 if not corr_df.empty:
                     correlation_report = generate_correlation_report(corr_df, pval_df)
@@ -10007,16 +14938,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     corr_csv_path = outcomes_dir / f"hpo_param_outcome_correlations_{symbol}_{timeframe}_{timestamp}.csv"
                     corr_df.to_csv(corr_csv_path)
                     tprint_success(f"💾 Saved correlation matrix to {corr_csv_path}")
+                    
+                    # Save extended correlation matrix with backtest metrics if available
+                    if backtest_metrics_dict:
+                        backtest_corr_path = outcomes_dir / f"hpo_param_outcome_correlations_with_backtest_{symbol}_{timeframe}_{timestamp}.csv"
+                        corr_df.to_csv(backtest_corr_path)
+                        tprint_success(f"💾 Saved extended correlation matrix (with backtest) to {backtest_corr_path}")
                 else:
                     tprint_warning("⚠️ No valid correlations computed")
         except Exception as corr_exc:
             tprint_warning(f"⚠️ Correlation analysis failed: {corr_exc}")
 
+        best_params_path = standardized_json_path or json_path
+
         metrics: Dict[str, Any] = {
             "best_score": best_score,
             "best_edge": best_edge,
             "best_params": best_params,
-            "best_params_json": str(json_path) if json_path is not None else None,
+            "best_params_json": str(best_params_path) if best_params_path is not None else None,
             "round_metrics_csv": str(csv_path) if csv_path is not None else None,
             "post_hpo_evaluation": post_hpo_evaluation_results.get("model_comparison", []),
             "recommended_diagnostics_path": diagnostics_path,
@@ -10026,7 +14965,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "candidate_pool_size": len(candidate_pool),
         }
         artifacts = {
-            "best_params_json": str(json_path),
+            "best_params_json": str(best_params_path) if best_params_path is not None else None,
             "report_md": str(md_path)
         }
         return {"success": True, "metrics": metrics, "artifacts": artifacts}
@@ -10057,3 +14996,4 @@ def register_meta_labeling_hpo_sample_weighted_step() -> None:
 
 # Auto-register when module is imported
 register_meta_labeling_hpo_sample_weighted_step()
+

@@ -13,6 +13,8 @@ import traceback
 import logging
 import psutil
 import importlib
+import asyncio
+import inspect
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
 from pathlib import Path
@@ -496,30 +498,45 @@ def create_enhanced_error_handler(step_name: str) -> Callable:
     """Create an enhanced error handler decorator for training steps."""
 
     def error_handler_decorator(func: Callable) -> Callable:
-        def wrapper(*args, **kwargs):
-            debugger = TrainingDebugger(step_name)
+        def _extract_config(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Dict[str, Any]:
+            cfg = kwargs.get('config')
+            if cfg is None:
+                for arg in args[1:]:
+                    if isinstance(arg, dict):
+                        cfg = arg
+                        break
+            return cfg or {}
+
+        async def _execute_with_debug(*args, **kwargs):
+            config = _extract_config(args, kwargs)
+            debugger = TrainingDebugger(step_name, config=config)
 
             try:
                 with debugger.debug_context(f"execute_{step_name}"):
                     # Pre-execution validation
                     tprint_info(f"🔍 Pre-execution validation for {step_name}")
 
-                    # Extract common parameters for validation
-                    config = kwargs.get('config', {})
-                    data_dir = config.get('data_dir', 'historical_data')
+                    # Only validate on-disk data files when the caller explicitly
+                    # provides a data_dir. Many steps can source data from artifacts
+                    # and will work even if ./historical_data is empty.
+                    data_dir = config.get('data_dir')
                     symbol = config.get('symbol', 'ETHUSDT')
-                    timeframe = config.get('timeframe', '1m')
+                    timeframe = config.get('timeframe') or config.get('regime_timeframe') or '15m'
+                    exchange = config.get('exchange', 'binance')
 
                     # Run comprehensive validation
                     if not debugger.comprehensive_validation(
                         data_dir=data_dir,
                         symbol=symbol,
-                        timeframe=timeframe
+                        timeframe=timeframe,
+                        exchange=exchange,
                     ):
                         raise RuntimeError(f"Pre-execution validation failed for {step_name}")
 
                     # Execute the actual function
                     result = func(*args, **kwargs)
+                    if inspect.isawaitable(result):
+                        result = await result
 
                     # Post-execution validation
                     tprint_info(f"✅ {step_name} completed successfully")
@@ -542,7 +559,10 @@ def create_enhanced_error_handler(step_name: str) -> Callable:
                 # Re-raise with enhanced context
                 raise RuntimeError(f"{step_name} failed: {str(e)}") from e
 
-        return wrapper
+        def wrapper(*args, **kwargs):
+            return asyncio.run(_execute_with_debug(*args, **kwargs))
+
+        return _execute_with_debug if inspect.iscoroutinefunction(func) else wrapper
     return error_handler_decorator
 
 # Utility functions for quick validation

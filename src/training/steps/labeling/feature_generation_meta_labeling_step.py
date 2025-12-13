@@ -46,6 +46,16 @@ from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.preprocessing import RobustScaler
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import TimeSeriesSplit
+from src.training.steps.labeling.generate_weights_per_label import (
+    generate_weights_per_label,
+    compute_horizon_consistency,
+    compute_uniqueness,
+    run_layer1_optimization,
+)
+from src.training.steps.labeling.signal_spacing_utils import (
+    apply_signal_spacing_filter,
+    compute_expected_signal_weight,
+)
 from sklearn.metrics import (
     roc_auc_score,
     precision_score,
@@ -91,6 +101,8 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
+from src.utils.pipeline_standards import PipelineStandards
+from src.training.utils.debug_utilities import create_enhanced_error_handler
 from .labeled_data_schema import (
     LABELED_DATA_SCHEMA_VERSION,
     get_required_labeled_data_columns,
@@ -130,12 +142,15 @@ except ImportError:
     def generate_regime_meta_features(*args, **kwargs):
         return pd.DataFrame()
 
+from src.features_common.transforms.scaling_normalization import rolling_adaptive_normalize
+
 logger = logging.getLogger(__name__)
 
 
 def _load_latest_labeling_hpo_params(
     symbol: str,
     timeframe: str,
+    exchange: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Optional[Path], str]:
     """Load latest HPO parameters from outcomes directory.
 
@@ -149,16 +164,43 @@ def _load_latest_labeling_hpo_params(
         - file_path: Path to JSON file (or None if not found)
         - source_key: Either 'knee_params' or 'best_params' to indicate source
     """
+    search_dirs: List[Path] = []
+
+    # Primary: standardized data_cache path for training artifacts
+    try:
+        exchange_norm = (exchange or "unknown").lower()
+        symbol_norm = symbol.lower()
+        training_root = Path(
+            PipelineStandards.build_path(
+                "training",
+                exchange_norm,
+                symbol_norm,
+                timeframe=timeframe,
+            )
+        )
+        standardized_dir = training_root / "labeling_hpo" / exchange_norm / symbol_norm / timeframe
+        standardized_dir.mkdir(parents=True, exist_ok=True)
+        search_dirs.append(standardized_dir)
+    except Exception as e_std_path:
+        tprint(f"⚠️ Failed to build standardized HPO path: {e_std_path}", "WARNING")
+
+    # Legacy fallback: historical outcomes directory
     outcomes_dir = Path("outcomes")
-    if not outcomes_dir.exists():
-        return {}, None, ""
+    search_dirs.append(outcomes_dir)
 
     pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
-    candidates = sorted(outcomes_dir.glob(pattern))
-    if not candidates:
+    latest = None
+    for base_dir in search_dirs:
+        if not base_dir.exists():
+            continue
+        candidates = sorted(base_dir.glob(pattern))
+        if candidates:
+            latest = candidates[-1]
+            break
+
+    if latest is None:
         return {}, None, ""
 
-    latest = candidates[-1]
     with open(latest, "r") as f:
         hpo_cfg = json.load(f)
 
@@ -296,13 +338,13 @@ def create_triple_barrier_from_hpo(
         return labeler, {}, False
 
 # Production TPSL Parameters (overridable via config)
-DEFAULT_PROFIT_THRESHOLD = 0.01  # 1%
-DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
+DEFAULT_PROFIT_THRESHOLD = 0.005  # 0.5% (reduced for better balance)
+DEFAULT_STOP_THRESHOLD = 0.0075  # 0.75% (increased for better balance)
 DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
 R_MULTIPLE_POS_THRESHOLD = 0.5
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-# Set to 1.2 (slightly more permissive than 1.5) for increased event retention
-ECON_MIN_RETURN_MULTIPLE = 1.2
+# Set to 2.0 (stricter: profit must exceed 2x transaction costs) for higher quality labels
+ECON_MIN_RETURN_MULTIPLE = 0.1
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
@@ -948,6 +990,69 @@ def generate_primary_signals(
     high_low_range = (df_local['high'] - df_local['low']).replace(0.0, np.nan)
     upper_wick = df_local['high'] - df_local[['open', 'close']].max(axis=1)
     lower_wick = df_local[['open', 'close']].min(axis=1) - df_local['low']
+
+    # ===== SIGNAL SPACING & PRIORITY FILTERING (New 2025-12-12) =====
+    # 1. Compute Consistency (Trend Smoothness)
+    # Use momentum_period for consistency horizon
+    df_local['consistency'] = compute_horizon_consistency(df_local['close'], horizon=momentum_period)
+
+    # 2. Compute Priority (Expected Weight) - HPO-Aligned
+    # Ensure ATR is available
+    if 'atr' not in df_local.columns:
+        # Re-calc ATR if not present (using atr_period from arguments)
+        df_local['atr'] = (df_local['high'] - df_local['low']).rolling(atr_period).mean()
+
+    # Pass vol_short as volatility proxy
+    signals['priority_score'] = compute_expected_signal_weight(
+        df_local,
+        atr_col='atr',
+        close_col='close',
+        consistency_col='consistency',  # Use computed consistency
+        vol_proxy_col='vol_short',     # Use short-term vol proxy
+        # Use smart defaults for pre-filtering (can be exposed as args later)
+        mag_compression=0.8,
+        exp_mag=1.0,
+        exp_uniq=1.0, 
+        exp_learn=1.0, 
+        downside_multiplier=1.5, # Penalize high-vol regimes in pre-filtering
+        uniq_intensity=1.0,
+        mag_clip_pct=0.99,
+    )
+
+    tprint_info(f"⚖️ Priority Score Stats: Mean={signals['priority_score'].mean():.4f}, Max={signals['priority_score'].max():.4f}")
+
+    # 3. Apply Spacing Filter
+    # 15m bars -> 96 bars/day. Min spacing 4 bars = 1 hour.
+    tprint_info(f"📉 Applying signal spacing filter (Target: {target_trades_per_day} signals/day)...")
+    
+    filtered_consensus, spacing_stats = apply_signal_spacing_filter(
+        signals['consensus'],
+        priority_col=signals['priority_score'],
+        min_spacing_bars=4,        # Force at least 1 hour between signals
+        max_signals_per_day=target_trades_per_day,
+        bars_per_day=96,           # Sane default for 15m
+    )
+
+    # 4. Update Signals & Funnel
+    signals['consensus_raw'] = signals['consensus']  # Backup original
+    signals['consensus'] = filtered_consensus       # Overwrite with filtered
+    
+    funnel['spaced_signals'] = int((filtered_consensus != 0).sum())
+    funnel['spacing_reduction_pct'] = spacing_stats['reduction_pct']
+    
+    # Log spacing results
+    tprint(f"  🔻 Signal Spacing Results:", "INFO")
+    tprint(f"     Original: {spacing_stats['original_count']} signals", "INFO")
+    tprint(f"     Filtered: {spacing_stats['final_count']} signals ({spacing_stats['reduction_pct']:.1f}% reduction)", "INFO")
+    tprint(f"     Density: {spacing_stats['signals_per_day']:.1f} signals/day", "INFO")
+
+    try:
+        signals.attrs['signal_funnel'] = funnel
+    except Exception:
+        pass
+
+
+
     body_ratio = (body.abs() / (high_low_range + 1e-8)).fillna(0.0)
 
     signals['trend_regime'] = 0
@@ -1197,6 +1302,15 @@ def compute_realized_returns(
                     min_profit_price_long = entry_price * (1 + profit_thr)
                     effective_stop = max(effective_stop, min_profit_price_long)
 
+                if not event_use_trailing:
+                    tp_price = entry_price * (1 + profit_thr)
+                    if (high_price >= tp_price) and (low_price <= effective_stop):
+                        # Both Hit: Conservative assumption -> Stop
+                        exit_price = effective_stop
+                        exit_reason = 'stop'
+                        event_end_idx = idx
+                        break
+
                 # 1. Check Stop Hit (Highest priority exit)
                 if low_price <= effective_stop:
                     exit_price = effective_stop
@@ -1259,6 +1373,17 @@ def compute_realized_returns(
                     # With trailing enabled, never realize less than the base profit
                     min_profit_price_short = entry_price * (1 - profit_thr)
                     effective_stop = min(effective_stop, min_profit_price_short)
+
+                if not event_use_trailing:
+                    tp_price = entry_price * (1 - profit_thr)
+                    if (low_price <= tp_price) and (high_price >= effective_stop):
+                        # Both Hit: Ambiguous outcome in bar.
+                        # Conservative-ish: Assume 'stop' reason but assign average exit price (0.5 R loss)
+                        # to represent 50% probability of hitting stop first.
+                        exit_price = 0.5 * (entry_price + effective_stop)
+                        exit_reason = 'stop'
+                        event_end_idx = idx
+                        break
 
                 # 1. Check Stop Hit (Highest priority exit)
                 if high_price >= effective_stop:
@@ -3487,12 +3612,27 @@ def create_meta_features(
         except Exception as align_exc:
             tprint(f"⚠️ [meta_features] Failed to align df/signals by tail: {align_exc}", "WARNING")
 
-    # After alignment, enforce identical index by resetting to a simple
-    # RangeIndex so that downstream operations are purely positional and
-    # not affected by duplicate datetime labels.
+    # After alignment, prefer to preserve datetime information; only fall back
+    # to RangeIndex when preservation fails.
     if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
-        df = df.reset_index(drop=True)
-        signals = signals.reset_index(drop=True)
+        try:
+            df = df.loc[~df.index.duplicated(keep="last")]
+            signals = signals.loc[~signals.index.duplicated(keep="last")]
+
+            shared_len = min(len(df), len(signals))
+            if shared_len <= 0:
+                raise ValueError("[meta_features] Non-positive shared length after duplicate removal")
+
+            df = df.iloc[-shared_len:, :]
+            signals = signals.iloc[-shared_len:, :]
+
+            if not signals.index.equals(df.index):
+                signals = signals.copy()
+                signals.index = df.index
+        except Exception as idx_exc:
+            tprint(f"⚠️ [meta_features] Failed to preserve datetime index, using RangeIndex: {idx_exc}", "WARNING")
+            df = df.reset_index(drop=True)
+            signals = signals.reset_index(drop=True)
     features = pd.DataFrame(index=df.index)
 
     # Attach DDO regime meta-features (meta_volatility_regime, meta_trendiness,
@@ -3517,6 +3657,59 @@ def create_meta_features(
     # Log returns (more stable)
     log_ret = np.log(df['close']).diff()
     features['log_ret'] = log_ret
+
+    _interaction_norm_cache: Dict[str, np.ndarray] = {}
+
+    def _norm_for_interaction(values: Any, name: str) -> np.ndarray:
+        if name in _interaction_norm_cache:
+            return _interaction_norm_cache[name]
+
+        s = pd.Series(values, index=features.index, name=name)
+        s_num = pd.to_numeric(s, errors='coerce')
+        non_na = s_num.dropna()
+
+        if non_na.empty:
+            arr = s_num.to_numpy()
+            _interaction_norm_cache[name] = arr
+            return arr
+
+        uniq = pd.unique(non_na)
+        if len(uniq) <= 2 and set(uniq).issubset({0, 1}):
+            arr = s_num.to_numpy()
+            _interaction_norm_cache[name] = arr
+            return arr
+
+        if len(uniq) <= 5:
+            try:
+                uniq_arr = np.asarray(uniq, dtype=float)
+                if np.all(np.isfinite(uniq_arr)) and np.all(np.isclose(uniq_arr, np.round(uniq_arr))):
+                    arr = s_num.to_numpy()
+                    _interaction_norm_cache[name] = arr
+                    return arr
+            except Exception:
+                pass
+
+        try:
+            s_norm = rolling_adaptive_normalize(
+                s,
+                window=600,
+                min_periods=1,
+                ddof=1,
+                lower_quantile=0.01,
+                upper_quantile=0.99,
+                high=df['high'] if 'high' in df.columns else None,
+                low=df['low'] if 'low' in df.columns else None,
+                close=df['close'] if 'close' in df.columns else None,
+                volume_columns=['volume'],
+                enable_log1p_volume=True,
+                atr_window=14,
+            )
+            arr = pd.to_numeric(s_norm, errors='coerce').to_numpy()
+        except Exception:
+            arr = s_num.to_numpy()
+
+        _interaction_norm_cache[name] = arr
+        return arr
 
     # Multiple volatility windows
     features['volatility_1h'] = log_ret.rolling(window=4).std()  # 4 x 15min bars
@@ -3818,6 +4011,51 @@ def create_meta_features(
         features['volume_spike'] = 1.0
         features['signed_volume_ema'] = 0.0
 
+    try:
+        horizon_48 = 48
+        rv_48_series = log_ret.rolling(horizon_48).std()
+
+        if volume_available and 'volume' in df.columns:
+            vol_mean_48 = df['volume'].rolling(horizon_48).mean()
+            participation_48 = df['volume'] / (vol_mean_48 + 1e-8)
+        else:
+            participation_48 = pd.Series(1.0, index=df.index)
+
+        if 'vol_expansion' in signals.columns:
+            vol_expansion_series = pd.to_numeric(signals['vol_expansion'], errors='coerce')
+        else:
+            vol_short_20_local = log_ret.rolling(20).std()
+            vol_long_96_local = log_ret.rolling(96).std()
+            vol_expansion_series = vol_short_20_local / (vol_long_96_local + 1e-8)
+
+        base_vol_96 = log_ret.rolling(96).std()
+        large_move_flag = (log_ret.abs() > (2.5 * base_vol_96)).astype(float)
+        liq_cluster_48_raw = large_move_flag.rolling(horizon_48).sum() * participation_48
+
+        participation_48_n = _norm_for_interaction(participation_48, 'volume_participation_48')
+        rv_48_n = _norm_for_interaction(rv_48_series, 'rv_48')
+        volume_x_rv_48 = participation_48_n * rv_48_n
+
+        liq_cluster_48_n = _norm_for_interaction(liq_cluster_48_raw, 'liq_cluster_48')
+        vol_expansion_n = _norm_for_interaction(vol_expansion_series, 'vol_expansion')
+        liq_cluster_vs_vol_expansion_48 = liq_cluster_48_n / (np.where(np.isfinite(vol_expansion_n), vol_expansion_n, np.nan) + 1e-8)
+
+        trend_48 = df['close'].pct_change(horizon_48)
+        trend_48_n = _norm_for_interaction(trend_48, 'trend_48')
+        trend_x_participation_48 = trend_48_n * participation_48_n
+
+        if use_kalman:
+            n_features_local = len(features)
+            features['volume_x_rv_48'] = _align_to_features(volume_x_rv_48, n_features_local)
+            features['liq_cluster_vs_vol_expansion_48'] = _align_to_features(liq_cluster_vs_vol_expansion_48, n_features_local)
+            features['trend_x_participation_48'] = _align_to_features(trend_x_participation_48, n_features_local)
+        else:
+            features['volume_x_rv_48'] = volume_x_rv_48.to_numpy()
+            features['liq_cluster_vs_vol_expansion_48'] = liq_cluster_vs_vol_expansion_48.to_numpy()
+            features['trend_x_participation_48'] = trend_x_participation_48.to_numpy()
+    except Exception:
+        pass
+
     # ===== MARKET MOMENTUM =====
 
     mom5_series = df['close'].pct_change(5)
@@ -4046,22 +4284,20 @@ def create_meta_features(
 
     # Volatility / trend interaction features
     if 'kalman_trend' in features.columns and 'vol_ratio' in features.columns:
-        features['kalman_trend_x_vol_ratio'] = features['kalman_trend'] * features['vol_ratio']
+        features['kalman_trend_x_vol_ratio'] = _norm_for_interaction(features['kalman_trend'], 'kalman_trend') * _norm_for_interaction(features['vol_ratio'], 'vol_ratio')
     if 'sma_slope' in features.columns and 'vol_ratio' in features.columns:
-        features['sma_slope_x_vol_ratio'] = features['sma_slope'] * features['vol_ratio']
+        features['sma_slope_x_vol_ratio'] = _norm_for_interaction(features['sma_slope'], 'sma_slope') * _norm_for_interaction(features['vol_ratio'], 'vol_ratio')
     if 'price_vs_sma20' in features.columns and 'vol_ratio' in features.columns:
-        features['price_vs_sma20_x_vol_ratio'] = features['price_vs_sma20'] * features['vol_ratio']
+        features['price_vs_sma20_x_vol_ratio'] = _norm_for_interaction(features['price_vs_sma20'], 'price_vs_sma20') * _norm_for_interaction(features['vol_ratio'], 'vol_ratio')
     if 'range_position' in features.columns and 'vol_ratio' in features.columns:
-        features['range_position_x_vol_ratio'] = features['range_position'] * features['vol_ratio']
+        features['range_position_x_vol_ratio'] = _norm_for_interaction(features['range_position'], 'range_position') * _norm_for_interaction(features['vol_ratio'], 'vol_ratio')
 
     # DDO meta-regime interaction features
     if (
         'meta_trendiness' in features.columns
         and 'meta_volatility_regime' in features.columns
     ):
-        features['meta_trendiness_x_meta_volatility_regime'] = (
-            features['meta_trendiness'] * features['meta_volatility_regime']
-        )
+        features['meta_trendiness_x_meta_volatility_regime'] = _norm_for_interaction(features['meta_trendiness'], 'meta_trendiness') * _norm_for_interaction(features['meta_volatility_regime'], 'meta_volatility_regime')
 
     if 'meta_volume_shock' in features.columns:
         for proxy_col in [
@@ -4071,18 +4307,12 @@ def create_meta_features(
             'momentum_ema',
         ]:
             if proxy_col in features.columns:
-                features[f'meta_volume_shock_x_{proxy_col}'] = (
-                    features['meta_volume_shock'] * features[proxy_col]
-                )
+                features[f'meta_volume_shock_x_{proxy_col}'] = _norm_for_interaction(features['meta_volume_shock'], 'meta_volume_shock') * _norm_for_interaction(features[proxy_col], proxy_col)
 
         if 'hour_sin' in features.columns:
-            features['meta_volume_shock_x_hour_sin'] = (
-                features['meta_volume_shock'] * features['hour_sin']
-            )
+            features['meta_volume_shock_x_hour_sin'] = _norm_for_interaction(features['meta_volume_shock'], 'meta_volume_shock') * features['hour_sin']
         if 'hour_cos' in features.columns:
-            features['meta_volume_shock_x_hour_cos'] = (
-                features['meta_volume_shock'] * features['hour_cos']
-            )
+            features['meta_volume_shock_x_hour_cos'] = _norm_for_interaction(features['meta_volume_shock'], 'meta_volume_shock') * features['hour_cos']
 
     if 'consensus' in signals.columns:
         signal_consensus = signals['consensus']
@@ -4185,11 +4415,11 @@ def create_meta_features(
     if 'trend_regime' in features.columns and 'signal_macd_hist_abs' in features.columns:
         tr_arr = np.asarray(features['trend_regime'])
         macd_abs_arr = np.asarray(features['signal_macd_hist_abs'])
-        features['signal_trend_regime_x_macd_hist_abs'] = tr_arr * macd_abs_arr
+        features['signal_trend_regime_x_macd_hist_abs'] = tr_arr * _norm_for_interaction(features['signal_macd_hist_abs'], 'signal_macd_hist_abs')
     if 'candle_trend' in features.columns and 'signal_rsi_distance_50' in features.columns:
         ct_arr = np.asarray(features['candle_trend'])
         rsi_dist_arr = np.asarray(features['signal_rsi_distance_50'])
-        features['signal_candle_trend_x_rsi_distance_50'] = ct_arr * rsi_dist_arr
+        features['signal_candle_trend_x_rsi_distance_50'] = ct_arr * _norm_for_interaction(features['signal_rsi_distance_50'], 'signal_rsi_distance_50')
 
     # ===== CROSS-TIMEFRAME FEATURES (1H, 4H AGGREGATIONS) =====
     # Aggregate 15m data to higher timeframes for multi-horizon analysis
@@ -4283,15 +4513,17 @@ def create_meta_features(
 
     # Volatility × Momentum interactions
     if 'volatility_1d' in features.columns and 'momentum_20' in features.columns:
-        features['vol_momentum_interaction'] = features['volatility_1d'] * features['momentum_20']
+        features['vol_momentum_interaction'] = _norm_for_interaction(features['volatility_1d'], 'volatility_1d') * _norm_for_interaction(features['momentum_20'], 'momentum_20')
 
     # Sharpe-like momentum/volatility ratios
     if 'volatility_1d' in features.columns and 'momentum_10' in features.columns:
-        denom_10 = features['volatility_1d'].replace(0.0, np.nan)
-        features['momentum_10_div_volatility_1d'] = features['momentum_10'] / (denom_10 + 1e-8)
+        denom_10 = _norm_for_interaction(features['volatility_1d'], 'volatility_1d')
+        num_10 = _norm_for_interaction(features['momentum_10'], 'momentum_10')
+        features['momentum_10_div_volatility_1d'] = num_10 / (np.where(np.isfinite(denom_10), denom_10, np.nan) + 1e-8)
     if 'volatility_1d' in features.columns and 'momentum_5' in features.columns:
-        denom_5 = features['volatility_1d'].replace(0.0, np.nan)
-        features['momentum_5_div_volatility_1d'] = features['momentum_5'] / (denom_5 + 1e-8)
+        denom_5 = _norm_for_interaction(features['volatility_1d'], 'volatility_1d')
+        num_5 = _norm_for_interaction(features['momentum_5'], 'momentum_5')
+        features['momentum_5_div_volatility_1d'] = num_5 / (np.where(np.isfinite(denom_5), denom_5, np.nan) + 1e-8)
 
     if 'volatility_regime' in features.columns:
         # Regime-conditional momentum
@@ -4299,22 +4531,293 @@ def create_meta_features(
             if col in features.columns:
                 # Create dummy variables for regime if they don't exist
                 if 'vol_regime_high' in features.columns:
-                    features[f'{col}_x_regime_high'] = features[col] * features['vol_regime_high']
+                    features[f'{col}_x_regime_high'] = _norm_for_interaction(features[col], col) * features['vol_regime_high']
                 if 'vol_regime_medium' in features.columns:
-                    features[f'{col}_x_regime_medium'] = features[col] * features['vol_regime_medium']
+                    features[f'{col}_x_regime_medium'] = _norm_for_interaction(features[col], col) * features['vol_regime_medium']
 
     # ATR × Momentum
     if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
-        features['atr_momentum'] = features['atr_ratio'] * features['momentum_20']
+        features['atr_momentum'] = _norm_for_interaction(features['atr_ratio'], 'atr_ratio') * _norm_for_interaction(features['momentum_20'], 'momentum_20')
 
     # Volatility × Range Position
     if 'vol_ratio' in features.columns and 'range_position' in features.columns:
-        features['vol_range_interaction'] = features['vol_ratio'] * features['range_position']
+        features['vol_range_interaction'] = _norm_for_interaction(features['vol_ratio'], 'vol_ratio') * _norm_for_interaction(features['range_position'], 'range_position')
 
     # Distance features × Volatility
     if 'dist_from_recent_high_50' in features.columns and 'volatility_1d' in features.columns:
-        features['high_dist_x_vol'] = features['dist_from_recent_high_50'] * features['volatility_1d']
-        features['low_dist_x_vol'] = features['dist_from_recent_low_50'] * features['volatility_1d']
+        features['high_dist_x_vol'] = _norm_for_interaction(features['dist_from_recent_high_50'], 'dist_from_recent_high_50') * _norm_for_interaction(features['volatility_1d'], 'volatility_1d')
+        features['low_dist_x_vol'] = _norm_for_interaction(features['dist_from_recent_low_50'], 'dist_from_recent_low_50') * _norm_for_interaction(features['volatility_1d'], 'volatility_1d')
+
+    # ===== ORTHOGONAL FEATURES (2025-12-11) =====
+    # These features capture information dimensions not present in existing features:
+    # - Entropy: randomness/predictability of price/volume sequences
+    # - Volume-price divergence: accumulation/distribution signals
+    # - Hurst exponent: trending vs mean-reverting behavior
+    # - Hour return z-scores: hour-specific anomaly detection
+
+    # --- Enhanced Entropy Features ---
+    try:
+        # Shannon entropy of discretized returns (20-bar window)
+        # High entropy = noisy/unpredictable, Low entropy = trending/predictable
+        def compute_shannon_entropy(series: pd.Series, n_bins: int = 10, window: int = 20) -> pd.Series:
+            """Compute rolling Shannon entropy of a series."""
+            entropy = pd.Series(index=series.index, dtype=float)
+            entropy[:] = np.nan
+            
+            values = series.to_numpy()
+            for i in range(window, len(values)):
+                window_data = values[i-window:i]
+                if np.all(np.isnan(window_data)):
+                    continue
+                window_data = window_data[~np.isnan(window_data)]
+                if len(window_data) < 5:
+                    continue
+                
+                # Discretize into bins
+                try:
+                    hist, _ = np.histogram(window_data, bins=n_bins, density=True)
+                    hist = hist[hist > 0]  # Remove zero bins
+                    if len(hist) > 0:
+                        # Normalize to get probabilities
+                        probs = hist / hist.sum()
+                        # Shannon entropy: -sum(p * log(p))
+                        entropy.iloc[i] = -np.sum(probs * np.log(probs + 1e-10))
+                except Exception:
+                    continue
+            return entropy
+        
+        # Return entropy (captures randomness in price movements)
+        return_entropy_20 = compute_shannon_entropy(returns, n_bins=10, window=20)
+        if use_kalman:
+            features['return_entropy_20'] = _align_to_features(return_entropy_20, n_features)
+        else:
+            features['return_entropy_20'] = return_entropy_20.to_numpy()
+        
+        # Volume entropy (captures randomness in volume patterns)
+        if 'volume' in df.columns:
+            volume_pct_change = df['volume'].pct_change()
+            volume_entropy_20 = compute_shannon_entropy(volume_pct_change, n_bins=10, window=20)
+            if use_kalman:
+                features['volume_entropy_20'] = _align_to_features(volume_entropy_20, n_features)
+            else:
+                features['volume_entropy_20'] = volume_entropy_20.to_numpy()
+        
+        # Permutation entropy (captures order complexity in price sequence)
+        def compute_permutation_entropy(series: pd.Series, m: int = 3, delay: int = 1, window: int = 30) -> pd.Series:
+            """Compute rolling permutation entropy using embedding dimension m."""
+            from itertools import permutations
+            from collections import Counter
+            
+            perm_entropy = pd.Series(index=series.index, dtype=float)
+            perm_entropy[:] = np.nan
+            
+            values = series.to_numpy()
+            n_perms = np.math.factorial(m)
+            
+            for i in range(window + m * delay, len(values)):
+                window_data = values[i-window:i]
+                if np.any(np.isnan(window_data)):
+                    continue
+                
+                # Create embedded vectors
+                n_vectors = len(window_data) - (m - 1) * delay
+                if n_vectors < 5:
+                    continue
+                
+                # Get ordinal patterns
+                patterns = []
+                for j in range(n_vectors):
+                    vec = [window_data[j + k * delay] for k in range(m)]
+                    # Convert to ordinal pattern (rank order)
+                    pattern = tuple(np.argsort(vec))
+                    patterns.append(pattern)
+                
+                # Count pattern frequencies
+                pattern_counts = Counter(patterns)
+                probs = np.array(list(pattern_counts.values())) / len(patterns)
+                
+                # Normalized permutation entropy (0 to 1)
+                if len(probs) > 0:
+                    pe = -np.sum(probs * np.log(probs + 1e-10)) / np.log(n_perms)
+                    perm_entropy.iloc[i] = pe
+            
+            return perm_entropy
+        
+        perm_entropy_30 = compute_permutation_entropy(df['close'], m=3, delay=1, window=30)
+        if use_kalman:
+            features['permutation_entropy_30'] = _align_to_features(perm_entropy_30, n_features)
+        else:
+            features['permutation_entropy_30'] = perm_entropy_30.to_numpy()
+            
+    except Exception as entropy_exc:
+        tprint(f"⚠️ Entropy features failed: {entropy_exc}", "WARNING")
+
+    # --- Volume-Price Divergence Features ---
+    try:
+        if 'volume' in df.columns:
+            # 1. Volume-price divergence detector (rolling correlation)
+            # Negative correlation = divergence (volume up, price down or vice versa)
+            price_change_sign = np.sign(returns.fillna(0))
+            volume_change_sign = np.sign(df['volume'].pct_change().fillna(0))
+            
+            # Rolling correlation between price direction and volume direction
+            vol_price_dir_corr = price_change_sign.rolling(10).corr(volume_change_sign)
+            # Divergence flag: strong negative correlation
+            vol_price_divergence_10 = (vol_price_dir_corr < -0.3).astype(float)
+            
+            if use_kalman:
+                features['vol_price_divergence_10'] = _align_to_features(vol_price_divergence_10, n_features)
+                features['vol_price_dir_corr_10'] = _align_to_features(vol_price_dir_corr, n_features)
+            else:
+                features['vol_price_divergence_10'] = vol_price_divergence_10.to_numpy()
+                features['vol_price_dir_corr_10'] = vol_price_dir_corr.to_numpy()
+            
+            # 2. OBV (On-Balance Volume) divergence from price
+            # OBV: cumulative sum of volume weighted by price direction
+            obv = (df['volume'] * np.sign(returns.fillna(0))).cumsum()
+            obv_normalized = (obv - obv.rolling(50).mean()) / (obv.rolling(50).std() + 1e-8)
+            price_normalized = (df['close'] - df['close'].rolling(50).mean()) / (df['close'].rolling(50).std() + 1e-8)
+            
+            # OBV vs price slope divergence (20-bar regression slopes)
+            obv_slope = obv_normalized.rolling(20).apply(
+                lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) >= 2 else np.nan, raw=False
+            )
+            price_slope = price_normalized.rolling(20).apply(
+                lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) >= 2 else np.nan, raw=False
+            )
+            obv_price_divergence = obv_slope - price_slope  # Positive = OBV stronger than price (accumulation)
+            
+            if use_kalman:
+                features['obv_divergence'] = _align_to_features(obv_price_divergence, n_features)
+            else:
+                features['obv_divergence'] = obv_price_divergence.to_numpy()
+                
+    except Exception as div_exc:
+        tprint(f"⚠️ Volume-price divergence features failed: {div_exc}", "WARNING")
+
+    # --- Hurst Exponent (Fractal Analysis) ---
+    try:
+        def compute_hurst_exponent(series: pd.Series, window: int = 30, min_window: int = 10) -> pd.Series:
+            """Compute rolling Hurst exponent using R/S analysis.
+            
+            H > 0.5: Trending (persistent)
+            H < 0.5: Mean-reverting (anti-persistent)
+            H = 0.5: Random walk
+            """
+            hurst = pd.Series(index=series.index, dtype=float)
+            hurst[:] = np.nan
+            
+            values = series.to_numpy()
+            
+            for i in range(window, len(values)):
+                window_data = values[i-window:i]
+                if np.any(np.isnan(window_data)):
+                    continue
+                
+                try:
+                    # R/S analysis
+                    n = len(window_data)
+                    mean_val = np.mean(window_data)
+                    
+                    # Cumulative deviate series
+                    y = np.cumsum(window_data - mean_val)
+                    
+                    # Range
+                    r = np.max(y) - np.min(y)
+                    
+                    # Standard deviation
+                    s = np.std(window_data, ddof=1)
+                    
+                    if s > 0 and r > 0:
+                        # R/S ratio
+                        rs = r / s
+                        # Hurst exponent: log(R/S) / log(n)
+                        h = np.log(rs) / np.log(n)
+                        # Clip to reasonable range
+                        hurst.iloc[i] = np.clip(h, 0.0, 1.0)
+                except Exception:
+                    continue
+            
+            return hurst
+        
+        hurst_30 = compute_hurst_exponent(returns, window=30)
+        if use_kalman:
+            features['hurst_exponent_30'] = _align_to_features(hurst_30, n_features)
+        else:
+            features['hurst_exponent_30'] = hurst_30.to_numpy()
+            
+    except Exception as hurst_exc:
+        tprint(f"⚠️ Hurst exponent feature failed: {hurst_exc}", "WARNING")
+
+    # --- Hour-Specific Return Z-Scores (Seasonality) ---
+    try:
+        if isinstance(df.index, pd.DatetimeIndex):
+            hour_arr = df.index.hour.to_numpy()
+            returns_arr = returns.to_numpy()
+            
+            # Compute z-score of current return vs historical same-hour distribution
+            hour_return_zscore = pd.Series(index=df.index, dtype=float)
+            hour_return_zscore[:] = np.nan
+            
+            # For each hour, compute rolling mean and std of returns at that hour
+            for h in range(24):
+                hour_mask = hour_arr == h
+                hour_indices = np.where(hour_mask)[0]
+                
+                if len(hour_indices) < 20:
+                    continue
+                
+                # Get returns at this hour
+                hour_returns = returns_arr[hour_mask]
+                
+                # Rolling statistics (using position-based index for this hour)
+                for j in range(20, len(hour_indices)):
+                    idx = hour_indices[j]
+                    historical_returns = hour_returns[:j]
+                    
+                    mean_h = np.nanmean(historical_returns)
+                    std_h = np.nanstd(historical_returns)
+                    
+                    if std_h > 0 and not np.isnan(returns_arr[idx]):
+                        z = (returns_arr[idx] - mean_h) / std_h
+                        hour_return_zscore.iloc[idx] = np.clip(z, -5, 5)
+            
+            if use_kalman:
+                features['hour_return_zscore'] = _align_to_features(hour_return_zscore, n_features)
+            else:
+                features['hour_return_zscore'] = hour_return_zscore.to_numpy()
+                
+    except Exception as season_exc:
+        tprint(f"⚠️ Hour return z-score feature failed: {season_exc}", "WARNING")
+
+    # --- Kalman-Filtered Orthogonal Features ---
+    # Apply Kalman smoothing to key orthogonal features for noise reduction
+    # This follows the same pattern as existing Kalman features
+    if use_kalman:
+        try:
+            # Kalman-smoothed Hurst exponent (captures persistent trend/MR regime)
+            if 'hurst_exponent_30' in features.columns:
+                hurst_series = pd.Series(features['hurst_exponent_30'], index=df.index[:n_features])
+                kf_hurst = KalmanFilter1D(Q=1e-4, R=0.1, initial_value=0.5)
+                kalman_hurst, _ = kf_hurst.filter_series(hurst_series.fillna(0.5))
+                features['hurst_kalman'] = _align_to_features(kalman_hurst, n_features)
+            
+            # Kalman-smoothed OBV divergence (captures persistent accumulation/distribution)
+            if 'obv_divergence' in features.columns:
+                obv_div_series = pd.Series(features['obv_divergence'], index=df.index[:n_features])
+                kf_obv = KalmanFilter1D(Q=1e-5, R=0.05, initial_value=0.0)
+                kalman_obv_div, _ = kf_obv.filter_series(obv_div_series.fillna(0.0))
+                features['obv_divergence_kalman'] = _align_to_features(kalman_obv_div, n_features)
+            
+            # Kalman-smoothed entropy (captures persistent randomness regime)
+            if 'return_entropy_20' in features.columns:
+                entropy_series = pd.Series(features['return_entropy_20'], index=df.index[:n_features])
+                kf_entropy = KalmanFilter1D(Q=1e-4, R=0.1, initial_value=1.5)
+                kalman_entropy, _ = kf_entropy.filter_series(entropy_series.fillna(1.5))
+                features['entropy_kalman'] = _align_to_features(kalman_entropy, n_features)
+                
+        except Exception as kalman_ortho_exc:
+            tprint(f"⚠️ Kalman orthogonal features failed: {kalman_ortho_exc}", "WARNING")
 
     # ===== EVENT HISTORY FEATURES (FOR PRE-FILTERING) =====
     # Track historical event performance to filter low-quality signals
@@ -4348,6 +4851,149 @@ def create_meta_features(
         features['signal_strength'] = signals[['rsi', 'ma', 'mom']].abs().sum(axis=1)
         features['signal_consensus'] = signals['consensus'].abs()
 
+    # ===== LAGGED PREDICTION FEATURES (Phase 4: Temporal Structure) =====
+    # These capture autocorrelation in the model's predictions by using
+    # lagged versions of already-computed features as proxies for p_hat_lag
+    try:
+        if 'rsi_kalman' in features.columns:
+            rsi_series = pd.Series(features['rsi_kalman'], index=df.index[:len(features)])
+            features['rsi_kalman_lag_1'] = rsi_series.shift(1).values[:len(features)]
+            features['rsi_kalman_lag_2'] = rsi_series.shift(2).values[:len(features)]
+            features['rsi_kalman_lag_4'] = rsi_series.shift(4).values[:len(features)]
+        
+        if 'momentum_kalman' in features.columns:
+            mom_series = pd.Series(features['momentum_kalman'], index=df.index[:len(features)])
+            features['momentum_kalman_lag_1'] = mom_series.shift(1).values[:len(features)]
+            features['momentum_kalman_lag_2'] = mom_series.shift(2).values[:len(features)]
+        
+        # Volatility regime lag (proxy for regime persistence)
+        if 'volatility_1d' in features.columns:
+            vol_series = pd.Series(features['volatility_1d'], index=df.index[:len(features)])
+            features['volatility_1d_lag_1'] = vol_series.shift(1).values[:len(features)]
+            features['volatility_1d_lag_4'] = vol_series.shift(4).values[:len(features)]
+    except Exception:
+        pass
+
+    # ===== REGIME PERSISTENCE INDICATORS (Phase 4) =====
+    # Capture how long the current regime has been active
+    try:
+        # Volatility regime age (bars since last regime change)
+        if 'vol_regime_high' in features.columns:
+            vol_regime = (features['vol_regime_high'] > 0.5).astype(int)
+            regime_series = pd.Series(vol_regime, index=df.index[:len(features)])
+            regime_change = (regime_series != regime_series.shift(1)).astype(int)
+            regime_age = regime_change.groupby(regime_change.cumsum()).cumcount()
+            features['volatility_regime_age'] = regime_age.values[:len(features)]
+        
+        # Trend regime persistence (bars since direction change)
+        if 'momentum_kalman' in features.columns:
+            trend_sign = np.sign(features['momentum_kalman'])
+            trend_series = pd.Series(trend_sign, index=df.index[:len(features)])
+            trend_change = (trend_series != trend_series.shift(1)).astype(int)
+            trend_age = trend_change.groupby(trend_change.cumsum()).cumcount()
+            features['trend_regime_age'] = trend_age.values[:len(features)]
+    except Exception:
+        pass
+
+    try:
+        time_cols = {
+            'hour',
+            'day_of_week',
+            'hour_sin',
+            'hour_cos',
+            'is_good_hour',
+            'is_bad_hour',
+            'is_sunday',
+        }
+
+        numeric_cols = features.select_dtypes(include=[np.number]).columns.tolist()
+        cols_to_normalize: List[str] = []
+        for col in numeric_cols:
+            if col in time_cols:
+                continue
+
+            s = pd.to_numeric(features[col], errors='coerce')
+            non_na = s.dropna()
+            if non_na.empty:
+                continue
+
+            uniq = pd.unique(non_na)
+            if len(uniq) <= 2 and set(uniq).issubset({0, 1}):
+                continue
+
+            if len(uniq) <= 5:
+                try:
+                    uniq_arr = np.asarray(uniq, dtype=float)
+                    if np.all(np.isfinite(uniq_arr)) and np.all(np.isclose(uniq_arr, np.round(uniq_arr))):
+                        continue
+                except Exception:
+                    pass
+
+            cols_to_normalize.append(col)
+
+        if cols_to_normalize:
+            normalized_block = rolling_adaptive_normalize(
+                features[cols_to_normalize],
+                window=600,
+                min_periods=1,
+                ddof=1,
+                lower_quantile=0.01,
+                upper_quantile=0.99,
+                high=df['high'] if 'high' in df.columns else None,
+                low=df['low'] if 'low' in df.columns else None,
+                close=df['close'] if 'close' in df.columns else None,
+                volume_columns=['volume'],
+                enable_log1p_volume=True,
+                atr_window=14,
+            )
+            features[cols_to_normalize] = normalized_block.to_numpy()
+    except Exception:
+        pass
+
+    # ------------------------------------------------------------------
+    # Avoid double-counting regime/volatility context.
+    # The regime leaf feature pipeline now has its own dedicated OHLCV-only
+    # regime embedding features (see regime_leaf_feature_extractor.py).
+    # Keep the categorical `volatility_regime` for diagnostics, but drop the
+    # numeric volatility-regime dummies and closely-related numeric regime
+    # context columns from the meta-model feature surface.
+    # ------------------------------------------------------------------
+    try:
+        drop_cols: List[str] = []
+
+        for c in [
+            # Volatility windows / ratios (regime context)
+            'volatility_1h',
+            'volatility_4h',
+            'volatility_1d',
+            'vol_of_vol',
+            'vol_ratio',
+            # Dummies derived from volatility_regime
+            'vol_regime_medium',
+            'vol_regime_high',
+            # Regime-age / persistence derived from volatility_regime
+            'volatility_regime_age',
+            # Direct interactions that re-introduce vol_ratio
+            'kalman_trend_x_vol_ratio',
+            'sma_slope_x_vol_ratio',
+            'price_vs_sma20_x_vol_ratio',
+            'range_position_x_vol_ratio',
+        ]:
+            if c in features.columns:
+                drop_cols.append(c)
+
+        # Defensive: drop any remaining volatility-regime dummy variants
+        drop_cols.extend([c for c in features.columns if c.startswith('vol_regime_')])
+
+        # Also drop any explicitly volatility-regime-conditional features
+        # that may have been generated downstream.
+        drop_cols.extend([c for c in features.columns if 'volatility_regime' in str(c) and c != 'volatility_regime'])
+
+        if drop_cols:
+            features = features.drop(columns=sorted(set(drop_cols)), errors='ignore')
+    except Exception:
+        pass
+
     return features
 
 
@@ -4361,8 +5007,8 @@ def prepare_feature_matrix(features: pd.DataFrame) -> pd.DataFrame:
 
 def winsorize_features(
     X: pd.DataFrame,
-    lower_quantile: float = 0.01,
-    upper_quantile: float = 0.99,
+    lower_quantile: float = 0.0025,
+    upper_quantile: float = 0.9975,
 ) -> pd.DataFrame:
     if X.empty:
         return X
@@ -4463,19 +5109,91 @@ def select_features_by_importance(
     """
     # Remove features with NaN/Inf
     clean_mask = ~y.isna()
-    X_clean = X[clean_mask].fillna(0)
-    y_clean = y[clean_mask]
+    n_labeled = int(clean_mask.sum())
 
-    # Normalise pinned feature list and restrict to columns actually present
-    pinned_features = pinned_features or []
-    pinned_in_X = [f for f in pinned_features if f in X.columns]
-
-    if len(y_clean) < 20:
-        tprint("⚠️ Too few samples for feature selection, using all features", "WARNING")
+    # If there are no labeled samples (e.g., during pre-computation with dummy
+    # labels), skip quality screening entirely to avoid incorrectly dropping
+    # all features as "100% NaN".
+    if n_labeled == 0:
+        tprint(
+            "⚠️ No labeled samples available for feature selection; "
+            "skipping quality screening and retaining all features",
+            "WARNING",
+        )
         return list(X.columns)
 
+    # Quality gate: flag/drop bad columns before correlation pruning
+    working_X = X.copy()
+    quality_drops: List[str] = []
+    pinned_features = pinned_features or []
+
+    try:
+        X_quality = working_X.loc[clean_mask]
+        for col in working_X.columns:
+            s = X_quality[col]
+            nan_ratio = float(s.isna().mean()) if len(s) else 1.0
+            near_constant = s.nunique(dropna=True) <= 1 or float(s.std(skipna=True) or 0.0) < 1e-8
+
+            if nan_ratio > 0.6 or near_constant:
+                if col in pinned_features:
+                    tprint(f"⚠️ Keeping pinned but low-quality feature '{col}' (nan_ratio={nan_ratio:.1%}, near_const={near_constant})", "WARNING")
+                else:
+                    quality_drops.append(col)
+                    reason = "high NaN ratio" if nan_ratio > 0.6 else "near-constant"
+                    tprint(f"⚠️ Dropping feature '{col}' due to {reason} (nan_ratio={nan_ratio:.1%})", "WARNING")
+    except Exception as quality_exc:
+        tprint(f"⚠️ Feature quality scan failed: {quality_exc}", "WARNING")
+
+    if quality_drops:
+        working_X = working_X.drop(columns=list(set(quality_drops)), errors="ignore")
+
+    # Optional VIF screening (skip if too many columns to avoid heavy cost)
+    try:
+        from statsmodels.stats.outliers_influence import variance_inflation_factor  # type: ignore
+
+        numeric_cols = working_X.select_dtypes(include=[np.number]).columns.tolist()
+        vif_candidates = [c for c in numeric_cols if c not in pinned_features]
+        vif_drops: List[str] = []
+        if 2 <= len(vif_candidates) <= 30:
+            data = working_X[vif_candidates].fillna(0.0).to_numpy()
+            for i, col in enumerate(vif_candidates):
+                vif_val = float(variance_inflation_factor(data, i))
+                if vif_val > 10.0:
+                    if col in pinned_features:
+                        tprint(f"⚠️ High VIF for pinned feature '{col}' (VIF={vif_val:.2f}) - retained", "WARNING")
+                    else:
+                        vif_drops.append(col)
+                        tprint(f"⚠️ Dropping feature '{col}' due to high VIF={vif_val:.2f}", "WARNING")
+        if 'vif_drops' in locals() and vif_drops:
+            working_X = working_X.drop(columns=list(set(vif_drops)), errors="ignore")
+    except Exception as vif_exc:
+        tprint(f"⚠️ VIF screening skipped: {vif_exc}", "WARNING")
+
+    X_clean = working_X[clean_mask].fillna(0)
+    y_clean = y[clean_mask]
+    n_labeled = int(clean_mask.sum())
+    n_features = int(X.shape[1])
+    pos_count = int((y_clean == 1).sum())
+    neg_count = int((y_clean == 0).sum())
+
+    # Normalise pinned feature list and restrict to columns actually present
+    pinned_in_X = [f for f in pinned_features if f in working_X.columns]
+
+    if len(y_clean) < 20:
+        tprint(
+            f"⚠️ Too few samples for feature selection "
+            f"(n_labels={n_labeled}, pos={pos_count}, neg={neg_count}, features={n_features}); "
+            "using all features",
+            "WARNING",
+        )
+        return list(working_X.columns)
+
     # Step 1: Remove highly correlated features
-    tprint(f"🔍 Feature selection: Starting with {len(X.columns)} features", "INFO")
+    tprint(
+        f"🔍 Feature selection: Starting with {len(working_X.columns)} features "
+        f"(labels={n_labeled}, pos={pos_count}, neg={neg_count})",
+        "INFO",
+    )
 
     corr_matrix = X_clean.corr().abs()
     upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
@@ -4487,7 +5205,7 @@ def select_features_by_importance(
     to_drop = [col for col in upper_tri.columns if any(upper_tri[col] > correlation_threshold)]
     if pinned_in_X:
         to_drop = [col for col in to_drop if col not in pinned_in_X]
-    features_after_corr = [col for col in X.columns if col not in to_drop]
+    features_after_corr = [col for col in working_X.columns if col not in to_drop]
 
     tprint(f"  ✓ Removed {len(to_drop)} highly correlated features (>{correlation_threshold})", "INFO")
     X_reduced = X_clean[features_after_corr]
@@ -4732,7 +5450,25 @@ def build_meta_features_for_model(
     meta_features_model = prepare_feature_matrix(meta_features)
 
     try:
-        direction_sign = np.sign(realized_returns.fillna(0.0)).replace({0.0: np.nan})
+        direction_src = None
+        if isinstance(primary_signals, pd.DataFrame) and 'consensus' in primary_signals.columns:
+            direction_src = primary_signals['consensus']
+        elif isinstance(primary_signals, pd.Series):
+            direction_src = primary_signals
+
+        if direction_src is None:
+            raise KeyError("primary_signals missing consensus")
+
+        dir_arr = pd.to_numeric(direction_src, errors="coerce").fillna(0.0).to_numpy(dtype=float)
+        n_feat = int(len(meta_features_model))
+        if dir_arr.shape[0] != n_feat:
+            if dir_arr.shape[0] > n_feat:
+                dir_arr = dir_arr[-n_feat:]
+            else:
+                pad = np.zeros(n_feat - dir_arr.shape[0], dtype=float)
+                dir_arr = np.concatenate([pad, dir_arr])
+
+        direction_sign = pd.Series(np.sign(dir_arr), index=meta_features_model.index).replace({0.0: np.nan})
         for base_col in [
             'risk_score',
             'smc_predicted',
@@ -4807,7 +5543,7 @@ def build_meta_features_for_model(
     # disabled via the config. This keeps the feature matrix numerically
     # stable for tree-based models and consistent with unified training.
     if 'enable_winsorisation' not in meta_feature_cfg:
-        meta_feature_cfg['enable_winsorisation'] = True
+        meta_feature_cfg['enable_winsorisation'] = False
     if 'enable_feature_selection' not in meta_feature_cfg:
         meta_feature_cfg['enable_feature_selection'] = True
     if 'enable_sample_weighting' not in meta_feature_cfg:
@@ -4815,8 +5551,8 @@ def build_meta_features_for_model(
 
     if meta_feature_cfg.get('enable_winsorisation', False):
         try:
-            lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
-            upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
+            lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.0025))
+            upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.9975))
             robust_window = int(meta_feature_cfg.get('robust_window', 256))
             robust_min_periods = int(
                 meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4))
@@ -5125,6 +5861,78 @@ def fit_probability_to_return_mapping(
 
     else:
         raise ValueError(f"Unknown method: {method}")
+
+
+def calculate_calibration_metrics(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    n_bins: int = 10
+) -> Dict[str, float]:
+    """
+    Calculate calibration quality metrics.
+
+    Args:
+        y_true: True binary labels (0/1)
+        y_prob: Predicted probabilities [0,1]
+        n_bins: Number of bins for reliability diagram
+
+    Returns:
+        Dict with ECE, BSL, and other calibration metrics
+    """
+    try:
+        # Expected Calibration Error (ECE)
+        bins = np.linspace(0, 1, n_bins + 1)
+        bin_indices = np.digitize(y_prob, bins) - 1
+        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+        ece = 0.0
+        total_samples = len(y_true)
+
+        for bin_idx in range(n_bins):
+            mask = bin_indices == bin_idx
+            if np.sum(mask) == 0:
+                continue
+
+            bin_prob = np.mean(y_prob[mask])
+            bin_acc = np.mean(y_true[mask])
+            bin_size = np.sum(mask)
+
+            ece += (bin_size / total_samples) * abs(bin_prob - bin_acc)
+
+        # Brier Score
+        brier_score = np.mean((y_prob - y_true) ** 2)
+
+        # Brier Skill Score (vs naive baseline of mean label rate)
+        baseline_brier = np.mean(y_true) * (1 - np.mean(y_true))
+        brier_skill_score = 1 - (brier_score / baseline_brier) if baseline_brier > 0 else 0
+
+        # Maximum Calibration Error (MCE)
+        mce = 0.0
+        for bin_idx in range(n_bins):
+            mask = bin_indices == bin_idx
+            if np.sum(mask) == 0:
+                continue
+            bin_prob = np.mean(y_prob[mask])
+            bin_acc = np.mean(y_true[mask])
+            mce = max(mce, abs(bin_prob - bin_acc))
+
+        return {
+            'ece': float(ece),
+            'brier_score': float(brier_score),
+            'brier_skill_score': float(brier_skill_score),
+            'mce': float(mce),
+            'calibration_bins': n_bins
+        }
+
+    except Exception as e:
+        return {
+            'ece': float('nan'),
+            'brier_score': float('nan'),
+            'brier_skill_score': float('nan'),
+            'mce': float('nan'),
+            'calibration_bins': n_bins,
+            'error': str(e)
+        }
 
 
 def translate_to_targets_with_isotonic(
@@ -7230,6 +8038,8 @@ def tune_lgbm_hyperparameters_meta(
     tscv = TimeSeriesSplit(n_splits=n_splits)
     rng = np.random.RandomState(42)
 
+    purge_horizon = max(1, int(horizon) * 2)
+
     best_score = float("-inf")
     best_params: Dict[str, Any] = {}
 
@@ -7290,7 +8100,7 @@ def tune_lgbm_hyperparameters_meta(
                 train_idx,
                 test_idx[0],
                 test_idx[-1] + 1,
-                horizon=horizon,
+                horizon=purge_horizon,
             )
             if len(train_idx_purged) < 50 or len(test_idx) < 20:
                 continue
@@ -7485,6 +8295,8 @@ def train_ensemble_with_kfold(
 
     tscv = TimeSeriesSplit(n_splits=effective_splits)
 
+    purge_horizon = max(1, int(horizon) * 2)
+
     for fold_idx, (train_sub, test_sub) in enumerate(tscv.split(event_idx)):
         train_idx = event_idx[train_sub]
         test_idx = event_idx[test_sub]
@@ -7496,7 +8308,7 @@ def train_ensemble_with_kfold(
             train_idx,
             test_idx[0],
             test_idx[-1] + 1,
-            horizon=horizon
+            horizon=purge_horizon
         )
 
         if len(train_idx_purged) == 0:
@@ -7646,28 +8458,53 @@ def train_ensemble_with_kfold(
             try:
                 # Special handling for LGBM with early stopping and eval weights
                 if model_name == 'lgbm' and isinstance(model, lgb.LGBMClassifier):
-                    fit_params = {}
-                    if weights_train_clean is not None:
-                        fit_params['sample_weight'] = weights_train_clean
+                    fit_params: Dict[str, Any] = {}
+                    X_fit = X_train_clean
+                    y_fit = y_train_clean
+                    w_fit = weights_train_clean
 
                     # Prepare validation set for early stopping
-                    eval_set = [(X_test_clean, y_test_clean)]
-                    eval_weight = [weights_test_clean] if weights_test_clean is not None else None
+                    eval_set = None
+                    eval_weight = None
+                    try:
+                        n_train_clean = int(X_train_clean.shape[0])
+                        val_size = max(50, int(0.2 * n_train_clean))
+                        if (n_train_clean - val_size) >= 50:
+                            X_val = X_train_clean.iloc[-val_size:]
+                            y_val = y_train_clean.iloc[-val_size:]
+                            X_fit = X_train_clean.iloc[:-val_size]
+                            y_fit = y_train_clean.iloc[:-val_size]
+                            eval_set = [(X_val, y_val)]
+                            if weights_train_clean is not None:
+                                w_fit = weights_train_clean[:-val_size]
+                                eval_weight = [weights_train_clean[-val_size:]]
+                    except Exception:
+                        eval_set = None
+                        eval_weight = None
 
-                    if eval_weight is not None:
-                        fit_params['eval_sample_weight'] = eval_weight
+                    if w_fit is not None:
+                        fit_params['sample_weight'] = w_fit
 
-                    model.fit(
-                        X_train_clean,
-                        y_train_clean,
-                        eval_set=eval_set,
-                        eval_metric='auc',
-                        callbacks=[
-                            lgb.early_stopping(stopping_rounds=50),
-                            lgb.log_evaluation(0) # Silence logs
-                        ],
-                        **fit_params
-                    )
+                    if eval_set is not None:
+                        if eval_weight is not None:
+                            fit_params['eval_sample_weight'] = eval_weight
+                        model.fit(
+                            X_fit,
+                            y_fit,
+                            eval_set=eval_set,
+                            eval_metric='auc',
+                            callbacks=[
+                                lgb.early_stopping(stopping_rounds=50),
+                                lgb.log_evaluation(0) # Silence logs
+                            ],
+                            **fit_params
+                        )
+                    else:
+                        model.fit(
+                            X_fit,
+                            y_fit,
+                            **fit_params
+                        )
                 else:
                     # Standard fit for other models
                     if weights_train_clean is not None:
@@ -7686,10 +8523,22 @@ def train_ensemble_with_kfold(
 
                 # Metrics (track for early stopping)
                 try:
+                    pos_test_local = int((y_test_clean == 1.0).sum())
+                    neg_test_local = int((y_test_clean == 0.0).sum())
+                    if pos_test_local < 10 or neg_test_local < 10:
+                        tprint(
+                            (
+                                f"    ⚠️ {model_name}: very small class count in test fold "
+                                f"(pos={pos_test_local}, neg={neg_test_local}); AUC may be unstable"
+                            ),
+                            "WARNING",
+                        )
+
                     auc = roc_auc_score(y_test_clean, y_pred_proba)
+                    ap = average_precision_score(y_test_clean, y_pred_proba)
                     oof_aucs[model_name].append(auc)
                     if verbose:
-                        tprint(f"    ✓ {model_name}: AUC={auc:.3f}", "INFO")
+                        tprint(f"    ✓ {model_name}: AUC={auc:.3f}, AP={ap:.3f}", "INFO")
                 except:
                     oof_aucs[model_name].append(np.nan)
                     if verbose:
@@ -8032,6 +8881,8 @@ def train_bagged_lgbm_with_kfold(
 
     rng = np.random.RandomState(42)
 
+    purge_horizon = max(1, int(horizon) * 2)
+
     oof_mean = pd.Series(np.nan, index=X.index)
     oof_lower = pd.Series(np.nan, index=X.index)
     oof_mad = pd.Series(np.nan, index=X.index)
@@ -8047,7 +8898,7 @@ def train_bagged_lgbm_with_kfold(
             train_idx,
             test_idx[0],
             test_idx[-1] + 1,
-            horizon=horizon,
+            horizon=purge_horizon,
         )
 
         if len(train_idx_purged) == 0:
@@ -8123,7 +8974,9 @@ def train_bagged_lgbm_with_kfold(
                     fobj = dd_objectives.get_objective_for_specialist(spec_config, vol_train_sub)
 
                     if fobj is not None:
-                        model = lgb.LGBMRegressor(objective=fobj, **params)
+                        params_custom = dict(params)
+                        params_custom.pop('objective', None)
+                        model = lgb.LGBMRegressor(objective=fobj, **params_custom)
                         if weights_bag_sub is not None:
                             model.fit(X_train_bag_sub, y_train_bag_sub.astype(float), sample_weight=weights_bag_sub)
                         else:
@@ -8759,24 +9612,21 @@ def compute_label_entropy_score(
     y_clean = y[valid_mask]
 
     if len(y_clean) < min_samples:
-        return 0.0  # Not enough samples
-
-    pos_rate = y_clean.mean()
-    n_positive = (y_clean == 1).sum()
-
-    # Hard constraint: too few positive samples
-    if n_positive < min_samples:
         return 0.0
 
-    # Hard constraint: too extreme distribution
-    if pos_rate < min_positive_rate or pos_rate > max_positive_rate:
+    n_positive = int((y_clean == 1).sum())
+    n_total = int(len(y_clean))
+    n_negative = int(n_total - n_positive)
+    if n_positive <= 0 or n_negative <= 0:
         return 0.0
 
-    # Balance score: parabolic curve peaking at 0.5
-    # balance = 1 - (2 * |0.5 - pos_rate|)^2
-    balance_score = 1.0 - (2.0 * abs(0.5 - pos_rate)) ** 2
-
-    return balance_score
+    p = float(n_positive) / float(n_total)
+    p = float(np.clip(p, 1e-12, 1.0 - 1e-12))
+    entropy = float(-(p * np.log(p) + (1.0 - p) * np.log(1.0 - p)))
+    entropy_norm = float(entropy / np.log(2.0))
+    if not np.isfinite(entropy_norm):
+        return 0.0
+    return float(np.clip(entropy_norm, 0.0, 1.0))
 
 
 def combined_label_quality_objective(
@@ -9151,15 +10001,43 @@ def attach_rolling_hmm_regimes_to_market_data(
 class HPOCache:
     """Simple cache for HPO computations to avoid recomputing labels."""
 
-    def __init__(self, cache_dir: Optional[Path] = None):
-        self.cache_dir = cache_dir or Path("/tmp/hpo_cache")
+    def __init__(
+        self,
+        cache_dir: Optional[Path] = None,
+        exchange: Optional[str] = None,
+        asset: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        context: Optional[str] = None,
+    ):
+        context_suffix = context or "default"
+        exchange_norm = (exchange or "unknown").lower()
+        asset_norm = (asset or "unknown").lower()
+        timeframe_norm = timeframe or "na"
+
+        if cache_dir is None:
+            try:
+                temp_root = Path(
+                    PipelineStandards.build_path(
+                        "temp",
+                        exchange_norm,
+                        asset_norm,
+                        timeframe=timeframe_norm,
+                    )
+                )
+                cache_dir = temp_root / "meta_labeling_hpo_cache" / exchange_norm / asset_norm / timeframe_norm
+            except Exception as e_cache_path:
+                tprint(f"⚠️ Failed to build standardized HPO cache path, using /tmp: {e_cache_path}", "WARNING")
+                cache_dir = Path("/tmp/hpo_cache") / context_suffix
+
+        self.context = f"{exchange_norm}:{asset_norm}:{timeframe_norm}:{context_suffix}"
+        self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache = {}
 
     def _get_key(self, params: Dict[str, Any]) -> str:
         """Generate cache key from parameters."""
         # Sort keys for consistent hashing
-        param_str = str(sorted(params.items()))
+        param_str = f"{self.context}|{str(sorted(params.items()))}"
         return hashlib.md5(param_str.encode()).hexdigest()
 
     def get(self, params: Dict[str, Any]) -> Optional[Tuple[pd.Series, pd.Series]]:
@@ -9567,6 +10445,29 @@ def run_lgbm_feature_selection_multi_set(
         return {}, {"error": str(e)}
 
 
+def _load_latest_hpo_feature_selection(
+    symbol: str,
+    timeframe: str,
+    outcomes_dir: Path = Path("outcomes"),
+) -> Optional[Dict[str, Any]]:
+    try:
+        if not outcomes_dir.exists():
+            return None
+        pattern = f"hpo_feature_selection_{symbol}_{timeframe}_*.json"
+        candidates = list(outcomes_dir.glob(pattern))
+        if not candidates:
+            return None
+        latest = max(candidates, key=lambda p: p.stat().st_mtime)
+        with open(latest, "r") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            return None
+        payload["_path"] = str(latest)
+        return payload
+    except Exception:
+        return None
+
+
 def save_multi_feature_set_results(
     results: Dict[int, Dict[str, Any]],
     exchange: str,
@@ -9643,6 +10544,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
         self._feature_sets_cache: Dict[int, List[str]] = {}
         self._feature_selection_log: Dict[str, Any] = {}
 
+    @create_enhanced_error_handler("feature_generation_meta_labeling_step")
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute feature generation meta-labeling with enhanced methodology.
@@ -9711,6 +10613,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     hpo_params, latest_path, params_source = _load_latest_labeling_hpo_params(
                         symbol,
                         timeframe,
+                        exchange=config.get('exchange'),
                     )
                     if latest_path is not None and hpo_params:
                         label_source = params_source or 'params'
@@ -10536,13 +11439,55 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 meta_feature_cfg=meta_feature_cfg,
             )
 
+            prefer_hpo_feature_selection = bool(config.get('prefer_hpo_feature_selection', True))
+            hpo_feature_payload = None
+            if prefer_hpo_feature_selection:
+                try:
+                    hpo_feature_payload = _load_latest_hpo_feature_selection(
+                        symbol=str(config.get('symbol', '')),
+                        timeframe=str(config.get('timeframe', '')),
+                    )
+                except Exception:
+                    hpo_feature_payload = None
+
+            if prefer_hpo_feature_selection and isinstance(hpo_feature_payload, dict):
+                hpo_feature_selection_applied = False
+                try:
+                    hpo_selected = hpo_feature_payload.get('selected_features')
+                    if isinstance(hpo_selected, list) and hpo_selected:
+                        hpo_selected_set = {str(c) for c in hpo_selected}
+                        available_cols = [c for c in meta_features_model_processed.columns if c in hpo_selected_set]
+
+                        min_features = int(config.get('hpo_feature_selection_min_features', 30))
+                        min_keep_ratio = float(config.get('hpo_feature_selection_min_keep_ratio', 0.5))
+
+                        if available_cols and len(available_cols) >= min_features and (
+                            len(available_cols) / max(1, len(hpo_selected))
+                        ) >= min_keep_ratio:
+                            mandatory_feats = ['atr_14', 'momentum_30', 'rolling_sharpe', 'kaufman_efficiency_ratio']
+                            for feat in mandatory_feats:
+                                if feat in meta_features_model_processed.columns and feat not in available_cols:
+                                    available_cols.append(feat)
+
+                            selected_feature_names = available_cols
+                            meta_features_model_processed = meta_features_model_processed[selected_feature_names]
+                            hpo_feature_selection_applied = True
+                            tprint(
+                                f"   Using HPO-selected meta feature set ({len(selected_feature_names)} features) from {hpo_feature_payload.get('_path')}",
+                                "INFO",
+                            )
+                except Exception as e_hpo_fs:
+                    tprint(f"⚠️ Failed to apply HPO-selected feature set, continuing with step selection: {e_hpo_fs}", "WARNING")
+            else:
+                hpo_feature_selection_applied = False
+
             # Optional: run dedicated LGBM feature selection pipeline for
             # meta-labeling to derive a persistent set of features fully owned
             # by this step.
             multi_feature_sets: Dict[int, List[str]] = {}
             feature_selection_log: Dict[str, Any] = {}
 
-            if use_lgbm_feature_selection:
+            if use_lgbm_feature_selection and not hpo_feature_selection_applied:
                 try:
                     exchange = config.get('exchange', 'binance')
                     symbol = config.get('symbol', 'UNKNOWN')
@@ -10591,7 +11536,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             if feat in meta_features_full.columns:
                                 selected_set.add(feat)
 
-                        selected_feature_names = sorted(selected_set)
+                        selected_feature_names = [
+                            c for c in sorted(selected_set) if c in meta_features_full.columns
+                        ]
 
                         meta_features_model_processed = meta_features_full[selected_feature_names]
                         tprint(
@@ -11135,8 +12082,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             X_full = meta_features_enhanced_model[train_columns]
             if meta_feature_cfg.get('enable_winsorisation', False):
                 try:
-                    lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
-                    upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
+                    lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.0025))
+                    upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.9975))
                     robust_window = int(meta_feature_cfg.get('robust_window', 256))
                     robust_min_periods = int(meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4)))
 

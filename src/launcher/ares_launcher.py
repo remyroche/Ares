@@ -425,6 +425,29 @@ Examples:
         action='store_true',
         help='Alias for --enable-labeling-hpo-params; use latest meta-labeling HPO best-params in labeling steps'
     )
+
+    # Force recomputation of multi-stage labeling HPO (ignore cached best params)
+    parser.add_argument(
+        '--force-hpo',
+        action='store_true',
+        help='Force recomputation of multi-stage labeling HPO for compatible steps (ignore cached results)'
+    )
+
+    parser.add_argument(
+        '--labeling-hpo-start-at',
+        type=str,
+        default=None,
+        choices=[
+            'layer0', 'layer1', 'layer2', 'feature_selection', 'layer3',
+            'stage0', 'kalman', 'weighting', 'trading', 'model',
+            '0', '1', '2', '3', 'fs'
+        ],
+        help=(
+            'Start multi-stage meta-labeling HPO at a specific step. Steps before the start point '
+            'reuse the latest persisted best-params, while the start point and subsequent steps '
+            're-run HPO. Choices: layer0/layer1/layer2/feature_selection/layer3 (aliases: stage0, kalman, weighting, trading, model, fs, 0-3).'
+        )
+    )
     
     parser.add_argument(
         '--meta-permutation-test',
@@ -709,6 +732,14 @@ async def main():
         # discovery/alpha models unless explicitly overridden on the CLI.
         'regime_timeframe': args.regime_timeframe or '15m',
     }
+
+    # Optional: force recomputation of multi-stage labeling HPO (ignore cached params)
+    if getattr(args, 'force_hpo', False):
+        config['force_hpo'] = True
+
+    # Optional: start multi-stage labeling HPO at a specific stage
+    if getattr(args, 'labeling_hpo_start_at', None) is not None:
+        config['labeling_hpo_start_at'] = args.labeling_hpo_start_at
 
     # Hard-cap feature selection at ~200 features for full and blank modes
     if args.execution_mode in ("full", "blank"):

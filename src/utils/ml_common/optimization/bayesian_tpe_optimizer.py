@@ -481,7 +481,12 @@ class BayesianTPEOptimizer:
                         best_value = coarse_results['best_value']
 
                 if coarse_results and coarse_results.get('best_value') is not None:
-                    self.logger.info(f"   Coarse grid: {len(coarse_results['trials'])} trials, best: {coarse_results['best_value']:.4f}")
+                    self.logger.info(
+                        f"   Coarse grid: {len(coarse_results['trials'])} trials, best: {coarse_results['best_value']:.4f}"
+                    )
+                    self.logger.info(
+                        f"   Coarse grid best params: {coarse_results['best_params']}"
+                    )
                 elif coarse_results:
                     self.logger.info(f"   Coarse grid: {len(coarse_results['trials'])} trials, best: N/A")
 
@@ -495,7 +500,12 @@ class BayesianTPEOptimizer:
                         best_value = fine_results['best_value']
 
                 if fine_results:
-                    self.logger.info(f"   Fine grid: {len(fine_results['trials'])} trials, best: {fine_results['best_value']:.4f}")
+                    self.logger.info(
+                        f"   Fine grid: {len(fine_results['trials'])} trials, best: {fine_results['best_value']:.4f}"
+                    )
+                    self.logger.info(
+                        f"   Fine grid best params: {fine_results['best_params']}"
+                    )
 
             # Stage 2.5: Adaptive Grid Refinement (if enabled)
             if (self.config.enable_adaptive_grid_refinement and
@@ -512,7 +522,12 @@ class BayesianTPEOptimizer:
                         best_value = adaptive_results['best_value']
 
                     if adaptive_results:
-                        self.logger.info(f"   Adaptive refinement: {len(adaptive_results['trials'])} trials, best: {adaptive_results['best_value']:.4f}")
+                        self.logger.info(
+                            f"   Adaptive refinement: {len(adaptive_results['trials'])} trials, best: {adaptive_results['best_value']:.4f}"
+                        )
+                        self.logger.info(
+                            f"   Adaptive refinement best params: {adaptive_results['best_params']}"
+                        )
 
             # Stage 3: TPE Optimization
             tpe_trials_needed = self.config.n_trials - len(all_trials)
@@ -525,7 +540,12 @@ class BayesianTPEOptimizer:
                         best_value = tpe_results['best_value']
 
                 if tpe_results:
-                    self.logger.info(f"   TPE: {len(tpe_results['trials'])} trials, best: {tpe_results['best_value']:.4f}")
+                    self.logger.info(
+                        f"   TPE: {len(tpe_results['trials'])} trials, best: {tpe_results['best_value']:.4f}"
+                    )
+                    self.logger.info(
+                        f"   TPE best params: {tpe_results['best_params']}"
+                    )
 
             # Final results
             optimization_time = time.time() - start_time
@@ -1216,13 +1236,29 @@ class BayesianTPEOptimizer:
                 self.logger.warning("⚠️ No fine grid points generated")
                 return None
 
-            # Check if grid is too large and needs chunking for memory efficiency
-            if len(fine_grid) > self.config.max_fine_grid_size:
-                self.logger.warning(f"⚠️ Fine grid size ({len(fine_grid)}) exceeds max ({self.config.max_fine_grid_size})")
-                self.logger.info(f"   Using chunked evaluation for memory efficiency")
-                return self._chunked_evaluate_grid(objective, fine_grid, 'fine', self.config.max_fine_grid_size)
+            # If the fine grid is excessively large, cap the TOTAL number of evaluations
+            # to at most (max_fine_grid_size * ~10) points, then evaluate in chunks of
+            # size max_fine_grid_size so we get a small number of chunks with good
+            # coverage instead of thousands of tiny chunks.
+            max_points_per_chunk = self.config.max_fine_grid_size
+            max_chunks = 10
+            max_total_points = max_points_per_chunk * max_chunks
 
-            # Use batch evaluation if available and safe
+            if len(fine_grid) > max_total_points:
+                self.logger.warning(
+                    f"⚠️ Fine grid size ({len(fine_grid)}) exceeds cap "
+                    f"({max_total_points}); subsampling for efficiency"
+                )
+                # Deterministic subsample: stride through the grid and keep at most max_total_points
+                step = max(1, len(fine_grid) // max_total_points)
+                fine_grid = fine_grid[::step][: max_total_points]
+                self.logger.info(f"   Capped fine grid to {len(fine_grid)} points for evaluation")
+
+            # If we still have more points than a single chunk, use chunked evaluation
+            if len(fine_grid) > max_points_per_chunk:
+                return self._chunked_evaluate_grid(objective, fine_grid, 'fine', max_points_per_chunk)
+
+            # Otherwise, fall back to the simpler batch/sequential evaluation
             if (self.batch_processor and self.config.enable_batch_processing and
                 len(fine_grid) > 1 and self._is_batch_evaluation_safe(fine_grid)):
                 return self._batch_evaluate_grid(objective, fine_grid, 'fine')
@@ -1261,11 +1297,30 @@ class BayesianTPEOptimizer:
                 self.logger.warning("⚠️ No adaptive grid points generated")
                 return None
 
-            # Use batch evaluation for adaptive grid if safe
-            if self._is_batch_evaluation_safe(adaptive_grid):
-                adaptive_results = self._batch_evaluate_grid(objective, adaptive_grid, 'adaptive')
+            # As with the fine grid, cap the total number of adaptive points to avoid
+            # extremely large evaluations when the search space is high-dimensional,
+            # and then use chunked evaluation to get a few well-sized chunks.
+            max_points_per_chunk = self.config.max_fine_grid_size
+            max_chunks = 10
+            max_total_points = max_points_per_chunk * max_chunks
+
+            if len(adaptive_grid) > max_total_points:
+                self.logger.warning(
+                    f"⚠️ Adaptive grid size ({len(adaptive_grid)}) exceeds cap "
+                    f"({max_total_points}); subsampling for efficiency"
+                )
+                step = max(1, len(adaptive_grid) // max_total_points)
+                adaptive_grid = adaptive_grid[::step][: max_total_points]
+                self.logger.info(f"   Capped adaptive grid to {len(adaptive_grid)} points for evaluation")
+
+            if len(adaptive_grid) > max_points_per_chunk:
+                adaptive_results = self._chunked_evaluate_grid(objective, adaptive_grid, 'adaptive', max_points_per_chunk)
             else:
-                adaptive_results = self._sequential_evaluate_grid(objective, adaptive_grid, 'adaptive')
+                # Use batch evaluation for adaptive grid if safe
+                if self._is_batch_evaluation_safe(adaptive_grid):
+                    adaptive_results = self._batch_evaluate_grid(objective, adaptive_grid, 'adaptive')
+                else:
+                    adaptive_results = self._sequential_evaluate_grid(objective, adaptive_grid, 'adaptive')
 
             if adaptive_results:
                 # Update refinement history
@@ -1846,8 +1901,9 @@ class BayesianTPEOptimizer:
                         best_params = params
                         best_value = value
 
-                    # Check early stopping after minimum trials
-                    if i >= self.config.early_stopping_patience:
+                    # Check early stopping after minimum trials, if configured
+                    patience = self.config.early_stopping_patience
+                    if patience is not None and patience > 0 and i >= patience:
                         if self._check_early_stopping_grid(trials, stage):
                             self.logger.info(f"   Stopped after {i+1}/{len(grid_points)} evaluations")
                             break

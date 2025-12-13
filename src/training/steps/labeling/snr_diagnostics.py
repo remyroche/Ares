@@ -64,6 +64,28 @@ from src.training.steps.labeling.labeled_data_schema import (
     validate_labeled_data_schema,
 )
 
+# Import calibration quality utilities for enhanced diagnostics
+try:
+    from src.training.steps.labeling.probability_calibration import (
+        calibration_quality_report,
+        validate_monotonicity,
+        select_brier_optimal_threshold,
+    )
+    CALIBRATION_QUALITY_AVAILABLE = True
+except ImportError:
+    CALIBRATION_QUALITY_AVAILABLE = False
+
+# Import signal spacing utilities for density diagnostics
+try:
+    from src.training.steps.labeling.signal_spacing_utils import (
+        compute_signal_spacing_stats,
+        recommend_signal_spacing,
+    )
+    SIGNAL_SPACING_AVAILABLE = True
+except ImportError:
+    SIGNAL_SPACING_AVAILABLE = False
+
+
 try:
     import lightgbm as lgb  # type: ignore
     from sklearn.model_selection import TimeSeriesSplit
@@ -211,6 +233,17 @@ def _load_labeled_data(
                     df,
                     context="snr_diagnostics._load_labeled_data",
                 )
+            # Helpful debug info: these columns drive the bucket diagnostics.
+            try:
+                cols = set(map(str, df.columns))
+                logger.info(
+                    "labeled_data columns present: meta_probability=%s, volatility_1d=%s, targets=%s",
+                    "meta_probability" in cols,
+                    "volatility_1d" in cols,
+                    any(c in cols for c in ("target_long", "target_short")),
+                )
+            except Exception:
+                pass
             logger.info(
                 "Loaded labeled data from artifact '%s' with shape %s",
                 name,
@@ -464,22 +497,356 @@ def _compute_feature_importance_stability(
     }
 
 
-def _estimate_label_noise_confident_learning(
-    y_true: np.ndarray,
-    y_proba: np.ndarray,
+def _apply_confident_learning_noise_filter(
+    df: pd.DataFrame,
+    y_true_col: str = "binary_label",
+    y_proba_col: str = "meta_probability",
     threshold_confident: float = 0.9,
+    min_samples_required: int = 100,
+    verbose: bool = True
 ) -> dict:
-    """Implement confident learning to estimate label noise.
-
-    Finds samples where model is highly confident but label disagrees with
-    predicted class, indicating potential mislabeling.
-
+    """Apply confident learning noise filter to remove suspected mislabeled rows.
+    
+    This function identifies samples where the model is highly confident but the label
+    disagrees with the prediction, indicating potential mislabeling. These samples are
+    removed from the dataset and SNR metrics are recomputed.
+    
+    Args:
+        df: Input DataFrame with labels and probabilities
+        y_true_col: Column name for true labels
+        y_proba_col: Column name for predicted probabilities
+        threshold_confident: Confidence threshold for identifying confident predictions
+        min_samples_required: Minimum samples required for filtering
+        verbose: Whether to print filtering statistics
+        
     Returns:
-        Dict with noise metrics and indices of potentially mislabeled samples.
+        Dict with filtered DataFrame, noise statistics, and SNR recomputation
     """
-    # Predicted class and confidence
-    y_pred = (y_proba >= 0.5).astype(int)
-    confidence = np.abs(y_proba - 0.5) * 2  # 0-1 scale
+    # Validate inputs
+    if y_true_col not in df.columns or y_proba_col not in df.columns:
+        if verbose:
+            print(f"Warning: Missing required columns {y_true_col} or {y_proba_col}")
+        return {
+            "filtered_df": df,
+            "noise_stats": {},
+            "snr_before": {},
+            "snr_after": {},
+            "applied_filter": False
+        }
+    
+    # Get labeled samples only
+    labeled_mask = df[y_true_col].notna() & df[y_proba_col].notna()
+    labeled_df = df[labeled_mask].copy()
+    
+    if len(labeled_df) < min_samples_required:
+        if verbose:
+            print(f"Warning: Insufficient labeled samples ({len(labeled_df)} < {min_samples_required})")
+        return {
+            "filtered_df": df,
+            "noise_stats": {},
+            "snr_before": {},
+            "snr_after": {},
+            "applied_filter": False
+        }
+    
+    # Extract labels and probabilities
+    y_true = labeled_df[y_true_col].values
+    y_proba = labeled_df[y_proba_col].values
+    
+    # Estimate noise using confident learning
+    noise_stats = _estimate_label_noise_confident_learning(
+        y_true, y_proba, threshold_confident=threshold_confident
+    )
+    
+    # Get indices of potential mislabeled samples
+    mislabeled_indices = noise_stats["mislabeled_indices"]
+    
+    if len(mislabeled_indices) == 0:
+        if verbose:
+            print("No mislabeled candidates detected")
+        return {
+            "filtered_df": df,
+            "noise_stats": noise_stats,
+            "snr_before": {},
+            "snr_after": {},
+            "applied_filter": False
+        }
+    
+    # Get actual DataFrame indices to remove
+    labeled_indices = labeled_df.index
+    indices_to_remove = [labeled_indices[i] for i in mislabeled_indices if i < len(labeled_indices)]
+    
+    # Compute SNR before filtering
+    snr_before = {}
+    if "realized_return" in labeled_df.columns:
+        returns = labeled_df["realized_return"]
+        pos_mask = labeled_df[y_true_col] == 1
+        neg_mask = labeled_df[y_true_col] == 0
+        
+        if pos_mask.sum() > 0 and neg_mask.sum() > 0:
+            pos_returns = returns[pos_mask].dropna()
+            neg_returns = returns[neg_mask].dropna()
+            
+            if len(pos_returns) > 1 and len(neg_returns) > 1:
+                pos_mean, pos_std = pos_returns.mean(), pos_returns.std()
+                neg_mean = neg_returns.mean()
+                snr_before = {
+                    "pos_mean": float(pos_mean),
+                    "pos_std": float(pos_std),
+                    "neg_mean": float(neg_mean),
+                    "snr": float(pos_mean / (pos_std + 1e-8)),
+                    "cohens_d": float((pos_mean - neg_mean) / np.sqrt(((pos_returns.var() + neg_returns.var()) / 2) + 1e-8))
+                }
+    
+    # Apply filter - remove mislabeled samples
+    filtered_df = df.drop(indices_to_remove).copy()
+    
+    # Compute SNR after filtering
+    snr_after = {}
+    if "realized_return" in filtered_df.columns:
+        filtered_labeled_mask = filtered_df[y_true_col].notna() & filtered_df[y_proba_col].notna()
+        filtered_labeled = filtered_df[filtered_labeled_mask]
+        
+        if len(filtered_labeled) > 0:
+            returns = filtered_labeled["realized_return"]
+            pos_mask = filtered_labeled[y_true_col] == 1
+            neg_mask = filtered_labeled[y_true_col] == 0
+            
+            if pos_mask.sum() > 0 and neg_mask.sum() > 0:
+                pos_returns = returns[pos_mask].dropna()
+                neg_returns = returns[neg_mask].dropna()
+                
+                if len(pos_returns) > 1 and len(neg_returns) > 1:
+                    pos_mean, pos_std = pos_returns.mean(), pos_returns.std()
+                    neg_mean = neg_returns.mean()
+                    snr_after = {
+                        "pos_mean": float(pos_mean),
+                        "pos_std": float(pos_std),
+                        "neg_mean": float(neg_mean),
+                        "snr": float(pos_mean / (pos_std + 1e-8)),
+                        "cohens_d": float((pos_mean - neg_mean) / np.sqrt(((pos_returns.var() + neg_returns.var()) / 2) + 1e-8))
+                    }
+    
+    # Calculate improvement metrics
+    snr_improvement = {}
+    if snr_before and snr_after:
+        snr_improvement = {
+            "snr_delta": float(snr_after["snr"] - snr_before["snr"]),
+            "snr_pct_change": float((snr_after["snr"] - snr_before["snr"]) / abs(snr_before["snr"]) * 100) if snr_before["snr"] != 0 else 0,
+            "cohens_d_delta": float(snr_after["cohens_d"] - snr_before["cohens_d"]),
+            "samples_removed": len(indices_to_remove),
+            "samples_remaining": len(filtered_labeled_mask),
+            "removal_rate": float(len(indices_to_remove) / len(labeled_df) * 100)
+        }
+    
+    if verbose:
+        print(f"\n=== Confident Learning Noise Filter Results ===")
+        print(f"Original labeled samples: {len(labeled_df)}")
+        print(f"Mislabeled candidates: {len(indices_to_remove)} ({noise_stats['estimated_noise_rate']:.1%})")
+        print(f"Samples remaining: {len(filtered_labeled_mask)}")
+        
+        if snr_improvement:
+            print(f"SNR change: {snr_before['snr']:.3f} → {snr_after['snr']:.3f} ({snr_improvement['snr_pct_change']:+.1f}%)")
+            print(f"Cohen's d change: {snr_before['cohens_d']:.3f} → {snr_after['cohens_d']:.3f} ({snr_improvement['cohens_d_delta']:+.3f})")
+    
+    return {
+        "filtered_df": filtered_df,
+        "noise_stats": noise_stats,
+        "snr_before": snr_before,
+        "snr_after": snr_after,
+        "snr_improvement": snr_improvement,
+        "applied_filter": len(indices_to_remove) > 0,
+        "indices_removed": indices_to_remove
+    }
+
+
+def _apply_confident_learning_noise_filter(
+    df: pd.DataFrame,
+    y_true_col: str = "binary_label",
+    y_proba_col: str = "meta_probability",
+    threshold_confident: float = 0.9,
+    min_samples_required: int = 100,
+    verbose: bool = True
+) -> dict:
+    """Apply confident learning noise filter to remove suspected mislabeled rows.
+    
+    This function identifies samples where the model is highly confident but the label
+    disagrees with the prediction, indicating potential mislabeling. These samples are
+    removed from the dataset and SNR metrics are recomputed.
+    
+    Args:
+        df: Input DataFrame with labels and probabilities
+        y_true_col: Column name for true labels
+        y_proba_col: Column name for predicted probabilities
+        threshold_confident: Confidence threshold for identifying confident predictions
+        min_samples_required: Minimum samples required for filtering
+        verbose: Whether to print progress
+        
+    Returns:
+        Dict with filtered DataFrame and noise statistics
+    """
+    # Check if probability column exists
+    if y_proba_col not in df.columns:
+        if verbose:
+            print(f"Probability column '{y_proba_col}' not found - skipping noise filter")
+        return {
+            "filtered_df": df,
+            "noise_stats": {},
+            "snr_before": {},
+            "snr_after": {},
+            "snr_improvement": {},
+            "applied_filter": False,
+            "indices_removed": []
+        }
+    
+    # Filter labeled samples
+    labeled_df = df[df[y_true_col].notna()].copy()
+    if len(labeled_df) < min_samples_required:
+        if verbose:
+            print(f"Insufficient labeled samples ({len(labeled_df)} < {min_samples_required}) - skipping")
+        return {
+            "filtered_df": df,
+            "noise_stats": {},
+            "snr_before": {},
+            "snr_after": {},
+            "snr_improvement": {},
+            "applied_filter": False,
+            "indices_removed": []
+        }
+    
+    # Extract labels and probabilities
+    y_true = labeled_df[y_true_col].values
+    y_proba = labeled_df[y_proba_col].values
+    
+    # Estimate noise using confident learning
+    noise_stats = _estimate_label_noise_confident_learning(
+        y_true, y_proba, threshold_confident=threshold_confident
+    )
+    
+    # Get indices of potential mislabeled samples
+    mislabeled_indices = noise_stats["mislabeled_indices"]
+    
+    if len(mislabeled_indices) == 0:
+        if verbose:
+            print("No mislabeled candidates detected")
+        return {
+            "filtered_df": df,
+            "noise_stats": noise_stats,
+            "snr_before": {},
+            "snr_after": {},
+            "snr_improvement": {},
+            "applied_filter": False,
+            "indices_removed": []
+        }
+    
+    # Get original indices
+    original_indices = labeled_df.index[mislabeled_indices]
+    
+    # Create filtered dataset
+    filtered_df = df.drop(original_indices)
+    
+    # Compute SNR before and after filtering
+    snr_before = _compute_snr_metrics(labeled_df[y_true_col], labeled_df.get('realized_return', pd.Series()))
+    snr_after = _compute_snr_metrics(
+        filtered_df[filtered_df[y_true_col].notna()][y_true_col],
+        filtered_df[filtered_df[y_true_col].notna()].get('realized_return', pd.Series())
+    )
+    
+    # Compute improvement metrics
+    snr_improvement = {}
+    if snr_before and snr_after:
+        snr_improvement = {
+            "snr_delta": snr_after.get("snr", 0) - snr_before.get("snr", 0),
+            "snr_pct_change": ((snr_after.get("snr", 0) - snr_before.get("snr", 0)) / max(abs(snr_before.get("snr", 1e-8)), 1e-8)) * 100,
+            "cohens_d_delta": snr_after.get("cohens_d", 0) - snr_before.get("cohens_d", 0)
+        }
+    
+    # Additional statistics
+    filtered_labeled_mask = filtered_df[y_true_col].notna()
+    indices_to_remove = list(original_indices)
+    
+    noise_stats.update({
+        "original_labeled_samples": len(labeled_df),
+        "samples_remaining": len(filtered_labeled_mask),
+        "removal_rate": float(len(indices_to_remove) / len(labeled_df) * 100)
+    })
+    
+    if verbose:
+        print(f"\n=== Confident Learning Noise Filter Results ===")
+        print(f"Original labeled samples: {len(labeled_df)}")
+        print(f"Mislabeled candidates: {len(indices_to_remove)} ({noise_stats['estimated_noise_rate']:.1%})")
+        print(f"Samples remaining: {len(filtered_labeled_mask)}")
+        
+        if snr_improvement:
+            print(f"SNR change: {snr_before['snr']:.3f} → {snr_after['snr']:.3f} ({snr_improvement['snr_pct_change']:+.1f}%)")
+            print(f"Cohen's d change: {snr_before['cohens_d']:.3f} → {snr_after['cohens_d']:.3f} ({snr_improvement['cohens_d_delta']:+.3f})")
+    
+    return {
+        "filtered_df": filtered_df,
+        "noise_stats": noise_stats,
+        "snr_before": snr_before,
+        "snr_after": snr_after,
+        "snr_improvement": snr_improvement,
+        "applied_filter": len(indices_to_remove) > 0,
+        "indices_removed": indices_to_remove
+    }
+
+
+def _compute_snr_metrics(y_true: pd.Series, y_returns: Optional[pd.Series] = None) -> dict:
+    """Compute SNR metrics for label quality assessment."""
+    if len(y_true) == 0:
+        return {}
+    
+    # Basic metrics
+    n_positive = int((y_true == 1).sum())
+    n_negative = int((y_true == 0).sum())
+    n_total = len(y_true)
+    
+    if n_positive == 0 or n_negative == 0:
+        return {
+            "n_positive": n_positive,
+            "n_negative": n_negative,
+            "n_total": n_total,
+            "positive_rate": n_positive / n_total,
+            "snr": 0.0,
+            "cohens_d": 0.0
+        }
+    
+    # Compute effect size and SNR if returns available
+    snr = 0.0
+    cohens_d = 0.0
+    
+    if y_returns is not None and len(y_returns) == len(y_true):
+        try:
+            pos_returns = y_returns[y_true == 1].dropna()
+            neg_returns = y_returns[y_true == 0].dropna()
+            
+            if len(pos_returns) > 1 and len(neg_returns) > 1:
+                pos_mean = float(pos_returns.mean())
+                neg_mean = float(neg_returns.mean())
+                pos_std = float(pos_returns.std())
+                neg_std = float(neg_returns.std())
+                
+                # Cohen's d
+                pooled_std = np.sqrt(((len(pos_returns) - 1) * pos_std**2 + (len(neg_returns) - 1) * neg_std**2) / 
+                                   (len(pos_returns) + len(neg_returns) - 2))
+                cohens_d = (pos_mean - neg_mean) / max(pooled_std, 1e-8)
+                
+                # SNR (signal-to-noise ratio)
+                signal = abs(pos_mean - neg_mean)
+                noise = np.sqrt((pos_std**2 + neg_std**2) / 2)
+                snr = signal / max(noise, 1e-8)
+        except Exception:
+            pass
+    
+    return {
+        "n_positive": n_positive,
+        "n_negative": n_negative,
+        "n_total": n_total,
+        "positive_rate": n_positive / n_total,
+        "snr": snr,
+        "cohens_d": cohens_d
+    }
 
     # Find confident predictions (high confidence in one direction)
     confident_mask = confidence >= threshold_confident
@@ -1011,8 +1378,7 @@ def run_label_quality(
                 except Exception:
                     continue
 
-    # Volatility-bucket diagnostics (low/mid/high volatility regimes) using
-    # volatility_1d when available in labeled_data.
+    # Enhanced volatility-bucket diagnostics with adaptive thresholds
     vol_bucket_stats = {}
     if "volatility_1d" in df.columns:
         try:
@@ -1028,6 +1394,10 @@ def run_label_quality(
                     "mid": (vol >= low_thr) & (vol < high_thr),
                     "high": vol >= high_thr,
                 }
+
+                # Get adaptive threshold information if available
+                adaptive_profit = df.get("adaptive_profit_threshold")
+                adaptive_stop = df.get("adaptive_stop_threshold")
 
                 for name, regime_mask in regimes.items():
                     seg_mask = vol_mask & regime_mask
@@ -1052,7 +1422,7 @@ def run_label_quality(
                     seg_total = int(seg_mask.sum())
                     seg_pos_rate = seg_pos / max(seg_pos + seg_neg, 1)
 
-                    vol_bucket_stats[name] = {
+                    bucket_stats = {
                         "n_events": seg_total,
                         "n_positive": seg_pos,
                         "n_negative": seg_neg,
@@ -1062,7 +1432,23 @@ def run_label_quality(
                         "low_threshold": float(low_thr),
                         "high_threshold": float(high_thr),
                     }
-        except Exception:
+
+                    # Add adaptive threshold statistics if available
+                    if adaptive_profit is not None and adaptive_stop is not None:
+                        seg_adaptive_profit = adaptive_profit[seg_mask].dropna()
+                        seg_adaptive_stop = adaptive_stop[seg_mask].dropna()
+                        
+                        if len(seg_adaptive_profit) > 0:
+                            bucket_stats.update({
+                                "adaptive_threshold_mean": float(seg_adaptive_profit.mean()),
+                                "adaptive_threshold_std": float(seg_adaptive_profit.std()),
+                                "adaptive_stop_mean": float(seg_adaptive_stop.mean()),
+                                "adaptive_stop_std": float(seg_adaptive_stop.std()),
+                            })
+
+                    vol_bucket_stats[name] = bucket_stats
+        except Exception as e:
+            print(f"Warning: Volatility bucket analysis failed: {e}")
             vol_bucket_stats = {}
 
     # Simple interpretation helpers for coverage, effect size, SNR and retention
@@ -1196,7 +1582,7 @@ def run_label_quality(
 
     if vol_bucket_stats:
         print()
-        print("-- Volatility Buckets (by volatility_1d) --")
+        print("-- Enhanced Volatility Buckets (by volatility_1d) --")
         for name in ["low", "mid", "high"]:
             if name not in vol_bucket_stats:
                 continue
@@ -1205,8 +1591,14 @@ def run_label_quality(
                 f"Vol {name:>4}: n={stats['n_events']}, "
                 f"pos_rate={stats['positive_rate']:.1%}, "
                 f"mean_ret={stats['mean_return']:.2%}, "
-                f"Sharpe={stats['sharpe']:.2f}"
+                f"Sharpe={stats['sharpe']:.2f}, "
+                f"vol_range=[{stats.get('low_threshold', 'nan'):.4f}, {stats.get('high_threshold', 'nan'):.4f}]"
             )
+            
+            # Add volatility-aware threshold diagnostics if available
+            if 'adaptive_threshold_mean' in stats:
+                print(f"         Adaptive profit threshold: {stats['adaptive_threshold_mean']:.4f} ± {stats.get('adaptive_threshold_std', 0):.4f}")
+                print(f"         Adaptive stop threshold: {stats['adaptive_stop_mean']:.4f} ± {stats.get('adaptive_stop_std', 0):.4f}")
 
     print()
     print("-- Interpretation Hints --")
@@ -1329,7 +1721,7 @@ def run_label_quality(
 
     md_lines.extend([
         "",
-        "## Volatility Buckets (by volatility_1d)",
+        "## Enhanced Volatility Buckets (by volatility_1d)",
     ])
 
     if vol_bucket_stats:
@@ -1341,8 +1733,18 @@ def run_label_quality(
                 f"- Vol {name}: n={stats['n_events']}, "
                 f"pos_rate={stats['positive_rate']:.1%}, "
                 f"mean_ret={stats['mean_return']:.2%}, "
-                f"Sharpe={stats['sharpe']:.2f}"
+                f"Sharpe={stats['sharpe']:.2f}, "
+                f"vol_range=[{stats.get('low_threshold', 'nan'):.4f}, {stats.get('high_threshold', 'nan'):.4f}]"
             )
+            
+            # Add adaptive threshold information to markdown
+            if 'adaptive_threshold_mean' in stats:
+                md_lines.append(
+                    f"  - Adaptive profit threshold: {stats['adaptive_threshold_mean']:.4f} ± {stats.get('adaptive_threshold_std', 0):.4f}"
+                )
+                md_lines.append(
+                    f"  - Adaptive stop threshold: {stats['adaptive_stop_mean']:.4f} ± {stats.get('adaptive_stop_std', 0):.4f}"
+                )
     else:
         md_lines.append("- volatility_1d not available or insufficient data for volatility buckets.")
 
@@ -2369,7 +2771,28 @@ def run_trading_simulation(
     X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
     if prob_column not in df.columns:
-        raise ValueError(f"labeled_data must contain '{prob_column}' column for trading simulation")
+        # Auto-fallback: prefer ensemble / bagged outputs if meta_probability is absent.
+        fallback_cols = [
+            "meta_probability",
+            "meta_probability_ensemble",
+            "meta_probability_lgbm_bag_mean",
+            "meta_probability_lgbm_bag_lower",
+        ]
+        chosen = None
+        for c in fallback_cols:
+            if c in df.columns:
+                chosen = c
+                break
+        if chosen is None:
+            raise ValueError(
+                f"labeled_data must contain '{prob_column}' (or one of {fallback_cols}) column for trading simulation"
+            )
+        logger.warning(
+            "prob_column '%s' not found; falling back to '%s' for trading simulation",
+            prob_column,
+            chosen,
+        )
+        prob_column = chosen
     if "realized_return" not in df.columns:
         raise ValueError("labeled_data must contain 'realized_return' column for trading simulation")
 

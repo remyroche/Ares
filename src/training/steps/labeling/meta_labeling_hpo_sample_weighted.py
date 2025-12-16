@@ -857,6 +857,205 @@ def compute_brier_and_ece(
     return brier, float(ece), float(mce)
 
 
+def log_returns_fees_adjusted(
+    returns: Union[np.ndarray, pd.Series],
+    transaction_cost: Optional[float] = None,
+    already_net: bool = True,
+    winsorize_pct: float = 0.01,
+) -> np.ndarray:
+    """
+    Transform returns to log-scale with fee adjustment.
+    
+    This function:
+    1. Subtracts transaction costs if returns are gross (already_net=False)
+    2. Applies winsorization to clip extreme outliers
+    3. Applies sign-preserving log transform: sign(x) * log(1 + |x|)
+    
+    The log transform:
+    - Compresses large returns (reducing influence of outliers)
+    - Expands small returns (making small differences more distinguishable)
+    - Preserves sign direction (positive returns stay positive, negative stay negative)
+    - Is well-suited for ML objectives that predict returns
+    
+    Args:
+        returns: Raw or net returns (simple returns, not log returns)
+        transaction_cost: Transaction cost per trade (buy+sell+slippage+spread).
+                         Default uses DEFAULT_TRANSACTION_COST (0.003 = 0.3%)
+        already_net: If True, assumes returns already have fees subtracted.
+                    If False, will subtract transaction_cost from returns.
+        winsorize_pct: Percentile for winsorization (default 1% each tail)
+        
+    Returns:
+        Log-transformed, fee-adjusted returns as numpy array
+    """
+    # Import here to avoid circular imports
+    if transaction_cost is None:
+        try:
+            transaction_cost = float(DEFAULT_TRANSACTION_COST)
+        except Exception:
+            transaction_cost = 0.003  # Fallback: 0.3% round-trip
+    
+    # Convert to numpy array
+    if isinstance(returns, pd.Series):
+        r = returns.values.astype(float)
+    else:
+        r = np.asarray(returns, dtype=float)
+    
+    # Create output array
+    result = np.full_like(r, np.nan, dtype=float)
+    valid_mask = np.isfinite(r)
+    
+    if not np.any(valid_mask):
+        return result
+    
+    r_valid = r[valid_mask].copy()
+    
+    # Step 1: Subtract fees if returns are gross
+    if not already_net:
+        r_valid = r_valid - float(transaction_cost)
+    
+    # Step 2: Winsorize to clip extreme outliers
+    if winsorize_pct > 0.0 and len(r_valid) > 10:
+        try:
+            lower = np.percentile(r_valid, winsorize_pct * 100)
+            upper = np.percentile(r_valid, (1.0 - winsorize_pct) * 100)
+            r_valid = np.clip(r_valid, lower, upper)
+        except Exception:
+            pass
+    
+    # Step 3: Apply sign-preserving log transform
+    # log_return = sign(r) * log(1 + |r|)
+    # This maps:
+    #   0.01 (1%) → 0.00995 (nearly linear for small values)
+    #   0.10 (10%) → 0.0953
+    #   0.50 (50%) → 0.405
+    #   -0.05 (-5%) → -0.0488
+    log_r = np.sign(r_valid) * np.log1p(np.abs(r_valid))
+    
+    # Handle any edge cases
+    log_r = np.where(np.isfinite(log_r), log_r, 0.0)
+    
+    result[valid_mask] = log_r
+    return result
+
+
+def inverse_log_returns(log_returns: np.ndarray) -> np.ndarray:
+    """
+    Inverse of log_returns_fees_adjusted transform.
+    
+    Converts sign(x) * log(1 + |x|) back to simple returns.
+    Note: Does NOT add back transaction costs.
+    
+    Args:
+        log_returns: Log-transformed returns
+        
+    Returns:
+        Simple returns (still net of fees)
+    """
+    log_r = np.asarray(log_returns, dtype=float)
+    # Inverse: sign(x) * (exp(|x|) - 1)
+    simple_r = np.sign(log_r) * (np.expm1(np.abs(log_r)))
+    return np.where(np.isfinite(simple_r), simple_r, 0.0)
+
+
+def fit_temperature_scaling(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    temperature_range: Tuple[float, float] = (0.5, 2.0),
+    n_grid: int = 20,
+    sample_weight: Optional[np.ndarray] = None,
+) -> Tuple[float, float]:
+    """
+    Find optimal temperature for probability calibration via grid search.
+    
+    Temperature scaling adjusts predicted probabilities: p_calibrated = p^(1/T)
+    - T < 1: Makes predictions more extreme (sharper)
+    - T > 1: Makes predictions more uncertain (softer)
+    - T = 1: No change
+    
+    This method is simple, monotonic, and doesn't require retraining the model.
+    It's particularly effective for neural networks but also helps LightGBM.
+    
+    Args:
+        y_true: True binary labels (0 or 1)
+        y_pred: Predicted probabilities [0, 1]
+        temperature_range: Range of temperatures to search (min, max)
+        n_grid: Number of temperature values to try
+        sample_weight: Optional sample weights for weighted Brier score
+        
+    Returns:
+        Tuple of (best_temperature, best_brier_score)
+    """
+    from sklearn.metrics import brier_score_loss
+    
+    y = np.asarray(y_true, dtype=float).ravel()
+    p = np.asarray(y_pred, dtype=float).ravel()
+    
+    # Filter valid samples
+    valid_mask = np.isfinite(y) & np.isfinite(p) & (p > 0) & (p < 1)
+    if np.sum(valid_mask) < 10:
+        return 1.0, float('inf')
+    
+    y = y[valid_mask]
+    p = p[valid_mask]
+    w = None
+    if sample_weight is not None:
+        w = np.asarray(sample_weight, dtype=float).ravel()[valid_mask]
+        w = w / (np.sum(w) + 1e-8)  # Normalize
+    
+    best_temp = 1.0
+    best_brier = float('inf')
+    
+    for T in np.linspace(temperature_range[0], temperature_range[1], n_grid):
+        try:
+            # Apply temperature scaling: p_cal = p^(1/T)
+            # Clip to avoid numerical issues
+            p_cal = np.clip(np.power(p, 1.0 / T), 1e-6, 1.0 - 1e-6)
+            
+            # Compute weighted or unweighted Brier score
+            if w is not None:
+                brier = float(np.sum(w * (p_cal - y) ** 2))
+            else:
+                brier = float(brier_score_loss(y, p_cal))
+            
+            if brier < best_brier:
+                best_brier = brier
+                best_temp = T
+        except Exception:
+            continue
+    
+    return float(best_temp), float(best_brier)
+
+
+def apply_temperature_scaling(
+    y_pred: np.ndarray,
+    temperature: float,
+) -> np.ndarray:
+    """
+    Apply temperature scaling to predicted probabilities.
+    
+    Args:
+        y_pred: Predicted probabilities [0, 1]
+        temperature: Temperature parameter (from fit_temperature_scaling)
+        
+    Returns:
+        Calibrated probabilities
+    """
+    if temperature <= 0 or not np.isfinite(temperature):
+        temperature = 1.0
+    
+    p = np.asarray(y_pred, dtype=float)
+    # Handle edge cases
+    eps = 1e-8
+    p = np.clip(p, eps, 1.0 - eps)
+    
+    # Apply temperature scaling: p_cal = p^(1/T)
+    p_cal = np.power(p, 1.0 / temperature)
+    p_cal = np.clip(p_cal, eps, 1.0 - eps)
+    
+    return p_cal
+
+
 def _cross_val_predict_proba_weighted(
     estimator: BaseEstimator,
     X: pd.DataFrame,
@@ -6886,6 +7085,9 @@ def calculate_hpo_utility(
     w_return: float = 3.0,  # NEW: Weight for return contribution
     max_drawdown: Optional[float] = None,  # NEW: Max drawdown (0.0 to 1.0)
     w_dd: float = 1.0,  # NEW: Weight for drawdown penalty
+    # NEW: Probability-Return Correlation (encourages probabilities to correlate with returns)
+    prob_return_corr: Optional[float] = None,  # Spearman correlation between probabilities and returns
+    w_prob_return_corr: float = 0.1,  # Weight for prob-return correlation bonus (weak by default)
 ) -> float:
     """
     Compute a stable utility for HPO combining Sharpe stability, AUC gate, trade density,
@@ -7011,6 +7213,7 @@ def calculate_hpo_utility(
         modifier = 0.0
 
     # Optional: calibration quality modifier (model-dependent; useful for Layer 3)
+    phi_cal = None
     if w_cal and w_cal > 0.0:
         cal = None
         if calibration_brier is not None and np.isfinite(calibration_brier):
@@ -7023,6 +7226,25 @@ def calculate_hpo_utility(
                 modifier *= float(phi_cal) ** float(w_cal)
             except Exception:
                 modifier *= 0.0
+
+    # NEW: Probability-Return Correlation modifier
+    # Encourages models where higher probability predictions correlate with higher returns.
+    # This addresses the core issue of weak prob-return correlation (Spearman ~0.06).
+    # The modifier provides a bonus/penalty based on the correlation strength.
+    phi_prob_ret_corr = None
+    if w_prob_return_corr and w_prob_return_corr > 0.0 and prob_return_corr is not None:
+        try:
+            corr = float(prob_return_corr)
+            if np.isfinite(corr):
+                # Map correlation [-1, 1] to modifier [0.5, 1.5]
+                # corr = 0.0 -> modifier = 1.0 (neutral)
+                # corr = 0.3 -> modifier = 1.15 (15% bonus)
+                # corr = -0.3 -> modifier = 0.85 (15% penalty)
+                phi_prob_ret_corr = 1.0 + (corr * w_prob_return_corr * 5.0)  # Scale by 5 so w=0.1 gives ±50% effect at corr=±1
+                phi_prob_ret_corr = float(np.clip(phi_prob_ret_corr, 0.5, 1.5))
+                modifier *= phi_prob_ret_corr
+        except Exception:
+            pass
 
     # ISSUE #2 FIX: No log - direct multiplication
     utility_pre_clip = float(combined_base) * float(modifier)
@@ -7049,6 +7271,9 @@ def calculate_hpo_utility(
                     "phi_auc": float(phi_auc),
                     "phi_auc_raw": float(phi_auc_raw),
                     "phi_density": float(phi_density),
+                    "phi_cal": float(phi_cal) if phi_cal is not None else None,
+                    "phi_prob_ret_corr": float(phi_prob_ret_corr) if phi_prob_ret_corr is not None else None,
+                    "prob_return_corr": float(prob_return_corr) if prob_return_corr is not None else None,
                     "modifier": float(modifier),
                     "utility_pre_clip": float(utility_pre_clip),
                     "utility_clip_max": float(clip_max_v),
@@ -11408,6 +11633,15 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "prob_stop_enable": {"type": "int", "low": 0, "high": 1}, # Treat as bool
             "prob_stop_threshold": {"type": "float", "low": 0.55, "high": 0.95},
             "prob_stop_drift_window": {"type": "int", "low": 12, "high": 96},
+            
+            # NEW: Regime-Adaptive Probability Thresholds
+            # These adjustments are ADDED to base prob_threshold for each regime.
+            # Negative = lower threshold (more trades), Positive = higher threshold (fewer trades)
+            # Range is intentionally asymmetric to allow lowering threshold more than raising.
+            "prob_threshold_adj_vol_low": {"type": "float", "low": -0.15, "high": 0.05},   # Low vol: often lower threshold needed
+            "prob_threshold_adj_vol_high": {"type": "float", "low": -0.05, "high": 0.10},  # High vol: may need higher threshold
+            "prob_threshold_adj_trend_high": {"type": "float", "low": -0.10, "high": 0.05}, # Strong trends: lower threshold
+            "prob_threshold_adj_trend_low": {"type": "float", "low": -0.05, "high": 0.10},  # Choppy: higher threshold
         }
 
         _l2_std_trial_counter = [0]
@@ -11866,14 +12100,23 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if int(pd.Series(l2_labels_bin.values).nunique()) < 2:
                     raise ValueError("Layer2 labels have <2 classes")
                 
-                # Use sign(returns) as training target to predict profitability directly
+                # Use sign(log-returns) as training target to predict profitability directly
+                # Log-transform compresses outliers for better ML stability
                 # This addresses the model-return correlation problem
                 try:
                     l2_returns_arr = l2_returns_clean.reindex(l2_t_events).values.astype(float)
+                    # Apply log-transform to compress outliers
+                    l2_log_returns_arr = log_returns_fees_adjusted(
+                        l2_returns_arr,
+                        already_net=True,  # returns already have fees subtracted
+                        winsorize_pct=0.01,
+                    )
                     if bool(layer2_econ_win_enabled):
-                        y_train_target = pd.Series((l2_returns_arr > float(layer2_econ_win_floor)).astype(int), index=l2_t_events)
+                        # For econ_win_floor, convert to log-space threshold
+                        log_floor = float(np.sign(layer2_econ_win_floor) * np.log1p(abs(layer2_econ_win_floor)))
+                        y_train_target = pd.Series((l2_log_returns_arr > log_floor).astype(int), index=l2_t_events)
                     else:
-                        y_train_target = pd.Series((l2_returns_arr > 0).astype(int), index=l2_t_events)
+                        y_train_target = pd.Series((l2_log_returns_arr > 0).astype(int), index=l2_t_events)
                 except Exception:
                     y_train_target = l2_labels_bin
                 
@@ -11883,7 +12126,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     y=y_train_target,
                     sample_weight=sample_weights,
                     n_splits=n_cv_folds,
-                    returns=l2_returns_clean.values.astype(float),
+                    returns=l2_returns_clean.values.astype(float),  # Keep linear returns for Sharpe calculation
                     direction=direction,
                     prob_thr=float(prob_thr),
                     use_calibration=True,
@@ -12458,10 +12701,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     cv_fail_reason = "single_class_labels"
                     raise ValueError("Layer2 labels have <2 classes")
                 
-                # Use sign(returns) as training target to predict profitability directly
+                # Use sign(log-returns) as training target to predict profitability directly
+                # Log-transform compresses outliers for better ML stability
                 try:
                     l2_returns_arr = l2_returns_clean.reindex(l2_t_events).values.astype(float)
-                    y_train_target = pd.Series((l2_returns_arr > 0).astype(int), index=l2_t_events)
+                    # Apply log-transform to compress outliers
+                    l2_log_returns_arr = log_returns_fees_adjusted(
+                        l2_returns_arr,
+                        already_net=True,
+                        winsorize_pct=0.01,
+                    )
+                    y_train_target = pd.Series((l2_log_returns_arr > 0).astype(int), index=l2_t_events)
                 except Exception:
                     y_train_target = l2_labels_bin
                 
@@ -12471,7 +12721,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     y=y_train_target,
                     sample_weight=sample_weights,
                     n_splits=n_cv_folds,
-                    returns=l2_returns_clean.values.astype(float),
+                    returns=l2_returns_clean.values.astype(float),  # Keep linear returns for Sharpe
                     direction=direction,
                     prob_thr=float(prob_thr),
                     use_calibration=True,
@@ -13145,19 +13395,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     tr = np.asarray(trade_returns, dtype=float)
                     tr = tr[np.isfinite(tr)]
                     
-                    # Double-check: if returns seem too high (>5% average), they might be gross
-                    # In that case, subtract transaction cost as a safety measure
-                    if len(tr) > 0:
-                        avg_abs_return = float(np.mean(np.abs(tr)))
-                        if avg_abs_return > 0.05:  # Sanity check: >5% average seems unrealistic for net returns
-                            # This shouldn't happen if compute_realized_returns is working correctly
-                            # but add defensive deduction just in case
-                            # Fee deduction: winners reduced, losers made worse
-                            try:
-                                tx_cost = float(DEFAULT_TRANSACTION_COST)
-                                tr = tr - tx_cost  # Subtract fee from all returns
-                            except Exception:
-                                pass
+                    # NOTE: No additional fee deduction needed here.
+                    # trade_returns comes from compute_realized_returns() which already
+                    # subtracts transaction_cost from gross returns (net_return = gross_return - tx_cost).
+                    # See feature_generation_meta_labeling_step.py line ~1489.
+                    # 
+                    # Previous defensive check removed to avoid double-counting fees.
+                    # If you see returns >5% average, it's due to high volatility, not missing fees.
                     
                     if len(tr) > 0:
                         pos_sum = float(np.sum(tr[tr > 0])) if np.any(tr > 0) else 0.0
@@ -14525,9 +14769,71 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 cs_full = np.where(np.isfinite(cs_full), cs_full, -np.inf)
                 thr_take = float(threshold) + float(abstain_margin) + float(ev_margin_local)
 
-                # Regime-aware thresholding: allow HPO to increase/decrease the
-                # effective threshold in regimes where the committee generalizes poorly.
+                # ================================================================
+                # REGIME-ADAPTIVE PROBABILITY THRESHOLDS (HPO-optimized per regime)
+                # ================================================================
+                # Apply regime-specific threshold adjustments from HPO parameters.
+                # These are ADDED to the base threshold for each regime type.
                 thr_take_vec = None
+                try:
+                    # Get regime-specific threshold adjustments from params
+                    adj_vol_low = float(params.get("prob_threshold_adj_vol_low", 0.0))
+                    adj_vol_high = float(params.get("prob_threshold_adj_vol_high", 0.0))
+                    adj_trend_high = float(params.get("prob_threshold_adj_trend_high", 0.0))
+                    adj_trend_low = float(params.get("prob_threshold_adj_trend_low", 0.0))
+
+                    # Validate adjustments are finite
+                    if not np.isfinite(adj_vol_low):
+                        adj_vol_low = 0.0
+                    if not np.isfinite(adj_vol_high):
+                        adj_vol_high = 0.0
+                    if not np.isfinite(adj_trend_high):
+                        adj_trend_high = 0.0
+                    if not np.isfinite(adj_trend_low):
+                        adj_trend_low = 0.0
+
+                    # Check if any adjustments are non-zero
+                    has_regime_adjustments = (
+                        abs(adj_vol_low) > 1e-6
+                        or abs(adj_vol_high) > 1e-6
+                        or abs(adj_trend_high) > 1e-6
+                        or abs(adj_trend_low) > 1e-6
+                    )
+
+                    if has_regime_adjustments and regime_labels is not None:
+                        # Get regime labels aligned to events
+                        vol_regime = regime_labels.get("volatility_regime")
+                        trend_regime = regime_labels.get("trend_regime")
+
+                        # Build per-event threshold adjustment vector
+                        thr_adjustments = np.zeros(len(ev_idx0), dtype=float)
+
+                        if vol_regime is not None:
+                            try:
+                                vol_r = vol_regime.reindex(ev_idx0).astype(str).fillna("medium")
+                                thr_adjustments += np.where(vol_r == "low", adj_vol_low, 0.0)
+                                thr_adjustments += np.where(vol_r == "high", adj_vol_high, 0.0)
+                            except Exception:
+                                pass
+
+                        if trend_regime is not None:
+                            try:
+                                trend_r = trend_regime.reindex(ev_idx0).astype(str).fillna("medium")
+                                thr_adjustments += np.where(trend_r == "high", adj_trend_high, 0.0)
+                                thr_adjustments += np.where(trend_r == "low", adj_trend_low, 0.0)
+                            except Exception:
+                                pass
+
+                        # Apply adjustments to base threshold
+                        thr_take_vec = float(thr_take) + thr_adjustments
+                        thr_take_vec = np.clip(thr_take_vec, 0.3, 0.95)  # Ensure reasonable bounds
+
+                except Exception:
+                    thr_take_vec = None
+
+                # Legacy regime-aware thresholding: allow HPO to increase/decrease the
+                # effective threshold in regimes where the committee generalizes poorly.
+                # (This is multiplicative scaling, complementary to the additive adjustments above)
                 try:
                     if (
                         np.isfinite(float(regime_threshold_sensitivity))
@@ -14536,13 +14842,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     ):
                         s_evt = regime_scalar_for_barriers.reindex(ev_idx0).astype(float)
                         s_evt = s_evt.replace([np.inf, -np.inf], np.nan).fillna(1.0)
-                        thr_take_vec = float(thr_take) * (
-                            1.0 + float(regime_threshold_sensitivity) * (s_evt.astype(float) - 1.0)
-                        )
-                        thr_take_vec = pd.to_numeric(thr_take_vec, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(float(thr_take))
+                        if thr_take_vec is None:
+                            thr_take_vec = float(thr_take) * (
+                                1.0 + float(regime_threshold_sensitivity) * (s_evt.astype(float) - 1.0)
+                            )
+                        else:
+                            # Combine with existing adjustments (multiply scaling)
+                            scaling = 1.0 + float(regime_threshold_sensitivity) * (s_evt.astype(float) - 1.0)
+                            thr_take_vec = thr_take_vec * scaling.to_numpy(dtype=float)
+                        thr_take_vec = pd.to_numeric(pd.Series(thr_take_vec), errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(float(thr_take))
                         thr_take_vec = thr_take_vec.clip(lower=0.0, upper=0.999999).to_numpy(dtype=float)
                 except Exception:
-                    thr_take_vec = None
+                    pass
 
                 if consensus_quantile is not None and np.isfinite(consensus_quantile):
                     q = float(np.clip(consensus_quantile, 0.0, 0.999999))
@@ -16857,15 +17168,26 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     except Exception:
                         w_series = None
 
-                    # Use sign(returns) as target for feature selection to select features that predict profitability
+                    # Use sign(log-returns) as target for feature selection to select features that predict profitability
                     # rather than just labels. This addresses the model-return correlation problem.
+                    # Log-transform compresses outliers and makes the distribution more suitable for ML.
                     y_for_selection = y_final
                     try:
                         returns_for_selection = final_returns.reindex(X_final_full.index).fillna(0.0)
-                        y_for_selection = (returns_for_selection > 0).astype(int)
-                        tprint_info(f"   [Layer3 Feature Selection] Using sign(returns) as target for feature selection")
+                        # Apply log-transform to compress outliers before taking sign
+                        # This gives more weight to consistent performers vs lucky outliers
+                        log_returns_for_sel = log_returns_fees_adjusted(
+                            returns_for_selection.values,
+                            already_net=True,  # final_returns is already net of fees
+                            winsorize_pct=0.01,
+                        )
+                        y_for_selection = pd.Series(
+                            (log_returns_for_sel > 0).astype(int),
+                            index=returns_for_selection.index
+                        )
+                        tprint_info(f"   [Layer3 Feature Selection] Using sign(log_returns) as target for feature selection")
                     except Exception as rtgt_exc:
-                        tprint_warning(f"   [Layer3 Feature Selection] Failed to compute sign(returns): {rtgt_exc}; using y_final")
+                        tprint_warning(f"   [Layer3 Feature Selection] Failed to compute sign(log_returns): {rtgt_exc}; using y_final")
                         y_for_selection = y_final
 
                     selected_feats_l3, selection_results_l3 = run_mda_shap_feature_selection(
@@ -17481,6 +17803,34 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                             iso.fit(np.asarray(train_pos, dtype=float), y_tr.values)
                         preds_cal = iso.predict(preds_arr)
 
+                        # ============================================================
+                        # TEMPERATURE SCALING (post-isotonic refinement)
+                        # ============================================================
+                        # Apply temperature scaling after isotonic calibration for
+                        # additional calibration refinement. Temperature scaling is
+                        # particularly effective when MCE is high (extreme bins are miscalibrated).
+                        try:
+                            enable_temp_scaling = bool(config.get("layer3_enable_temperature_scaling", True))
+                        except Exception:
+                            enable_temp_scaling = True
+
+                        if enable_temp_scaling:
+                            try:
+                                # Fit temperature on training fold predictions
+                                preds_train_iso = iso.predict(np.asarray(train_pos, dtype=float))
+                                opt_temp, temp_brier = fit_temperature_scaling(
+                                    y_true=y_tr.values,
+                                    y_pred=preds_train_iso,
+                                    temperature_range=(0.5, 2.0),
+                                    n_grid=20,
+                                    sample_weight=w_tr,
+                                )
+                                # Only apply if temperature is meaningfully different from 1.0
+                                if abs(opt_temp - 1.0) > 0.05:
+                                    preds_cal = apply_temperature_scaling(preds_cal, opt_temp)
+                            except Exception:
+                                pass
+
                         # Save calibrated OOF preds
                         try:
                             oof_pred_cal[te_idx] = preds_cal
@@ -17681,6 +18031,37 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 except Exception:
                     per_regime_metrics = {}
 
+                # ================================================================
+                # PROBABILITY-RETURN CORRELATION
+                # ================================================================
+                # Compute Spearman correlation between OOF calibrated probabilities and returns.
+                # This measures how well the model's confidence correlates with actual outcomes.
+                # A weak correlation (< 0.1) indicates the model's probabilities are not informative.
+                prob_return_spearman = None
+                prob_return_kendall = None
+                try:
+                    from scipy.stats import spearmanr, kendalltau
+                    probs_valid = np.asarray(oof_pred_cal, dtype=float)
+                    rets_valid = np.asarray(final_returns_arr, dtype=float)
+                    valid_mask = np.isfinite(probs_valid) & np.isfinite(rets_valid)
+                    if np.sum(valid_mask) > 10:
+                        probs_v = probs_valid[valid_mask]
+                        rets_v = rets_valid[valid_mask]
+                        try:
+                            corr_s, _ = spearmanr(probs_v, rets_v)
+                            if np.isfinite(corr_s):
+                                prob_return_spearman = float(corr_s)
+                        except Exception:
+                            pass
+                        try:
+                            corr_k, _ = kendalltau(probs_v, rets_v)
+                            if np.isfinite(corr_k):
+                                prob_return_kendall = float(corr_k)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
                 sharpe_arr = np.asarray(fold_sharpes, dtype=float)
                 sharpe_mean = float(np.mean(sharpe_arr))
                 sharpe_std = float(np.std(sharpe_arr, ddof=1)) if len(sharpe_arr) > 1 else 0.0
@@ -17742,9 +18123,20 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     density_lower=float(l3_den_lower),
                     density_sweet_spot=(float(l3_den_s0), float(l3_den_s1)),
                     density_upper=float(l3_den_upper),
-                    mean_return=mean_return_l3,    # NEW
-                    max_drawdown=max_dd_l3,        # NEW
+                    mean_return=mean_return_l3,
+                    max_drawdown=max_dd_l3,
+                    prob_return_corr=prob_return_spearman,  # NEW
+                    w_prob_return_corr=0.0,  # Disabled for debug utility
                 )
+
+                # Get configurable weight for prob-return correlation
+                try:
+                    l3_w_prob_return_corr = float(config.get("layer3_w_prob_return_corr", 0.1))
+                except Exception:
+                    l3_w_prob_return_corr = 0.1
+                if not np.isfinite(l3_w_prob_return_corr):
+                    l3_w_prob_return_corr = 0.1
+                l3_w_prob_return_corr = float(np.clip(l3_w_prob_return_corr, 0.0, 0.5))
 
                 utility = calculate_hpo_utility(
                     folds_sharpe=sharpe_arr,
@@ -17759,8 +18151,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     density_lower=float(l3_den_lower),
                     density_sweet_spot=(float(l3_den_s0), float(l3_den_s1)),
                     density_upper=float(l3_den_upper),
-                    mean_return=mean_return_l3,    # NEW
-                    max_drawdown=max_dd_l3,        # NEW
+                    mean_return=mean_return_l3,
+                    max_drawdown=max_dd_l3,
+                    prob_return_corr=prob_return_spearman,  # NEW: Probability-return correlation
+                    w_prob_return_corr=l3_w_prob_return_corr,  # NEW: Weak weight (0.1)
                 )
 
                 if not np.isfinite(float(utility)):
@@ -17859,6 +18253,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     "calibration_brier": mean_brier,
                     "calibration_ece": mean_ece,
                     "calibration_mce": mean_mce,
+                    "prob_return_spearman": prob_return_spearman,
+                    "prob_return_kendall": prob_return_kendall,
+                    "w_prob_return_corr": l3_w_prob_return_corr,
                     "sharpe_mean": sharpe_mean,
                     "sharpe_std": sharpe_std,
                     "sharpe_min": sharpe_min,

@@ -1515,11 +1515,13 @@ def compute_realized_returns(
                 # Use stop threshold as volatility proxy
                 vol_at_i = stop_thr if stop_thr > 0 else 0.01
             
-            # Sigmoid: label = 1 / (1 + exp(-scale * (return - cost) / vol))
-            # This maps: return = cost → label ≈ 0.5
-            #           return >> cost → label → 1.0
-            #           return << -cost → label → 0.0
-            scaled_return = (net_return - transaction_cost) / (vol_at_i + 1e-12)
+            # Sigmoid: label = 1 / (1 + exp(-scale * net_return / vol))
+            # NOTE: net_return is ALREADY net of transaction costs (see line ~1489)
+            # Do NOT subtract transaction_cost again to avoid double-counting!
+            # This maps: net_return = 0 → label ≈ 0.5
+            #           net_return >> 0 → label → 1.0
+            #           net_return << 0 → label → 0.0
+            scaled_return = net_return / (vol_at_i + 1e-12)
             scaled_return = scaled_return * soft_label_scale
             
             # Clip to avoid overflow

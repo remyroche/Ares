@@ -4037,6 +4037,52 @@ def extract_regime_leaf_onehot_features(
                         pd.DataFrame({f"regime_leaf_interaction_transition_abs__{target_name}": d1.abs()}, index=X_num.index)
                     )
 
+                    # ----------------------------------------------------------------
+                    # REGIME MOMENTUM FEATURES
+                    # Captures the rate of change of regime indicator over multiple windows.
+                    # This helps the model understand regime dynamics: accelerating,
+                    # decelerating, or stable regime conditions.
+                    # ----------------------------------------------------------------
+                    momentum_cfg = transition_cfg.get("momentum") if isinstance(transition_cfg.get("momentum"), dict) else {}
+                    momentum_enabled = bool(momentum_cfg.get("enabled", True))
+                    if momentum_enabled:
+                        try:
+                            momentum_windows = momentum_cfg.get("windows", [3, 5, 10])
+                            if not isinstance(momentum_windows, (list, tuple)):
+                                momentum_windows = [3, 5, 10]
+                            momentum_windows = [int(w) for w in momentum_windows if int(w) > 0]
+
+                            for mw in momentum_windows:
+                                # Rolling mean of regime change (momentum)
+                                regime_momentum = d1.rolling(window=mw, min_periods=1).mean()
+                                interaction_frames.append(
+                                    pd.DataFrame(
+                                        {f"regime_leaf_momentum_{mw}__{target_name}": regime_momentum.astype(float)},
+                                        index=X_num.index
+                                    )
+                                )
+
+                                # Rolling std of regime change (volatility of regime transitions)
+                                regime_momentum_std = d1.rolling(window=mw, min_periods=2).std()
+                                interaction_frames.append(
+                                    pd.DataFrame(
+                                        {f"regime_leaf_momentum_std_{mw}__{target_name}": regime_momentum_std.astype(float)},
+                                        index=X_num.index
+                                    )
+                                )
+
+                            # Regime acceleration: second derivative (change of momentum)
+                            regime_accel = d1.diff(1).astype(float)
+                            interaction_frames.append(
+                                pd.DataFrame(
+                                    {f"regime_leaf_acceleration__{target_name}": regime_accel},
+                                    index=X_num.index
+                                )
+                            )
+
+                        except Exception:
+                            pass
+
                 try:
                     stats = {
                         "interaction_non_null": int(pd.to_numeric(interaction_series, errors="coerce").notna().sum()),
@@ -4050,6 +4096,18 @@ def extract_regime_leaf_onehot_features(
                                 "transition_std": float(d1.std()),
                             }
                         )
+                        # Add momentum stats if enabled
+                        if momentum_enabled:
+                            try:
+                                # Momentum over default 5-bar window
+                                regime_mom_5 = d1.rolling(window=5, min_periods=1).mean()
+                                stats.update({
+                                    "momentum_5_mean": float(regime_mom_5.mean()) if regime_mom_5.notna().any() else None,
+                                    "momentum_5_std": float(regime_mom_5.std()) if regime_mom_5.notna().any() else None,
+                                    "momentum_5_abs_mean": float(regime_mom_5.abs().mean()) if regime_mom_5.notna().any() else None,
+                                })
+                            except Exception:
+                                pass
                     if isinstance(report.get("targets", {}).get(str(target_name)), dict):
                         report["targets"][str(target_name)]["interaction_stats"] = stats
                 except Exception:
@@ -4104,6 +4162,8 @@ def extract_regime_leaf_onehot_features(
                     if str(c).startswith("regime_leaf_interaction__")
                     or str(c).startswith("regime_leaf_interaction_transition__")
                     or str(c).startswith("regime_leaf_interaction_transition_abs__")
+                    or str(c).startswith("regime_leaf_momentum_")
+                    or str(c).startswith("regime_leaf_acceleration__")
                 ]
             except Exception:
                 interaction_cols = []

@@ -1006,7 +1006,11 @@ def _cross_val_predict_proba_and_fold_sharpes_weighted(
                 if len(np.unique(y_arr[train_idx])) >= 2:
                     prob_train = est.predict_proba(X.iloc[train_idx])[:, 1]
                     iso = IsotonicRegression(out_of_bounds='clip')
-                    iso.fit(prob_train, y_arr[train_idx])
+                    # Use sample weights for isotonic calibration if available
+                    if w_arr is not None:
+                        iso.fit(prob_train, y_arr[train_idx], sample_weight=w_arr[train_idx])
+                    else:
+                        iso.fit(prob_train, y_arr[train_idx])
                     prob_test_cal = iso.predict(prob_test.astype(float))
             except Exception:
                 prob_test_cal = prob_test
@@ -1197,12 +1201,15 @@ class TwoStageBaggedMetaModel(BaseEstimator, ClassifierMixin):
             random_state=self.random_state,
         )
 
-    def fit(self, X: Any, y: Any) -> "TwoStageBaggedMetaModel":
+    def fit(self, X: Any, y: Any, sample_weight: Optional[np.ndarray] = None) -> "TwoStageBaggedMetaModel":
         y_arr = np.asarray(y)
 
         # Stage 1: activity gate (non-timeout vs timeout)
         y_activity = (y_arr != 0).astype(int)
-        self.stage1_model.fit(X, y_activity)
+        if sample_weight is not None and len(sample_weight) == len(y_arr):
+            self.stage1_model.fit(X, y_activity, sample_weight=sample_weight)
+        else:
+            self.stage1_model.fit(X, y_activity)
 
         # Stage 2: direction among active events only
         active_mask = (y_arr != 0)
@@ -1212,12 +1219,20 @@ class TwoStageBaggedMetaModel(BaseEstimator, ClassifierMixin):
 
         X_dir = X[active_mask]
         y_dir_raw = y_arr[active_mask]
+        
+        # Subset sample weights for active mask
+        sw_dir = None
+        if sample_weight is not None and len(sample_weight) == len(y_arr):
+            sw_dir = sample_weight[active_mask]
 
         # Map profit vs stop to {1, 0}
         y_dir = (y_dir_raw == 1).astype(int)
 
         if X_dir.shape[0] > 50 and np.unique(y_dir).size >= 2:
-            self.stage2_ensemble.fit(X_dir, y_dir)
+            if sw_dir is not None:
+                self.stage2_ensemble.fit(X_dir, y_dir, sample_weight=sw_dir)
+            else:
+                self.stage2_ensemble.fit(X_dir, y_dir)
         else:
             self.stage2_ensemble = None
 
@@ -1778,6 +1793,7 @@ def compute_learnability_with_calibration(
     use_feature_selection: bool = False,
     use_resampling: bool = False,
     recency_decay_lambda: Optional[float] = None,  # Exponential decay rate for recency weighting (0.01 = 1%/day)
+    target_sample_weight: Optional[np.ndarray] = None,  # Pre-computed sample weights to use for training
 ) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression], np.ndarray, np.ndarray]:
     """Compute learnability score with isotonic calibration for accurate P&L estimation.
 
@@ -1868,12 +1884,29 @@ def compute_learnability_with_calibration(
     # ===== FEATURE SELECTION (Fast RFE-like) =====
     if use_feature_selection and n_features_clean > 10:
         try:
+            # Prepare sample weights for feature selection if provided
+            fs_sample_weight = None
+            if target_sample_weight is not None:
+                try:
+                    if isinstance(target_sample_weight, pd.Series):
+                        fs_sample_weight = target_sample_weight.reindex(y_clean.index).fillna(1.0).values
+                    elif len(target_sample_weight) == len(y):
+                        # Original weights aligned to full y, subset to valid_mask
+                        fs_sample_weight = np.asarray(target_sample_weight)[valid_mask.values if hasattr(valid_mask, 'values') else valid_mask]
+                    elif len(target_sample_weight) == len(y_clean):
+                        fs_sample_weight = np.asarray(target_sample_weight)
+                except Exception:
+                    fs_sample_weight = None
+            
             # Train a quick fast model to get feature importance
             selector = lgb.LGBMClassifier(
                 n_estimators=50, max_depth=3, learning_rate=0.1, n_jobs=-1, 
                 random_state=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=1), verbose=-1
             )
-            selector.fit(X_clean, y_clean)
+            if fs_sample_weight is not None and len(fs_sample_weight) == len(y_clean):
+                selector.fit(X_clean, y_clean, sample_weight=fs_sample_weight)
+            else:
+                selector.fit(X_clean, y_clean)
             importances = selector.feature_importances_
 
             # Select top 60% features or at least top 10
@@ -2033,63 +2066,83 @@ def compute_learnability_with_calibration(
     returns_array = returns_clean.fillna(0.0).to_numpy(dtype=float)
     y_array = y_clean.to_numpy(dtype=float)
 
-    sample_weights = np.ones_like(returns_array, dtype=float)
-
-    # Conservative positive class up-weighting
-    pos_mask = (y_array == 1.0)
-    sample_weights[pos_mask] *= 1.2
-
-    # Return-based weighting for label=1: linear in realized return, clipped
-    try:
-        finite_returns = returns_clean.replace([np.inf, -np.inf], np.nan).dropna().values
-        if finite_returns.size >= 50:
-            ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
-            ret_clip = max(ret_clip, 1e-4)
-        else:
-            ret_clip = 0.02
-    except Exception:
-        ret_clip = 0.02
-
-    if ret_clip > 0:
-        ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
-        weight_factor = 1.0 + (ret_for_weight / ret_clip)
-        sample_weights[pos_mask] *= weight_factor[pos_mask]
-
-    # Optional: scale positive-class weights by signal strength so that
-    # high-confidence signal configurations receive slightly higher weight
-    # in the learnability scorer. We use the "signal_strength_all" meta-feature
-    # when present in X_clean, normalised and clipped for robustness. The
-    # overall strength of this effect is controlled by ``signal_strength_scale_max``.
-    signal_strength = None
-    if isinstance(X_clean, pd.DataFrame) and "signal_strength_all" in X_clean.columns:
+    # Use provided target_sample_weight if available, otherwise compute internally
+    if target_sample_weight is not None:
         try:
-            s = X_clean.loc[valid_mask, "signal_strength_all"].to_numpy(dtype=float)
-            s = np.abs(s)
-            # Robust scaling: use 90th percentile to avoid extreme values
-            if np.isfinite(s).any():
-                s_clean = s[np.isfinite(s)]
-                if s_clean.size >= 10:
-                    s_clip = float(np.nanpercentile(s_clean, 90))
-                    s_clip = max(s_clip, 1e-6)
-                else:
-                    s_clip = float(np.nanmax(s_clean)) if s_clean.size > 0 else 1.0
-                if s_clip <= 0:
-                    s_clip = 1.0
-                strength_norm = np.clip(s / s_clip, 0.0, 1.0)
-                # Map to [1.0, signal_strength_scale_max] so HPO can tune the
-                # influence of signal strength on sample weighting.
-                scale_max = max(1.0, float(signal_strength_scale_max))
-                scale_range = max(0.0, scale_max - 1.0)
-                signal_weight = 1.0 + scale_range * strength_norm
-                sample_weights[pos_mask] *= signal_weight[pos_mask]
+            if isinstance(target_sample_weight, pd.Series):
+                sample_weights = target_sample_weight.reindex(y_clean.index).fillna(1.0).values.astype(float)
+            elif len(target_sample_weight) == len(y):
+                # Original weights aligned to full y, subset to valid_mask
+                sample_weights = np.asarray(target_sample_weight, dtype=float)[valid_mask.values if hasattr(valid_mask, 'values') else valid_mask]
+            elif len(target_sample_weight) == len(y_clean):
+                sample_weights = np.asarray(target_sample_weight, dtype=float)
+            else:
+                # Fallback to computing internally
+                sample_weights = None
         except Exception:
-            # If anything goes wrong, fall back to return-only weighting.
-            pass
+            sample_weights = None
+    else:
+        sample_weights = None
+    
+    if sample_weights is None:
+        # Compute sample weights internally if not provided or failed to extract
+        sample_weights = np.ones_like(returns_array, dtype=float)
 
-    # Normalize weights for numerical stability
-    mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
-    if mean_w > 0:
-        sample_weights = sample_weights / mean_w
+        # Conservative positive class up-weighting
+        pos_mask = (y_array == 1.0)
+        sample_weights[pos_mask] *= 1.2
+
+        # Return-based weighting for label=1: linear in realized return, clipped
+        try:
+            finite_returns = returns_clean.replace([np.inf, -np.inf], np.nan).dropna().values
+            if finite_returns.size >= 50:
+                ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
+                ret_clip = max(ret_clip, 1e-4)
+            else:
+                ret_clip = 0.02
+        except Exception:
+            ret_clip = 0.02
+
+        if ret_clip > 0:
+            ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
+            weight_factor = 1.0 + (ret_for_weight / ret_clip)
+            sample_weights[pos_mask] *= weight_factor[pos_mask]
+
+        # Optional: scale positive-class weights by signal strength so that
+        # high-confidence signal configurations receive slightly higher weight
+        # in the learnability scorer. We use the "signal_strength_all" meta-feature
+        # when present in X_clean, normalised and clipped for robustness. The
+        # overall strength of this effect is controlled by ``signal_strength_scale_max``.
+        signal_strength = None
+        if isinstance(X_clean, pd.DataFrame) and "signal_strength_all" in X_clean.columns:
+            try:
+                s = X_clean.loc[valid_mask, "signal_strength_all"].to_numpy(dtype=float)
+                s = np.abs(s)
+                # Robust scaling: use 90th percentile to avoid extreme values
+                if np.isfinite(s).any():
+                    s_clean = s[np.isfinite(s)]
+                    if s_clean.size >= 10:
+                        s_clip = float(np.nanpercentile(s_clean, 90))
+                        s_clip = max(s_clip, 1e-6)
+                    else:
+                        s_clip = float(np.nanmax(s_clean)) if s_clean.size > 0 else 1.0
+                    if s_clip <= 0:
+                        s_clip = 1.0
+                    strength_norm = np.clip(s / s_clip, 0.0, 1.0)
+                    # Map to [1.0, signal_strength_scale_max] so HPO can tune the
+                    # influence of signal strength on sample weighting.
+                    scale_max = max(1.0, float(signal_strength_scale_max))
+                    scale_range = max(0.0, scale_max - 1.0)
+                    signal_weight = 1.0 + scale_range * strength_norm
+                    sample_weights[pos_mask] *= signal_weight[pos_mask]
+            except Exception:
+                # If anything goes wrong, fall back to return-only weighting.
+                pass
+
+        # Normalize weights for numerical stability
+        mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
+        if mean_w > 0:
+            sample_weights = sample_weights / mean_w
 
     # -------------------------------------------------------------------------
     # Apply recency weighting (exponential decay prioritizing recent events)
@@ -4005,6 +4058,7 @@ def compute_robustness_diagnostics(
     market_index: Optional[pd.DatetimeIndex] = None,
     base_horizon_bars: Optional[int] = None,
     use_purged_splits: bool = True,
+    target_sample_weight: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Compute robustness diagnostics across time and regimes.
 
@@ -4046,6 +4100,19 @@ def compute_robustness_diagnostics(
     X_clean = X_num[valid_mask].fillna(0)
     y_clean = y[valid_mask]
     returns_clean = realized_returns[valid_mask] if realized_returns is not None else None
+    
+    # Prepare sample weights aligned to cleaned data
+    sample_weights_clean = None
+    if target_sample_weight is not None:
+        try:
+            if isinstance(target_sample_weight, pd.Series):
+                sample_weights_clean = target_sample_weight.reindex(y_clean.index).fillna(1.0).values
+            elif len(target_sample_weight) == len(y):
+                sample_weights_clean = np.asarray(target_sample_weight)[valid_mask.values if hasattr(valid_mask, 'values') else valid_mask]
+            elif len(target_sample_weight) == len(y_clean):
+                sample_weights_clean = np.asarray(target_sample_weight)
+        except Exception:
+            sample_weights_clean = None
 
     if len(y_clean) < 100 or len(y_clean.unique()) < 2:
         return diagnostics
@@ -4098,7 +4165,15 @@ def compute_robustness_diagnostics(
                 if len(y_train.unique()) < 2 or len(y_test.unique()) < 2:
                     continue
 
-                model.fit(X_train, y_train)
+                # Get sample weights for this fold
+                w_train = None
+                if sample_weights_clean is not None and len(sample_weights_clean) == len(y_clean):
+                    w_train = sample_weights_clean[train_idx]
+                
+                if w_train is not None:
+                    model.fit(X_train, y_train, sample_weight=w_train)
+                else:
+                    model.fit(X_train, y_train)
                 probs = model.predict_proba(X_test)[:, 1]
 
                 # AUC
@@ -4160,7 +4235,15 @@ def compute_robustness_diagnostics(
                 y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
                 if len(y_train.unique()) < 2:
                     continue
-                model.fit(X_train, y_train)
+                # Get sample weights for this fold
+                w_train_oof = None
+                if sample_weights_clean is not None and len(sample_weights_clean) == len(y_clean):
+                    w_train_oof = sample_weights_clean[train_idx]
+                
+                if w_train_oof is not None:
+                    model.fit(X_train, y_train, sample_weight=w_train_oof)
+                else:
+                    model.fit(X_train, y_train)
                 oof_probs[test_idx] = model.predict_proba(X_test)[:, 1]
         except Exception:
             pass
@@ -7767,6 +7850,7 @@ def calibrate_probabilities_isotonic(
     y_true: np.ndarray,
     y_prob: np.ndarray,
     cv_folds: int = 3,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Calibrate probabilities using isotonic regression with cross-validation.
@@ -7775,6 +7859,7 @@ def calibrate_probabilities_isotonic(
         y_true: True binary labels
         y_prob: Uncalibrated predicted probabilities
         cv_folds: Number of cross-validation folds
+        sample_weight: Optional sample weights (if provided, used in isotonic fit)
     
     Returns:
         Calibrated probabilities
@@ -7787,7 +7872,10 @@ def calibrate_probabilities_isotonic(
     
     for train_idx, val_idx in kf.split(y_prob):
         iso = IsotonicRegression(out_of_bounds='clip')
-        iso.fit(y_prob[train_idx], y_true[train_idx])
+        if sample_weight is not None and len(sample_weight) == len(y_prob):
+            iso.fit(y_prob[train_idx], y_true[train_idx], sample_weight=sample_weight[train_idx])
+        else:
+            iso.fit(y_prob[train_idx], y_true[train_idx])
         calibrated[val_idx] = iso.predict(y_prob[val_idx])
     
     return calibrated
@@ -7799,6 +7887,7 @@ def compute_fold_sharpe_ratios(
     returns: np.ndarray,
     n_folds: int = 5,
     use_calibration: bool = True,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Compute per-fold Sharpe ratios for stability assessment.
@@ -7809,6 +7898,7 @@ def compute_fold_sharpe_ratios(
         returns: Realized returns per sample
         n_folds: Number of folds
         use_calibration: Whether to calibrate probabilities before sizing
+        sample_weight: Optional sample weights (passed to calibration if provided)
     
     Returns:
         Array of per-fold Sharpe ratios
@@ -7817,7 +7907,7 @@ def compute_fold_sharpe_ratios(
     
     # Pre-calibrate if requested
     if use_calibration:
-        y_prob_cal = calibrate_probabilities_isotonic(y_true, y_prob, cv_folds=min(3, n_folds))
+        y_prob_cal = calibrate_probabilities_isotonic(y_true, y_prob, cv_folds=min(3, n_folds), sample_weight=sample_weight)
     else:
         y_prob_cal = y_prob
     
@@ -16572,7 +16662,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
                     if isinstance(model_fold, TwoStageBaggedMetaModel) and y_trinary_all is not None:
                         y_tr_tri = y_trinary_all.iloc[tr_idx].to_numpy()
-                        model_fold.fit(np.asarray(X_tr), y_tr_tri)
+                        model_fold.fit(np.asarray(X_tr), y_tr_tri, sample_weight=w_tr)
                         proba = model_fold.predict_proba(np.asarray(X_te))
                     else:
                         model_fold.fit(X_tr, y_tr, sample_weight=w_tr)
@@ -16622,7 +16712,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                             train_pos = None
                         if train_pos is None:
                             train_pos = np.full(int(len(X_tr)), float(np.mean(y_tr.values.astype(float))), dtype=float)
-                        iso.fit(np.asarray(train_pos, dtype=float), y_tr.values)
+                        # Use sample weights for isotonic calibration if available
+                        if w_tr is not None and len(w_tr) == len(train_pos):
+                            iso.fit(np.asarray(train_pos, dtype=float), y_tr.values, sample_weight=w_tr)
+                        else:
+                            iso.fit(np.asarray(train_pos, dtype=float), y_tr.values)
                         preds_cal = iso.predict(preds_arr)
 
                         # Save calibrated OOF preds

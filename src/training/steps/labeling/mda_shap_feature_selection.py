@@ -421,15 +421,16 @@ class MDA_SHAP_FeatureSelector:
             if feature in ir_ranks and feature in shap_scores:
                 ir_rank = ir_ranks[feature]
                 
-                # IC weight: boost features with high absolute correlation with target
-                # Features with |IC| > 0.1 get significant boost, those near 0 get no boost
+                # IC weight: mild boost for features with high absolute correlation with target
+                # Reduced weight (0.5x) since IC is univariate and misses interactions
                 abs_ic = abs(float(ic_mean_values.get(feature, 0.0)))
-                ic_weight = 1.0 + abs_ic * 2.0  # Range: 1.0 to ~1.2 for typical IC values
+                ic_weight = 1.0 + abs_ic * 0.5  # Range: 1.0 to ~1.05 for typical IC values
                 
-                # SHAP weight: incorporate SHAP importance (log-scaled to avoid extremes)
+                # SHAP weight: primary importance signal (captures feature interactions)
+                # Increased weight (2x) since SHAP accounts for feature interactions
                 shap_val = float(shap_scores.get(feature, 0.0))
                 shap_normalized = shap_val / shap_median if shap_median > 0 else 0.0
-                shap_weight = 1.0 + np.log1p(max(0.0, shap_normalized)) * 0.5  # Range: 1.0 to ~2.0
+                shap_weight = 1.0 + np.log1p(max(0.0, shap_normalized)) * 2.0  # Range: 1.0 to ~3.5
                 
                 # Composite score: MDA * IC_weight * SHAP_weight / IR_rank
                 composite_score = float(mda_mean) * float(ic_weight) * float(shap_weight) / float(ir_rank) if float(ir_rank) > 0 else 0.0

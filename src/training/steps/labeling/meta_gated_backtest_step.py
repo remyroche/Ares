@@ -483,6 +483,12 @@ class MetaGatedBacktestStep(BaseStep):
             filters_cfg = meta_gating.get("filters", {})
 
             prob_threshold = float(entry_cfg.get("prob_threshold", 0.6))
+            selection_mode = str(entry_cfg.get("selection_mode", "threshold") or "threshold").strip().lower()
+            top_quantile = entry_cfg.get("top_quantile", None)
+            try:
+                top_quantile = float(top_quantile) if top_quantile is not None else None
+            except Exception:
+                top_quantile = None
             use_expected_return = bool(entry_cfg.get("use_expected_return", False))
             er_threshold = float(entry_cfg.get("expected_return_threshold", 0.0))
             
@@ -514,7 +520,50 @@ class MetaGatedBacktestStep(BaseStep):
                         if key in diagnostics.get("filtering_diagnostics", {}):
                             tprint_info(f"      {key}: {diagnostics['filtering_diagnostics'][key]}")
 
-            tprint_info(f"   Final gating config: prob_thr={prob_threshold:.3f}, er_thr={er_threshold:.4f}")
+            # Explicit override for prob threshold (takes precedence over gating_config and HPO best_params)
+            prob_threshold_override = None
+            try:
+                # Prefer config override so callers (launcher/tests) can force a value
+                prob_threshold_override = config.get("meta_prob_threshold")
+                if prob_threshold_override is None:
+                    prob_threshold_override = config.get("meta_prob_threshold_override")
+            except Exception:
+                prob_threshold_override = None
+
+            try:
+                # Optional env override (useful for quick experiments without editing config)
+                env_thr = os.environ.get("ARES_META_PROB_THRESHOLD")
+                if env_thr is None:
+                    env_thr = os.environ.get("META_PROB_THRESHOLD")
+                if (prob_threshold_override is None) and env_thr is not None:
+                    prob_threshold_override = env_thr
+            except Exception:
+                pass
+
+            if prob_threshold_override is not None:
+                try:
+                    thr_str = str(prob_threshold_override).strip()
+                    thr_str = thr_str.replace(",", ".")
+                    thr_val = float(thr_str)
+                    if np.isfinite(thr_val) and 0.0 < thr_val < 1.0:
+                        prob_threshold = float(thr_val)
+                        tprint_info(f"      prob_threshold overridden by user: {prob_threshold:.3f}")
+                    else:
+                        tprint_warning(
+                            f"⚠️ Ignoring invalid meta prob threshold override: {prob_threshold_override}"
+                        )
+                except Exception:
+                    tprint_warning(
+                        f"⚠️ Failed to parse meta prob threshold override: {prob_threshold_override}"
+                    )
+
+            if selection_mode == "top_quantile":
+                tq_str = "None" if top_quantile is None else f"{top_quantile:.4f}"
+                tprint_info(
+                    f"   Final gating config: mode=top_quantile, top_quantile={tq_str}, prob_thr(ref)={prob_threshold:.3f}, er_thr={er_threshold:.4f}"
+                )
+            else:
+                tprint_info(f"   Final gating config: mode=threshold, prob_thr={prob_threshold:.3f}, er_thr={er_threshold:.4f}")
 
             iso_rel_path = calibration_cfg.get("iso_regressor_artifact")
             iso_model = None
@@ -711,8 +760,25 @@ class MetaGatedBacktestStep(BaseStep):
             if optimize_thresholds:
                 tprint_info("🔍 Optimizing probability threshold...")
                 try:
-                    event_probs_pre = event_probs
-                    event_returns_pre = event_returns
+                    opt_mask = None
+                    try:
+                        opt_mask = event_mask & (~eval_mask)
+                    except Exception:
+                        opt_mask = None
+
+                    try:
+                        if opt_mask is not None and bool(opt_mask.any()) and int(opt_mask.sum()) >= 100:
+                            event_probs_pre = event_probs.reindex(df.index)[opt_mask]
+                            event_returns_pre = realized_returns.reindex(df.index)[opt_mask]
+                            tprint_info(
+                                f"   ↪ Threshold optimization uses pre-holdout events: {int(opt_mask.sum())}"
+                            )
+                        else:
+                            event_probs_pre = event_probs
+                            event_returns_pre = event_returns
+                    except Exception:
+                        event_probs_pre = event_probs
+                        event_returns_pre = event_returns
 
                     min_trades = 0
                     try:
@@ -752,6 +818,12 @@ class MetaGatedBacktestStep(BaseStep):
                         except Exception:
                             expected_returns_pre = None
 
+                    df_events_opt = None
+                    try:
+                        df_events_opt = df.loc[event_probs_pre.index]
+                    except Exception:
+                        df_events_opt = None
+
                     def _gate_mask_for_threshold(thresh: float) -> pd.Series:
                         mask = (event_probs_pre >= float(thresh)).copy()
                         if expected_returns_pre is not None:
@@ -761,7 +833,7 @@ class MetaGatedBacktestStep(BaseStep):
                                 pass
 
                         try:
-                            df_events_local = df.loc[event_probs_pre.index]
+                            df_events_local = df_events_opt if df_events_opt is not None else df.loc[event_probs_pre.index]
 
                             use_vol_filter = bool(filters_cfg.get("use_volatility_filter", True))
                             vol_quantile = float(filters_cfg.get("volatility_quantile", 0.40))
@@ -897,7 +969,174 @@ class MetaGatedBacktestStep(BaseStep):
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Threshold optimization failed: {e}, using default")
 
-            gate_mask = event_probs >= prob_threshold
+            per_regime_thresholds_result = None
+            try:
+                optimize_thresholds_by_regime = bool(config.get("optimize_thresholds_by_regime", False))
+            except Exception:
+                optimize_thresholds_by_regime = False
+
+            if optimize_thresholds and optimize_thresholds_by_regime:
+                try:
+                    regime_col = None
+                    try:
+                        regime_col = config.get("threshold_optimization_regime_col")
+                    except Exception:
+                        regime_col = None
+                    try:
+                        if regime_col is None:
+                            for cand in [
+                                "combined_regime",
+                                "trend_regime",
+                                "volatility_regime",
+                                "hmm_regime_label_1h",
+                            ]:
+                                if cand in df.columns:
+                                    regime_col = cand
+                                    break
+                    except Exception:
+                        regime_col = None
+
+                    if regime_col is not None:
+                        try:
+                            df_events_opt = df.loc[event_probs_pre.index]
+                        except Exception:
+                            df_events_opt = None
+
+                        regime_opt = None
+                        try:
+                            regime_opt = df_events_opt[regime_col] if df_events_opt is not None else df.loc[event_probs_pre.index, regime_col]
+                        except Exception:
+                            regime_opt = None
+
+                        if regime_opt is not None:
+                            thresholds_to_test = np.linspace(0.35, 0.85, 26)
+                            thr_map: Dict[str, float] = {}
+                            thr_stats: Dict[str, Any] = {}
+
+                            for reg_val in pd.unique(regime_opt.dropna()):
+                                reg_mask = (regime_opt == reg_val)
+                                n_reg_events = int(reg_mask.sum())
+                                if n_reg_events < 50:
+                                    continue
+
+                                best_score = -np.inf
+                                best_thr = float(prob_threshold)
+                                best_n = 0
+                                best_mean = float("nan")
+                                best_tpd = float("nan")
+
+                                for thr in thresholds_to_test:
+                                    gate_mask_test = _gate_mask_for_threshold(float(thr))
+                                    try:
+                                        gate_mask_test = gate_mask_test & reg_mask
+                                    except Exception:
+                                        pass
+
+                                    try:
+                                        n_trades_test = int(gate_mask_test.sum())
+                                    except Exception:
+                                        n_trades_test = 0
+                                    if n_trades_test < max(10, int(min_trades_required)):
+                                        continue
+
+                                    gated_returns_test = event_returns_pre[gate_mask_test]
+                                    if gated_returns_test.size == 0:
+                                        continue
+
+                                    mean_ret_test = float(gated_returns_test.mean())
+                                    std_ret_test = float(gated_returns_test.std(ddof=1)) if gated_returns_test.size > 1 else 0.0
+                                    sharpe_trade = float(mean_ret_test / std_ret_test) if std_ret_test > 0 else 0.0
+
+                                    trades_per_day_test = None
+                                    try:
+                                        if isinstance(gated_returns_test.index, pd.DatetimeIndex) and gated_returns_test.size > 0:
+                                            idx_sorted = gated_returns_test.index.sort_values()
+                                            start_day = idx_sorted[0].date()
+                                            end_day = idx_sorted[-1].date()
+                                            n_days_local = int((end_day - start_day).days) + 1
+                                            if n_days_local <= 0:
+                                                n_days_local = 1
+                                            trades_per_day_test = float(n_trades_test) / float(n_days_local)
+                                    except Exception:
+                                        trades_per_day_test = None
+
+                                    if min_trades_per_day_required is not None and trades_per_day_test is not None:
+                                        if float(trades_per_day_test) < float(min_trades_per_day_required):
+                                            continue
+
+                                    score = float(sharpe_trade) * float(np.sqrt(max(n_trades_test, 1)))
+                                    if score > best_score:
+                                        best_score = score
+                                        best_thr = float(thr)
+                                        best_n = int(n_trades_test)
+                                        best_mean = float(mean_ret_test)
+                                        best_tpd = float(trades_per_day_test) if trades_per_day_test is not None else float("nan")
+
+                                if np.isfinite(best_score) and int(best_n) > 0:
+                                    thr_key = str(reg_val)
+                                    thr_map[thr_key] = float(best_thr)
+                                    thr_stats[thr_key] = {
+                                        "n_events_opt": int(n_reg_events),
+                                        "n_trades_opt": int(best_n),
+                                        "mean_return_opt": float(best_mean) if np.isfinite(best_mean) else None,
+                                        "trades_per_day_opt": float(best_tpd) if np.isfinite(best_tpd) else None,
+                                        "score": float(best_score),
+                                    }
+
+                            if thr_map:
+                                per_regime_thresholds_result = {
+                                    "regime_col": str(regime_col),
+                                    "thresholds": dict(thr_map),
+                                    "stats": dict(thr_stats),
+                                    "default_threshold": float(prob_threshold),
+                                }
+                                tprint_success(
+                                    f"   ✅ Per-regime threshold map learned for '{regime_col}' (n_regimes={len(thr_map)})"
+                                )
+                except Exception as e_reg:
+                    tprint_warning(f"   ⚠️ Per-regime threshold optimization failed: {e_reg}")
+
+            gate_mask = None
+            try:
+                if per_regime_thresholds_result is not None:
+                    regime_col = str(per_regime_thresholds_result.get("regime_col"))
+                    thr_map = per_regime_thresholds_result.get("thresholds", {})
+                    try:
+                        regimes_eval = df.loc[event_probs.index, regime_col]
+                        thr_series = regimes_eval.astype(object).astype(str).map(thr_map)
+                        thr_series = thr_series.fillna(float(prob_threshold))
+                        gate_mask = (event_probs >= thr_series).copy()
+                    except Exception:
+                        gate_mask = None
+            except Exception:
+                gate_mask = None
+
+            if gate_mask is None:
+                if selection_mode == "top_quantile" and top_quantile is not None and np.isfinite(float(top_quantile)):
+                    try:
+                        tq = float(np.clip(float(top_quantile), 0.0, 0.999999))
+                        n_evt = int(event_probs.size)
+                        if n_evt > 0 and tq > 0.0:
+                            k = int(np.ceil(float(tq) * float(n_evt)))
+                            k = int(np.clip(k, 1, n_evt))
+                            score = event_probs.to_numpy(dtype=float)
+                            score = np.where(np.isfinite(score), score, -np.inf)
+                            top_idx = np.argpartition(score, n_evt - k)[n_evt - k :]
+                            gate_mask = pd.Series(False, index=event_probs.index)
+                            gate_mask.iloc[top_idx] = True
+                            try:
+                                thr_eff = float(np.min(score[top_idx])) if top_idx.size > 0 else float("nan")
+                                tprint_info(
+                                    f"   ↪ Rank gate: top_quantile={tq:.4f} -> k={k}/{n_evt} (thr_eff≈{thr_eff:.4f})"
+                                )
+                            except Exception:
+                                tprint_info(f"   ↪ Rank gate: top_quantile={tq:.4f} -> k={k}/{n_evt}")
+                        else:
+                            gate_mask = pd.Series(False, index=event_probs.index)
+                    except Exception:
+                        gate_mask = event_probs >= prob_threshold
+                else:
+                    gate_mask = event_probs >= prob_threshold
             expected_returns = None
 
             if use_expected_return and iso_model is not None:
@@ -988,6 +1227,86 @@ class MetaGatedBacktestStep(BaseStep):
 
             gated_returns = event_returns[gate_mask]
             n_trades = int(len(gated_returns))
+
+            if n_trades == 0:
+                if calibration_applied:
+                    try:
+                        tprint_warning("⚠️ Calibrated gate produced zero trades; retrying with raw probabilities")
+                        event_probs_uncal = raw_event_probs
+                        gate_mask_uncal = (event_probs_uncal >= float(prob_threshold)).copy()
+
+                        expected_returns_uncal = None
+                        if use_expected_return and iso_model is not None:
+                            try:
+                                prob_array = event_probs_uncal.to_numpy(dtype=float)
+                                er_array = iso_model.predict(prob_array)
+                                expected_returns_uncal = pd.Series(er_array, index=event_probs_uncal.index)
+                                gate_mask_uncal &= expected_returns_uncal >= float(er_threshold)
+                            except Exception:
+                                expected_returns_uncal = None
+
+                        try:
+                            df_events_uncal = df.loc[event_probs_uncal.index]
+
+                            use_vol_filter_uncal = bool(filters_cfg.get("use_volatility_filter", True))
+                            vol_quantile_uncal = float(filters_cfg.get("volatility_quantile", 0.40))
+                            use_trend_filter_uncal = bool(filters_cfg.get("use_trend_filter", True))
+                            trend_window_uncal = int(filters_cfg.get("trend_window", 20))
+                            trend_min_abs_uncal = float(filters_cfg.get("trend_min_abs", 0.0))
+
+                            use_liquidity_filter_uncal = bool(filters_cfg.get("use_liquidity_regime_filter", False))
+                            liquidity_regime_threshold_uncal = float(filters_cfg.get("liquidity_regime_threshold", 0.7))
+                            preferred_liquidity_regimes_uncal = filters_cfg.get("preferred_liquidity_regimes", [])
+
+                            if use_vol_filter_uncal and "volatility_1d" in df_events_uncal.columns:
+                                v_uncal = df_events_uncal["volatility_1d"].astype(float)
+                                try:
+                                    v_thr_uncal = v_uncal.quantile(vol_quantile_uncal)
+                                except Exception:
+                                    v_thr_uncal = v_uncal.quantile(0.40)
+                                gate_mask_uncal &= v_uncal >= v_thr_uncal
+
+                            if use_trend_filter_uncal and "close" in df_events_uncal.columns:
+                                close_uncal = df_events_uncal["close"].astype(float)
+                                sma_uncal = close_uncal.rolling(trend_window_uncal, min_periods=trend_window_uncal // 2).mean()
+                                trend_uncal = (close_uncal - sma_uncal) / sma_uncal
+                                trend_uncal = trend_uncal.reindex(df_events_uncal.index)
+                                gate_mask_uncal &= trend_uncal.abs() >= trend_min_abs_uncal
+
+                            if use_liquidity_filter_uncal:
+                                liquidity_cols_uncal = [
+                                    c
+                                    for c in df_events_uncal.columns
+                                    if c.startswith('liquidity_liquidity_regime_') and 'prob_' in c
+                                ]
+                                if liquidity_cols_uncal:
+                                    if preferred_liquidity_regimes_uncal:
+                                        preferred_cols_uncal = [
+                                            c
+                                            for c in liquidity_cols_uncal
+                                            if any(f"_{reg}_" in c for reg in preferred_liquidity_regimes_uncal)
+                                        ]
+                                        if preferred_cols_uncal:
+                                            liquidity_mask_uncal = (
+                                                df_events_uncal[preferred_cols_uncal].fillna(0).max(axis=1)
+                                                >= liquidity_regime_threshold_uncal
+                                            )
+                                            gate_mask_uncal &= liquidity_mask_uncal
+                                    else:
+                                        max_liquidity_prob_uncal = df_events_uncal[liquidity_cols_uncal].fillna(0).max(axis=1)
+                                        gate_mask_uncal &= max_liquidity_prob_uncal >= liquidity_regime_threshold_uncal
+                        except Exception:
+                            pass
+
+                        gated_returns_uncal = event_returns[gate_mask_uncal]
+                        n_trades_uncal = int(len(gated_returns_uncal))
+                        if n_trades_uncal > 0:
+                            event_probs = event_probs_uncal
+                            gate_mask = gate_mask_uncal
+                            gated_returns = gated_returns_uncal
+                            n_trades = n_trades_uncal
+                    except Exception:
+                        pass
 
             if n_trades == 0:
                 raise ValueError(

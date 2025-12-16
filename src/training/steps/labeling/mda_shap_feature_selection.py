@@ -28,7 +28,7 @@ except ImportError:
 try:
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import TimeSeriesSplit
-    from sklearn.metrics import accuracy_score, roc_auc_score
+    from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
     from sklearn.feature_selection import f_classif, SelectKBest
     from sklearn.preprocessing import StandardScaler
     from scipy.cluster.hierarchy import linkage, fcluster
@@ -303,7 +303,8 @@ class MDA_SHAP_FeatureSelector:
         X_train: pd.DataFrame,
         y_train: pd.Series,
         X_test: pd.DataFrame,
-        y_test: pd.Series
+        y_test: pd.Series,
+        target_sample_weight: Optional[Union[pd.Series, np.ndarray]] = None,
     ) -> Dict[str, float]:
         """
         Compute Information Coefficient (IC) for each feature in a fold.
@@ -324,7 +325,13 @@ class MDA_SHAP_FeatureSelector:
         # Train a simple model to get feature-target relationships
         # Use predictions on test set for more stable IC calculation
         model = self._create_base_model()
-        model.fit(X_train, y_train)
+        fit_kwargs: Dict[str, Any] = {}
+        if target_sample_weight is not None:
+            try:
+                fit_kwargs["sample_weight"] = np.asarray(target_sample_weight).ravel().astype(float)
+            except Exception:
+                pass
+        model.fit(X_train, y_train, **fit_kwargs)
 
         # Get model predictions on test set
         y_pred = None
@@ -353,8 +360,7 @@ class MDA_SHAP_FeatureSelector:
 
     def _compute_composite_scores(
         self,
-        clusters: Dict[str, List[str]],
-        mda_scores: Dict[str, float],
+        mda_stats: Dict[str, Dict[str, float]],
         shap_scores: Dict[str, float],
         ic_scores: Dict[str, Dict[str, float]]
     ) -> Dict[str, Dict[str, float]]:
@@ -383,24 +389,29 @@ class MDA_SHAP_FeatureSelector:
         sorted_by_ir = sorted(ir_values.items(), key=lambda x: x[1], reverse=True)
         ir_ranks = {feature: rank for rank, (feature, _) in enumerate(sorted_by_ir, 1)}
 
-        # Compute composite scores for individual features
-        for cluster_name, features in clusters.items():
-            cluster_mda = mda_scores.get(cluster_name, 0.0)
+        # Compute composite scores for individual features (feature-level MDA).
+        for feature, stat in mda_stats.items():
+            try:
+                mda_mean = float(stat.get('mean', 0.0))
+            except Exception:
+                mda_mean = 0.0
+            try:
+                mda_std_err = float(stat.get('std_err', 0.0))
+            except Exception:
+                mda_std_err = 0.0
 
-            for feature in features:
-                if feature in ir_ranks and feature in shap_scores:
-                    # Composite Score = MDA_cluster * IR_rank (lower rank = better)
-                    ir_rank = ir_ranks[feature]
-                    composite_score = cluster_mda / ir_rank  # Higher MDA and lower rank = higher score
+            if feature in ir_ranks and feature in shap_scores:
+                ir_rank = ir_ranks[feature]
+                composite_score = float(mda_mean) / float(ir_rank) if float(ir_rank) > 0 else 0.0
 
-                    composite_scores[feature] = {
-                        'composite_score': float(composite_score),
-                        'mda_cluster_score': float(cluster_mda),
-                        'ir_score': float(ir_values.get(feature, 0.0)),
-                        'ir_rank': int(ir_rank),
-                        'shap_score': float(shap_scores.get(feature, 0.0)),
-                        'cluster': cluster_name
-                    }
+                composite_scores[feature] = {
+                    'composite_score': float(composite_score),
+                    'mda_mean': float(mda_mean),
+                    'mda_std_err': float(mda_std_err),
+                    'ir_score': float(ir_values.get(feature, 0.0)),
+                    'ir_rank': int(ir_rank),
+                    'shap_score': float(shap_scores.get(feature, 0.0)),
+                }
 
         return composite_scores
 
@@ -491,15 +502,40 @@ class MDA_SHAP_FeatureSelector:
             X_test_fold = X.iloc[test_idx]
             y_test_fold = y.iloc[test_idx]
 
+            w_train_fold = None
+            w_test_fold = None
+            if target_sample_weight is not None:
+                try:
+                    if isinstance(target_sample_weight, pd.Series):
+                        w_aligned = target_sample_weight.reindex(X.index).fillna(1.0)
+                        w_train_fold = w_aligned.values[train_idx]
+                        w_test_fold = w_aligned.values[test_idx]
+                    else:
+                        w_arr = np.asarray(target_sample_weight).ravel().astype(float)
+                        if w_arr.shape[0] == len(X):
+                            w_train_fold = w_arr[train_idx]
+                            w_test_fold = w_arr[test_idx]
+                except Exception:
+                    w_train_fold = None
+                    w_test_fold = None
+
             # Subsample for speed
-            X_train_fold, y_train_fold, _ = self._subsample_training_data(X_train_fold, y_train_fold, None)
+            X_train_fold, y_train_fold, w_train_fold = self._subsample_training_data(
+                X_train_fold, y_train_fold, w_train_fold
+            )
 
             for set_name, features in test_sets.items():
                 try:
                     # Train model
                     model = self._create_base_model()
                     X_train_subset = X_train_fold[features]
-                    model.fit(X_train_subset, y_train_fold)
+                    fit_kwargs: Dict[str, Any] = {}
+                    if w_train_fold is not None:
+                        try:
+                            fit_kwargs["sample_weight"] = np.asarray(w_train_fold).ravel().astype(float)
+                        except Exception:
+                            pass
+                    model.fit(X_train_subset, y_train_fold, **fit_kwargs)
 
                     # Evaluate
                     X_test_subset = X_test_fold[features]
@@ -507,10 +543,25 @@ class MDA_SHAP_FeatureSelector:
                         y_pred = _safe_predict_proba_pos(model, X_test_subset)
                         if y_pred is None:
                             y_pred = np.full(int(len(X_test_subset)), 0.5, dtype=float)
-                        score = roc_auc_score(y_test_fold, y_pred) if y_test_fold.nunique() >= 2 else 0.5
+                        try:
+                            score = (
+                                roc_auc_score(
+                                    y_test_fold,
+                                    y_pred,
+                                    sample_weight=(np.asarray(w_test_fold).ravel().astype(float) if w_test_fold is not None else None),
+                                )
+                                if y_test_fold.nunique() >= 2
+                                else 0.5
+                            )
+                        except Exception:
+                            score = roc_auc_score(y_test_fold, y_pred) if y_test_fold.nunique() >= 2 else 0.5
                     else:
                         y_pred = model.predict(X_test_subset)
-                        score = accuracy_score(y_test_fold, y_pred)
+                        score = accuracy_score(
+                            y_test_fold,
+                            y_pred,
+                            sample_weight=(np.asarray(w_test_fold).ravel().astype(float) if w_test_fold is not None else None),
+                        )
 
                     fold_scores[set_name].append(score)
 
@@ -766,18 +817,28 @@ class MDA_SHAP_FeatureSelector:
         model.fit(X_train, y_train, **fit_kwargs)
 
         # Calculate baseline performance
+        test_weight_arr = None
+        if target_sample_weight is not None:
+            try:
+                test_weight_arr = np.asarray(target_sample_weight).ravel().astype(float)
+            except Exception:
+                test_weight_arr = None
         if hasattr(y_test, 'nunique') and y_test.nunique() > 2:
             # Multi-class
-            baseline_score = accuracy_score(y_test, model.predict(X_test))
+            baseline_score = accuracy_score(y_test, model.predict(X_test), sample_weight=test_weight_arr)
         else:
             # Binary (use AUC if available)
             try:
                 y_pred_proba = _safe_predict_proba_pos(model, X_test)
                 if y_pred_proba is None:
                     raise ValueError("predict_proba_failed")
-                baseline_score = roc_auc_score(y_test, y_pred_proba) if y_test.nunique() >= 2 else 0.5
+                baseline_score = (
+                    roc_auc_score(y_test, y_pred_proba, sample_weight=test_weight_arr)
+                    if y_test.nunique() >= 2
+                    else 0.5
+                )
             except:
-                baseline_score = accuracy_score(y_test, model.predict(X_test))
+                baseline_score = accuracy_score(y_test, model.predict(X_test), sample_weight=test_weight_arr)
 
         cluster_importance = {}
 
@@ -792,21 +853,111 @@ class MDA_SHAP_FeatureSelector:
 
             # Calculate performance on shuffled data
             if hasattr(y_test, 'nunique') and y_test.nunique() > 2:
-                shuffled_score = accuracy_score(y_test, model.predict(X_test_shuffled))
+                shuffled_score = accuracy_score(y_test, model.predict(X_test_shuffled), sample_weight=test_weight_arr)
             else:
                 try:
                     y_pred_proba_shuffled = _safe_predict_proba_pos(model, X_test_shuffled)
                     if y_pred_proba_shuffled is None:
                         raise ValueError("predict_proba_failed")
-                    shuffled_score = roc_auc_score(y_test, y_pred_proba_shuffled) if y_test.nunique() >= 2 else 0.5
+                    shuffled_score = (
+                        roc_auc_score(y_test, y_pred_proba_shuffled, sample_weight=test_weight_arr)
+                        if y_test.nunique() >= 2
+                        else 0.5
+                    )
                 except:
-                    shuffled_score = accuracy_score(y_test, model.predict(X_test_shuffled))
+                    shuffled_score = accuracy_score(y_test, model.predict(X_test_shuffled), sample_weight=test_weight_arr)
 
             # Importance = baseline - shuffled (higher = more important)
             importance = baseline_score - shuffled_score
             cluster_importance[cluster_name] = max(0, importance)  # Ensure non-negative
 
         return cluster_importance
+
+    def _compute_per_feature_mda_deprado(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        w_train: Optional[np.ndarray],
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        w_test: Optional[np.ndarray],
+    ) -> Dict[str, float]:
+        model = self._create_base_model()
+
+        fit_kwargs: Dict[str, Any] = {}
+        if w_train is not None:
+            try:
+                w_train_arr = np.asarray(w_train).ravel().astype(float)
+                fit_kwargs["sample_weight"] = w_train_arr
+            except Exception:
+                pass
+
+        model.fit(X_train, y_train, **fit_kwargs)
+
+        scoring = "neg_log_loss"
+        baseline = None
+        try:
+            proba = model.predict_proba(X_test)
+            baseline = -log_loss(
+                y_test,
+                proba,
+                sample_weight=(np.asarray(w_test).ravel().astype(float) if w_test is not None else None),
+                labels=getattr(model, "classes_", None),
+            )
+        except Exception:
+            scoring = "accuracy"
+            try:
+                pred = model.predict(X_test)
+                baseline = accuracy_score(
+                    y_test,
+                    pred,
+                    sample_weight=(np.asarray(w_test).ravel().astype(float) if w_test is not None else None),
+                )
+            except Exception:
+                baseline = None
+
+        if baseline is None or (not np.isfinite(float(baseline))):
+            return {}
+
+        imp: Dict[str, float] = {}
+        rs = np.random.RandomState(self.random_state)
+
+        for j in X_test.columns:
+            try:
+                X1_ = X_test.copy(deep=True)
+                try:
+                    arr = X1_[j].values
+                    rs.shuffle(arr)
+                    X1_[j] = arr
+                except Exception:
+                    rs.shuffle(X1_[j].values)
+
+                if scoring == "neg_log_loss":
+                    proba_ = model.predict_proba(X1_)
+                    perm = -log_loss(
+                        y_test,
+                        proba_,
+                        sample_weight=(np.asarray(w_test).ravel().astype(float) if w_test is not None else None),
+                        labels=getattr(model, "classes_", None),
+                    )
+                    denom = float(max(-float(perm), 1e-12))
+                    val = (float(baseline) - float(perm)) / denom
+                else:
+                    pred_ = model.predict(X1_)
+                    perm = accuracy_score(
+                        y_test,
+                        pred_,
+                        sample_weight=(np.asarray(w_test).ravel().astype(float) if w_test is not None else None),
+                    )
+                    denom = float(max(1.0 - float(perm), 1e-12))
+                    val = (float(baseline) - float(perm)) / denom
+
+                if np.isfinite(val):
+                    imp[str(j)] = float(val)
+            except Exception:
+                continue
+
+        return imp
 
     def _compute_shap_importance(
         self,
@@ -1012,25 +1163,63 @@ class MDA_SHAP_FeatureSelector:
             # Use only features that passed previous filters
             X_filtered = X[filtered_features]
 
-            # Handle multi-class targets
-            if y.nunique() > 2:
-                # For multi-class, use f_classif which handles it
-                selector = SelectKBest(score_func=f_classif, k='all')
-                selector.fit(X_filtered, y)
-                scores = selector.scores_
-            else:
-                # Binary case
-                selector = SelectKBest(score_func=f_classif, k='all')
-                selector.fit(X_filtered, y)
-                scores = selector.scores_
+            try:
+                y_unique = int(y.nunique(dropna=True))
+            except Exception:
+                y_unique = int(y.nunique())
 
-            # Keep top 75th percentile
-            percentile_threshold = np.percentile(scores, 25)  # Bottom 25% get removed
-            keep_indices = scores >= percentile_threshold
-            filtered_features = [f for f, keep in zip(filtered_features, keep_indices) if keep]
-            after = int(len(filtered_features))
-            prefilter_counts["anova"] = after
-            self._log(f"   📊 ANOVA filter: {before} → {after} features")
+            if y_unique < 2:
+                msg = f"ANOVA filter aborted: y has <2 classes (y_unique={y_unique})"
+                self._log(f"   ❌ {msg}", level="error")
+                raise ValueError(msg)
+            else:
+                try:
+                    X_anova = X_filtered.replace([np.inf, -np.inf], np.nan)
+                    if bool(getattr(X_anova, "isna", lambda: False)().any().any()):
+                        med = X_anova.median(axis=0, numeric_only=True)
+                        X_anova = X_anova.fillna(med)
+                        X_anova = X_anova.fillna(0.0)
+                except Exception:
+                    X_anova = X_filtered
+
+                # Handle multi-class targets
+                selector = SelectKBest(score_func=f_classif, k='all')
+                try:
+                    selector.fit(X_anova, y)
+                    scores = np.asarray(selector.scores_, dtype=float)
+                except Exception as anova_exc:
+                    scores = None
+                    self._log(f"   ⚠️ ANOVA filter failed ({anova_exc}); skipping", level="warning")
+
+                if scores is not None:
+                    finite = np.isfinite(scores)
+                    n_finite = int(np.sum(finite))
+                    if n_finite <= 0:
+                        prefilter_counts["anova"] = int(len(filtered_features))
+                        self._log("   ⚠️ ANOVA filter skipped: all scores non-finite", level="warning")
+                    else:
+                        try:
+                            percentile_threshold = float(np.nanpercentile(scores, 25))
+                        except Exception:
+                            percentile_threshold = float(np.percentile(scores[finite], 25))
+
+                        if not np.isfinite(percentile_threshold):
+                            prefilter_counts["anova"] = int(len(filtered_features))
+                            self._log("   ⚠️ ANOVA filter skipped: percentile threshold non-finite", level="warning")
+                        else:
+                            keep_indices = finite & (scores >= percentile_threshold)
+                            kept = [f for f, keep in zip(filtered_features, keep_indices) if bool(keep)]
+                            if int(len(kept)) <= 0:
+                                prefilter_counts["anova"] = int(len(filtered_features))
+                                self._log("   ⚠️ ANOVA filter produced 0 features; skipping", level="warning")
+                            else:
+                                filtered_features = kept
+                                after = int(len(filtered_features))
+                                prefilter_counts["anova"] = after
+                                self._log(f"   📊 ANOVA filter: {before} → {after} features")
+
+                if prefilter_counts.get("anova", None) is None:
+                    prefilter_counts["anova"] = int(len(filtered_features))
 
         X_filtered = X[filtered_features]
         self._prefilter_counts = dict(prefilter_counts)
@@ -1050,11 +1239,12 @@ class MDA_SHAP_FeatureSelector:
         regime_leaf_config: Optional[Dict[str, Any]] = None,
         pre_filter_config: Optional[Dict[str, Any]] = None,
         corr_threshold: float = 0.85,
-        top_clusters: int = 5,
+        top_clusters: int = 8,
         shap_sample_size: int = 1000,
         enable_shap_interaction_features: bool = False,
         shap_interaction_config: Optional[Dict[str, Any]] = None,
         elbow_min_features: int = 10,
+        max_selected_features: Optional[int] = None,
     ) -> Tuple[List[str], Dict[str, Any]]:
         """
         Main feature selection method implementing the 3-phase approach.
@@ -1243,15 +1433,41 @@ class MDA_SHAP_FeatureSelector:
 
                 X_interaction_candidates = X_filtered[candidate_cols]
 
+                # Prefer regime-feature interactions (regime_leaf_* x other_feature) over generic interactions.
+                # If none are found, optionally fall back to generic mining.
+                enable_regime_bias = bool(inter_cfg.get("prefer_regime_feature", True)) and bool(enable_regime_leaves)
+                allow_fallback = bool(inter_cfg.get("fallback_to_generic", True))
+                inter_cfg_regime = dict(inter_cfg)
+                if enable_regime_bias:
+                    rcfg = dict(inter_cfg_regime.get("regime") or {})
+                    rcfg.setdefault("require_regime_feature", True)
+                    rcfg.setdefault("exclude_regime_regime", True)
+                    inter_cfg_regime["regime"] = rcfg
+
                 shap_interaction_defs, shap_interaction_info = mine_shap_interaction_feature_defs(
                     X=X_interaction_candidates,
                     y=y,
                     target_sample_weight=target_sample_weight,
-                    config=inter_cfg,
+                    config=inter_cfg_regime,
                     random_state=self.random_state,
                     embargo_pct=self.embargo_pct,
                     verbose=self.verbose,
                 )
+
+                if enable_regime_bias and allow_fallback and not shap_interaction_defs:
+                    inter_cfg_generic = dict(inter_cfg)
+                    rcfg = dict((inter_cfg_generic.get("regime") or {}))
+                    rcfg["require_regime_feature"] = False
+                    inter_cfg_generic["regime"] = rcfg
+                    shap_interaction_defs, shap_interaction_info = mine_shap_interaction_feature_defs(
+                        X=X_interaction_candidates,
+                        y=y,
+                        target_sample_weight=target_sample_weight,
+                        config=inter_cfg_generic,
+                        random_state=self.random_state,
+                        embargo_pct=self.embargo_pct,
+                        verbose=self.verbose,
+                    )
 
                 if shap_interaction_defs:
                     inter_df = apply_interaction_definitions(
@@ -1275,7 +1491,7 @@ class MDA_SHAP_FeatureSelector:
         # Phase 2: Execution of Importance Methods
         self._log("⚙️ Phase 2: Execution of Importance Methods")
 
-        # Cluster features
+        # Cluster features (kept for diagnostics; MDA uses per-feature permutation).
         clusters = self._cluster_features(X_filtered, corr_threshold)
 
         # Initialize result storage
@@ -1295,6 +1511,7 @@ class MDA_SHAP_FeatureSelector:
 
             # Split sample weights if provided
             target_sample_weight_train_fold = None
+            target_sample_weight_test_fold = None
             if target_sample_weight is not None:
                 # Ensure target_sample_weight is aligned with X_filtered index
                 if hasattr(target_sample_weight, 'index'):
@@ -1304,6 +1521,7 @@ class MDA_SHAP_FeatureSelector:
 
                 # Use positional indexing to avoid index alignment issues
                 target_sample_weight_train_fold = target_sample_weight_aligned.values[train_idx]
+                target_sample_weight_test_fold = target_sample_weight_aligned.values[test_idx]
 
             # Subsample training data for computational efficiency
             X_train_fold, y_train_fold, target_sample_weight_train_fold = self._subsample_training_data(
@@ -1330,12 +1548,27 @@ class MDA_SHAP_FeatureSelector:
             except Exception:
                 clusters_fold = clusters
 
-            # Clustered MDA
-            if clusters_fold:
-                fold_mda = self._compute_clustered_mda(
-                    X_train_fold, y_train_fold, target_sample_weight_train_fold,
-                    X_test_fold, y_test_fold, clusters_fold
-                )
+            # Per-feature MDA (De Prado-style) with weighted scoring.
+            try:
+                w_tr = None
+                if target_sample_weight_train_fold is not None:
+                    w_tr = np.asarray(target_sample_weight_train_fold).ravel().astype(float)
+                w_te = None
+                if target_sample_weight_test_fold is not None:
+                    w_te = np.asarray(target_sample_weight_test_fold).ravel().astype(float)
+            except Exception:
+                w_tr = None
+                w_te = None
+
+            fold_mda = self._compute_per_feature_mda_deprado(
+                X_train=X_train_fold,
+                y_train=y_train_fold,
+                w_train=w_tr,
+                X_test=X_test_fold,
+                y_test=y_test_fold,
+                w_test=w_te,
+            )
+            if fold_mda:
                 fold_mda_results.append(fold_mda)
 
             # SHAP
@@ -1345,18 +1578,37 @@ class MDA_SHAP_FeatureSelector:
             fold_shap_results.append(fold_shap)
 
             # Information Coefficient (IC) - Spearman correlation per fold
-            fold_ic = self._compute_fold_ic(X_train_fold, y_train_fold, X_test_fold, y_test_fold)
+            fold_ic = self._compute_fold_ic(
+                X_train_fold,
+                y_train_fold,
+                target_sample_weight=target_sample_weight_train_fold,
+                X_test=X_test_fold,
+                y_test=y_test_fold,
+            )
             fold_ic_results.append(fold_ic)
 
-        # Aggregate results across folds
+        # Aggregate results across folds (feature-level mean + std_err)
+        self.mda_results_stats = {}
         if fold_mda_results:
-            # Average MDA scores across folds
-            mda_scores = {}
-            for cluster in clusters.keys():
-                scores = [fold.get(cluster, 0) for fold in fold_mda_results]
-                mda_scores[cluster] = np.mean(scores)
+            try:
+                mda_df = pd.DataFrame(fold_mda_results)
+                mda_mean = mda_df.mean(axis=0, skipna=True)
+                mda_std = mda_df.std(axis=0, ddof=1, skipna=True)
+                mda_n = mda_df.count(axis=0)
+                mda_std_err = mda_std / np.sqrt(np.maximum(mda_n.astype(float), 1.0))
 
-            self.mda_results = mda_scores
+                self.mda_results = {str(k): float(v) for k, v in mda_mean.to_dict().items() if np.isfinite(float(v))}
+                self.mda_results_stats = {
+                    str(k): {
+                        "mean": float(mda_mean.loc[k]) if np.isfinite(float(mda_mean.loc[k])) else 0.0,
+                        "std_err": float(mda_std_err.loc[k]) if np.isfinite(float(mda_std_err.loc[k])) else 0.0,
+                        "n_folds": int(mda_n.loc[k]) if int(mda_n.loc[k]) >= 0 else 0,
+                    }
+                    for k in mda_df.columns
+                }
+            except Exception:
+                self.mda_results = {}
+                self.mda_results_stats = {}
 
         # Compute Information Ratio (IR) for feature stability
         if fold_ic_results:
@@ -1392,10 +1644,9 @@ class MDA_SHAP_FeatureSelector:
 
         selected_features = []
 
-        if clusters and self.mda_results and hasattr(self, 'ic_results') and self.ic_results:
-            # Compute composite scores (MDA * IR rank)
+        if self.mda_results_stats and hasattr(self, 'ic_results') and self.ic_results:
             composite_scores = self._compute_composite_scores(
-                clusters, self.mda_results, self.shap_results, self.ic_results
+                self.mda_results_stats, self.shap_results, self.ic_results
             )
 
             if composite_scores:
@@ -1455,14 +1706,9 @@ class MDA_SHAP_FeatureSelector:
 
         # Fallback selections if composite scoring fails
         if not selected_features:
-            if clusters and self.mda_results:
-                # Fallback to MDA-based selection
-                sorted_clusters = sorted(self.mda_results.items(), key=lambda x: x[1], reverse=True)
-                top_cluster_names = [cluster for cluster, _ in sorted_clusters[:top_clusters]]
-                cluster_features = []
-                for cluster_name in top_cluster_names:
-                    cluster_features.extend(clusters[cluster_name])
-                selected_features = cluster_features[:50]
+            if self.mda_results:
+                sorted_feats = sorted(self.mda_results.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [f for f, _ in sorted_feats[:50]]
                 self._log("⚠️ Using MDA-based fallback selection")
 
             elif self.shap_results:
@@ -1486,17 +1732,49 @@ class MDA_SHAP_FeatureSelector:
             forced_features = [f for f in regime_leaf_feature_names if f not in selected_features]
             selected_features = list(selected_features) + forced_features
 
+        try:
+            max_sel = int(max_selected_features) if max_selected_features is not None else None
+        except Exception:
+            max_sel = None
+        if max_sel is not None and max_sel > 0 and int(len(selected_features)) > int(max_sel):
+            try:
+                ranked_all: List[str] = []
+                try:
+                    ranked_all = [feat for feat, _ in getattr(self, "sorted_features", [])]
+                except Exception:
+                    ranked_all = []
+                if not ranked_all:
+                    ranked_all = list(selected_features)
+
+                forced_keep = [f for f in forced_features if f in selected_features]
+                if int(len(forced_keep)) >= int(max_sel):
+                    selected_features = forced_keep[: int(max_sel)]
+                else:
+                    remaining = int(max_sel) - int(len(forced_keep))
+                    fill = [f for f in ranked_all if f in selected_features and f not in set(forced_keep)]
+                    selected_features = list(fill[: int(remaining)]) + list(forced_keep)
+                self._log(f"🎯 Capped selected features to {int(max_sel)}")
+            except Exception:
+                selected_features = list(selected_features)[: int(max_sel)]
+
         self.selected_features = selected_features
 
         # Create rankings
         self.importance_rankings = {
-            'mda_clusters': dict(sorted(self.mda_results.items(), key=lambda x: x[1], reverse=True)),
+            'mda_features_mean': dict(sorted(self.mda_results.items(), key=lambda x: x[1], reverse=True)),
+            'mda_features_std_err': dict(
+                sorted(
+                    {k: v.get('std_err', 0.0) for k, v in getattr(self, 'mda_results_stats', {}).items()}.items(),
+                    key=lambda x: x[1],
+                    reverse=True,
+                )
+            ),
             'shap_features': dict(sorted(self.shap_results.items(), key=lambda x: x[1], reverse=True))
         }
 
         # Summary
         self._log(f"✅ Feature selection complete: {len(X_filtered.columns)} → {len(selected_features)} features")
-        self._log(f"   📊 Selected from {len(clusters)} clusters using MDA × IR composite scoring + Elbow method")
+        self._log(f"   📊 Selected using feature-level MDA × IR composite scoring + Elbow method")
 
         results: Dict[str, Any] = {}
 
@@ -1517,6 +1795,7 @@ class MDA_SHAP_FeatureSelector:
             'prefilter_features': getattr(self, '_prefilter_features', []),
             'clusters': clusters,
             'mda_results': self.mda_results,
+            'mda_results_stats': getattr(self, 'mda_results_stats', {}),
             'shap_results': self.shap_results,
             'ic_results': getattr(self, 'ic_results', {}),
             'composite_scores': getattr(self, 'composite_scores', {}),
@@ -1637,6 +1916,11 @@ def run_mda_shap_feature_selection(
             else {}
         ),
         elbow_min_features=int(config.get("elbow_min_features", 10)) if config else 10,
+        max_selected_features=(
+            int(config.get("max_selected_features"))
+            if config and config.get("max_selected_features") is not None
+            else None
+        ),
     )
 
     try:

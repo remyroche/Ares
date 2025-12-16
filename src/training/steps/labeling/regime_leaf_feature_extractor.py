@@ -19,6 +19,29 @@ from src.utils.tprint import tprint_info, tprint_warning
 from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
 from src.utils.feature_common.atr_normalization import atr_normalize
 from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+from src.feature_generation.categories.smc_regime_features import generate_smc_regime_features
+from src.feature_generation.categories.liquidity_regime_features import generate_liquidity_regime_features
+from src.feature_generation.categories.volume_force_features import generate_volume_force_features
+
+# Temporal Conv Encoder (optional, for neural temporal features)
+try:
+    from src.training.steps.labeling.temporal_conv_encoder import (
+        generate_temporal_embeddings,
+        TemporalConvEncoder,
+    )
+    _TEMPORAL_ENCODER_AVAILABLE = True
+except ImportError:
+    _TEMPORAL_ENCODER_AVAILABLE = False
+
+# Stacked NN Sequence Encoder (optional, for Conv+LSTM+Attention)
+try:
+    from src.training.steps.labeling.short_nn_sequence_template import (
+        generate_nn_sequence_embeddings,
+        StackedSequenceEncoder,
+    )
+    _NN_SEQUENCE_AVAILABLE = True
+except ImportError:
+    _NN_SEQUENCE_AVAILABLE = False
 
 try:
     import lightgbm as lgb
@@ -91,6 +114,46 @@ def _ensure_sorted_unique(
         if verbose:
             tprint_warning(f"[{name}] index hardening failed: {exc}")
     return df
+
+
+def _infer_time_tolerance(index: pd.DatetimeIndex) -> Optional[pd.Timedelta]:
+    try:
+        if not isinstance(index, pd.DatetimeIndex) or len(index) < 3:
+            return None
+        diffs = pd.Series(index).diff().dropna()
+        if diffs.empty:
+            return None
+        med = diffs.median()
+        if med is None:
+            return None
+        tol = pd.to_timedelta(med) * 2
+        return tol if tol > pd.Timedelta(0) else None
+    except Exception:
+        return None
+
+
+def _align_frame_to_index(
+    df: pd.DataFrame,
+    target_index: pd.Index,
+    *,
+    method: str = "ffill",
+    tolerance: Optional[pd.Timedelta] = None,
+) -> pd.DataFrame:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame(index=target_index)
+    if not isinstance(df.index, pd.DatetimeIndex) or not isinstance(target_index, pd.DatetimeIndex):
+        return df.reindex(target_index)
+
+    if tolerance is None:
+        tolerance = _infer_time_tolerance(df.index)
+    method = str(method or "ffill").lower()
+    if method in {"ffill", "pad"}:
+        return df.reindex(target_index, method="ffill", tolerance=tolerance)
+    if method in {"bfill", "backfill"}:
+        return df.reindex(target_index, method="bfill", tolerance=tolerance)
+    if method in {"nearest"}:
+        return df.reindex(target_index, method="nearest", tolerance=tolerance)
+    return df.reindex(target_index)
 
 
 def _detect_forbidden_feature_columns(
@@ -174,6 +237,8 @@ def _infer_max_lookahead_bars_from_targets_cfg(targets_cfg: dict) -> int:
         "volatility_window_short",
         "macro_trend_horizon",
         "trend_efficiency_window",
+        "volume_force_horizon",
+        "volume_force_lookahead",
         "liquidity_window",
         "liquidity_norm_window",
         "memory_window",
@@ -191,6 +256,13 @@ def _infer_max_lookahead_bars_from_targets_cfg(targets_cfg: dict) -> int:
         mh = targets_cfg.get("macro_trend_horizons")
         if isinstance(mh, (list, tuple)) and mh:
             cands.append(int(max([int(x) for x in mh if x is not None] + [1])))
+    except Exception:
+        pass
+
+    try:
+        eh = targets_cfg.get("trend_efficiency_horizons")
+        if isinstance(eh, (list, tuple)) and eh:
+            cands.append(int(max([int(x) for x in eh if x is not None] + [1])))
     except Exception:
         pass
     return max([1] + cands)
@@ -269,14 +341,24 @@ def _compute_future_volatility(close: pd.Series, window: int) -> pd.Series:
     return fut.rolling(window=window, min_periods=max(5, window // 4)).std().shift(-(window - 1))
 
 
+def _compute_future_past_vol_log_ratio(close: pd.Series, window: int) -> pd.Series:
+    log_ret = np.log(close).diff()
+    past = log_ret.rolling(window=window, min_periods=max(5, window // 4)).std()
+    future = log_ret.shift(-1).rolling(window=window, min_periods=max(5, window // 4)).std().shift(-(window - 1))
+    return (np.log(future + 1e-12) - np.log(past.shift(1) + 1e-12)).astype(float)
+
+
 def _compute_future_return(close: pd.Series, horizon: int) -> pd.Series:
     return (close.shift(-horizon) / (close + 1e-12) - 1.0).astype(float)
 
 
 def _compute_trend_efficiency(close: pd.Series, window: int) -> pd.Series:
-    fut_signal = (close.shift(-window) - close).abs()
-    noise = close.diff().abs().shift(-1)
+    c = pd.to_numeric(close, errors="coerce").replace(0.0, np.nan)
+    logp = np.log(c)
+    fut_signal = (logp.shift(-window) - logp).abs()
+    noise = logp.diff().abs().shift(-1)
     fut_noise = noise.rolling(window=window, min_periods=max(5, window // 4)).sum().shift(-(window - 1))
+    fut_noise = fut_noise.clip(lower=1e-6)
     return (fut_signal / (fut_noise + 1e-12)).clip(lower=0.0, upper=1.0)
 
 
@@ -351,6 +433,78 @@ def _compute_future_vol_of_vol(close: pd.Series, vol_window_short: int, vol_of_v
     )
 
 
+def _score_leaf_pairs_effect_support(
+    *,
+    leaves_oos: pd.DataFrame,
+    y_all: pd.Series,
+    raw_cols: Sequence[str],
+    min_support: float,
+    max_support: float,
+    dominant_support_max: float,
+    min_effect_z: float,
+    max_pairs: Optional[int],
+) -> Tuple[List[Tuple[str, float, float, float]], Dict[str, set]]:
+    pair_scores: List[Tuple[str, float, float, float]] = []
+    keep_pairs_by_tree: Dict[str, set] = {}
+
+    y_vals = pd.to_numeric(y_all, errors="coerce")
+    y_mu = float(y_vals.mean()) if y_vals.notna().any() else 0.0
+    y_sd = float(y_vals.std()) if y_vals.notna().any() else 0.0
+    y_sd = float(y_sd) if np.isfinite(y_sd) and y_sd > 1e-12 else 1.0
+
+    for raw_col in list(raw_cols):
+        try:
+            s = pd.to_numeric(leaves_oos[raw_col], errors="coerce")
+        except Exception:
+            continue
+        vc = s.dropna().value_counts()
+        n = float(max(1, int(vc.sum())))
+        if vc.empty:
+            continue
+
+        for leaf_val, cnt in vc.items():
+            try:
+                support = float(cnt) / float(n)
+            except Exception:
+                continue
+            if not np.isfinite(support):
+                continue
+            if support < float(min_support) or support > float(max_support):
+                continue
+            if support > float(dominant_support_max):
+                continue
+
+            try:
+                mask = s.eq(float(leaf_val))
+                y_leaf = y_vals.where(mask)
+                y_leaf = y_leaf.replace([np.inf, -np.inf], np.nan).dropna()
+                if len(y_leaf) < 5:
+                    continue
+                effect_z = float(abs(float(y_leaf.mean()) - float(y_mu)) / (float(y_sd) + 1e-12))
+                if not np.isfinite(effect_z) or effect_z < float(min_effect_z):
+                    continue
+                score = float(effect_z * np.sqrt(max(1e-12, support)))
+                if not np.isfinite(score):
+                    continue
+                pair_scores.append((str(raw_col), float(leaf_val), float(score), float(support)))
+            except Exception:
+                continue
+
+    pair_scores_sorted = sorted(pair_scores, key=lambda x: x[2], reverse=True)
+    if max_pairs is not None:
+        try:
+            max_pairs = int(max_pairs)
+        except Exception:
+            max_pairs = None
+    if max_pairs is not None and max_pairs > 0:
+        pair_scores_sorted = pair_scores_sorted[: int(max_pairs)]
+
+    for raw_col, leaf_val, _, _ in pair_scores_sorted:
+        keep_pairs_by_tree.setdefault(raw_col, set()).add(float(leaf_val))
+
+    return pair_scores_sorted, keep_pairs_by_tree
+
+
 def _compute_memory_autocorr(returns: pd.Series, window: int) -> pd.Series:
     shifted = returns.shift(1)
     return returns.rolling(window=window, min_periods=max(10, window // 4)).corr(shifted)
@@ -375,6 +529,66 @@ def _binary_entropy_from_prob(p: pd.Series) -> pd.Series:
     p = pd.to_numeric(p, errors="coerce").astype(float)
     p = p.clip(lower=1e-12, upper=1.0 - 1e-12)
     return -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p)).astype(float)
+
+
+def _safe_tanh(x: pd.Series, scale: float) -> pd.Series:
+    x = pd.to_numeric(x, errors="coerce").astype(float)
+    try:
+        scale = float(scale)
+    except Exception:
+        scale = 1.0
+    if not np.isfinite(scale) or scale <= 1e-12:
+        scale = 1.0
+    return np.tanh(x / scale).astype(float)
+
+
+def _interaction_gating_features(
+    score: pd.Series,
+    *,
+    prefix: str,
+    cfg: Dict[str, Any],
+) -> pd.DataFrame:
+    out = pd.DataFrame(index=score.index)
+    include_sign = bool(cfg.get("include_sign", True))
+    include_soft = bool(cfg.get("include_soft", True))
+    include_bins = bool(cfg.get("include_bins", True))
+
+    if include_sign:
+        s = pd.to_numeric(score, errors="coerce")
+        out[f"{prefix}gate_sign"] = np.sign(s.fillna(0.0)).astype(float)
+
+    if include_soft:
+        scale = float(cfg.get("soft_scale", 1.0))
+        out[f"{prefix}gate_soft"] = _safe_tanh(score, scale=scale)
+
+    if include_bins:
+        try:
+            n_bins = int(cfg.get("n_bins", 3))
+        except Exception:
+            n_bins = 3
+        n_bins = int(max(2, min(8, n_bins)))
+
+        s = pd.to_numeric(score, errors="coerce")
+        s_non_null = s.dropna()
+        if len(s_non_null) >= max(50, 10 * n_bins):
+            split_idx = max(1, int(len(s_non_null) * float(cfg.get("train_frac", 0.7))))
+            train = s_non_null.iloc[:split_idx]
+            try:
+                qs = [float(q) for q in np.linspace(0.0, 1.0, n_bins + 1)]
+                edges = train.quantile(qs).to_numpy(dtype=float)
+                edges[0] = -np.inf
+                edges[-1] = np.inf
+                for i in range(1, len(edges) - 1):
+                    if not np.isfinite(edges[i]) or edges[i] <= edges[i - 1]:
+                        edges[i] = edges[i - 1] + 1e-12
+                labels = [f"b{i}" for i in range(n_bins)]
+                binned = pd.cut(s, bins=edges, labels=labels, include_lowest=True)
+                d = pd.get_dummies(binned, prefix=f"{prefix}gate_bin", drop_first=True)
+                out = out.join(d)
+            except Exception:
+                pass
+
+    return out
 
 
 def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, Any]) -> pd.DataFrame:
@@ -471,6 +685,14 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
     out["reg_ohlcv__ema_fast_slope"] = (ema_fast.diff() / (ema_fast.abs() + 1e-12)).astype(float)
     out["reg_ohlcv__ema_slow_slope"] = (ema_slow.diff() / (ema_slow.abs() + 1e-12)).astype(float)
 
+    try:
+        spread = (ema_fast - ema_slow).astype(float)
+        out["reg_ohlcv__ema_spread_slope"] = (spread.diff() / (spread.abs() + 1e-12)).astype(float)
+        out["reg_ohlcv__ema_spread_accel"] = (out["reg_ohlcv__ema_spread_slope"].diff() / (out["reg_ohlcv__ema_spread_slope"].abs() + 1e-12)).astype(float)
+    except Exception:
+        out["reg_ohlcv__ema_spread_slope"] = np.nan
+        out["reg_ohlcv__ema_spread_accel"] = np.nan
+
     eff_w = int(cfg.get("efficiency_window", 32))
     path = close.diff().abs()
     denom = path.rolling(window=eff_w, min_periods=max(5, eff_w // 4)).sum()
@@ -506,9 +728,41 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
     out["reg_ohlcv__lower_wick_frac"] = (lower / rng).replace([np.inf, -np.inf], np.nan)
     out["reg_ohlcv__range_pct"] = ((high - low) / (close.abs() + 1e-12)).astype(float)
 
+    try:
+        re_cfg = cfg.get("range_expansion")
+        if not isinstance(re_cfg, dict):
+            re_cfg = {}
+        re_windows = re_cfg.get("windows")
+        if not isinstance(re_windows, (list, tuple)) or not re_windows:
+            re_windows = [96]
+        re_windows = [int(w) for w in re_windows if int(w) >= 10]
+        for w in re_windows:
+            hh = high.rolling(window=w, min_periods=max(10, w // 4)).max()
+            ll = low.rolling(window=w, min_periods=max(10, w // 4)).min()
+            out[f"reg_ohlcv__range_expansion_atr_w{w}"] = ((hh - ll) / (atr + 1e-12)).replace([np.inf, -np.inf], np.nan)
+    except Exception:
+        pass
+
     gap = (open_px - close.shift(1)).astype(float)
     out["reg_ohlcv__gap_abs_atr"] = (gap.abs() / (atr + 1e-12)).replace([np.inf, -np.inf], np.nan)
     out["reg_ohlcv__gap_signed_atr"] = (gap / (atr + 1e-12)).replace([np.inf, -np.inf], np.nan)
+
+    try:
+        gap_cfg = cfg.get("gap_frequency")
+        if not isinstance(gap_cfg, dict):
+            gap_cfg = {}
+        gap_windows = gap_cfg.get("windows")
+        if not isinstance(gap_windows, (list, tuple)) or not gap_windows:
+            gap_windows = [96]
+        gap_windows = [int(w) for w in gap_windows if int(w) >= 10]
+        gap_thr = float(gap_cfg.get("gap_abs_atr_threshold", 1.0))
+        for w in gap_windows:
+            gflag = (pd.to_numeric(out["reg_ohlcv__gap_abs_atr"], errors="coerce") > gap_thr).astype(float)
+            out[f"reg_ohlcv__gap_freq_gt{gap_thr:g}_w{w}"] = gflag.rolling(
+                window=w, min_periods=max(10, w // 4)
+            ).mean()
+    except Exception:
+        pass
 
     dd_w = int(cfg.get("drawdown_window", 192))
     roll_max = close.rolling(window=dd_w, min_periods=max(10, dd_w // 6)).max()
@@ -669,6 +923,24 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
         except Exception:
             out["reg_ohlcv__turnover_log1p_z"] = np.nan
 
+        try:
+            shock_cfg = cfg.get("liquidity_shock")
+            if not isinstance(shock_cfg, dict):
+                shock_cfg = {}
+            shock_w = int(shock_cfg.get("window", norm_w))
+            clip_abs = float(shock_cfg.get("clip_abs", 6.0))
+            vol_chg = vol.pct_change().replace([np.inf, -np.inf], np.nan)
+            t_chg = turnover.pct_change().replace([np.inf, -np.inf], np.nan)
+            out["reg_ohlcv__volume_chg_z"] = winsorized_zscore_normalize(vol_chg, window=shock_w, min_periods=max(10, shock_w // 10)).clip(
+                lower=-clip_abs, upper=clip_abs
+            )
+            out["reg_ohlcv__turnover_chg_z"] = winsorized_zscore_normalize(t_chg, window=shock_w, min_periods=max(10, shock_w // 10)).clip(
+                lower=-clip_abs, upper=clip_abs
+            )
+        except Exception:
+            out["reg_ohlcv__volume_chg_z"] = np.nan
+            out["reg_ohlcv__turnover_chg_z"] = np.nan
+
         amihud_w = int(cfg.get("amihud_window", 96))
         illiq = (ret.abs() / (turnover.abs() + 1e-12)).replace([np.inf, -np.inf], np.nan)
         out["reg_ohlcv__amihud_illiq"] = illiq.rolling(window=amihud_w, min_periods=max(10, amihud_w // 4)).mean()
@@ -782,6 +1054,614 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             out["reg_ohlcv__liquidity_gap_up"] = 0.0
             out["reg_ohlcv__liquidity_gap_down"] = 0.0
             out["reg_ohlcv__liquidity_gap_abs"] = 0.0
+
+        # Advanced Volatility Features (Vol-of-Vol, ATR Rank, Compression)
+        try:
+            adv_vol_windows = [24, 96]
+            
+            # Vol-of-Vol: CoV of volatility (std / mean)
+            for w in adv_vol_windows:
+                vol_rolling_mean = vol.rolling(window=w, min_periods=max(5, w//4)).mean()
+                vol_rolling_std = vol.rolling(window=w, min_periods=max(5, w//4)).std()
+                out[f"reg_ohlcv__vol_of_vol_w{w}"] = (vol_rolling_std / (vol_rolling_mean + 1e-12)).replace([np.inf, -np.inf], np.nan)
+            
+            # ATR Rank: Percentile of current ATR within historical window
+            # (ATR - MinATR) / (MaxATR - MinATR)
+            for w in adv_vol_windows:
+                atr_min = atr.rolling(window=w, min_periods=max(5, w//4)).min()
+                atr_max = atr.rolling(window=w, min_periods=max(5, w//4)).max()
+                out[f"reg_ohlcv__atr_rank_w{w}"] = ((atr - atr_min) / (atr_max - atr_min + 1e-12)).clip(0.0, 1.0)
+                
+            # Compression Ratio: Short-term range / Long-term range (BB Width proxy)
+            # Using ATR ratio as proxy: ATR(short) / ATR(long)
+            # Low values (< 1) imply compression, High values (> 1) imply expansion
+            short_w = 12
+            long_w = 48
+            atr_short = atr.rolling(window=short_w, min_periods=5).mean()
+            atr_long = atr.rolling(window=long_w, min_periods=20).mean()
+            out["reg_ohlcv__vol_compression_ratio"] = (atr_short / (atr_long + 1e-12)).replace([np.inf, -np.inf], np.nan)
+            
+        except Exception:
+            pass
+
+        # Multi-Horizon Regime Agreement
+        # Proxies for Volatility (Log Ratio) and Trend (Returns) across scales
+        try:
+            mh_windows = [8, 16, 32] 
+            
+            # 1. Volatility Proxies
+            vol_proxies = []
+            for w in mh_windows:
+                # Log(Vol / MA(Vol, w))
+                v_ma = vol.rolling(window=w, min_periods=max(5, w//4)).mean()
+                vp = np.log((vol / (v_ma + 1e-12)).replace(0, np.nan)).fillna(0.0)
+                vol_proxies.append(vp)
+            
+            # Vol Dispersion (Std across horizons)
+            # Use concat(axis=1).std(axis=1)
+            vol_proxy_df = pd.concat(vol_proxies, axis=1)
+            out["reg_ohlcv__vol_multi_horizon_dispersion"] = vol_proxy_df.std(axis=1)
+            out["reg_ohlcv__vol_multi_horizon_mean"] = vol_proxy_df.mean(axis=1)
+
+            # 2. Trend Proxies
+            trend_proxies = []
+            for w in mh_windows:
+                # Returns over w bars
+                tp = close.pct_change(periods=w).fillna(0.0)
+                trend_proxies.append(tp)
+            
+            trend_proxy_df = pd.concat(trend_proxies, axis=1)
+            
+            # Trend Agreement: Mean of Signs (1.0 = All Agree, 0.0 = Mixed)
+            # We want "Agreement Strength" -> abs(mean(signs))
+            # If 3 windows: (+1, +1, +1) -> mean 1.0 -> abs 1.0
+            # (+1, +1, -1) -> mean 0.33 -> abs 0.33
+            trend_signs = np.sign(trend_proxy_df)
+            out["reg_ohlcv__trend_multi_horizon_agreement"] = trend_signs.mean(axis=1).abs()
+            out["reg_ohlcv__trend_multi_horizon_mean"] = trend_proxy_df.mean(axis=1)
+            
+        except Exception:
+            out["reg_ohlcv__vol_multi_horizon_dispersion"] = 0.0
+            out["reg_ohlcv__vol_multi_horizon_mean"] = 0.0
+            out["reg_ohlcv__trend_multi_horizon_agreement"] = 0.5
+            out["reg_ohlcv__trend_multi_horizon_mean"] = 0.0
+
+        # =====================================================================
+        # TREND STRENGTH FEATURES (ADX, Donchian, Trend Persistence)
+        # Added to improve performance in trending/volatile markets
+        # =====================================================================
+        
+        # --- ADX (Average Directional Index) ---
+        # Measures trend strength regardless of direction (0-100 scale)
+        # Windows: 16=4h, 24=6h, 32=8h at 15m timeframe
+        try:
+            adx_cfg = cfg.get("adx", {})
+            if not isinstance(adx_cfg, dict):
+                adx_cfg = {}
+            adx_windows = adx_cfg.get("windows", [16, 24, 32])  # 4h, 6h, 8h at 15m
+            if not isinstance(adx_windows, (list, tuple)):
+                adx_windows = [16, 24, 32]
+            adx_windows = [int(w) for w in adx_windows if int(w) >= 5]
+            
+            for adx_w in adx_windows:
+                # True Range (already computed as `tr`)
+                # +DM (positive directional movement)
+                high_diff = high.diff()
+                low_diff = low.diff()
+                plus_dm = high_diff.where((high_diff > 0) & (high_diff > -low_diff), 0.0)
+                minus_dm = (-low_diff).where((low_diff < 0) & (-low_diff > high_diff), 0.0)
+                
+                # Smoothed averages (Wilder's smoothing = EWM with alpha=1/window)
+                alpha = 1.0 / float(adx_w)
+                atr_smooth = tr.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
+                plus_dm_smooth = plus_dm.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
+                minus_dm_smooth = minus_dm.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
+                
+                # +DI and -DI
+                plus_di = 100.0 * plus_dm_smooth / (atr_smooth + 1e-12)
+                minus_di = 100.0 * minus_dm_smooth / (atr_smooth + 1e-12)
+                
+                # DX = |+DI - -DI| / |+DI + -DI| * 100
+                di_sum = plus_di + minus_di
+                di_diff = (plus_di - minus_di).abs()
+                dx = 100.0 * di_diff / (di_sum + 1e-12)
+                
+                # ADX = smoothed DX
+                adx_val = dx.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
+                
+                out[f"reg_ohlcv__adx_w{adx_w}"] = adx_val.clip(0.0, 100.0)
+                out[f"reg_ohlcv__plus_di_w{adx_w}"] = plus_di.clip(0.0, 100.0)
+                out[f"reg_ohlcv__minus_di_w{adx_w}"] = minus_di.clip(0.0, 100.0)
+                # DI spread: bullish when positive
+                out[f"reg_ohlcv__di_spread_w{adx_w}"] = (plus_di - minus_di).clip(-100.0, 100.0)
+                
+                # --- ADX × Direction Interaction Features ---
+                # Combines trend strength with trend direction for macro_trend prediction
+                # Direction: sign of return over the window
+                htf_ret = close.pct_change(adx_w)
+                htf_dir = np.sign(htf_ret)
+                
+                # ADX × Direction: positive for strong uptrend, negative for strong downtrend
+                out[f"reg_ohlcv__adx_x_direction_w{adx_w}"] = (adx_val * htf_dir / 100.0).clip(-1.0, 1.0)
+                
+                # ADX × |Return|: trend strength weighted by move size
+                out[f"reg_ohlcv__adx_x_abs_ret_w{adx_w}"] = (adx_val * htf_ret.abs() * 10.0).clip(0.0, 10.0)
+                
+                # Directional trend score: ADX * DI_spread / 100 (captures both strength and direction)
+                di_spread_norm = (plus_di - minus_di) / 100.0  # -1 to +1
+                out[f"reg_ohlcv__directional_trend_w{adx_w}"] = (adx_val / 100.0 * di_spread_norm).clip(-1.0, 1.0)
+                
+        except Exception:
+            for w in [16, 24, 32]:
+                out[f"reg_ohlcv__adx_w{w}"] = np.nan
+                out[f"reg_ohlcv__plus_di_w{w}"] = np.nan
+                out[f"reg_ohlcv__minus_di_w{w}"] = np.nan
+                out[f"reg_ohlcv__di_spread_w{w}"] = np.nan
+                out[f"reg_ohlcv__adx_x_direction_w{w}"] = 0.0
+                out[f"reg_ohlcv__adx_x_abs_ret_w{w}"] = 0.0
+                out[f"reg_ohlcv__directional_trend_w{w}"] = 0.0
+        
+        # --- Donchian Channel Features ---
+        # Position within channel (0=at low, 1=at high), channel width
+        try:
+            donch_cfg = cfg.get("donchian", {})
+            if not isinstance(donch_cfg, dict):
+                donch_cfg = {}
+            donch_windows = donch_cfg.get("windows", [20, 50])
+            if not isinstance(donch_windows, (list, tuple)):
+                donch_windows = [20, 50]
+            donch_windows = [int(w) for w in donch_windows if int(w) >= 5]
+            
+            for donch_w in donch_windows:
+                donch_high = high.rolling(window=donch_w, min_periods=max(5, donch_w // 4)).max()
+                donch_low = low.rolling(window=donch_w, min_periods=max(5, donch_w // 4)).min()
+                donch_mid = (donch_high + donch_low) / 2.0
+                donch_width = donch_high - donch_low
+                
+                # Position in channel (0-1 range)
+                out[f"reg_ohlcv__donch_position_w{donch_w}"] = ((close - donch_low) / (donch_width + 1e-12)).clip(0.0, 1.0)
+                # Width normalized by ATR
+                out[f"reg_ohlcv__donch_width_atr_w{donch_w}"] = (donch_width / (atr + 1e-12)).replace([np.inf, -np.inf], np.nan)
+                # Distance from channel midpoint (normalized)
+                out[f"reg_ohlcv__donch_mid_dist_w{donch_w}"] = ((close - donch_mid) / (donch_width + 1e-12)).clip(-1.0, 1.0)
+                # Breakout signals: close at/above high or at/below low
+                out[f"reg_ohlcv__donch_at_high_w{donch_w}"] = ((close >= donch_high * 0.998) & (donch_width > 0)).astype(float)
+                out[f"reg_ohlcv__donch_at_low_w{donch_w}"] = ((close <= donch_low * 1.002) & (donch_width > 0)).astype(float)
+                
+        except Exception:
+            for w in [20, 50]:
+                out[f"reg_ohlcv__donch_position_w{w}"] = np.nan
+                out[f"reg_ohlcv__donch_width_atr_w{w}"] = np.nan
+                out[f"reg_ohlcv__donch_mid_dist_w{w}"] = np.nan
+                out[f"reg_ohlcv__donch_at_high_w{w}"] = 0.0
+                out[f"reg_ohlcv__donch_at_low_w{w}"] = 0.0
+        
+        # --- Trend Persistence Features ---
+        # Consecutive up/down bars, streak strength
+        try:
+            # Up/Down classification
+            is_up = (close > close.shift(1)).astype(int)
+            is_down = (close < close.shift(1)).astype(int)
+            
+            # Count consecutive up bars
+            up_reset = (is_up != is_up.shift(1)).cumsum()
+            consec_up = is_up.groupby(up_reset).cumsum()
+            consec_up = consec_up.where(is_up == 1, 0)
+            
+            # Count consecutive down bars
+            down_reset = (is_down != is_down.shift(1)).cumsum()
+            consec_down = is_down.groupby(down_reset).cumsum()
+            consec_down = consec_down.where(is_down == 1, 0)
+            
+            out["reg_ohlcv__consec_up_bars"] = consec_up.astype(float)
+            out["reg_ohlcv__consec_down_bars"] = consec_down.astype(float)
+            out["reg_ohlcv__consec_net_bars"] = (consec_up - consec_down).astype(float)
+            
+            # Streak strength: consecutive count weighted by cumulative return
+            streak_ret_up = ret.where(is_up == 1, 0.0).groupby(up_reset).cumsum()
+            streak_ret_down = ret.where(is_down == 1, 0.0).groupby(down_reset).cumsum()
+            out["reg_ohlcv__streak_strength_up"] = (consec_up * streak_ret_up.abs()).fillna(0.0)
+            out["reg_ohlcv__streak_strength_down"] = (consec_down * streak_ret_down.abs()).fillna(0.0)
+            
+            # Rolling trend persistence: how often are consecutive moves > N bars
+            for persist_w in [24, 96]:
+                long_streak = ((consec_up >= 3) | (consec_down >= 3)).astype(float)
+                out[f"reg_ohlcv__trend_persist_rate_w{persist_w}"] = long_streak.rolling(
+                    window=persist_w, min_periods=max(10, persist_w // 4)
+                ).mean()
+                
+        except Exception:
+            out["reg_ohlcv__consec_up_bars"] = 0.0
+            out["reg_ohlcv__consec_down_bars"] = 0.0
+            out["reg_ohlcv__consec_net_bars"] = 0.0
+            out["reg_ohlcv__streak_strength_up"] = 0.0
+            out["reg_ohlcv__streak_strength_down"] = 0.0
+            out["reg_ohlcv__trend_persist_rate_w24"] = 0.0
+            out["reg_ohlcv__trend_persist_rate_w96"] = 0.0
+        
+        # --- Higher-Timeframe Trend ---
+        # 4h and 1d equivalent trend signals using rolling windows
+        try:
+            htf_cfg = cfg.get("higher_tf_trend", {})
+            if not isinstance(htf_cfg, dict):
+                htf_cfg = {}
+            htf_windows = htf_cfg.get("windows", [16, 96])  # 4h = 16 bars, 1d = 96 bars at 15m
+            if not isinstance(htf_windows, (list, tuple)):
+                htf_windows = [16, 96]
+            htf_windows = [int(w) for w in htf_windows if int(w) >= 4]
+            
+            for htf_w in htf_windows:
+                # HTF close approximation (last close in window)
+                htf_close_start = close.shift(htf_w)
+                htf_return = ((close - htf_close_start) / (htf_close_start.abs() + 1e-12)).replace([np.inf, -np.inf], np.nan)
+                htf_direction = np.sign(htf_return)
+                
+                out[f"reg_ohlcv__htf_return_w{htf_w}"] = htf_return
+                out[f"reg_ohlcv__htf_direction_w{htf_w}"] = htf_direction
+                
+                # HTF trend strength: HTF return / ATR (momentum normalized by vol)
+                htf_atr = atr.rolling(window=htf_w, min_periods=max(5, htf_w // 4)).mean()
+                out[f"reg_ohlcv__htf_trend_strength_w{htf_w}"] = (htf_return.abs() / (htf_atr / close.abs() + 1e-12)).clip(0.0, 10.0)
+                
+        except Exception:
+            for w in [16, 96]:
+                out[f"reg_ohlcv__htf_return_w{w}"] = np.nan
+                out[f"reg_ohlcv__htf_direction_w{w}"] = 0.0
+                out[f"reg_ohlcv__htf_trend_strength_w{w}"] = 0.0
+
+        # --- Direction Dominance (for predicting trend efficiency) ---
+        # Measures how one-sided recent moves have been
+        try:
+            dom_cfg = cfg.get("direction_dominance", {})
+            if not isinstance(dom_cfg, dict):
+                dom_cfg = {}
+            dom_windows = dom_cfg.get("windows", [8, 16, 24])  # Match macro_trend horizons
+            if not isinstance(dom_windows, (list, tuple)):
+                dom_windows = [8, 16, 24]
+            dom_windows = [int(w) for w in dom_windows if int(w) >= 4]
+            
+            for dom_w in dom_windows:
+                # Count up vs down moves
+                n_up = (ret > 0).astype(float).rolling(window=dom_w, min_periods=max(3, dom_w // 4)).sum()
+                n_down = (ret < 0).astype(float).rolling(window=dom_w, min_periods=max(3, dom_w // 4)).sum()
+                
+                # Direction dominance: |n_up - n_down| / total moves (0 = choppy, 1 = trending)
+                total_moves = n_up + n_down
+                out[f"reg_ohlcv__direction_dominance_w{dom_w}"] = ((n_up - n_down).abs() / (total_moves + 1e-12)).clip(0.0, 1.0)
+                
+                # Signed direction bias (-1 = bearish, +1 = bullish)
+                out[f"reg_ohlcv__direction_bias_w{dom_w}"] = ((n_up - n_down) / (total_moves + 1e-12)).clip(-1.0, 1.0)
+                
+                # Up/Down ratio
+                out[f"reg_ohlcv__up_down_ratio_w{dom_w}"] = (n_up / (n_down + 1e-12)).clip(0.0, 10.0)
+                
+        except Exception:
+            for w in [8, 16, 24]:
+                out[f"reg_ohlcv__direction_dominance_w{w}"] = 0.5
+                out[f"reg_ohlcv__direction_bias_w{w}"] = 0.0
+                out[f"reg_ohlcv__up_down_ratio_w{w}"] = 1.0
+        
+        # --- Trend Stability Features ---
+        # Predict whether current trend will persist
+        try:
+            stab_cfg = cfg.get("trend_stability", {})
+            if not isinstance(stab_cfg, dict):
+                stab_cfg = {}
+            stab_windows = stab_cfg.get("windows", [16, 24])
+            if not isinstance(stab_windows, (list, tuple)):
+                stab_windows = [16, 24]
+            stab_windows = [int(w) for w in stab_windows if int(w) >= 8]
+            
+            for stab_w in stab_windows:
+                # Return autocorrelation (high = trending, low = mean-reverting)
+                ret_ac = ret.rolling(window=stab_w, min_periods=max(5, stab_w // 4)).corr(ret.shift(1))
+                out[f"reg_ohlcv__ret_autocorr_w{stab_w}"] = ret_ac.fillna(0.0).clip(-1.0, 1.0)
+                
+                # Volatility-adjusted momentum (trend strength adjusted for noise)
+                mom = close.pct_change(stab_w)
+                vol = ret.rolling(window=stab_w, min_periods=max(5, stab_w // 4)).std()
+                out[f"reg_ohlcv__vol_adj_momentum_w{stab_w}"] = (mom / (vol + 1e-12)).clip(-5.0, 5.0)
+                
+                # Price path linearity (R-squared of price vs time)
+                # High R² = smooth trend, Low R² = choppy
+                def rolling_r2(x):
+                    if len(x) < 3:
+                        return np.nan
+                    t = np.arange(len(x))
+                    if np.std(x) < 1e-12:
+                        return 0.0
+                    corr = np.corrcoef(t, x)[0, 1]
+                    return corr ** 2 if np.isfinite(corr) else 0.0
+                
+                out[f"reg_ohlcv__price_linearity_w{stab_w}"] = close.rolling(window=stab_w, min_periods=max(5, stab_w // 4)).apply(rolling_r2, raw=True).fillna(0.0)
+                
+        except Exception:
+            for w in [16, 24]:
+                out[f"reg_ohlcv__ret_autocorr_w{w}"] = 0.0
+                out[f"reg_ohlcv__vol_adj_momentum_w{w}"] = 0.0
+                out[f"reg_ohlcv__price_linearity_w{w}"] = 0.0
+        
+        # --- Path Efficiency Change (delta of efficiency ratio) ---
+        # Predicts if market is becoming more or less trendy
+        try:
+            eff_val = pd.to_numeric(out.get("reg_ohlcv__efficiency_ratio"), errors="coerce")
+            if eff_val is not None:
+                out["reg_ohlcv__efficiency_delta_1"] = eff_val.diff(1)
+                out["reg_ohlcv__efficiency_delta_4"] = eff_val.diff(4)
+                out["reg_ohlcv__efficiency_acceleration"] = eff_val.diff(1).diff(1)  # 2nd derivative
+        except Exception:
+            out["reg_ohlcv__efficiency_delta_1"] = 0.0
+            out["reg_ohlcv__efficiency_delta_4"] = 0.0
+            out["reg_ohlcv__efficiency_acceleration"] = 0.0
+
+        # --- Momentum-Based Features for Trend Regimes ---
+        # Added to improve trend regime prediction
+        try:
+            mom_cfg = cfg.get("momentum_features", {})
+            if not isinstance(mom_cfg, dict):
+                mom_cfg = {}
+            mom_windows = mom_cfg.get("windows", [8, 16, 32])
+            if not isinstance(mom_windows, (list, tuple)):
+                mom_windows = [8, 16, 32]
+            mom_windows = [int(w) for w in mom_windows if int(w) >= 4]
+            
+            for mom_w in mom_windows:
+                # Momentum (rate of change)
+                mom = (close / close.shift(mom_w) - 1.0).replace([np.inf, -np.inf], np.nan)
+                out[f"reg_ohlcv__momentum_w{mom_w}"] = mom.clip(-0.5, 0.5)
+                
+                # Momentum acceleration (change in momentum)
+                mom_prev = (close.shift(mom_w) / close.shift(2 * mom_w) - 1.0).replace([np.inf, -np.inf], np.nan)
+                mom_accel = (mom - mom_prev).fillna(0.0)
+                out[f"reg_ohlcv__momentum_accel_w{mom_w}"] = mom_accel.clip(-0.2, 0.2)
+                
+                # Momentum consistency (ratio of returns in same direction)
+                ret_signs = np.sign(ret)
+                sign_consistency = ret_signs.rolling(window=mom_w, min_periods=max(3, mom_w // 4)).apply(
+                    lambda x: np.abs(np.sum(x)) / (len(x) + 1e-12), raw=True
+                )
+                out[f"reg_ohlcv__momentum_consistency_w{mom_w}"] = sign_consistency.fillna(0.0).clip(0.0, 1.0)
+            
+            # Multi-horizon momentum divergence (short vs long momentum difference)
+            if len(mom_windows) >= 2:
+                short_w = min(mom_windows)
+                long_w = max(mom_windows)
+                mom_short = (close / close.shift(short_w) - 1.0).replace([np.inf, -np.inf], np.nan)
+                mom_long = (close / close.shift(long_w) - 1.0).replace([np.inf, -np.inf], np.nan)
+                out["reg_ohlcv__momentum_divergence"] = (mom_short - mom_long).fillna(0.0).clip(-0.3, 0.3)
+                
+                # Momentum alignment (sign agreement between short/long)
+                out["reg_ohlcv__momentum_alignment"] = (np.sign(mom_short) == np.sign(mom_long)).astype(float)
+                
+        except Exception:
+            for w in [8, 16, 32]:
+                out[f"reg_ohlcv__momentum_w{w}"] = 0.0
+                out[f"reg_ohlcv__momentum_accel_w{w}"] = 0.0
+                out[f"reg_ohlcv__momentum_consistency_w{w}"] = 0.0
+            out["reg_ohlcv__momentum_divergence"] = 0.0
+            out["reg_ohlcv__momentum_alignment"] = 0.5
+
+        # --- Order Flow Proxies (OHLCV-based) ---
+        # Microstructure signals without order book data
+        try:
+            oflow_cfg = cfg.get("order_flow_proxies", {})
+            if not isinstance(oflow_cfg, dict):
+                oflow_cfg = {}
+            oflow_windows = oflow_cfg.get("windows", [8, 24, 48])
+            if not isinstance(oflow_windows, (list, tuple)):
+                oflow_windows = [8, 24, 48]
+            oflow_windows = [int(w) for w in oflow_windows if int(w) >= 4]
+            
+            # 1. Trade Imbalance Proxy (Close position in candle range)
+            candle_range = high - low
+            close_position = (close - low) / (candle_range + 1e-12)  # 0-1, 1 = buying pressure
+            out["reg_ohlcv__close_position"] = close_position.clip(0.0, 1.0)
+            
+            # 2. Volume-Weighted Price Pressure
+            if volume is not None:
+                # Buying volume proxy: (close-low)/(high-low) * volume
+                buy_vol_proxy = close_position * volume
+                sell_vol_proxy = (1.0 - close_position) * volume
+                out["reg_ohlcv__buy_sell_ratio"] = (buy_vol_proxy / (sell_vol_proxy + 1e-12)).clip(0.0, 10.0)
+            
+            for oflow_w in oflow_windows:
+                # 3. Cumulative Volume Delta Proxy (CVD)
+                cvd = (close_position - 0.5) * volume if volume is not None else (close_position - 0.5)
+                cvd_rolling = cvd.rolling(window=oflow_w, min_periods=max(3, oflow_w // 4)).sum()
+                out[f"reg_ohlcv__cvd_proxy_w{oflow_w}"] = cvd_rolling.fillna(0.0)
+                
+                # 4. CVD momentum (speed of accumulation/distribution)
+                if volume is not None:
+                    cvd_mom = cvd_rolling.diff(max(4, oflow_w // 6))
+                    out[f"reg_ohlcv__cvd_momentum_w{oflow_w}"] = cvd_mom.fillna(0.0)
+                
+                # 5. Price-Volume Divergence (price up, volume down = weak)
+                price_trend = close.pct_change(oflow_w)
+                vol_trend = volume.pct_change(oflow_w) if volume is not None else pd.Series(0.0, index=close.index)
+                pv_diverg = np.sign(price_trend) * np.sign(vol_trend)  # -1 = divergence
+                out[f"reg_ohlcv__pv_divergence_w{oflow_w}"] = pv_diverg.fillna(0.0)
+                
+                # 6. Absorption Ratio (large candle with little price change = absorption)
+                price_change = close.diff(oflow_w).abs()
+                vol_sum = volume.rolling(window=oflow_w, min_periods=max(3, oflow_w // 4)).sum() if volume is not None else pd.Series(1.0, index=close.index)
+                absorption = vol_sum / (price_change + 1e-12)
+                out[f"reg_ohlcv__absorption_w{oflow_w}"] = absorption.clip(0.0, 1e6).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                
+                # 7. Intrabar Volatility (wick-to-body ratio as uncertainty proxy)
+                body = (close - open_s).abs() if open_s is not None else close.diff().abs()
+                wick = candle_range - body
+                wick_ratio = wick / (candle_range + 1e-12)
+                out[f"reg_ohlcv__wick_ratio_ema_w{oflow_w}"] = wick_ratio.ewm(span=oflow_w).mean().clip(0.0, 1.0)
+                
+        except Exception:
+            out["reg_ohlcv__close_position"] = 0.5
+            out["reg_ohlcv__buy_sell_ratio"] = 1.0
+            for w in [8, 24, 48]:
+                out[f"reg_ohlcv__cvd_proxy_w{w}"] = 0.0
+                out[f"reg_ohlcv__cvd_momentum_w{w}"] = 0.0
+                out[f"reg_ohlcv__pv_divergence_w{w}"] = 0.0
+                out[f"reg_ohlcv__absorption_w{w}"] = 0.0
+                out[f"reg_ohlcv__wick_ratio_ema_w{w}"] = 0.5
+
+        # --- Recency-Weighted Rolling Statistics (EWM) ---
+        # Exponential weighted features emphasizing recent behavior
+        try:
+            ewm_cfg = cfg.get("ewm_features", {})
+            if not isinstance(ewm_cfg, dict):
+                ewm_cfg = {}
+            ewm_halflifes = ewm_cfg.get("halflifes", [12, 24, 48])  # In bars
+            if not isinstance(ewm_halflifes, (list, tuple)):
+                ewm_halflifes = [12, 24, 48]
+            ewm_halflifes = [int(h) for h in ewm_halflifes if int(h) >= 4]
+            
+            for hl in ewm_halflifes:
+                # EWM volatility
+                ewm_vol = ret.ewm(halflife=hl).std()
+                out[f"reg_ohlcv__ewm_vol_h{hl}"] = ewm_vol.fillna(0.0)
+                
+                # EWM trend (price vs EWM mean)
+                ewm_mean = close.ewm(halflife=hl).mean()
+                ewm_trend = (close - ewm_mean) / (ewm_vol * close + 1e-12)
+                out[f"reg_ohlcv__ewm_trend_h{hl}"] = ewm_trend.clip(-5.0, 5.0).fillna(0.0)
+                
+                # EWM momentum
+                ewm_ret = ret.ewm(halflife=hl).mean()
+                out[f"reg_ohlcv__ewm_momentum_h{hl}"] = ewm_ret.fillna(0.0)
+            
+            # Fast vs Slow EWM Divergence (MACD-like)
+            if len(ewm_halflifes) >= 2:
+                fast_hl = min(ewm_halflifes)
+                slow_hl = max(ewm_halflifes)
+                ewm_fast = close.ewm(halflife=fast_hl).mean()
+                ewm_slow = close.ewm(halflife=slow_hl).mean()
+                ewm_div = (ewm_fast - ewm_slow) / (close * 0.01 + 1e-12)  # Normalize by 1%
+                out["reg_ohlcv__ewm_divergence"] = ewm_div.clip(-10.0, 10.0).fillna(0.0)
+                
+                # EWM divergence momentum
+                out["reg_ohlcv__ewm_divergence_momentum"] = ewm_div.diff(4).fillna(0.0)
+                
+        except Exception:
+            for h in [12, 24, 48]:
+                out[f"reg_ohlcv__ewm_vol_h{h}"] = 0.0
+                out[f"reg_ohlcv__ewm_trend_h{h}"] = 0.0
+                out[f"reg_ohlcv__ewm_momentum_h{h}"] = 0.0
+            out["reg_ohlcv__ewm_divergence"] = 0.0
+            out["reg_ohlcv__ewm_divergence_momentum"] = 0.0
+
+        # --- Regime Age / Persistence ---
+        # How long current regime has lasted
+        try:
+            regime_cfg = cfg.get("regime_age", {})
+            if not isinstance(regime_cfg, dict):
+                regime_cfg = {}
+            
+            # Volatility regime age
+            vol_q = atr.rolling(window=96, min_periods=24).quantile(0.5)
+            vol_regime = (atr > vol_q).astype(int)
+            vol_regime_change = (vol_regime != vol_regime.shift(1)).astype(int)
+            vol_regime_age = vol_regime_change.groupby(vol_regime_change.cumsum()).cumcount()
+            out["reg_ohlcv__vol_regime_age"] = vol_regime_age.astype(float)
+            
+            # Trend regime age (based on price vs SMA)
+            sma_trend = close.rolling(window=24, min_periods=8).mean()
+            trend_regime = (close > sma_trend).astype(int)
+            trend_regime_change = (trend_regime != trend_regime.shift(1)).astype(int)
+            trend_regime_age = trend_regime_change.groupby(trend_regime_change.cumsum()).cumcount()
+            out["reg_ohlcv__trend_regime_age"] = trend_regime_age.astype(float)
+            
+            # Normalized regime age (0 = just changed, 1 = typical duration)
+            expected_regime_duration = 24.0  # bars
+            out["reg_ohlcv__vol_regime_age_norm"] = (vol_regime_age / expected_regime_duration).clip(0.0, 3.0)
+            out["reg_ohlcv__trend_regime_age_norm"] = (trend_regime_age / expected_regime_duration).clip(0.0, 3.0)
+            
+            # Regime stability (fewer changes = more stable)
+            regime_changes_24 = vol_regime_change.rolling(window=24, min_periods=8).sum()
+            out["reg_ohlcv__regime_change_rate_24"] = regime_changes_24.fillna(0.0)
+            
+        except Exception:
+            out["reg_ohlcv__vol_regime_age"] = 0.0
+            out["reg_ohlcv__trend_regime_age"] = 0.0
+            out["reg_ohlcv__vol_regime_age_norm"] = 0.0
+            out["reg_ohlcv__trend_regime_age_norm"] = 0.0
+            out["reg_ohlcv__regime_change_rate_24"] = 0.0
+
+        # --- Temporal Momentum / Feature Velocity ---
+        # Speed of change in key market indicators
+        try:
+            vel_cfg = cfg.get("feature_velocity", {})
+            if not isinstance(vel_cfg, dict):
+                vel_cfg = {}
+            vel_lookback = int(vel_cfg.get("lookback", 4))
+            
+            # Volatility velocity (is vol increasing or decreasing?)
+            vol_velocity = atr.pct_change(vel_lookback).replace([np.inf, -np.inf], np.nan)
+            out["reg_ohlcv__vol_velocity"] = vol_velocity.clip(-2.0, 2.0).fillna(0.0)
+            
+            # Volatility acceleration (is velocity changing?)
+            vol_accel = vol_velocity.diff(vel_lookback)
+            out["reg_ohlcv__vol_acceleration"] = vol_accel.clip(-1.0, 1.0).fillna(0.0)
+            
+            # Trend velocity (how fast is the trend changing?)
+            trend_sma = close.rolling(window=24, min_periods=8).mean()
+            trend_dist = close - trend_sma
+            trend_velocity = trend_dist.diff(vel_lookback) / (atr + 1e-12)
+            out["reg_ohlcv__trend_velocity"] = trend_velocity.clip(-5.0, 5.0).fillna(0.0)
+            
+            # Volume velocity
+            if volume is not None:
+                vol_sma = volume.rolling(window=24, min_periods=8).mean()
+                vol_vol_velocity = vol_sma.pct_change(vel_lookback).replace([np.inf, -np.inf], np.nan)
+                out["reg_ohlcv__volume_velocity"] = vol_vol_velocity.clip(-2.0, 2.0).fillna(0.0)
+            else:
+                out["reg_ohlcv__volume_velocity"] = 0.0
+                
+        except Exception:
+            out["reg_ohlcv__vol_velocity"] = 0.0
+            out["reg_ohlcv__vol_acceleration"] = 0.0
+            out["reg_ohlcv__trend_velocity"] = 0.0
+            out["reg_ohlcv__volume_velocity"] = 0.0
+
+        # --- Lookback Decay Statistics ---
+        # Compare short vs long lookback to detect regime shifts
+        try:
+            decay_cfg = cfg.get("lookback_decay", {})
+            if not isinstance(decay_cfg, dict):
+                decay_cfg = {}
+            
+            short_w = int(decay_cfg.get("short", 8))
+            long_w = int(decay_cfg.get("long", 48))
+            
+            # Volatility ratio (short/long)
+            vol_short = ret.rolling(window=short_w, min_periods=max(3, short_w // 2)).std()
+            vol_long = ret.rolling(window=long_w, min_periods=max(10, long_w // 2)).std()
+            vol_ratio_sl = vol_short / (vol_long + 1e-12)
+            out["reg_ohlcv__vol_ratio_short_long"] = vol_ratio_sl.clip(0.1, 5.0).fillna(1.0)
+            
+            # Return mean ratio (recent vs long-term)
+            ret_short = ret.rolling(window=short_w, min_periods=max(3, short_w // 2)).mean()
+            ret_long = ret.rolling(window=long_w, min_periods=max(10, long_w // 2)).mean()
+            ret_divergence = ret_short - ret_long
+            out["reg_ohlcv__ret_divergence_sl"] = ret_divergence.fillna(0.0)
+            
+            # Efficiency ratio comparison
+            eff_short = close.diff(short_w).abs() / (close.diff().abs().rolling(window=short_w, min_periods=3).sum() + 1e-12)
+            eff_long = close.diff(long_w).abs() / (close.diff().abs().rolling(window=long_w, min_periods=10).sum() + 1e-12)
+            eff_ratio = eff_short / (eff_long + 1e-12)
+            out["reg_ohlcv__efficiency_ratio_sl"] = eff_ratio.clip(0.1, 5.0).fillna(1.0)
+            
+            # Correlation with recent data (rolling correlation of returns with time index)
+            # High = trending, Low = mean-reverting
+            recent_w = 24
+            time_idx = pd.Series(np.arange(len(close)), index=close.index).astype(float)
+            time_corr = close.rolling(window=recent_w, min_periods=max(10, recent_w // 2)).corr(time_idx)
+            out["reg_ohlcv__recency_trend_corr"] = time_corr.clip(-1.0, 1.0).fillna(0.0)
+            
+        except Exception:
+            out["reg_ohlcv__vol_ratio_short_long"] = 1.0
+            out["reg_ohlcv__ret_divergence_sl"] = 0.0
+            out["reg_ohlcv__efficiency_ratio_sl"] = 1.0
+            out["reg_ohlcv__recency_trend_corr"] = 0.0
+
     else:
         out["reg_ohlcv__volume_log1p_z"] = np.nan
         out["reg_ohlcv__turnover_log1p_z"] = np.nan
@@ -799,6 +1679,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
         trans_windows = [int(w) for w in trans_windows if int(w) >= 10]
 
         # Key state deltas (causal)
+        # Key state deltas (causal)
         try:
             out["reg_ohlcv__d_volatility_1d"] = pd.to_numeric(out.get("reg_ohlcv__volatility_1d"), errors="coerce").diff()
         except Exception:
@@ -807,6 +1688,36 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             out["reg_ohlcv__d_vol_ratio"] = pd.to_numeric(out.get("reg_ohlcv__vol_ratio"), errors="coerce").diff()
         except Exception:
             out["reg_ohlcv__d_vol_ratio"] = np.nan
+
+        # Regime Transition Features (Efficiency & Autocorr Derivatives)
+        try:
+            # 1. Volatility Acceleration (2nd derivative)
+            out["reg_ohlcv__vol_acceleration_1d"] = pd.to_numeric(out["reg_ohlcv__d_volatility_1d"], errors="coerce").diff()
+
+            # 2. Efficiency and Autocorr Deltas
+            # Compute rolling features first if needed
+            eff_window = 24
+            
+            # Efficiency (Kaufman-like): Abs(TotalMove) / Sum(Abs(Moves))
+            # Directional Move over W
+            dir_move = close.diff(eff_window).abs()
+            # Path Length over W (sum of 1-bar abs diffs)
+            path_len = close.diff().abs().rolling(window=eff_window, min_periods=max(5, eff_window//2)).sum()
+            eff_val = (dir_move / (path_len + 1e-12)).clip(0.0, 1.0)
+            
+            out[f"reg_ohlcv__efficiency_w{eff_window}"] = eff_val
+            out[f"reg_ohlcv__d_efficiency_w{eff_window}"] = eff_val.diff()
+
+            # Autocorrelation (Market Memory)
+            # Rolling 1-lag autocorrelation of returns
+            mem_window = 24
+            auto_corr = ret.rolling(window=mem_window, min_periods=max(10, mem_window//2)).corr(ret.shift(1)).fillna(0.0).clip(-0.99, 0.99)
+            
+            out[f"reg_ohlcv__autocorr_w{mem_window}"] = auto_corr
+            out[f"reg_ohlcv__d_autocorr_w{mem_window}"] = auto_corr.diff()
+
+        except Exception:
+            pass
 
         # Shock / change intensity from state deltas
         dv = pd.to_numeric(out["reg_ohlcv__d_volatility_1d"], errors="coerce")
@@ -886,6 +1797,27 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             out["reg_ohlcv__is_good_hour"] = np.isin(hour_arr, [3, 5, 10]).astype(float)
             out["reg_ohlcv__is_bad_hour"] = np.isin(hour_arr, [0, 13, 19]).astype(float)
             out["reg_ohlcv__is_sunday"] = (dow_arr == 6).astype(float)
+
+            # New Contextual Features (Dist from Open, Session Pos)
+            # Distance from Daily Open (approximate using resampling)
+            try:
+                # Resample to daily open prices
+                daily_open = close.resample('D').first().reindex(close.index).ffill()
+                out["reg_ohlcv__dist_from_open_day"] = (close / (daily_open + 1e-8) - 1.0).astype(float)
+                
+                # Distance from Weekly Open
+                weekly_open = close.resample('W').first().reindex(close.index).ffill()
+                out["reg_ohlcv__dist_from_open_week"] = (close / (weekly_open + 1e-8) - 1.0).astype(float)
+                
+                # Session Position (0.0 to 1.0)
+                # minute of day / 1440
+                minutes = out.index.hour * 60 + out.index.minute
+                out["reg_ohlcv__session_pos_24h"] = (minutes / 1440.0).astype(float)
+            except Exception:
+                out["reg_ohlcv__dist_from_open_day"] = 0.0
+                out["reg_ohlcv__dist_from_open_week"] = 0.0
+                out["reg_ohlcv__session_pos_24h"] = 0.0
+
         else:
             out["reg_ohlcv__hour"] = 0.0
             out["reg_ohlcv__day_of_week"] = 0.0
@@ -894,6 +1826,9 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             out["reg_ohlcv__is_good_hour"] = 0.0
             out["reg_ohlcv__is_bad_hour"] = 0.0
             out["reg_ohlcv__is_sunday"] = 0.0
+            out["reg_ohlcv__dist_from_open_day"] = 0.0
+            out["reg_ohlcv__dist_from_open_week"] = 0.0
+            out["reg_ohlcv__session_pos_24h"] = 0.0
     except Exception:
         out["reg_ohlcv__hour"] = 0.0
         out["reg_ohlcv__day_of_week"] = 0.0
@@ -903,9 +1838,123 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
         out["reg_ohlcv__is_bad_hour"] = 0.0
         out["reg_ohlcv__is_sunday"] = 0.0
 
+
+    # =========================================================================
+    # REGIME QUALITY & DEGRADATION FEATURES
+    # These features help identify "weak" regime combinations where trading
+    # performance is historically poor (e.g., vol_low + trend_high)
+    # =========================================================================
+    try:
+        enable_regime_quality = bool(cfg.get("enable_regime_quality_features", True))
+    except Exception:
+        enable_regime_quality = True
+
+    if enable_regime_quality:
+        try:
+            # 1. Volatility-Trend Mismatch Score
+            # Low vol + high trend is suspicious: real trends have confirming volatility
+            vol_1d = out.get("reg_ohlcv__volatility_1d")
+            trend_efficiency = out.get("reg_ohlcv__efficiency_ratio")
+
+            if vol_1d is not None and trend_efficiency is not None:
+                vol_1d = pd.to_numeric(vol_1d, errors="coerce")
+                trend_efficiency = pd.to_numeric(trend_efficiency, errors="coerce")
+
+                # Rolling percentile ranks for contextualization
+                vol_pctl = vol_1d.rolling(window=192, min_periods=48).apply(
+                    lambda x: (x.iloc[-1] <= x).mean() if len(x) > 0 else 0.5, raw=False
+                )
+                trend_pctl = trend_efficiency.rolling(window=192, min_periods=48).apply(
+                    lambda x: (x.iloc[-1] <= x).mean() if len(x) > 0 else 0.5, raw=False
+                )
+
+                # Mismatch: low vol (< 0.33 pctl) + high trend (> 0.66 pctl)
+                vol_low_flag = (vol_pctl < 0.33).astype(float)
+                trend_high_flag = (trend_pctl > 0.66).astype(float)
+                mismatch = vol_low_flag * trend_high_flag
+                out["reg_ohlcv__vol_trend_mismatch"] = mismatch
+
+                # Mismatch severity (continuous)
+                out["reg_ohlcv__vol_trend_mismatch_score"] = (
+                    (0.33 - vol_pctl).clip(lower=0.0) * (trend_pctl - 0.66).clip(lower=0.0) * 10.0
+                ).fillna(0.0)
+
+            # 2. Bars-in-Weak-Regime Counter
+            # Count consecutive bars where volatility is low and trend is high
+            if "reg_ohlcv__vol_trend_mismatch" in out.columns:
+                mismatch_flag = out["reg_ohlcv__vol_trend_mismatch"]
+                # Cumulative counter of consecutive weak regime bars
+                # Reset on transitions
+                group = (mismatch_flag != mismatch_flag.shift()).cumsum()
+                bars_counter = mismatch_flag.groupby(group).cumsum()
+                out["reg_ohlcv__bars_in_weak_regime"] = bars_counter
+
+            # 3. Volatility Trend Within Low-Vol Regime
+            # Rising volatility in a low-vol regime is a warning sign
+            if vol_1d is not None:
+                vol_slope_48 = out.get("reg_ohlcv__vol_ewm_slope_w48")
+                if vol_slope_48 is not None:
+                    vol_slope_48 = pd.to_numeric(vol_slope_48, errors="coerce")
+                    # Warning: rising vol in low-vol regime
+                    vol_rising_in_low = vol_low_flag * (vol_slope_48 > 0.0).astype(float)
+                    out["reg_ohlcv__vol_rising_in_low_regime"] = vol_rising_in_low
+
+            # 4. Regime Transition Recency
+            # How many bars since the last regime transition?
+            try:
+                vol_regime_med = out.get("reg_ohlcv__vol_regime_medium")
+                vol_regime_high = out.get("reg_ohlcv__vol_regime_high")
+                if vol_regime_med is not None and vol_regime_high is not None:
+                    vol_state = (
+                        pd.to_numeric(vol_regime_high, errors="coerce").fillna(0.0) * 2 +
+                        pd.to_numeric(vol_regime_med, errors="coerce").fillna(0.0)
+                    )
+                    transitions = (vol_state != vol_state.shift()).astype(float)
+                    out["reg_ohlcv__is_regime_transition"] = transitions
+
+                    # Bars since last transition
+                    group_trans = transitions.cumsum()
+                    bars_since_trans = vol_state.groupby(group_trans).cumcount()
+                    out["reg_ohlcv__bars_since_regime_transition"] = bars_since_trans.astype(float)
+
+                    # Normalize to 0-1 scale (capped at 96 bars = ~1 day)
+                    out["reg_ohlcv__regime_stability"] = (bars_since_trans / 96.0).clip(upper=1.0)
+            except Exception:
+                pass
+
+            # 5. Multi-Horizon Regime Agreement
+            # Do short/medium/long volatility windows agree on the regime?
+            vol_8 = out.get("reg_ohlcv__rv_std_logret_w8")
+            vol_24 = out.get("reg_ohlcv__rv_std_logret_w24")
+            vol_96 = out.get("reg_ohlcv__rv_std_logret_w96")
+            if vol_8 is not None and vol_24 is not None and vol_96 is not None:
+                vol_8 = pd.to_numeric(vol_8, errors="coerce")
+                vol_24 = pd.to_numeric(vol_24, errors="coerce")
+                vol_96 = pd.to_numeric(vol_96, errors="coerce")
+
+                # Agreement: all three trending same direction
+                dir_8 = np.sign(vol_8.diff())
+                dir_24 = np.sign(vol_24.diff())
+                dir_96 = np.sign(vol_96.diff())
+
+                agreement = ((dir_8 == dir_24) & (dir_24 == dir_96)).astype(float)
+                out["reg_ohlcv__multi_horizon_vol_agreement"] = agreement
+
+                # Disagreement score
+                disagreement = (
+                    (dir_8 != dir_24).astype(float) +
+                    (dir_24 != dir_96).astype(float) +
+                    (dir_8 != dir_96).astype(float)
+                ) / 3.0
+                out["reg_ohlcv__multi_horizon_vol_disagreement"] = disagreement
+
+        except Exception as regime_qual_exc:
+            tprint_warning(f"Failed to compute regime quality features: {regime_qual_exc}")
+
     out = out.replace([np.inf, -np.inf], np.nan)
 
     try:
+
         drop_non_numeric = bool(cfg.get("drop_non_numeric", True))
     except Exception:
         drop_non_numeric = True
@@ -949,6 +1998,119 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 out[cols_other] = out[cols_other].apply(pd.to_numeric, errors="coerce")
         except Exception:
             pass
+
+    # =========================================================================
+    # EXPERT FEATURES INTEGRATION (SMC, Liquidity, Volume Force)
+    # Knowledge Distillation from specialized components
+    # =========================================================================
+    try:
+        # SMC Features (Market Structure, FVG, Order Blocks)
+        try:
+            smc_feat = generate_smc_regime_features(market_data, cfg)
+            # Ensure index alignment and no duplicates
+            smc_feat = smc_feat.reindex(out.index)
+            # Drop columns that might already exist (though unlikely due to prefixing)
+            new_cols = [c for c in smc_feat.columns if c not in out.columns]
+            if new_cols:
+                out = pd.concat([out, smc_feat[new_cols]], axis=1)
+        except Exception:
+            pass
+
+        # Liquidity Features (Regimes, Volume Profile)
+        try:
+            # Note: generate_liquidity_regime_features might produce many cols.
+            # We assume it handles its own config extraction.
+            liq_feat = generate_liquidity_regime_features(market_data, cfg)
+            liq_feat = liq_feat.reindex(out.index)
+            new_cols = [c for c in liq_feat.columns if c not in out.columns]
+            if new_cols:
+                out = pd.concat([out, liq_feat[new_cols]], axis=1)
+        except Exception:
+            pass
+
+        # Volume Force Features (Impulse, Pressure)
+        try:
+            vf_feat = generate_volume_force_features(market_data, cfg)
+            vf_feat = vf_feat.reindex(out.index)
+            new_cols = [c for c in vf_feat.columns if c not in out.columns]
+            if new_cols:
+                out = pd.concat([out, vf_feat[new_cols]], axis=1)
+        except Exception:
+            pass
+
+        # Temporal Conv Embeddings (Neural Network features for temporal patterns)
+        enable_temporal = bool(cfg.get("enable_temporal_embeddings", False))
+        if enable_temporal and _TEMPORAL_ENCODER_AVAILABLE:
+            try:
+                temporal_cfg = cfg.get("temporal_encoder", {})
+                if not isinstance(temporal_cfg, dict):
+                    temporal_cfg = {}
+                
+                seq_len = int(temporal_cfg.get("seq_len", 24))
+                embed_dim = int(temporal_cfg.get("embed_dim", 8))
+                device = str(temporal_cfg.get("device", "cpu"))
+                pretrained_path = temporal_cfg.get("pretrained_path", None)
+                
+                temporal_embed = generate_temporal_embeddings(
+                    market_data=market_data,
+                    seq_len=seq_len,
+                    embed_dim=embed_dim,
+                    device=device,
+                    pretrained_path=pretrained_path,
+                )
+                
+                if temporal_embed is not None and len(temporal_embed) > 0:
+                    temporal_embed = temporal_embed.reindex(out.index)
+                    new_cols = [c for c in temporal_embed.columns if c not in out.columns]
+                    if new_cols:
+                        out = pd.concat([out, temporal_embed[new_cols]], axis=1)
+                        tprint_info(f"Added {len(new_cols)} temporal embedding features")
+            except Exception as e:
+                tprint_warning(f"Failed to generate temporal embeddings: {e}")
+
+        # Stacked NN Sequence Embeddings (Conv + LSTM + optional Attention)
+        enable_nn_sequence = bool(cfg.get("enable_nn_sequence_embeddings", False))
+        if enable_nn_sequence and _NN_SEQUENCE_AVAILABLE:
+            try:
+                nn_cfg = cfg.get("nn_sequence_encoder", {})
+                if not isinstance(nn_cfg, dict):
+                    nn_cfg = {}
+                
+                seq_len = int(nn_cfg.get("seq_len", 24))
+                embed_dim = int(nn_cfg.get("embed_dim", 8))
+                device = str(nn_cfg.get("device", "cpu"))
+                encoder_type = str(nn_cfg.get("encoder_type", "stacked"))
+                use_conv = bool(nn_cfg.get("use_conv", True))
+                use_lstm = bool(nn_cfg.get("use_lstm", True))
+                use_attention = bool(nn_cfg.get("use_attention", False))
+                pretrained_path = nn_cfg.get("pretrained_path", None)
+                
+                nn_embed = generate_nn_sequence_embeddings(
+                    market_data=market_data,
+                    encoder_type=encoder_type,
+                    seq_len=seq_len,
+                    embed_dim=embed_dim,
+                    use_conv=use_conv,
+                    use_lstm=use_lstm,
+                    use_attention=use_attention,
+                    device=device,
+                    pretrained_path=pretrained_path,
+                )
+                
+                if nn_embed is not None and len(nn_embed) > 0:
+                    nn_embed = nn_embed.reindex(out.index)
+                    new_cols = [c for c in nn_embed.columns if c not in out.columns]
+                    if new_cols:
+                        out = pd.concat([out, nn_embed[new_cols]], axis=1)
+                        tprint_info(f"Added {len(new_cols)} stacked NN embedding features")
+            except Exception as e:
+                tprint_warning(f"Failed to generate NN sequence embeddings: {e}")
+
+        # Drop duplicates just in case
+        out = out.loc[:, ~out.columns.duplicated()]
+
+    except Exception:
+        pass
 
     return out
 
@@ -1058,14 +2220,21 @@ def compute_regime_targets_from_ohlcv(
         macro_trend_horizons = [int(x) for x in macro_trend_horizons if x is not None]
     else:
         if macro_trend_horizon is None:
-            macro_trend_horizons = [16, 32, 64]
+            macro_trend_horizons = [8, 16, 24]  # 2h, 4h, 6h at 15m (reduced from [16,32,64])
         else:
             macro_trend_horizons = [int(macro_trend_horizon)]
     macro_trend_horizons = [int(h) for h in macro_trend_horizons if int(h) > 0]
     if not macro_trend_horizons:
-        macro_trend_horizons = [32]
+        macro_trend_horizons = [16]  # 4h at 15m
 
     efficiency_window = int(config.get("trend_efficiency_window", 16))
+    try:
+        vf_horizon = config.get("volume_force_horizon")
+        if vf_horizon is None:
+            vf_horizon = config.get("volume_force_lookahead")
+        vf_horizon = int(vf_horizon) if vf_horizon is not None else 16
+    except Exception:
+        vf_horizon = 16
     liquidity_window = int(config.get("liquidity_window", 50))
     liquidity_norm = str(config.get("liquidity_norm", "rolling")).lower()
     liquidity_norm_window = int(config.get("liquidity_norm_window", 1000))
@@ -1078,16 +2247,78 @@ def compute_regime_targets_from_ohlcv(
     vol_of_vol_window = int(config.get("vol_of_vol_window", 64))
 
     targets = pd.DataFrame(index=market_data.index)
-    targets["regime_volatility"] = _compute_future_volatility(close, window=vol_window)
+    vol_target_mode = str(config.get("volatility_target_mode", "future_past_log_ratio")).lower()
+    if vol_target_mode in {"future_past_log_ratio", "log_ratio", "ratio"}:
+        targets["regime_volatility"] = _compute_future_past_vol_log_ratio(close, window=vol_window)
+    else:
+        targets["regime_volatility"] = _compute_future_volatility(close, window=vol_window)
+
+    log_ret = np.log(close).diff()
+    vol_base = log_ret.rolling(window=vol_window, min_periods=max(5, vol_window // 4)).std()
 
     for h in macro_trend_horizons:
         targets[f"regime_macro_trend_h{int(h)}"] = _compute_future_return(close, horizon=int(h))
+    
+    # Normalize macro trend target by volatility to ensure consistent scale for LGBM (avoiding L1/L2 regularization collapse)
+    # CHANGED: Convert from regression to CLASSIFICATION (+1/0/-1) since exact return prediction has IC=-0.01
+    # Classification predicts trend direction: +1 (bullish), 0 (neutral), -1 (bearish)
+    h_max = int(max(macro_trend_horizons))
     try:
-        targets["regime_macro_trend"] = targets[f"regime_macro_trend_h{int(max(macro_trend_horizons))}"].astype(float)
+        raw_trend = targets[f"regime_macro_trend_h{h_max}"].astype(float)
     except Exception:
-        targets["regime_macro_trend"] = _compute_future_return(close, horizon=int(max(macro_trend_horizons)))
+        raw_trend = _compute_future_return(close, horizon=h_max)
+    
+    # Scale: vol_base * sqrt(h) approximates vol over horizon h
+    trend_zscore = (raw_trend / (vol_base * np.sqrt(float(h_max)) + 1e-12)).replace([np.inf, -np.inf], np.nan)
+    
+    # Convert to classification: thresholds at +/- 0.5 sigma (conservative)
+    # +1 = bullish (zscore > 0.5), -1 = bearish (zscore < -0.5), 0 = neutral
+    trend_class = pd.Series(0.0, index=close.index, dtype=float)
+    trend_class = trend_class.where(trend_zscore.abs() <= 0.5, np.sign(trend_zscore))
+    targets["regime_macro_trend"] = trend_class
 
-    targets["regime_trend_efficiency"] = _compute_trend_efficiency(close, window=efficiency_window)
+    try:
+        vf_ret = (np.log(close.replace(0.0, np.nan)) - np.log(close.shift(int(vf_horizon)).replace(0.0, np.nan))).shift(-int(vf_horizon))
+        vf_vol = _compute_future_volatility(close, window=int(vf_horizon))
+        vf = (vf_ret / (vf_vol * np.sqrt(float(max(1, int(vf_horizon)))) + 1e-12)).replace([np.inf, -np.inf], np.nan)
+        targets["regime_volume_force_direction"] = vf.clip(-6.0, 6.0).astype(float)
+    except Exception:
+        targets["regime_volume_force_direction"] = np.nan
+
+    # Trend Efficiency is [0,1], scale ~0.2. L1/L2 reg of 0.5 dampens it.
+    # Normalize with rolling robust z-score (median/IQR) to boost scale to ~1.0
+    eff_horizons = config.get("trend_efficiency_horizons")
+    if isinstance(eff_horizons, (list, tuple)) and eff_horizons:
+        eff_horizons = [int(h) for h in eff_horizons if h is not None and int(h) > 1]
+    else:
+        eff_horizons = [int(efficiency_window)]
+    if not eff_horizons:
+        eff_horizons = [int(efficiency_window)]
+
+    eff_parts = []
+    for h in eff_horizons:
+        eff_parts.append(_compute_trend_efficiency(close, window=int(h)))
+    if len(eff_parts) == 1:
+        eff_raw = eff_parts[0]
+    else:
+        eff_raw = pd.concat(eff_parts, axis=1).median(axis=1)
+
+    eff_transform = str(config.get("trend_efficiency_transform", "robust_zscore")).lower()
+    if eff_transform in {"logit", "logit_zscore"}:
+        eps = 1e-6
+        eff_for_scale = np.log((eff_raw.clip(lower=0.0, upper=1.0) + eps) / (1.0 - eff_raw.clip(lower=0.0, upper=1.0) + eps))
+    else:
+        eff_for_scale = eff_raw
+
+    eff_med = eff_for_scale.rolling(window=efficiency_window*4, min_periods=efficiency_window).median()
+    eff_q75 = eff_for_scale.rolling(window=efficiency_window*4, min_periods=efficiency_window).quantile(0.75)
+    eff_q25 = eff_for_scale.rolling(window=efficiency_window*4, min_periods=efficiency_window).quantile(0.25)
+    eff_iqr = (eff_q75 - eff_q25).replace(0.0, np.nan)
+    # Fallback to std if IQR is 0
+    eff_std = eff_for_scale.rolling(window=efficiency_window*4, min_periods=efficiency_window).std()
+    eff_scale = eff_iqr.fillna(eff_std).fillna(0.2) # Default scale 0.2
+    
+    targets["regime_trend_efficiency"] = ((eff_for_scale - eff_med) / (eff_scale + 1e-12)).clip(-5.0, 5.0).astype(float)
 
     if volume_col in market_data.columns:
         vol_series = pd.to_numeric(market_data[volume_col], errors="coerce")
@@ -1130,30 +2361,65 @@ def compute_regime_targets_from_ohlcv(
         vol_of_vol_window=vol_of_vol_window,
     )
 
+    # --- Breakout Target (from Volume Force) ---
+    try:
+        # Check if High/Low available
+        if high_col in market_data.columns and low_col in market_data.columns:
+            L_brk = 20
+            H_brk = 12
+            thresh_mult = 1.0
+            
+            # Use raw high/low
+            h_s = pd.to_numeric(market_data[high_col], errors="coerce")
+            l_s = pd.to_numeric(market_data[low_col], errors="coerce")
+            
+            past_h = h_s.rolling(L_brk).max()
+            past_l = l_s.rolling(L_brk).min()
+            
+            tr_brk = np.maximum(h_s - l_s, (h_s - close.shift(1)).abs())
+            atr_brk = tr_brk.rolling(14).mean()
+            thresh_val = atr_brk * thresh_mult
+            
+            # Future max/min close - Checks if price SUSTAINS the break (close basis)
+            f_max = close.shift(-H_brk).rolling(H_brk).max()
+            f_min = close.shift(-H_brk).rolling(H_brk).min()
+            
+            # Binary Breakout (1.0 = Breakout, 0.0 = Range)
+            is_brk = ((f_max > (past_h + thresh_val)) | (f_min < (past_l - thresh_val))).astype(float)
+            targets["regime_breakout"] = is_brk
+        else:
+            targets["regime_breakout"] = np.nan
+    except Exception:
+        targets["regime_breakout"] = np.nan
+
     return targets
 
 
 def _default_lgbm_params(config: dict, random_state: int, *, n_train_samples: Optional[int] = None) -> dict:
-    num_leaves = int(config.get("num_leaves", 6))
-    max_depth = int(config.get("max_depth", 3))
-    n_estimators = int(config.get("n_estimators", 50))
-    learning_rate = float(config.get("learning_rate", 0.1))
+    # Increased defaults to produce more diverse leaves for regime detection
+    # Previous values (6 leaves, depth 3) collapsed to single leaf OOS
+    num_leaves = int(config.get("num_leaves", 15))
+    max_depth = int(config.get("max_depth", 5))
+    n_estimators = int(config.get("n_estimators", 80))
+    learning_rate = float(config.get("learning_rate", 0.08))
 
-    min_data_in_leaf = int(config.get("min_data_in_leaf", 50))
+    min_data_in_leaf = int(config.get("min_data_in_leaf", 30))
     try:
         n_train = int(n_train_samples) if n_train_samples is not None else None
     except Exception:
         n_train = None
     if n_train is not None and n_train > 0:
         try:
-            cap = int(max(10, round(0.05 * float(n_train))))
+            # Allow smaller leaves (down to 1% of training data) for more granular regimes
+            cap = int(max(10, round(0.01 * float(n_train))))
             min_data_in_leaf = int(max(10, min(int(min_data_in_leaf), int(cap), max(10, n_train - 1))))
         except Exception:
             min_data_in_leaf = int(max(10, min_data_in_leaf))
 
-    min_gain_to_split = float(config.get("min_gain_to_split", 0.05))
-    lambda_l1 = float(config.get("lambda_l1", 3.0))
-    lambda_l2 = float(config.get("lambda_l2", 3.0))
+    min_gain_to_split = float(config.get("min_gain_to_split", 0.01))
+    # Reduced regularization to allow more splits
+    lambda_l1 = float(config.get("lambda_l1", 0.5))
+    lambda_l2 = float(config.get("lambda_l2", 0.5))
 
     subsample = float(config.get("subsample", 0.9))
     colsample_bytree = float(config.get("colsample_bytree", 1.0))
@@ -1493,6 +2759,18 @@ def extract_regime_leaf_onehot_features(
         raise ValueError("market_data must be a non-empty DataFrame")
 
     targets_cfg = dict(config.get("targets", {}))
+    try:
+        if "trend_efficiency_horizons" not in targets_cfg or targets_cfg.get("trend_efficiency_horizons") in (None, [], ()):
+            te_w = targets_cfg.get("trend_efficiency_window", 16)
+            te_w = int(te_w) if te_w is not None else 16
+            targets_cfg["trend_efficiency_horizons"] = [max(2, te_w // 2), max(2, te_w), max(2, te_w * 2)]
+    except Exception:
+        pass
+    try:
+        if "trend_efficiency_transform" not in targets_cfg or targets_cfg.get("trend_efficiency_transform") in (None, ""):
+            targets_cfg["trend_efficiency_transform"] = "logit"
+    except Exception:
+        pass
     wfv_cfg = dict(config.get("walk_forward", {}))
     input_cfg = dict(config.get("inputs", {}))
     preprocess_cfg = dict(config.get("preprocessing", {}))
@@ -1563,10 +2841,24 @@ def extract_regime_leaf_onehot_features(
     except Exception as exc:
         raise RuntimeError(f"failed_to_compute_regime_targets: {exc}")
 
+    align_cfg = dict(input_cfg.get("alignment", {})) if isinstance(input_cfg.get("alignment"), dict) else {}
+    align_enabled = bool(align_cfg.get("enabled", True))
+    align_method = str(align_cfg.get("method", "ffill")).lower()
+    tolerance = None
     try:
-        targets = targets_full.reindex(X.index)
+        tolerance_cfg = align_cfg.get("tolerance")
+        if tolerance_cfg is not None:
+            tolerance = pd.to_timedelta(tolerance_cfg)
     except Exception:
-        targets = targets_full.loc[targets_full.index.intersection(X.index)].reindex(X.index)
+        tolerance = None
+
+    if align_enabled:
+        targets = _align_frame_to_index(targets_full, X.index, method=align_method, tolerance=tolerance)
+    else:
+        try:
+            targets = targets_full.reindex(X.index)
+        except Exception:
+            targets = targets_full.loc[targets_full.index.intersection(X.index)].reindex(X.index)
 
     if enabled_targets is not None:
         try:
@@ -1587,7 +2879,11 @@ def extract_regime_leaf_onehot_features(
             X_ohlcv = build_regime_embedding_features(market_data=market_data, cfg=feat_cfg)
         except Exception as exc:
             raise RuntimeError(f"failed_to_build_regime_embedding_features: {exc}")
-        X_num = X_ohlcv.reindex(X.index)
+
+        if align_enabled:
+            X_num = _align_frame_to_index(X_ohlcv, X.index, method=align_method, tolerance=tolerance)
+        else:
+            X_num = X_ohlcv.reindex(X.index)
 
     try:
         forbidden = _detect_forbidden_feature_columns(X_num.columns, hardening_cfg)
@@ -1610,6 +2906,19 @@ def extract_regime_leaf_onehot_features(
         except Exception:
             pass
 
+    try:
+        X_numeric = X_num.select_dtypes(include=[np.number, "bool"])
+        dropped_cols = [c for c in list(X_num.columns) if c not in set(X_numeric.columns)]
+        if dropped_cols:
+            if verbose:
+                try:
+                    tprint_warning(f"[regime_leaf] dropping_non_numeric_feature_columns={dropped_cols} action=drop")
+                except Exception:
+                    pass
+            X_num = X_numeric
+    except Exception:
+        pass
+
     leaf_frames = []
     score_frames = []
     interaction_frames = []
@@ -1626,9 +2935,20 @@ def extract_regime_leaf_onehot_features(
         "topk_min": int(config.get("topk_min", 5)),
         "topk_max": (int(config.get("topk_max")) if config.get("topk_max") is not None else None),
         "max_features": (int(config.get("max_features")) if config.get("max_features") is not None else None),
+        "alignment": {
+            "enabled": bool(align_enabled),
+            "method": str(align_method),
+            "tolerance": str(tolerance) if tolerance is not None else None,
+        },
         "targets": {},
         "report_path": None,
     }
+
+    try:
+        nan_frac = float(pd.to_numeric(X_num.stack(), errors="coerce").isna().mean()) if not X_num.empty else 0.0
+        report["X_nan_frac"] = float(nan_frac)
+    except Exception:
+        pass
 
     split_mode = str(wfv_cfg.get("mode", "walk_forward")).lower()
     is_cross_fit = bool(split_mode == "cross_fit")
@@ -1653,6 +2973,13 @@ def extract_regime_leaf_onehot_features(
     for target_name in list(targets.columns):
         y_all = pd.to_numeric(targets[target_name], errors="coerce")
 
+        try:
+            y_non_null = int(y_all.notna().sum())
+            y_nan_frac = float(1.0 - (float(y_non_null) / float(max(1, len(y_all)))))
+        except Exception:
+            y_non_null = 0
+            y_nan_frac = 1.0
+
         n_total_target = int(len(X_num))
         try:
             cfg_min_train = int(wfv_cfg.get("min_train_samples", 500))
@@ -1668,8 +2995,9 @@ def extract_regime_leaf_onehot_features(
 
         if verbose:
             try:
-                nn = int(np.sum(pd.notna(y_all).values))
-                tprint_info(f"[regime_leaf] target_begin target={target_name} y_non_null={nn}")
+                tprint_info(
+                    f"[regime_leaf] target_begin target={target_name} y_non_null={int(y_non_null)} y_nan_frac={float(y_nan_frac):.2%}"
+                )
             except Exception:
                 pass
 
@@ -1679,8 +3007,18 @@ def extract_regime_leaf_onehot_features(
                 target_lookahead = int(targets_cfg.get("volatility_window", 24))
             elif target_name == "regime_macro_trend":
                 target_lookahead = int(targets_cfg.get("macro_trend_horizon", 96))
+            elif target_name == "regime_volume_force_direction":
+                vf_h = targets_cfg.get("volume_force_horizon")
+                if vf_h is None:
+                    vf_h = targets_cfg.get("volume_force_lookahead")
+                target_lookahead = int(vf_h) if vf_h is not None else 16
             elif target_name == "regime_trend_efficiency":
-                target_lookahead = int(targets_cfg.get("trend_efficiency_window", 16))
+                eff_h = targets_cfg.get("trend_efficiency_horizons")
+                if isinstance(eff_h, (list, tuple)) and eff_h:
+                    eff_h = [int(h) for h in eff_h if h is not None and int(h) > 1]
+                    target_lookahead = int(max(eff_h)) if eff_h else int(targets_cfg.get("trend_efficiency_window", 16))
+                else:
+                    target_lookahead = int(targets_cfg.get("trend_efficiency_window", 16))
             elif target_name == "regime_liquidity":
                 target_lookahead = int(targets_cfg.get("liquidity_window", 50))
             elif target_name == "regime_memory":
@@ -1707,6 +3045,8 @@ def extract_regime_leaf_onehot_features(
         last_pred_error = None
         skipped_small_train = 0
         skipped_small_test = 0
+        last_top_shap_features = []
+        last_top_mdi_features = []
 
         fold_test_indexes = []
         fold_test_indexes_raw = []
@@ -1714,6 +3054,15 @@ def extract_regime_leaf_onehot_features(
         fold_ic_spearman = []
         fold_ic_pearson = []
         fold_n = []
+
+        fold_train_n_raw = []
+        fold_train_n_after_leakage = []
+        fold_train_n_after_lookahead = []
+        fold_y_train_n = []
+        fold_y_train_std = []
+
+        leaf_window_presence: Dict[str, Dict[int, int]] = {}
+        leaf_distinct_values: Dict[str, set] = {}
 
         standardize_cfg = interaction_cfg.get("standardize") if isinstance(interaction_cfg.get("standardize"), dict) else {}
         standardize_enabled = bool(standardize_cfg.get("enabled", True))
@@ -1736,6 +3085,12 @@ def extract_regime_leaf_onehot_features(
             embargo_bars = int(purge_bars)
         embargo_bars = int(max(0, embargo_bars))
 
+        try:
+            min_train_samples_effective = wfv_cfg.get("min_train_samples_effective")
+            min_train_samples_effective = int(min_train_samples_effective) if min_train_samples_effective is not None else int(cfg_min_train)
+        except Exception:
+            min_train_samples_effective = int(cfg_min_train)
+
         for train_sel, test_sel in list(split_plan):
             try:
                 tr_pos = _sel_to_positions(X_num.index, train_sel, is_cross_fit=is_cross_fit)
@@ -1746,10 +3101,24 @@ def extract_regime_leaf_onehot_features(
                 te_pos_raw = np.asarray(te_pos, dtype=int)
                 te_pos_eff = te_pos_raw
 
+                try:
+                    fold_train_n_raw.append(int(tr_pos.size))
+                except Exception:
+                    pass
+
                 if leakage_enabled and te_pos_raw.size > 0 and tr_pos.size > 0:
                     cutoff = int(np.min(te_pos_raw)) - int(purge_bars) - int(embargo_bars)
                     if cutoff >= 0:
                         tr_pos = tr_pos[tr_pos < cutoff]
+
+                try:
+                    fold_train_n_after_leakage.append(int(tr_pos.size))
+                except Exception:
+                    pass
+
+                if int(tr_pos.size) < int(min_train_samples_effective):
+                    skipped_small_train += 1
+                    continue
 
                 if tr_pos.size == 0:
                     skipped_small_train += 1
@@ -1772,7 +3141,36 @@ def extract_regime_leaf_onehot_features(
             except Exception:
                 pass
 
+            try:
+                fold_train_n_after_lookahead.append(int(len(X_train)))
+            except Exception:
+                pass
+
+            if int(len(X_train)) < int(min_train_samples_effective):
+                skipped_small_train += 1
+                continue
+
             y_train = pd.to_numeric(y_train, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+
+            try:
+                fold_y_train_n.append(int(len(y_train)))
+                fold_y_train_std.append(float(y_train.std()))
+            except Exception:
+                pass
+
+            try:
+                min_target_std = float(wfv_cfg.get("min_target_std", 0.0))
+            except Exception:
+                min_target_std = 0.0
+            if min_target_std is not None and np.isfinite(min_target_std) and float(min_target_std) > 0.0:
+                try:
+                    y_sd = float(y_train.std()) if len(y_train) > 1 else 0.0
+                    if not np.isfinite(y_sd) or y_sd < float(min_target_std):
+                        skipped_small_train += 1
+                        continue
+                except Exception:
+                    pass
+
             if len(y_train) < int(cfg_min_train):
                 skipped_small_train += 1
                 continue
@@ -1797,8 +3195,18 @@ def extract_regime_leaf_onehot_features(
                     dict(preprocess_cfg.get("robust_scaling", {})),
                 )
 
+            lgbm_cfg = dict(config.get("lgbm", {}))
+            try:
+                lgbm_by_target = config.get("lgbm_by_target")
+                if isinstance(lgbm_by_target, dict):
+                    tgt_overrides = lgbm_by_target.get(str(target_name))
+                    if isinstance(tgt_overrides, dict) and tgt_overrides:
+                        lgbm_cfg.update(dict(tgt_overrides))
+            except Exception:
+                pass
+
             params = _default_lgbm_params(
-                dict(config.get("lgbm", {})),
+                lgbm_cfg,
                 random_state=random_state,
                 n_train_samples=int(len(y_train)),
             )
@@ -1810,9 +3218,45 @@ def extract_regime_leaf_onehot_features(
                 last_fit_error = str(fit_exc)
                 continue
 
-            windows_trained += 1
+            # SHAP Feature Attribution
+            try:
+                import shap
+                explainer = shap.TreeExplainer(model)
+                # Sample background if train is too large
+                x_sample = X_train.sample(n=min(len(X_train), 200), random_state=42) if len(X_train) > 200 else X_train
+                shap_values = explainer.shap_values(x_sample)
+                
+                # Handle LightGBM/SHAP output formats (list for classifier, array for regressor)
+                if isinstance(shap_values, list):
+                    # For binary classifier, index 1 is usually positive class
+                    if len(shap_values) > 1:
+                        vals = shap_values[1]
+                    else:
+                        vals = shap_values[0]
+                else:
+                    vals = shap_values
+                
+                if hasattr(vals, "values"): # If shap returned an object with values
+                     vals = vals.values
 
-            pred_test = None
+                # Mean Abs SHAP per feature
+                if vals.shape == x_sample.shape:
+                    shap_imp = np.mean(np.abs(vals), axis=0)
+                    # Map to columns
+                    feat_imp = pd.Series(shap_imp, index=X_train.columns).sort_values(ascending=False)
+                    last_top_shap_features = feat_imp.head(5).index.tolist()
+            except Exception:
+                pass
+
+            # MDI Feature Attribution (Fallback/Complement)
+            try:
+                mdi_imp = model.feature_importances_
+                feat_imp_mdi = pd.Series(mdi_imp, index=X_train.columns).sort_values(ascending=False)
+                last_top_mdi_features = feat_imp_mdi.head(5).index.tolist()
+            except Exception:
+                pass
+                
+            prediction_start_timestamp = pd.Timestamp.utcnow()
             try:
                 pred_test = np.asarray(model.predict(X_test), dtype=float).reshape(-1)
                 if pred_test.shape[0] == len(test_index):
@@ -1887,6 +3331,21 @@ def extract_regime_leaf_onehot_features(
             leaf_chunk = pd.DataFrame(leaf_mat, index=test_index, columns=cols)
             for c in cols:
                 leaves_oos.loc[test_index, c] = leaf_chunk[c]
+
+            try:
+                for c in cols:
+                    s = pd.to_numeric(leaf_chunk[c], errors="coerce").dropna()
+                    if s.empty:
+                        continue
+                    uniq = pd.unique(s.astype(int))
+                    dset = leaf_distinct_values.setdefault(c, set())
+                    dset.update([int(x) for x in uniq.tolist()])
+                    pc = leaf_window_presence.setdefault(c, {})
+                    for x in uniq:
+                        xi = int(x)
+                        pc[xi] = int(pc.get(xi, 0)) + 1
+            except Exception:
+                pass
             any_pred = True
 
             try:
@@ -2097,6 +3556,8 @@ def extract_regime_leaf_onehot_features(
                     "last_pred_error": last_pred_error,
                     "skipped_small_train": int(skipped_small_train),
                     "skipped_small_test": int(skipped_small_test),
+                    "y_non_null": int(y_non_null),
+                    "y_nan_frac": float(y_nan_frac),
                     "target_lookahead_bars": int(target_lookahead),
                     "purge_bars": int(purge_bars) if leakage_enabled else 0,
                     "embargo_bars": int(embargo_bars) if leakage_enabled else 0,
@@ -2122,52 +3583,163 @@ def extract_regime_leaf_onehot_features(
 
         raw_cols = [c for c in leaves_oos.columns if str(c).startswith(f"regime_leaf_raw__{target_name}__t")]
 
-        pair_freqs = []
+        leaf_stability_cfg = config.get("leaf_stability")
+        if not isinstance(leaf_stability_cfg, dict):
+            leaf_stability_cfg = {}
+        try:
+            min_survival_frac = float(leaf_stability_cfg.get("min_survival_frac", 0.0))
+        except Exception:
+            min_survival_frac = 0.0
+        try:
+            min_distinct_leaves = int(leaf_stability_cfg.get("min_distinct_leaves", 2))
+        except Exception:
+            min_distinct_leaves = 2
+        min_survival_frac = float(max(0.0, min(1.0, min_survival_frac)))
+        min_distinct_leaves = int(max(1, min_distinct_leaves))
+
+        drop_trees = set()
+        try:
+            for rc in list(raw_cols):
+                n_distinct = int(len(leaf_distinct_values.get(rc, set())))
+                if n_distinct < int(min_distinct_leaves):
+                    drop_trees.add(str(rc))
+        except Exception:
+            drop_trees = set()
+
+        leaf_sel_cfg = config.get("leaf_selection")
+        if not isinstance(leaf_sel_cfg, dict):
+            leaf_sel_cfg = {}
+        leaf_sel_mode = str(leaf_sel_cfg.get("mode", "effect_support")).lower()
+
+        # Defaults: avoid selecting the dominant leaf (collapse) and prefer informative leaves.
+        min_support = float(leaf_sel_cfg.get("min_support", 0.01))
+        max_support = float(leaf_sel_cfg.get("max_support", 0.80))
+        dominant_support_max = float(leaf_sel_cfg.get("dominant_support_max", 0.95))
+        min_effect_z = float(leaf_sel_cfg.get("min_effect_z", 0.25))
+        try:
+            max_pairs = leaf_sel_cfg.get("max_pairs")
+            if max_pairs is None:
+                max_pairs = config.get("topk_max") if "topk_max" in config else None
+            max_pairs = int(max_pairs) if max_pairs is not None else None
+        except Exception:
+            max_pairs = None
+
         keep_pairs_by_tree = {}
-        for raw_col in raw_cols:
+        pair_scores_sorted: List[Tuple[str, float, float, float]] = []
+        if leaf_sel_mode in {"effect_support", "effect", "effect_support_v1"}:
             try:
-                s = leaves_oos[raw_col]
-                vc = s.dropna().value_counts()
-                denom = float(max(1, int(vc.sum())))
-                for leaf_val, cnt in vc.items():
-                    try:
-                        pair_freqs.append((raw_col, float(leaf_val), float(cnt) / denom))
-                    except Exception:
-                        continue
+                pair_scores_sorted, keep_pairs_by_tree = _score_leaf_pairs_effect_support(
+                    leaves_oos=leaves_oos,
+                    y_all=y_all,
+                    raw_cols=raw_cols,
+                    min_support=min_support,
+                    max_support=max_support,
+                    dominant_support_max=dominant_support_max,
+                    min_effect_z=min_effect_z,
+                    max_pairs=max_pairs,
+                )
             except Exception:
-                continue
+                keep_pairs_by_tree = {}
+                pair_scores_sorted = []
 
-        if pair_freqs:
-            pair_freqs_sorted = sorted(pair_freqs, key=lambda x: x[2], reverse=True)
-            freqs = np.asarray([p[2] for p in pair_freqs_sorted], dtype=float)
-            min_k = int(config.get("topk_min", 5))
-            max_k = (config.get("topk_max") if "topk_max" in config else 7)
-            try:
-                if max_k is not None:
-                    max_k = int(max_k)
-            except Exception:
-                max_k = None
-
-            k_elbow = _find_elbow_k(freqs, min_k=min_k)
-            if max_k is not None and max_k > 0:
-                k_elbow = int(min(k_elbow, max_k))
-
-            if verbose:
+        if not keep_pairs_by_tree:
+            # Fallback: frequency-based, but still avoid the dominant leaf
+            pair_freqs = []
+            for raw_col in raw_cols:
                 try:
-                    tprint_info(
-                        f"[regime_leaf] target={target_name} topk_elbow_k={int(k_elbow)} "
-                        f"pairs_total={int(len(pair_freqs_sorted))}"
-                    )
+                    s = leaves_oos[raw_col]
+                    vc = s.dropna().value_counts()
+                    denom = float(max(1, int(vc.sum())))
+                    for leaf_val, cnt in vc.items():
+                        try:
+                            freq = float(cnt) / denom
+                            if not np.isfinite(freq):
+                                continue
+                            if freq > float(dominant_support_max):
+                                continue
+                            pair_freqs.append((raw_col, float(leaf_val), float(freq)))
+                        except Exception:
+                            continue
                 except Exception:
-                    pass
+                    continue
 
-            kept = pair_freqs_sorted[: int(max(0, k_elbow))]
-            for raw_col, leaf_val, _ in kept:
-                keep_pairs_by_tree.setdefault(raw_col, set()).add(float(leaf_val))
+            if pair_freqs:
+                pair_freqs_sorted = sorted(pair_freqs, key=lambda x: x[2], reverse=True)
+                min_k = int(config.get("topk_min", 5))
+                max_k = (config.get("topk_max") if "topk_max" in config else 7)
+                try:
+                    if max_k is not None:
+                        max_k = int(max_k)
+                except Exception:
+                    max_k = None
+                k_elbow = _find_elbow_k(np.asarray([p[2] for p in pair_freqs_sorted], dtype=float), min_k=min_k)
+                if max_k is not None and max_k > 0:
+                    k_elbow = int(min(k_elbow, max_k))
+                kept = pair_freqs_sorted[: int(max(0, k_elbow))]
+                for raw_col, leaf_val, _ in kept:
+                    keep_pairs_by_tree.setdefault(raw_col, set()).add(float(leaf_val))
 
-        pair_freqs_present = bool(pair_freqs)
+        pair_freqs_present = bool(keep_pairs_by_tree)
+
+        kept_pairs_before_stability = 0
+        try:
+            kept_pairs_before_stability = int(sum([len(v) for v in keep_pairs_by_tree.values() if isinstance(v, set)]))
+        except Exception:
+            kept_pairs_before_stability = 0
+
+        if min_survival_frac > 0.0 and int(windows_trained) > 0 and keep_pairs_by_tree:
+            try:
+                for raw_col, keep_vals in list(keep_pairs_by_tree.items()):
+                    if raw_col in drop_trees:
+                        keep_pairs_by_tree[raw_col] = set()
+                        continue
+                    if not isinstance(keep_vals, set) or not keep_vals:
+                        continue
+                    pc = leaf_window_presence.get(raw_col, {})
+                    filtered = set()
+                    for v in list(keep_vals):
+                        try:
+                            vi = int(v)
+                        except Exception:
+                            continue
+                        surv = float(pc.get(vi, 0)) / float(max(1, int(windows_trained)))
+                        if surv >= float(min_survival_frac):
+                            filtered.add(float(vi))
+                    keep_pairs_by_tree[raw_col] = filtered
+            except Exception:
+                pass
+
+        kept_pairs_after_stability = 0
+        try:
+            kept_pairs_after_stability = int(sum([len(v) for v in keep_pairs_by_tree.values() if isinstance(v, set)]))
+        except Exception:
+            kept_pairs_after_stability = 0
+
+        if verbose:
+            try:
+                n_pairs = int(sum([len(v) for v in keep_pairs_by_tree.values()]))
+                tprint_info(f"[regime_leaf] target={target_name} leaf_selection={leaf_sel_mode} kept_pairs={n_pairs}")
+            except Exception:
+                pass
+
+        try:
+            if isinstance(report.get("targets", {}).get(str(target_name)), dict):
+                report["targets"][str(target_name)]["y_non_null"] = int(y_non_null)
+                report["targets"][str(target_name)]["y_nan_frac"] = float(y_nan_frac)
+                report["targets"][str(target_name)]["leaf_stability"] = {
+                    "min_survival_frac": float(min_survival_frac),
+                    "min_distinct_leaves": int(min_distinct_leaves),
+                    "kept_pairs_before": int(kept_pairs_before_stability),
+                    "kept_pairs_after": int(kept_pairs_after_stability),
+                    "dropped_trees": sorted(list(drop_trees)),
+                    "n_dropped_trees": int(len(drop_trees)),
+                }
+        except Exception:
+            pass
 
         for raw_col in raw_cols:
+            if str(raw_col) in drop_trees:
+                continue
             raw_series = leaves_oos[raw_col]
             dummies = pd.get_dummies(raw_series, prefix=raw_col, dummy_na=False)
             dummies = dummies.reindex(index=X_num.index).fillna(0.0)
@@ -2351,10 +3923,16 @@ def extract_regime_leaf_onehot_features(
                 "target_lookahead_bars": int(target_lookahead),
                 "purge_bars": int(purge_bars) if leakage_enabled else 0,
                 "embargo_bars": int(embargo_bars) if leakage_enabled else 0,
+                "min_train_samples_effective": int(min_train_samples_effective),
                 "standardize_method": str(standardize_method) if standardize_enabled else None,
                 "fold_ic_spearman": [float(x) if x is not None and np.isfinite(x) else None for x in fold_ic_spearman],
                 "fold_ic_pearson": [float(x) if x is not None and np.isfinite(x) else None for x in fold_ic_pearson],
                 "fold_n": [int(x) for x in fold_n],
+                "fold_train_n_raw": [int(x) for x in fold_train_n_raw],
+                "fold_train_n_after_leakage": [int(x) for x in fold_train_n_after_leakage],
+                "fold_train_n_after_lookahead": [int(x) for x in fold_train_n_after_lookahead],
+                "fold_y_train_n": [int(x) for x in fold_y_train_n],
+                "fold_y_train_std": [float(x) if x is not None and np.isfinite(x) else None for x in fold_y_train_std],
                 "fold_ic_spearman_summary": {},
                 "kept_pairs_by_tree": kept_pairs,
                 "kept_leaf_values": leaf_values_kept,
@@ -2375,6 +3953,8 @@ def extract_regime_leaf_onehot_features(
                         "icir": (ic_mean / (ic_std + 1e-12)) if np.isfinite(ic_std) else None,
                         "sign_consistency": float(np.mean([1.0 if v >= 0 else 0.0 for v in ic_vals])),
                         "n_folds": int(len(ic_vals)),
+                        "top_shap_features": list(last_top_shap_features) if last_top_shap_features else [],
+                        "top_mdi_features": list(last_top_mdi_features) if last_top_mdi_features else [],
                     }
             except Exception:
                 pass
@@ -2397,15 +3977,46 @@ def extract_regime_leaf_onehot_features(
                         interaction_series = resid_raw.where(resid_raw.notna(), pd.to_numeric(interaction_oos, errors="coerce"))
 
                 interaction_series = interaction_series.reindex(X_num.index).astype(float)
+
+                interaction_fillna = str(interaction_cfg.get("fillna", "nan")).lower()
+                if interaction_fillna in {"zero", "0", "0.0"}:
+                    interaction_out = interaction_series.fillna(0.0)
+                elif interaction_fillna in {"median"}:
+                    med = float(interaction_series.dropna().median()) if interaction_series.notna().any() else 0.0
+                    interaction_out = interaction_series.fillna(med)
+                else:
+                    interaction_out = interaction_series
+
                 interaction_frames.append(
-                    pd.DataFrame({f"regime_leaf_interaction__{target_name}": interaction_series.fillna(0.0)}, index=X_num.index)
+                    pd.DataFrame({f"regime_leaf_interaction__{target_name}": interaction_out}, index=X_num.index)
                 )
+
+                gating_cfg = interaction_cfg.get("gating") if isinstance(interaction_cfg.get("gating"), dict) else {}
+                try:
+                    gdf = _interaction_gating_features(
+                        pd.to_numeric(interaction_out, errors="coerce"),
+                        prefix=f"regime_leaf_interaction__{target_name}__",
+                        cfg=dict(gating_cfg),
+                    )
+                    if gdf is not None and not gdf.empty:
+                        interaction_frames.append(gdf.reindex(X_num.index).fillna(0.0))
+                except Exception:
+                    pass
 
                 transition_cfg = interaction_cfg.get("transition") if isinstance(interaction_cfg.get("transition"), dict) else {}
                 transition_enabled = bool(transition_cfg.get("enabled", True))
                 if transition_enabled:
-                    s_ff = interaction_series.ffill().fillna(0.0)
-                    d1 = s_ff.diff(1).fillna(0.0).astype(float)
+                    transition_fillna = str(transition_cfg.get("fillna", "none")).lower()
+                    if transition_fillna in {"ffill_zero", "ffill0"}:
+                        s_for_diff = interaction_series.ffill().fillna(0.0)
+                    elif transition_fillna in {"ffill"}:
+                        s_for_diff = interaction_series.ffill()
+                    elif transition_fillna in {"zero", "0", "0.0"}:
+                        s_for_diff = interaction_series.fillna(0.0)
+                    else:
+                        s_for_diff = interaction_series
+
+                    d1 = s_for_diff.diff(1).astype(float)
                     interaction_frames.append(
                         pd.DataFrame({f"regime_leaf_interaction_transition__{target_name}": d1}, index=X_num.index)
                     )
@@ -2471,12 +4082,55 @@ def extract_regime_leaf_onehot_features(
                 parts.append(pd.concat(score_frames, axis=1))
             if interaction_frames:
                 parts.append(pd.concat(interaction_frames, axis=1))
-            out_df = pd.concat(parts, axis=1).reindex(X_num.index).fillna(0.0)
-            if time_features is not None and not time_features.empty and bool(time_feat_cfg.get("include_in_output", True)):
+            out_df = pd.concat(parts, axis=1).reindex(X_num.index)
+
+            try:
+                interaction_cols = [
+                    c
+                    for c in list(out_df.columns)
+                    if str(c).startswith("regime_leaf_interaction__")
+                    or str(c).startswith("regime_leaf_interaction_transition__")
+                    or str(c).startswith("regime_leaf_interaction_transition_abs__")
+                ]
+            except Exception:
+                interaction_cols = []
+            if interaction_cols:
+                non_inter_cols = [c for c in list(out_df.columns) if c not in set(interaction_cols)]
                 try:
-                    out_df = pd.concat([out_df, time_features.reindex(out_df.index)], axis=1).fillna(0.0)
+                    if non_inter_cols:
+                        out_df[non_inter_cols] = out_df[non_inter_cols].fillna(0.0)
                 except Exception:
                     pass
+            else:
+                out_df = out_df.fillna(0.0)
+
+            if time_features is not None and not time_features.empty and bool(time_feat_cfg.get("include_in_output", True)):
+                try:
+                    tf = time_features.reindex(out_df.index)
+                    tf = tf.fillna(0.0)
+                    out_df = pd.concat([out_df, tf], axis=1)
+                except Exception:
+                    pass
+
+            # Explicitly pass through engineered regime features to the Meta Model
+            try:
+                # Include Multi-Horizon Agreement and Advanced Volatility/Transition features
+                passthrough_prefixes = [
+                    "reg_ohlcv__vol_multi_horizon",
+                    "reg_ohlcv__trend_multi_horizon",
+                    "reg_ohlcv__vol_acceleration",
+                    "reg_ohlcv__d_efficiency",
+                    "reg_ohlcv__d_autocorr",
+                    "reg_ohlcv__vol_compression",
+                    "reg_ohlcv__atr_rank",
+                    "reg_ohlcv__vol_of_vol"
+                ]
+                cols_to_pass = [c for c in X_num.columns if any(str(c).startswith(p) for p in passthrough_prefixes)]
+                if cols_to_pass:
+                    pt_df = X_num[cols_to_pass].reindex(out_df.index).fillna(0.0)
+                    out_df = pd.concat([out_df, pt_df], axis=1)
+            except Exception:
+                pass
             try:
                 if reporting_enabled:
                     try:
@@ -2512,7 +4166,8 @@ def extract_regime_leaf_onehot_features(
 
     if time_features is not None and not time_features.empty and bool(time_feat_cfg.get("include_in_output", True)):
         try:
-            leaf_onehot = pd.concat([leaf_onehot, time_features.reindex(leaf_onehot.index)], axis=1).fillna(0.0)
+            tf = time_features.reindex(leaf_onehot.index).fillna(0.0)
+            leaf_onehot = pd.concat([leaf_onehot, tf], axis=1)
         except Exception:
             pass
 
@@ -2529,6 +4184,39 @@ def extract_regime_leaf_onehot_features(
 
     if verbose:
         tprint_info(f"[regime_leaf] onehot_features={int(leaf_onehot.shape[1])}")
+
+    # Print summary of per-target metrics before saving report
+    if verbose:
+        try:
+            tprint_success("=" * 60)
+            tprint_success("REGIME LEAF MODEL: Per-Target Metrics Summary")
+            tprint_success("=" * 60)
+            targets_data = report.get("targets", {})
+            if targets_data:
+                for tgt_name, tgt_data in targets_data.items():
+                    summary = tgt_data.get("fold_ic_spearman_summary", {})
+                    fold_ics = tgt_data.get("fold_ic_spearman", [])
+                    if summary:
+                        ic_mean = summary.get("mean", "N/A")
+                        ic_std = summary.get("std", "N/A")
+                        icir = summary.get("icir", "N/A")
+                        sign_cons = summary.get("sign_consistency", "N/A")
+                        # Format values nicely
+                        ic_mean_str = f"{ic_mean:.4f}" if isinstance(ic_mean, (int, float)) else str(ic_mean)
+                        ic_std_str = f"{ic_std:.4f}" if isinstance(ic_std, (int, float)) else str(ic_std)
+                        icir_str = f"{icir:.2f}" if isinstance(icir, (int, float)) else str(icir)
+                        sign_str = f"{sign_cons:.1%}" if isinstance(sign_cons, (int, float)) else str(sign_cons)
+                        fold_ic_str = ", ".join([f"{v:.3f}" if isinstance(v, (int, float)) else "N/A" for v in fold_ics[:6]])
+                        # Classification for quick assessment
+                        verdict = "✅ GOOD" if isinstance(ic_mean, (int, float)) and float(ic_mean) > 0.1 else ("⚠️ WEAK" if isinstance(ic_mean, (int, float)) and float(ic_mean) > 0.0 else "❌ NO SIGNAL")
+                        tprint_info(f"  [{tgt_name}] {verdict}")
+                        tprint_info(f"    IC Mean: {ic_mean_str}  |  IC Std: {ic_std_str}  |  ICIR: {icir_str}  |  Sign: {sign_str}")
+                        tprint_info(f"    Fold ICs: [{fold_ic_str}]")
+                    else:
+                        tprint_warning(f"  [{tgt_name}] No summary available")
+            tprint_success("=" * 60)
+        except Exception as summary_exc:
+            tprint_warning(f"[regime_leaf] metrics summary print failed: {summary_exc}")
 
     if reporting_enabled:
         try:
@@ -2556,3 +4244,79 @@ def extract_regime_leaf_onehot_features(
         pass
 
     return leaf_onehot
+
+
+def generate_regime_feature_interactions(
+    feature_df: pd.DataFrame,
+    regime_scores: pd.DataFrame,
+    config: Dict[str, Any]
+) -> pd.DataFrame:
+    """
+    Generate interaction features between regime scores and key market indicators.
+    
+    Creates products: RegimeScore * MarketFeature
+    Targeting specific interactions: Volatility, Momentum (RSI), and Liquidity.
+    Supports non-linear transformations (Squared, Threshold) to sharpen regime focus.
+    
+    Args:
+        feature_df: DataFrame with raw market features (must contain keys like 'volatility', 'rsi', etc.)
+        regime_scores: DataFrame with regime leaf scores (e.g. from extract_regime_leaf_onehot_features)
+        config: Configuration dictionary for interactions
+        
+    Returns:
+        DataFrame of interaction features
+    """
+    out = pd.DataFrame(index=feature_df.index)
+    
+    # Check for dynamic features (e.g. from SHAP mining)
+    dynamic_feats = config.get("dynamic_interaction_features", [])
+    if isinstance(dynamic_feats, list) and len(dynamic_feats) > 0:
+        # Use dynamic SHAP features
+        # Filter to only those present in the dataframe
+        valid_dynamic = [f for f in dynamic_feats if f in feature_df.columns]
+        if valid_dynamic:
+            key_feats = {"shap": valid_dynamic}
+        else:
+             # Fallback if dynamic features not found in DF
+            key_feats = config.get("interaction_keys", {
+                "volatility": ["reg_ohlcv__volatility_1d", "volatility_1d"],
+                "rsi": ["reg_ohlcv__rsi_14", "rsi_14", "rsi"],
+                "volume": ["reg_ohlcv__volume_log1p_z", "volume_z"]
+            })
+    else:
+        # Fallback to heuristics
+        key_feats = config.get("interaction_keys", {
+            "volatility": ["reg_ohlcv__volatility_1d", "volatility_1d"],
+            "rsi": ["reg_ohlcv__rsi_14", "rsi_14", "rsi"],
+            "volume": ["reg_ohlcv__volume_log1p_z", "volume_z"]
+        })
+    
+    interaction_types = config.get("interaction_types", ["linear", "squared", "threshold"])
+    threshold_val = float(config.get("interaction_threshold", 0.5))
+
+    # Identify regime score columns
+    score_cols = [c for c in regime_scores.columns if "regime_leaf_raw_score" in str(c)]
+    
+    for score_col in score_cols:
+        score_raw = pd.to_numeric(regime_scores[score_col], errors="coerce").fillna(0.0)
+        
+        # Pre-compute score variants
+        score_variants = {}
+        if "linear" in interaction_types:
+            score_variants["lin"] = score_raw
+        if "squared" in interaction_types:
+            score_variants["sq"] = score_raw ** 2
+        if "threshold" in interaction_types:
+            score_variants["thr"] = (score_raw - threshold_val).clip(lower=0.0)
+        
+        for key, candidate_list in key_feats.items():
+            feat_col = next((c for c in candidate_list if c in feature_df.columns), None)
+            if feat_col:
+                feat_val = pd.to_numeric(feature_df[feat_col], errors="coerce").fillna(0.0)
+                
+                for var_name, score_vec in score_variants.items():
+                    # e.g. regime_leaf_raw_score__regime_volatility_x_volatility_lin
+                    col_name = f"{score_col}_x_{key}_{var_name}"
+                    out[col_name] = score_vec * feat_val
+                
+    return out

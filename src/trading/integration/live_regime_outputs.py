@@ -222,6 +222,26 @@ def _load_mean_reversion_block(
             context=context,
         )
     except FileNotFoundError:
+        direction_norm = str(direction).lower()
+        mr = None
+        if direction_norm not in {"long", "short"}:
+            for dir_try in ("long", "short"):
+                try:
+                    mr = router.load(
+                        artifact_name=artifact_name,
+                        artifact_type="data",
+                        data_category="features",
+                        context={**context, "direction": dir_try},
+                    )
+                    if mr is not None and not getattr(mr, "empty", True):
+                        break
+                except FileNotFoundError:
+                    mr = None
+                    continue
+
+        if mr is not None and not getattr(mr, "empty", True):
+            return mr.reindex(target_index, method="ffill")[[c for c in mr.columns if str(c).startswith("mr_")]]
+
         msg = (
             f"Mean-reversion training data artifact '{artifact_name}' not found "
             f"for {symbol}/{exchange} [{regime_timeframe}]"

@@ -340,11 +340,17 @@ def create_triple_barrier_from_hpo(
 # Production TPSL Parameters (overridable via config)
 DEFAULT_PROFIT_THRESHOLD = 0.005  # 0.5% (reduced for better balance)
 DEFAULT_STOP_THRESHOLD = 0.0075  # 0.75% (increased for better balance)
-DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
+
+# Transaction cost: import from centralized module for consistency
+try:
+    from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+except ImportError:
+    DEFAULT_TRANSACTION_COST = 0.003  # Fallback: 0.30% per round-trip trade
+
 R_MULTIPLE_POS_THRESHOLD = 0.5
 R_MULTIPLE_NEG_THRESHOLD = -0.25
 # Set to 2.0 (stricter: profit must exceed 2x transaction costs) for higher quality labels
-ECON_MIN_RETURN_MULTIPLE = 0.1
+ECON_MIN_RETURN_MULTIPLE = 2.0
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
@@ -1083,13 +1089,15 @@ def compute_realized_returns(
     signals: pd.DataFrame,
     profit_threshold: Union[float, pd.Series] = 0.015,
     stop_threshold: Union[float, pd.Series] = 0.010,
-    horizon: int = 16,
+    horizon: Union[int, pd.Series] = 16,
     transaction_cost: float = 0.0005,
     min_event_spacing: int = 2,
     volatility_series: Optional[pd.Series] = None,
     use_multiclass_labels: bool = False,  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
     atr_series: Optional[pd.Series] = None,  # NEW: For trailing stops
-    trail_distance_atr_mult: Optional[float] = None,  # NEW: Trailing distance in ATR
+    trail_distance_atr_mult: Optional[Union[float, pd.Series]] = None,  # NEW: Trailing distance in ATR
+    use_soft_labels: bool = False,  # NEW: Continuous [0,1] labels using sigmoid transform
+    soft_label_scale: float = 1.0,  # Scale factor for sigmoid (higher = sharper transition)
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
@@ -1104,6 +1112,7 @@ def compute_realized_returns(
     - NEW: Directional binary labels (binary_labels_long, binary_labels_short) for training
            direction-specific classifiers
     - NEW: Simulated trailing profit (activates at TP, exits on reversal)
+    - NEW: Soft labels using sigmoid transform for better classifier calibration
 
     Args:
         df: DataFrame with OHLCV data
@@ -1119,6 +1128,9 @@ def compute_realized_returns(
                                If False, returns binary labels (0=loss/timeout, 1=profit)
         atr_series: ATR series for trailing stop calculation (optional)
         trail_distance_atr_mult: Trailing distance in ATR multiples (optional, enables trailing)
+        use_soft_labels: If True, outputs continuous [0,1] labels using sigmoid((return-cost)/vol)
+                        This improves classifier calibration by giving partial credit for marginal trades
+        soft_label_scale: Scale factor for sigmoid sharpness (default 1.0, higher = sharper 0/1 transition)
 
     Returns:
         Tuple of (realized_returns, binary_labels, exit_reasons, event_durations, 
@@ -1175,8 +1187,17 @@ def compute_realized_returns(
     else:
         stop_thresholds = stop_threshold.values
 
+    trail_mult_values = None
+    try:
+        if isinstance(trail_distance_atr_mult, pd.Series):
+            trail_mult_values = trail_distance_atr_mult.reindex(df.index).astype(float).values
+        elif trail_distance_atr_mult is not None:
+            trail_mult_values = np.full(len(df), float(trail_distance_atr_mult), dtype=float)
+    except Exception:
+        trail_mult_values = None
+
     # Prepare trailing stop arrays if enabled
-    use_trailing = (atr_series is not None) and (trail_distance_atr_mult is not None) and (trail_distance_atr_mult > 0)
+    use_trailing = (atr_series is not None) and (trail_mult_values is not None) and bool(np.any(np.asarray(trail_mult_values, dtype=float) > 0.0))
     # Ensure atr_values is aligned with df
     if use_trailing:
         if len(atr_series) != len(df):
@@ -1186,11 +1207,22 @@ def compute_realized_returns(
     else:
         atr_values = None
 
+    base_horizons = None
+    try:
+        if isinstance(horizon, pd.Series):
+            base_horizons = horizon.reindex(df.index).astype(float).values
+        else:
+            base_horizons = np.full(len(df), float(horizon), dtype=float)
+    except Exception:
+        base_horizons = np.full(len(df), 16.0, dtype=float)
+    base_horizons = np.where(np.isfinite(base_horizons), base_horizons, 16.0)
+    base_horizons = np.clip(base_horizons, 1.0, 10000.0)
+
     # Dynamic horizon based on volatility (LINEAR with 2x max cap)
     # Lower vol = More time needed (price moves slower in low vol environments)
     # Higher vol = Less time needed (price moves faster in high vol environments)
     if volatility_series is not None:
-        vol_array = volatility_series.values
+        vol_array = volatility_series.reindex(df.index).values if len(volatility_series) != len(df) else volatility_series.values
         # Normalize volatility to [0, 1] range using quantiles
         vol_clean = vol_array[~np.isnan(vol_array)]
         if len(vol_clean) > 10:
@@ -1202,14 +1234,16 @@ def compute_realized_returns(
             # LINEAR SCALING: 2.0x at low vol (slow moves), 0.5x at high vol (fast moves)
             # time_multiplier = 2.0 - 1.5 * normalized_vol → Range: [0.5, 2.0]
             time_multiplier = 2.0 - 1.5 * normalized_vol
-            dynamic_horizons = (horizon * time_multiplier).astype(int)
+            dynamic_horizons = (base_horizons * time_multiplier).astype(int)
 
-            # Safety bounds: [horizon/2, horizon*2]
-            dynamic_horizons = np.clip(dynamic_horizons, max(4, horizon // 2), horizon * 2)
+            min_h = np.maximum(4, (base_horizons / 2.0).astype(int))
+            max_h = (base_horizons * 2.0).astype(int)
+            max_h = np.maximum(max_h, min_h)
+            dynamic_horizons = np.clip(dynamic_horizons, min_h, max_h)
         else:
-            dynamic_horizons = np.full(len(df), horizon)
+            dynamic_horizons = base_horizons.astype(int)
     else:
-        dynamic_horizons = np.full(len(df), horizon)
+        dynamic_horizons = base_horizons.astype(int)
 
     last_event_idx = -min_event_spacing  # Track last signal to avoid overlaps
 
@@ -1251,16 +1285,22 @@ def compute_realized_returns(
         peak_price = entry_price  # Initialize peak/trough
         # Pre-calculate trailing distance if trailing enabled
         if use_trailing:
-            # Trailing distance = ATR at entry * mult
-            current_atr = atr_values[i]
-            if pd.isna(current_atr):
-                # Fallback if ATR missing: use % of price approx or disable trailing
-                # For safety, disable trailing for this specific event if ATR is missing
+            try:
+                mult_i = float(trail_mult_values[i])
+            except Exception:
+                mult_i = 0.0
+            if (not np.isfinite(mult_i)) or mult_i <= 0.0:
                 event_trail_dist = 0.0
                 event_use_trailing = False
             else:
-                event_trail_dist = current_atr * trail_distance_atr_mult
-                event_use_trailing = True
+                # Trailing distance = ATR at entry * mult
+                current_atr = atr_values[i]
+                if pd.isna(current_atr):
+                    event_trail_dist = 0.0
+                    event_use_trailing = False
+                else:
+                    event_trail_dist = float(current_atr) * float(mult_i)
+                    event_use_trailing = True
         else:
             event_trail_dist = 0.0
             event_use_trailing = False
@@ -1463,7 +1503,34 @@ def compute_realized_returns(
         # Compute the unified binary label first (used for backward compatibility)
         unified_label = np.nan
         
-        if use_multiclass_labels:
+        # NEW: Soft label mode using sigmoid transform
+        # Provides continuous [0,1] labels: ~0.5 for marginal trades, ~0 for losses, ~1 for winners
+        if use_soft_labels and not use_multiclass_labels:
+            # Get volatility for scaling
+            if volatility_series is not None:
+                vol_at_i = volatility_series.iloc[i] if i < len(volatility_series) else 0.01
+                if pd.isna(vol_at_i) or vol_at_i <= 0:
+                    vol_at_i = 0.01
+            else:
+                # Use stop threshold as volatility proxy
+                vol_at_i = stop_thr if stop_thr > 0 else 0.01
+            
+            # Sigmoid: label = 1 / (1 + exp(-scale * (return - cost) / vol))
+            # This maps: return = cost → label ≈ 0.5
+            #           return >> cost → label → 1.0
+            #           return << -cost → label → 0.0
+            scaled_return = (net_return - transaction_cost) / (vol_at_i + 1e-12)
+            scaled_return = scaled_return * soft_label_scale
+            
+            # Clip to avoid overflow
+            scaled_return = np.clip(scaled_return, -20.0, 20.0)
+            unified_label = 1.0 / (1.0 + np.exp(-scaled_return))
+            
+            # Ensure output is valid
+            if not np.isfinite(unified_label):
+                unified_label = 0.5
+        
+        elif use_multiclass_labels:
             # MULTI-CLASS LABELS: 0=timeout, 1=profit, 2=stop
             # This allows model to learn different patterns for each exit type
             if exit_reason == 'timeout':
@@ -1584,7 +1651,14 @@ def compute_vol_scaled_returns_for_events(
             else float(ECON_MIN_RETURN_MULTIPLE)
         )
         econ_floor = DEFAULT_TRANSACTION_COST * econ_mult
-        small_mask = realized_returns.abs() < econ_floor
+        
+        # User Request Fix: "Keep ECON_MIN_RETURN_MULTIPLE high, but don't filter valid timeouts".
+        # Logic: We only want to filter "useless wins" (small positive returns).
+        # We MUST keep "small losses" (costs/timeouts) so the model learns to avoid them.
+        # If we filter losses, we delete the "0" class and create Tiny Samples.
+        # So: Filter only if return is POSITIVE and < FLOOR.
+        # Negatives are always kept.
+        small_mask = (realized_returns > 0) & (realized_returns < econ_floor)
         vol_scaled[small_mask] = np.nan
 
         # Robust outlier handling: winsorize extreme vol-scaled returns so that
@@ -3723,6 +3797,33 @@ def create_meta_features(
     vol_baseline = features['volatility_1d'].rolling(96).mean()
     features['vol_ratio'] = features['volatility_1d'] / (vol_baseline + 1e-8)
 
+    try:
+        vol_1d_series = pd.to_numeric(features['volatility_1d'], errors='coerce')
+        vol_non_null = vol_1d_series.dropna()
+        if len(vol_non_null) >= 10:
+            split_idx = max(1, int(len(vol_non_null) * 0.7))
+            vol_train = vol_non_null.iloc[:split_idx]
+        else:
+            vol_train = vol_non_null
+
+        if len(vol_train) >= 10:
+            vs = np.sort(vol_train.to_numpy(dtype=float))
+            denom = float(max(1, vs.size))
+            vol_vals = vol_1d_series.to_numpy(dtype=float)
+            pct = np.searchsorted(vs, vol_vals, side='right') / denom
+            features['vol_percentile_1d'] = np.clip(pct, 0.0, 1.0)
+        else:
+            features['vol_percentile_1d'] = np.nan
+
+        vol_med = vol_train.median() if len(vol_train) else np.nan
+        vol_std = vol_train.std() if len(vol_train) else np.nan
+        vol_std = float(vol_std) if np.isfinite(vol_std) and vol_std > 1e-12 else np.nan
+        vol_z = (vol_1d_series - float(vol_med)) / (float(vol_std) + 1e-8) if np.isfinite(vol_med) and np.isfinite(vol_std) else np.nan
+        features['vol_z_1d'] = pd.to_numeric(vol_z, errors='coerce').clip(lower=-10.0, upper=10.0)
+    except Exception:
+        features['vol_percentile_1d'] = np.nan
+        features['vol_z_1d'] = np.nan
+
     # ===== VOLATILITY REGIME LABELING =====
 
     # Compute rolling volatility for regime detection
@@ -3969,6 +4070,26 @@ def create_meta_features(
     features['atr_14'] = atr_14
     features['atr_ratio'] = atr_14 / (close_arr_for_atr + 1e-8)
 
+    try:
+        close_series = pd.to_numeric(df['close'], errors='coerce')
+        trend_lb = 32
+        trend_move = (close_series - close_series.shift(trend_lb)).abs()
+        trend_strength = (trend_move / (pd.Series(atr_14, index=features.index).abs() + 1e-8)).replace([np.inf, -np.inf], np.nan)
+        features['trend_strength_atr_32'] = pd.to_numeric(trend_strength, errors='coerce').clip(lower=0.0, upper=10.0)
+    except Exception:
+        features['trend_strength_atr_32'] = np.nan
+
+    try:
+        range_w = 96
+        roll_high = pd.to_numeric(df['high'], errors='coerce').rolling(range_w).max()
+        roll_low = pd.to_numeric(df['low'], errors='coerce').rolling(range_w).min()
+        roll_range = (roll_high - roll_low).abs()
+        atr_series_full = pd.Series(atr_14, index=features.index)
+        range_to_atr = (roll_range / (atr_series_full.abs() + 1e-8)).replace([np.inf, -np.inf], np.nan)
+        features['range_to_atr_96'] = pd.to_numeric(range_to_atr, errors='coerce').clip(lower=0.0, upper=200.0)
+    except Exception:
+        features['range_to_atr_96'] = np.nan
+
     # ===== VOLUME CONTEXT =====
 
     if volume_available and 'volume' in df.columns:
@@ -4010,6 +4131,15 @@ def create_meta_features(
         features['volume_zscore'] = 0.0
         features['volume_spike'] = 1.0
         features['signed_volume_ema'] = 0.0
+
+    try:
+        thr_mult = 2.5
+        vol_proxy = pd.to_numeric(features.get('volatility_1h'), errors='coerce')
+        abs_lr = pd.to_numeric(features.get('log_ret'), errors='coerce').abs()
+        flag = (abs_lr > (thr_mult * vol_proxy)).astype(float)
+        features['event_intensity_96'] = flag.rolling(96, min_periods=16).mean()
+    except Exception:
+        features['event_intensity_96'] = np.nan
 
     try:
         horizon_48 = 48
@@ -5449,6 +5579,88 @@ def build_meta_features_for_model(
 
     meta_features_model = prepare_feature_matrix(meta_features)
 
+    # ------------------------------------------------------------------
+    # Optional: Short NN sequence embeddings (Conv/LSTM stacked)
+    # ------------------------------------------------------------------
+    try:
+        enable_nn_seq = False
+        nn_cfg = {}
+        if isinstance(meta_feature_cfg, dict):
+            enable_nn_seq = bool(meta_feature_cfg.get("enable_nn_sequence_embeddings", False))
+            nn_cfg = meta_feature_cfg.get("nn_sequence_encoder", {})
+            if not isinstance(nn_cfg, dict):
+                nn_cfg = {}
+
+        if enable_nn_seq:
+            try:
+                from .short_nn_sequence_template import (
+                    generate_nn_sequence_embeddings,
+                    load_cached_nn_embeddings,
+                )
+                nn_available = True
+            except Exception:
+                nn_available = False
+
+            if not nn_available:
+                tprint("⚠️ [nn_sequence] short_nn_sequence_template not importable; skipping NN embeddings", "WARNING")
+            else:
+                cache_path = nn_cfg.get("cache_path")
+                if cache_path is None:
+                    cache_path = meta_feature_cfg.get("nn_embeddings_cache_path") if isinstance(meta_feature_cfg, dict) else None
+
+                seq_len = int(nn_cfg.get("seq_len", 24))
+                embed_dim = int(nn_cfg.get("embed_dim", 8))
+                device = str(nn_cfg.get("device", "cpu"))
+                encoder_type = str(nn_cfg.get("encoder_type", "stacked"))
+                use_conv = bool(nn_cfg.get("use_conv", True))
+                use_lstm = bool(nn_cfg.get("use_lstm", True))
+                use_attention = bool(nn_cfg.get("use_attention", False))
+                pretrained_path = nn_cfg.get("pretrained_path", None)
+
+                nn_embed = None
+                if cache_path:
+                    try:
+                        nn_embed = load_cached_nn_embeddings(cache_path=str(cache_path), target_index=market_data.index)
+                    except Exception:
+                        nn_embed = None
+
+                if nn_embed is None:
+                    nn_embed = generate_nn_sequence_embeddings(
+                        market_data=market_data,
+                        encoder_type=encoder_type,
+                        seq_len=seq_len,
+                        embed_dim=embed_dim,
+                        use_conv=use_conv,
+                        use_lstm=use_lstm,
+                        use_attention=use_attention,
+                        device=device,
+                        pretrained_path=pretrained_path,
+                    )
+
+                if nn_embed is not None and hasattr(nn_embed, "columns") and len(nn_embed) > 0:
+                    # Align by length to the meta_features_model window (create_meta_features may tail-align).
+                    n_feat = int(len(meta_features_model))
+                    nn_reset = nn_embed.reset_index(drop=True)
+                    if len(nn_reset) > n_feat:
+                        nn_reset = nn_reset.iloc[-n_feat:, :].reset_index(drop=True)
+                    elif len(nn_reset) < n_feat:
+                        pad_rows = n_feat - len(nn_reset)
+                        pad = pd.DataFrame(0.0, index=range(pad_rows), columns=nn_reset.columns)
+                        nn_reset = pd.concat([pad, nn_reset], axis=0, ignore_index=True)
+                    nn_reset.index = meta_features_model.index
+
+                    try:
+                        nn_reset = nn_reset.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+                    except Exception:
+                        nn_reset = nn_reset.fillna(0.0)
+
+                    new_cols = [c for c in nn_reset.columns if c not in meta_features_model.columns]
+                    if new_cols:
+                        meta_features_model = pd.concat([meta_features_model, nn_reset[new_cols]], axis=1)
+                        tprint(f"✅ [nn_sequence] Added {len(new_cols)} nn_embed_* features to meta feature matrix", "INFO")
+    except Exception as nn_exc:
+        tprint(f"⚠️ [nn_sequence] Failed to attach NN embeddings: {nn_exc}", "WARNING")
+
     try:
         direction_src = None
         if isinstance(primary_signals, pd.DataFrame) and 'consensus' in primary_signals.columns:
@@ -5534,6 +5746,16 @@ def build_meta_features_for_model(
 
     n_features_after_forbidden = int(meta_features_model.shape[1])
 
+    try:
+        nn_cols_post_forbidden = [c for c in meta_features_model.columns if str(c).startswith("nn_embed_")]
+        if nn_cols_post_forbidden:
+            tprint(
+                f"[nn_sequence] nn_embed_after_forbidden={int(len(nn_cols_post_forbidden))}",
+                "INFO",
+            )
+    except Exception:
+        pass
+
     meta_features_model_processed = meta_features_model
     if not isinstance(meta_feature_cfg, dict):
         meta_feature_cfg = {}
@@ -5602,6 +5824,16 @@ def build_meta_features_for_model(
         except Exception as e_fs:
             tprint(f"⚠️ Feature selection failed, using all features: {e_fs}", "WARNING")
             selected_feature_names = list(meta_features_model_processed.columns)
+
+    try:
+        nn_cols_final = [c for c in meta_features_model_processed.columns if str(c).startswith("nn_embed_")]
+        if nn_cols_final:
+            tprint(
+                f"[nn_sequence] nn_embed_final={int(len(nn_cols_final))}",
+                "INFO",
+            )
+    except Exception:
+        pass
 
     # Compact diagnostics: feature counts before/after structural drops and processing.
     try:

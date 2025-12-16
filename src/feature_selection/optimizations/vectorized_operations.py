@@ -17,7 +17,7 @@ from scipy.stats import spearmanr, pearsonr
 # Import hardware optimization tools
 from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
-from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
 # Import UnifiedVectorizationManager for enhanced vectorization
 try:
@@ -65,6 +65,58 @@ class VectorizationConfig:
     # GPU configuration (for compatibility)
     gpu_data_size_threshold: int = 1000000
     enable_gpu_fallback: bool = True
+
+
+class VectorizedOperations:
+    """Compatibility wrapper for vectorized utilities used by market-analysis steps.
+
+    Note: Some steps historically imported `VectorizedOperations` from this module.
+    The newer implementation focuses on `VectorizedFeatureSelector`, but those
+    call sites still expect rolling helpers like `vectorized_rolling`.
+    """
+
+    def __init__(self, config: Optional[VectorizationConfig] = None):
+        self.config = config or VectorizationConfig()
+        self.logger = logger.getChild('VectorizedOperations')
+
+    def vectorized_rolling(
+        self,
+        values: Union[np.ndarray, pd.Series],
+        window: int,
+        operation: str,
+        min_periods: Optional[int] = None,
+    ) -> np.ndarray:
+        """Compute a rolling operation and return a NumPy array.
+
+        Supported operations: mean, sum, std, min, max, median.
+        """
+        if window <= 0:
+            raise ValueError(f"window must be > 0 (got {window})")
+
+        if isinstance(values, pd.Series):
+            s = values.astype(float)
+        else:
+            s = pd.Series(np.asarray(values, dtype=float))
+
+        if min_periods is None:
+            min_periods = max(1, window // 5)
+
+        op = (operation or "").lower().strip()
+
+        if op == "mean":
+            return s.rolling(window, min_periods=min_periods).mean().to_numpy()
+        if op == "sum":
+            return s.rolling(window, min_periods=min_periods).sum().to_numpy()
+        if op == "std":
+            return s.rolling(window, min_periods=min_periods).std(ddof=0).to_numpy()
+        if op == "min":
+            return s.rolling(window, min_periods=min_periods).min().to_numpy()
+        if op == "max":
+            return s.rolling(window, min_periods=min_periods).max().to_numpy()
+        if op == "median":
+            return s.rolling(window, min_periods=min_periods).median().to_numpy()
+
+        raise ValueError(f"Unsupported rolling operation: {operation!r}")
 
 class VectorizedFeatureSelector:
     """Feature selector with vectorized operations and hardware optimization."""

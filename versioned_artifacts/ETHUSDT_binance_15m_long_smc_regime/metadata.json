@@ -1,7 +1,7 @@
 {
   "versions": {
-    "smc_predictions_with_confidence_20251207_131500_659": {
-      "created_at": "2025-12-07T13:15:00.659301",
+    "smc_predictions_with_confidence_20251213_170746_093": {
+      "created_at": "2025-12-13T17:07:46.093212",
       "num_rows": 35025,
       "num_columns": 2,
       "columns": [
@@ -30,8 +30,8 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_smc_features_15m_20251207_131500_692": {
-      "created_at": "2025-12-07T13:15:00.692230",
+    "ml_smc_features_15m_20251213_170746_137": {
+      "created_at": "2025-12-13T17:07:46.137341",
       "num_rows": 35041,
       "num_columns": 62,
       "columns": [
@@ -108,7 +108,7 @@
       "source_market_data": "historical_data"
     }
   },
-  "current_version": "ml_smc_features_15m_20251207_131500_692",
+  "current_version": "ml_smc_features_15m_20251213_170746_137",
   "created_at": "2025-12-03T22:09:41.649037",
-  "updated_at": "2025-12-09T20:40:09.391636"
+  "updated_at": "2025-12-15T11:32:19.428947"
 }

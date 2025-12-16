@@ -312,6 +312,21 @@ def mine_shap_interaction_feature_defs(
     fillna_value = float(cfg.get("fillna_value", 0.0))
     sample_size = int(min(int(cfg.get("sample_size", 800)), len(Xn)))
 
+    regime_cfg = cfg.get("regime") if isinstance(cfg.get("regime"), dict) else {}
+    require_regime_pair = bool(regime_cfg.get("require_regime_feature", False))
+    exclude_regime_regime = bool(regime_cfg.get("exclude_regime_regime", True))
+    regime_prefixes = regime_cfg.get("prefixes")
+    if not isinstance(regime_prefixes, list) or not regime_prefixes:
+        regime_prefixes = ["regime_leaf_"]
+    regime_prefixes = [str(p) for p in regime_prefixes if str(p)]
+
+    def _is_regime_feature(name: str) -> bool:
+        try:
+            s = str(name)
+            return any(s.startswith(p) for p in regime_prefixes)
+        except Exception:
+            return False
+
     idx = _stratified_sample_index(y, sample_size, random_state)
     Xs = Xn.loc[idx].fillna(fillna_value)
     ys = y.loc[idx]
@@ -357,10 +372,17 @@ def mine_shap_interaction_feature_defs(
     for i in range(nfeat):
         for j in range(i + 1, nfeat):
             try:
+                a_name = str(top_features[i])
+                b_name = str(top_features[j])
+                if require_regime_pair:
+                    if not (_is_regime_feature(a_name) or _is_regime_feature(b_name)):
+                        continue
+                if exclude_regime_regime and _is_regime_feature(a_name) and _is_regime_feature(b_name):
+                    continue
                 s = float(np.mean(np.abs(arr1[:, i, j])))
                 if not np.isfinite(s):
                     continue
-                pairs.append((s, str(top_features[i]), str(top_features[j])))
+                pairs.append((s, a_name, b_name))
             except Exception:
                 continue
 

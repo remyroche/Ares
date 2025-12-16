@@ -326,6 +326,7 @@ def compute_backtest_metrics(
     event_times: Optional[Any] = None,
     returns_are_net: bool = True,
     annualize: bool = True,
+    verbose: bool = True,
 ) -> Dict[str, float]:
     """
     Compute comprehensive backtesting metrics.
@@ -344,7 +345,8 @@ def compute_backtest_metrics(
     Returns:
         Dict with backtest metrics including cost-adjusted returns
     """
-    tprint_info("   Computing backtest metrics...")
+    if verbose:
+        tprint_info("   Computing backtest metrics...")
     
     valid_mask = np.isfinite(y_prob) & np.isfinite(returns)
     y_prob = y_prob[valid_mask]

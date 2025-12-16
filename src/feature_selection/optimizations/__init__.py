@@ -6,6 +6,8 @@ including vectorized operations and algorithm-specific optimizations.
 """
 
 from .vectorized_operations import (
+    VectorizedOperations,
+    VectorizationConfig,
     VectorizedFeatureSelector,
     OptimizedCorrelationFilter,
     OptimizedVarianceFilter,
@@ -13,6 +15,8 @@ from .vectorized_operations import (
 )
 
 __all__ = [
+    'VectorizedOperations',
+    'VectorizationConfig',
     'VectorizedFeatureSelector',
     'OptimizedCorrelationFilter',
     'OptimizedVarianceFilter',

@@ -5,90 +5,75 @@
   "direction": "long",
   "model_family": "analyst_meta",
   "meta_gating": {
-    "version": "2025-12-09T22:51:12",
+    "version": "2025-12-14T22:50:42",
     "transaction_cost": 0.003,
     "entry": {
-      "prob_threshold": 0.6,
+      "selection_mode": "top_quantile",
+      "top_quantile": 0.011943793911007026,
+      "prob_threshold": 0.65,
       "use_expected_return": false,
       "expected_return_threshold": 0.0,
       "expected_return_unit": "fraction",
-      "min_trades": 675
+      "min_trades": 0
     },
     "calibration": {
       "iso_regressor_artifact": "artifacts/iso_regressor_analyst_meta.pkl",
-      "fitted_on": "train_oof"
+      "fitted_on": "weighted_oof"
+    }
+  },
+  "weighted_hpo": {
+    "run_timestamp": "20251214_224010",
+    "best_params": {
+      "w_scalp": 0.4094705824370901,
+      "w_swing": 0.20389794973529923,
+      "w_trend": 1.1682739073311168,
+      "consensus_threshold": 0.7038899401622896,
+      "abstain_margin": 0.21149008324916754,
+      "ev_margin": 0.04058702478906926,
+      "diversity_lambda": 0.022571516877324817,
+      "regime_threshold_sensitivity": 1.2761104780521673,
+      "volatility_penalty_lambda": 0.0,
+      "consensus_quantile": 0.7525690832250248,
+      "num_leaves": 46,
+      "min_data_in_leaf": 30,
+      "max_depth": 7,
+      "min_gain_to_split": 0.1,
+      "lambda_l1": 0.1,
+      "lambda_l2": 0.1,
+      "path_smooth": 0.1,
+      "learning_rate": 0.05,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "n_estimators": 300
     },
-    "triple_barrier": {
-      "profit_threshold": 0.017103603074793458,
-      "stop_threshold": 0.008479404338990288,
-      "horizon_bars": 20,
-      "min_event_spacing": 3
+    "layer2_best_params": {
+      "w_scalp": 0.4094705824370901,
+      "w_swing": 0.20389794973529923,
+      "w_trend": 1.1682739073311168,
+      "consensus_threshold": 0.7038899401622896,
+      "abstain_margin": 0.21149008324916754,
+      "ev_margin": 0.04058702478906926,
+      "diversity_lambda": 0.022571516877324817,
+      "regime_threshold_sensitivity": 1.2761104780521673,
+      "volatility_penalty_lambda": 0.0,
+      "consensus_quantile": 0.7525690832250248
     },
-    "backtest_metrics": {
-      "mean_return_gated": 0.005062561432832898,
-      "sharpe_gated": 9.65695715583366,
-      "trades_gated": 675,
-      "trades_per_day_gated": 0.46169630642954856,
-      "pnl_per_day_pct": 0.2337365914611632,
-      "max_drawdown_pct": -31.4041628714905,
-      "final_equity": 28.40160567571755,
-      "auc_oof": 0.7368327133331553
+    "layer3_best_params": {
+      "num_leaves": 46,
+      "min_data_in_leaf": 30,
+      "max_depth": 7,
+      "min_gain_to_split": 0.1,
+      "lambda_l1": 0.1,
+      "lambda_l2": 0.1,
+      "path_smooth": 0.1,
+      "learning_rate": 0.05,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "n_estimators": 300
     },
-    "regime_specific": {
-      "hmm_2.0": {
-        "prob_threshold": 0.6,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.002478636432157835,
-        "sharpe": 1.4101119644309197,
-        "n_trades": 72,
-        "trades_per_day": 0.20055710306406685,
-        "score": 11.965196787376643
-      },
-      "hmm_4.0": {
-        "prob_threshold": 0.55,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.004452510895027336,
-        "sharpe": 5.55357247108384,
-        "n_trades": 299,
-        "trades_per_day": 0.8328690807799443,
-        "score": 96.03024518495462
-      },
-      "hmm_0.0": {
-        "prob_threshold": 0.75,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.011880792628879326,
-        "sharpe": 9.682814381491484,
-        "n_trades": 45,
-        "trades_per_day": 0.13313609467455623,
-        "score": 64.95429351158262
-      },
-      "hmm_3.0": {
-        "prob_threshold": 0.8,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.008587957394468848,
-        "sharpe": 4.799896871703328,
-        "n_trades": 33,
-        "trades_per_day": 0.09792284866468842,
-        "score": 27.573308276421674
-      },
-      "hmm_1.0": {
-        "prob_threshold": 0.55,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.005486830655304658,
-        "sharpe": 5.682653759379239,
-        "n_trades": 195,
-        "trades_per_day": 0.5786350148367952,
-        "score": 79.35394118159768
-      },
-      "hmm_-1.0": {
-        "prob_threshold": 0.6,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.009604548399752076,
-        "sharpe": 3.7688899862001524,
-        "n_trades": 23,
-        "trades_per_day": 0.06804733727810651,
-        "score": 18.07496140371633
-      }
+    "source": {
+      "layer3_report": "outcomes/hpo_stage_report_layer3_model_ETHUSDT_binance_15m_long_20251214_224010.json",
+      "layer2_report": "outcomes/hpo_stage_report_layer2_trading_ETHUSDT_binance_15m_long_20251214_224010.json"
     }
   }
 }

@@ -467,6 +467,13 @@ Examples:
         help='Number of forward-walk evaluation windows for meta_gated_backtest'
     )
     
+    # Weighted meta-labeling utilities
+    parser.add_argument(
+        '--save-labeled-data-csv',
+        action='store_true',
+        help='Save labeled data CSVs in outcomes/ (e.g., weighted_labeled_data_*)'
+    )
+    
     # Legacy compatibility options
     parser.add_argument('--start-from-step-name', type=str, help='Legacy: start from specific step')
     parser.add_argument('--stop-at-step', type=int, help='Legacy: stop at specific step number')
@@ -474,6 +481,53 @@ Examples:
     # Utility options
     parser.add_argument('--list-steps', action='store_true', help='List all registered steps')
     parser.add_argument('--list-stages', action='store_true', help='List all available stages')
+    parser.add_argument(
+        '--cleanup-only',
+        action='store_true',
+        help=(
+            'Run the launcher cleanup routines only (no step execution) and exit. '
+            "Includes duplicate-file cleanup and versioned artifact store pruning unless '--cleanup-skip-versioned-artifacts' is set."
+        )
+    )
+    parser.add_argument(
+        '--cleanup-duplicates-keep-count',
+        type=int,
+        default=3,
+        help='For duplicate-file cleanup, keep this many newest files per base name (default: 3; logs uses 100 regardless).'
+    )
+    parser.add_argument(
+        '--cleanup-keep-per-base',
+        type=int,
+        default=5,
+        help='For VersionedArtifactStore pruning, keep this many most recent versions per base (default: 5).'
+    )
+    parser.add_argument(
+        '--cleanup-repair-versioned-artifacts',
+        action='store_true',
+        help=(
+            'When running cleanup-only, reconcile VersionedArtifactStore metadata.json with store.h5 '
+            'before pruning (removes metadata-only phantom versions and adds minimal metadata for HDF5-only versions).'
+        )
+    )
+    parser.add_argument(
+        '--cleanup-regime-models-keep-count',
+        type=int,
+        default=1,
+        help=(
+            'Rotate timestamped files under versioned_artifacts/regime_models by base name and keep this many newest per group '
+            '(default: 1).'
+        )
+    )
+    parser.add_argument(
+        '--cleanup-skip-regime-models',
+        action='store_true',
+        help='When running --cleanup-only, skip rotation of versioned_artifacts/regime_models.'
+    )
+    parser.add_argument(
+        '--cleanup-skip-versioned-artifacts',
+        action='store_true',
+        help='When running --cleanup-only, skip versioned_artifacts store pruning.'
+    )
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     
     return parser
@@ -585,6 +639,80 @@ def cleanup_duplicate_files(directories: List[str], keep_count: int = 5):
     logger.info(f"✅ Cleanup complete: {total_deleted} files deleted, {total_skipped} files skipped")
 
 
+def cleanup_regime_models_artifacts(keep_count: int = 1) -> None:
+    """Rotate timestamped detector artifacts under versioned_artifacts/regime_models."""
+    root = Path("versioned_artifacts/regime_models")
+    if not root.exists():
+        logger.debug("versioned_artifacts/regime_models directory does not exist, skipping")
+        return
+
+    logger.info(
+        "🧹 Rotating regime_models artifacts: %s (keeping %d newest files per base name)",
+        str(root),
+        keep_count,
+    )
+
+    datetime_pattern = re.compile(r'_(\d{8}_\d{6})(?:_\d+)?(\.[a-zA-Z]+)?$')
+
+    files = [f for f in root.glob('*') if f.is_file()]
+    if not files:
+        logger.info("No files found in versioned_artifacts/regime_models")
+        return
+
+    file_groups: Dict[str, List[Dict[str, Any]]] = {}
+    total_deleted = 0
+    total_skipped = 0
+
+    for file_path in files:
+        file_name = file_path.name
+        try:
+            mtime = file_path.stat().st_mtime
+        except FileNotFoundError:
+            continue
+
+        match = datetime_pattern.search(file_name)
+        if match:
+            extension = match.group(2) if match.group(2) else ''
+            base_name = file_name[:match.start()] + extension
+        else:
+            base_name = file_name
+
+        file_groups.setdefault(base_name, []).append({
+            'path': file_path,
+            'name': file_name,
+            'mtime': mtime,
+        })
+
+    for base_name, files_in_group in file_groups.items():
+        if len(files_in_group) <= keep_count:
+            continue
+
+        files_in_group.sort(key=lambda x: x['mtime'], reverse=True)
+        to_delete = files_in_group[keep_count:]
+
+        logger.info(
+            "  Group '%s': %d files, keeping %d, deleting %d",
+            base_name,
+            len(files_in_group),
+            keep_count,
+            len(to_delete),
+        )
+
+        for file_info in to_delete:
+            try:
+                file_info['path'].unlink()
+                total_deleted += 1
+            except Exception as e:
+                logger.error(f"    Failed to delete {file_info['name']}: {e}")
+                total_skipped += 1
+
+    logger.info(
+        "✅ Regime model artifact rotation complete: %d files deleted, %d files skipped",
+        total_deleted,
+        total_skipped,
+    )
+
+
 def cleanup_versioned_artifact_stores(keep_per_base: int = 5) -> None:
     """Prune old versions inside each VersionedArtifactStore."""
     logger.info(f"Starting cleanup of versioned artifact stores (keeping {keep_per_base} versions per base)")
@@ -618,23 +746,97 @@ def cleanup_versioned_artifact_stores(keep_per_base: int = 5) -> None:
             logger.error(f"Failed to clean VersionedArtifactStore at {store_dir}: {e}")
 
 
+def cleanup_versioned_artifact_stores_repair(keep_per_base: int = 5) -> None:
+    """Repair and then prune old versions inside each VersionedArtifactStore."""
+    logger.info(
+        "Starting REPAIR+cleanup of versioned artifact stores (keeping %d versions per base)",
+        keep_per_base,
+    )
+
+    root = Path("versioned_artifacts")
+    if not root.exists():
+        logger.debug("versioned_artifacts directory does not exist, skipping store cleanup")
+        return
+
+    for store_dir in root.iterdir():
+        if not store_dir.is_dir():
+            continue
+
+        h5_path = store_dir / "store.h5"
+        if not h5_path.exists():
+            continue
+
+        try:
+            logger.info(f"Repairing VersionedArtifactStore at {store_dir}")
+            store = VersionedArtifactStore(store_path=store_dir)
+            repair_summary = store.reconcile_metadata_with_hdf5()
+            logger.info(
+                "Repaired store %s: meta_only_removed=%d, h5_only_added=%d",
+                store_dir.name,
+                repair_summary.get("meta_only_removed", 0),
+                repair_summary.get("h5_only_added", 0),
+            )
+
+            prune_summary = store.prune_versions(keep_per_base=keep_per_base)
+            logger.info(
+                "Pruned store %s: h5_only_removed=%d, meta_only_removed=%d, versions_pruned=%d (keep_per_base=%d)",
+                store_dir.name,
+                prune_summary.get("h5_only_removed", 0),
+                prune_summary.get("meta_only_removed", 0),
+                prune_summary.get("versions_pruned", 0),
+                keep_per_base,
+            )
+        except Exception as e:
+            logger.error(f"Failed to repair/clean VersionedArtifactStore at {store_dir}: {e}")
+
+
 async def main():
     """Main entry point."""
     logger.info("Starting Simplified Ares Launcher...")
     
-    # Run cleanup before anything else
-    directories_to_clean = [
-        'logs',
-        'artifacts',
-        'versioned_artifacts',
-        'outcomes'
-    ]
-    cleanup_duplicate_files(directories_to_clean, keep_count=3)
-    cleanup_versioned_artifact_stores(keep_per_base=5)
-    
     # Create CLI parser
     parser = create_cli_parser()
     args = parser.parse_args()
+
+    # Map positional command argument for utility commands
+    if args.command in ("cleaner", "cleanup"):
+        args.cleanup_only = True
+        args.command = None
+        logger.info("Detected cleanup-only utility command")
+
+    # Run cleanup before anything else (skip if ARES_SKIP_CLEANUP is set)
+    # NOTE: Cleanup is intentionally skipped for normal runs on versioned_artifacts
+    # because it can be slow when many files exist. Use --cleanup-only to run the
+    # cleaner explicitly.
+    skip_cleanup = os.environ.get('ARES_SKIP_CLEANUP', '0') == '1'
+    if args.cleanup_only:
+        directories_to_clean = [
+            'logs',
+            'artifacts',
+            'outcomes'
+        ]
+        cleanup_duplicate_files(directories_to_clean, keep_count=int(args.cleanup_duplicates_keep_count))
+
+        if not getattr(args, 'cleanup_skip_regime_models', False):
+            cleanup_regime_models_artifacts(keep_count=int(args.cleanup_regime_models_keep_count))
+
+        if not args.cleanup_skip_versioned_artifacts:
+            if getattr(args, 'cleanup_repair_versioned_artifacts', False):
+                cleanup_versioned_artifact_stores_repair(keep_per_base=int(args.cleanup_keep_per_base))
+            else:
+                cleanup_versioned_artifact_stores(keep_per_base=int(args.cleanup_keep_per_base))
+        return
+    elif not skip_cleanup:
+        directories_to_clean = [
+            'logs',
+            'artifacts',
+            # 'versioned_artifacts',  # Skip - too many files, causes long startup
+            'outcomes'
+        ]
+        cleanup_duplicate_files(directories_to_clean, keep_count=3)
+        # cleanup_versioned_artifact_stores(keep_per_base=5)  # Skip - too slow with many artifacts
+    else:
+        logger.info("⏭️ Skipping cleanup (ARES_SKIP_CLEANUP=1)")
     
     # Set up logging level
     if args.verbose:
@@ -797,6 +999,10 @@ async def main():
         config['permutation_repeats'] = args.meta_permutation_repeats
     if getattr(args, 'meta_forward_walk_n_windows', None) is not None:
         config['forward_walk_n_windows'] = args.meta_forward_walk_n_windows
+
+    # Optional artifact export used by weighted_meta_labeling_step
+    if getattr(args, 'save_labeled_data_csv', False):
+        config['save_labeled_data_csv'] = True
     
     # Import tprint for troubleshooting output
     try:

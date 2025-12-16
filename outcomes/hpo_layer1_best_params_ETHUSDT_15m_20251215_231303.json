@@ -1,0 +1,19 @@
+{
+  "best_params": {
+    "mag_compression": 1.083555868416714,
+    "learn_slope": 0.0,
+    "learn_center": 0.5,
+    "uniq_intensity": 1.2789877213040837,
+    "quality_intensity": 0.8764339456056545,
+    "quality_floor": 0.2514990138115304,
+    "exp_mag": 1.2031227465025898,
+    "exp_learn": 1.0,
+    "exp_uniq": 1.3748731276621369,
+    "exp_cross": 1.0,
+    "downside_multiplier": 1.0798695128633438,
+    "committee_agreement_alpha": 1.184829137724085,
+    "committee_mag_clip": 1.4180537144799796,
+    "mag_clip_pct": 0.9705693775365445
+  },
+  "timestamp": "20251215_231303"
+}

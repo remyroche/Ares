@@ -335,6 +335,9 @@ feature_selection:
   correlation_threshold: 0.9
   mi_threshold: 0.9
   variance_threshold: 1e-8
+  do_not_drop_patterns:
+    - "regime_leaf_interaction__*"
+    - "regime_leaf_interaction_transition*__*"
   
   family_balance:
     max_features_per_family: 60

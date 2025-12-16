@@ -29,6 +29,25 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
 )
 
+
+def _compute_ewma_sigma_of_log_returns(
+    close: pd.Series,
+    span: int = 64,
+    min_periods: int = 20,
+) -> pd.Series:
+    close = close.astype(float)
+    log_ret = np.log(close.replace(0.0, np.nan)).diff()
+    log_ret = log_ret.replace([np.inf, -np.inf], np.nan)
+    log_ret = log_ret.fillna(0.0)
+    try:
+        sigma = log_ret.ewm(span=int(span), adjust=False, min_periods=int(min_periods)).std()
+    except Exception:
+        sigma = log_ret.ewm(span=int(span), adjust=False).std()
+    sigma = sigma.replace([np.inf, -np.inf], np.nan)
+    sigma = sigma.fillna(method="bfill").fillna(0.0)
+    sigma = sigma.abs()
+    return sigma
+
 # Triple barrier configuration
 @dataclass
 class TripleBarrierConfig:
@@ -627,14 +646,56 @@ def compute_kalman_smoothed_price_and_volatility(
     )
 
     # Compute Kalman volatility from residuals
-    residuals = clean_prices - smoothed_price
-    kalman_volatility = residuals.rolling(vol_window).std().fillna(method='bfill')
-
     # Reindex to original price index, forward filling any gaps
     smoothed_price = smoothed_price.reindex(prices.index).fillna(method='ffill')
+
+    residuals = np.log(smoothed_price.astype(float).abs() + 1e-12).diff()
+    kalman_volatility = (
+        residuals.rolling(vol_window).std().abs() * smoothed_price.astype(float).abs()
+    ).fillna(method='bfill')
     kalman_volatility = kalman_volatility.reindex(prices.index).fillna(method='ffill')
 
     return smoothed_price, kalman_volatility
+
+
+def compute_regime_vol_scalar(
+    kalman_vol: pd.Series,
+    lookback: int = 100,
+    low_vol_quantile: float = 0.25,
+    high_vol_quantile: float = 0.75,
+) -> pd.Series:
+    """
+    Compute regime-conditional volatility scalar for barrier adjustment.
+    
+    In low-vol regimes: tighten barriers (scalar < 1.0)
+    In high-vol regimes: widen barriers (scalar > 1.0)
+    In normal regimes: no change (scalar = 1.0)
+    
+    Args:
+        kalman_vol: Kalman-smoothed volatility series
+        lookback: Rolling window for quantile calculation
+        low_vol_quantile: Quantile threshold for low-vol regime
+        high_vol_quantile: Quantile threshold for high-vol regime
+    
+    Returns:
+        Series of regime scalars
+    """
+    # Rolling quantiles for regime detection
+    vol_low = kalman_vol.rolling(lookback, min_periods=20).quantile(low_vol_quantile)
+    vol_high = kalman_vol.rolling(lookback, min_periods=20).quantile(high_vol_quantile)
+    
+    # Initialize with neutral scalar
+    regime_scalar = pd.Series(1.0, index=kalman_vol.index)
+    
+    # Low-vol regime: tighten barriers (0.7x to 0.9x)
+    low_vol_mask = kalman_vol < vol_low
+    regime_scalar.loc[low_vol_mask] = 0.8
+    
+    # High-vol regime: widen barriers (1.1x to 1.3x)
+    high_vol_mask = kalman_vol > vol_high
+    regime_scalar.loc[high_vol_mask] = 1.2
+    
+    return regime_scalar
 
 
 def compute_multi_triple_barrier_outcomes_vectorized(
@@ -644,7 +705,13 @@ def compute_multi_triple_barrier_outcomes_vectorized(
     kalman_price_col: str = 'kalman_price',
     kalman_vol_col: str = 'kalman_volatility',
     transaction_cost: float = 0.0005,
-    chunk_size: int = 2000
+    chunk_size: int = 2000,
+    enable_regime_conditional: bool = True,
+    direction: Optional[str] = None,
+    ewma_span: int = 64,
+    ewma_min_periods: int = 20,
+    confidence_clip: float = 3.0,
+    timeout_confidence: float = 0.25,
 ) -> List[Dict[str, pd.Series]]:
     """
     Compute triple-barrier outcomes for multiple configurations using vectorized operations.
@@ -659,6 +726,7 @@ def compute_multi_triple_barrier_outcomes_vectorized(
         kalman_vol_col: Column name for Kalman volatility
         transaction_cost: Transaction cost as fraction
         chunk_size: Size of chunks to process (following HPO pattern ~2000 bars)
+        enable_regime_conditional: If True, adjust barriers based on vol regime
 
     Returns:
         List of result dictionaries, one per config
@@ -666,13 +734,32 @@ def compute_multi_triple_barrier_outcomes_vectorized(
     if 'consensus' not in primary_signals.columns:
         raise ValueError("primary_signals must include a 'consensus' column")
 
-    # Get signal events (where consensus != 0)
-    event_mask = primary_signals['consensus'] != 0
+    # Get signal events
+    d = str(direction or '').lower()
+    if d == 'long':
+        event_mask = primary_signals['consensus'] > 0
+    elif d == 'short':
+        event_mask = primary_signals['consensus'] < 0
+    else:
+        event_mask = primary_signals['consensus'] != 0
     event_indices = event_mask[event_mask].index
 
     # Prepare Kalman data
     kalman_price = market_data[kalman_price_col]
     kalman_vol = market_data[kalman_vol_col]
+
+    if "close" not in market_data.columns:
+        raise ValueError("market_data must include a 'close' column")
+    ewma_sigma = _compute_ewma_sigma_of_log_returns(
+        close=market_data["close"],
+        span=int(ewma_span),
+        min_periods=int(ewma_min_periods),
+    )
+    
+    # Compute regime-conditional scalar if enabled
+    regime_scalar = None
+    if enable_regime_conditional:
+        regime_scalar = compute_regime_vol_scalar(kalman_vol)
 
     results = []
 
@@ -680,21 +767,51 @@ def compute_multi_triple_barrier_outcomes_vectorized(
     n_chunks = max(1, len(market_data) // chunk_size)
     chunks = np.array_split(market_data.index, n_chunks)
 
+    full_index = market_data.index
+
     for config in configs:
         config_results = []
 
         for chunk_idx in chunks:
-            chunk_data = market_data.loc[chunk_idx]
-            chunk_signals = primary_signals.loc[chunk_idx]
+            # Extend the chunk window with enough forward bars so that events
+            # starting inside the chunk have access to their full vertical
+            # barrier horizon.
+            try:
+                start_ts = chunk_idx[0]
+                end_ts = chunk_idx[-1]
+                start_pos = int(full_index.get_indexer([start_ts])[0])
+                end_pos = int(full_index.get_indexer([end_ts])[0])
+                if start_pos < 0 or end_pos < 0:
+                    # Fallback to non-extended chunk if mapping fails.
+                    window_index = chunk_idx
+                    chunk_index_for_collect = chunk_idx
+                else:
+                    ext_end_pos = min(len(full_index) - 1, end_pos + int(config.horizon) + 1)
+                    window_index = full_index[start_pos:ext_end_pos + 1]
+                    chunk_index_for_collect = full_index[start_pos:end_pos + 1]
+            except Exception:
+                window_index = chunk_idx
+                chunk_index_for_collect = chunk_idx
 
-            # Compute dynamic barriers for this chunk
-            chunk_kalman_price = kalman_price.loc[chunk_idx]
-            chunk_kalman_vol = kalman_vol.loc[chunk_idx]
+            chunk_data = market_data.loc[window_index]
+            chunk_signals = primary_signals.loc[window_index]
+
+            # Compute dynamic barriers for this window.
+            # IMPORTANT: compute_realized_returns expects profit_threshold/stop_threshold arrays
+            # aligned 1:1 with the df/signals passed in. Since we extend the chunk window
+            # forward for horizon lookahead, thresholds must be computed over window_index.
+            chunk_kalman_price = kalman_price.loc[window_index]
+            chunk_kalman_vol = kalman_vol.loc[window_index]
 
             # Convert Kalman volatility (in price units) into fractional threshold space.
             # compute_realized_returns expects profit_threshold/stop_threshold as return fractions.
-            denom = (chunk_kalman_price.abs() + 1e-12)
-            vol_frac = (chunk_kalman_vol.abs() / denom).fillna(0.0)
+            vol_frac = ewma_sigma.loc[window_index].fillna(0.0)
+            
+            # Apply regime-conditional scaling if enabled
+            if regime_scalar is not None:
+                chunk_regime_scalar = regime_scalar.loc[window_index].fillna(1.0)
+                vol_frac = vol_frac * chunk_regime_scalar
+            
             profit_threshold = (config.tp_multiplier * vol_frac).astype(float)
             stop_threshold = (config.sl_multiplier * vol_frac).astype(float)
 
@@ -740,7 +857,7 @@ def compute_multi_triple_barrier_outcomes_vectorized(
                 pass
 
             # Compute triple barrier outcomes for this chunk
-            realized_returns, binary_labels, exit_reasons, *_ = compute_realized_returns(
+            realized_returns, _binary_labels, exit_reasons, event_durations, mfe_series, mae_series, *_ = compute_realized_returns(
                 df=chunk_data,
                 signals=chunk_signals,
                 profit_threshold=profit_threshold,
@@ -749,40 +866,64 @@ def compute_multi_triple_barrier_outcomes_vectorized(
                 transaction_cost=transaction_cost,
             )
 
-            # Convert to trinary labels {-1, 0, 1}
-            trinary_labels = pd.Series(0, index=binary_labels.index, dtype=int)
-            econ_min_profit = float(ECON_MIN_RETURN_MULTIPLE) * float(transaction_cost)
-            rr = float(config.tp_multiplier) / float(max(config.sl_multiplier, 1e-12))
-            econ_min_stop = float(econ_min_profit) / float(max(rr, 1.0))
-            try:
-                gross_returns = (realized_returns.astype(float) + float(transaction_cost)).replace(
-                    [np.inf, -np.inf], np.nan
-                )
-                profit_mask = ((exit_reasons == "profit") | (exit_reasons == "trailing")) & (
-                    gross_returns >= econ_min_profit
-                )
-                stop_mask = (exit_reasons == "stop") & (gross_returns <= -econ_min_stop)
-            except Exception:
-                profit_mask = (exit_reasons == "profit") | (exit_reasons == "trailing")
-                stop_mask = exit_reasons == "stop"
+            # Confidence: margin beyond threshold at touch (0 for timeouts).
+            # For profit/trailing: (MFE - PT) / PT
+            # For stop: ((-MAE) - SL) / SL
+            pt_thr = profit_threshold.reindex(exit_reasons.index).astype(float)
+            sl_thr = stop_threshold.reindex(exit_reasons.index).astype(float)
+            mfe_v = mfe_series.reindex(exit_reasons.index).astype(float)
+            mae_v = mae_series.reindex(exit_reasons.index).astype(float)
+            timeout_conf = float(timeout_confidence)
+            if (not np.isfinite(timeout_conf)) or timeout_conf < 0.0:
+                timeout_conf = 0.0
+            conf = pd.Series(timeout_conf, index=exit_reasons.index, dtype=float)
+            profit_mask = (exit_reasons == "profit") | (exit_reasons == "trailing")
+            stop_mask = exit_reasons == "stop"
 
+            try:
+                m = (mfe_v[profit_mask] - pt_thr[profit_mask]) / (pt_thr[profit_mask] + 1e-12)
+                m = np.clip(m.to_numpy(dtype=float), 0.0, float(confidence_clip))
+                conf.loc[profit_mask] = 1.0 + m
+            except Exception:
+                pass
+            try:
+                m = ((-mae_v[stop_mask]) - sl_thr[stop_mask]) / (sl_thr[stop_mask] + 1e-12)
+                m = np.clip(m.to_numpy(dtype=float), 0.0, float(confidence_clip))
+                conf.loc[stop_mask] = 1.0 + m
+            except Exception:
+                pass
+
+            # Convert to trinary labels {-1, 0, 1} using strict first-barrier-hit semantics.
+            # - profit/trailing => +1
+            # - stop => -1
+            # - timeout/other => 0
+            trinary_labels = pd.Series(0, index=exit_reasons.index, dtype=int)
+            profit_mask = (exit_reasons == "profit") | (exit_reasons == "trailing")
+            stop_mask = exit_reasons == "stop"
             trinary_labels.loc[profit_mask] = 1
             trinary_labels.loc[stop_mask] = -1
 
             config_results.append({
-                'labels': trinary_labels,
-                'returns': realized_returns,
-                'exit_reasons': exit_reasons
+                'labels': trinary_labels.reindex(chunk_index_for_collect),
+                'returns': realized_returns.reindex(chunk_index_for_collect),
+                'exit_reasons': exit_reasons.reindex(chunk_index_for_collect),
+                'durations': event_durations.reindex(chunk_index_for_collect),
+                'confidence': conf.reindex(chunk_index_for_collect),
             })
 
         # Combine chunks for this configuration
         combined_labels = pd.concat([r['labels'] for r in config_results])
         combined_returns = pd.concat([r['returns'] for r in config_results])
         combined_exit_reasons = pd.concat([r['exit_reasons'] for r in config_results])
+        combined_durations = pd.concat([r['durations'] for r in config_results])
+        combined_confidence = pd.concat([r['confidence'] for r in config_results])
 
         # Align to event index
         aligned_labels = combined_labels.loc[event_mask].dropna().astype(int)
         aligned_returns = combined_returns.loc[event_mask].reindex(aligned_labels.index)
+        aligned_exit_reasons = combined_exit_reasons.loc[event_mask].reindex(aligned_labels.index)
+        aligned_durations = combined_durations.loc[event_mask].reindex(aligned_labels.index)
+        aligned_confidence = combined_confidence.loc[event_mask].reindex(aligned_labels.index)
 
         # Compute absolute returns for weighting
         abs_returns = aligned_returns.abs()
@@ -794,7 +935,9 @@ def compute_multi_triple_barrier_outcomes_vectorized(
             'abs_returns': abs_returns,
             'profit_threshold': profit_threshold,  # From last chunk (for reference)
             'stop_threshold': stop_threshold,  # From last chunk (for reference)
-            'exit_reasons': combined_exit_reasons
+            'exit_reasons': aligned_exit_reasons,
+            'event_durations': aligned_durations,
+            'confidence': aligned_confidence,
         }
 
         results.append(result)
@@ -809,7 +952,8 @@ def compute_multi_triple_barrier_outcomes(
     configs: List[TripleBarrierConfig],
     kalman_price_col: str = 'kalman_price',
     kalman_vol_col: str = 'kalman_volatility',
-    transaction_cost: float = 0.0005
+    transaction_cost: float = 0.0005,
+    direction: Optional[str] = None,
 ) -> List[Dict[str, pd.Series]]:
     """
     Legacy wrapper for backward compatibility.
@@ -822,7 +966,8 @@ def compute_multi_triple_barrier_outcomes(
         kalman_price_col=kalman_price_col,
         kalman_vol_col=kalman_vol_col,
         transaction_cost=transaction_cost,
-        chunk_size=2000
+        chunk_size=2000,
+        direction=direction,
     )
 
 
@@ -853,6 +998,12 @@ def compute_kalman_multi_triple_barrier_sample_weights(
 
     for result in tb_results:
         abs_returns = result['abs_returns']
+        conf = result.get("confidence")
+        if isinstance(conf, pd.Series):
+            conf_aligned = conf.reindex(abs_returns.index).astype(float)
+            conf_aligned = conf_aligned.replace([np.inf, -np.inf], np.nan).fillna(1.0)
+            conf_aligned = conf_aligned.clip(lower=0.0)
+            abs_returns = abs_returns.astype(float) * conf_aligned
         abs_returns_list.append(abs_returns)
 
         if common_index is None:
@@ -897,7 +1048,9 @@ def kalman_multi_triple_barrier_labels(
     transaction_cost: float = 0.0005,
     economic_floor_multiplier: float = 0.25,
     consensus_threshold: float = 0.6,
-    return_detailed_results: bool = False
+    return_detailed_results: bool = False,
+    use_confidence_weighted_voting: bool = True,
+    timeout_downweight_factor: float = 0.25,
 ) -> Union[Tuple[pd.Series, pd.Series], Tuple[pd.Series, pd.Series, Dict]]:
     """
     Generate labels using Kalman-smoothed multi-triple-barrier approach.
@@ -990,18 +1143,53 @@ def kalman_multi_triple_barrier_labels(
         index=sample_weights.index
     )
 
-    # Weighted voting based on configuration performance
-    # For simplicity, use equal weights here - could be enhanced with performance weighting
-    weights = np.ones(len(configs)) / len(configs)
-    scores = (label_matrix.values * weights).sum(axis=1) / (weights.sum() + 1e-8)
+    if use_confidence_weighted_voting:
+        conf_mat = []
+        for result in tb_results:
+            conf = result.get("confidence")
+            if isinstance(conf, pd.Series):
+                conf = conf.reindex(sample_weights.index).astype(float)
+            else:
+                conf = pd.Series(1.0, index=sample_weights.index, dtype=float)
+            conf = conf.replace([np.inf, -np.inf], np.nan)
+            conf = conf.fillna(1.0)
+            conf = conf.clip(lower=0.0)
+            conf_mat.append(conf)
+
+        conf_matrix = pd.DataFrame(
+            {name: c for name, c in zip(label_names, conf_mat)},
+            index=sample_weights.index,
+        )
+
+        vote_mask = (label_matrix.values != 0).astype(float)
+        conf_vals = conf_matrix.values.astype(float)
+        denom = (vote_mask * conf_vals).sum(axis=1) + 1e-8
+        numer = (label_matrix.values.astype(float) * conf_vals).sum(axis=1)
+        scores = numer / denom
+    else:
+        weights = np.ones(len(configs)) / len(configs)
+        scores = (label_matrix.values * weights).sum(axis=1) / (weights.sum() + 1e-8)
 
     # Generate consensus labels
     consensus_labels = pd.Series(0, index=sample_weights.index, dtype=int)
     consensus_labels[scores > consensus_threshold] = 1
     consensus_labels[scores < -consensus_threshold] = -1
 
-    # Step 6: Handle weak signals - they're already handled by low weights
-    # No explicit filtering needed - all samples kept with appropriate weights
+    # Step 6: Downweight timeouts (events where no barrier was hit across the ensemble)
+    try:
+        timeout_factor = float(timeout_downweight_factor)
+    except Exception:
+        timeout_factor = 0.25
+    if (not np.isfinite(timeout_factor)) or timeout_factor < 0.0:
+        timeout_factor = 0.0
+    if timeout_factor < 1.0:
+        try:
+            n_fired = (label_matrix.values != 0).sum(axis=1)
+            all_timeout = n_fired <= 0
+            sample_weights = sample_weights.copy()
+            sample_weights.loc[all_timeout] = sample_weights.loc[all_timeout] * timeout_factor
+        except Exception:
+            pass
 
     if return_detailed_results:
         detailed_results = {
@@ -1216,6 +1404,202 @@ def example_kalman_multi_triple_barrier_usage():
     except Exception as e:
         print(f"Error in Kalman multi-triple-barrier labeling: {e}")
         return None, None, None
+
+
+# ---------------------------------------------------------------------------
+# Non-Leaky Committee Voting for Layer 2 (Option C)
+# ---------------------------------------------------------------------------
+# Uses the existing 6 TPSL experts for label diversity, but learns voting
+# weights only from training data (no lookahead). The voted labels become
+# the target `y` for a standard model-based Layer 2.
+# ---------------------------------------------------------------------------
+
+
+def compute_committee_voted_labels_for_cv(
+    label_matrix: np.ndarray,
+    returns_matrix: np.ndarray,
+    event_index: pd.DatetimeIndex,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    floor_weight: float = 0.1,
+    alpha_hit_rate: float = 0.5,
+    use_return_weighted_labels: bool = True,
+) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+    """
+    Compute committee-voted labels for a single CV fold WITHOUT lookahead.
+
+    The voting weights are learned from TRAINING events only, then applied
+    to produce voted labels for TEST events. This is non-leaky because:
+    - weights come only from train_idx events
+    - test_idx labels are computed using those train-derived weights
+
+    Args:
+        label_matrix: (n_events, n_experts) array of trinary labels {-1, 0, 1}
+        returns_matrix: (n_events, n_experts) array of realized returns
+        event_index: DatetimeIndex aligned to label_matrix rows
+        train_idx: integer indices into label_matrix for training events
+        test_idx: integer indices into label_matrix for test events
+        floor_weight: minimum weight per expert
+        alpha_hit_rate: weight = max(edge, 0) + alpha_hit_rate * hit_rate
+        use_return_weighted_labels: if True, use actual returns to determine labels
+            (positive return = label 1, negative = label 0). If False, use barrier
+            hits (profit barrier = 1, stop barrier = 0). Default True for better
+            alignment between labels and actual profitability.
+
+    Returns:
+        voted_labels_train: (len(train_idx),) binary labels for train events
+        voted_labels_test: (len(test_idx),) binary labels for test events
+        weights: dict of expert_idx -> weight (for diagnostics)
+    """
+    n_experts = label_matrix.shape[1]
+
+    # 1. Compute weights from TRAINING data only
+    weights = {}
+    for k in range(n_experts):
+        lbl_train = label_matrix[train_idx, k]
+        ret_train = returns_matrix[train_idx, k]
+
+        # Only consider events where expert fired (label != 0)
+        fired = lbl_train != 0
+        if not np.any(fired):
+            weights[k] = float(floor_weight)
+            continue
+
+        lbl_fired = lbl_train[fired]
+        ret_fired = ret_train[fired]
+
+        # Binary success: label == 1 (profit hit)
+        pos_mask = lbl_fired == 1
+        neg_mask = lbl_fired == -1
+
+        pos_ret = ret_fired[pos_mask]
+        neg_ret = ret_fired[neg_mask]
+
+        hit_rate = float(np.mean(pos_ret > 0)) if pos_ret.size > 0 else 0.0
+        mean_pos = float(np.mean(pos_ret)) if pos_ret.size > 0 else 0.0
+        mean_neg = float(np.mean(neg_ret)) if neg_ret.size > 0 else 0.0
+        edge = mean_pos - mean_neg
+
+        w = max(edge, 0.0) + float(alpha_hit_rate) * hit_rate
+        weights[k] = max(w, float(floor_weight))
+
+    # Normalize weights
+    w_arr = np.array([weights[k] for k in range(n_experts)], dtype=float)
+    w_sum = float(np.sum(w_arr))
+    if w_sum > 0:
+        w_arr = w_arr / w_sum
+    else:
+        w_arr = np.ones(n_experts, dtype=float) / float(n_experts)
+
+    # 2. Apply weights to compute voted labels with RETURN-WEIGHTED smoothing
+    def _vote(indices: np.ndarray, use_return_weighting: bool = True) -> np.ndarray:
+        lbl_sub = label_matrix[indices, :]  # (n, n_experts)
+        ret_sub = returns_matrix[indices, :]  # (n, n_experts)
+        
+        # fired mask: only count experts that fired
+        fired = lbl_sub != 0
+        
+        if use_return_weighting:
+            # RETURN-WEIGHTED VOTING: Use actual returns to weight votes
+            # This ensures labels reflect actual profitability, not just barrier hits
+            # 
+            # For each event, compute weighted average of returns across experts,
+            # then convert to soft label based on return sign and magnitude.
+            
+            # Mask invalid returns
+            ret_valid = np.where(fired & np.isfinite(ret_sub), ret_sub, 0.0)
+            
+            # Weighted average return across experts
+            weighted_ret = np.sum(ret_valid * w_arr.reshape(1, -1), axis=1)
+            weight_denom = np.sum(fired.astype(float) * w_arr.reshape(1, -1), axis=1) + 1e-12
+            avg_ret = weighted_ret / weight_denom
+            
+            # Convert to soft label using sigmoid transform
+            # This maps: return=0 -> label=0.5, positive return -> label>0.5, negative -> label<0.5
+            # Scale factor controls sharpness (higher = sharper transition)
+            scale = 100.0  # 1% return maps to ~0.73 label, -1% to ~0.27
+            z = np.clip(avg_ret * scale, -10.0, 10.0)
+            soft_label = 1.0 / (1.0 + np.exp(-z))
+            
+            # Binary label: soft_label > 0.5 => 1, else 0
+            # (equivalent to avg_ret > 0)
+            voted = (soft_label > 0.5).astype(float)
+        else:
+            # Original barrier-hit voting (fallback)
+            weighted_sum = np.sum(lbl_sub.astype(float) * w_arr.reshape(1, -1), axis=1)
+            weight_denom = np.sum(fired.astype(float) * w_arr.reshape(1, -1), axis=1) + 1e-12
+            score = weighted_sum / weight_denom
+            voted = (score > 0).astype(float)
+        
+        # Mark events with no votes as NaN
+        no_votes = np.sum(fired, axis=1) == 0
+        voted[no_votes] = np.nan
+        return voted
+
+    voted_train = _vote(train_idx, use_return_weighting=use_return_weighted_labels)
+    voted_test = _vote(test_idx, use_return_weighting=use_return_weighted_labels)
+
+    weights_dict = {f"expert_{k}": float(w_arr[k]) for k in range(n_experts)}
+    return voted_train, voted_test, weights_dict
+
+
+def compute_committee_voted_labels_full(
+    label_matrix: np.ndarray,
+    returns_matrix: np.ndarray,
+    event_index: pd.DatetimeIndex,
+    cv_splits: List[Tuple[np.ndarray, np.ndarray]],
+    floor_weight: float = 0.1,
+    alpha_hit_rate: float = 0.5,
+    use_return_weighted_labels: bool = True,
+) -> Tuple[pd.Series, Dict[str, Any]]:
+    """
+    Compute committee-voted labels for ALL events using CV-style train-only weights.
+
+    For each fold, weights are learned from train events and applied to test events.
+    The result is a complete label series covering all events (OOF-style).
+
+    Args:
+        label_matrix: (n_events, n_experts) trinary labels
+        returns_matrix: (n_events, n_experts) realized returns
+        event_index: DatetimeIndex aligned to rows
+        cv_splits: list of (train_idx, test_idx) tuples
+        floor_weight: minimum expert weight
+        alpha_hit_rate: hit_rate contribution to weight
+        use_return_weighted_labels: if True, use actual returns to determine labels
+            (positive return = label 1, negative = label 0). Default True.
+
+    Returns:
+        voted_labels: pd.Series of binary labels (0/1) indexed by event_index
+        diagnostics: dict with per-fold weights and coverage stats
+    """
+    n_events = label_matrix.shape[0]
+    voted = np.full(n_events, np.nan, dtype=float)
+    fold_weights = []
+
+    for fold_i, (train_idx, test_idx) in enumerate(cv_splits):
+        _, voted_test, weights = compute_committee_voted_labels_for_cv(
+            label_matrix=label_matrix,
+            returns_matrix=returns_matrix,
+            event_index=event_index,
+            train_idx=train_idx,
+            test_idx=test_idx,
+            floor_weight=floor_weight,
+            alpha_hit_rate=alpha_hit_rate,
+            use_return_weighted_labels=use_return_weighted_labels,
+        )
+        voted[test_idx] = voted_test
+        fold_weights.append({"fold": fold_i, **weights})
+
+    voted_series = pd.Series(voted, index=event_index)
+
+    diagnostics = {
+        "n_events": n_events,
+        "n_labeled": int(np.sum(~np.isnan(voted))),
+        "pos_rate": float(np.nanmean(voted)) if np.any(~np.isnan(voted)) else None,
+        "fold_weights": fold_weights,
+    }
+
+    return voted_series, diagnostics
 
 
 if __name__ == "__main__":

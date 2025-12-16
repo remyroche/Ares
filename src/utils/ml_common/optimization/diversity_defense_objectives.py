@@ -341,14 +341,27 @@ def generate_regime_meta_features(
         result['meta_volume_shock'] = (volume / (avg_vol + EPS)).clip(0.1, 10.0)
     else:
         result['meta_volume_shock'] = 1.0  # Neutral if no volume data
-    
+
+    # 4. Market Efficiency (Trending vs Random Walk)
+    # Kaufman Efficiency Ratio: Directional Move / Total Path Length
+    # High (-> 1) = Efficient Trend, Low (-> 0) = Choppy/Noise
+    change = (close - close.shift(ma_window)).abs()
+    path_len = close.diff().abs().rolling(window=ma_window, min_periods=ma_window//2).sum()
+    result['meta_efficiency'] = (change / (path_len + EPS)).clip(0.0, 1.0)
+
+    # 5. Market Memory (Mean Reversion vs Momentum)
+    # Rolling Autocorrelation of returns
+    # Positive = Momentum/Trend, Negative = Mean Reversion
+    ret = df[close_col].pct_change()
+    result['meta_autocorr'] = ret.rolling(window=ma_window, min_periods=ma_window//2).corr(ret.shift(1)).fillna(0.0).clip(-0.99, 0.99)
+
     # Fill any NaN values
-    result = result.fillna(1.0)
+    result = result.fillna(0.0)
     
     return result
 
 
-META_FEATURE_COLUMNS = ['meta_volatility_regime', 'meta_trendiness', 'meta_volume_shock']
+META_FEATURE_COLUMNS = ['meta_volatility_regime', 'meta_trendiness', 'meta_volume_shock', 'meta_efficiency', 'meta_autocorr']
 
 
 # =============================================================================

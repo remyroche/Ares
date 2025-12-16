@@ -86,6 +86,14 @@ class VersionedArtifactStore:
         # Logger
         self.logger = logging.getLogger(f"VersionedArtifactStore.{self.store_path.name}")
 
+        # Load metadata eagerly so read operations (e.g. get_view) work without
+        # requiring a prior write call.
+        self._metadata = self._load_metadata()
+
+        # Ensure base HDF5 file exists
+        if not self.h5_file.exists():
+            self._init_h5_file()
+
     def _validate_data_quality(
         self,
         data: pd.DataFrame,
@@ -1161,15 +1169,45 @@ class VersionedArtifactStore:
         if len(versions) <= keep_per_base:
             return {'versions_pruned': 0, 'h5_only_removed': 0, 'meta_only_removed': 0}
             
-        # Sort versions by creation time (descending)
+        def _safe_parse_created_at(created_at: Any) -> float:
+            if not created_at:
+                return 0.0
+            if isinstance(created_at, (int, float)):
+                return float(created_at)
+            try:
+                created_str = str(created_at).strip()
+                if not created_str:
+                    return 0.0
+                if created_str.endswith('Z'):
+                    created_str = created_str[:-1] + '+00:00'
+                return datetime.fromisoformat(created_str).timestamp()
+            except Exception:
+                return 0.0
+
+        # Sort versions by robust creation time (descending). Prefer metadata.json
+        # created_at; fall back to the HDF5 per-version attribute if needed.
         version_details = []
+        h5_created_at: Dict[str, Any] = {}
+        if self.h5_file.exists():
+            try:
+                with h5py.File(self.h5_file, 'r') as f:
+                    if 'versions' in f:
+                        versions_group = f['versions']
+                        for v in versions:
+                            if v in versions_group:
+                                h5_created_at[v] = versions_group[v].attrs.get('created_at')
+            except Exception:
+                h5_created_at = {}
+
         for v in versions:
             meta = self._metadata['versions'].get(v, {})
-            created_at = meta.get('created_at', '')
-            version_details.append({'name': v, 'created_at': created_at})
-            
-        # Sort descending by created time
-        version_details.sort(key=lambda x: x['created_at'], reverse=True)
+            meta_created_at = meta.get('created_at')
+            ts = _safe_parse_created_at(meta_created_at)
+            if ts <= 0.0:
+                ts = _safe_parse_created_at(h5_created_at.get(v))
+            version_details.append({'name': v, 'created_ts': ts})
+
+        version_details.sort(key=lambda x: (x['created_ts'], x['name']), reverse=True)
         
         versions_to_delete = [v['name'] for v in version_details[keep_per_base:]]
         
@@ -1207,6 +1245,96 @@ class VersionedArtifactStore:
             'versions_pruned': pruned_count,
             'h5_only_removed': h5_removed,
             'meta_only_removed': 0
+        }
+
+    def reconcile_metadata_with_hdf5(self) -> Dict[str, int]:
+        """Repair mismatches between metadata.json and store.h5.
+
+        This reconciles the list of versions so that metadata reflects what is
+        actually present in the HDF5 file.
+
+        Policy:
+        - Remove versions present only in metadata.json (phantom versions).
+        - Add minimal metadata entries for versions present only in HDF5.
+
+        Returns:
+            Summary counts.
+        """
+        meta_versions = set((self._metadata or {}).get('versions', {}).keys())
+
+        h5_versions: set[str] = set()
+        if self.h5_file.exists():
+            try:
+                with h5py.File(self.h5_file, 'r') as f:
+                    if 'versions' in f:
+                        h5_versions = set(f['versions'].keys())
+            except Exception:
+                h5_versions = set()
+
+        metadata_only = meta_versions - h5_versions
+        h5_only = h5_versions - meta_versions
+
+        removed_meta_only = 0
+        added_h5_only = 0
+
+        # Drop metadata-only versions
+        if metadata_only:
+            for v in metadata_only:
+                try:
+                    if v in self._metadata.get('versions', {}):
+                        del self._metadata['versions'][v]
+                        removed_meta_only += 1
+                except Exception:
+                    continue
+
+        # Add metadata entries for HDF5-only versions
+        if h5_only and self.h5_file.exists():
+            try:
+                with h5py.File(self.h5_file, 'r') as f:
+                    versions_group = f.get('versions')
+                    if versions_group is not None:
+                        for v in h5_only:
+                            attrs = {}
+                            try:
+                                if v in versions_group:
+                                    vg = versions_group[v]
+                                    attrs = {
+                                        'created_at': vg.attrs.get('created_at'),
+                                        'num_rows': vg.attrs.get('num_rows'),
+                                        'num_columns': vg.attrs.get('num_columns'),
+                                    }
+                            except Exception:
+                                attrs = {}
+
+                            self._metadata.setdefault('versions', {})[v] = {
+                                'created_at': attrs.get('created_at') or datetime.now().isoformat(),
+                                'num_rows': int(attrs.get('num_rows') or 0),
+                                'num_columns': int(attrs.get('num_columns') or 0),
+                                'columns': [],
+                            }
+                            added_h5_only += 1
+            except Exception:
+                # If we can't read HDF5 attrs, still create minimal entries
+                for v in h5_only:
+                    self._metadata.setdefault('versions', {})[v] = {
+                        'created_at': datetime.now().isoformat(),
+                        'num_rows': 0,
+                        'num_columns': 0,
+                        'columns': [],
+                    }
+                    added_h5_only += 1
+
+        # Fix current_version pointer if it points at a removed version
+        current_version = (self._metadata or {}).get('current_version')
+        if current_version and current_version not in self._metadata.get('versions', {}):
+            self._metadata['current_version'] = None
+
+        if removed_meta_only > 0 or added_h5_only > 0:
+            self._save_metadata()
+
+        return {
+            'meta_only_removed': removed_meta_only,
+            'h5_only_added': added_h5_only,
         }
 
     def get_statistics(self) -> Dict[str, Any]:

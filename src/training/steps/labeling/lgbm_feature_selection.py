@@ -126,6 +126,8 @@ def iterative_lgbm_importance_selection(
     bottom_percentile: float = 0.30,
     discard_threshold: float = 0.70,
     log_dir: Optional[Path] = None,
+    returns: Optional[pd.Series] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[List[str], Dict[str, Any]]:
     """
     Iterative LGBM-based feature selection with external subsampling.
@@ -138,13 +140,15 @@ def iterative_lgbm_importance_selection(
     
     Args:
         X: Feature matrix
-        y: Binary labels
+        y: Binary labels (fallback if returns not provided)
         target_n_features: Target number of features (default 80)
         subsample_fraction: Fraction of samples to use per run (0.65)
         n_iterations: Number of LGBM runs (10)
         bottom_percentile: Bottom percentile threshold (0.30)
         discard_threshold: Discard if in bottom this fraction of runs (0.70)
         log_dir: Optional directory to save iteration logs
+        returns: Optional realized returns - if provided, uses sign(returns) as target
+        sample_weight: Optional sample weights (e.g., return-magnitude weighted)
         
     Returns:
         Tuple of (selected_features, selection_log)
@@ -157,10 +161,35 @@ def iterative_lgbm_importance_selection(
     tprint_info(f"   ↪ Subsample fraction: {subsample_fraction}")
     tprint_info(f"   ↪ Iterations per round: {n_iterations}")
     
+    # Determine target: use sign(returns) if returns provided, otherwise use y
+    target_type = "labels"
+    if returns is not None:
+        try:
+            returns_arr = np.asarray(returns, dtype=float)
+            # sign(returns): positive return = 1 (profit), else = 0
+            y_target = pd.Series((returns_arr > 0).astype(int), index=X.index[:len(returns_arr)])
+            target_type = "sign_returns"
+            tprint_info(f"   ↪ Using sign(returns) as target (profit=1, loss=0)")
+        except Exception:
+            y_target = y
+            tprint_warning(f"   ⚠️ Failed to use returns, falling back to labels")
+    else:
+        y_target = y
+    
     # Prepare data
-    clean_mask = ~y.isna()
+    clean_mask = ~y_target.isna()
     X_clean = X[clean_mask].fillna(0)
-    y_clean = y[clean_mask]
+    y_clean = y_target[clean_mask]
+    
+    # Prepare sample weights
+    w_arr = None
+    if sample_weight is not None:
+        try:
+            w_full = np.asarray(sample_weight, dtype=float)
+            w_arr = w_full[clean_mask] if len(w_full) == len(clean_mask) else w_full[:len(y_clean)]
+            w_arr = np.where(np.isfinite(w_arr) & (w_arr > 0), w_arr, 1.0)
+        except Exception:
+            w_arr = None
     
     n_samples = len(y_clean)
     if n_samples < 100:
@@ -171,8 +200,10 @@ def iterative_lgbm_importance_selection(
     selection_log: Dict[str, Any] = {
         "initial_features": len(current_features),
         "target_features": target_n_features,
+        "target_type": target_type,
         "iterations": [],
     }
+
     
     iteration = 0
     while len(current_features) > target_n_features:
@@ -192,17 +223,18 @@ def iterative_lgbm_importance_selection(
             
             X_sample = X_iter.iloc[sample_indices]
             y_sample = y_clean.iloc[sample_indices]
+            w_sample = w_arr[sample_indices] if w_arr is not None else None
             
             # Train LGBM
             params = _get_lgbm_params(random_state=42 + iteration * 100 + run_idx)
             model = lgb.LGBMClassifier(**params)
             
             try:
-                model.fit(
-                    X_sample, y_sample,
-                    eval_set=[(X_sample, y_sample)],
-                    callbacks=[lgb.early_stopping(50, verbose=False)],
-                )
+                fit_kwargs = {"eval_set": [(X_sample, y_sample)], "callbacks": [lgb.early_stopping(50, verbose=False)]}
+                if w_sample is not None:
+                    fit_kwargs["sample_weight"] = w_sample
+                model.fit(X_sample, y_sample, **fit_kwargs)
+
                 
                 # Get feature importance
                 importances = model.feature_importances_
@@ -305,6 +337,8 @@ def permutation_importance_rfe(
     n_repeats: int = 3,
     features_per_step: int = 10,
     log_dir: Optional[Path] = None,
+    returns: Optional[pd.Series] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
     """
     Permutation importance with Recursive Feature Elimination (RFE).
@@ -316,12 +350,14 @@ def permutation_importance_rfe(
     
     Args:
         X: Feature matrix (should start from 80 features)
-        y: Binary labels
+        y: Binary labels (fallback if returns not provided)
         feature_sets: Target feature set sizes [70, 60, 50]
         sample_fraction: Fraction of samples to use (0.50)
         n_repeats: Number of permutation repeats (3)
         features_per_step: Features to remove per RFE step (10)
         log_dir: Optional directory to save iteration logs
+        returns: Optional realized returns - if provided, uses sign(returns) as target
+        sample_weight: Optional sample weights (e.g., return-magnitude weighted)
         
     Returns:
         Tuple of (feature_sets_dict, rfe_log)
@@ -335,10 +371,34 @@ def permutation_importance_rfe(
     tprint_info(f"   ↪ Sample fraction: {sample_fraction}")
     tprint_info(f"   ↪ Permutation repeats: {n_repeats}")
     
+    # Determine target: use sign(returns) if returns provided, otherwise use y
+    target_type = "labels"
+    if returns is not None:
+        try:
+            returns_arr = np.asarray(returns, dtype=float)
+            y_target = pd.Series((returns_arr > 0).astype(int), index=X.index[:len(returns_arr)])
+            target_type = "sign_returns"
+            tprint_info(f"   ↪ Using sign(returns) as target (profit=1, loss=0)")
+        except Exception:
+            y_target = y
+            tprint_warning(f"   ⚠️ Failed to use returns, falling back to labels")
+    else:
+        y_target = y
+    
     # Prepare data
-    clean_mask = ~y.isna()
+    clean_mask = ~y_target.isna()
     X_clean = X[clean_mask].fillna(0)
-    y_clean = y[clean_mask]
+    y_clean = y_target[clean_mask]
+    
+    # Prepare sample weights
+    w_arr = None
+    if sample_weight is not None:
+        try:
+            w_full = np.asarray(sample_weight, dtype=float)
+            w_arr = w_full[clean_mask] if len(w_full) == len(clean_mask) else w_full[:len(y_clean)]
+            w_arr = np.where(np.isfinite(w_arr) & (w_arr > 0), w_arr, 1.0)
+        except Exception:
+            w_arr = None
     
     n_samples = len(y_clean)
     if n_samples < 100:
@@ -350,14 +410,17 @@ def permutation_importance_rfe(
     sample_indices = rng.choice(len(X_clean), size=int(len(X_clean) * sample_fraction), replace=False)
     X_sample = X_clean.iloc[sample_indices]
     y_sample = y_clean.iloc[sample_indices]
+    w_sample = w_arr[sample_indices] if w_arr is not None else None
     
     current_features = list(X_clean.columns)
     feature_sets_dict: Dict[int, List[str]] = {}
     rfe_log: Dict[str, Any] = {
         "initial_features": len(current_features),
         "target_sets": feature_sets,
+        "target_type": target_type,
         "iterations": [],
     }
+
     
     # Sort target sets in descending order
     sorted_targets = sorted(feature_sets, reverse=True)
@@ -375,7 +438,11 @@ def permutation_importance_rfe(
             model = lgb.LGBMClassifier(**params)
             
             try:
-                model.fit(X_iter, y_sample)
+                if w_sample is not None:
+                    model.fit(X_iter, y_sample, sample_weight=w_sample)
+                else:
+                    model.fit(X_iter, y_sample)
+
                 
                 # Calculate permutation importance
                 perm_result = permutation_importance(
@@ -452,6 +519,8 @@ def lgbm_feature_selection_pipeline(
     target_feature_sets: List[int] = [80, 70, 60, 50],
     log_dir: Optional[Path] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    returns: Optional[pd.Series] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
     """
     Complete LGBM-based feature selection pipeline.
@@ -463,24 +532,29 @@ def lgbm_feature_selection_pipeline(
     
     Args:
         X: Feature matrix
-        y: Binary labels
+        y: Binary labels (fallback if returns not provided)
         correlation_threshold: Threshold for correlation pruning (0.95)
         target_feature_sets: List of target feature set sizes [80, 70, 60, 50]
         log_dir: Optional directory to save logs
         metadata: Optional metadata (exchange, asset, etc.)
+        returns: Optional realized returns - if provided, uses sign(returns) as target
+        sample_weight: Optional sample weights (e.g., return-magnitude weighted)
         
     Returns:
         Tuple of (feature_sets_dict, pipeline_log)
     """
+    target_type = "sign_returns" if returns is not None else "labels"
     tprint(f"🚀 Starting LGBM feature selection pipeline", "INFO")
     tprint(f"   ↪ Initial features: {len(X.columns)}", "INFO")
     tprint(f"   ↪ Target sets: {target_feature_sets}", "INFO")
+    tprint(f"   ↪ Target type: {target_type}", "INFO")
     
     pipeline_log: Dict[str, Any] = {
         "timestamp": datetime.now().isoformat(),
         "metadata": metadata or {},
         "initial_features": len(X.columns),
         "target_sets": target_feature_sets,
+        "target_type": target_type,
         "stages": {},
     }
     
@@ -505,6 +579,8 @@ def lgbm_feature_selection_pipeline(
         bottom_percentile=FEATURE_SELECTION_CONFIG["bottom_percentile"],
         discard_threshold=FEATURE_SELECTION_CONFIG["discard_threshold"],
         log_dir=log_dir,
+        returns=returns,
+        sample_weight=sample_weight,
     )
     pipeline_log["stages"]["iterative_importance"] = importance_log
     
@@ -519,6 +595,8 @@ def lgbm_feature_selection_pipeline(
             n_repeats=FEATURE_SELECTION_CONFIG["permutation_n_repeats"],
             features_per_step=FEATURE_SELECTION_CONFIG["rfe_features_per_step"],
             log_dir=log_dir,
+            returns=returns,
+            sample_weight=sample_weight,
         )
         pipeline_log["stages"]["permutation_rfe"] = rfe_log
     else:

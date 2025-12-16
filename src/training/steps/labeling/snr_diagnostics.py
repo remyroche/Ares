@@ -2891,16 +2891,44 @@ def run_trading_simulation(
     # Aggregate predictions for calibration
     calibration_metrics = {}
     calibration_curve_data = {}
+    iso_calibrator = None  # Will hold fitted isotonic calibrator
 
     if all_y_true:
         y_all = np.concatenate(all_y_true)
         p_all = np.concatenate(all_p_pred)
 
-        # Brier score
+        # Brier score (uncalibrated)
         try:
             brier = float(brier_score_loss(y_all, p_all))
         except Exception:
             brier = float("nan")
+
+        # -----------------------------------------------------------------
+        # Fit isotonic calibration on OOS predictions
+        # -----------------------------------------------------------------
+        try:
+            from sklearn.isotonic import IsotonicRegression
+            iso_calibrator = IsotonicRegression(out_of_bounds='clip')
+            iso_calibrator.fit(p_all, y_all)
+            
+            # Compute calibrated Brier for comparison
+            p_calibrated = iso_calibrator.predict(p_all)
+            brier_calibrated = float(brier_score_loss(y_all, p_calibrated))
+            try:
+                abs_improvement = float(brier - brier_calibrated)
+                rel_improvement_pct = float(100.0 * abs_improvement / max(float(brier), 1e-12))
+                abs_improvement_pct_points = float(100.0 * abs_improvement)
+            except Exception:
+                rel_improvement_pct = float("nan")
+                abs_improvement_pct_points = float("nan")
+            logger.info(
+                f"Isotonic calibration fitted: Brier {brier:.4f} -> {brier_calibrated:.4f} "
+                f"(improvement: {abs_improvement_pct_points:.2f} pct-pts, {rel_improvement_pct:.2f}% relative)"
+            )
+        except Exception as e:
+            logger.warning(f"Isotonic calibration failed: {e}")
+            iso_calibrator = None
+            brier_calibrated = float("nan")
 
         # Calibration curve (reliability diagram data)
         try:
@@ -2925,24 +2953,37 @@ def run_trading_simulation(
         except Exception:
             ece = float("nan")
             mce = float("nan")
+            brier_calibrated = float("nan")
 
         calibration_metrics = {
             "brier_score": brier,
+            "brier_score_calibrated": brier_calibrated if 'brier_calibrated' in dir() else float("nan"),
             "expected_calibration_error": float(ece) if np.isfinite(ece) else float("nan"),
             "max_calibration_error": float(mce) if np.isfinite(mce) else float("nan"),
             "n_samples": int(len(y_all)),
+            "isotonic_calibration_applied": iso_calibrator is not None,
         }
     else:
         calibration_metrics = {
             "brier_score": float("nan"),
+            "brier_score_calibrated": float("nan"),
             "expected_calibration_error": float("nan"),
             "max_calibration_error": float("nan"),
             "n_samples": 0,
+            "isotonic_calibration_applied": False,
         }
 
     # -------------------------------------------------------------------------
     # 2. Trading Simulation at Different Probability Thresholds
     # -------------------------------------------------------------------------
+    
+    # Apply isotonic calibration to trading probabilities if available
+    if iso_calibrator is not None:
+        prob_trading = iso_calibrator.predict(prob_valid)
+        logger.info(f"Applied isotonic calibration to {len(prob_trading)} trading probabilities")
+    else:
+        prob_trading = prob_valid
+        logger.info("Using uncalibrated probabilities for trading simulation")
 
     threshold_results = {}
     best_gate_info: Optional[dict] = None
@@ -2950,8 +2991,8 @@ def run_trading_simulation(
     regime_gating_cfg: dict = {}
 
     for threshold in prob_thresholds:
-        # Filter events passing the threshold
-        trade_mask = prob_valid >= threshold
+        # Filter events passing the threshold (using calibrated probabilities)
+        trade_mask = prob_trading >= threshold
         n_trades = int(trade_mask.sum())
 
         if n_trades < 10:

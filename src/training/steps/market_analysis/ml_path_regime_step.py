@@ -2975,6 +2975,7 @@ class MLPathRegimeStep(BaseStep):
             from pathlib import Path
 
             symbol_hmm = str(config.get("symbol", "UNKNOWN"))
+            exchange_hmm = str(config.get("exchange", "UNKNOWN"))
             timeframe_hmm = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
             ts_hmm = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -3033,7 +3034,7 @@ class MLPathRegimeStep(BaseStep):
             }
 
             # 1. Save HMM-Direct detector (recommended for production)
-            hmm_detector_path = f"versioned_artifacts/regime_models/path_hmm_{symbol_hmm}_{timeframe_hmm}_{ts_hmm}.pkl"
+            hmm_detector_path = f"versioned_artifacts/regime_models/path_hmm_{symbol_hmm}_{exchange_hmm}_{timeframe_hmm}.pkl"
             Path(hmm_detector_path).parent.mkdir(parents=True, exist_ok=True)
 
             hmm_model_data = {
@@ -3049,7 +3050,7 @@ class MLPathRegimeStep(BaseStep):
 
             # 2. Create and save LiveHMM wrapper for O(1) production updates
             live_hmm = LiveHMM(hmm)
-            live_hmm_path = f"versioned_artifacts/regime_models/path_live_hmm_{symbol_hmm}_{timeframe_hmm}_{ts_hmm}.pkl"
+            live_hmm_path = f"versioned_artifacts/regime_models/path_live_hmm_{symbol_hmm}_{exchange_hmm}_{timeframe_hmm}.pkl"
             joblib.dump(live_hmm, live_hmm_path)
             tprint_success(f"💾 Saved LiveHMM wrapper (O(1) updates): {live_hmm_path}")
 
@@ -3072,7 +3073,7 @@ class MLPathRegimeStep(BaseStep):
                     index=risk_features_clean.columns
                 ).T
 
-                centroid_detector_path = f"versioned_artifacts/regime_models/path_centroid_{symbol_hmm}_{timeframe_hmm}_{ts_hmm}.pkl"
+                centroid_detector_path = f"versioned_artifacts/regime_models/path_centroid_{symbol_hmm}_{exchange_hmm}_{timeframe_hmm}.pkl"
 
                 centroid_model_data = {
                     "regime_centroids": centroids_df,

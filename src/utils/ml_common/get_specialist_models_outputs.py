@@ -1542,27 +1542,49 @@ def get_specialist_models_outputs(
             log_info("=" * 80)
 
             mr_artifact_name = f"ml_mean_reversion_training_data_{regime_timeframe}"
-            mr_context = {
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": regime_timeframe,
-                "direction": direction,
-                "model": "mean_reversion",
-                "step_name": "ml_mean_reversion_step",
-            }
+            direction_norm = str(direction).lower()
+            directions_to_try = [direction]
+            if direction_norm not in {"long", "short"}:
+                directions_to_try = ["long", "short"]
 
-            log_info(f"Attempting to load Mean Reversion data: {mr_artifact_name}")
-            mr = artifact_router.load(
-                artifact_name=mr_artifact_name,
-                artifact_type="data",
-                data_category="features",
-                context=mr_context,
-            )
+            mr = None
+            mr_loaded_direction = None
+            for dir_try in directions_to_try:
+                mr_context = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": regime_timeframe,
+                    "direction": dir_try,
+                    "model": "mean_reversion",
+                    "step_name": "ml_mean_reversion_step",
+                }
+
+                log_info(f"Attempting to load Mean Reversion data: {mr_artifact_name} (direction={dir_try})")
+                try:
+                    mr = artifact_router.load(
+                        artifact_name=mr_artifact_name,
+                        artifact_type="data",
+                        data_category="features",
+                        context=mr_context,
+                    )
+                    mr_loaded_direction = dir_try
+                    if mr is not None and not getattr(mr, "empty", True):
+                        break
+                except FileNotFoundError:
+                    mr = None
+                    mr_loaded_direction = None
+                    continue
 
             if mr is not None and not getattr(mr, "empty", True):
                 if not isinstance(mr, pd.DataFrame):
                     mr = pd.DataFrame(mr)
                 mr = _standardize_index(mr)
+
+                if mr_loaded_direction is not None and str(mr_loaded_direction).lower() != direction_norm:
+                    log_warning(
+                        " Loaded mean-reversion artifact using fallback direction=%s (requested direction=%s)"
+                        % (mr_loaded_direction, direction)
+                    )
 
                 if isinstance(mr.index, pd.DatetimeIndex) and len(mr.index) > 0:
                     log_info(

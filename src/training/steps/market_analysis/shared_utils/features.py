@@ -61,6 +61,11 @@ class FeatureConfig:
         quality_thresholds = thresholds.get('quality_thresholds', {})
         quality_filter_cfg = filter_thresholds.get('quality', {})
 
+        do_not_drop_patterns = filter_thresholds.get("do_not_drop_patterns", [])
+        if not isinstance(do_not_drop_patterns, list):
+            do_not_drop_patterns = []
+        self.do_not_drop_patterns = [str(p) for p in do_not_drop_patterns if str(p)]
+
         if self.feature_categories is None:
             # Use regime-focused feature categories for regime classification
             self.feature_categories = [
@@ -396,7 +401,11 @@ def prepare_market_features(
             raise ValueError("No data remaining after NaN filtering")
 
         # Apply variance filtering
-        variance_result = filter_low_variance(features_df, feature_config.min_variance)
+        variance_result = filter_low_variance(
+            features_df,
+            feature_config.min_variance,
+            do_not_drop_patterns=getattr(feature_config, "do_not_drop_patterns", None),
+        )
         if verbose:
             tprint_debug(f"📊 [SHARED_FEATURES] Dropped low-variance features: {variance_result.dropped_columns}")
         features_df = variance_result.frame
@@ -410,6 +419,7 @@ def prepare_market_features(
             feature_config.min_persistence,
             feature_config.max_noise_ratio,
             feature_config.min_stability,
+            do_not_drop_patterns=getattr(feature_config, "do_not_drop_patterns", None),
         )
         metadata['filters']['quality'] = {
             'metrics': quality_metrics,
@@ -446,6 +456,23 @@ def prepare_market_features(
             for i, j in high_corr_pairs:
                 if i not in features_to_remove:
                     features_to_remove.add(j)
+
+            # Do-not-drop patterns: preserve protected feature names from removal.
+            try:
+                protected_patterns = getattr(feature_config, "do_not_drop_patterns", None)
+                if protected_patterns:
+                    protected_names = []
+                    for col in list(features_df.columns):
+                        try:
+                            if any(__import__("fnmatch").fnmatch(str(col), str(p)) for p in protected_patterns):
+                                protected_names.append(col)
+                        except Exception:
+                            continue
+                    if protected_names:
+                        protected_idx = {int(features_df.columns.get_loc(c)) for c in protected_names if c in features_df.columns}
+                        features_to_remove = {int(i) for i in features_to_remove if int(i) not in protected_idx}
+            except Exception:
+                pass
 
             # Remove highly correlated features
             if features_to_remove:

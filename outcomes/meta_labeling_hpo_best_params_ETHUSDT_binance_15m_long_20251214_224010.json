@@ -1,0 +1,57 @@
+{
+  "best_params": {
+    "w_scalp": 0.4094705824370901,
+    "w_swing": 0.20389794973529923,
+    "w_trend": 1.1682739073311168,
+    "consensus_threshold": 0.7038899401622896,
+    "abstain_margin": 0.21149008324916754,
+    "ev_margin": 0.04058702478906926,
+    "diversity_lambda": 0.022571516877324817,
+    "regime_threshold_sensitivity": 1.2761104780521673,
+    "volatility_penalty_lambda": 3.805966569061507,
+    "consensus_quantile": 0.7525690832250248,
+    "num_leaves": 46,
+    "min_data_in_leaf": 30,
+    "max_depth": 7,
+    "min_gain_to_split": 0.1,
+    "lambda_l1": 0.1,
+    "lambda_l2": 0.1,
+    "path_smooth": 0.1,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "n_estimators": 300
+  },
+  "best_score": 0.0,
+  "best_edge": 0.0,
+  "layer2_best_params": {
+    "w_scalp": 0.4094705824370901,
+    "w_swing": 0.20389794973529923,
+    "w_trend": 1.1682739073311168,
+    "consensus_threshold": 0.7038899401622896,
+    "abstain_margin": 0.21149008324916754,
+    "ev_margin": 0.04058702478906926,
+    "diversity_lambda": 0.022571516877324817,
+    "regime_threshold_sensitivity": 1.2761104780521673,
+    "volatility_penalty_lambda": 3.805966569061507,
+    "consensus_quantile": 0.7525690832250248
+  },
+  "layer3_best_params": {
+    "num_leaves": 46,
+    "min_data_in_leaf": 30,
+    "max_depth": 7,
+    "min_gain_to_split": 0.1,
+    "lambda_l1": 0.1,
+    "lambda_l2": 0.1,
+    "path_smooth": 0.1,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "n_estimators": 300
+  },
+  "run_timestamp": "20251214_224010",
+  "source": {
+    "layer3_report": "outcomes/hpo_stage_report_layer3_model_ETHUSDT_binance_15m_long_20251214_224010.json",
+    "layer2_report": "outcomes/hpo_stage_report_layer2_trading_ETHUSDT_binance_15m_long_20251214_224010.json"
+  }
+}

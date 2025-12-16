@@ -8,6 +8,34 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+
+def _matches_any_pattern(name: str, patterns: Iterable[str]) -> bool:
+    try:
+        from fnmatch import fnmatch
+    except Exception:
+        fnmatch = None
+
+    for p in patterns or []:
+        try:
+            ps = str(p)
+        except Exception:
+            continue
+        if not ps:
+            continue
+        if fnmatch is not None:
+            try:
+                if fnmatch(str(name), ps):
+                    return True
+            except Exception:
+                pass
+        else:
+            try:
+                if ps in str(name):
+                    return True
+            except Exception:
+                pass
+    return False
+
 @dataclass
 class FilterResult:
     """Container for filter outputs and per-column metadata."""
@@ -38,19 +66,35 @@ def winsorize_frame(
 
     return capped, metadata
 
-def filter_low_variance(frame: pd.DataFrame, min_variance: float) -> FilterResult:
+def filter_low_variance(
+    frame: pd.DataFrame,
+    min_variance: float,
+    *,
+    do_not_drop_patterns: Optional[Iterable[str]] = None,
+) -> FilterResult:
     """Remove columns whose variance falls below ``min_variance``."""
 
     variances = frame.var(axis=0, skipna=True)
     keep_mask = variances >= min_variance
     kept_columns = variances.index[keep_mask].tolist()
     dropped_columns = variances.index[~keep_mask].tolist()
+
+    if do_not_drop_patterns:
+        protected = [c for c in dropped_columns if _matches_any_pattern(str(c), do_not_drop_patterns)]
+        if protected:
+            kept_columns.extend([c for c in protected if c not in kept_columns])
+            dropped_columns = [c for c in dropped_columns if c not in set(protected)]
     metadata = {col: {"variance": float(variances[col])} for col in variances.index}
 
     filtered = frame[kept_columns]
     return FilterResult(filtered, metadata, dropped_columns)
 
-def prune_correlated_features(frame: pd.DataFrame, threshold: float) -> FilterResult:
+def prune_correlated_features(
+    frame: pd.DataFrame,
+    threshold: float,
+    *,
+    do_not_drop_patterns: Optional[Iterable[str]] = None,
+) -> FilterResult:
     """Drop columns that exceed the pairwise correlation ``threshold``."""
 
     if frame.empty or frame.shape[1] <= 1:
@@ -60,7 +104,16 @@ def prune_correlated_features(frame: pd.DataFrame, threshold: float) -> FilterRe
     upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
     to_drop: List[str] = []
 
+    protected = set()
+    if do_not_drop_patterns:
+        try:
+            protected = {c for c in list(frame.columns) if _matches_any_pattern(str(c), do_not_drop_patterns)}
+        except Exception:
+            protected = set()
+
     for column in upper.columns:
+        if column in protected:
+            continue
         if any(upper[column] > threshold):
             to_drop.append(column)
 
@@ -102,6 +155,8 @@ def apply_quality_thresholds(
     min_persistence: float,
     max_noise_ratio: float,
     min_stability: float,
+    *,
+    do_not_drop_patterns: Optional[Iterable[str]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Dict[str, float]], Dict[str, List[str]]]:
     """Filter columns based on persistence, noise ratio, and temporal stability."""
 
@@ -128,7 +183,9 @@ def apply_quality_thresholds(
         if stability < min_stability:
             reasons.append("stability")
 
-        if reasons:
+        if do_not_drop_patterns and _matches_any_pattern(str(column), do_not_drop_patterns):
+            keep_columns.append(column)
+        elif reasons:
             dropped[column] = reasons
         else:
             keep_columns.append(column)

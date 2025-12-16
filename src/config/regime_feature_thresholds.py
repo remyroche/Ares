@@ -19,6 +19,10 @@ _DEFAULTS: Dict[str, Any] = {
         "min_temporal_stability": 0.1,
     },
     "filter_thresholds": {
+        "do_not_drop_patterns": [
+            "regime_leaf_interaction__*",
+            "regime_leaf_interaction_transition*__*",
+        ],
         "variance": {"min_variance": 1.0e-8},
         "winsorization": {"lower_quantile": 0.01, "upper_quantile": 0.99},
         "correlation": {"threshold": 0.95},
@@ -34,7 +38,11 @@ def _config_path(override_path: Optional[Path] = None) -> Path:
     """Return the path to the regime feature configuration file."""
     if override_path is not None:
         return override_path
-    return Path(__file__).resolve().parents[2] / "config" / "regime_features.yaml"
+    root = Path(__file__).resolve().parents[2]
+    preferred = root / "config" / "features" / "regime_features.yaml"
+    if preferred.is_file():
+        return preferred
+    return root / "config" / "regime_features.yaml"
 
 def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merge ``updates`` into ``base`` and return the result."""

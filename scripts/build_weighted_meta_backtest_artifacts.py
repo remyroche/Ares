@@ -182,6 +182,8 @@ def build_meta_gating_config(
     profit_threshold: Optional[float] = None,
     stop_threshold: Optional[float] = None,
     horizon: Optional[int] = None,
+    selection_mode: str = "threshold",
+    top_quantile: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build meta_gating_config.json structure."""
     # Extract thresholds from HPO params if available
@@ -215,6 +217,8 @@ def build_meta_gating_config(
             "version": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
             "transaction_cost": float(transaction_cost),
             "entry": {
+                "selection_mode": str(selection_mode),
+                "top_quantile": float(top_quantile) if top_quantile is not None else None,
                 "prob_threshold": float(prob_threshold),
                 "use_expected_return": bool(use_expected_return),
                 "expected_return_threshold": float(er_threshold),
@@ -432,7 +436,27 @@ def main():
         profit_threshold=profit_threshold,
         stop_threshold=stop_threshold,
         horizon=horizon,
+        selection_mode="top_quantile",
+        top_quantile=None,
     )
+
+    # Compute an initial top-quantile equivalent to the old prob_threshold gate coverage.
+    # This makes gating scale-free (rank-based) while keeping a comparable trade frequency.
+    try:
+        prob_thr_ref = float(gating_config.get("meta_gating", {}).get("entry", {}).get("prob_threshold", 0.6))
+        p = labeled_data["meta_probability"].astype(float)
+        m = np.isfinite(p.values)
+        if int(np.sum(m)) > 0:
+            top_q = float(np.mean(p.values[m] >= float(prob_thr_ref)))
+            top_q = float(np.clip(top_q, 0.0, 0.999999))
+            gating_config["meta_gating"]["entry"]["top_quantile"] = float(top_q)
+            tprint_info(
+                f"   ↪ Rank-gating: set top_quantile={top_q:.4f} (equivalent coverage to prob_threshold={prob_thr_ref:.3f})"
+            )
+        else:
+            tprint_warning("   ⚠️ Rank-gating: no finite meta_probability values; leaving top_quantile unset")
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Rank-gating: failed to compute top_quantile from labeled_data: {e}")
     
     gating_path = va_dir / "meta_gating_config.json"
 

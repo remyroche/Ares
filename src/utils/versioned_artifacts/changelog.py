@@ -21,6 +21,7 @@ class ChangeType(Enum):
     UPDATE_COLUMNS = "update_columns"
     DELETE_ROWS = "delete_rows"
     DELETE_COLUMNS = "delete_columns"
+    DELETE_VERSION = "delete_version"
     CREATE_VIEW = "create_view"
     MERGE_VIEWS = "merge_views"
     CREATE_VERSION = "create_version"

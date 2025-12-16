@@ -21,7 +21,10 @@ from datetime import datetime
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Union, Dict, Any, List
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, average_precision_score
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer,
@@ -246,17 +249,148 @@ def compute_horizon_consistency(price_series: pd.Series, horizon: int = 12) -> p
     
     return consistency
 
+
+def compute_multi_horizon_consistency(
+    price_series: pd.Series,
+    horizons: Optional[List[int]] = None,
+    aggregation: str = "mean",
+) -> pd.Series:
+    """
+    Compute label consistency across multiple horizons.
+    
+    A sample is considered "consistent" if its label direction agrees
+    across different lookahead horizons. This helps identify robust signals
+    vs. noise that only appears at specific horizons.
+    
+    Args:
+        price_series: Series of prices
+        horizons: List of horizons to check (default: [6, 12, 24])
+        aggregation: How to combine scores ("mean", "min", "geometric")
+    
+    Returns:
+        Series of multi-horizon consistency scores (0.0 to 1.0)
+    """
+    if horizons is None:
+        horizons = [6, 12, 24]
+    
+    # Compute consistency at each horizon
+    consistency_scores = []
+    for h in horizons:
+        cons = compute_horizon_consistency(price_series, horizon=h)
+        consistency_scores.append(cons)
+    
+    # Stack into DataFrame
+    cons_df = pd.concat(consistency_scores, axis=1)
+    cons_df.columns = [f"h{h}" for h in horizons]
+    
+    # Aggregate across horizons
+    if aggregation == "mean":
+        result = cons_df.mean(axis=1)
+    elif aggregation == "min":
+        result = cons_df.min(axis=1)
+    elif aggregation == "geometric":
+        # Geometric mean is more sensitive to low values
+        result = cons_df.prod(axis=1) ** (1.0 / len(horizons))
+    else:
+        result = cons_df.mean(axis=1)
+    
+    return result.fillna(0.5)
+
+
+def compute_label_agreement_consistency(
+    labels_matrix: np.ndarray,
+    returns_matrix: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute consistency based on agreement among multiple labeling schemes.
+    
+    For each sample, measures how much the different labeling experts agree.
+    High agreement = high consistency = more reliable label.
+    
+    Args:
+        labels_matrix: (n_samples, n_experts) matrix of labels (-1, 0, 1)
+        returns_matrix: (n_samples, n_experts) matrix of realized returns
+    
+    Returns:
+        Array of consistency scores (0.0 to 1.0)
+    """
+    n_samples, n_experts = labels_matrix.shape
+    
+    # Agreement score: fraction of experts that agree with majority
+    consistency = np.zeros(n_samples, dtype=float)
+    
+    for i in range(n_samples):
+        row = labels_matrix[i, :]
+        # Count non-zero votes
+        nonzero_mask = row != 0
+        n_votes = nonzero_mask.sum()
+        
+        if n_votes == 0:
+            consistency[i] = 0.0
+            continue
+        
+        # Count positive and negative votes
+        n_pos = (row > 0).sum()
+        n_neg = (row < 0).sum()
+        
+        # Agreement = max(pos, neg) / total_votes
+        majority = max(n_pos, n_neg)
+        consistency[i] = float(majority) / float(n_votes) if n_votes > 0 else 0.0
+    
+    return consistency
+
+
+def compute_return_sign_consistency(
+    returns_matrix: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute consistency based on return sign agreement across experts.
+    
+    If all experts produce returns of the same sign, consistency is high.
+    Mixed signs indicate an ambiguous/noisy sample.
+    
+    Args:
+        returns_matrix: (n_samples, n_experts) matrix of realized returns
+    
+    Returns:
+        Array of consistency scores (0.0 to 1.0)
+    """
+    n_samples, n_experts = returns_matrix.shape
+    
+    consistency = np.zeros(n_samples, dtype=float)
+    
+    for i in range(n_samples):
+        row = returns_matrix[i, :]
+        valid_mask = np.isfinite(row) & (row != 0)
+        n_valid = valid_mask.sum()
+        
+        if n_valid == 0:
+            consistency[i] = 0.0
+            continue
+        
+        valid_returns = row[valid_mask]
+        n_pos = (valid_returns > 0).sum()
+        n_neg = (valid_returns < 0).sum()
+        
+        # Consistency = |pos - neg| / total
+        consistency[i] = abs(n_pos - n_neg) / float(n_valid)
+    
+    return consistency
+
 def generate_weights_per_label(
     returns: np.ndarray,
     t_events: pd.Index,
     close_series: Optional[pd.Series] = None,
     consistency_scores: Optional[np.ndarray] = None,
+    label_quality_scores: Optional[np.ndarray] = None,
     uniqueness_scores: Optional[np.ndarray] = None,
     vol_proxy: Optional[np.ndarray] = None,
     mag_compression: float = 0.8,
     learn_slope: float = 0.0,
     learn_center: float = 0.5,
     uniq_intensity: float = 1.0,
+    quality_intensity: float = 0.0,
+    quality_floor: float = 0.2,
     exp_mag: float = 1.0,
     exp_learn: float = 1.0,
     exp_uniq: float = 1.0,
@@ -373,7 +507,32 @@ def generate_weights_per_label(
     else:
         comp_cross = np.ones(n_samples, dtype=float)
 
-    # 6. Downside risk penalty
+    # 6. Confident-learning label quality component
+    # This is designed to be monotone and bounded:
+    # quality_floor <= q_eff <= 1.0, then raised by quality_intensity.
+    comp_quality = np.ones(n_samples, dtype=float)
+    try:
+        q_int = float(quality_intensity)
+    except Exception:
+        q_int = 0.0
+
+    if q_int > 0.0:
+        cleaned_quality = _coerce_numeric_array(
+            label_quality_scores, n_samples, "label_quality_scores", fill_value=1.0, allow_negative=False
+        )
+        if cleaned_quality is not None:
+            q = np.asarray(cleaned_quality, dtype=float)
+            q = np.where(np.isfinite(q), q, 1.0)
+            q = np.clip(q, 0.0, 1.0)
+            try:
+                q_floor = float(quality_floor)
+            except Exception:
+                q_floor = 0.2
+            q_floor = float(np.clip(q_floor, 0.0, 1.0))
+            q_eff = q_floor + (1.0 - q_floor) * q
+            comp_quality = np.power(np.clip(q_eff, q_floor, 1.0), q_int)
+
+    # 7. Downside risk penalty
     # Use vol_proxy to penalize high volatility periods if downside_multiplier > 1.0
     comp_risk = np.ones(n_samples, dtype=float)
     cleaned_vol = _coerce_numeric_array(
@@ -388,7 +547,7 @@ def generate_weights_per_label(
                 # Apply penalty: 1.0 -> 1.0 / multiplier
                 comp_risk[high_vol_mask] = 1.0 / downside_multiplier
 
-    # 7. Time-decay weighting (Phase 4.3: weight recent data higher)
+    # 8. Time-decay weighting (Phase 4.3: weight recent data higher)
     comp_decay = np.ones(n_samples, dtype=float)
     if time_decay_halflife is not None and time_decay_halflife > 0:
         try:
@@ -401,12 +560,13 @@ def generate_weights_per_label(
         except Exception:
             pass
 
-    # 8. Geometric mixing
+    # 9. Geometric mixing
     raw_weights = (
         np.power(comp_mag, exp_mag)
         * np.power(comp_uniq, exp_uniq)
         * np.power(comp_time, exp_learn)
         * comp_cross
+        * comp_quality
         * comp_risk
         * comp_decay
     )
@@ -536,6 +696,8 @@ def run_layer1_optimization(
     labels: pd.Series,
     committee_agreement_scores: Optional[Union[np.ndarray, pd.Series, list]] = None,
     committee_mag_factors: Optional[Union[np.ndarray, pd.Series, list]] = None,
+    n_trials: int = 60,
+    objective_mode: str = "proxy",
 ) -> Dict[str, Any]:
     """
     Run lightweight optimization for weighting parameters (Layer 1).
@@ -549,6 +711,8 @@ def run_layer1_optimization(
         'learn_slope': 0.0,
         'learn_center': 0.5,
         'uniq_intensity': 1.0,
+        'quality_intensity': 0.0,
+        'quality_floor': 0.2,
         'exp_mag': 1.0,
         'exp_learn': 1.0,
         'exp_uniq': 1.0,
@@ -589,6 +753,46 @@ def run_layer1_optimization(
         returns_arr = returns_series.values.astype(float)
 
         n_samples = int(len(returns_arr))
+
+        # Confident-learning style per-event label quality (out-of-sample probabilities)
+        # This is used as an additional multiplicative component inside generate_weights_per_label.
+        cl_quality_scores = None
+        try:
+            from src.training.steps.labeling.confident_learning import (
+                get_cross_val_pred_probs,
+                compute_label_quality_scores,
+            )
+
+            y_cl = (np.asarray(returns_arr, dtype=float) > 0.0).astype(int)
+            if int(np.unique(y_cl).size) >= 2:
+                # Simple, leakage-safe features from market_data available at t_events.
+                close_ret_1 = close_series.pct_change(1)
+                close_ret_3 = close_series.pct_change(3)
+                close_ret_6 = close_series.pct_change(6)
+                vol_20 = close_series.pct_change().rolling(20).std()
+                feat_df = pd.DataFrame(
+                    {
+                        "ret1": close_ret_1.reindex(t_events),
+                        "ret3": close_ret_3.reindex(t_events),
+                        "ret6": close_ret_6.reindex(t_events),
+                        "vol20": vol_20.reindex(t_events),
+                    },
+                    index=t_events,
+                ).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                pred_probs = get_cross_val_pred_probs(
+                    feat_df.values,
+                    y_cl,
+                    model=None,
+                    n_splits=3,
+                    random_state=42,
+                )
+                cl_quality_scores = compute_label_quality_scores(y_cl, pred_probs, method="self_confidence")
+                cl_quality_scores = np.asarray(cl_quality_scores, dtype=float)
+                cl_quality_scores = np.where(np.isfinite(cl_quality_scores), cl_quality_scores, 1.0)
+                cl_quality_scores = np.clip(cl_quality_scores, 0.0, 1.0)
+        except Exception:
+            cl_quality_scores = None
  
         # Heuristic floor for "small" returns (used in objective)
         finite_abs = np.abs(returns_arr[np.isfinite(returns_arr)])
@@ -654,6 +858,96 @@ def run_layer1_optimization(
         # Convert concurrency into a simple uniqueness proxy (1 / concurrency)
         event_uniqueness = 1.0 / np.maximum(1.0, event_concurrency)
 
+        try:
+            objective_mode_local = str(objective_mode or "proxy").strip().lower()
+        except Exception:
+            objective_mode_local = "proxy"
+
+        def _predictive_cv_score(
+            weights: np.ndarray,
+            returns_arr_local: np.ndarray,
+            t_events_local: pd.Index,
+            close_series_local: pd.Series,
+            n_splits: int = 3,
+        ) -> float:
+            try:
+                y = (np.asarray(returns_arr_local, dtype=float) > 0.0).astype(int)
+                if int(np.unique(y).size) < 2:
+                    return -10.0
+
+                close = close_series_local.astype(float)
+                ret1 = close.pct_change(1).reindex(t_events_local)
+                ret3 = close.pct_change(3).reindex(t_events_local)
+                ret6 = close.pct_change(6).reindex(t_events_local)
+                vol20 = close.pct_change().rolling(20).std().reindex(t_events_local)
+                X_df = (
+                    pd.DataFrame(
+                        {"ret1": ret1, "ret3": ret3, "ret6": ret6, "vol20": vol20},
+                        index=t_events_local,
+                    )
+                    .replace([np.inf, -np.inf], np.nan)
+                    .fillna(0.0)
+                )
+                X = X_df.values.astype(float)
+
+                w = np.asarray(weights, dtype=float)
+                w = np.where(np.isfinite(w) & (w > 0.0), w, 0.0)
+                if float(np.sum(w)) <= 0.0:
+                    w = np.ones_like(w, dtype=float)
+
+                n_samples_local = int(len(y))
+                if n_samples_local < 80:
+                    n_splits = 2
+                n_splits = int(max(2, min(int(n_splits), 5)))
+                if n_samples_local < (n_splits + 1) * 10:
+                    return -10.0
+
+                tscv = TimeSeriesSplit(n_splits=n_splits)
+                fold_aucs: List[float] = []
+                fold_prs: List[float] = []
+
+                for tr_idx, te_idx in tscv.split(X):
+                    y_tr = y[tr_idx]
+                    y_te = y[te_idx]
+                    if int(np.unique(y_tr).size) < 2 or int(np.unique(y_te).size) < 2:
+                        continue
+
+                    model = LogisticRegression(
+                        solver="lbfgs",
+                        max_iter=500,
+                        n_jobs=1,
+                    )
+                    model.fit(X[tr_idx], y_tr, sample_weight=w[tr_idx])
+                    p_te = model.predict_proba(X[te_idx])[:, 1]
+
+                    sw_te = w[te_idx]
+                    try:
+                        auc = float(roc_auc_score(y_te, p_te, sample_weight=sw_te))
+                    except Exception:
+                        auc = float(roc_auc_score(y_te, p_te))
+
+                    try:
+                        pr = float(average_precision_score(y_te, p_te, sample_weight=sw_te))
+                    except Exception:
+                        pr = float(average_precision_score(y_te, p_te))
+
+                    if np.isfinite(auc):
+                        fold_aucs.append(auc)
+                    if np.isfinite(pr):
+                        fold_prs.append(pr)
+
+                if len(fold_aucs) < 1:
+                    return -10.0
+
+                mean_auc = float(np.mean(fold_aucs))
+                mean_pr = float(np.mean(fold_prs)) if len(fold_prs) else 0.0
+                score = mean_auc + 0.50 * mean_pr
+                if not np.isfinite(score):
+                    return -10.0
+                return float(score)
+            except Exception:
+                return -10.0
+
         committee_components_available = False
         committee_agree_arr = _coerce_numeric_array(
             committee_agreement_scores,
@@ -680,6 +974,66 @@ def run_layer1_optimization(
             committee_agree_arr = np.clip(committee_agree_arr, 0.0, 1.0)
             committee_mag_arr = np.where(np.isfinite(committee_mag_arr) & (committee_mag_arr > 0.0), committee_mag_arr, 1.0)
 
+        if committee_components_available and committee_agree_arr is not None and committee_mag_arr is not None:
+            try:
+                def _safe_corr(x_arr: np.ndarray, y_arr: np.ndarray) -> float:
+                    x_arr = np.asarray(x_arr, dtype=float)
+                    y_arr = np.asarray(y_arr, dtype=float)
+                    if x_arr.size < 2 or y_arr.size < 2:
+                        return 0.0
+                    if not np.isfinite(x_arr).any() or not np.isfinite(y_arr).any():
+                        return 0.0
+                    try:
+                        if spearmanr is not None:
+                            corr, _ = spearmanr(x_arr, y_arr)
+                            if corr is None or not np.isfinite(corr):
+                                return 0.0
+                            return float(corr)
+                    except Exception:
+                        pass
+
+                    try:
+                        x_center = x_arr - np.nanmean(x_arr)
+                        y_center = y_arr - np.nanmean(y_arr)
+                        denom = (
+                            np.sqrt(np.nanmean(x_center ** 2))
+                            * np.sqrt(np.nanmean(y_center ** 2))
+                        )
+                        if denom <= 0:
+                            return 0.0
+                        return float(np.nanmean(x_center * y_center) / denom)
+                    except Exception:
+                        return 0.0
+
+                agree_v = np.asarray(committee_agree_arr, dtype=float)
+                mag_v = np.asarray(committee_mag_arr, dtype=float)
+                abs_ret_v = np.abs(np.asarray(returns_arr, dtype=float))
+
+                agree_std = float(np.nanstd(agree_v)) if np.isfinite(agree_v).any() else 0.0
+                tprint_info(
+                    "   [Layer1 committee] agreement stats: "
+                    f"mean={float(np.nanmean(agree_v)):.4f}, std={agree_std:.4f}, "
+                    f"min={float(np.nanmin(agree_v)):.4f}, max={float(np.nanmax(agree_v)):.4f}"
+                )
+                tprint_info(
+                    "   [Layer1 committee] magnitude stats: "
+                    f"mean={float(np.nanmean(mag_v)):.4f}, std={float(np.nanstd(mag_v)):.4f}, "
+                    f"min={float(np.nanmin(mag_v)):.4f}, max={float(np.nanmax(mag_v)):.4f}"
+                )
+                tprint_info(
+                    "   [Layer1 committee] correlations (Spearman if available): "
+                    f"corr(agree,|ret|)={_safe_corr(agree_v, abs_ret_v):.4f}, "
+                    f"corr(mag,|ret|)={_safe_corr(mag_v, abs_ret_v):.4f}, "
+                    f"corr(agree,concurrency)={_safe_corr(agree_v, event_concurrency):.4f}, "
+                    f"corr(agree,vol)={_safe_corr(agree_v, event_volatility):.4f}"
+                )
+                if agree_std < 1e-3:
+                    tprint_warning(
+                        "   ⚠️ Layer1 committee agreement is nearly constant; committee_agreement_alpha may be weakly identified and can optimize to ~0."
+                    )
+            except Exception:
+                pass
+
         search_space: Dict[str, Dict[str, Any]] = {
             # --- A. INFORMATION HANDLING (Magnitude & Uniqueness) ---
             # How much do we reward high returns?
@@ -695,8 +1049,22 @@ def run_layer1_optimization(
             # How strictly do we punish concurrent/overlapping events?
             'uniq_intensity': {
                 'type': 'float',
-                'low': 0.50,
-                'high': 1.00,
+                'low': 1.00,
+                'high': 3.00,
+                'log': False,
+            },
+
+            # Confident-learning quality weight (optional; intensity 0 disables)
+            'quality_intensity': {
+                'type': 'float',
+                'low': 0.0,
+                'high': 3.0,
+                'log': False,
+            },
+            'quality_floor': {
+                'type': 'float',
+                'low': 0.05,
+                'high': 0.60,
                 'log': False,
             },
 
@@ -756,12 +1124,15 @@ def run_layer1_optimization(
                     t_events=t_events,
                     close_series=close_series,
                     consistency_scores=None,
+                    label_quality_scores=cl_quality_scores,
                     uniqueness_scores=event_uniqueness,
                     vol_proxy=vol_proxy,
                     mag_compression=float(params.get('mag_compression', default_params['mag_compression'])),
                     learn_slope=float(default_params.get('learn_slope', 0.0)),
                     learn_center=float(default_params.get('learn_center', 0.5)),
                     uniq_intensity=float(params.get('uniq_intensity', default_params['uniq_intensity'])),
+                    quality_intensity=float(params.get('quality_intensity', default_params['quality_intensity'])),
+                    quality_floor=float(params.get('quality_floor', default_params['quality_floor'])),
                     exp_mag=float(params.get('exp_mag', default_params['exp_mag'])),
                     exp_learn=float(default_params.get('exp_learn', 1.0)),
                     exp_uniq=float(params.get('exp_uniq', default_params['exp_uniq'])),
@@ -811,23 +1182,42 @@ def run_layer1_optimization(
                     else:
                         weights = np.ones(len(returns_arr), dtype=float)
 
-                score = safe_layer1_objective(
-                    weights=weights,
-                    returns=returns_arr,
-                    concurrency=event_concurrency,
-                    volatility=event_volatility,
-                    noise_threshold=float(small_ret_thr) if small_ret_thr > 0 else 0.001,
-                )
+                if objective_mode_local == "predictive_cv":
+                    score = _predictive_cv_score(
+                        weights=np.asarray(weights, dtype=float),
+                        returns_arr_local=returns_arr,
+                        t_events_local=t_events,
+                        close_series_local=close_series,
+                        n_splits=3,
+                    )
+                else:
+                    score = safe_layer1_objective(
+                        weights=weights,
+                        returns=returns_arr,
+                        concurrency=event_concurrency,
+                        volatility=event_volatility,
+                        noise_threshold=float(small_ret_thr) if small_ret_thr > 0 else 0.001,
+                    )
                 return float(score)
             except Exception as e:
                 tprint_warning(f"⚠️ Layer 1 objective failure: {e}")
                 return -10.0
 
+        try:
+            n_trials_i = int(n_trials)
+        except Exception:
+            n_trials_i = 60
+        n_trials_i = max(5, min(n_trials_i, 250))
+
         opt_config = OptimizationConfig(
-            n_trials=12,
+            n_trials=n_trials_i,
             execution_mode="light",
             direction="maximize",
             seed=42,
+            enable_staged_optimization=False,
+            coarse_grid_trials=0,
+            fine_grid_trials=0,
+            tpe_trials=n_trials_i,
         )
 
         optimizer = BayesianTPEOptimizer(config=opt_config)
@@ -872,12 +1262,15 @@ def run_layer1_optimization(
                         t_events=t_events,
                         close_series=close_series,
                         consistency_scores=None,
+                        label_quality_scores=cl_quality_scores,
                         uniqueness_scores=event_uniqueness,
                         vol_proxy=vol_proxy,
                         mag_compression=float(params.get('mag_compression', default_params['mag_compression'])),
                         learn_slope=float(params.get('learn_slope', default_params['learn_slope'])),
                         learn_center=float(params.get('learn_center', default_params['learn_center'])),
                         uniq_intensity=float(params.get('uniq_intensity', default_params['uniq_intensity'])),
+                        quality_intensity=float(params.get('quality_intensity', default_params['quality_intensity'])),
+                        quality_floor=float(params.get('quality_floor', default_params['quality_floor'])),
                         exp_mag=float(params.get('exp_mag', default_params['exp_mag'])),
                         exp_learn=float(params.get('exp_learn', default_params['exp_learn'])),
                         exp_uniq=float(params.get('exp_uniq', default_params['exp_uniq'])),

@@ -73,8 +73,10 @@ except ImportError:
     UNIFIED_VECTORIZATION_MANAGER_AVAILABLE = False
     UnifiedVectorizationManager = None
 
+# CuPy for GPU acceleration (optional)
+try:
+    import cupy as cp
 except ImportError:
-
     cp = None
 
 logger = logging.getLogger(__name__)

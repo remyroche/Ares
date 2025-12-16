@@ -1,0 +1,31 @@
+{
+  "best_params": {
+    "profit_floor_tx_mult": 3.725950166977911,
+    "sl_atr_mult": 0.9097043134828373,
+    "risk_reward_ratio": 1.2204917831803304,
+    "horizon_bars": 34,
+    "min_event_spacing": 1,
+    "trail_distance_atr_mult": 2.4765347062658165,
+    "prob_threshold": 0.686053424160682,
+    "ev_margin": 0.2170049009053693,
+    "volatility_penalty_lambda": 0.019375870935129005,
+    "barrier_regime_strength": 0.7574626287983193,
+    "barrier_regime_power": 0.8633009038424846,
+    "sig_strength_sensitivity": 0.17949216812706387,
+    "trail_trend_modulation": 1.9094305602822699,
+    "barrier_trend_asymmetry": 1.4745463247288189,
+    "horizon_volume_modulation": 1.712220133473656,
+    "barrier_vol_vol_exp": 0.39840992618326115,
+    "moe_trend_dominance": 0.5918065238135477,
+    "moe_scalp_dominance": 0.9615866750972236,
+    "moe_vol_sensitivity": 0.3161382996164722,
+    "moe_adx_trend_q": 0.9225069743923109,
+    "moe_adx_chop_q": 0.06676772721997717,
+    "moe_vol_spike_q": 0.808892117153591,
+    "prob_stop_enable": 0,
+    "prob_stop_threshold": 0.936463439107088,
+    "prob_stop_drift_window": 17
+  },
+  "best_score": 0.00556432497247323,
+  "timestamp": "20251216_233407"
+}

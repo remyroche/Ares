@@ -1,13 +1,6 @@
 {
-  "symbol": "ETHUSDT",
-  "exchange": "binance",
-  "timeframe": "15m",
-  "timestamp": "20251216_234723",
-  "n_samples": 3180,
   "n_features": 69,
-  "features_path": "versioned_artifacts/ETHUSDT/binance/15m/layer3_features/layer3_features_ETHUSDT_15m_20251216_234723.parquet",
-  "labels_path": "versioned_artifacts/ETHUSDT/binance/15m/layer3_features/layer3_labels_ETHUSDT_15m_20251216_234723.parquet",
-  "feature_names": [
+  "features": [
     "signal_strength_all_Short",
     "high_dist_x_vol_Medium_Diff",
     "ENT_Return_x_Volatility",

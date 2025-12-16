@@ -45,7 +45,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy import sparse
-from scipy.special import expit
+from scipy.special import expit, erfinv
 from src.utils.ml_common.oof_probability_calibration import get_recommended_calibration_method
 
 logger = logging.getLogger(__name__)
@@ -900,17 +900,24 @@ class BaggedLGBMClassifier:
             zeros = np.zeros(n_samples, dtype=float)
             return zeros, zeros, zeros
 
+        classification_mode = False
+        for model in self.models:
+            if hasattr(model, 'predict_proba'):
+                classification_mode = True
+                break
+
         bag_preds = []
         for model in self.models:
             try:
-                # All models use full feature set - colsample_bytree handles diversity
-                # Predict probability of class 1
-                if hasattr(model, 'predict_proba'):
+                if classification_mode and hasattr(model, 'predict_proba'):
                     prob = model.predict_proba(X)[:, 1]
                 else:
-                    # Fallback for regressors or custom objectives without proba
-                    # Assuming they return raw margin or probability directly
-                    prob = model.predict(X)
+                    raw = model.predict(X)
+                    raw = np.asarray(raw, dtype=float).reshape(-1)
+                    if raw.size and (np.nanmin(raw) < 0.0 or np.nanmax(raw) > 1.0):
+                        prob = expit(raw)
+                    else:
+                        prob = raw
 
                 bag_preds.append(prob)
             except Exception:
@@ -923,40 +930,27 @@ class BaggedLGBMClassifier:
 
         preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
 
-        # --- Standard Bagging Logic ---
-        # Output: (N_up * AvgConf_up - N_down * AvgConf_down) / total_models
-        # Up if p > 0.5, Down if p <= 0.5
-        # Conf_up = p
-        # Conf_down = 1 - p
+        mean = preds_mat.mean(axis=1)
+        std = preds_mat.std(axis=1)
 
-        # Masks for Up/Down
+        if not classification_mode:
+            lower = mean - std
+            return mean, std, lower
+
         up_mask = preds_mat > 0.5
         down_mask = ~up_mask
 
-        # Counts
         n_up = up_mask.sum(axis=1)
         n_down = down_mask.sum(axis=1)
         n_total = preds_mat.shape[1]
 
-        # Average Confidence (handle zero counts to avoid NaN)
-        # Using masked arrays or where
-
-        # Sum of probabilities for UP
         sum_p_up = np.where(up_mask, preds_mat, 0.0).sum(axis=1)
-        avg_conf_up = np.divide(sum_p_up, n_up, out=np.zeros_like(sum_p_up), where=n_up!=0)
+        avg_conf_up = np.divide(sum_p_up, n_up, out=np.zeros_like(sum_p_up), where=n_up != 0)
 
-        # Sum of (1-p) for DOWN
         sum_p_down = np.where(down_mask, 1.0 - preds_mat, 0.0).sum(axis=1)
-        avg_conf_down = np.divide(sum_p_down, n_down, out=np.zeros_like(sum_p_down), where=n_down!=0)
+        avg_conf_down = np.divide(sum_p_down, n_down, out=np.zeros_like(sum_p_down), where=n_down != 0)
 
-        # Final Score
-        # (N_up * AvgConf_up - N_down * AvgConf_down) / N
         score = (n_up * avg_conf_up - n_down * avg_conf_down) / n_total
-
-        # Mean and Std for backward compatibility / logging
-        mean = preds_mat.mean(axis=1)
-        std = preds_mat.std(axis=1)
-
         return mean, std, score
 
     def predict_diversity_defense(self, X: np.ndarray) -> Dict[str, np.ndarray]:
@@ -986,27 +980,30 @@ class BaggedLGBMClassifier:
                 'raw_preds': np.zeros((n_samples, 1))
             }
 
+        classification_mode = False
+        for model in self.models:
+            if hasattr(model, 'predict_proba'):
+                classification_mode = True
+                break
+
         bag_preds = []
         for model in self.models:
             try:
-                # All models use full feature set - colsample_bytree handles diversity
-                if hasattr(model, 'predict_proba'):
+                if classification_mode and hasattr(model, 'predict_proba'):
                     prob = model.predict_proba(X)[:, 1]
-                else:
-                    # Custom objectives might return raw scores (margin) which need sigmoid
-                    # OR they return probability directly if handled by LGBM wrapper
-                    # Assuming standard sklearn-like API returns class labels for predict()
-                    # and probs for predict_proba().
-                    # If predict() returns raw scores for custom obj, we need sigmoid.
-                    # But here models are LGBMClassifier instances trained with custom obj.
-                    # LGBMClassifier.predict_proba usually works but might need raw_score=True + Expit.
-                    # Let's try standard predict_proba first.
+                elif classification_mode:
                     try:
                         prob = model.predict_proba(X)[:, 1]
-                    except:
-                        # Fallback for custom objective if predict_proba fails
+                    except Exception:
                         raw = model.predict(X, raw_score=True)
                         prob = expit(raw)
+                else:
+                    raw = model.predict(X)
+                    raw = np.asarray(raw, dtype=float).reshape(-1)
+                    if raw.size and (np.nanmin(raw) < 0.0 or np.nanmax(raw) > 1.0):
+                        prob = expit(raw)
+                    else:
+                        prob = raw
 
                 bag_preds.append(prob)
             except Exception:
@@ -1023,25 +1020,31 @@ class BaggedLGBMClassifier:
 
         preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
 
-        # Standard statistics (on Probabilities)
         mean = preds_mat.mean(axis=1)
         std = preds_mat.std(axis=1)
-        lower = mean - std # Less meaningful for probs but kept for structure
+        lower = mean - std
 
-        # Robust statistics
-        # Calculate MAD on transformed signal space [-1, 1] for consistency with aggregator
+        median = np.median(preds_mat, axis=1)
+        mad_raw = np.median(np.abs(preds_mat - median[:, np.newaxis]), axis=1)
+
+        if not classification_mode:
+            return {
+                'mean': mean,
+                'std': std,
+                'lower': lower,
+                'median': median,
+                'mad': mad_raw,
+                'consensus': lower,
+                'raw_preds': preds_mat,
+            }
+
         preds_signal = 2.0 * preds_mat - 1.0
         median_signal = np.median(preds_signal, axis=1)
         mad = np.median(np.abs(preds_signal - median_signal[:, np.newaxis]), axis=1)
 
-        # Median prob for fallback (mapped back from signal or computed directly)
-        median = np.median(preds_mat, axis=1)
-
         consensus = None
         if self._aggregator is not None:
             try:
-                # DiversityDefenseAggregator expects (n_models, n_samples)
-                # And it handles probability -> signal conversion internally (2p-1)
                 preds_matrix = np.vstack(bag_preds)
                 agg_result = self._aggregator.aggregate(preds_matrix)
                 consensus = agg_result.get('final_signal')
@@ -1052,13 +1055,10 @@ class BaggedLGBMClassifier:
                 )
 
         if consensus is None:
-            # Consensus signal: median / (1 + mad)
-            # High disagreement (large MAD) shrinks signal toward zero
             mad_floor = 0.25
             if self.diversity_defense_config is not None:
                 mad_floor = getattr(self.diversity_defense_config, 'mad_floor', 0.25)
             mad_eff = np.maximum(mad, mad_floor)
-            # Use signal-space median
             signal_strength = np.abs(median_signal)
             raw_score = signal_strength - 1.1 * mad_eff
             consensus = np.clip(raw_score, 0.0, 1.0)
@@ -1070,7 +1070,7 @@ class BaggedLGBMClassifier:
             'median': median,
             'mad': mad,
             'consensus': consensus,
-            'raw_preds': preds_mat
+            'raw_preds': preds_mat,
         }
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -1112,6 +1112,9 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
         self._bagged_boosters = []  # Store boosters for warm start
 
+        scheme = (model_config or {}).get('specialist_scheme', None)
+        self._specialist_scheme = str(scheme).lower().strip() if scheme is not None else None
+
         # Diversity Defense configuration
         self._use_diversity_defense = bool((model_config or {}).get('use_diversity_defense', True))
         self._run_diversity_sweep = bool((model_config or {}).get('run_diversity_sweep', True))
@@ -1127,35 +1130,37 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                     DiversityDefenseObjectives,
                 )
                 dd_config_dict = (model_config or {}).get('diversity_defense_config', {})
-                # Initial config - colsample_bytree will be updated after sweep
+                base_dd = DiversityDefenseConfig()
                 self._dd_config = DiversityDefenseConfig(
-                    sharpe_count=dd_config_dict.get('sharpe_count', 3),
-                    tanh_count=dd_config_dict.get('tanh_count', 3),
-                    huber_standard_count=dd_config_dict.get('huber_standard_count', 2),
-                    huber_asymmetric_count=dd_config_dict.get('huber_asymmetric_count', 2),
-                    sharpe_lambdas=dd_config_dict.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
-                    huber_delta=dd_config_dict.get('huber_delta', 0.01),
-                    asymmetric_penalty=dd_config_dict.get('asymmetric_penalty', 3.0),
-                    lr_sharpe=dd_config_dict.get('lr_sharpe', 0.03),
-                    lr_tanh=dd_config_dict.get('lr_tanh', 0.03),
-                    lr_huber=dd_config_dict.get('lr_huber', 0.03),
+                    sharpe_count=dd_config_dict.get('sharpe_count', base_dd.sharpe_count),
+                    tanh_count=dd_config_dict.get('tanh_count', base_dd.tanh_count),
+                    huber_standard_count=dd_config_dict.get('huber_standard_count', base_dd.huber_standard_count),
+                    huber_asymmetric_count=dd_config_dict.get('huber_asymmetric_count', base_dd.huber_asymmetric_count),
+                    sharpe_lambdas=dd_config_dict.get('sharpe_lambdas', base_dd.sharpe_lambdas),
+                    huber_delta=dd_config_dict.get('huber_delta', base_dd.huber_delta),
+                    asymmetric_penalty=dd_config_dict.get('asymmetric_penalty', base_dd.asymmetric_penalty),
+                    lr_sharpe=dd_config_dict.get('lr_sharpe', base_dd.lr_sharpe),
+                    lr_tanh=dd_config_dict.get('lr_tanh', base_dd.lr_tanh),
+                    lr_huber=dd_config_dict.get('lr_huber', base_dd.lr_huber),
                     sample_fraction=self._sample_fraction,
                     colsample_bytree=self._optimal_colsample_bytree,
-                    z_score_window=self._dd_config.z_score_window,
-                    mad_floor=self._dd_config.mad_floor,
-                    noise_threshold=self._dd_config.noise_threshold,
-                    cap_threshold=self._dd_config.cap_threshold,
-                    # Pass new params
-                    focal_gamma_standard=dd_config_dict.get('focal_gamma_standard', 2.0),
-                    focal_alpha_standard=dd_config_dict.get('focal_alpha_standard', 0.25),
-                    focal_gamma_asymmetric=dd_config_dict.get('focal_gamma_asymmetric', 2.0),
-                    focal_alpha_asymmetric=dd_config_dict.get('focal_alpha_asymmetric', 0.75),
+                    z_score_window=dd_config_dict.get('z_score_window', base_dd.z_score_window),
+                    mad_floor=dd_config_dict.get('mad_floor', base_dd.mad_floor),
+                    noise_threshold=dd_config_dict.get('noise_threshold', base_dd.noise_threshold),
+                    cap_threshold=dd_config_dict.get('cap_threshold', base_dd.cap_threshold),
+                    focal_gamma_standard=dd_config_dict.get('focal_gamma_standard', base_dd.focal_gamma_standard),
+                    focal_alpha_standard=dd_config_dict.get('focal_alpha_standard', base_dd.focal_alpha_standard),
+                    focal_gamma_asymmetric=dd_config_dict.get('focal_gamma_asymmetric', base_dd.focal_gamma_asymmetric),
+                    focal_alpha_asymmetric=dd_config_dict.get('focal_alpha_asymmetric', base_dd.focal_alpha_asymmetric),
                 )
                 self._dd_objectives = DiversityDefenseObjectives(self._dd_config)
                 logger.info(f"Diversity Defense enabled for {model_id}")
             except ImportError as e:
                 logger.warning(f"Diversity Defense not available: {e}, using standard bagging")
                 self._use_diversity_defense = False
+
+        if self._specialist_scheme in ('abc', 'abc_v1'):
+            self._use_diversity_defense = False
 
     def _run_colsample_optimization(self, X: np.ndarray, y: np.ndarray, verbose: bool = True) -> float:
         """

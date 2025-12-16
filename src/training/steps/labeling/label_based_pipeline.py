@@ -96,6 +96,7 @@ from src.training.steps.labeling.advanced_gating_logic import (
     apply_specialization_weights,
     compute_diversity_regularized_utility,
 )
+from src.training.steps.labeling.label_based_layer_0 import run_layer_0
 from src.training.steps.labeling.layer3_feature_cache import (
     save_layer3_features_to_cache,
     load_layer3_features_from_cache,
@@ -5092,6 +5093,82 @@ def calculate_all_feature_qualities(
 
 
 # ============================================================================
+# LGBM RETURN CORRELATION SWEEP (Signal Detection) - NEW FIX
+# ============================================================================
+
+def lgbm_return_correlation_sweep(
+    df_features: pd.DataFrame,
+    market_data: pd.DataFrame,
+    volatility_series: Optional[pd.Series] = None,
+    lookahead: int = 4,
+    max_features: int = 200,
+    importance_threshold: float = 1.0,
+    price_col: str = 'close',
+    use_vol_scaled: bool = True,
+) -> pd.DataFrame:
+    """Use VOL-SCALED RETURNS as target for feature selection (not just magnitude)."""
+    import lightgbm as lgb
+    
+    tprint_info(f"🔬 LGBM Return Correlation Sweep: {len(df_features.columns)} features, lookahead={lookahead}")
+    
+    if price_col not in market_data.columns:
+        tprint_warning(f"   ⚠️ Price column not found, skipping return sweep")
+        return df_features
+    
+    future_price = market_data[price_col].shift(-lookahead)
+    current_price = market_data[price_col]
+    future_return = np.log(future_price / current_price)
+    
+    if use_vol_scaled:
+        if volatility_series is not None:
+            vol = volatility_series.reindex(market_data.index).fillna(method='ffill').fillna(0.01)
+        else:
+            if 'high' in market_data.columns and 'low' in market_data.columns:
+                tr = market_data['high'] - market_data['low']
+                vol = tr.rolling(14, min_periods=1).mean().fillna(0.01)
+            else:
+                ret = np.log(current_price / current_price.shift(1))
+                vol = ret.rolling(20, min_periods=1).std().fillna(0.01)
+        vol = vol.clip(lower=1e-6)
+        proxy_target = (future_return / vol).clip(lower=-5, upper=5)
+    else:
+        proxy_target = future_return
+    
+    common_idx = df_features.index.intersection(proxy_target.dropna().index)
+    if len(common_idx) < 500:
+        return df_features
+    
+    X = df_features.loc[common_idx].fillna(0)
+    y = proxy_target.loc[common_idx]
+    valid_mask = np.isfinite(y.values)
+    X, y = X.loc[valid_mask], y.loc[valid_mask]
+    
+    if len(X) < 500:
+        return df_features
+    
+    dtrain = lgb.Dataset(X, label=y, free_raw_data=False)
+    params = {'objective': 'regression', 'boosting': 'gbdt', 'verbosity': -1,
+              'num_leaves': 31, 'max_depth': 5, 'feature_fraction': 0.7,
+              'min_data_in_leaf': 50, 'learning_rate': 0.05, 'seed': 42}
+    
+    model = lgb.train(params, dtrain, num_boost_round=200)
+    importance = model.feature_importance(importance_type='gain')
+    
+    if importance.max() < 1e-9:
+        return df_features
+    
+    importance_normalized = 100 * (importance / importance.max())
+    importance_df = pd.DataFrame({"feature": model.feature_name(), "importance": importance_normalized})
+    importance_df = importance_df.sort_values("importance", ascending=False)
+    
+    keep_count = min(max_features, len(importance_df))
+    kept_features = importance_df.head(keep_count)["feature"].tolist()
+    
+    tprint_info(f"   Kept {len(kept_features)} features for return prediction")
+    return df_features[kept_features]
+
+
+# ============================================================================
 # LGBM MAGNITUDE SWEEP (Structure Detection)
 # ============================================================================
 
@@ -6246,23 +6323,39 @@ def select_features_with_quality(
             quality_scores = {c: quality_scores[c] for c in quality_filtered_cols}
     
     # =========================================================================
-    # STEP 6: LGBM Magnitude Sweep
+    # STEP 6: LGBM Return Correlation Sweep (CHANGED from Magnitude)
+    # FIX: Use vol-scaled returns as target to select features that predict
+    # directional profitability, not just volatility (magnitude).
     # =========================================================================
     if use_lgbm_sweep and market_data is not None and len(df_expanded.columns) > lgbm_max_features:
-        tprint_info(f"   [6/7] LGBM Magnitude Sweep (lookahead={lgbm_lookahead}, max={lgbm_max_features})...")
+        tprint_info(f"   [6/7] LGBM Return Correlation Sweep (lookahead={lgbm_lookahead}, max={lgbm_max_features})...")
         try:
-            df_expanded = lgbm_magnitude_sweep(
+            # NEW: Use return correlation sweep instead of magnitude sweep
+            df_expanded = lgbm_return_correlation_sweep(
                 df_features=df_expanded,
                 market_data=market_data,
+                volatility_series=None,  # Will compute internally
                 lookahead=lgbm_lookahead,
                 max_features=lgbm_max_features,
+                use_vol_scaled=True,  # Use vol-scaled returns
             )
             # Update quality scores for remaining features
             quality_scores = {c: quality_scores.get(c, 0.0) for c in df_expanded.columns}
         except Exception as e:
-            tprint_warning(f"         ⚠️ LGBM sweep failed: {e}")
+            tprint_warning(f"         ⚠️ LGBM return sweep failed: {e}, falling back to magnitude sweep")
+            try:
+                df_expanded = lgbm_magnitude_sweep(
+                    df_features=df_expanded,
+                    market_data=market_data,
+                    lookahead=lgbm_lookahead,
+                    max_features=lgbm_max_features,
+                )
+                quality_scores = {c: quality_scores.get(c, 0.0) for c in df_expanded.columns}
+            except Exception as e2:
+                tprint_warning(f"         ⚠️ Magnitude sweep also failed: {e2}")
     else:
         tprint_info(f"   [6/7] Skipping LGBM sweep (features={len(df_expanded.columns)} <= {lgbm_max_features})")
+
 
     # =========================================================================
     # OPTIONAL FAST PROXY SELECTION (Two-stage)
@@ -7068,13 +7161,13 @@ def calculate_hpo_utility(
     folds_sharpe: np.ndarray,  # Now actually Sortino ratios (name kept for backward compat)
     auc: float,
     trades_per_day: float,
-    lambda_vol: float = 0.4,  # CHANGED: Reduced from 0.8 to 0.4 for Sortino (higher variance)
+    lambda_vol: float = 0.2,  # CHANGED: Reduced from 0.4 to 0.2 for Sortino (inherent high fold variance)
     w_auc: float = 0.5,  # Softer AUC gate
     w_den: float = 0.15,  # Much lower density power
     calibration_brier: Optional[float] = None,
     calibration_ece: Optional[float] = None,
     w_cal: float = 0.0,
-    clip_min: float = -1.0,
+    clip_min: float = -5.0,  # CHANGED: Lowered from -1.0 to allow differentiation of negative trials
     clip_max: float = 20.0,  # Allow larger values
     debug_out: Optional[Dict[str, Any]] = None,
     density_lower: float = 0.3,  # More lenient
@@ -8897,7 +8990,7 @@ def simulate_concurrent_trades(
     return executed_df
 
 
-class MetaLabelingHPOSampleWeightedStep(BaseStep):
+class LabelBasedPipelineStep(BaseStep):
     """Offline HPO step to optimize labeling parameters with sample weighting.
 
     This step does *not* run as part of standard training. It must be
@@ -8913,7 +9006,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
     between positive/negative labels using realized returns.
     """
 
-    def __init__(self, step_name: str = "meta_labeling_hpo_sample_weighted") -> None:
+    def __init__(self, step_name: str = "label_based_pipeline") -> None:
         super().__init__(step_name, use_versioned_artifacts=False)
         self.logger = logger
 
@@ -10282,6 +10375,39 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
         gate_stats: Dict[str, Any] = {}
 
+        layer0_output = run_layer_0(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            direction=direction,
+            market_data=market_data,
+            primary_signals=primary_signals,
+            config=config,
+            outcomes_dir=outcomes_dir,
+            start_rank=start_rank,
+            stage_rank=stage_rank,
+            start_at_canonical=start_at_canonical,
+            load_stage_best_params=_load_stage_best_params,
+        )
+
+        best_kalman_params = dict(layer0_output.best_kalman_params or {})
+        enable_committee_voting_hpo = bool(layer0_output.enable_committee_voting_hpo)
+        enable_committee_weight_factor = bool(layer0_output.enable_committee_weight_factor)
+        enable_committee_pre_step = bool(layer0_output.enable_committee_pre_step)
+        best_committee_params = dict(layer0_output.best_committee_params or {})
+        committee_loaded_from = layer0_output.committee_loaded_from
+        committee_event_idx = layer0_output.committee_event_idx
+        committee_label_matrix_values = layer0_output.committee_label_matrix_values
+        committee_returns_matrix_values = layer0_output.committee_returns_matrix_values
+        committee_durations_matrix_values = layer0_output.committee_durations_matrix_values
+        committee_confidence_matrix_values = layer0_output.committee_confidence_matrix_values
+        advanced_gating_pipeline = layer0_output.advanced_gating_pipeline
+        committee_configs = list(getattr(layer0_output, "committee_configs", []) or [])
+        committee_names = list(getattr(layer0_output, "committee_names", []) or [])
+
+        skip_stage0_optimizer = True
+        skip_committee_pre_step_compute = True
+
         # ------------------------------------------------------------------
         # STAGE 0: SIGNAL/FEATURE HPO (KALMAN TUNING)
         # ------------------------------------------------------------------
@@ -10704,15 +10830,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         kalman_loss_details: Dict[str, Any] = {}
 
         stage0_loaded_from: Optional[str] = None
-        if stage_rank["stage0"] < start_rank:
-            loaded_params, loaded_path = _load_stage_best_params("stage0")
-            best_kalman_params = dict(loaded_params or {})
-            stage0_loaded_from = str(loaded_path) if loaded_path is not None else None
-            if not best_kalman_params:
+        if bool(skip_stage0_optimizer) or (stage_rank["stage0"] < start_rank):
+            stage0_loaded_from = "layer0"
+            if not isinstance(best_kalman_params, dict) or (not best_kalman_params):
                 best_kalman_params = {"kalman_Q": 1e-4, "kalman_R": 0.01}
-            kalman_result = {"best_params": dict(best_kalman_params), "best_value": 0.0, "history": []}
+            kalman_result = {"best_params": dict(best_kalman_params), "best_value": None, "history": []}
             tprint_info(
-                f"♻️ Stage 0 skipped (start_at={start_at_canonical}); loaded best params from {stage0_loaded_from}"
+                f"♻️ Stage 0 skipped (start_at={start_at_canonical}); using Layer0 best params"
             )
         else:
             kalman_optimizer = BayesianTPEOptimizer(
@@ -10844,8 +10968,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         enable_committee_pre_step = bool(config.get("enable_committee_pre_step", True))
         enable_committee_pre_step = bool(enable_committee_pre_step and (enable_committee_voting_hpo or enable_committee_weight_factor))
 
-        committee_configs: List[TripleBarrierConfig] = []
-        committee_names: List[str] = []
+        committee_configs = [] if not isinstance(committee_configs, list) else committee_configs
+        committee_names = [] if not isinstance(committee_names, list) else committee_names
         committee_event_idx: Optional[pd.DatetimeIndex] = None
         committee_label_matrix_values: Optional[np.ndarray] = None
         committee_returns_matrix_values: Optional[np.ndarray] = None
@@ -10863,7 +10987,23 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         }
         committee_loaded_from: Optional[str] = None
 
-        if enable_committee_pre_step:
+        if bool(skip_committee_pre_step_compute):
+            try:
+                best_committee_params = dict(layer0_output.best_committee_params or best_committee_params)
+            except Exception:
+                pass
+            committee_loaded_from = getattr(layer0_output, "committee_loaded_from", None)
+
+        if bool(skip_committee_pre_step_compute):
+            enable_committee_pre_step = bool(layer0_output.enable_committee_pre_step)
+            committee_event_idx = layer0_output.committee_event_idx
+            committee_label_matrix_values = layer0_output.committee_label_matrix_values
+            committee_returns_matrix_values = layer0_output.committee_returns_matrix_values
+            committee_durations_matrix_values = layer0_output.committee_durations_matrix_values
+            committee_confidence_matrix_values = layer0_output.committee_confidence_matrix_values
+            committee_configs = list(getattr(layer0_output, "committee_configs", []) or [])
+            committee_names = list(getattr(layer0_output, "committee_names", []) or [])
+        if enable_committee_pre_step and (not bool(skip_committee_pre_step_compute)):
             tprint_info("🧪 Committee pre-step: optimizing committee voting weights...")
 
             # Build committee configs (6 experts)
@@ -11067,11 +11207,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ------------------------------------------------------------------
         # ADVANCED GATING PIPELINE (fit on committee pre-step data)
         # ------------------------------------------------------------------
-        advanced_gating_pipeline: Optional[AdvancedGatingPipeline] = None
+        advanced_gating_pipeline = advanced_gating_pipeline
         try:
             enable_advanced_gating = bool(config.get("enable_advanced_gating", True))
             if (
                 enable_advanced_gating
+                and (advanced_gating_pipeline is None)
                 and committee_label_matrix_values is not None
                 and committee_returns_matrix_values is not None
                 and committee_confidence_matrix_values is not None
@@ -11807,6 +11948,16 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         meta_feature_cfg["nn_sequence_encoder"] = nn_cfg
                 if "nn_embeddings_cache_path" in config and "nn_embeddings_cache_path" not in meta_feature_cfg:
                     meta_feature_cfg["nn_embeddings_cache_path"] = config.get("nn_embeddings_cache_path")
+
+                nn_cfg_local = meta_feature_cfg.get("nn_sequence_encoder") if isinstance(meta_feature_cfg, dict) else None
+                if isinstance(nn_cfg_local, dict) and nn_cfg_local.get("pretrained_path"):
+                    if not bool(config.get("allow_pretrained_nn_sequence_embeddings", False)):
+                        nn_cfg_local = dict(nn_cfg_local)
+                        nn_cfg_local["pretrained_path"] = None
+                        meta_feature_cfg["nn_sequence_encoder"] = nn_cfg_local
+                        tprint_warning(
+                            "[nn_sequence] disabling pretrained_path during HPO (set allow_pretrained_nn_sequence_embeddings=True to override)"
+                        )
         except Exception:
             pass
 
@@ -13497,6 +13648,69 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 utility = utility_pre_improvements
 
+            # =====================================================================
+            # NEW FIX: Prob-Return Correlation Gate
+            # =====================================================================
+            # Purpose: Penalize utility when model predictions don't correlate with
+            # actual returns. This is the key fix for feature-signal alignment.
+            #
+            # Even if a model achieves good AUC (separating label=1 from label=0),
+            # if the predicted probabilities don't correlate with actual RETURNS,
+            # the model is useless for trading.
+            # =====================================================================
+            prob_return_correlation = 0.0
+            prob_return_modifier = 1.0
+            try:
+                prob_return_gate_enabled = bool(config.get("layer2_prob_return_gate_enabled", True))
+                prob_return_min_corr = float(config.get("layer2_prob_return_min_corr", 0.03))
+                prob_return_penalty_weight = float(config.get("layer2_prob_return_penalty_weight", 0.5))
+                
+                if prob_return_gate_enabled and cv_preds is not None and returns_arr is not None:
+                    from scipy.stats import spearmanr
+                    
+                    # Get predictions and returns
+                    p_arr = np.asarray(cv_preds, dtype=float)
+                    r_arr = np.asarray(returns_arr, dtype=float)
+                    
+                    # Align lengths
+                    min_len = min(len(p_arr), len(r_arr))
+                    if min_len > 30:  # Need enough samples for correlation
+                        p_arr = p_arr[:min_len]
+                        r_arr = r_arr[:min_len]
+                        
+                        # Mask out NaN/Inf
+                        valid_mask = np.isfinite(p_arr) & np.isfinite(r_arr)
+                        if valid_mask.sum() > 30:
+                            corr, pval = spearmanr(p_arr[valid_mask], r_arr[valid_mask])
+                            
+                            if np.isfinite(corr):
+                                prob_return_correlation = float(corr)
+                                
+                                # Apply penalty if correlation is below threshold
+                                if prob_return_correlation < prob_return_min_corr:
+                                    # Scale: at corr=0, modifier=0.5; at corr=min_corr, modifier=1.0
+                                    ratio = max(0.0, prob_return_correlation / prob_return_min_corr)
+                                    prob_return_modifier = float(
+                                        (1.0 - prob_return_penalty_weight) + prob_return_penalty_weight * ratio
+                                    )
+                                    prob_return_modifier = float(np.clip(prob_return_modifier, 0.3, 1.0))
+                                    
+                                    utility_pre_prob_return_gate = float(utility)
+                                    utility = float(utility) * float(prob_return_modifier)
+                                    
+                                    # Log warning for diagnostics
+                                    if _l2_std_trial_counter[0] <= 3:
+                                        tprint_warning(
+                                            f"      ⚠️ Prob-return corr={prob_return_correlation:.3f} < {prob_return_min_corr} → "
+                                            f"penalty={1.0 - prob_return_modifier:.2f}"
+                                        )
+            except ImportError:
+                # scipy not available
+                pass
+            except Exception:
+                pass
+
+
             try:
                 utility_debug.update(
                     {
@@ -13511,10 +13725,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         # Magnitude-Weighted Win Rate (sole modifier now)
                         "magnitude_weighted_win_rate": float(magnitude_weighted_win_rate),
                         "magnitude_win_rate_modifier": float(magnitude_win_rate_modifier),
+                        # NEW: Prob-Return Correlation Gate metrics
+                        "prob_return_correlation": float(prob_return_correlation),
+                        "prob_return_modifier": float(prob_return_modifier),
                         "utility_pre_clip": float(utility),
                         "utility": float(utility),
                     }
                 )
+
             except Exception:
                 pass
 
@@ -14634,16 +14852,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     # Use calibrated confidence and learned weights
                     if adv_gating_result is not None:
                         conf_mat = adv_gating_result.get("calibrated_conf", conf_mat0)
-                        learned_weights = adv_gating_result.get("weights", None)
-                        if learned_weights is not None:
-                            weights_mat = learned_weights
-                            # Update moe_diagnostics to indicate learned router was used
-                            moe_diag_update = params.get("moe_diagnostics", {})
-                            moe_diag_update["learned_router"] = True
-                            moe_diag_update["learned_weights_shape"] = list(learned_weights.shape) if hasattr(learned_weights, 'shape') else None
-                            moe_diag_update["learned_weights_mean"] = float(np.mean(learned_weights)) if learned_weights is not None else None
-                            moe_diag_update["learned_weights_std"] = float(np.std(learned_weights)) if learned_weights is not None else None
-                            params["moe_diagnostics"] = moe_diag_update
+                        weights_mat = adv_gating_result.get("weights", weights_mat)
                         # Store diagnostics
                         params["adv_gating_diagnostics"] = adv_gating_result.get("diagnostics", {})
                         
@@ -16105,17 +16314,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 )
             moe_diag = l2_metrics.get("moe_diagnostics", {})
             if moe_diag:
-                # Check if learned router was used
-                if moe_diag.get('learned_router'):
-                    tprint_info("   Layer 2 MoE: 🧠 LEARNED ROUTER active (heuristic MoE skipped)")
-                else:
-                    tprint_info(
-                        "   Layer 2 MoE regime counts: "
-                        f"trend={moe_diag.get('n_trend_events', 0)}, "
-                        f"chop={moe_diag.get('n_chop_events', 0)}, "
-                        f"vol_spike={moe_diag.get('n_vol_spike_events', 0)}, "
-                        f"transition={moe_diag.get('n_transition_events', 0)}"
-                    )
+                tprint_info(
+                    "   Layer 2 MoE regime counts: "
+                    f"trend={moe_diag.get('n_trend_events', 0)}, "
+                    f"chop={moe_diag.get('n_chop_events', 0)}, "
+                    f"vol_spike={moe_diag.get('n_vol_spike_events', 0)}, "
+                    f"transition={moe_diag.get('n_transition_events', 0)}"
+                )
                 if moe_diag.get('trend_w_in_trend') is not None:
                     tprint_info(
                         "   Layer 2 MoE weights by regime: "
@@ -16555,8 +16760,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 # NEW: Log return and drawdown components
                 tprint_info(
                     "   Layer 2 debug: "
-                    f"mean_return={mean_return_dbg:.6f if mean_return_dbg is not None else 'N/A'}, "
-                    f"max_drawdown={max_dd_dbg:.4f if max_dd_dbg is not None else 'N/A'}"
+                    f"mean_return={f'{mean_return_dbg:.6f}' if mean_return_dbg is not None else 'N/A'}, "
+                    f"max_drawdown={f'{max_dd_dbg:.4f}' if max_dd_dbg is not None else 'N/A'}"
                 )
         except Exception as dbg_exc:
             tprint_warning(f"   ⚠️ Layer 2 debug diagnostics failed: {dbg_exc}")
@@ -16777,6 +16982,65 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 final_returns = pd.Series(weighted_returns.astype(float), index=final_t_events_all).iloc[train_mask]
                 final_labels = pd.Series((weighted_returns > 0).astype(float), index=final_t_events_all).iloc[train_mask]
 
+                # =====================================================================
+                # NEW FIX: Continuous Labels for Model Training (Vol-Scaled Returns)
+                # =====================================================================
+                # Purpose: Create continuous labels that preserve magnitude information.
+                # This can be used for:
+                # 1. Sample weighting: larger returns get higher weight in training
+                # 2. Regression objective: predict continuous vol-scaled returns
+                #
+                # Standard De Prado approach: normalize returns by volatility
+                # =====================================================================
+                continuous_labels = None
+                magnitude_weights = None
+                try:
+                    use_continuous_labels = bool(config.get("layer3_use_continuous_labels", True))
+                    use_magnitude_weighting = bool(config.get("layer3_use_magnitude_weighting", True))
+                    
+                    if use_continuous_labels or use_magnitude_weighting:
+                        # Get volatility series for vol-scaling
+                        vol_s = None
+                        try:
+                            vol_s = volatility_1d.reindex(final_t_events_all)
+                            if vol_s.isna().all():
+                                vol_s = None
+                        except Exception:
+                            vol_s = None
+                        
+                        # Compute vol-scaled returns
+                        raw_returns = pd.Series(weighted_returns.astype(float), index=final_t_events_all)
+                        
+                        if vol_s is not None:
+                            vol_s = vol_s.fillna(vol_s.median()).clip(lower=1e-6)
+                            vol_scaled_returns = raw_returns / vol_s
+                        else:
+                            # Fallback: use rolling std as volatility estimate
+                            rolling_vol = raw_returns.rolling(20, min_periods=5).std().fillna(raw_returns.std())
+                            rolling_vol = rolling_vol.clip(lower=1e-6)
+                            vol_scaled_returns = raw_returns / rolling_vol
+                        
+                        # Clip to [-5, +5] to prevent outlier domination
+                        vol_scaled_returns = vol_scaled_returns.clip(lower=-5, upper=5)
+                        
+                        # Normalize to [0, 1] for compatibility with classification
+                        continuous_labels = ((vol_scaled_returns + 5.0) / 10.0).clip(0, 1)
+                        continuous_labels = continuous_labels.iloc[train_mask]
+                        
+                        # Compute magnitude weights: larger |returns| get higher weight
+                        if use_magnitude_weighting:
+                            abs_vol_scaled = np.abs(vol_scaled_returns.iloc[train_mask].values)
+                            # Normalize to have mean=1 (no change in total weight)
+                            abs_vol_scaled = abs_vol_scaled / (np.mean(abs_vol_scaled) + 1e-8)
+                            # Clip extremes to prevent single-sample domination
+                            magnitude_weights = np.clip(abs_vol_scaled, 0.2, 5.0)
+                            tprint_info(f"   Layer 3: magnitude weighting enabled (range: {magnitude_weights.min():.2f} - {magnitude_weights.max():.2f})")
+                except Exception as cont_exc:
+                    tprint_warning(f"   Layer 3: continuous labels failed: {cont_exc}")
+                    continuous_labels = None
+                    magnitude_weights = None
+
+
                 # If committee-gated training collapses to a single class, fall back
                 # to training on all events to restore a meaningful learnability AUC.
                 try:
@@ -16851,6 +17115,65 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         X_final = meta_features_full.reindex(final_t_events).fillna(0)
         y_final = final_labels[valid_final_mask]
 
+        # Initialize continuous_labels if not already defined (from committee block)
+        try:
+            continuous_labels  # Check if defined
+        except NameError:
+            continuous_labels = None
+
+
+        # =====================================================================
+        # SOFT LABELS: Use continuous labels (vol-scaled returns) if enabled
+        # =====================================================================
+        # LightGBM supports soft labels (values between 0 and 1) for classification.
+        # This preserves magnitude information during training, so larger moves
+        # have more influence on the loss function.
+        # =====================================================================
+        use_soft_labels_for_training = False
+        try:
+            use_soft_labels_for_training = bool(config.get("layer3_use_soft_labels", True))
+            
+            # If continuous_labels weren't computed in committee block, compute them now
+            if use_soft_labels_for_training and continuous_labels is None:
+                tprint_info("   Layer 3: computing soft labels from final_returns...")
+                try:
+                    # Use final_returns directly to create vol-scaled soft labels
+                    raw_returns = final_returns.reindex(final_t_events).fillna(0.0)
+                    
+                    # Estimate volatility from rolling std
+                    rolling_vol = raw_returns.rolling(20, min_periods=5).std().fillna(raw_returns.std())
+                    rolling_vol = rolling_vol.clip(lower=1e-6)
+                    
+                    # Vol-scale returns
+                    vol_scaled = (raw_returns / rolling_vol).clip(-5, +5)
+                    
+                    # Normalize to [0, 1]
+                    continuous_labels = ((vol_scaled + 5.0) / 10.0).clip(0, 1)
+                except Exception as cl_exc:
+                    tprint_warning(f"   Layer 3: failed to compute continuous labels: {cl_exc}")
+                    continuous_labels = None
+            
+            if use_soft_labels_for_training and continuous_labels is not None:
+                # Get continuous labels aligned with final_t_events
+                y_soft = continuous_labels.reindex(final_t_events).fillna(0.5)
+                
+                # Validate soft labels are in [0, 1] range
+                y_soft = y_soft.clip(0.0, 1.0)
+                
+                if len(y_soft) == len(y_final) and not y_soft.isna().all():
+                    y_final = y_soft
+                    tprint_info(f"   Layer 3: using SOFT labels (range: {y_final.min():.3f} - {y_final.max():.3f})")
+                else:
+                    tprint_warning(f"   Layer 3: soft labels invalid, falling back to binary")
+                    use_soft_labels_for_training = False
+            elif use_soft_labels_for_training:
+                tprint_warning(f"   Layer 3: continuous_labels not available, using binary labels")
+                use_soft_labels_for_training = False
+        except Exception as soft_exc:
+            tprint_warning(f"   Layer 3: soft label setup failed: {soft_exc}")
+            use_soft_labels_for_training = False
+
+
         committee_gate_arr_for_l3: Optional[np.ndarray] = None
         try:
             if committee_gate_series_for_l3 is not None:
@@ -16874,6 +17197,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
         # Explicitly define X_final_full for feature selection usage
         X_final_full = X_final.copy()
+
+        # Initialize magnitude_weights and continuous_labels at outer scope
+        # (may have been set in committee block)
+        try:
+            magnitude_weights  # Check if defined
+        except NameError:
+            magnitude_weights = None
+        
+        try:
+            continuous_labels  # Check if defined
+        except NameError:
+            continuous_labels = None
 
         # ======================================================================
         # HOLDOUT EXAM SPLIT: Reserve most recent data for final OOS evaluation
@@ -17081,6 +17416,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 pass
         except Exception:
             final_weights = np.ones(len(final_t_events), dtype=float)
+
+        # =====================================================================
+        # NEW FIX: Apply magnitude weighting to final_weights
+        # =====================================================================
+        # If magnitude_weights was computed earlier (continuous labels section),
+        # multiply it into final_weights so larger trades have more influence.
+        # =====================================================================
+        try:
+            if magnitude_weights is not None and len(magnitude_weights) == len(final_weights):
+                final_weights = final_weights * magnitude_weights
+                # Re-normalize to mean=1
+                fw_mean = float(np.mean(final_weights))
+                if np.isfinite(fw_mean) and fw_mean > 0:
+                    final_weights = final_weights / fw_mean
+                tprint_info(f"   Layer 3: magnitude weights applied to sample weights")
+        except Exception as mw_exc:
+            tprint_warning(f"   Layer 3: failed to apply magnitude weights: {mw_exc}")
+
 
         tprint_info(
             f"[L3 data check] events={len(final_t_events)}, "
@@ -17735,28 +18088,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     l3_w_den = 0.0
                 l3_w_den = float(max(0.0, l3_w_den))
 
-                use_soft_target = False
-                try:
-                    use_soft_target = bool(use_soft_labels_for_training and (int(y_final_train.nunique()) > 2))
-                except Exception:
-                    use_soft_target = False
-                if bool(use_soft_target) and bool(layer3_use_two_stage_model):
-                    use_soft_target = False
-
-                if bool(use_soft_target):
-                    model = lgb.LGBMRegressor(
-                        n_jobs=-1,
-                        verbose=-1,
-                        random_state=42,
-                        **{k: v for k, v in model_params.items() if k != 'recency_decay_lambda'},
-                    )
-                else:
-                    model = lgb.LGBMClassifier(
-                        n_jobs=-1,
-                        verbose=-1,
-                        random_state=42,
-                        **{k: v for k, v in model_params.items() if k != 'recency_decay_lambda'},
-                    )
+                model = lgb.LGBMClassifier(n_jobs=-1, verbose=-1, random_state=42, **{k: v for k, v in model_params.items() if k != 'recency_decay_lambda'})
 
                 # Extract recency_decay_lambda from HPO trial params
                 trial_recency_decay = model_params.get('recency_decay_lambda', 0.0)
@@ -18342,7 +18674,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     folds_sharpe=folds_sharpe_dbg,  # Actually Sortino ratios now
                     auc=mean_auc_dbg,
                     trades_per_day=trades_per_day_dbg,
-                    lambda_vol=0.4,  # CHANGED from 0.8 (recalibrated for Sortino)
+                    lambda_vol=0.2,  # CHANGED from 0.4 (further reduced for high fold variance)
                     w_auc=0.5,
                     w_den=0.3,
                     calibration_brier=mean_brier_dbg,
@@ -18370,7 +18702,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     folds_sharpe=sortino_arr,  # Now Sortino ratios (param name kept for backward compat)
                     auc=mean_auc_effective,
                     trades_per_day=trades_per_day,
-                    lambda_vol=lambda_vol,  # 0.4 for Sortino (reduced from 0.8 for Sharpe)
+                    lambda_vol=lambda_vol,  # 0.2 for Sortino (further reduced for high fold variance)
                     w_auc=w_auc,
                     w_den=float(l3_w_den),
                     calibration_brier=mean_brier,
@@ -18457,7 +18789,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     pass
                 try:
                     if np.isfinite(float(utility)):
-                        utility = float(np.clip(float(utility), -1.0, float(config.get("layer3_utility_clip_max", 5000.0))))
+                        utility = float(np.clip(float(utility), -5.0, float(config.get("layer3_utility_clip_max", 5000.0))))  # CHANGED: -5.0 to differentiate negative trials
                 except Exception:
                     pass
 
@@ -18682,9 +19014,25 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 )
 
                 # Get feature-selected columns if feature selection was used
+                # IMPORTANT: Holdout set may not have all columns (e.g., regime_leaf features
+                # are generated during HPO on the dev set only). Use intersection.
                 selected_cols = list(X_final.columns)
-                X_train_exam = X_final[selected_cols].copy()
-                X_test_exam = X_holdout[selected_cols].copy()
+                available_holdout_cols = list(X_holdout.columns)
+                common_cols = [c for c in selected_cols if c in available_holdout_cols]
+                
+                if len(common_cols) < len(selected_cols):
+                    missing_cols = [c for c in selected_cols if c not in available_holdout_cols]
+                    tprint_warning(f"   ⚠️ Holdout missing {len(missing_cols)} features (using {len(common_cols)}/{len(selected_cols)})")
+                    if len(missing_cols) <= 10:
+                        tprint_info(f"      Missing: {missing_cols}")
+                    else:
+                        tprint_info(f"      Missing (first 10): {missing_cols[:10]}...")
+                
+                if len(common_cols) < 10:
+                    raise ValueError(f"Too few common features ({len(common_cols)}) for holdout exam")
+                
+                X_train_exam = X_final[common_cols].copy()
+                X_test_exam = X_holdout[common_cols].copy()
 
                 # Train on full development set
                 if final_weights is not None and len(final_weights) == len(X_train_exam):
@@ -22364,30 +22712,19 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         }
         return {"success": True, "metrics": metrics, "artifacts": artifacts}
 
-def register_meta_labeling_hpo_sample_weighted_step() -> None:
-    """Register the meta-labeling HPO sample weighted step in the registry.
-    
-    This is the CANONICAL HPO entry point for meta-labeling. All HPO step aliases
-    route to MetaLabelingHPOSampleWeightedStep for consistency.
-    """
+def register_label_based_pipeline_step() -> None:
+    """Register the label-based layered HPO pipeline step in the registry."""
     from src.training.steps.base_step import step_registry
 
     # Primary registration
-    step_registry.register("meta_labeling_hpo_sample_weighted", MetaLabelingHPOSampleWeightedStep)
-    
-    # Backward compatibility aliases - route old names to weighted version
-    step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOSampleWeightedStep)
-    step_registry.register("sr_labeling_xgb", MetaLabelingHPOSampleWeightedStep)
-    step_registry.register("sr_labeling_xgb_weighted", MetaLabelingHPOSampleWeightedStep)
+    step_registry.register("label_based_pipeline", LabelBasedPipelineStep)
     
     tprint(
-        "✅ Meta-labeling HPO sample weighted step registered as CANONICAL entry point "
-        "(aliases: meta_labeling_hpo_sample_weighted, meta_labeling_hpo_experiment, "
-        "sr_labeling_xgb, sr_labeling_xgb_weighted)",
+        "✅ Label-based pipeline step registered (label_based_pipeline)",
         "SUCCESS"
     )
 
 
 # Auto-register when module is imported
-register_meta_labeling_hpo_sample_weighted_step()
+register_label_based_pipeline_step()
 

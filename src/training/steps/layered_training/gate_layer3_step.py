@@ -1,7 +1,8 @@
 """
 Layer 3: Gate Model Step
 
-Trains a Gate Model (ExtraTreesClassifier) to filter Layer 2 predictions.
+Trains a Gate Model to filter Layer 2 predictions.
+Compares ExtraTreesClassifier and RidgeClassifier.
 Inputs: Layer 2 OOF + Regime Features.
 Target: Binary Success (Net Return > 0).
 """
@@ -17,6 +18,7 @@ from src.utils.versioned_artifacts import VersionedArtifactStore
 from src.utils.reporting.layered_pipeline_reporter import LayeredPipelineReporter
 
 from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.linear_model import RidgeClassifier
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, precision_score
 
@@ -38,14 +40,6 @@ class GateLayer3Step(BaseStep):
              return {"success": False, "error": "Layer 2 OOF not found."}
 
         l2_oof = pd.read_csv(l2_oof_path, index_col=0, parse_dates=True)
-        # We need to know which model was best, or we take 'average' or just all?
-        # Typically we gate the *chosen* signal.
-        # For this implementation, we'll try to find the 'best' column from metadata or just take the one with highest var?
-        # Simpler: Use ALL columns from L2 OOF as input to Gate?
-        # User said: "using OOF predictions only from Analyst meta model". Singular.
-        # We'll use the 'average' or 'lgbm' (whichever is present).
-        # Let's use the one with highest correlation in the OOF if possible, or just all.
-        # Actually, let's use all L2 predictions as input.
 
         # Load Regime Features (Labeled Data)
         store_path = f"versioned_artifacts/{symbol}_{exchange}_{timeframe}_{direction}_meta_labeling"
@@ -72,50 +66,85 @@ class GateLayer3Step(BaseStep):
         X_gate = pd.concat([l2_oof, labeled_data[regime_cols]], axis=1)
         X_gate = X_gate.fillna(0)
 
-        # Train Gate
-        gate_model = ExtraTreesClassifier(n_estimators=100, max_depth=5, min_samples_leaf=30, n_jobs=1, class_weight="balanced")
+        # Define Models
+        models = {
+            "ExtraTrees": ExtraTreesClassifier(n_estimators=100, max_depth=5, min_samples_leaf=30, n_jobs=1, class_weight="balanced"),
+            "Ridge": RidgeClassifier(class_weight="balanced", alpha=1.0)
+        }
 
         tscv = TimeSeriesSplit(n_splits=5)
-        gate_oof_preds = pd.Series(index=X_gate.index, dtype=float)
+        # DataFrame to store OOF preds for each model
+        gate_oof_df = pd.DataFrame(index=X_gate.index, columns=models.keys())
 
         reporter = LayeredPipelineReporter()
 
-        self.log("Training Gate Model (CV)...")
+        self.log("Training Gate Models (CV)...")
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X_gate)):
             X_tr, y_tr = X_gate.iloc[train_idx], y_gate.iloc[train_idx]
             X_val = X_gate.iloc[val_idx]
 
-            gate_model.fit(X_tr, y_tr)
-            # Predict Proba of Class 1 (Profit)
-            preds = gate_model.predict_proba(X_val)[:, 1]
-            gate_oof_preds.iloc[val_idx] = preds
+            for name, model in models.items():
+                model.fit(X_tr, y_tr)
 
-        # Metrics
-        valid_gate = gate_oof_preds.dropna()
-        y_valid = y_gate.reindex(valid_gate.index)
+                # Predict scores
+                if hasattr(model, "predict_proba"):
+                    preds = model.predict_proba(X_val)[:, 1]
+                else:
+                    # RidgeClassifier has decision_function
+                    preds = model.decision_function(X_val)
+                    # Normalize to 0-1 sigmoid-like for comparability if needed,
+                    # but for ranking (AUC) raw score is fine.
+                    # For consistency with ExtraTrees (0-1), we might want to sigmoid it?
+                    # But AUC doesn't care. We'll store raw scores.
 
-        auc = roc_auc_score(y_valid, valid_gate)
-        # Check precision at threshold 0.6
-        binary_preds = (valid_gate > 0.6).astype(int)
-        prec = precision_score(y_valid, binary_preds, zero_division=0)
+                gate_oof_df.loc[X_val.index, name] = preds
 
-        metrics = {
-            "auc_roc": auc,
-            "precision_at_0.6": prec,
-            "prediction_std": valid_gate.std()
-        }
-        reporter.log_metrics("Layer3", "Gate_ExtraTrees", "OOF", metrics)
+        # Evaluation and Selection
+        best_auc = -1
+        best_model_name = "ExtraTrees" # Default
 
-        self.log(f"Gate AUC: {auc:.4f}, Precision@0.6: {prec:.4f}")
+        valid_idx = gate_oof_df.dropna().index
+        y_valid = y_gate.reindex(valid_idx)
 
-        # Save OOF
+        for name in models.keys():
+            preds = gate_oof_df.loc[valid_idx, name].astype(float)
+
+            # Calculate AUC
+            try:
+                auc = roc_auc_score(y_valid, preds)
+            except ValueError:
+                auc = 0.5
+
+            # Calculate Precision @ Top 40% (proxy for confidence > threshold)
+            # Dynamic thresholding based on quantile
+            threshold = preds.quantile(0.60)
+            binary_preds = (preds > threshold).astype(int)
+            prec = precision_score(y_valid, binary_preds, zero_division=0)
+
+            metrics = {
+                "auc_roc": auc,
+                "precision_at_40pct": prec,
+                "prediction_std": preds.std()
+            }
+            reporter.log_metrics("Layer3", f"Gate_{name}", "OOF", metrics)
+            self.log(f"Model {name}: AUC={auc:.4f}, Prec@40%={prec:.4f}")
+
+            if auc > best_auc:
+                best_auc = auc
+                best_model_name = name
+
+        self.log(f"Best Gate Model: {best_model_name} (AUC: {best_auc:.4f})")
+
+        # Save Winner OOF
         l3_oof_path = f"artifacts/layer3_oof_{symbol}_{timeframe}_{direction}.csv"
-        gate_oof_preds.to_csv(l3_oof_path)
+        # Save as a Series (single column) for compatibility with downstream
+        gate_oof_df[best_model_name].to_csv(l3_oof_path)
 
         return {
             "success": True,
             "l3_oof_path": l3_oof_path,
-            "gate_auc": auc
+            "gate_auc": best_auc,
+            "best_model": best_model_name
         }
 
 step_registry.register("gate_layer3_step", GateLayer3Step)

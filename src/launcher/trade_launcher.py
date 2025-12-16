@@ -23,6 +23,7 @@ from src.utils.logger import system_logger
 from src.launcher.trading_launcher import get_parameter_manager
 from src.utils.api_key_loader import get_api_keys
 from src.utils.tprint import tprint
+from src.utils.trading_verification.delta_checker import run_delta_check_cli
 
 
 # Configure logging
@@ -82,6 +83,8 @@ Examples:
                        help='Logging level (default: DEBUG for paper mode, INFO for trade mode)')
     parser.add_argument('--dry-run', action='store_true',
                        help='Validate configuration without starting trading')
+    parser.add_argument('--delta-check', action='store_true',
+                       help='Run Delta Check (Backtest vs Live parity) before starting')
     
     args = parser.parse_args()
 
@@ -240,6 +243,15 @@ Examples:
             logger.info("Use without --dry-run to start actual trading")
             tprint("🔚 trade_launcher.main() - Exiting dry run with return code: 0", "SUCCESS")
             return 0
+
+        # Delta Check (Pre-flight)
+        if args.delta_check:
+            tprint("🕵️ trade_launcher.main() - Running Delta Check...", "INFO")
+            delta_exit_code = await run_delta_check_cli(args.asset, "15m", args.exchange)
+            if delta_exit_code != 0:
+                tprint("❌ Delta Check FAILED. Aborting trading start.", "ERROR")
+                return delta_exit_code
+            tprint("✅ Delta Check PASSED. Proceeding.", "SUCCESS")
         
         # Create trading config
         tprint(f"⚙️ trade_launcher.main() - Creating trading config: mode={live_trading_mode}, exchange={args.exchange}, symbols={[args.asset]}, direction={args.direction}", "INFO")

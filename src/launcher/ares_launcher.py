@@ -116,6 +116,14 @@ except Exception as e:
         e,
     )
 
+try:
+    import src.training.steps.layered_training  # Registers LAYERED_TRAINING steps
+except Exception as e:
+    logger.warning(
+        "LAYERED_TRAINING steps could not be imported and will be unavailable: %s",
+        e,
+    )
+
 
 class SimplifiedAresLauncher:
     """
@@ -268,6 +276,13 @@ class SimplifiedAresLauncher:
                 'regime_aware_feature_interaction_generation_step',
                 'feature_generation_final_feature_selection_step',
                 'feature_generation_final_validation_step'
+            ],
+            'LAYERED_TRAINING': [
+                'analyst_base_layer1_step',
+                'analyst_meta_layer2_step',
+                'gate_layer3_step',
+                'final_retraining_step',
+                'diagnostics_reporting_step'
             ]
         }
         
@@ -358,6 +373,15 @@ Examples:
     training_group.add_argument('--train-tactician-base', action='store_true', help='Train tactician base models')
     training_group.add_argument('--train-tactician-ensemble', action='store_true', help='Train tactician ensemble models')
     training_group.add_argument('--train-gate', action='store_true', help='Train gate model')
+
+    # Layered training options
+    layered_group = parser.add_mutually_exclusive_group()
+    layered_group.add_argument('--layered-training-base', action='store_true', help='Run Layer 1: Analyst Base Models')
+    layered_group.add_argument('--layered-training-meta', action='store_true', help='Run Layer 2: Analyst Meta Model')
+    layered_group.add_argument('--layered-training-gate', action='store_true', help='Run Layer 3: Gate Model')
+    layered_group.add_argument('--layered-training-final', action='store_true', help='Run Final Retraining')
+    layered_group.add_argument('--layered-training-diagnostics', action='store_true', help='Run Diagnostics Reporting')
+    layered_group.add_argument('--run-layered-pipeline', action='store_true', help='Run the full Layered Training pipeline')
     
     # Feature generation interaction generation options
     interaction_group = parser.add_mutually_exclusive_group()
@@ -910,6 +934,8 @@ async def main():
         args.regime_models_training, args.regime_ensemble_training,
         args.regime_models_training, args.regime_ensemble_training,
         args.hmm_macro_regime, args.xgb_meso_regime, args.final_parameters_optimization,
+        args.layered_training_base, args.layered_training_meta, args.layered_training_gate,
+        args.layered_training_final, args.layered_training_diagnostics, args.run_layered_pipeline
     ])
 
     if not has_execution_mode:
@@ -1102,6 +1128,38 @@ async def main():
                 logger.info("Running analyst base backtest using OOS predictions")
                 backtest_result = await launcher.run_step('analyst_base_backtest', config)
                 print(f"Analyst base backtest completed: {'✅ Success' if backtest_result.get('success') else '❌ Failed'}")
+
+        elif args.layered_training_base:
+            logger.info("Running Layer 1: Analyst Base Models")
+            result = await launcher.run_step('analyst_base_layer1_step', config)
+            print(f"Layer 1 completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.layered_training_meta:
+            logger.info("Running Layer 2: Analyst Meta Model")
+            result = await launcher.run_step('analyst_meta_layer2_step', config)
+            print(f"Layer 2 completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.layered_training_gate:
+            logger.info("Running Layer 3: Gate Model")
+            result = await launcher.run_step('gate_layer3_step', config)
+            print(f"Layer 3 completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.layered_training_final:
+            logger.info("Running Final Retraining")
+            result = await launcher.run_step('final_retraining_step', config)
+            print(f"Final Retraining completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.layered_training_diagnostics:
+            logger.info("Running Diagnostics Reporting")
+            result = await launcher.run_step('diagnostics_reporting_step', config)
+            print(f"Diagnostics Reporting completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.run_layered_pipeline:
+            logger.info("Running full Layered Training Pipeline")
+            result = await launcher.run_stage('LAYERED_TRAINING', config)
+            successful = sum(1 for r in result.values() if r.get('success', False))
+            total = len(result)
+            print(f"Layered Training Pipeline completed: {successful}/{total} steps successful")
 
         elif args.rolling_hmm_regime_discovery:
             # Rolling HMM regime discovery execution

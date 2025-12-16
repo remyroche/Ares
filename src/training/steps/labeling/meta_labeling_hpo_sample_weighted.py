@@ -10897,11 +10897,16 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         if not np.isfinite(l2_vol_penalty_high):
             l2_vol_penalty_high = 0.25
         l2_vol_penalty_high = float(np.clip(l2_vol_penalty_high, 0.0, 1.0))
+        # 2025-12-16: Adjusted search space minimums to produce more learnable labels
+        # Previous minimums (sl_atr_mult=0.5, horizon_bars=6) led to:
+        # - 50%+ stop-out rate (trades don't have room to develop)
+        # - Labels that predict short-term noise, not trade quality
+        # - Model predictions that don't correlate with actual returns (0.062 vs 0.607 for labels)
         layer2_search_space = {
-            "profit_floor_tx_mult": {"type": "float", "low": 1.0, "high": 4.0},
-            "sl_atr_mult": {"type": "float", "low": 0.5, "high": 3.0},
+            "profit_floor_tx_mult": {"type": "float", "low": 1.5, "high": 4.0},
+            "sl_atr_mult": {"type": "float", "low": 1.0, "high": 3.0},  # Was 0.5 - too tight
             "risk_reward_ratio": {"type": "float", "low": 1.0, "high": 5.0},
-            "horizon_bars": {"type": "int", "low": 6, "high": 48},
+            "horizon_bars": {"type": "int", "low": 16, "high": 48},  # Was 6 - too short
             "min_event_spacing": {"type": "int", "low": 0, "high": 6},
             "trail_distance_atr_mult": {"type": "float", "low": 0.5, "high": 3.0},
             "prob_threshold": {"type": "float", "low": 0.50, "high": float(l2_prob_thr_high)},

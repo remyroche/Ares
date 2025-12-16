@@ -12580,7 +12580,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             # --- Option 1: Trade Magnitude Bonus ---
             # Concept: Reward larger per-trade profits (scale-aware optimization)
-            # A 1% mean return gets ~1.0 bonus, 0.5% gets ~0.5 bonus
+            # Uses log1p for diminishing returns: doubling profit doesn't double bonus
+            # Capped to prevent extreme values from dominating utility
             try:
                 w_magnitude = float(config.get("layer2_utility_w_magnitude", 50.0))
             except Exception:
@@ -12589,9 +12590,21 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 w_magnitude = 50.0
 
             try:
+                magnitude_bonus_cap = float(config.get("layer2_utility_magnitude_bonus_cap", 2.0))
+            except Exception:
+                magnitude_bonus_cap = 2.0
+            if not np.isfinite(magnitude_bonus_cap):
+                magnitude_bonus_cap = 2.0
+
+            try:
                 if trade_mean_return is not None and np.isfinite(trade_mean_return) and trade_mean_return > 0:
-                    # Scale: 1% return → 1.0 bonus (before weight)
-                    magnitude_bonus = float(trade_mean_return) * 100.0 * w_magnitude
+                    # Use log1p for diminishing returns: log1p(x) grows slowly for large x
+                    # Scale: 1% return → log1p(1.0) ≈ 0.69, 2% → log1p(2.0) ≈ 1.10 (not 2x)
+                    # This makes the bonus relative to magnitude with diminishing returns
+                    return_pct = float(trade_mean_return) * 100.0  # Convert to percentage
+                    magnitude_bonus_raw = float(np.log1p(return_pct)) * w_magnitude
+                    # Cap the bonus to prevent extreme values
+                    magnitude_bonus = float(np.clip(magnitude_bonus_raw, 0.0, magnitude_bonus_cap * w_magnitude))
                     if not np.isfinite(magnitude_bonus):
                         magnitude_bonus = 0.0
             except Exception:
@@ -12636,11 +12649,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # A 50% win rate with 3:1 R:R is better than 50% with 1:1 R:R
             # Formula: sum(positive_returns) / (sum(positive_returns) + |sum(negative_returns)|)
             try:
-                w_mag_winrate = float(config.get("layer2_utility_w_mag_winrate", 0.3))
+                w_mag_winrate = float(config.get("layer2_utility_w_mag_winrate", 0.8))
             except Exception:
-                w_mag_winrate = 0.3
+                w_mag_winrate = 0.8
             if not np.isfinite(w_mag_winrate):
-                w_mag_winrate = 0.3
+                w_mag_winrate = 0.8
 
             try:
                 mag_winrate_floor = float(config.get("layer2_utility_mag_winrate_floor", 0.45))
@@ -12667,10 +12680,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                                 )
                                 magnitude_win_rate_modifier = float(np.clip(magnitude_win_rate_modifier, 0.3, 1.0))
                             else:
-                                # Bonus for good magnitude-weighted win rate (up to 1.2x)
+                                # Bonus for good magnitude-weighted win rate (up to 1.4x)
                                 excess = magnitude_weighted_win_rate - mag_winrate_floor
                                 magnitude_win_rate_modifier = float(1.0 + excess * w_mag_winrate)
-                                magnitude_win_rate_modifier = float(np.clip(magnitude_win_rate_modifier, 1.0, 1.2))
+                                magnitude_win_rate_modifier = float(np.clip(magnitude_win_rate_modifier, 1.0, 1.4))
             except Exception:
                 magnitude_win_rate_modifier = 1.0
 

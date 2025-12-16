@@ -2838,102 +2838,26 @@ def run_trading_simulation(
     labels_valid = binary_labels[valid_mask].values if binary_labels is not None else None
 
     # -------------------------------------------------------------------------
-    # 1. Model Calibration Diagnostics
+    # 1. Model Calibration Diagnostics (Production Model)
     # -------------------------------------------------------------------------
 
-    # Train a probe model and get predictions for calibration analysis
-    y_array = y.values.astype(float)
-    X_array = X.values.astype(float)
+    # Use the production model probabilities (prob_valid) and corresponding labels (labels_valid)
+    # We skip fitting a probe model here because we want to diagnose the existing meta_probability.
 
-    tscv = TimeSeriesSplit(n_splits=cv_splits)
-
-    all_y_true = []
-    all_p_pred = []
-
-    for fold_idx, (tr_idx, te_idx) in enumerate(tscv.split(X_array), start=1):
-        X_tr, X_te = X_array[tr_idx], X_array[te_idx]
-        y_tr, y_te = y_array[tr_idx], y_array[te_idx]
-
-        # Require both classes in train and test
-        if len(np.unique(y_tr[~np.isnan(y_tr)])) < 2 or len(np.unique(y_te[~np.isnan(y_te)])) < 2:
-            continue
-
-        mask_tr = ~np.isnan(y_tr)
-        y_tr_clean = y_tr[mask_tr]
-        X_tr_clean = X_tr[mask_tr]
-        mask_te = ~np.isnan(y_te)
-        y_te_clean = y_te[mask_te]
-        X_te_clean = X_te[mask_te]
-
-        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
-            continue
-
-        clf = lgb.LGBMClassifier(
-            boosting_type="gbdt",
-            objective="binary",
-            max_depth=3,
-            n_estimators=50,
-            learning_rate=0.1,
-            subsample=0.7,
-            colsample_bytree=0.7,
-            min_child_samples=20,
-            n_jobs=-1,
-            verbose=-1,
-            random_state=42,
-        )
-
-        clf.fit(X_tr_clean, y_tr_clean)
-        prob = clf.predict_proba(X_te_clean)[:, 1]
-
-        all_y_true.append(y_te_clean)
-        all_p_pred.append(prob)
-
-    # Aggregate predictions for calibration
     calibration_metrics = {}
     calibration_curve_data = {}
-    iso_calibrator = None  # Will hold fitted isotonic calibrator
 
-    if all_y_true:
-        y_all = np.concatenate(all_y_true)
-        p_all = np.concatenate(all_p_pred)
-
-        # Brier score (uncalibrated)
+    if labels_valid is not None and len(labels_valid) > 0:
+        # Brier score (Production Model)
         try:
-            brier = float(brier_score_loss(y_all, p_all))
+            brier = float(brier_score_loss(labels_valid, prob_valid))
         except Exception:
             brier = float("nan")
-
-        # -----------------------------------------------------------------
-        # Fit isotonic calibration on OOS predictions
-        # -----------------------------------------------------------------
-        try:
-            from sklearn.isotonic import IsotonicRegression
-            iso_calibrator = IsotonicRegression(out_of_bounds='clip')
-            iso_calibrator.fit(p_all, y_all)
-            
-            # Compute calibrated Brier for comparison
-            p_calibrated = iso_calibrator.predict(p_all)
-            brier_calibrated = float(brier_score_loss(y_all, p_calibrated))
-            try:
-                abs_improvement = float(brier - brier_calibrated)
-                rel_improvement_pct = float(100.0 * abs_improvement / max(float(brier), 1e-12))
-                abs_improvement_pct_points = float(100.0 * abs_improvement)
-            except Exception:
-                rel_improvement_pct = float("nan")
-                abs_improvement_pct_points = float("nan")
-            logger.info(
-                f"Isotonic calibration fitted: Brier {brier:.4f} -> {brier_calibrated:.4f} "
-                f"(improvement: {abs_improvement_pct_points:.2f} pct-pts, {rel_improvement_pct:.2f}% relative)"
-            )
-        except Exception as e:
-            logger.warning(f"Isotonic calibration failed: {e}")
-            iso_calibrator = None
-            brier_calibrated = float("nan")
 
         # Calibration curve (reliability diagram data)
         try:
             fraction_of_positives, mean_predicted_value = calibration_curve(
-                y_all, p_all, n_bins=10, strategy='uniform'
+                labels_valid, prob_valid, n_bins=10, strategy='uniform'
             )
             calibration_curve_data = {
                 "fraction_of_positives": [float(x) for x in fraction_of_positives],
@@ -2941,11 +2865,11 @@ def run_trading_simulation(
             }
 
             # Expected Calibration Error (ECE)
-            bin_counts = np.histogram(p_all, bins=10, range=(0, 1))[0]
+            bin_counts = np.histogram(prob_valid, bins=10, range=(0, 1))[0]
             ece = 0.0
             for i in range(len(fraction_of_positives)):
                 if i < len(bin_counts) and bin_counts[i] > 0:
-                    ece += (bin_counts[i] / len(p_all)) * abs(fraction_of_positives[i] - mean_predicted_value[i])
+                    ece += (bin_counts[i] / len(prob_valid)) * abs(fraction_of_positives[i] - mean_predicted_value[i])
 
             # Maximum Calibration Error (MCE)
             mce = float(np.max(np.abs(fraction_of_positives - mean_predicted_value)))
@@ -2953,20 +2877,17 @@ def run_trading_simulation(
         except Exception:
             ece = float("nan")
             mce = float("nan")
-            brier_calibrated = float("nan")
 
         calibration_metrics = {
             "brier_score": brier,
-            "brier_score_calibrated": brier_calibrated if 'brier_calibrated' in dir() else float("nan"),
             "expected_calibration_error": float(ece) if np.isfinite(ece) else float("nan"),
             "max_calibration_error": float(mce) if np.isfinite(mce) else float("nan"),
-            "n_samples": int(len(y_all)),
-            "isotonic_calibration_applied": iso_calibrator is not None,
+            "n_samples": int(len(labels_valid)),
+            "isotonic_calibration_applied": False,
         }
     else:
         calibration_metrics = {
             "brier_score": float("nan"),
-            "brier_score_calibrated": float("nan"),
             "expected_calibration_error": float("nan"),
             "max_calibration_error": float("nan"),
             "n_samples": 0,
@@ -2977,13 +2898,9 @@ def run_trading_simulation(
     # 2. Trading Simulation at Different Probability Thresholds
     # -------------------------------------------------------------------------
     
-    # Apply isotonic calibration to trading probabilities if available
-    if iso_calibrator is not None:
-        prob_trading = iso_calibrator.predict(prob_valid)
-        logger.info(f"Applied isotonic calibration to {len(prob_trading)} trading probabilities")
-    else:
-        prob_trading = prob_valid
-        logger.info("Using uncalibrated probabilities for trading simulation")
+    # Use raw probabilities for trading simulation to assess actual ranking power
+    prob_trading = prob_valid
+    logger.info("Using raw production probabilities for trading simulation (no cross-model calibration)")
 
     threshold_results = {}
     best_gate_info: Optional[dict] = None

@@ -12100,14 +12100,23 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if int(pd.Series(l2_labels_bin.values).nunique()) < 2:
                     raise ValueError("Layer2 labels have <2 classes")
                 
-                # Use sign(returns) as training target to predict profitability directly
+                # Use sign(log-returns) as training target to predict profitability directly
+                # Log-transform compresses outliers for better ML stability
                 # This addresses the model-return correlation problem
                 try:
                     l2_returns_arr = l2_returns_clean.reindex(l2_t_events).values.astype(float)
+                    # Apply log-transform to compress outliers
+                    l2_log_returns_arr = log_returns_fees_adjusted(
+                        l2_returns_arr,
+                        already_net=True,  # returns already have fees subtracted
+                        winsorize_pct=0.01,
+                    )
                     if bool(layer2_econ_win_enabled):
-                        y_train_target = pd.Series((l2_returns_arr > float(layer2_econ_win_floor)).astype(int), index=l2_t_events)
+                        # For econ_win_floor, convert to log-space threshold
+                        log_floor = float(np.sign(layer2_econ_win_floor) * np.log1p(abs(layer2_econ_win_floor)))
+                        y_train_target = pd.Series((l2_log_returns_arr > log_floor).astype(int), index=l2_t_events)
                     else:
-                        y_train_target = pd.Series((l2_returns_arr > 0).astype(int), index=l2_t_events)
+                        y_train_target = pd.Series((l2_log_returns_arr > 0).astype(int), index=l2_t_events)
                 except Exception:
                     y_train_target = l2_labels_bin
                 
@@ -12117,7 +12126,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     y=y_train_target,
                     sample_weight=sample_weights,
                     n_splits=n_cv_folds,
-                    returns=l2_returns_clean.values.astype(float),
+                    returns=l2_returns_clean.values.astype(float),  # Keep linear returns for Sharpe calculation
                     direction=direction,
                     prob_thr=float(prob_thr),
                     use_calibration=True,
@@ -12692,10 +12701,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     cv_fail_reason = "single_class_labels"
                     raise ValueError("Layer2 labels have <2 classes")
                 
-                # Use sign(returns) as training target to predict profitability directly
+                # Use sign(log-returns) as training target to predict profitability directly
+                # Log-transform compresses outliers for better ML stability
                 try:
                     l2_returns_arr = l2_returns_clean.reindex(l2_t_events).values.astype(float)
-                    y_train_target = pd.Series((l2_returns_arr > 0).astype(int), index=l2_t_events)
+                    # Apply log-transform to compress outliers
+                    l2_log_returns_arr = log_returns_fees_adjusted(
+                        l2_returns_arr,
+                        already_net=True,
+                        winsorize_pct=0.01,
+                    )
+                    y_train_target = pd.Series((l2_log_returns_arr > 0).astype(int), index=l2_t_events)
                 except Exception:
                     y_train_target = l2_labels_bin
                 
@@ -12705,7 +12721,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     y=y_train_target,
                     sample_weight=sample_weights,
                     n_splits=n_cv_folds,
-                    returns=l2_returns_clean.values.astype(float),
+                    returns=l2_returns_clean.values.astype(float),  # Keep linear returns for Sharpe
                     direction=direction,
                     prob_thr=float(prob_thr),
                     use_calibration=True,
@@ -17152,15 +17168,26 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     except Exception:
                         w_series = None
 
-                    # Use sign(returns) as target for feature selection to select features that predict profitability
+                    # Use sign(log-returns) as target for feature selection to select features that predict profitability
                     # rather than just labels. This addresses the model-return correlation problem.
+                    # Log-transform compresses outliers and makes the distribution more suitable for ML.
                     y_for_selection = y_final
                     try:
                         returns_for_selection = final_returns.reindex(X_final_full.index).fillna(0.0)
-                        y_for_selection = (returns_for_selection > 0).astype(int)
-                        tprint_info(f"   [Layer3 Feature Selection] Using sign(returns) as target for feature selection")
+                        # Apply log-transform to compress outliers before taking sign
+                        # This gives more weight to consistent performers vs lucky outliers
+                        log_returns_for_sel = log_returns_fees_adjusted(
+                            returns_for_selection.values,
+                            already_net=True,  # final_returns is already net of fees
+                            winsorize_pct=0.01,
+                        )
+                        y_for_selection = pd.Series(
+                            (log_returns_for_sel > 0).astype(int),
+                            index=returns_for_selection.index
+                        )
+                        tprint_info(f"   [Layer3 Feature Selection] Using sign(log_returns) as target for feature selection")
                     except Exception as rtgt_exc:
-                        tprint_warning(f"   [Layer3 Feature Selection] Failed to compute sign(returns): {rtgt_exc}; using y_final")
+                        tprint_warning(f"   [Layer3 Feature Selection] Failed to compute sign(log_returns): {rtgt_exc}; using y_final")
                         y_for_selection = y_final
 
                     selected_feats_l3, selection_results_l3 = run_mda_shap_feature_selection(

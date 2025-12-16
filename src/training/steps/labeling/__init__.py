@@ -83,6 +83,38 @@ except Exception:
     except Exception:
         MetaLabelingHPOExperimentStep = None
 
+# Layer-specific HPO modules (refactored from meta_labeling_hpo_sample_weighted.py)
+# Each module handles one layer of the hierarchical optimization:
+# - Layer 0: Kalman/RTS smoother optimization
+# - Layer 1: Sample weighting optimization
+# - Layer 2: Trading parameters optimization
+# - Layer 3: Model hyperparameters optimization
+try:
+    from .meta_labeling_weighted_hpo_0 import (
+        LAYER0_KALMAN_SEARCH_SPACE,
+        run_layer0_kalman_optimization,
+        run_committee_pre_step,
+    )
+    from .meta_labeling_weighted_hpo_1 import (
+        DEFAULT_WEIGHTING_PARAMS,
+        compute_committee_weight_factors,
+        run_layer1_weighting_optimization,
+    )
+    from .meta_labeling_weighted_hpo_2 import (
+        get_layer2_search_space,
+        compute_regime_conditional_barrier_geometry,
+        save_layer2_results,
+    )
+    from .meta_labeling_weighted_hpo_3 import (
+        get_layer3_search_space,
+        get_lgbm_params_from_trial,
+        compute_layer3_cv_metrics,
+        save_layer3_results,
+    )
+except Exception:
+    # Layer modules are optional - main coordinator still has all logic
+    pass
+
 # Weighted meta-labeling production step (2025-12-11)
 try:
     from .weighted_meta_labeling_step import (

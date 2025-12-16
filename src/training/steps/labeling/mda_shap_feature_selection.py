@@ -1221,6 +1221,53 @@ class MDA_SHAP_FeatureSelector:
                 if prefilter_counts.get("anova", None) is None:
                     prefilter_counts["anova"] = int(len(filtered_features))
 
+        # 5. Return-IC filter (2025-12-16)
+        # Prioritize features that correlate with returns, not just labels
+        # This addresses the problem where regime features dominate because they
+        # split labels well but don't predict actual trade profitability
+        if config.get("enable_return_ic_filter", True):
+            self._log("   📈 Return-IC filter (correlation with target)...")
+            before = int(len(filtered_features))
+            
+            try:
+                # Compute Spearman correlation between each feature and y (which should be sign(returns))
+                return_ics = {}
+                y_numeric = pd.to_numeric(y, errors='coerce')
+                
+                for feature in filtered_features:
+                    try:
+                        feat_vals = pd.to_numeric(X[feature], errors='coerce')
+                        corr = feat_vals.corr(y_numeric, method='spearman')
+                        if np.isfinite(corr):
+                            return_ics[feature] = abs(float(corr))  # Use absolute correlation
+                        else:
+                            return_ics[feature] = 0.0
+                    except Exception:
+                        return_ics[feature] = 0.0
+                
+                # Keep features with IC above median, but ensure we don't filter too aggressively
+                ic_values = list(return_ics.values())
+                if ic_values and len(ic_values) > 20:
+                    ic_threshold = float(np.percentile(ic_values, 25))  # Keep top 75%
+                    ic_filtered = [f for f in filtered_features if return_ics.get(f, 0.0) >= ic_threshold]
+                    
+                    # Ensure we keep at least 50% of features
+                    if len(ic_filtered) >= len(filtered_features) * 0.5:
+                        filtered_features = ic_filtered
+                        after = int(len(filtered_features))
+                        prefilter_counts["return_ic"] = after
+                        self._log(f"   📊 Return-IC filter: {before} → {after} features (IC threshold: {ic_threshold:.4f})")
+                    else:
+                        prefilter_counts["return_ic"] = before
+                        self._log(f"   ⚠️ Return-IC filter skipped: would remove >50% of features")
+                else:
+                    prefilter_counts["return_ic"] = before
+                    self._log(f"   ⚠️ Return-IC filter skipped: insufficient features ({len(ic_values)})")
+                    
+            except Exception as ric_exc:
+                prefilter_counts["return_ic"] = before
+                self._log(f"   ⚠️ Return-IC filter failed: {ric_exc}", level="warning")
+
         X_filtered = X[filtered_features]
         self._prefilter_counts = dict(prefilter_counts)
         try:

@@ -1,0 +1,10 @@
+{
+  "steps_1_4": {
+    "success": false,
+    "layers": {},
+    "comparison": {},
+    "best_combination": {},
+    "integrity_checks": [],
+    "error": "'dict' object has no attribute 'columns'"
+  }
+}

@@ -1,0 +1,51 @@
+# L1_BASE - lgbm_conservative
+
+**Generated**: 2025-12-16T15:47:36.146538
+
+**Config**: ETHUSDT | binance | 15m | long
+
+**Model Type**: bagged_lgbm
+
+**Samples**: 1,580 | **Features**: 70
+
+
+## Layer 1 (Base): Raw Predictive Power & Diversity
+
+| Metric | Value | Threshold | Status |
+|--------|-------|-----------|--------|
+| Information Coefficient (IC) | 0.0333 | > 0.03 | ✅ |
+| Sortino Ratio | 2.7753 | > 1.5 | ✅ |
+| Avg Expectancy | 0.002260 | > 0.001 | ✅ |
+| Pairwise Correlation | 0.0000 | < 0.75 | ✅ |
+| Prediction Std | 0.0197 | > 0.05 | ❌ |
+
+## Additional Metrics
+
+### Calibration
+- ECE: 0.0272
+- Brier Score: 0.2504
+- MCE: 0.1407
+- Log Loss: 0.6940
+- Prediction Std: 0.0197
+
+### Trading Performance
+- Win Rate: 0.6508
+- Profit Factor: 1.6536
+- Avg Expectancy: 0.002260
+- Total Trades: 63
+
+### Risk Metrics
+- Sortino Ratio: 2.7753
+- Max Drawdown: 0.3411
+- Calmar Ratio: 3.7765
+- Omega Ratio: 1.0556
+- Tail Ratio: 1.0616
+
+### Predictive Power
+- AUC-ROC: 0.5105
+- Information Coefficient: 0.0333
+- Information Ratio: 0.0000
+- Directional Accuracy: 0.5057
+
+## Notes
+AUC: 0.5294

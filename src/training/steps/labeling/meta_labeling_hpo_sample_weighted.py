@@ -7718,6 +7718,136 @@ def _compute_per_expert_psr(
     return result
 
 
+def _compute_unprofitable_expert_penalty(
+    *,
+    per_expert_psr: Dict[str, Dict[str, Any]],
+    weights_vec: np.ndarray,
+    expert_names: List[str],
+    psr_threshold: float = 0.5,
+    sr_threshold: float = 0.0,
+    penalty_scale: float = 1.0,
+    min_trades_required: int = 10,
+) -> Dict[str, Any]:
+    """
+    Compute a penalty for configurations that give high weight to unprofitable experts.
+    
+    This enables HPO to automatically down-weight experts that consistently
+    underperform on a risk-adjusted basis (low PSR or negative Sharpe Ratio).
+    
+    The penalty is computed as:
+        penalty = sum(weight_i * underperformance_i) for all unprofitable experts
+    
+    Where underperformance_i = max(0, psr_threshold - psr_i) + max(0, -sr_i) * sr_weight
+    
+    Args:
+        per_expert_psr: Dict from _compute_per_expert_psr with PSR metrics per expert
+        weights_vec: (n_experts,) normalized expert weights from HPO
+        expert_names: List of expert names matching weights_vec order
+        psr_threshold: PSR below this is considered underperforming (default 0.5 = random)
+        sr_threshold: SR below this triggers additional penalty (default 0.0)
+        penalty_scale: Multiplier for the final penalty
+        min_trades_required: Ignore experts with fewer trades
+        
+    Returns:
+        Dict with:
+            - penalty: Total penalty value (higher = worse configuration)
+            - unprofitable_experts: List of expert names flagged as unprofitable
+            - expert_penalties: Dict mapping expert_name -> individual penalty contribution
+            - diagnostics: Additional debug info
+    """
+    result: Dict[str, Any] = {
+        "penalty": 0.0,
+        "unprofitable_experts": [],
+        "expert_penalties": {},
+        "diagnostics": {
+            "n_experts_evaluated": 0,
+            "n_unprofitable": 0,
+            "total_unprofitable_weight": 0.0,
+            "worst_expert": None,
+            "worst_expert_psr": None,
+        },
+    }
+    
+    if not per_expert_psr or not expert_names:
+        return result
+    
+    w = np.asarray(weights_vec, dtype=float).reshape(-1)
+    if w.size != len(expert_names):
+        return result
+    
+    # Normalize weights for consistent penalty scaling
+    w_sum = float(np.sum(w))
+    if w_sum <= 1e-12:
+        return result
+    w_norm = w / w_sum
+    
+    total_penalty = 0.0
+    unprofitable_experts: List[str] = []
+    expert_penalties: Dict[str, float] = {}
+    total_unprofitable_weight = 0.0
+    worst_expert = None
+    worst_psr = 1.0
+    n_evaluated = 0
+    
+    for j, name in enumerate(expert_names):
+        psr_data = per_expert_psr.get(str(name), {})
+        if not isinstance(psr_data, dict):
+            continue
+        
+        # Skip experts with insufficient trades
+        n_trades = psr_data.get("n_taken", psr_data.get("n", 0))
+        if n_trades < min_trades_required:
+            continue
+        
+        n_evaluated += 1
+        psr_val = float(psr_data.get("psr", 0.5))
+        sr_val = psr_data.get("sr")
+        weight_i = float(w_norm[j])
+        
+        # Compute underperformance score
+        # 1. PSR penalty: how far below threshold
+        psr_gap = float(max(0.0, psr_threshold - psr_val))
+        
+        # 2. SR penalty: additional penalty for negative Sharpe
+        sr_penalty = 0.0
+        if sr_val is not None and np.isfinite(sr_val):
+            if float(sr_val) < sr_threshold:
+                # Stronger penalty for negative SR (losing money)
+                sr_penalty = float(max(0.0, sr_threshold - float(sr_val)))
+        
+        # Combined underperformance (PSR dominates, SR adds extra penalty for losses)
+        underperformance = psr_gap + 0.5 * sr_penalty
+        
+        if underperformance > 0.01:
+            # Weight-adjusted penalty: high weight + poor performance = big penalty
+            expert_penalty = weight_i * underperformance * penalty_scale
+            total_penalty += expert_penalty
+            unprofitable_experts.append(str(name))
+            expert_penalties[str(name)] = float(expert_penalty)
+            total_unprofitable_weight += weight_i
+            
+            # Track worst expert
+            if psr_val < worst_psr:
+                worst_psr = psr_val
+                worst_expert = str(name)
+    
+    result["penalty"] = float(total_penalty)
+    result["unprofitable_experts"] = unprofitable_experts
+    result["expert_penalties"] = expert_penalties
+    result["diagnostics"] = {
+        "n_experts_evaluated": n_evaluated,
+        "n_unprofitable": len(unprofitable_experts),
+        "total_unprofitable_weight": float(total_unprofitable_weight),
+        "worst_expert": worst_expert,
+        "worst_expert_psr": float(worst_psr) if worst_expert else None,
+        "psr_threshold": float(psr_threshold),
+        "sr_threshold": float(sr_threshold),
+        "penalty_scale": float(penalty_scale),
+    }
+    
+    return result
+
+
 def _compute_regime_aware_correlation(
     *,
     signals: np.ndarray,
@@ -14908,6 +15038,43 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 pass
 
+            # ================================================================
+            # UNPROFITABLE EXPERT PENALTY
+            # ================================================================
+            # Automatically down-weight configurations that give high weight
+            # to experts with poor risk-adjusted returns (low PSR / negative SR).
+            # This enables HPO to learn which experts are consistently unprofitable.
+            unprofitable_expert_penalty_result: Dict[str, Any] = {}
+            unprofitable_expert_penalty = 0.0
+            utility_pre_unprofitable_penalty = float(utility_after_diversity)
+            try:
+                # Get config for unprofitable expert penalty
+                unprofitable_penalty_enabled = bool(config.get("layer2_unprofitable_expert_penalty_enabled", True))
+                unprofitable_penalty_lambda = float(config.get("layer2_unprofitable_expert_penalty_lambda", 0.5))
+                unprofitable_psr_threshold = float(config.get("layer2_unprofitable_psr_threshold", 0.5))
+                unprofitable_sr_threshold = float(config.get("layer2_unprofitable_sr_threshold", 0.0))
+                
+                if unprofitable_penalty_enabled and unprofitable_penalty_lambda > 0.0 and per_expert_psr:
+                    unprofitable_expert_penalty_result = _compute_unprofitable_expert_penalty(
+                        per_expert_psr=per_expert_psr,
+                        weights_vec=weights_vec,
+                        expert_names=list(committee_names),
+                        psr_threshold=unprofitable_psr_threshold,
+                        sr_threshold=unprofitable_sr_threshold,
+                        penalty_scale=unprofitable_penalty_lambda,
+                        min_trades_required=int(config.get("layer2_psr_min_expert_trades", 10)),
+                    )
+                    
+                    raw_penalty = float(unprofitable_expert_penalty_result.get("penalty", 0.0))
+                    if np.isfinite(raw_penalty) and raw_penalty > 0.0:
+                        # Apply penalty: reduce utility proportionally
+                        # Cap penalty at 50% of utility to avoid complete zeroing
+                        max_penalty = 0.5 * abs(float(utility_after_diversity))
+                        unprofitable_expert_penalty = float(min(raw_penalty, max_penalty))
+                        utility_after_diversity = float(utility_after_diversity) - unprofitable_expert_penalty
+            except Exception:
+                pass
+
             utility_pre_volatility_penalty = float(utility_after_diversity)
             vol_mean_all = None
             vol_mean_taken = None
@@ -15174,6 +15341,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 "diversity_multiplier": float(diversity_multiplier),
                 "regime_aware_diversity": regime_aware_diversity if regime_aware_diversity else {},
                 "per_expert_psr": per_expert_psr if per_expert_psr else {},
+                "unprofitable_expert_penalty": float(unprofitable_expert_penalty),
+                "unprofitable_expert_penalty_result": unprofitable_expert_penalty_result if unprofitable_expert_penalty_result else {},
+                "utility_pre_unprofitable_penalty": float(utility_pre_unprofitable_penalty),
                 "layer2_soft_min_trades_committee": int(min_tr),
                 "phi_trades": float(phi_trades),
                 "sharpe_mean": float(np.mean(folds_sharpe_arr)),
@@ -15339,6 +15509,29 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if per_regime:
                     regime_str = ", ".join(f"{k}={v:.3f}" for k, v in per_regime.items())
                     tprint_info(f"   Layer 2 per-regime corr: {regime_str}")
+            # Log unprofitable expert penalty
+            unprofitable_penalty = l2_metrics.get("unprofitable_expert_penalty", 0.0)
+            unprofitable_result = l2_metrics.get("unprofitable_expert_penalty_result", {})
+            if unprofitable_penalty > 0.01 or unprofitable_result:
+                diag = unprofitable_result.get("diagnostics", {})
+                n_unprofitable = diag.get("n_unprofitable", 0)
+                total_weight = diag.get("total_unprofitable_weight", 0.0)
+                worst_expert = diag.get("worst_expert")
+                worst_psr = diag.get("worst_expert_psr")
+                unprofitable_experts = unprofitable_result.get("unprofitable_experts", [])
+                tprint_info(
+                    f"   Layer 2 unprofitable expert penalty: {unprofitable_penalty:.4f} "
+                    f"(n_unprofitable={n_unprofitable}, weight={total_weight:.3f})"
+                )
+                if worst_expert and worst_psr is not None:
+                    tprint_info(f"   Layer 2 worst expert: {worst_expert} (PSR={worst_psr:.3f})")
+                if unprofitable_experts:
+                    expert_penalties = unprofitable_result.get("expert_penalties", {})
+                    penalty_str = ", ".join(
+                        f"{exp}:{expert_penalties.get(exp, 0.0):.3f}" 
+                        for exp in unprofitable_experts[:5]
+                    )
+                    tprint_info(f"   Layer 2 unprofitable experts: {penalty_str}")
         except Exception as l2_diag_exc:
             l2_metrics = {}
             tprint_warning(f"   ⚠️ Failed to compute Layer 2 metrics breakdown: {l2_diag_exc}")

@@ -367,27 +367,45 @@ class MDA_SHAP_FeatureSelector:
         """
         Compute composite scores combining MDA, SHAP, and IR.
 
-        Formula: Composite Score = MDA_cluster_score * IR_rank
+        Formula (2025-12-16 update):
+            Composite Score = MDA_mean * IC_weight * SHAP_weight / IR_rank
+        
+        Where:
+            - MDA_mean: Mean Decrease in Accuracy (permutation importance)
+            - IC_weight: 1 + abs(mean_ic) to boost features with high target correlation
+            - SHAP_weight: 1 + log(1 + shap_score) to incorporate SHAP importance
+            - IR_rank: Ranking by Information Ratio (stability of IC across folds)
+        
+        This addresses the problem where regime features dominate MDI because they
+        have high variance, but don't correlate well with actual returns. The IC_weight
+        term penalizes features with low target correlation.
 
         Args:
             clusters: Feature clusters
             mda_scores: MDA scores per cluster
             shap_scores: SHAP scores per feature
-            ic_scores: IC/IR scores per feature
+            ic_scores: IC/IR scores per feature (IC = Spearman correlation with target)
 
         Returns:
             Dict with composite scores and rankings
         """
         composite_scores = {}
 
-        # Get IR values for ranking
+        # Get IR values and mean IC for each feature
         ir_values = {}
+        ic_mean_values = {}
         for feature, ic_data in ic_scores.items():
             ir_values[feature] = ic_data.get('ir', 0.0)
+            ic_mean_values[feature] = ic_data.get('mean_ic', 0.0)  # Note: key is 'mean_ic'
 
         # Rank features by IR (higher IR = more stable = better rank)
         sorted_by_ir = sorted(ir_values.items(), key=lambda x: x[1], reverse=True)
         ir_ranks = {feature: rank for rank, (feature, _) in enumerate(sorted_by_ir, 1)}
+
+        # Normalize SHAP scores for weighting (avoid extreme values)
+        shap_vals = [v for v in shap_scores.values() if np.isfinite(v) and v > 0]
+        shap_median = float(np.median(shap_vals)) if shap_vals else 1.0
+        shap_median = max(shap_median, 1e-8)
 
         # Compute composite scores for individual features (feature-level MDA).
         for feature, stat in mda_stats.items():
@@ -402,7 +420,19 @@ class MDA_SHAP_FeatureSelector:
 
             if feature in ir_ranks and feature in shap_scores:
                 ir_rank = ir_ranks[feature]
-                composite_score = float(mda_mean) / float(ir_rank) if float(ir_rank) > 0 else 0.0
+                
+                # IC weight: boost features with high absolute correlation with target
+                # Features with |IC| > 0.1 get significant boost, those near 0 get no boost
+                abs_ic = abs(float(ic_mean_values.get(feature, 0.0)))
+                ic_weight = 1.0 + abs_ic * 2.0  # Range: 1.0 to ~1.2 for typical IC values
+                
+                # SHAP weight: incorporate SHAP importance (log-scaled to avoid extremes)
+                shap_val = float(shap_scores.get(feature, 0.0))
+                shap_normalized = shap_val / shap_median if shap_median > 0 else 0.0
+                shap_weight = 1.0 + np.log1p(max(0.0, shap_normalized)) * 0.5  # Range: 1.0 to ~2.0
+                
+                # Composite score: MDA * IC_weight * SHAP_weight / IR_rank
+                composite_score = float(mda_mean) * float(ic_weight) * float(shap_weight) / float(ir_rank) if float(ir_rank) > 0 else 0.0
 
                 composite_scores[feature] = {
                     'composite_score': float(composite_score),
@@ -411,6 +441,9 @@ class MDA_SHAP_FeatureSelector:
                     'ir_score': float(ir_values.get(feature, 0.0)),
                     'ir_rank': int(ir_rank),
                     'shap_score': float(shap_scores.get(feature, 0.0)),
+                    'ic_mean': float(ic_mean_values.get(feature, 0.0)),
+                    'ic_weight': float(ic_weight),
+                    'shap_weight': float(shap_weight),
                 }
 
         return composite_scores
@@ -1220,53 +1253,6 @@ class MDA_SHAP_FeatureSelector:
 
                 if prefilter_counts.get("anova", None) is None:
                     prefilter_counts["anova"] = int(len(filtered_features))
-
-        # 5. Return-IC filter (2025-12-16)
-        # Prioritize features that correlate with returns, not just labels
-        # This addresses the problem where regime features dominate because they
-        # split labels well but don't predict actual trade profitability
-        if config.get("enable_return_ic_filter", True):
-            self._log("   📈 Return-IC filter (correlation with target)...")
-            before = int(len(filtered_features))
-            
-            try:
-                # Compute Spearman correlation between each feature and y (which should be sign(returns))
-                return_ics = {}
-                y_numeric = pd.to_numeric(y, errors='coerce')
-                
-                for feature in filtered_features:
-                    try:
-                        feat_vals = pd.to_numeric(X[feature], errors='coerce')
-                        corr = feat_vals.corr(y_numeric, method='spearman')
-                        if np.isfinite(corr):
-                            return_ics[feature] = abs(float(corr))  # Use absolute correlation
-                        else:
-                            return_ics[feature] = 0.0
-                    except Exception:
-                        return_ics[feature] = 0.0
-                
-                # Keep features with IC above median, but ensure we don't filter too aggressively
-                ic_values = list(return_ics.values())
-                if ic_values and len(ic_values) > 20:
-                    ic_threshold = float(np.percentile(ic_values, 25))  # Keep top 75%
-                    ic_filtered = [f for f in filtered_features if return_ics.get(f, 0.0) >= ic_threshold]
-                    
-                    # Ensure we keep at least 50% of features
-                    if len(ic_filtered) >= len(filtered_features) * 0.5:
-                        filtered_features = ic_filtered
-                        after = int(len(filtered_features))
-                        prefilter_counts["return_ic"] = after
-                        self._log(f"   📊 Return-IC filter: {before} → {after} features (IC threshold: {ic_threshold:.4f})")
-                    else:
-                        prefilter_counts["return_ic"] = before
-                        self._log(f"   ⚠️ Return-IC filter skipped: would remove >50% of features")
-                else:
-                    prefilter_counts["return_ic"] = before
-                    self._log(f"   ⚠️ Return-IC filter skipped: insufficient features ({len(ic_values)})")
-                    
-            except Exception as ric_exc:
-                prefilter_counts["return_ic"] = before
-                self._log(f"   ⚠️ Return-IC filter failed: {ric_exc}", level="warning")
 
         X_filtered = X[filtered_features]
         self._prefilter_counts = dict(prefilter_counts)

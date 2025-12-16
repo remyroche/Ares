@@ -1,7 +1,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, List, Tuple, Union
+from typing import Optional, Dict, List, Tuple, Union, Any
 
 def calc_prob_touch_sl(
     mu: float,
@@ -106,16 +106,45 @@ def calc_prob_touch_sl_vec(
     reg = valid & (~small)
     if np.any(reg):
         MAX_EXP = 50.0
-        arg_x = np.clip(-ratio[reg] * sl[reg], -MAX_EXP, MAX_EXP)
-        arg_L = np.clip(-ratio[reg] * L[reg], -MAX_EXP, MAX_EXP)
-        exp_x = np.exp(arg_x)
-        exp_L = np.exp(arg_L)
-        denom = 1.0 - exp_L
-        safe = np.abs(denom) > 1e-12
-        p_tp = np.zeros_like(denom, dtype=float)
-        p_tp[safe] = (1.0 - exp_x[safe]) / denom[safe]
-        p_sl = 1.0 - p_tp
-        out[reg] = np.clip(p_sl, 0.0, 1.0)
+        # Calculate raw arguments without clipping first
+        raw_arg_x = -ratio[reg] * sl[reg]
+        raw_arg_L = -ratio[reg] * L[reg]
+
+        # Check for large positive arguments (extreme negative drift)
+        # where exponentials would overflow. In this limit:
+        # P(TP) ~ exp(arg_x - arg_L) = exp(ratio * tp)
+        overflow_mask = raw_arg_L > MAX_EXP
+
+        # Initialize outputs for the 'reg' subset
+        p_sl_subset = np.zeros(np.sum(reg), dtype=float)
+
+        # 1. Handle Overflow Case (Extreme Negative Drift -> High P(SL))
+        if np.any(overflow_mask):
+            # arg_x - arg_L = -ratio*sl - (-ratio*(sl+tp)) = ratio*tp
+            # Since ratio is large negative, ratio*tp is large negative.
+            # exp(ratio*tp) -> 0. So P(TP) -> 0, P(SL) -> 1.
+            # We calculate P(TP) directly to avoid Inf/Inf
+            ratio_overflow = ratio[reg][overflow_mask]
+            tp_overflow = tp[reg][overflow_mask]
+            p_tp_overflow = np.exp(ratio_overflow * tp_overflow)
+            p_sl_subset[overflow_mask] = 1.0 - p_tp_overflow
+
+        # 2. Handle Normal Case
+        normal_mask = ~overflow_mask
+        if np.any(normal_mask):
+            arg_x = np.clip(raw_arg_x[normal_mask], -MAX_EXP, MAX_EXP)
+            arg_L = np.clip(raw_arg_L[normal_mask], -MAX_EXP, MAX_EXP)
+
+            exp_x = np.exp(arg_x)
+            exp_L = np.exp(arg_L)
+            denom = 1.0 - exp_L
+
+            # Avoid division by zero if denom is tiny
+            safe_denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
+            p_tp_normal = (1.0 - exp_x) / safe_denom
+            p_sl_subset[normal_mask] = 1.0 - p_tp_normal
+
+        out[reg] = np.clip(p_sl_subset, 0.0, 1.0)
 
     out = np.where(np.isfinite(out), out, 1.0)
     return out

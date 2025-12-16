@@ -16862,6 +16862,125 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # Explicitly define X_final_full for feature selection usage
         X_final_full = X_final.copy()
 
+        # ======================================================================
+        # HOLDOUT EXAM SPLIT: Reserve most recent data for final OOS evaluation
+        # ======================================================================
+        # This creates a true holdout set that is NEVER seen during HPO:
+        # - Development set: Used for cross-validation during HPO
+        # - Holdout set: Used ONLY for final "exam" evaluation after HPO completes
+        #
+        # Default: 15% holdout (most recent data, chronologically)
+        # ======================================================================
+        try:
+            layer3_holdout_fraction = float(config.get("layer3_holdout_fraction", 0.15))
+        except Exception:
+            layer3_holdout_fraction = 0.15
+        if not np.isfinite(layer3_holdout_fraction) or layer3_holdout_fraction < 0.0:
+            layer3_holdout_fraction = 0.15
+        layer3_holdout_fraction = float(np.clip(layer3_holdout_fraction, 0.0, 0.4))  # Cap at 40%
+
+        layer3_enable_holdout = bool(config.get("layer3_enable_holdout_exam", True))
+
+        # Initialize holdout variables
+        X_holdout: Optional[pd.DataFrame] = None
+        y_holdout: Optional[pd.Series] = None
+        holdout_returns: Optional[np.ndarray] = None
+        holdout_weights: Optional[np.ndarray] = None
+        holdout_gate_arr: Optional[np.ndarray] = None
+        holdout_exit_reasons: Optional[np.ndarray] = None
+        holdout_durations: Optional[np.ndarray] = None
+        holdout_t_events: Optional[pd.DatetimeIndex] = None
+        n_holdout = 0
+        n_dev = len(X_final)
+
+        if layer3_enable_holdout and layer3_holdout_fraction > 0.0 and len(X_final) >= 200:
+            try:
+                # Chronological split: development (early), holdout (late/recent)
+                n_total = len(X_final)
+                n_holdout = int(n_total * layer3_holdout_fraction)
+                n_dev = n_total - n_holdout
+
+                if n_dev >= 100 and n_holdout >= 30:
+                    # Sort by index to ensure chronological order
+                    sorted_idx = X_final.index.sort_values()
+                    dev_idx = sorted_idx[:n_dev]
+                    holdout_idx = sorted_idx[n_dev:]
+
+                    # Development set (for HPO cross-validation)
+                    X_dev = X_final.loc[dev_idx].copy()
+                    y_dev = y_final.loc[dev_idx].copy()
+
+                    # Holdout set (for final exam - NEVER seen during HPO)
+                    X_holdout = X_final.loc[holdout_idx].copy()
+                    y_holdout = y_final.loc[holdout_idx].copy()
+                    holdout_t_events = holdout_idx
+
+                    # Get holdout returns for Sortino calculation
+                    try:
+                        holdout_returns = final_returns.reindex(holdout_idx).fillna(0.0).values
+                    except Exception:
+                        holdout_returns = np.zeros(len(holdout_idx))
+
+                    # Get holdout committee gate
+                    try:
+                        if committee_gate_arr_for_l3 is not None:
+                            # Map the boolean array to holdout indices
+                            full_gate_series = pd.Series(committee_gate_arr_for_l3, index=final_t_events)
+                            holdout_gate_arr = full_gate_series.loc[holdout_idx].values.astype(bool)
+                        else:
+                            holdout_gate_arr = np.ones(len(holdout_idx), dtype=bool)
+                    except Exception:
+                        holdout_gate_arr = np.ones(len(holdout_idx), dtype=bool)
+
+                    # Get holdout exit reasons and durations
+                    try:
+                        if final_exit_reasons is not None:
+                            holdout_exit_reasons = final_exit_reasons.reindex(holdout_idx).values
+                        if final_durations is not None:
+                            holdout_durations = final_durations.reindex(holdout_idx).values
+                    except Exception:
+                        pass
+
+                    # Update X_final, y_final, and committee_gate_arr_for_l3 to development set only
+                    X_final = X_dev
+                    y_final = y_dev
+                    final_t_events = dev_idx
+                    X_final_full = X_final.copy()
+
+                    # Update committee gate to development set
+                    try:
+                        if committee_gate_arr_for_l3 is not None:
+                            dev_gate_series = pd.Series(committee_gate_arr_for_l3, index=sorted_idx[:n_total])
+                            committee_gate_arr_for_l3 = dev_gate_series.loc[dev_idx].values.astype(bool)
+                    except Exception:
+                        pass
+
+                    tprint_info("=" * 60)
+                    tprint_info(f"   🔒 HOLDOUT EXAM ENABLED: {layer3_holdout_fraction:.0%} reserved for final OOS test")
+                    tprint_info(f"   Development set: {n_dev} samples (used for HPO CV)")
+                    tprint_info(f"   Holdout set: {n_holdout} samples (final exam, never seen during HPO)")
+                    tprint_info(f"   Holdout date range: {holdout_idx.min()} to {holdout_idx.max()}")
+                    tprint_info("=" * 60)
+                else:
+                    tprint_warning(f"   ⚠️ Holdout disabled: insufficient data (dev={n_dev}, holdout={n_holdout})")
+                    X_holdout = None
+                    y_holdout = None
+                    n_holdout = 0
+                    n_dev = len(X_final)
+            except Exception as holdout_exc:
+                tprint_warning(f"   ⚠️ Failed to create holdout split: {holdout_exc}")
+                X_holdout = None
+                y_holdout = None
+                n_holdout = 0
+                n_dev = len(X_final)
+        else:
+            if not layer3_enable_holdout:
+                tprint_info("   ℹ️ Holdout exam disabled via config (layer3_enable_holdout_exam=False)")
+            elif layer3_holdout_fraction <= 0.0:
+                tprint_info("   ℹ️ Holdout exam disabled (layer3_holdout_fraction=0)")
+            else:
+                tprint_info(f"   ℹ️ Holdout exam disabled: insufficient data ({len(X_final)} < 200 samples)")
+
         # ------------------------------------------------------------------
         # DIAGNOSTIC: Log HPO feature/label summary for comparison with SNR probe
         # ------------------------------------------------------------------
@@ -18505,6 +18624,210 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 )
         except Exception as l3_diag_exc:
             tprint_warning(f"   ⚠️ Failed to compute Layer 3 metrics breakdown: {l3_diag_exc}")
+
+        # ======================================================================
+        # HOLDOUT EXAM: Final out-of-sample evaluation on data NEVER seen during HPO
+        # ======================================================================
+        # This is the "final exam" - train on full development set, test on holdout.
+        # The holdout set was reserved at the start and never used in any HPO trial.
+        # ======================================================================
+        holdout_exam_metrics: Dict[str, Any] = {}
+        if X_holdout is not None and y_holdout is not None and len(X_holdout) >= 30:
+            tprint_info("=" * 60)
+            tprint_info("🎓 HOLDOUT EXAM: Evaluating best model on reserved out-of-sample data...")
+            tprint_info("=" * 60)
+            try:
+                # Build final model with best params and train on FULL development set
+                final_exam_model = lgb.LGBMClassifier(
+                    boosting_type="gbdt",
+                    objective="binary",
+                    n_jobs=-1,
+                    verbose=-1,
+                    random_state=42,
+                    **{k: v for k, v in best_model_params.items() if k not in ["boosting_type", "objective", "n_jobs", "verbose", "random_state"]}
+                )
+
+                # Get feature-selected columns if feature selection was used
+                selected_cols = list(X_final.columns)
+                X_train_exam = X_final[selected_cols].copy()
+                X_test_exam = X_holdout[selected_cols].copy()
+
+                # Train on full development set
+                if final_weights is not None and len(final_weights) == len(X_train_exam):
+                    final_exam_model.fit(X_train_exam, y_final, sample_weight=final_weights)
+                else:
+                    final_exam_model.fit(X_train_exam, y_final)
+
+                # Predict on holdout
+                holdout_probs = final_exam_model.predict_proba(X_test_exam)[:, 1]
+
+                # Calibrate predictions using isotonic regression (trained on dev set)
+                try:
+                    from sklearn.isotonic import IsotonicRegression
+                    # Use OOF predictions from development set for calibration
+                    dev_oof_probs = np.zeros(len(X_train_exam))
+                    from sklearn.model_selection import TimeSeriesSplit as _HoldoutTSCV
+                    holdout_cal_cv = _HoldoutTSCV(n_splits=3)
+                    for tr_idx_cal, te_idx_cal in holdout_cal_cv.split(X_train_exam):
+                        cal_model = lgb.LGBMClassifier(
+                            boosting_type="gbdt", objective="binary", n_jobs=-1, verbose=-1, random_state=42,
+                            **{k: v for k, v in best_model_params.items() if k not in ["boosting_type", "objective", "n_jobs", "verbose", "random_state"]}
+                        )
+                        if final_weights is not None:
+                            cal_model.fit(X_train_exam.iloc[tr_idx_cal], y_final.iloc[tr_idx_cal], sample_weight=final_weights[tr_idx_cal])
+                        else:
+                            cal_model.fit(X_train_exam.iloc[tr_idx_cal], y_final.iloc[tr_idx_cal])
+                        dev_oof_probs[te_idx_cal] = cal_model.predict_proba(X_train_exam.iloc[te_idx_cal])[:, 1]
+                    
+                    iso_reg = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+                    iso_reg.fit(dev_oof_probs, y_final.values)
+                    holdout_probs_cal = iso_reg.predict(holdout_probs)
+                except Exception:
+                    holdout_probs_cal = holdout_probs
+
+                # Compute holdout AUC
+                holdout_auc = None
+                try:
+                    if len(np.unique(y_holdout)) >= 2:
+                        holdout_auc = float(roc_auc_score(y_holdout, holdout_probs_cal))
+                except Exception:
+                    pass
+
+                # Compute holdout Brier score
+                holdout_brier = None
+                try:
+                    from sklearn.metrics import brier_score_loss
+                    holdout_brier = float(brier_score_loss(y_holdout, holdout_probs_cal))
+                except Exception:
+                    pass
+
+                # Compute holdout Sortino (using position sizing)
+                holdout_sortino = None
+                holdout_trades_per_day = 0.0
+                holdout_mean_return = None
+                holdout_win_rate = None
+                holdout_n_trades = 0
+                try:
+                    # Apply same threshold as used in HPO
+                    try:
+                        layer3_prob_threshold_exam = float(config.get("layer3_prob_threshold", 0.5))
+                    except Exception:
+                        layer3_prob_threshold_exam = 0.5
+
+                    # Compute position sizes
+                    holdout_sizes = np.zeros(len(holdout_probs_cal))
+                    for i, prob in enumerate(holdout_probs_cal):
+                        sz = directional_size_from_prob(
+                            float(prob),
+                            direction=direction,
+                            thr=float(layer3_prob_threshold_exam),
+                            max_exposure=1.0,
+                            scale=1.0,
+                        )
+                        sz = float(sz) if np.isfinite(float(sz)) else 0.0
+                        # Apply committee gate if available
+                        if holdout_gate_arr is not None and not bool(holdout_gate_arr[i]):
+                            sz = 0.0
+                        holdout_sizes[i] = sz
+
+                    # Compute sized returns
+                    holdout_sized_returns = np.abs(holdout_sizes) * holdout_returns
+                    take_mask_exam = np.abs(holdout_sizes) > 1e-12
+                    traded_returns_exam = holdout_sized_returns[take_mask_exam]
+                    holdout_n_trades = int(np.sum(take_mask_exam))
+
+                    if len(traded_returns_exam) > 5:
+                        # Compute Sortino ratio
+                        holdout_sortino = _compute_sortino_ratio(traded_returns_exam, periods_per_year=365.0)
+
+                        # Compute trades per day
+                        try:
+                            holdout_days = (holdout_t_events.max() - holdout_t_events.min()).days
+                            holdout_days = max(holdout_days, 1)
+                            holdout_trades_per_day = float(holdout_n_trades) / float(holdout_days)
+                        except Exception:
+                            holdout_trades_per_day = 0.0
+
+                        # Compute mean return and win rate
+                        holdout_mean_return = float(np.mean(traded_returns_exam))
+                        holdout_win_rate = float(np.mean(traded_returns_exam > 0))
+                except Exception as sortino_exc:
+                    tprint_warning(f"   ⚠️ Failed to compute holdout Sortino: {sortino_exc}")
+
+                # Compute Probabilistic Sortino for holdout
+                holdout_prob_sortino = None
+                try:
+                    if traded_returns_exam is not None and len(traded_returns_exam) > 10:
+                        psor_holdout = _probabilistic_sortino_from_returns(
+                            traded_returns_exam,
+                            sortino_benchmark=0.0,
+                            periods_per_year=365.0,
+                        )
+                        holdout_prob_sortino = float(psor_holdout.get("probabilistic_sortino", 0.0))
+                except Exception:
+                    pass
+
+                # Store holdout metrics
+                holdout_exam_metrics = {
+                    "holdout_enabled": True,
+                    "holdout_n_samples": int(len(X_holdout)),
+                    "holdout_n_trades": holdout_n_trades,
+                    "holdout_auc": holdout_auc,
+                    "holdout_brier": holdout_brier,
+                    "holdout_sortino": holdout_sortino,
+                    "holdout_prob_sortino": holdout_prob_sortino,
+                    "holdout_trades_per_day": holdout_trades_per_day,
+                    "holdout_mean_return": holdout_mean_return,
+                    "holdout_win_rate": holdout_win_rate,
+                    "holdout_date_start": str(holdout_t_events.min()) if holdout_t_events is not None else None,
+                    "holdout_date_end": str(holdout_t_events.max()) if holdout_t_events is not None else None,
+                    "dev_n_samples": int(n_dev),
+                }
+
+                # Report holdout results
+                tprint_info("   📊 HOLDOUT EXAM RESULTS (True Out-of-Sample):")
+                tprint_info(f"      Samples: {len(X_holdout)} (holdout) vs {n_dev} (development)")
+                tprint_info(f"      Trades: {holdout_n_trades} ({holdout_trades_per_day:.2f}/day)")
+                if holdout_auc is not None:
+                    cv_auc = best_metrics.get("mean_auc", 0.0)
+                    auc_gap = cv_auc - holdout_auc
+                    gap_pct = (auc_gap / cv_auc * 100) if cv_auc > 0 else 0
+                    tprint_info(f"      AUC: {holdout_auc:.4f} (CV: {cv_auc:.4f}, gap: {auc_gap:+.4f} / {gap_pct:+.1f}%)")
+                    if auc_gap > 0.05:
+                        tprint_warning(f"      ⚠️ AUC DROP > 5%: Potential overfitting detected!")
+                    elif auc_gap < -0.02:
+                        tprint_success(f"      ✅ Holdout AUC HIGHER than CV — robust generalization!")
+                    else:
+                        tprint_success(f"      ✅ AUC gap within tolerance — good generalization")
+                if holdout_sortino is not None:
+                    cv_sortino = best_metrics.get("sharpe_mean", 0.0)  # Actually Sortino now
+                    tprint_info(f"      Sortino: {holdout_sortino:.4f} (CV mean: {cv_sortino:.4f})")
+                if holdout_prob_sortino is not None:
+                    tprint_info(f"      Prob. Sortino: {holdout_prob_sortino:.4f}")
+                if holdout_mean_return is not None:
+                    tprint_info(f"      Mean Return: {holdout_mean_return*100:.3f}% per trade")
+                if holdout_win_rate is not None:
+                    tprint_info(f"      Win Rate: {holdout_win_rate:.1%}")
+                if holdout_brier is not None:
+                    cv_brier = best_metrics.get("calibration_brier")
+                    if cv_brier is not None:
+                        tprint_info(f"      Brier: {holdout_brier:.4f} (CV: {cv_brier:.4f})")
+                    else:
+                        tprint_info(f"      Brier: {holdout_brier:.4f}")
+
+                tprint_info("=" * 60)
+
+                # Add holdout metrics to best_metrics for persistence
+                best_metrics.update(holdout_exam_metrics)
+
+            except Exception as holdout_exc:
+                tprint_warning(f"   ⚠️ Holdout exam failed: {holdout_exc}")
+                holdout_exam_metrics = {"holdout_enabled": False, "holdout_error": str(holdout_exc)}
+        else:
+            if X_holdout is None:
+                holdout_exam_metrics = {"holdout_enabled": False, "holdout_reason": "no_holdout_split"}
+            else:
+                holdout_exam_metrics = {"holdout_enabled": False, "holdout_reason": f"insufficient_samples_{len(X_holdout) if X_holdout is not None else 0}"}
 
         # Save Layer 3 History
         l3_history_path: Optional[Path] = None

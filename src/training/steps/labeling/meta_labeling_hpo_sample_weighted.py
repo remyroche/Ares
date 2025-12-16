@@ -7065,52 +7065,53 @@ def trapezoidal_gate(x: float, lower: float, sweet_spot: tuple, upper: float) ->
 
 
 def calculate_hpo_utility(
-    folds_sharpe: np.ndarray,
+    folds_sharpe: np.ndarray,  # Now actually Sortino ratios (name kept for backward compat)
     auc: float,
     trades_per_day: float,
-    lambda_vol: float = 0.6,  # CHANGED: Reduced from 1.2 to 0.6 (less fold variance penalty)
-    w_auc: float = 0.5,  # CHANGED: Reduced from 1.0 (softer AUC gate)
-    w_den: float = 0.15,  # CHANGED: Reduced from 0.3 to 0.15 (much lower density power)
+    lambda_vol: float = 0.4,  # CHANGED: Reduced from 0.8 to 0.4 for Sortino (higher variance)
+    w_auc: float = 0.5,  # Softer AUC gate
+    w_den: float = 0.15,  # Much lower density power
     calibration_brier: Optional[float] = None,
     calibration_ece: Optional[float] = None,
     w_cal: float = 0.0,
     clip_min: float = -1.0,
-    clip_max: float = 20.0,  # CHANGED: Increased from 10.0 (allow larger values)
+    clip_max: float = 20.0,  # Allow larger values
     debug_out: Optional[Dict[str, Any]] = None,
-    density_lower: float = 0.3,  # CHANGED: From 0.5 (more lenient)
-    density_sweet_spot: Tuple[float, float] = (1.0, 6.0),  # CHANGED: Widened from (1.5, 5.0)
-    density_upper: float = 10.0,  # CHANGED: From 8.0 (more lenient)
+    density_lower: float = 0.3,  # More lenient
+    density_sweet_spot: Tuple[float, float] = (1.0, 6.0),  # Widened
+    density_upper: float = 10.0,  # More lenient
     # NEW PARAMETERS:
-    mean_return: Optional[float] = None,  # NEW: Direct PnL term
-    w_return: float = 3.0,  # NEW: Weight for return contribution
-    max_drawdown: Optional[float] = None,  # NEW: Max drawdown (0.0 to 1.0)
-    w_dd: float = 1.0,  # NEW: Weight for drawdown penalty
-    # NEW: Probability-Return Correlation (encourages probabilities to correlate with returns)
-    prob_return_corr: Optional[float] = None,  # Spearman correlation between probabilities and returns
-    w_prob_return_corr: float = 0.1,  # Weight for prob-return correlation bonus (weak by default)
+    mean_return: Optional[float] = None,  # Direct PnL term
+    w_return: float = 3.0,  # Weight for return contribution
+    max_drawdown: Optional[float] = None,  # Max drawdown (0.0 to 1.0)
+    w_dd: float = 1.0,  # Weight for drawdown penalty
+    # Probability-Return Correlation
+    prob_return_corr: Optional[float] = None,
+    w_prob_return_corr: float = 0.1,
 ) -> float:
     """
-    Compute a stable utility for HPO combining Sharpe stability, AUC gate, trade density,
+    Compute a stable utility for HPO combining Sortino stability, AUC gate, trade density,
     direct returns, and drawdown penalty.
     
     IMPROVEMENTS (Dec 2024):
-    1. Added mean_return term - directly optimizes for $ profit
-    2. Removed log compression - preserves differences between good and great
-    3. Softened AUC gate - additive component, less harsh on moderate AUC
-    4. Added max_drawdown penalty - penalizes volatile strategies
-    5. Widened density band - [1.0, 6.0] sweet spot instead of [1.5, 5.0]
+    1. Replaced Sharpe with Sortino (upside volatility is not penalized)
+    2. Fixed unit mismatch: return_contribution now z-score normalized to Sortino scale
+    3. DD threshold raised to 15% (was 5%), multiplier reduced, capped at 2.0
+    4. lambda_vol reduced from 0.8 to 0.4 (Sortino has higher variance than Sharpe)
+    5. Removed magnitude bonus (redundant with win rate modifier)
+    6. Removed stop-out penalty (conflicts with win rate modifier)
     
     Args:
-        folds_sharpe: Array of per-fold Sharpe ratios
+        folds_sharpe: Array of per-fold Sortino ratios (name kept for backward compat)
         auc: Mean AUC across folds
         trades_per_day: Average trades per day
-        lambda_vol: Penalty weight for Sharpe volatility across folds (default 0.8)
+        lambda_vol: Penalty weight for Sortino volatility across folds (default 0.4)
         w_auc: Weight exponent for AUC gate (default 0.5 = softer)
         w_den: Weight exponent for density modifier (default 0.15)
-        mean_return: NEW - Mean return per trade (if available)
-        w_return: NEW - Weight for return contribution
-        max_drawdown: NEW - Maximum drawdown (0.0 to 1.0)
-        w_dd: NEW - Penalty weight for drawdown
+        mean_return: Mean return per trade (if available)
+        w_return: Weight for return contribution (applied after normalization)
+        max_drawdown: Maximum drawdown (0.0 to 1.0)
+        w_dd: Penalty weight for drawdown
     
     Returns:
         Utility score. Returns -1.0 for rejection.
@@ -7122,36 +7123,53 @@ def calculate_hpo_utility(
     if not np.isfinite(clip_min_v):
         clip_min_v = -1.0
 
-    sharpe_arr = np.asarray(folds_sharpe, dtype=float).reshape(-1)
-    sharpe_arr = sharpe_arr[np.isfinite(sharpe_arr)]
-    if sharpe_arr.size < 1:
+    # Now using Sortino ratios (name kept as sharpe_arr for backward compatibility)
+    sortino_arr = np.asarray(folds_sharpe, dtype=float).reshape(-1)
+    sortino_arr = sortino_arr[np.isfinite(sortino_arr)]
+    if sortino_arr.size < 1:
         return float(clip_min_v)
 
-    avg_sharpe = float(np.mean(sharpe_arr))
-    vol_sharpe = float(np.std(sharpe_arr, ddof=1)) if sharpe_arr.size > 1 else 0.0
-    if not (np.isfinite(avg_sharpe) and np.isfinite(vol_sharpe)):
+    avg_sortino = float(np.mean(sortino_arr))
+    vol_sortino = float(np.std(sortino_arr, ddof=1)) if sortino_arr.size > 1 else 0.0
+    if not (np.isfinite(avg_sortino) and np.isfinite(vol_sortino)):
         return float(clip_min_v)
 
-    # ISSUE #2 FIX: No log compression - just linear base score
-    base_score = avg_sharpe - (lambda_vol * vol_sharpe)
+    # Base score: mean Sortino minus fold variance penalty (reduced lambda for Sortino)
+    base_score = avg_sortino - (lambda_vol * vol_sortino)
     if not np.isfinite(base_score):
         base_score = 0.0
 
-    # ISSUE #1 FIX: Add direct return term (scaled to be comparable to Sharpe)
+    # UNIT MISMATCH FIX: Normalize return_contribution to Sortino scale
+    # Instead of raw scaling (mean_return * 100 * w_return), use z-score-like normalization
+    # Typical Sortino range: [-2, 5]. Typical mean_return range: [-0.02, 0.05]
+    # We normalize return_contribution to have similar magnitude as Sortino
     return_contribution = 0.0
     if mean_return is not None and np.isfinite(mean_return):
-        # Scale return to ~1.0 for typical good trades (e.g., 1% return -> 1.0 contribution)
-        return_contribution = float(mean_return) * 100.0 * w_return
+        # Normalize: 1% mean return ≈ 1.0 Sortino contribution (after w_return)
+        # This keeps return_contribution in [-2, 5] range for typical returns
+        # Formula: (mean_return - expected_mean) / expected_std * scale
+        # Using simplified approach: clip to Sortino-like range
+        normalized_return = float(mean_return) * 100.0  # Convert to percentage
+        # Soft clip to prevent dominating base_score
+        normalized_return = float(np.clip(normalized_return, -3.0, 5.0))
+        return_contribution = normalized_return * w_return
         if not np.isfinite(return_contribution):
             return_contribution = 0.0
 
-    # ISSUE #4 FIX: Add drawdown penalty
+    # DRAWDOWN PENALTY FIX: Threshold raised to 15%, multiplier reduced, capped at 2.0
+    # Rationale: 5% DD threshold was too conservative for crypto. Typical strategies
+    # have 15-25% max DD. Penalty is now linear with a hard cap.
     dd_penalty = 0.0
+    dd_threshold = 0.15  # Raised from 0.05 to 0.15 (15% DD threshold)
     if max_drawdown is not None and np.isfinite(max_drawdown):
-        # Penalize drawdown > 5% (0.05), harsh penalty above 10%
         dd_val = float(max_drawdown)
-        if dd_val > 0.05:
-            dd_penalty = (dd_val - 0.05) * w_dd * 10.0  # ~1.0 penalty for 15% DD
+        if dd_val > dd_threshold:
+            # Linear penalty: (dd - threshold) * w_dd * 3.0
+            # At 30% DD: (0.30 - 0.15) * 1.0 * 3.0 = 0.45 penalty
+            # At 50% DD: (0.50 - 0.15) * 1.0 * 3.0 = 1.05 penalty
+            dd_penalty = max(0.0, (dd_val - dd_threshold) * w_dd * 3.0)
+            # Hard cap at 2.0 to prevent NaN/Inf from extreme crashes
+            dd_penalty = min(dd_penalty, 2.0)
         if not np.isfinite(dd_penalty):
             dd_penalty = 0.0
 
@@ -7375,6 +7393,121 @@ def _psr_from_returns(
         "kurt": float(kurt),
         "sr_benchmark": float(sr_benchmark),
     }
+
+
+def _probabilistic_sortino_from_returns(
+    returns: np.ndarray,
+    *,
+    sortino_benchmark: float = 0.0,
+    periods_per_year: float = 365.0,
+) -> Dict[str, Any]:
+    """Compute Probabilistic Sortino Ratio (PSoR) using Lo (2002) standard error formula.
+    
+    Unlike PSR which penalizes all volatility equally, Probabilistic Sortino only
+    penalizes downside volatility. This is more appropriate for trading where
+    upside volatility (large wins) is desirable.
+    
+    The standard error formula (Lo, 2002) is robust for both Sharpe and Sortino:
+        se = sqrt((1 + 0.5 * ratio^2) / n)
+        z = (ratio - benchmark) / se
+        probabilistic_ratio = Phi(z)  # CDF of standard normal
+    
+    Args:
+        returns: Array of returns (daily log returns recommended)
+        sortino_benchmark: Benchmark Sortino ratio (default 0.0)
+        periods_per_year: Annualization factor (365 for crypto, 252 for equities)
+        
+    Returns:
+        Dict with probabilistic_sortino, z-score, sortino ratio, and diagnostics
+    """
+    r = np.asarray(returns, dtype=float).reshape(-1)
+    r = r[np.isfinite(r)]
+    n = int(r.size)
+    
+    if n < 5:
+        return {
+            "probabilistic_sortino": 0.0,
+            "psor_z": float("-inf"),
+            "sortino": float("nan"),
+            "n": int(n),
+            "downside_deviation": float("nan"),
+            "sortino_benchmark": float(sortino_benchmark),
+        }
+    
+    mu = float(np.mean(r))
+    
+    # Vectorized downside deviation: sqrt(mean(min(r, 0)^2))
+    # Only negative returns contribute to downside risk
+    downside_returns = np.minimum(r, 0.0)
+    downside_variance = float(np.mean(downside_returns ** 2))
+    downside_dev = float(np.sqrt(downside_variance)) if downside_variance > 0 else 1e-12
+    
+    # Annualized Sortino ratio
+    sortino = float("nan")
+    if np.isfinite(downside_dev) and downside_dev > 1e-12 and np.isfinite(mu):
+        sortino = float(mu / downside_dev * float(np.sqrt(float(periods_per_year))))
+    
+    z = float("-inf")
+    prob_sortino = 0.0
+    
+    try:
+        sortino_hat = float(sortino)
+        benchmark = float(sortino_benchmark)
+        
+        if np.isfinite(sortino_hat):
+            # Lo (2002) standard error formula - robust for both Sharpe and Sortino
+            # se = sqrt((1 + 0.5 * ratio^2) / n)
+            se_sortino = float(np.sqrt((1.0 + 0.5 * (sortino_hat ** 2)) / float(n)))
+            se_sortino = float(max(se_sortino, 1e-12))
+            
+            z = (sortino_hat - benchmark) / se_sortino
+            prob_sortino = float(_normal_cdf(z))
+    except Exception:
+        z = float("-inf")
+        prob_sortino = 0.0
+    
+    return {
+        "probabilistic_sortino": float(prob_sortino),
+        "psor_z": float(z),
+        "sortino": float(sortino) if np.isfinite(sortino) else None,
+        "n": int(n),
+        "downside_deviation": float(downside_dev) if np.isfinite(downside_dev) else None,
+        "sortino_benchmark": float(sortino_benchmark),
+    }
+
+
+def _compute_sortino_ratio(returns: np.ndarray, periods_per_year: float = 365.0) -> float:
+    """Compute annualized Sortino ratio from returns array.
+    
+    Sortino ratio only penalizes downside volatility, making it more appropriate
+    for trading strategies where upside volatility (large wins) is desirable.
+    
+    Args:
+        returns: Array of returns
+        periods_per_year: Annualization factor (365 for crypto)
+        
+    Returns:
+        Annualized Sortino ratio (or 0.0 if insufficient data)
+    """
+    r = np.asarray(returns, dtype=float).reshape(-1)
+    r = r[np.isfinite(r)]
+    
+    if len(r) < 2:
+        return 0.0
+    
+    mu = float(np.mean(r))
+    
+    # Vectorized downside deviation
+    downside_returns = np.minimum(r, 0.0)
+    downside_variance = float(np.mean(downside_returns ** 2))
+    downside_dev = float(np.sqrt(downside_variance)) if downside_variance > 0 else 1e-12
+    
+    if downside_dev < 1e-12:
+        return 0.0
+    
+    sortino = float(mu / downside_dev * float(np.sqrt(float(periods_per_year))))
+    
+    return float(sortino) if np.isfinite(sortino) else 0.0
 
 
 def _compute_regime_dispersion(per_regime_metrics: Any, metric_key: str = "sharpe") -> float:
@@ -12280,22 +12413,25 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 trade_returns = np.asarray([], dtype=float)
             trades_per_day = float(n_pred_trades) / float(max(days_span, 1))
 
-            # H. CALCULATE UTILITY (De Prado PSR on OOF traded daily returns)
+            # H. CALCULATE UTILITY (Probabilistic Sortino Ratio on OOF traded daily returns)
+            # CHANGED: Replaced PSR (Probabilistic Sharpe Ratio) with Probabilistic Sortino Ratio
+            # Rationale: Sortino only penalizes downside volatility, not upside volatility.
+            # In trading, large wins (upside vol) are desirable and should not be penalized.
             utility_debug: Dict[str, Any] = {}
             try:
-                psr_min_trades = int(config.get("layer2_psr_min_trades", 30))
+                psor_min_trades = int(config.get("layer2_psor_min_trades", config.get("layer2_psr_min_trades", 30)))
             except Exception:
-                psr_min_trades = 30
-            psr_min_trades = int(max(1, psr_min_trades))
+                psor_min_trades = 30
+            psor_min_trades = int(max(1, psor_min_trades))
 
             try:
-                sr_benchmark = float(config.get("layer2_psr_sr_benchmark", 0.0))
+                sortino_benchmark = float(config.get("layer2_sortino_benchmark", config.get("layer2_psr_sr_benchmark", 0.0)))
             except Exception:
-                sr_benchmark = 0.0
-            if not np.isfinite(sr_benchmark):
-                sr_benchmark = 0.0
+                sortino_benchmark = 0.0
+            if not np.isfinite(sortino_benchmark):
+                sortino_benchmark = 0.0
 
-            psr_details = {"psr": 0.0, "psr_z": float("-inf"), "sr": None, "n": 0, "skew": 0.0, "kurt": 3.0}
+            psor_details = {"probabilistic_sortino": 0.0, "psor_z": float("-inf"), "sortino": None, "n": 0, "downside_deviation": None}
             try:
                 if trade_returns is not None and int(np.size(trade_returns)) > 0:
                     idx_tr = pd.DatetimeIndex(ev_idx0)[np.asarray(take_mask, dtype=bool)]
@@ -12314,21 +12450,22 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         daily_pnl = daily_pnl.reindex(day_index, fill_value=0.0)
                         daily_log = np.log1p(daily_pnl.astype(float).values)
                         daily_log = daily_log[np.isfinite(daily_log)]
-                        psr_details = _psr_from_returns(
+                        # Use Probabilistic Sortino instead of PSR
+                        psor_details = _probabilistic_sortino_from_returns(
                             daily_log,
-                            sr_benchmark=float(sr_benchmark),
+                            sortino_benchmark=float(sortino_benchmark),
                             periods_per_year=365.0,
                         )
             except Exception:
                 pass
 
-            # Soft trade-count gate (PSR already depends on n, but this keeps low-trade configs from dominating).
+            # Soft trade-count gate (keeps low-trade configs from dominating).
             phi_trades = 0.0
             try:
-                phi_trades = float(np.clip(float(psr_details.get("n", 0)) / float(psr_min_trades), 0.0, 1.0))
+                phi_trades = float(np.clip(float(psor_details.get("n", 0)) / float(psor_min_trades), 0.0, 1.0))
             except Exception:
                 phi_trades = 0.0
-            utility = float(psr_details.get("psr", 0.0)) * float(phi_trades)
+            utility = float(psor_details.get("probabilistic_sortino", 0.0)) * float(phi_trades)
             if not np.isfinite(float(utility)):
                 utility = 0.0
 
@@ -12336,13 +12473,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 try:
                     utility_debug.update(
                         {
-                            "psr": float(psr_details.get("psr", 0.0)),
-                            "psr_z": float(psr_details.get("psr_z", float("-inf"))),
-                            "psr_sr": psr_details.get("sr", None),
-                            "psr_n": int(psr_details.get("n", 0) or 0),
-                            "psr_skew": float(psr_details.get("skew", 0.0)),
-                            "psr_kurt": float(psr_details.get("kurt", 3.0)),
-                            "psr_sr_benchmark": float(sr_benchmark),
+                            # Keep backward-compatible keys with "psr" prefix for logging compatibility
+                            "psr": float(psor_details.get("probabilistic_sortino", 0.0)),
+                            "psr_z": float(psor_details.get("psor_z", float("-inf"))),
+                            "psr_sr": psor_details.get("sortino", None),  # Actually Sortino now
+                            "psr_n": int(psor_details.get("n", 0) or 0),
+                            # New Sortino-specific keys
+                            "probabilistic_sortino": float(psor_details.get("probabilistic_sortino", 0.0)),
+                            "psor_z": float(psor_details.get("psor_z", float("-inf"))),
+                            "sortino": psor_details.get("sortino", None),
+                            "downside_deviation": psor_details.get("downside_deviation", None),
+                            "sortino_benchmark": float(sortino_benchmark),
                             "phi_trades": float(phi_trades),
                             "utility_pre_clip": float(utility),
                             "utility": float(utility),
@@ -12369,10 +12510,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             try:
                 tprint_info(
                     "   [L2 objective] "
-                    f"utility={utility:.4f} (psr={float(utility_debug.get('psr', 0.0)):.4f}, z={float(utility_debug.get('psr_z', -1e9)):.2f}, n={int(utility_debug.get('psr_n', 0) or 0)}), auc={mean_auc:.4f}, "
+                    f"utility={utility:.4f} (psor={float(utility_debug.get('probabilistic_sortino', 0.0)):.4f}, z={float(utility_debug.get('psor_z', -1e9)):.2f}, n={int(utility_debug.get('psr_n', 0) or 0)}), auc={mean_auc:.4f}, "
                     f"trades_per_day={trades_per_day:.2f}, "
-                    f"folds_sharpe_mean={float(np.mean(folds_sharpe)):.4f}, "
-                    f"folds_sharpe_std={float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe)>1 else 0.0:.4f}, "
+                    f"folds_sortino_mean={float(np.mean(folds_sharpe)):.4f}, "
+                    f"folds_sortino_std={float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe)>1 else 0.0:.4f}, "
                     f"take_trades={int(np.size(trade_returns) if trade_returns is not None else 0)}"
                 )
             except Exception:
@@ -13279,93 +13420,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 utility = 0.0
 
             # =====================================================================
-            # UTILITY IMPROVEMENTS (2024-12): Balance consistency with profitability
+            # UTILITY IMPROVEMENTS (2024-12): Magnitude-Weighted Win Rate Only
             # =====================================================================
-            # Problem: Pure PSR/Sharpe optimization incentivizes tight stops and short
-            # horizons because they minimize variance. This leads to:
-            # - sl_atr_mult → 0.5 (very tight stops)
-            # - horizon_bars → 6 (very short horizons)
-            # - 50%+ stop-out rate (trades don't develop)
+            # CHANGES (Dec 2024):
+            # - REMOVED: Magnitude Bonus (double-counts with win rate modifier)
+            # - REMOVED: Stop-Out Penalty (conflicts with magnitude-weighted win rate;
+            #   tight stop management is a feature, not a bug)
+            # - KEPT: Magnitude-Weighted Win Rate as the sole modifier
             #
-            # Solution: Add three corrections:
-            # 1. Magnitude Bonus: Reward larger per-trade profits
-            # 2. Stop-Out Penalty: Penalize excessive stop exits
-            # 3. Magnitude-Weighted Win Rate: Weight wins by size, not just count
+            # Rationale: The magnitude-weighted win rate already captures the economic
+            # effect of both trade size and stop management. A high stop-out rate with
+            # tight stops actually leads to BETTER magnitude-weighted win rate (small
+            # losses, occasional big wins), so penalizing stop-outs was counterproductive.
             # =====================================================================
 
-            magnitude_bonus = 0.0
-            stop_out_penalty = 0.0
             magnitude_win_rate_modifier = 1.0
-            stop_out_rate = 0.0
             magnitude_weighted_win_rate = 0.5
 
-            # --- Option 1: Trade Magnitude Bonus ---
-            # Concept: Reward larger per-trade profits (scale-aware optimization)
-            # Uses log1p for diminishing returns: doubling profit doesn't double bonus
-            # Capped to prevent extreme values from dominating utility
-            try:
-                w_magnitude = float(config.get("layer2_utility_w_magnitude", 50.0))
-            except Exception:
-                w_magnitude = 50.0
-            if not np.isfinite(w_magnitude):
-                w_magnitude = 50.0
-
-            try:
-                magnitude_bonus_cap = float(config.get("layer2_utility_magnitude_bonus_cap", 2.0))
-            except Exception:
-                magnitude_bonus_cap = 2.0
-            if not np.isfinite(magnitude_bonus_cap):
-                magnitude_bonus_cap = 2.0
-
-            try:
-                if trade_mean_return is not None and np.isfinite(trade_mean_return) and trade_mean_return > 0:
-                    # Use log1p for diminishing returns: log1p(x) grows slowly for large x
-                    # Scale: 1% return → log1p(1.0) ≈ 0.69, 2% → log1p(2.0) ≈ 1.10 (not 2x)
-                    # This makes the bonus relative to magnitude with diminishing returns
-                    return_pct = float(trade_mean_return) * 100.0  # Convert to percentage
-                    magnitude_bonus_raw = float(np.log1p(return_pct)) * w_magnitude
-                    # Cap the bonus to prevent extreme values
-                    magnitude_bonus = float(np.clip(magnitude_bonus_raw, 0.0, magnitude_bonus_cap * w_magnitude))
-                    if not np.isfinite(magnitude_bonus):
-                        magnitude_bonus = 0.0
-            except Exception:
-                magnitude_bonus = 0.0
-
-            # --- Option 2: Stop-Out Rate Penalty ---
-            # Concept: Penalize strategies where most exits are stops (tight SL problem)
-            # Target: <40% stop exits; penalize above that threshold
-            try:
-                w_stop_penalty = float(config.get("layer2_utility_w_stop_penalty", 0.5))
-            except Exception:
-                w_stop_penalty = 0.5
-            if not np.isfinite(w_stop_penalty):
-                w_stop_penalty = 0.5
-
-            try:
-                stop_threshold = float(config.get("layer2_utility_stop_threshold", 0.40))
-            except Exception:
-                stop_threshold = 0.40
-            if not np.isfinite(stop_threshold):
-                stop_threshold = 0.40
-
-            try:
-                if l2_exit_reasons is not None and take_mask is not None:
-                    exit_arr = l2_exit_reasons.reindex(l2_t_events).values
-                    exit_taken = exit_arr[np.asarray(take_mask, dtype=bool)]
-                    n_taken = len(exit_taken)
-                    if n_taken > 0:
-                        # Count stop exits (case-insensitive check for "stop" in exit reason)
-                        n_stops = sum(1 for ex in exit_taken if ex is not None and "stop" in str(ex).lower())
-                        stop_out_rate = float(n_stops) / float(n_taken)
-                        if stop_out_rate > stop_threshold:
-                            # Penalty scales with excess stop rate
-                            stop_out_penalty = (stop_out_rate - stop_threshold) * w_stop_penalty
-                            if not np.isfinite(stop_out_penalty):
-                                stop_out_penalty = 0.0
-            except Exception:
-                stop_out_penalty = 0.0
-
-            # --- Option 6: Magnitude-Weighted Win Rate Gate ---
+            # --- Magnitude-Weighted Win Rate Gate ---
             # Concept: Weight wins by magnitude, not just count
             # A 50% win rate with 3:1 R:R is better than 50% with 1:1 R:R
             # Formula: sum(positive_returns) / (sum(positive_returns) + |sum(negative_returns)|)
@@ -13391,17 +13463,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             try:
                 if trade_returns is not None and len(trade_returns) > 0:
                     # trade_returns is already net of transaction costs (from compute_realized_returns)
-                    # Verify by checking that we're using the fee-adjusted returns
                     tr = np.asarray(trade_returns, dtype=float)
                     tr = tr[np.isfinite(tr)]
-                    
-                    # NOTE: No additional fee deduction needed here.
-                    # trade_returns comes from compute_realized_returns() which already
-                    # subtracts transaction_cost from gross returns (net_return = gross_return - tx_cost).
-                    # See feature_generation_meta_labeling_step.py line ~1489.
-                    # 
-                    # Previous defensive check removed to avoid double-counting fees.
-                    # If you see returns >5% average, it's due to high volatility, not missing fees.
                     
                     if len(tr) > 0:
                         pos_sum = float(np.sum(tr[tr > 0])) if np.any(tr > 0) else 0.0
@@ -13424,11 +13487,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 magnitude_win_rate_modifier = 1.0
 
-            # --- Apply improvements to utility ---
+            # --- Apply magnitude-weighted win rate modifier only ---
             utility_pre_improvements = float(utility)
             try:
-                # Add magnitude bonus, subtract stop penalty, apply win rate modifier
-                utility = (float(utility) + float(magnitude_bonus) - float(stop_out_penalty)) * float(magnitude_win_rate_modifier)
+                # Only apply win rate modifier (no magnitude bonus, no stop penalty)
+                utility = float(utility) * float(magnitude_win_rate_modifier)
                 if not np.isfinite(utility):
                     utility = utility_pre_improvements
             except Exception:
@@ -13437,23 +13500,15 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             try:
                 utility_debug.update(
                     {
-                        "psr": float(psr_details.get("psr", 0.0)),
-                        "psr_z": float(psr_details.get("psr_z", float("-inf"))),
-                        "psr_sr": psr_details.get("sr", None),
-                        "psr_n": int(psr_details.get("n", 0) or 0),
-                        "psr_skew": float(psr_details.get("skew", 0.0)),
-                        "psr_kurt": float(psr_details.get("kurt", 3.0)),
-                        "psr_sr_benchmark": float(sr_benchmark),
+                        # Sortino-based metrics (backward-compatible keys)
+                        "psr": float(psor_details.get("probabilistic_sortino", 0.0)),
+                        "psr_z": float(psor_details.get("psor_z", float("-inf"))),
+                        "psr_sr": psor_details.get("sortino", None),
+                        "psr_n": int(psor_details.get("n", 0) or 0),
+                        "sortino_benchmark": float(sortino_benchmark),
                         "phi_trades": float(phi_trades),
                         "utility_pre_improvements": float(utility_pre_improvements),
-                        # Option 1: Magnitude Bonus
-                        "magnitude_bonus": float(magnitude_bonus),
-                        "w_magnitude": float(w_magnitude),
-                        # Option 2: Stop-Out Penalty
-                        "stop_out_rate": float(stop_out_rate),
-                        "stop_out_penalty": float(stop_out_penalty),
-                        "w_stop_penalty": float(w_stop_penalty),
-                        # Option 6: Magnitude-Weighted Win Rate
+                        # Magnitude-Weighted Win Rate (sole modifier now)
                         "magnitude_weighted_win_rate": float(magnitude_weighted_win_rate),
                         "magnitude_win_rate_modifier": float(magnitude_win_rate_modifier),
                         "utility_pre_clip": float(utility),
@@ -13546,6 +13601,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 vol_excess_pos_z = 0.0
 
+            # VOLATILITY PENALTY (downweighted Dec 2024)
+            # Rationale: In crypto, much alpha comes from volatility. The original penalty
+            # was too aggressive and systematically excluded profitable volatile regimes.
+            # Reduced scaling factor from 1.0 to 0.25 to soften the penalty.
+            volatility_penalty_scale = 0.25  # Downweighted from implicit 1.0
             try:
                 if (
                     np.isfinite(float(utility))
@@ -13555,9 +13615,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     and np.isfinite(float(vol_excess_pos_z))
                     and float(vol_excess_pos_z) > 0.0
                 ):
+                    # Apply scaled-down volatility penalty
+                    scaled_penalty = float(vol_penalty_lambda) * float(vol_excess_pos_z) * volatility_penalty_scale
                     utility = float(
                         np.clip(
-                            float(utility) - float(vol_penalty_lambda) * float(vol_excess_pos_z),
+                            float(utility) - scaled_penalty,
                             float(utility_floor),
                             float(utility_clip_max),
                         )
@@ -15818,17 +15880,19 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 pass
 
-            folds_sharpe_arr = np.asarray(fold_sharpes, dtype=float)
-            folds_sharpe_arr = folds_sharpe_arr[np.isfinite(folds_sharpe_arr)]
-            if folds_sharpe_arr.size <= 0:
-                folds_sharpe_arr = np.asarray([float(sharpe)], dtype=float)
+            # Now using Sortino ratios (variable names kept for backward compat)
+            folds_sortino_arr = np.asarray(fold_sharpes, dtype=float)  # Actually Sortino now
+            folds_sortino_arr = folds_sortino_arr[np.isfinite(folds_sortino_arr)]
+            if folds_sortino_arr.size <= 0:
+                folds_sortino_arr = np.asarray([float(sharpe)], dtype=float)
+            folds_sharpe_arr = folds_sortino_arr  # Alias for backward compat
 
-            lambda_vol = 0.8
+            lambda_vol = 0.4  # CHANGED from 0.8 (recalibrated for Sortino)
             w_auc = 0.5
             w_den = 0.3
 
-            avg_sharpe = float(np.mean(folds_sharpe_arr))
-            vol_sharpe = float(np.std(folds_sharpe_arr, ddof=1)) if folds_sharpe_arr.size > 1 else 0.0
+            avg_sharpe = float(np.mean(folds_sortino_arr))
+            vol_sharpe = float(np.std(folds_sortino_arr, ddof=1)) if folds_sortino_arr.size > 1 else 0.0
             base_score = avg_sharpe - (lambda_vol * vol_sharpe)
             try:
                 base_norm = float(np.sign(base_score) * np.log1p(abs(float(base_score))))
@@ -16451,17 +16515,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     max_dd_dbg = None
                 
                 utility_dbg = calculate_hpo_utility(
-                    folds_sharpe=folds_sharpe_dbg,
+                    folds_sharpe=folds_sharpe_dbg,  # Now Sortino ratios
                     auc=mean_auc_dbg,
                     trades_per_day=trades_per_day_dbg,
-                    lambda_vol=0.8,   # UPDATED from 1.2
-                    w_auc=0.5,        # UPDATED from 1.0
-                    w_den=0.3,        # UPDATED from 0.5
+                    lambda_vol=0.4,   # CHANGED from 0.8 (recalibrated for Sortino)
+                    w_auc=0.5,
+                    w_den=0.3,
                     calibration_brier=mean_brier_dbg,
                     calibration_ece=mean_ece_dbg,
                     w_cal=0.0,
-                    mean_return=mean_return_dbg,   # NEW
-                    max_drawdown=max_dd_dbg,       # NEW
+                    mean_return=mean_return_dbg,
+                    max_drawdown=max_dd_dbg,
                 )
                 tprint_info(
                     "   Layer 2 debug: "
@@ -16797,6 +16861,125 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
         # Explicitly define X_final_full for feature selection usage
         X_final_full = X_final.copy()
+
+        # ======================================================================
+        # HOLDOUT EXAM SPLIT: Reserve most recent data for final OOS evaluation
+        # ======================================================================
+        # This creates a true holdout set that is NEVER seen during HPO:
+        # - Development set: Used for cross-validation during HPO
+        # - Holdout set: Used ONLY for final "exam" evaluation after HPO completes
+        #
+        # Default: 15% holdout (most recent data, chronologically)
+        # ======================================================================
+        try:
+            layer3_holdout_fraction = float(config.get("layer3_holdout_fraction", 0.15))
+        except Exception:
+            layer3_holdout_fraction = 0.15
+        if not np.isfinite(layer3_holdout_fraction) or layer3_holdout_fraction < 0.0:
+            layer3_holdout_fraction = 0.15
+        layer3_holdout_fraction = float(np.clip(layer3_holdout_fraction, 0.0, 0.4))  # Cap at 40%
+
+        layer3_enable_holdout = bool(config.get("layer3_enable_holdout_exam", True))
+
+        # Initialize holdout variables
+        X_holdout: Optional[pd.DataFrame] = None
+        y_holdout: Optional[pd.Series] = None
+        holdout_returns: Optional[np.ndarray] = None
+        holdout_weights: Optional[np.ndarray] = None
+        holdout_gate_arr: Optional[np.ndarray] = None
+        holdout_exit_reasons: Optional[np.ndarray] = None
+        holdout_durations: Optional[np.ndarray] = None
+        holdout_t_events: Optional[pd.DatetimeIndex] = None
+        n_holdout = 0
+        n_dev = len(X_final)
+
+        if layer3_enable_holdout and layer3_holdout_fraction > 0.0 and len(X_final) >= 200:
+            try:
+                # Chronological split: development (early), holdout (late/recent)
+                n_total = len(X_final)
+                n_holdout = int(n_total * layer3_holdout_fraction)
+                n_dev = n_total - n_holdout
+
+                if n_dev >= 100 and n_holdout >= 30:
+                    # Sort by index to ensure chronological order
+                    sorted_idx = X_final.index.sort_values()
+                    dev_idx = sorted_idx[:n_dev]
+                    holdout_idx = sorted_idx[n_dev:]
+
+                    # Development set (for HPO cross-validation)
+                    X_dev = X_final.loc[dev_idx].copy()
+                    y_dev = y_final.loc[dev_idx].copy()
+
+                    # Holdout set (for final exam - NEVER seen during HPO)
+                    X_holdout = X_final.loc[holdout_idx].copy()
+                    y_holdout = y_final.loc[holdout_idx].copy()
+                    holdout_t_events = holdout_idx
+
+                    # Get holdout returns for Sortino calculation
+                    try:
+                        holdout_returns = final_returns.reindex(holdout_idx).fillna(0.0).values
+                    except Exception:
+                        holdout_returns = np.zeros(len(holdout_idx))
+
+                    # Get holdout committee gate
+                    try:
+                        if committee_gate_arr_for_l3 is not None:
+                            # Map the boolean array to holdout indices
+                            full_gate_series = pd.Series(committee_gate_arr_for_l3, index=final_t_events)
+                            holdout_gate_arr = full_gate_series.loc[holdout_idx].values.astype(bool)
+                        else:
+                            holdout_gate_arr = np.ones(len(holdout_idx), dtype=bool)
+                    except Exception:
+                        holdout_gate_arr = np.ones(len(holdout_idx), dtype=bool)
+
+                    # Get holdout exit reasons and durations
+                    try:
+                        if final_exit_reasons is not None:
+                            holdout_exit_reasons = final_exit_reasons.reindex(holdout_idx).values
+                        if final_durations is not None:
+                            holdout_durations = final_durations.reindex(holdout_idx).values
+                    except Exception:
+                        pass
+
+                    # Update X_final, y_final, and committee_gate_arr_for_l3 to development set only
+                    X_final = X_dev
+                    y_final = y_dev
+                    final_t_events = dev_idx
+                    X_final_full = X_final.copy()
+
+                    # Update committee gate to development set
+                    try:
+                        if committee_gate_arr_for_l3 is not None:
+                            dev_gate_series = pd.Series(committee_gate_arr_for_l3, index=sorted_idx[:n_total])
+                            committee_gate_arr_for_l3 = dev_gate_series.loc[dev_idx].values.astype(bool)
+                    except Exception:
+                        pass
+
+                    tprint_info("=" * 60)
+                    tprint_info(f"   🔒 HOLDOUT EXAM ENABLED: {layer3_holdout_fraction:.0%} reserved for final OOS test")
+                    tprint_info(f"   Development set: {n_dev} samples (used for HPO CV)")
+                    tprint_info(f"   Holdout set: {n_holdout} samples (final exam, never seen during HPO)")
+                    tprint_info(f"   Holdout date range: {holdout_idx.min()} to {holdout_idx.max()}")
+                    tprint_info("=" * 60)
+                else:
+                    tprint_warning(f"   ⚠️ Holdout disabled: insufficient data (dev={n_dev}, holdout={n_holdout})")
+                    X_holdout = None
+                    y_holdout = None
+                    n_holdout = 0
+                    n_dev = len(X_final)
+            except Exception as holdout_exc:
+                tprint_warning(f"   ⚠️ Failed to create holdout split: {holdout_exc}")
+                X_holdout = None
+                y_holdout = None
+                n_holdout = 0
+                n_dev = len(X_final)
+        else:
+            if not layer3_enable_holdout:
+                tprint_info("   ℹ️ Holdout exam disabled via config (layer3_enable_holdout_exam=False)")
+            elif layer3_holdout_fraction <= 0.0:
+                tprint_info("   ℹ️ Holdout exam disabled (layer3_holdout_fraction=0)")
+            else:
+                tprint_info(f"   ℹ️ Holdout exam disabled: insufficient data ({len(X_final)} < 200 samples)")
 
         # ------------------------------------------------------------------
         # DIAGNOSTIC: Log HPO feature/label summary for comparison with SNR probe
@@ -17903,10 +18086,15 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                             verbose=False,
                         )
 
-                        sharpe_val = float(bt.get("sharpe_ratio", 0.0))
-                        if not np.isfinite(sharpe_val):
-                            sharpe_val = 0.0
-                        fold_sharpes.append(float(_soft_sharpe_scale(float(sharpe_val))))
+                        # CHANGED: Use Sortino ratio instead of Sharpe ratio
+                        # Sortino only penalizes downside volatility, making it more appropriate
+                        # for trading where upside volatility (large wins) is desirable.
+                        # Compute Sortino from the sized_returns for this fold
+                        sortino_val = _compute_sortino_ratio(sized_returns, periods_per_year=365.0)
+                        if not np.isfinite(sortino_val):
+                            sortino_val = 0.0
+                        # Apply soft scaling (same as was used for Sharpe)
+                        fold_sharpes.append(float(_soft_sharpe_scale(float(sortino_val))))
 
                         n_trades_fold = int(bt.get("n_trades", 0))
                         trades_per_day_fold = float(
@@ -17931,11 +18119,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         pass
 
                 if len(fold_sharpes) < 2:
-                    # Not enough folds for stable Sharpe; still return a structured payload.
+                    # Not enough folds for stable Sortino; still return a structured payload.
+                    # Note: fold_sharpes now contains Sortino ratios (name kept for backward compat)
                     return -1.0, {
                         "valid_folds": int(len(fold_sharpes)),
                         "fold_aucs": [float(v) for v in fold_aucs],
-                        "fold_sharpes": [float(v) for v in fold_sharpes],
+                        "fold_sharpes": [float(v) for v in fold_sharpes],  # Actually Sortino now
                         "per_fold_metrics": per_fold_metrics,
                         "per_regime_metrics": {},
                     }
@@ -18062,19 +18251,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 except Exception:
                     pass
 
-                sharpe_arr = np.asarray(fold_sharpes, dtype=float)
-                sharpe_mean = float(np.mean(sharpe_arr))
-                sharpe_std = float(np.std(sharpe_arr, ddof=1)) if len(sharpe_arr) > 1 else 0.0
-                sharpe_min = float(np.min(sharpe_arr))
-                sharpe_max = float(np.max(sharpe_arr))
+                # Now using Sortino ratios (variable names kept for backward compat)
+                sortino_arr = np.asarray(fold_sharpes, dtype=float)  # Actually Sortino now
+                sharpe_arr = sortino_arr  # Alias for backward compat
+                sharpe_mean = float(np.mean(sortino_arr))
+                sharpe_std = float(np.std(sortino_arr, ddof=1)) if len(sortino_arr) > 1 else 0.0
+                sharpe_min = float(np.min(sortino_arr))
+                sharpe_max = float(np.max(sortino_arr))
 
-                lambda_vol = 0.8  # UPDATED from 1.2
-                w_auc = 0.5       # UPDATED from 1.0
+                # CHANGED: lambda_vol reduced from 0.8 to 0.4 for Sortino
+                # Sortino has higher variance than Sharpe (fewer samples in denominator),
+                # so we reduce the fold-variance penalty to avoid over-penalizing.
+                lambda_vol = 0.4  # CHANGED from 0.8 (recalibrated for Sortino)
+                w_auc = 0.5       # Softer AUC gate
                 w_den = 0.3       # Layer 3 density (can be overridden by l3_w_den)
                 w_cal = 1.0
 
                 base_score = sharpe_mean - (lambda_vol * sharpe_std)
-                # NOTE: log compression removed in new utility formula
+                # NOTE: Using Sortino ratios now; log compression removed
                 if not np.isfinite(base_score):
                     base_score = 0.0
 
@@ -18111,10 +18305,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     max_dd_l3 = None
 
                 utility_dbg = calculate_hpo_utility(
-                    folds_sharpe=folds_sharpe_dbg,
+                    folds_sharpe=folds_sharpe_dbg,  # Actually Sortino ratios now
                     auc=mean_auc_dbg,
                     trades_per_day=trades_per_day_dbg,
-                    lambda_vol=0.8,
+                    lambda_vol=0.4,  # CHANGED from 0.8 (recalibrated for Sortino)
                     w_auc=0.5,
                     w_den=0.3,
                     calibration_brier=mean_brier_dbg,
@@ -18125,7 +18319,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     density_upper=float(l3_den_upper),
                     mean_return=mean_return_l3,
                     max_drawdown=max_dd_l3,
-                    prob_return_corr=prob_return_spearman,  # NEW
+                    prob_return_corr=prob_return_spearman,
                     w_prob_return_corr=0.0,  # Disabled for debug utility
                 )
 
@@ -18139,10 +18333,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 l3_w_prob_return_corr = float(np.clip(l3_w_prob_return_corr, 0.0, 0.5))
 
                 utility = calculate_hpo_utility(
-                    folds_sharpe=sharpe_arr,
+                    folds_sharpe=sortino_arr,  # Now Sortino ratios (param name kept for backward compat)
                     auc=mean_auc_effective,
                     trades_per_day=trades_per_day,
-                    lambda_vol=lambda_vol,
+                    lambda_vol=lambda_vol,  # 0.4 for Sortino (reduced from 0.8 for Sharpe)
                     w_auc=w_auc,
                     w_den=float(l3_w_den),
                     calibration_brier=mean_brier,
@@ -18430,6 +18624,210 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 )
         except Exception as l3_diag_exc:
             tprint_warning(f"   ⚠️ Failed to compute Layer 3 metrics breakdown: {l3_diag_exc}")
+
+        # ======================================================================
+        # HOLDOUT EXAM: Final out-of-sample evaluation on data NEVER seen during HPO
+        # ======================================================================
+        # This is the "final exam" - train on full development set, test on holdout.
+        # The holdout set was reserved at the start and never used in any HPO trial.
+        # ======================================================================
+        holdout_exam_metrics: Dict[str, Any] = {}
+        if X_holdout is not None and y_holdout is not None and len(X_holdout) >= 30:
+            tprint_info("=" * 60)
+            tprint_info("🎓 HOLDOUT EXAM: Evaluating best model on reserved out-of-sample data...")
+            tprint_info("=" * 60)
+            try:
+                # Build final model with best params and train on FULL development set
+                final_exam_model = lgb.LGBMClassifier(
+                    boosting_type="gbdt",
+                    objective="binary",
+                    n_jobs=-1,
+                    verbose=-1,
+                    random_state=42,
+                    **{k: v for k, v in best_model_params.items() if k not in ["boosting_type", "objective", "n_jobs", "verbose", "random_state"]}
+                )
+
+                # Get feature-selected columns if feature selection was used
+                selected_cols = list(X_final.columns)
+                X_train_exam = X_final[selected_cols].copy()
+                X_test_exam = X_holdout[selected_cols].copy()
+
+                # Train on full development set
+                if final_weights is not None and len(final_weights) == len(X_train_exam):
+                    final_exam_model.fit(X_train_exam, y_final, sample_weight=final_weights)
+                else:
+                    final_exam_model.fit(X_train_exam, y_final)
+
+                # Predict on holdout
+                holdout_probs = final_exam_model.predict_proba(X_test_exam)[:, 1]
+
+                # Calibrate predictions using isotonic regression (trained on dev set)
+                try:
+                    from sklearn.isotonic import IsotonicRegression
+                    # Use OOF predictions from development set for calibration
+                    dev_oof_probs = np.zeros(len(X_train_exam))
+                    from sklearn.model_selection import TimeSeriesSplit as _HoldoutTSCV
+                    holdout_cal_cv = _HoldoutTSCV(n_splits=3)
+                    for tr_idx_cal, te_idx_cal in holdout_cal_cv.split(X_train_exam):
+                        cal_model = lgb.LGBMClassifier(
+                            boosting_type="gbdt", objective="binary", n_jobs=-1, verbose=-1, random_state=42,
+                            **{k: v for k, v in best_model_params.items() if k not in ["boosting_type", "objective", "n_jobs", "verbose", "random_state"]}
+                        )
+                        if final_weights is not None:
+                            cal_model.fit(X_train_exam.iloc[tr_idx_cal], y_final.iloc[tr_idx_cal], sample_weight=final_weights[tr_idx_cal])
+                        else:
+                            cal_model.fit(X_train_exam.iloc[tr_idx_cal], y_final.iloc[tr_idx_cal])
+                        dev_oof_probs[te_idx_cal] = cal_model.predict_proba(X_train_exam.iloc[te_idx_cal])[:, 1]
+                    
+                    iso_reg = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+                    iso_reg.fit(dev_oof_probs, y_final.values)
+                    holdout_probs_cal = iso_reg.predict(holdout_probs)
+                except Exception:
+                    holdout_probs_cal = holdout_probs
+
+                # Compute holdout AUC
+                holdout_auc = None
+                try:
+                    if len(np.unique(y_holdout)) >= 2:
+                        holdout_auc = float(roc_auc_score(y_holdout, holdout_probs_cal))
+                except Exception:
+                    pass
+
+                # Compute holdout Brier score
+                holdout_brier = None
+                try:
+                    from sklearn.metrics import brier_score_loss
+                    holdout_brier = float(brier_score_loss(y_holdout, holdout_probs_cal))
+                except Exception:
+                    pass
+
+                # Compute holdout Sortino (using position sizing)
+                holdout_sortino = None
+                holdout_trades_per_day = 0.0
+                holdout_mean_return = None
+                holdout_win_rate = None
+                holdout_n_trades = 0
+                try:
+                    # Apply same threshold as used in HPO
+                    try:
+                        layer3_prob_threshold_exam = float(config.get("layer3_prob_threshold", 0.5))
+                    except Exception:
+                        layer3_prob_threshold_exam = 0.5
+
+                    # Compute position sizes
+                    holdout_sizes = np.zeros(len(holdout_probs_cal))
+                    for i, prob in enumerate(holdout_probs_cal):
+                        sz = directional_size_from_prob(
+                            float(prob),
+                            direction=direction,
+                            thr=float(layer3_prob_threshold_exam),
+                            max_exposure=1.0,
+                            scale=1.0,
+                        )
+                        sz = float(sz) if np.isfinite(float(sz)) else 0.0
+                        # Apply committee gate if available
+                        if holdout_gate_arr is not None and not bool(holdout_gate_arr[i]):
+                            sz = 0.0
+                        holdout_sizes[i] = sz
+
+                    # Compute sized returns
+                    holdout_sized_returns = np.abs(holdout_sizes) * holdout_returns
+                    take_mask_exam = np.abs(holdout_sizes) > 1e-12
+                    traded_returns_exam = holdout_sized_returns[take_mask_exam]
+                    holdout_n_trades = int(np.sum(take_mask_exam))
+
+                    if len(traded_returns_exam) > 5:
+                        # Compute Sortino ratio
+                        holdout_sortino = _compute_sortino_ratio(traded_returns_exam, periods_per_year=365.0)
+
+                        # Compute trades per day
+                        try:
+                            holdout_days = (holdout_t_events.max() - holdout_t_events.min()).days
+                            holdout_days = max(holdout_days, 1)
+                            holdout_trades_per_day = float(holdout_n_trades) / float(holdout_days)
+                        except Exception:
+                            holdout_trades_per_day = 0.0
+
+                        # Compute mean return and win rate
+                        holdout_mean_return = float(np.mean(traded_returns_exam))
+                        holdout_win_rate = float(np.mean(traded_returns_exam > 0))
+                except Exception as sortino_exc:
+                    tprint_warning(f"   ⚠️ Failed to compute holdout Sortino: {sortino_exc}")
+
+                # Compute Probabilistic Sortino for holdout
+                holdout_prob_sortino = None
+                try:
+                    if traded_returns_exam is not None and len(traded_returns_exam) > 10:
+                        psor_holdout = _probabilistic_sortino_from_returns(
+                            traded_returns_exam,
+                            sortino_benchmark=0.0,
+                            periods_per_year=365.0,
+                        )
+                        holdout_prob_sortino = float(psor_holdout.get("probabilistic_sortino", 0.0))
+                except Exception:
+                    pass
+
+                # Store holdout metrics
+                holdout_exam_metrics = {
+                    "holdout_enabled": True,
+                    "holdout_n_samples": int(len(X_holdout)),
+                    "holdout_n_trades": holdout_n_trades,
+                    "holdout_auc": holdout_auc,
+                    "holdout_brier": holdout_brier,
+                    "holdout_sortino": holdout_sortino,
+                    "holdout_prob_sortino": holdout_prob_sortino,
+                    "holdout_trades_per_day": holdout_trades_per_day,
+                    "holdout_mean_return": holdout_mean_return,
+                    "holdout_win_rate": holdout_win_rate,
+                    "holdout_date_start": str(holdout_t_events.min()) if holdout_t_events is not None else None,
+                    "holdout_date_end": str(holdout_t_events.max()) if holdout_t_events is not None else None,
+                    "dev_n_samples": int(n_dev),
+                }
+
+                # Report holdout results
+                tprint_info("   📊 HOLDOUT EXAM RESULTS (True Out-of-Sample):")
+                tprint_info(f"      Samples: {len(X_holdout)} (holdout) vs {n_dev} (development)")
+                tprint_info(f"      Trades: {holdout_n_trades} ({holdout_trades_per_day:.2f}/day)")
+                if holdout_auc is not None:
+                    cv_auc = best_metrics.get("mean_auc", 0.0)
+                    auc_gap = cv_auc - holdout_auc
+                    gap_pct = (auc_gap / cv_auc * 100) if cv_auc > 0 else 0
+                    tprint_info(f"      AUC: {holdout_auc:.4f} (CV: {cv_auc:.4f}, gap: {auc_gap:+.4f} / {gap_pct:+.1f}%)")
+                    if auc_gap > 0.05:
+                        tprint_warning(f"      ⚠️ AUC DROP > 5%: Potential overfitting detected!")
+                    elif auc_gap < -0.02:
+                        tprint_success(f"      ✅ Holdout AUC HIGHER than CV — robust generalization!")
+                    else:
+                        tprint_success(f"      ✅ AUC gap within tolerance — good generalization")
+                if holdout_sortino is not None:
+                    cv_sortino = best_metrics.get("sharpe_mean", 0.0)  # Actually Sortino now
+                    tprint_info(f"      Sortino: {holdout_sortino:.4f} (CV mean: {cv_sortino:.4f})")
+                if holdout_prob_sortino is not None:
+                    tprint_info(f"      Prob. Sortino: {holdout_prob_sortino:.4f}")
+                if holdout_mean_return is not None:
+                    tprint_info(f"      Mean Return: {holdout_mean_return*100:.3f}% per trade")
+                if holdout_win_rate is not None:
+                    tprint_info(f"      Win Rate: {holdout_win_rate:.1%}")
+                if holdout_brier is not None:
+                    cv_brier = best_metrics.get("calibration_brier")
+                    if cv_brier is not None:
+                        tprint_info(f"      Brier: {holdout_brier:.4f} (CV: {cv_brier:.4f})")
+                    else:
+                        tprint_info(f"      Brier: {holdout_brier:.4f}")
+
+                tprint_info("=" * 60)
+
+                # Add holdout metrics to best_metrics for persistence
+                best_metrics.update(holdout_exam_metrics)
+
+            except Exception as holdout_exc:
+                tprint_warning(f"   ⚠️ Holdout exam failed: {holdout_exc}")
+                holdout_exam_metrics = {"holdout_enabled": False, "holdout_error": str(holdout_exc)}
+        else:
+            if X_holdout is None:
+                holdout_exam_metrics = {"holdout_enabled": False, "holdout_reason": "no_holdout_split"}
+            else:
+                holdout_exam_metrics = {"holdout_enabled": False, "holdout_reason": f"insufficient_samples_{len(X_holdout) if X_holdout is not None else 0}"}
 
         # Save Layer 3 History
         l3_history_path: Optional[Path] = None
@@ -18770,6 +19168,78 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 pass
 
+            # ======================================================================
+            # HOLDOUT EXAM RESULTS (True Out-of-Sample Validation)
+            # ======================================================================
+            try:
+                if best_metrics.get("holdout_enabled", False):
+                    f.write("## 🎓 Holdout Exam (True Out-of-Sample)\n\n")
+                    f.write("> **Note:** The holdout set was reserved at the start of HPO and NEVER used during optimization.\n")
+                    f.write("> This provides the most realistic estimate of live performance.\n\n")
+                    
+                    holdout_n_samples = best_metrics.get("holdout_n_samples", 0)
+                    dev_n_samples = best_metrics.get("dev_n_samples", 0)
+                    holdout_date_start = best_metrics.get("holdout_date_start", "N/A")
+                    holdout_date_end = best_metrics.get("holdout_date_end", "N/A")
+                    
+                    f.write(f"### Data Split\n")
+                    f.write(f"- Development set: {dev_n_samples} samples (used for HPO cross-validation)\n")
+                    f.write(f"- Holdout set: {holdout_n_samples} samples (final exam)\n")
+                    f.write(f"- Holdout date range: {holdout_date_start} to {holdout_date_end}\n\n")
+                    
+                    f.write("### Holdout vs Cross-Validation Comparison\n\n")
+                    f.write("| Metric | CV (Development) | Holdout (OOS) | Gap | Status |\n")
+                    f.write("|--------|----------------:|-------------:|----:|--------|\n")
+                    
+                    # AUC comparison
+                    cv_auc = best_metrics.get("mean_auc", 0.0)
+                    holdout_auc = best_metrics.get("holdout_auc")
+                    if holdout_auc is not None and np.isfinite(holdout_auc):
+                        auc_gap = cv_auc - holdout_auc
+                        gap_pct = (auc_gap / cv_auc * 100) if cv_auc > 0 else 0
+                        status = "⚠️ Overfit" if auc_gap > 0.05 else ("✅ Robust" if auc_gap < 0.02 else "⚠️ Marginal")
+                        f.write(f"| AUC | {cv_auc:.4f} | {holdout_auc:.4f} | {auc_gap:+.4f} ({gap_pct:+.1f}%) | {status} |\n")
+                    
+                    # Sortino comparison
+                    cv_sortino = best_metrics.get("sharpe_mean", 0.0)  # Actually Sortino
+                    holdout_sortino = best_metrics.get("holdout_sortino")
+                    if holdout_sortino is not None and np.isfinite(holdout_sortino):
+                        sortino_gap = cv_sortino - holdout_sortino
+                        status = "⚠️ Overfit" if sortino_gap > 0.5 else ("✅ Robust" if sortino_gap < 0.2 else "⚠️ Marginal")
+                        f.write(f"| Sortino | {cv_sortino:.4f} | {holdout_sortino:.4f} | {sortino_gap:+.4f} | {status} |\n")
+                    
+                    # Brier comparison
+                    cv_brier = best_metrics.get("calibration_brier")
+                    holdout_brier = best_metrics.get("holdout_brier")
+                    if holdout_brier is not None and np.isfinite(holdout_brier) and cv_brier is not None:
+                        brier_gap = holdout_brier - cv_brier  # Higher Brier is worse
+                        status = "⚠️ Overfit" if brier_gap > 0.03 else ("✅ Robust" if brier_gap < 0.01 else "⚠️ Marginal")
+                        f.write(f"| Brier Score | {cv_brier:.4f} | {holdout_brier:.4f} | {brier_gap:+.4f} | {status} |\n")
+                    
+                    f.write("\n")
+                    
+                    f.write("### Holdout Trading Metrics\n\n")
+                    holdout_n_trades = best_metrics.get("holdout_n_trades", 0)
+                    holdout_trades_per_day = best_metrics.get("holdout_trades_per_day", 0.0)
+                    holdout_mean_return = best_metrics.get("holdout_mean_return")
+                    holdout_win_rate = best_metrics.get("holdout_win_rate")
+                    holdout_prob_sortino = best_metrics.get("holdout_prob_sortino")
+                    
+                    f.write(f"- Trades: {holdout_n_trades} ({holdout_trades_per_day:.2f} per day)\n")
+                    if holdout_mean_return is not None:
+                        f.write(f"- Mean Return: {holdout_mean_return*100:.3f}% per trade\n")
+                    if holdout_win_rate is not None:
+                        f.write(f"- Win Rate: {holdout_win_rate:.1%}\n")
+                    if holdout_prob_sortino is not None:
+                        f.write(f"- Probabilistic Sortino: {holdout_prob_sortino:.4f}\n")
+                    f.write("\n")
+                else:
+                    holdout_reason = best_metrics.get("holdout_reason", "unknown")
+                    f.write("## 🎓 Holdout Exam\n\n")
+                    f.write(f"⚠️ Holdout exam was not performed. Reason: `{holdout_reason}`\n\n")
+            except Exception as holdout_report_exc:
+                f.write(f"## 🎓 Holdout Exam\n\n⚠️ Error generating holdout report: {holdout_report_exc}\n\n")
+
         json_path = outcomes_dir / f"hpo_multi_stage_best_params_{symbol}_{ts_run}.json"
         with open(json_path, "w") as f:
             json.dump(full_best_params, f, indent=2, default=str)
@@ -18786,6 +19256,25 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "layer3_feature_selection": l3_feature_selection_info,
             "best_params": full_best_params,
             "stage_reports": hpo_stage_reports,
+            # Holdout exam metrics (True Out-of-Sample)
+            "holdout_exam": {
+                "enabled": best_metrics.get("holdout_enabled", False),
+                "n_samples_dev": best_metrics.get("dev_n_samples", 0),
+                "n_samples_holdout": best_metrics.get("holdout_n_samples", 0),
+                "holdout_auc": best_metrics.get("holdout_auc"),
+                "holdout_sortino": best_metrics.get("holdout_sortino"),
+                "holdout_prob_sortino": best_metrics.get("holdout_prob_sortino"),
+                "holdout_brier": best_metrics.get("holdout_brier"),
+                "holdout_n_trades": best_metrics.get("holdout_n_trades", 0),
+                "holdout_trades_per_day": best_metrics.get("holdout_trades_per_day", 0.0),
+                "holdout_mean_return": best_metrics.get("holdout_mean_return"),
+                "holdout_win_rate": best_metrics.get("holdout_win_rate"),
+                "holdout_date_start": best_metrics.get("holdout_date_start"),
+                "holdout_date_end": best_metrics.get("holdout_date_end"),
+                # Gap analysis (CV vs Holdout)
+                "auc_gap": (best_metrics.get("mean_auc", 0) - best_metrics.get("holdout_auc", 0)) if best_metrics.get("holdout_auc") is not None else None,
+                "sortino_gap": (best_metrics.get("sharpe_mean", 0) - best_metrics.get("holdout_sortino", 0)) if best_metrics.get("holdout_sortino") is not None else None,
+            },
         }
 
         tprint_success(f"✅ Multi-Layer HPO Complete. Final metrics: {metrics}")

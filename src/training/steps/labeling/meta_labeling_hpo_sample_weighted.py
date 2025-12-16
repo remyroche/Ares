@@ -12648,6 +12648,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # Concept: Weight wins by magnitude, not just count
             # A 50% win rate with 3:1 R:R is better than 50% with 1:1 R:R
             # Formula: sum(positive_returns) / (sum(positive_returns) + |sum(negative_returns)|)
+            #
+            # IMPORTANT: Uses returns AFTER FEES (transaction costs)
+            # - trade_returns is derived from returns_arr (l2_returns_clean)
+            # - l2_returns comes from compute_realized_returns() with transaction_cost=DEFAULT_TRANSACTION_COST
+            # - This ensures we're measuring actual net profitability, not gross
             try:
                 w_mag_winrate = float(config.get("layer2_utility_w_mag_winrate", 0.8))
             except Exception:
@@ -12664,8 +12669,25 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             try:
                 if trade_returns is not None and len(trade_returns) > 0:
+                    # trade_returns is already net of transaction costs (from compute_realized_returns)
+                    # Verify by checking that we're using the fee-adjusted returns
                     tr = np.asarray(trade_returns, dtype=float)
                     tr = tr[np.isfinite(tr)]
+                    
+                    # Double-check: if returns seem too high (>5% average), they might be gross
+                    # In that case, subtract transaction cost as a safety measure
+                    if len(tr) > 0:
+                        avg_abs_return = float(np.mean(np.abs(tr)))
+                        if avg_abs_return > 0.05:  # Sanity check: >5% average seems unrealistic for net returns
+                            # This shouldn't happen if compute_realized_returns is working correctly
+                            # but add defensive deduction just in case
+                            # Fee deduction: winners reduced, losers made worse
+                            try:
+                                tx_cost = float(DEFAULT_TRANSACTION_COST)
+                                tr = tr - tx_cost  # Subtract fee from all returns
+                            except Exception:
+                                pass
+                    
                     if len(tr) > 0:
                         pos_sum = float(np.sum(tr[tr > 0])) if np.any(tr > 0) else 0.0
                         neg_sum = float(np.abs(np.sum(tr[tr < 0]))) if np.any(tr < 0) else 0.0

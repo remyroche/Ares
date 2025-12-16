@@ -16266,8 +16266,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "reg_lambda": {"type": "float", "low": 0.0, "high": 1.0},
             "subsample": {"type": "float", "low": 0.5, "high": 1.0},
             "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
-            # Recency weighting: exponential decay rate (0.0 = disabled, 0.01 = 1%/day default, 0.03 = strong)
-            "recency_decay_lambda": {"type": "float", "low": 0.0, "high": 0.03},
+            # Recency weighting: exponential decay rate (0.03 = 3%/day minimum, 0.05 = 5%/day default, 0.10 = strong)
+            # Increased from [0.0, 0.03] to address temporal degradation (early/late fold gap of 4.37)
+            "recency_decay_lambda": {"type": "float", "low": 0.03, "high": 0.10},
         }
 
         # Precompute values needed for Layer 3 utility calculation (aligned to final_t_events)

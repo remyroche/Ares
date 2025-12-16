@@ -7679,6 +7679,387 @@ def _weighted_avg_abs_corr(
     return float(numer / denom)
 
 
+def _compute_per_expert_psr(
+    *,
+    returns_matrix: np.ndarray,
+    label_matrix: np.ndarray,
+    take_mask: np.ndarray,
+    event_idx: pd.DatetimeIndex,
+    expert_names: List[str],
+    sr_benchmark: float = 0.0,
+    periods_per_year: float = 365.0,
+    min_trades: int = 10,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Compute Probabilistic Sharpe Ratio (PSR) for each expert individually.
+    
+    This provides per-expert risk-adjusted performance metrics following
+    De Prado's AFML methodology, enabling identification of consistently
+    unprofitable experts in the committee.
+    
+    Args:
+        returns_matrix: (n_events, n_experts) returns when expert fires
+        label_matrix: (n_events, n_experts) expert signals (-1, 0, +1)
+        take_mask: (n_events,) boolean mask of taken trades
+        event_idx: DatetimeIndex for aggregating to daily returns
+        expert_names: List of expert names
+        sr_benchmark: Benchmark Sharpe Ratio for PSR calculation
+        periods_per_year: Annualization factor (365 for crypto, 252 for equities)
+        min_trades: Minimum trades required for valid PSR
+        
+    Returns:
+        Dict mapping expert_name -> {psr, psr_z, sr, n, skew, kurt, ...}
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    
+    ret_mat = np.asarray(returns_matrix, dtype=float)
+    lbl_mat = np.asarray(label_matrix, dtype=float)
+    tm = np.asarray(take_mask, dtype=bool)
+    
+    if ret_mat.ndim != 2 or lbl_mat.ndim != 2:
+        return result
+    
+    n_events, n_experts = ret_mat.shape
+    if n_experts != len(expert_names):
+        return result
+    
+    try:
+        ev_idx = pd.DatetimeIndex(event_idx)
+        if len(ev_idx) != n_events:
+            return result
+    except Exception:
+        return result
+    
+    for j, name in enumerate(expert_names):
+        try:
+            # Expert fires and trade is taken
+            expert_fired = lbl_mat[:, j] != 0.0
+            expert_taken = expert_fired & tm
+            
+            n_taken = int(np.sum(expert_taken))
+            if n_taken < min_trades:
+                result[str(name)] = {
+                    "psr": 0.0,
+                    "psr_z": float("-inf"),
+                    "sr": None,
+                    "n": n_taken,
+                    "skew": 0.0,
+                    "kurt": 3.0,
+                    "sr_benchmark": float(sr_benchmark),
+                    "insufficient_trades": True,
+                }
+                continue
+            
+            # Get returns for this expert's taken trades
+            expert_returns = ret_mat[expert_taken, j]
+            expert_idx = ev_idx[expert_taken]
+            
+            # Aggregate to daily PnL
+            day_index = pd.date_range(
+                start=expert_idx.min().normalize(),
+                end=expert_idx.max().normalize(),
+                freq="D",
+            )
+            daily_pnl = pd.Series(expert_returns, index=expert_idx).groupby(
+                expert_idx.normalize()
+            ).sum()
+            daily_pnl = daily_pnl.reindex(day_index, fill_value=0.0)
+            daily_log = np.log1p(daily_pnl.astype(float).values)
+            daily_log = daily_log[np.isfinite(daily_log)]
+            
+            # Compute PSR using existing function
+            psr_details = _psr_from_returns(
+                daily_log,
+                sr_benchmark=float(sr_benchmark),
+                periods_per_year=float(periods_per_year),
+            )
+            psr_details["insufficient_trades"] = False
+            psr_details["n_taken"] = n_taken
+            
+            # Add contribution metrics
+            total_pnl = float(np.sum(expert_returns))
+            mean_ret = float(np.mean(expert_returns))
+            win_rate = float(np.mean(expert_returns > 0.0))
+            psr_details["total_pnl"] = total_pnl
+            psr_details["mean_return"] = mean_ret
+            psr_details["win_rate"] = win_rate
+            
+            result[str(name)] = psr_details
+            
+        except Exception:
+            result[str(name)] = {
+                "psr": 0.0,
+                "psr_z": float("-inf"),
+                "sr": None,
+                "n": 0,
+                "skew": 0.0,
+                "kurt": 3.0,
+                "sr_benchmark": float(sr_benchmark),
+                "error": True,
+            }
+    
+    return result
+
+
+def _compute_unprofitable_expert_penalty(
+    *,
+    per_expert_psr: Dict[str, Dict[str, Any]],
+    weights_vec: np.ndarray,
+    expert_names: List[str],
+    psr_threshold: float = 0.5,
+    sr_threshold: float = 0.0,
+    penalty_scale: float = 1.0,
+    min_trades_required: int = 10,
+) -> Dict[str, Any]:
+    """
+    Compute a penalty for configurations that give high weight to unprofitable experts.
+    
+    This enables HPO to automatically down-weight experts that consistently
+    underperform on a risk-adjusted basis (low PSR or negative Sharpe Ratio).
+    
+    The penalty is computed as:
+        penalty = sum(weight_i * underperformance_i) for all unprofitable experts
+    
+    Where underperformance_i = max(0, psr_threshold - psr_i) + max(0, -sr_i) * sr_weight
+    
+    Args:
+        per_expert_psr: Dict from _compute_per_expert_psr with PSR metrics per expert
+        weights_vec: (n_experts,) normalized expert weights from HPO
+        expert_names: List of expert names matching weights_vec order
+        psr_threshold: PSR below this is considered underperforming (default 0.5 = random)
+        sr_threshold: SR below this triggers additional penalty (default 0.0)
+        penalty_scale: Multiplier for the final penalty
+        min_trades_required: Ignore experts with fewer trades
+        
+    Returns:
+        Dict with:
+            - penalty: Total penalty value (higher = worse configuration)
+            - unprofitable_experts: List of expert names flagged as unprofitable
+            - expert_penalties: Dict mapping expert_name -> individual penalty contribution
+            - diagnostics: Additional debug info
+    """
+    result: Dict[str, Any] = {
+        "penalty": 0.0,
+        "unprofitable_experts": [],
+        "expert_penalties": {},
+        "diagnostics": {
+            "n_experts_evaluated": 0,
+            "n_unprofitable": 0,
+            "total_unprofitable_weight": 0.0,
+            "worst_expert": None,
+            "worst_expert_psr": None,
+        },
+    }
+    
+    if not per_expert_psr or not expert_names:
+        return result
+    
+    w = np.asarray(weights_vec, dtype=float).reshape(-1)
+    if w.size != len(expert_names):
+        return result
+    
+    # Normalize weights for consistent penalty scaling
+    w_sum = float(np.sum(w))
+    if w_sum <= 1e-12:
+        return result
+    w_norm = w / w_sum
+    
+    total_penalty = 0.0
+    unprofitable_experts: List[str] = []
+    expert_penalties: Dict[str, float] = {}
+    total_unprofitable_weight = 0.0
+    worst_expert = None
+    worst_psr = 1.0
+    n_evaluated = 0
+    
+    for j, name in enumerate(expert_names):
+        psr_data = per_expert_psr.get(str(name), {})
+        if not isinstance(psr_data, dict):
+            continue
+        
+        # Skip experts with insufficient trades
+        n_trades = psr_data.get("n_taken", psr_data.get("n", 0))
+        if n_trades < min_trades_required:
+            continue
+        
+        n_evaluated += 1
+        psr_val = float(psr_data.get("psr", 0.5))
+        sr_val = psr_data.get("sr")
+        weight_i = float(w_norm[j])
+        
+        # Compute underperformance score
+        # 1. PSR penalty: how far below threshold
+        psr_gap = float(max(0.0, psr_threshold - psr_val))
+        
+        # 2. SR penalty: additional penalty for negative Sharpe
+        sr_penalty = 0.0
+        if sr_val is not None and np.isfinite(sr_val):
+            if float(sr_val) < sr_threshold:
+                # Stronger penalty for negative SR (losing money)
+                sr_penalty = float(max(0.0, sr_threshold - float(sr_val)))
+        
+        # Combined underperformance (PSR dominates, SR adds extra penalty for losses)
+        underperformance = psr_gap + 0.5 * sr_penalty
+        
+        if underperformance > 0.01:
+            # Weight-adjusted penalty: high weight + poor performance = big penalty
+            expert_penalty = weight_i * underperformance * penalty_scale
+            total_penalty += expert_penalty
+            unprofitable_experts.append(str(name))
+            expert_penalties[str(name)] = float(expert_penalty)
+            total_unprofitable_weight += weight_i
+            
+            # Track worst expert
+            if psr_val < worst_psr:
+                worst_psr = psr_val
+                worst_expert = str(name)
+    
+    result["penalty"] = float(total_penalty)
+    result["unprofitable_experts"] = unprofitable_experts
+    result["expert_penalties"] = expert_penalties
+    result["diagnostics"] = {
+        "n_experts_evaluated": n_evaluated,
+        "n_unprofitable": len(unprofitable_experts),
+        "total_unprofitable_weight": float(total_unprofitable_weight),
+        "worst_expert": worst_expert,
+        "worst_expert_psr": float(worst_psr) if worst_expert else None,
+        "psr_threshold": float(psr_threshold),
+        "sr_threshold": float(sr_threshold),
+        "penalty_scale": float(penalty_scale),
+    }
+    
+    return result
+
+
+def _compute_regime_aware_correlation(
+    *,
+    signals: np.ndarray,
+    weights: np.ndarray,
+    regime_masks: Dict[str, np.ndarray],
+    home_regime_map: Optional[Dict[int, str]] = None,
+) -> Dict[str, Any]:
+    """
+    Compute regime-aware expert correlation metrics.
+    
+    Unlike global correlation, this computes correlation within each regime
+    separately. Experts should be diversified in regimes where they don't
+    specialize, but may be correlated in their "home" regime.
+    
+    Args:
+        signals: (n_events, n_experts) expert signal matrix
+        weights: (n_experts,) expert weights for weighted average
+        regime_masks: Dict mapping regime_name -> boolean mask of events
+        home_regime_map: Optional dict mapping expert_idx -> home_regime_name
+                         (experts are expected to be correlated in home regime)
+    
+    Returns:
+        Dict with:
+            - global_corr: Overall weighted average absolute correlation
+            - per_regime_corr: {regime_name: weighted_avg_abs_corr}
+            - out_of_home_corr: Avg correlation when experts are outside home regime
+            - diversity_score: Combined score (lower = more diverse)
+    """
+    result: Dict[str, Any] = {
+        "global_corr": 0.0,
+        "per_regime_corr": {},
+        "out_of_home_corr": 0.0,
+        "diversity_score": 0.0,
+        "n_regimes_evaluated": 0,
+    }
+    
+    x = np.asarray(signals, dtype=float)
+    if x.ndim != 2:
+        return result
+    
+    n_events, n_experts = x.shape
+    w = np.asarray(weights, dtype=float).reshape(-1)
+    
+    if n_experts <= 1 or int(w.size) != n_experts:
+        return result
+    
+    w = np.where(np.isfinite(w) & (w >= 0.0), w, 0.0)
+    if float(np.sum(w)) <= 1e-12:
+        return result
+    
+    # Global correlation (existing logic)
+    result["global_corr"] = _weighted_avg_abs_corr(signals=x, weights=w)
+    
+    # Per-regime correlation
+    per_regime_corr: Dict[str, float] = {}
+    regime_weights_sum = 0.0
+    weighted_regime_corr = 0.0
+    
+    for regime_name, mask in regime_masks.items():
+        try:
+            m = np.asarray(mask, dtype=bool)
+            if int(m.size) != n_events:
+                continue
+            n_in_regime = int(np.sum(m))
+            if n_in_regime < 20:  # Need sufficient samples
+                continue
+            
+            x_regime = x[m, :]
+            regime_corr = _weighted_avg_abs_corr(signals=x_regime, weights=w)
+            per_regime_corr[str(regime_name)] = float(regime_corr)
+            
+            # Weight by number of events in regime
+            weighted_regime_corr += float(regime_corr) * float(n_in_regime)
+            regime_weights_sum += float(n_in_regime)
+            
+        except Exception:
+            continue
+    
+    result["per_regime_corr"] = per_regime_corr
+    result["n_regimes_evaluated"] = len(per_regime_corr)
+    
+    # Compute out-of-home correlation if home_regime_map provided
+    if home_regime_map is not None and len(per_regime_corr) > 0:
+        try:
+            out_of_home_corrs: List[float] = []
+            out_of_home_weights: List[float] = []
+            
+            for regime_name, regime_corr in per_regime_corr.items():
+                # Count how many experts are "at home" in this regime
+                n_home = sum(
+                    1 for exp_idx, home_regime in home_regime_map.items()
+                    if home_regime == regime_name and exp_idx < n_experts
+                )
+                # If most experts are NOT home, this is an out-of-home regime
+                if n_home < n_experts // 2:
+                    mask = regime_masks.get(regime_name)
+                    if mask is not None:
+                        n_events_regime = int(np.sum(mask))
+                        out_of_home_corrs.append(float(regime_corr))
+                        out_of_home_weights.append(float(n_events_regime))
+            
+            if out_of_home_corrs:
+                total_w = sum(out_of_home_weights)
+                if total_w > 0:
+                    result["out_of_home_corr"] = float(
+                        sum(c * w for c, w in zip(out_of_home_corrs, out_of_home_weights)) / total_w
+                    )
+        except Exception:
+            pass
+    
+    # Diversity score: emphasize out-of-home correlation (where diversity matters most)
+    # If no home_regime_map, use weighted average of per-regime correlations
+    if regime_weights_sum > 0:
+        avg_regime_corr = weighted_regime_corr / regime_weights_sum
+        # Blend: 30% global, 70% regime-aware (emphasize regime-specific diversity)
+        if result["out_of_home_corr"] > 0:
+            result["diversity_score"] = float(
+                0.3 * result["global_corr"] + 0.7 * result["out_of_home_corr"]
+            )
+        else:
+            result["diversity_score"] = float(
+                0.3 * result["global_corr"] + 0.7 * avg_regime_corr
+            )
+    else:
+        result["diversity_score"] = result["global_corr"]
+    
+    return result
+
+
 def _apply_hpo_quality_penalty(
     *,
     utility: float,
@@ -13597,6 +13978,44 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 weights_mat = None
 
+            # ================================================================
+            # STORE REGIME MASKS FOR DIVERSITY CALCULATION
+            # ================================================================
+            # These masks are used for regime-aware correlation penalty.
+            # We reconstruct them here if they weren't computed in MoE block.
+            regime_masks_for_diversity: Dict[str, np.ndarray] = {}
+            try:
+                n_ev_local = len(event_idx)
+                if market_data is not None:
+                    # Reconstruct ADX/vol vectors
+                    adx_vec_div = np.full(n_ev_local, 20.0)
+                    if "reg_res_adx_14" in market_data.columns:
+                        adx_vec_div = market_data["reg_res_adx_14"].reindex(event_idx).fillna(20.0).values
+                    elif "adx" in market_data.columns:
+                        adx_vec_div = market_data["adx"].reindex(event_idx).fillna(20.0).values
+                    
+                    vol_vec_div = np.full(n_ev_local, 1.0)
+                    if "reg_ohlcv__vol_ratio_5" in market_data.columns:
+                        vol_vec_div = market_data["reg_ohlcv__vol_ratio_5"].reindex(event_idx).fillna(1.0).values
+                    elif "vol_ratio" in market_data.columns:
+                        vol_vec_div = market_data["vol_ratio"].reindex(event_idx).fillna(1.0).values
+                    
+                    # Use quantile thresholds from MoE diagnostics if available, else defaults
+                    moe_diag_local = params.get("moe_diagnostics", {})
+                    thr_trend_div = float(moe_diag_local.get("thr_trend", 25.0))
+                    thr_chop_div = float(moe_diag_local.get("thr_chop", 20.0))
+                    thr_vol_spike_div = float(moe_diag_local.get("thr_vol_spike", 1.5))
+                    
+                    regime_masks_for_diversity["trend"] = adx_vec_div > thr_trend_div
+                    regime_masks_for_diversity["chop"] = adx_vec_div < thr_chop_div
+                    regime_masks_for_diversity["vol_spike"] = vol_vec_div > thr_vol_spike_div
+                    # Neutral regime: not trend, not chop
+                    regime_masks_for_diversity["neutral"] = (
+                        (adx_vec_div >= thr_chop_div) & (adx_vec_div <= thr_trend_div)
+                    )
+            except Exception:
+                regime_masks_for_diversity = {}
+
             # Fallback to static weights if MoE disabled or failed
             if weights_mat is None:
                 # Build static weights vector matching number of experts
@@ -14186,6 +14605,44 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 committee_expert_stats = {}
 
+            # ================================================================
+            # PER-EXPERT PSR: Compute individual expert risk-adjusted returns
+            # ================================================================
+            # This enables identification of consistently unprofitable experts
+            # following De Prado's AFML methodology for strategy evaluation.
+            per_expert_psr: Dict[str, Dict[str, Any]] = {}
+            try:
+                psr_sr_benchmark = float(config.get("layer2_psr_sr_benchmark", 0.0))
+                if not np.isfinite(psr_sr_benchmark):
+                    psr_sr_benchmark = 0.0
+                psr_min_expert_trades = int(config.get("layer2_psr_min_expert_trades", 10))
+                
+                per_expert_psr = _compute_per_expert_psr(
+                    returns_matrix=returns_matrix_values,
+                    label_matrix=label_matrix_values,
+                    take_mask=np.asarray(take_mask, dtype=bool),
+                    event_idx=pd.DatetimeIndex(event_idx),
+                    expert_names=list(committee_names),
+                    sr_benchmark=psr_sr_benchmark,
+                    periods_per_year=365.0,
+                    min_trades=psr_min_expert_trades,
+                )
+                
+                # Merge PSR into committee_expert_stats
+                for name, psr_data in per_expert_psr.items():
+                    if name in committee_expert_stats:
+                        committee_expert_stats[name]["psr"] = psr_data.get("psr", 0.0)
+                        committee_expert_stats[name]["psr_z"] = psr_data.get("psr_z", float("-inf"))
+                        committee_expert_stats[name]["psr_sr"] = psr_data.get("sr")
+                        committee_expert_stats[name]["psr_n"] = psr_data.get("n", 0)
+                        committee_expert_stats[name]["psr_skew"] = psr_data.get("skew", 0.0)
+                        committee_expert_stats[name]["psr_kurt"] = psr_data.get("kurt", 3.0)
+                        committee_expert_stats[name]["psr_total_pnl"] = psr_data.get("total_pnl", 0.0)
+                        committee_expert_stats[name]["psr_mean_return"] = psr_data.get("mean_return", 0.0)
+                        committee_expert_stats[name]["psr_win_rate"] = psr_data.get("win_rate", 0.0)
+            except Exception:
+                pass
+
             committee_overlap: Dict[str, Any] = {}
             try:
                 n_exp = int(label_matrix_values.shape[1])
@@ -14582,10 +15039,44 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             if not np.isfinite(float(utility_raw)):
                 utility_raw = 0.0
 
+            # ================================================================
+            # REGIME-AWARE CORRELATION DIVERSITY PENALTY
+            # ================================================================
+            # Unlike global correlation, this computes correlation within each
+            # regime separately. Experts should be diversified in regimes where
+            # they don't specialize (out-of-home), but may be correlated in
+            # their "home" regime. This follows MoE principles more accurately.
             diversity = 0.0
             diversity_penalty = 0.0
+            regime_aware_diversity: Dict[str, Any] = {}
             try:
-                diversity = _weighted_avg_abs_corr(signals=np.asarray(label_matrix_values, dtype=float), weights=np.asarray(weights_vec, dtype=float))
+                # Define home regimes for each expert type
+                # Indices: [scalp_L, scalp_S, swing_L, swing_S, trend_L, trend_S, breakout, vwap_rev, vol_shock]
+                home_regime_map: Dict[int, str] = {
+                    0: "chop",      # scalp_L -> chop
+                    1: "chop",      # scalp_S -> chop
+                    2: "neutral",   # swing_L -> neutral
+                    3: "neutral",   # swing_S -> neutral
+                    4: "trend",     # trend_L -> trend
+                    5: "trend",     # trend_S -> trend
+                    6: "trend",     # breakout -> trend (transition into trend)
+                    7: "chop",      # vwap_rev -> chop (mean reversion)
+                    8: "vol_spike", # vol_shock -> vol_spike
+                }
+                
+                # Compute regime-aware correlation
+                regime_aware_diversity = _compute_regime_aware_correlation(
+                    signals=np.asarray(label_matrix_values, dtype=float),
+                    weights=np.asarray(weights_vec, dtype=float),
+                    regime_masks=regime_masks_for_diversity,
+                    home_regime_map=home_regime_map,
+                )
+                
+                # Use diversity_score (blended global + regime-aware) for penalty
+                diversity = float(regime_aware_diversity.get("diversity_score", 0.0))
+                if not np.isfinite(diversity):
+                    diversity = float(regime_aware_diversity.get("global_corr", 0.0))
+                
                 try:
                     diversity_scale = float(config.get("diversity_penalty_scale", 3.0))
                 except Exception:
@@ -14599,6 +15090,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 diversity = 0.0
                 diversity_penalty = 0.0
                 diversity_multiplier = 1.0
+                regime_aware_diversity = {}
 
             utility_after_diversity = float(utility_raw)
             try:
@@ -14633,6 +15125,43 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                             utility_after_diversity = float(utility_after_diversity) - adv_diversity_penalty
                             diversity_penalty += adv_diversity_penalty
                         adv_diversity_diag = adv_diversity_info
+            except Exception:
+                pass
+
+            # ================================================================
+            # UNPROFITABLE EXPERT PENALTY
+            # ================================================================
+            # Automatically down-weight configurations that give high weight
+            # to experts with poor risk-adjusted returns (low PSR / negative SR).
+            # This enables HPO to learn which experts are consistently unprofitable.
+            unprofitable_expert_penalty_result: Dict[str, Any] = {}
+            unprofitable_expert_penalty = 0.0
+            utility_pre_unprofitable_penalty = float(utility_after_diversity)
+            try:
+                # Get config for unprofitable expert penalty
+                unprofitable_penalty_enabled = bool(config.get("layer2_unprofitable_expert_penalty_enabled", True))
+                unprofitable_penalty_lambda = float(config.get("layer2_unprofitable_expert_penalty_lambda", 0.5))
+                unprofitable_psr_threshold = float(config.get("layer2_unprofitable_psr_threshold", 0.5))
+                unprofitable_sr_threshold = float(config.get("layer2_unprofitable_sr_threshold", 0.0))
+                
+                if unprofitable_penalty_enabled and unprofitable_penalty_lambda > 0.0 and per_expert_psr:
+                    unprofitable_expert_penalty_result = _compute_unprofitable_expert_penalty(
+                        per_expert_psr=per_expert_psr,
+                        weights_vec=weights_vec,
+                        expert_names=list(committee_names),
+                        psr_threshold=unprofitable_psr_threshold,
+                        sr_threshold=unprofitable_sr_threshold,
+                        penalty_scale=unprofitable_penalty_lambda,
+                        min_trades_required=int(config.get("layer2_psr_min_expert_trades", 10)),
+                    )
+                    
+                    raw_penalty = float(unprofitable_expert_penalty_result.get("penalty", 0.0))
+                    if np.isfinite(raw_penalty) and raw_penalty > 0.0:
+                        # Apply penalty: reduce utility proportionally
+                        # Cap penalty at 50% of utility to avoid complete zeroing
+                        max_penalty = 0.5 * abs(float(utility_after_diversity))
+                        unprofitable_expert_penalty = float(min(raw_penalty, max_penalty))
+                        utility_after_diversity = float(utility_after_diversity) - unprofitable_expert_penalty
             except Exception:
                 pass
 
@@ -14900,6 +15429,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 "weighted_avg_abs_corr": float(diversity),
                 "diversity_penalty": float(diversity_penalty),
                 "diversity_multiplier": float(diversity_multiplier),
+                "regime_aware_diversity": regime_aware_diversity if regime_aware_diversity else {},
+                "per_expert_psr": per_expert_psr if per_expert_psr else {},
+                "unprofitable_expert_penalty": float(unprofitable_expert_penalty),
+                "unprofitable_expert_penalty_result": unprofitable_expert_penalty_result if unprofitable_expert_penalty_result else {},
+                "utility_pre_unprofitable_penalty": float(utility_pre_unprofitable_penalty),
                 "layer2_soft_min_trades_committee": int(min_tr),
                 "phi_trades": float(phi_trades),
                 "sharpe_mean": float(np.mean(folds_sharpe_arr)),
@@ -15034,6 +15568,60 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     f"mean={moe_diag.get('weight_sum_mean', 1.0):.4f}, "
                     f"std={moe_diag.get('weight_sum_std', 0.0):.6f}"
                 )
+            # Log per-expert PSR metrics
+            per_expert_psr = l2_metrics.get("per_expert_psr", {})
+            if per_expert_psr:
+                psr_summary = []
+                for expert_name, psr_data in per_expert_psr.items():
+                    if isinstance(psr_data, dict):
+                        psr_val = psr_data.get("psr", 0.0)
+                        psr_sr = psr_data.get("sr")
+                        n_taken = psr_data.get("n_taken", psr_data.get("n", 0))
+                        if psr_sr is not None and np.isfinite(psr_sr):
+                            psr_summary.append(f"{expert_name}:PSR={psr_val:.2f}/SR={psr_sr:.2f}/n={n_taken}")
+                        else:
+                            psr_summary.append(f"{expert_name}:PSR={psr_val:.2f}/n={n_taken}")
+                if psr_summary:
+                    tprint_info(f"   Layer 2 per-expert PSR: {', '.join(psr_summary[:6])}")
+                    if len(psr_summary) > 6:
+                        tprint_info(f"   Layer 2 per-expert PSR (cont): {', '.join(psr_summary[6:])}")
+            # Log regime-aware diversity metrics
+            regime_div = l2_metrics.get("regime_aware_diversity", {})
+            if regime_div:
+                global_corr = regime_div.get("global_corr", 0.0)
+                diversity_score = regime_div.get("diversity_score", 0.0)
+                out_of_home = regime_div.get("out_of_home_corr", 0.0)
+                per_regime = regime_div.get("per_regime_corr", {})
+                tprint_info(
+                    f"   Layer 2 diversity: global={global_corr:.3f}, "
+                    f"regime_aware={diversity_score:.3f}, out_of_home={out_of_home:.3f}"
+                )
+                if per_regime:
+                    regime_str = ", ".join(f"{k}={v:.3f}" for k, v in per_regime.items())
+                    tprint_info(f"   Layer 2 per-regime corr: {regime_str}")
+            # Log unprofitable expert penalty
+            unprofitable_penalty = l2_metrics.get("unprofitable_expert_penalty", 0.0)
+            unprofitable_result = l2_metrics.get("unprofitable_expert_penalty_result", {})
+            if unprofitable_penalty > 0.01 or unprofitable_result:
+                diag = unprofitable_result.get("diagnostics", {})
+                n_unprofitable = diag.get("n_unprofitable", 0)
+                total_weight = diag.get("total_unprofitable_weight", 0.0)
+                worst_expert = diag.get("worst_expert")
+                worst_psr = diag.get("worst_expert_psr")
+                unprofitable_experts = unprofitable_result.get("unprofitable_experts", [])
+                tprint_info(
+                    f"   Layer 2 unprofitable expert penalty: {unprofitable_penalty:.4f} "
+                    f"(n_unprofitable={n_unprofitable}, weight={total_weight:.3f})"
+                )
+                if worst_expert and worst_psr is not None:
+                    tprint_info(f"   Layer 2 worst expert: {worst_expert} (PSR={worst_psr:.3f})")
+                if unprofitable_experts:
+                    expert_penalties = unprofitable_result.get("expert_penalties", {})
+                    penalty_str = ", ".join(
+                        f"{exp}:{expert_penalties.get(exp, 0.0):.3f}" 
+                        for exp in unprofitable_experts[:5]
+                    )
+                    tprint_info(f"   Layer 2 unprofitable experts: {penalty_str}")
         except Exception as l2_diag_exc:
             l2_metrics = {}
             tprint_warning(f"   ⚠️ Failed to compute Layer 2 metrics breakdown: {l2_diag_exc}")

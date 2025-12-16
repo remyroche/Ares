@@ -1990,7 +1990,7 @@ def compute_learnability_with_calibration(
                     learning_rate=0.02,
                     subsample=0.8,
                     colsample_bytree=0.8,
-                    min_child_samples=80,
+                    min_child_samples=40,
                     reg_alpha=0.3,
                     reg_lambda=0.9,
                 n_jobs=-1,

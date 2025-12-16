@@ -19168,6 +19168,78 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 pass
 
+            # ======================================================================
+            # HOLDOUT EXAM RESULTS (True Out-of-Sample Validation)
+            # ======================================================================
+            try:
+                if best_metrics.get("holdout_enabled", False):
+                    f.write("## 🎓 Holdout Exam (True Out-of-Sample)\n\n")
+                    f.write("> **Note:** The holdout set was reserved at the start of HPO and NEVER used during optimization.\n")
+                    f.write("> This provides the most realistic estimate of live performance.\n\n")
+                    
+                    holdout_n_samples = best_metrics.get("holdout_n_samples", 0)
+                    dev_n_samples = best_metrics.get("dev_n_samples", 0)
+                    holdout_date_start = best_metrics.get("holdout_date_start", "N/A")
+                    holdout_date_end = best_metrics.get("holdout_date_end", "N/A")
+                    
+                    f.write(f"### Data Split\n")
+                    f.write(f"- Development set: {dev_n_samples} samples (used for HPO cross-validation)\n")
+                    f.write(f"- Holdout set: {holdout_n_samples} samples (final exam)\n")
+                    f.write(f"- Holdout date range: {holdout_date_start} to {holdout_date_end}\n\n")
+                    
+                    f.write("### Holdout vs Cross-Validation Comparison\n\n")
+                    f.write("| Metric | CV (Development) | Holdout (OOS) | Gap | Status |\n")
+                    f.write("|--------|----------------:|-------------:|----:|--------|\n")
+                    
+                    # AUC comparison
+                    cv_auc = best_metrics.get("mean_auc", 0.0)
+                    holdout_auc = best_metrics.get("holdout_auc")
+                    if holdout_auc is not None and np.isfinite(holdout_auc):
+                        auc_gap = cv_auc - holdout_auc
+                        gap_pct = (auc_gap / cv_auc * 100) if cv_auc > 0 else 0
+                        status = "⚠️ Overfit" if auc_gap > 0.05 else ("✅ Robust" if auc_gap < 0.02 else "⚠️ Marginal")
+                        f.write(f"| AUC | {cv_auc:.4f} | {holdout_auc:.4f} | {auc_gap:+.4f} ({gap_pct:+.1f}%) | {status} |\n")
+                    
+                    # Sortino comparison
+                    cv_sortino = best_metrics.get("sharpe_mean", 0.0)  # Actually Sortino
+                    holdout_sortino = best_metrics.get("holdout_sortino")
+                    if holdout_sortino is not None and np.isfinite(holdout_sortino):
+                        sortino_gap = cv_sortino - holdout_sortino
+                        status = "⚠️ Overfit" if sortino_gap > 0.5 else ("✅ Robust" if sortino_gap < 0.2 else "⚠️ Marginal")
+                        f.write(f"| Sortino | {cv_sortino:.4f} | {holdout_sortino:.4f} | {sortino_gap:+.4f} | {status} |\n")
+                    
+                    # Brier comparison
+                    cv_brier = best_metrics.get("calibration_brier")
+                    holdout_brier = best_metrics.get("holdout_brier")
+                    if holdout_brier is not None and np.isfinite(holdout_brier) and cv_brier is not None:
+                        brier_gap = holdout_brier - cv_brier  # Higher Brier is worse
+                        status = "⚠️ Overfit" if brier_gap > 0.03 else ("✅ Robust" if brier_gap < 0.01 else "⚠️ Marginal")
+                        f.write(f"| Brier Score | {cv_brier:.4f} | {holdout_brier:.4f} | {brier_gap:+.4f} | {status} |\n")
+                    
+                    f.write("\n")
+                    
+                    f.write("### Holdout Trading Metrics\n\n")
+                    holdout_n_trades = best_metrics.get("holdout_n_trades", 0)
+                    holdout_trades_per_day = best_metrics.get("holdout_trades_per_day", 0.0)
+                    holdout_mean_return = best_metrics.get("holdout_mean_return")
+                    holdout_win_rate = best_metrics.get("holdout_win_rate")
+                    holdout_prob_sortino = best_metrics.get("holdout_prob_sortino")
+                    
+                    f.write(f"- Trades: {holdout_n_trades} ({holdout_trades_per_day:.2f} per day)\n")
+                    if holdout_mean_return is not None:
+                        f.write(f"- Mean Return: {holdout_mean_return*100:.3f}% per trade\n")
+                    if holdout_win_rate is not None:
+                        f.write(f"- Win Rate: {holdout_win_rate:.1%}\n")
+                    if holdout_prob_sortino is not None:
+                        f.write(f"- Probabilistic Sortino: {holdout_prob_sortino:.4f}\n")
+                    f.write("\n")
+                else:
+                    holdout_reason = best_metrics.get("holdout_reason", "unknown")
+                    f.write("## 🎓 Holdout Exam\n\n")
+                    f.write(f"⚠️ Holdout exam was not performed. Reason: `{holdout_reason}`\n\n")
+            except Exception as holdout_report_exc:
+                f.write(f"## 🎓 Holdout Exam\n\n⚠️ Error generating holdout report: {holdout_report_exc}\n\n")
+
         json_path = outcomes_dir / f"hpo_multi_stage_best_params_{symbol}_{ts_run}.json"
         with open(json_path, "w") as f:
             json.dump(full_best_params, f, indent=2, default=str)
@@ -19184,6 +19256,25 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "layer3_feature_selection": l3_feature_selection_info,
             "best_params": full_best_params,
             "stage_reports": hpo_stage_reports,
+            # Holdout exam metrics (True Out-of-Sample)
+            "holdout_exam": {
+                "enabled": best_metrics.get("holdout_enabled", False),
+                "n_samples_dev": best_metrics.get("dev_n_samples", 0),
+                "n_samples_holdout": best_metrics.get("holdout_n_samples", 0),
+                "holdout_auc": best_metrics.get("holdout_auc"),
+                "holdout_sortino": best_metrics.get("holdout_sortino"),
+                "holdout_prob_sortino": best_metrics.get("holdout_prob_sortino"),
+                "holdout_brier": best_metrics.get("holdout_brier"),
+                "holdout_n_trades": best_metrics.get("holdout_n_trades", 0),
+                "holdout_trades_per_day": best_metrics.get("holdout_trades_per_day", 0.0),
+                "holdout_mean_return": best_metrics.get("holdout_mean_return"),
+                "holdout_win_rate": best_metrics.get("holdout_win_rate"),
+                "holdout_date_start": best_metrics.get("holdout_date_start"),
+                "holdout_date_end": best_metrics.get("holdout_date_end"),
+                # Gap analysis (CV vs Holdout)
+                "auc_gap": (best_metrics.get("mean_auc", 0) - best_metrics.get("holdout_auc", 0)) if best_metrics.get("holdout_auc") is not None else None,
+                "sortino_gap": (best_metrics.get("sharpe_mean", 0) - best_metrics.get("holdout_sortino", 0)) if best_metrics.get("holdout_sortino") is not None else None,
+            },
         }
 
         tprint_success(f"✅ Multi-Layer HPO Complete. Final metrics: {metrics}")

@@ -367,27 +367,45 @@ class MDA_SHAP_FeatureSelector:
         """
         Compute composite scores combining MDA, SHAP, and IR.
 
-        Formula: Composite Score = MDA_cluster_score * IR_rank
+        Formula (2025-12-16 update):
+            Composite Score = MDA_mean * IC_weight * SHAP_weight / IR_rank
+        
+        Where:
+            - MDA_mean: Mean Decrease in Accuracy (permutation importance)
+            - IC_weight: 1 + abs(mean_ic) to boost features with high target correlation
+            - SHAP_weight: 1 + log(1 + shap_score) to incorporate SHAP importance
+            - IR_rank: Ranking by Information Ratio (stability of IC across folds)
+        
+        This addresses the problem where regime features dominate MDI because they
+        have high variance, but don't correlate well with actual returns. The IC_weight
+        term penalizes features with low target correlation.
 
         Args:
             clusters: Feature clusters
             mda_scores: MDA scores per cluster
             shap_scores: SHAP scores per feature
-            ic_scores: IC/IR scores per feature
+            ic_scores: IC/IR scores per feature (IC = Spearman correlation with target)
 
         Returns:
             Dict with composite scores and rankings
         """
         composite_scores = {}
 
-        # Get IR values for ranking
+        # Get IR values and mean IC for each feature
         ir_values = {}
+        ic_mean_values = {}
         for feature, ic_data in ic_scores.items():
             ir_values[feature] = ic_data.get('ir', 0.0)
+            ic_mean_values[feature] = ic_data.get('mean_ic', 0.0)  # Note: key is 'mean_ic'
 
         # Rank features by IR (higher IR = more stable = better rank)
         sorted_by_ir = sorted(ir_values.items(), key=lambda x: x[1], reverse=True)
         ir_ranks = {feature: rank for rank, (feature, _) in enumerate(sorted_by_ir, 1)}
+
+        # Normalize SHAP scores for weighting (avoid extreme values)
+        shap_vals = [v for v in shap_scores.values() if np.isfinite(v) and v > 0]
+        shap_median = float(np.median(shap_vals)) if shap_vals else 1.0
+        shap_median = max(shap_median, 1e-8)
 
         # Compute composite scores for individual features (feature-level MDA).
         for feature, stat in mda_stats.items():
@@ -402,7 +420,20 @@ class MDA_SHAP_FeatureSelector:
 
             if feature in ir_ranks and feature in shap_scores:
                 ir_rank = ir_ranks[feature]
-                composite_score = float(mda_mean) / float(ir_rank) if float(ir_rank) > 0 else 0.0
+                
+                # IC weight: mild boost for features with high absolute correlation with target
+                # Reduced weight (0.5x) since IC is univariate and misses interactions
+                abs_ic = abs(float(ic_mean_values.get(feature, 0.0)))
+                ic_weight = 1.0 + abs_ic * 0.5  # Range: 1.0 to ~1.05 for typical IC values
+                
+                # SHAP weight: primary importance signal (captures feature interactions)
+                # Increased weight (2x) since SHAP accounts for feature interactions
+                shap_val = float(shap_scores.get(feature, 0.0))
+                shap_normalized = shap_val / shap_median if shap_median > 0 else 0.0
+                shap_weight = 1.0 + np.log1p(max(0.0, shap_normalized)) * 2.0  # Range: 1.0 to ~3.5
+                
+                # Composite score: MDA * IC_weight * SHAP_weight / IR_rank
+                composite_score = float(mda_mean) * float(ic_weight) * float(shap_weight) / float(ir_rank) if float(ir_rank) > 0 else 0.0
 
                 composite_scores[feature] = {
                     'composite_score': float(composite_score),
@@ -411,6 +442,9 @@ class MDA_SHAP_FeatureSelector:
                     'ir_score': float(ir_values.get(feature, 0.0)),
                     'ir_rank': int(ir_rank),
                     'shap_score': float(shap_scores.get(feature, 0.0)),
+                    'ic_mean': float(ic_mean_values.get(feature, 0.0)),
+                    'ic_weight': float(ic_weight),
+                    'shap_weight': float(shap_weight),
                 }
 
         return composite_scores

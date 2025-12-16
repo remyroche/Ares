@@ -13028,6 +13028,168 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             if not np.isfinite(float(utility)):
                 utility = 0.0
 
+            # =====================================================================
+            # UTILITY IMPROVEMENTS (2024-12): Balance consistency with profitability
+            # =====================================================================
+            # Problem: Pure PSR/Sharpe optimization incentivizes tight stops and short
+            # horizons because they minimize variance. This leads to:
+            # - sl_atr_mult → 0.5 (very tight stops)
+            # - horizon_bars → 6 (very short horizons)
+            # - 50%+ stop-out rate (trades don't develop)
+            #
+            # Solution: Add three corrections:
+            # 1. Magnitude Bonus: Reward larger per-trade profits
+            # 2. Stop-Out Penalty: Penalize excessive stop exits
+            # 3. Magnitude-Weighted Win Rate: Weight wins by size, not just count
+            # =====================================================================
+
+            magnitude_bonus = 0.0
+            stop_out_penalty = 0.0
+            magnitude_win_rate_modifier = 1.0
+            stop_out_rate = 0.0
+            magnitude_weighted_win_rate = 0.5
+
+            # --- Option 1: Trade Magnitude Bonus ---
+            # Concept: Reward larger per-trade profits (scale-aware optimization)
+            # Uses log1p for diminishing returns: doubling profit doesn't double bonus
+            # Capped to prevent extreme values from dominating utility
+            try:
+                w_magnitude = float(config.get("layer2_utility_w_magnitude", 50.0))
+            except Exception:
+                w_magnitude = 50.0
+            if not np.isfinite(w_magnitude):
+                w_magnitude = 50.0
+
+            try:
+                magnitude_bonus_cap = float(config.get("layer2_utility_magnitude_bonus_cap", 2.0))
+            except Exception:
+                magnitude_bonus_cap = 2.0
+            if not np.isfinite(magnitude_bonus_cap):
+                magnitude_bonus_cap = 2.0
+
+            try:
+                if trade_mean_return is not None and np.isfinite(trade_mean_return) and trade_mean_return > 0:
+                    # Use log1p for diminishing returns: log1p(x) grows slowly for large x
+                    # Scale: 1% return → log1p(1.0) ≈ 0.69, 2% → log1p(2.0) ≈ 1.10 (not 2x)
+                    # This makes the bonus relative to magnitude with diminishing returns
+                    return_pct = float(trade_mean_return) * 100.0  # Convert to percentage
+                    magnitude_bonus_raw = float(np.log1p(return_pct)) * w_magnitude
+                    # Cap the bonus to prevent extreme values
+                    magnitude_bonus = float(np.clip(magnitude_bonus_raw, 0.0, magnitude_bonus_cap * w_magnitude))
+                    if not np.isfinite(magnitude_bonus):
+                        magnitude_bonus = 0.0
+            except Exception:
+                magnitude_bonus = 0.0
+
+            # --- Option 2: Stop-Out Rate Penalty ---
+            # Concept: Penalize strategies where most exits are stops (tight SL problem)
+            # Target: <40% stop exits; penalize above that threshold
+            try:
+                w_stop_penalty = float(config.get("layer2_utility_w_stop_penalty", 0.5))
+            except Exception:
+                w_stop_penalty = 0.5
+            if not np.isfinite(w_stop_penalty):
+                w_stop_penalty = 0.5
+
+            try:
+                stop_threshold = float(config.get("layer2_utility_stop_threshold", 0.40))
+            except Exception:
+                stop_threshold = 0.40
+            if not np.isfinite(stop_threshold):
+                stop_threshold = 0.40
+
+            try:
+                if l2_exit_reasons is not None and take_mask is not None:
+                    exit_arr = l2_exit_reasons.reindex(l2_t_events).values
+                    exit_taken = exit_arr[np.asarray(take_mask, dtype=bool)]
+                    n_taken = len(exit_taken)
+                    if n_taken > 0:
+                        # Count stop exits (case-insensitive check for "stop" in exit reason)
+                        n_stops = sum(1 for ex in exit_taken if ex is not None and "stop" in str(ex).lower())
+                        stop_out_rate = float(n_stops) / float(n_taken)
+                        if stop_out_rate > stop_threshold:
+                            # Penalty scales with excess stop rate
+                            stop_out_penalty = (stop_out_rate - stop_threshold) * w_stop_penalty
+                            if not np.isfinite(stop_out_penalty):
+                                stop_out_penalty = 0.0
+            except Exception:
+                stop_out_penalty = 0.0
+
+            # --- Option 6: Magnitude-Weighted Win Rate Gate ---
+            # Concept: Weight wins by magnitude, not just count
+            # A 50% win rate with 3:1 R:R is better than 50% with 1:1 R:R
+            # Formula: sum(positive_returns) / (sum(positive_returns) + |sum(negative_returns)|)
+            #
+            # IMPORTANT: Uses returns AFTER FEES (transaction costs)
+            # - trade_returns is derived from returns_arr (l2_returns_clean)
+            # - l2_returns comes from compute_realized_returns() with transaction_cost=DEFAULT_TRANSACTION_COST
+            # - This ensures we're measuring actual net profitability, not gross
+            try:
+                w_mag_winrate = float(config.get("layer2_utility_w_mag_winrate", 0.8))
+            except Exception:
+                w_mag_winrate = 0.8
+            if not np.isfinite(w_mag_winrate):
+                w_mag_winrate = 0.8
+
+            try:
+                mag_winrate_floor = float(config.get("layer2_utility_mag_winrate_floor", 0.45))
+            except Exception:
+                mag_winrate_floor = 0.45
+            if not np.isfinite(mag_winrate_floor):
+                mag_winrate_floor = 0.45
+
+            try:
+                if trade_returns is not None and len(trade_returns) > 0:
+                    # trade_returns is already net of transaction costs (from compute_realized_returns)
+                    # Verify by checking that we're using the fee-adjusted returns
+                    tr = np.asarray(trade_returns, dtype=float)
+                    tr = tr[np.isfinite(tr)]
+                    
+                    # Double-check: if returns seem too high (>5% average), they might be gross
+                    # In that case, subtract transaction cost as a safety measure
+                    if len(tr) > 0:
+                        avg_abs_return = float(np.mean(np.abs(tr)))
+                        if avg_abs_return > 0.05:  # Sanity check: >5% average seems unrealistic for net returns
+                            # This shouldn't happen if compute_realized_returns is working correctly
+                            # but add defensive deduction just in case
+                            # Fee deduction: winners reduced, losers made worse
+                            try:
+                                tx_cost = float(DEFAULT_TRANSACTION_COST)
+                                tr = tr - tx_cost  # Subtract fee from all returns
+                            except Exception:
+                                pass
+                    
+                    if len(tr) > 0:
+                        pos_sum = float(np.sum(tr[tr > 0])) if np.any(tr > 0) else 0.0
+                        neg_sum = float(np.abs(np.sum(tr[tr < 0]))) if np.any(tr < 0) else 0.0
+                        total_magnitude = pos_sum + neg_sum
+                        if total_magnitude > 1e-12:
+                            magnitude_weighted_win_rate = pos_sum / total_magnitude
+                            # Apply as a modifier if below floor (penalize poor magnitude-weighted win rate)
+                            if magnitude_weighted_win_rate < mag_winrate_floor:
+                                # Scale utility down: at 0.35 with floor 0.45, modifier = 0.5 + 0.5*(0.35/0.45) ≈ 0.89
+                                magnitude_win_rate_modifier = float(
+                                    0.5 + 0.5 * (magnitude_weighted_win_rate / mag_winrate_floor)
+                                )
+                                magnitude_win_rate_modifier = float(np.clip(magnitude_win_rate_modifier, 0.3, 1.0))
+                            else:
+                                # Bonus for good magnitude-weighted win rate (up to 1.4x)
+                                excess = magnitude_weighted_win_rate - mag_winrate_floor
+                                magnitude_win_rate_modifier = float(1.0 + excess * w_mag_winrate)
+                                magnitude_win_rate_modifier = float(np.clip(magnitude_win_rate_modifier, 1.0, 1.4))
+            except Exception:
+                magnitude_win_rate_modifier = 1.0
+
+            # --- Apply improvements to utility ---
+            utility_pre_improvements = float(utility)
+            try:
+                # Add magnitude bonus, subtract stop penalty, apply win rate modifier
+                utility = (float(utility) + float(magnitude_bonus) - float(stop_out_penalty)) * float(magnitude_win_rate_modifier)
+                if not np.isfinite(utility):
+                    utility = utility_pre_improvements
+            except Exception:
+                utility = utility_pre_improvements
+
             try:
                 utility_debug.update(
                     {
@@ -13039,6 +13201,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         "psr_kurt": float(psr_details.get("kurt", 3.0)),
                         "psr_sr_benchmark": float(sr_benchmark),
                         "phi_trades": float(phi_trades),
+                        "utility_pre_improvements": float(utility_pre_improvements),
+                        # Option 1: Magnitude Bonus
+                        "magnitude_bonus": float(magnitude_bonus),
+                        "w_magnitude": float(w_magnitude),
+                        # Option 2: Stop-Out Penalty
+                        "stop_out_rate": float(stop_out_rate),
+                        "stop_out_penalty": float(stop_out_penalty),
+                        "w_stop_penalty": float(w_stop_penalty),
+                        # Option 6: Magnitude-Weighted Win Rate
+                        "magnitude_weighted_win_rate": float(magnitude_weighted_win_rate),
+                        "magnitude_win_rate_modifier": float(magnitude_win_rate_modifier),
                         "utility_pre_clip": float(utility),
                         "utility": float(utility),
                     }
@@ -16944,8 +17117,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "reg_lambda": {"type": "float", "low": 0.0, "high": 1.0},
             "subsample": {"type": "float", "low": 0.5, "high": 1.0},
             "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
-            # Recency weighting: exponential decay rate (0.0 = disabled, 0.01 = 1%/day default, 0.03 = strong)
-            "recency_decay_lambda": {"type": "float", "low": 0.0, "high": 0.03},
+            # Recency weighting: exponential decay rate (0.03 = 3%/day minimum, 0.05 = 5%/day default, 0.10 = strong)
+            # Increased from [0.0, 0.03] to address temporal degradation (early/late fold gap of 4.37)
+            "recency_decay_lambda": {"type": "float", "low": 0.03, "high": 0.10},
         }
 
         # Precompute values needed for Layer 3 utility calculation (aligned to final_t_events)

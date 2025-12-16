@@ -4638,6 +4638,179 @@ def create_meta_features(
         features[f'dist_from_recent_high_{window}'] = dist_high_arr
         features[f'dist_from_recent_low_{window}'] = dist_low_arr
 
+    # ===== ENTRY-TIMING FEATURES (2025-12-16) =====
+    # These features capture trade-specific entry quality signals rather than general market state.
+    # They answer: "Is this a good TIME to enter?" rather than "What is the market doing?"
+    # 
+    # Problem addressed: Model selects regime features (27% of selected features) over 
+    # trade-specific predictors because regime features have higher variance. These features
+    # aim to provide higher-signal entry-timing indicators.
+
+    try:
+        close_arr = close_arr_full
+        
+        # --- 1. Momentum Exhaustion Indicators ---
+        # Detect when momentum is decelerating (potential reversal/pullback entry)
+        
+        # Momentum acceleration (2nd derivative of price)
+        # Positive = momentum increasing, Negative = momentum exhausting
+        if 'momentum_10' in features.columns:
+            mom_10 = pd.Series(features['momentum_10'], index=features.index)
+            mom_accel_5 = mom_10.diff(5)  # Change in momentum over 5 bars
+            mom_accel_10 = mom_10.diff(10)
+            features['momentum_acceleration_5'] = mom_accel_5.to_numpy()
+            features['momentum_acceleration_10'] = mom_accel_10.to_numpy()
+            
+            # Momentum exhaustion: momentum high but decelerating
+            # = sign(momentum) * -sign(acceleration) when |momentum| > threshold
+            mom_sign = np.sign(mom_10.to_numpy())
+            accel_sign = np.sign(mom_accel_5.to_numpy())
+            # Exhaustion when momentum and acceleration have opposite signs
+            features['momentum_exhaustion'] = (mom_sign * -accel_sign).clip(-1, 1)
+        
+        # --- 2. Bars Since Momentum Extreme ---
+        # How many bars since the local momentum peak/trough?
+        # Good entries often occur after momentum extreme has passed
+        
+        if 'momentum_20' in features.columns:
+            mom_20 = pd.Series(features['momentum_20'], index=features.index)
+            
+            # Rolling argmax/argmin to find bars since peak/trough
+            def bars_since_extreme(series: pd.Series, window: int, is_max: bool = True) -> np.ndarray:
+                """Calculate bars since the rolling max or min."""
+                result = np.full(len(series), np.nan)
+                vals = series.to_numpy()
+                for i in range(window, len(vals)):
+                    window_vals = vals[i-window:i+1]
+                    if np.all(np.isnan(window_vals)):
+                        continue
+                    if is_max:
+                        extreme_idx = np.nanargmax(window_vals)
+                    else:
+                        extreme_idx = np.nanargmin(window_vals)
+                    result[i] = window - extreme_idx  # Bars since extreme
+                return result
+            
+            features['bars_since_momentum_peak_20'] = bars_since_extreme(mom_20, 20, is_max=True)
+            features['bars_since_momentum_trough_20'] = bars_since_extreme(mom_20, 20, is_max=False)
+            
+            # Normalized version (0 = just happened, 1 = 20 bars ago)
+            features['momentum_peak_recency_20'] = 1.0 - (features['bars_since_momentum_peak_20'] / 20.0)
+            features['momentum_trough_recency_20'] = 1.0 - (features['bars_since_momentum_trough_20'] / 20.0)
+        
+        # --- 3. Price Pullback Quality ---
+        # How much has price pulled back from recent extreme relative to the move?
+        # Small pullbacks in strong trends = good entry, large pullbacks = potential reversal
+        
+        for window in [10, 20, 50]:
+            if f'dist_from_recent_high_{window}' in features.columns:
+                dist_high = features[f'dist_from_recent_high_{window}']
+                dist_low = features[f'dist_from_recent_low_{window}']
+                
+                # Range from low to high
+                close_min_w = df['close'].rolling(window).min().to_numpy()[-len(features):]
+                close_max_w = df['close'].rolling(window).max().to_numpy()[-len(features):]
+                range_w = close_max_w - close_min_w
+                
+                # Pullback ratio: where is price in the recent range? (0=low, 1=high)
+                pullback_position = (close_arr - close_min_w) / (range_w + 1e-8)
+                features[f'pullback_position_{window}'] = np.clip(pullback_position, 0, 1)
+                
+                # Pullback depth from high (for long entries after pullback)
+                # 0 = at high, 1 = pulled back to low
+                features[f'pullback_depth_{window}'] = 1.0 - features[f'pullback_position_{window}']
+        
+        # --- 4. Volume at Extreme ---
+        # Was there high volume at the recent high/low? (indicating strong level)
+        
+        if volume_available and 'volume' in df.columns:
+            vol_arr = df['volume'].to_numpy()[-len(features):]
+            vol_mean_20 = pd.Series(vol_arr).rolling(20).mean().to_numpy()
+            
+            for window in [10, 20]:
+                # Find index of recent high/low
+                high_idx = df['high'].rolling(window).apply(lambda x: x.argmax(), raw=True).to_numpy()[-len(features):]
+                low_idx = df['low'].rolling(window).apply(lambda x: x.argmin(), raw=True).to_numpy()[-len(features):]
+                
+                # Volume ratio at the extreme vs average
+                vol_at_high = np.full(len(features), np.nan)
+                vol_at_low = np.full(len(features), np.nan)
+                
+                for i in range(window, len(features)):
+                    if np.isfinite(high_idx[i]) and np.isfinite(low_idx[i]):
+                        h_idx = int(high_idx[i])
+                        l_idx = int(low_idx[i])
+                        if 0 <= i - window + h_idx < len(vol_arr):
+                            vol_at_high[i] = vol_arr[i - window + h_idx] / (vol_mean_20[i] + 1e-8)
+                        if 0 <= i - window + l_idx < len(vol_arr):
+                            vol_at_low[i] = vol_arr[i - window + l_idx] / (vol_mean_20[i] + 1e-8)
+                
+                features[f'volume_at_high_{window}'] = np.clip(vol_at_high, 0, 5)
+                features[f'volume_at_low_{window}'] = np.clip(vol_at_low, 0, 5)
+        
+        # --- 5. RSI Divergence (Momentum vs Price) ---
+        # Price makes new high but RSI doesn't = bearish divergence (wait for pullback)
+        # Price makes new low but RSI doesn't = bullish divergence (potential long entry)
+        
+        if 'rsi_kalman' in features.columns:
+            rsi = pd.Series(features['rsi_kalman'], index=features.index)
+            close_s = pd.Series(close_arr, index=features.index)
+            
+            for window in [10, 20]:
+                # Price new high/low detection
+                price_new_high = (close_s == close_s.rolling(window).max()).astype(float)
+                price_new_low = (close_s == close_s.rolling(window).min()).astype(float)
+                
+                # RSI relative to its window
+                rsi_at_max = rsi.rolling(window).max()
+                rsi_at_min = rsi.rolling(window).min()
+                
+                # Bearish divergence: price at high but RSI below its high
+                rsi_below_max = (rsi < rsi_at_max * 0.95).astype(float)  # RSI 5% below max
+                features[f'bearish_divergence_{window}'] = (price_new_high * rsi_below_max).to_numpy()
+                
+                # Bullish divergence: price at low but RSI above its low  
+                rsi_above_min = (rsi > rsi_at_min * 1.05).astype(float)  # RSI 5% above min
+                features[f'bullish_divergence_{window}'] = (price_new_low * rsi_above_min).to_numpy()
+        
+        # --- 6. Entry Quality Score (Composite) ---
+        # Combine multiple entry-timing signals into a single score
+        
+        # For long entries: good when price pulled back, momentum exhausted (from down), bullish divergence
+        entry_quality_long = np.zeros(len(features))
+        entry_quality_short = np.zeros(len(features))
+        n_components = 0
+        
+        if 'pullback_depth_20' in features.columns:
+            # Pullback = good for longs (0-1 scale, higher = more pullback)
+            entry_quality_long += features['pullback_depth_20']
+            entry_quality_short += features['pullback_position_20']  # Inverse for shorts
+            n_components += 1
+        
+        if 'momentum_exhaustion' in features.columns:
+            # Exhaustion from downside = good for longs
+            mom_exh = features['momentum_exhaustion']
+            entry_quality_long += np.where(mom_exh < 0, -mom_exh, 0)  # Negative exhaustion = bullish
+            entry_quality_short += np.where(mom_exh > 0, mom_exh, 0)  # Positive exhaustion = bearish
+            n_components += 1
+        
+        if 'bullish_divergence_20' in features.columns:
+            entry_quality_long += features['bullish_divergence_20']
+            n_components += 0.5  # Lower weight for divergence
+        
+        if 'bearish_divergence_20' in features.columns:
+            entry_quality_short += features['bearish_divergence_20']
+            n_components += 0.5
+        
+        if n_components > 0:
+            features['entry_quality_long'] = entry_quality_long / n_components
+            features['entry_quality_short'] = entry_quality_short / n_components
+            # Combined entry quality (for models that don't know direction yet)
+            features['entry_quality_any'] = np.maximum(entry_quality_long, entry_quality_short) / n_components
+        
+    except Exception as e:
+        tprint(f"⚠️ Warning: Could not create entry-timing features: {e}", "WARNING")
+
     # ===== MORE INTERACTION FEATURES =====
     # Combine features to capture non-linear relationships
 

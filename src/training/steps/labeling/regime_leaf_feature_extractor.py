@@ -548,10 +548,23 @@ def _interaction_gating_features(
     prefix: str,
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
+    """
+    Generate gating features for regime leaf interactions.
+    
+    Default configuration reduces feature count to prevent overfitting:
+    - include_sign: True  - directional indicator (+1/-1/0)
+    - include_soft: True  - tanh-scaled continuous version  
+    - include_bins: False - disabled by default (adds 2 dummy cols per target = 10 extra features)
+    
+    Total features per target with defaults: 2 (sign + soft)
+    Previously with bins enabled: 4 (sign + soft + 2 bins)
+    """
     out = pd.DataFrame(index=score.index)
     include_sign = bool(cfg.get("include_sign", True))
     include_soft = bool(cfg.get("include_soft", True))
-    include_bins = bool(cfg.get("include_bins", True))
+    # Disabled by default to reduce feature count and overfitting risk
+    # Bins add 2 dummy columns per target (10 total for 5 targets)
+    include_bins = bool(cfg.get("include_bins", False))
 
     if include_sign:
         s = pd.to_numeric(score, errors="coerce")

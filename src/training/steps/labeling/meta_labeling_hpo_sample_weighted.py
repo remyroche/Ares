@@ -857,6 +857,107 @@ def compute_brier_and_ece(
     return brier, float(ece), float(mce)
 
 
+def log_returns_fees_adjusted(
+    returns: Union[np.ndarray, pd.Series],
+    transaction_cost: Optional[float] = None,
+    already_net: bool = True,
+    winsorize_pct: float = 0.01,
+) -> np.ndarray:
+    """
+    Transform returns to log-scale with fee adjustment.
+    
+    This function:
+    1. Subtracts transaction costs if returns are gross (already_net=False)
+    2. Applies winsorization to clip extreme outliers
+    3. Applies sign-preserving log transform: sign(x) * log(1 + |x|)
+    
+    The log transform:
+    - Compresses large returns (reducing influence of outliers)
+    - Expands small returns (making small differences more distinguishable)
+    - Preserves sign direction (positive returns stay positive, negative stay negative)
+    - Is well-suited for ML objectives that predict returns
+    
+    Args:
+        returns: Raw or net returns (simple returns, not log returns)
+        transaction_cost: Transaction cost per trade (buy+sell+slippage+spread).
+                         Default uses DEFAULT_TRANSACTION_COST (0.003 = 0.3%)
+        already_net: If True, assumes returns already have fees subtracted.
+                    If False, will subtract transaction_cost from returns.
+        winsorize_pct: Percentile for winsorization (default 1% each tail)
+        
+    Returns:
+        Log-transformed, fee-adjusted returns as numpy array
+    """
+    # Import here to avoid circular imports
+    if transaction_cost is None:
+        try:
+            transaction_cost = float(DEFAULT_TRANSACTION_COST)
+        except Exception:
+            transaction_cost = 0.003  # Fallback: 0.3% round-trip
+    
+    # Convert to numpy array
+    if isinstance(returns, pd.Series):
+        r = returns.values.astype(float)
+    else:
+        r = np.asarray(returns, dtype=float)
+    
+    # Create output array
+    result = np.full_like(r, np.nan, dtype=float)
+    valid_mask = np.isfinite(r)
+    
+    if not np.any(valid_mask):
+        return result
+    
+    r_valid = r[valid_mask].copy()
+    
+    # Step 1: Subtract fees if returns are gross
+    if not already_net:
+        r_valid = r_valid - float(transaction_cost)
+    
+    # Step 2: Winsorize to clip extreme outliers
+    if winsorize_pct > 0.0 and len(r_valid) > 10:
+        try:
+            lower = np.percentile(r_valid, winsorize_pct * 100)
+            upper = np.percentile(r_valid, (1.0 - winsorize_pct) * 100)
+            r_valid = np.clip(r_valid, lower, upper)
+        except Exception:
+            pass
+    
+    # Step 3: Apply sign-preserving log transform
+    # log_return = sign(r) * log(1 + |r|)
+    # This maps:
+    #   0.01 (1%) → 0.00995 (nearly linear for small values)
+    #   0.10 (10%) → 0.0953
+    #   0.50 (50%) → 0.405
+    #   -0.05 (-5%) → -0.0488
+    log_r = np.sign(r_valid) * np.log1p(np.abs(r_valid))
+    
+    # Handle any edge cases
+    log_r = np.where(np.isfinite(log_r), log_r, 0.0)
+    
+    result[valid_mask] = log_r
+    return result
+
+
+def inverse_log_returns(log_returns: np.ndarray) -> np.ndarray:
+    """
+    Inverse of log_returns_fees_adjusted transform.
+    
+    Converts sign(x) * log(1 + |x|) back to simple returns.
+    Note: Does NOT add back transaction costs.
+    
+    Args:
+        log_returns: Log-transformed returns
+        
+    Returns:
+        Simple returns (still net of fees)
+    """
+    log_r = np.asarray(log_returns, dtype=float)
+    # Inverse: sign(x) * (exp(|x|) - 1)
+    simple_r = np.sign(log_r) * (np.expm1(np.abs(log_r)))
+    return np.where(np.isfinite(simple_r), simple_r, 0.0)
+
+
 def fit_temperature_scaling(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -13278,19 +13379,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     tr = np.asarray(trade_returns, dtype=float)
                     tr = tr[np.isfinite(tr)]
                     
-                    # Double-check: if returns seem too high (>5% average), they might be gross
-                    # In that case, subtract transaction cost as a safety measure
-                    if len(tr) > 0:
-                        avg_abs_return = float(np.mean(np.abs(tr)))
-                        if avg_abs_return > 0.05:  # Sanity check: >5% average seems unrealistic for net returns
-                            # This shouldn't happen if compute_realized_returns is working correctly
-                            # but add defensive deduction just in case
-                            # Fee deduction: winners reduced, losers made worse
-                            try:
-                                tx_cost = float(DEFAULT_TRANSACTION_COST)
-                                tr = tr - tx_cost  # Subtract fee from all returns
-                            except Exception:
-                                pass
+                    # NOTE: No additional fee deduction needed here.
+                    # trade_returns comes from compute_realized_returns() which already
+                    # subtracts transaction_cost from gross returns (net_return = gross_return - tx_cost).
+                    # See feature_generation_meta_labeling_step.py line ~1489.
+                    # 
+                    # Previous defensive check removed to avoid double-counting fees.
+                    # If you see returns >5% average, it's due to high volatility, not missing fees.
                     
                     if len(tr) > 0:
                         pos_sum = float(np.sum(tr[tr > 0])) if np.any(tr > 0) else 0.0

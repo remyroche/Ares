@@ -648,8 +648,23 @@ def load_cached_nn_embeddings(
     
     try:
         cached = pd.read_parquet(cache_path)
+
+        # Check for index overlap
+        overlap = cached.index.intersection(target_index)
+        if overlap.empty and len(target_index) > 0 and len(cached) > 0:
+            try:
+                tprint_warning(
+                    f"[nn_sequence] No index overlap between cache (range={cached.index.min()}..{cached.index.max()}) "
+                    f"and target (range={target_index.min()}..{target_index.max()}). "
+                    "Reindexing will produce all zeros/NaNs."
+                )
+            except Exception:
+                pass
+
         # Align to target index
-        cached.index = target_index[:len(cached)] if len(cached) <= len(target_index) else cached.index
+        # SAFETY: Removed unsafe index overwriting (cached.index = target_index[:len(cached)]).
+        # We strictly rely on the cached index matching the target index via reindex().
+        # This prevents accidental mapping of future/past data to current timestamps if lengths differ.
         out = cached.reindex(target_index)
         try:
             out = out.apply(pd.to_numeric, errors="coerce").fillna(0.0)

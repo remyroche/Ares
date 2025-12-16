@@ -9108,7 +9108,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 name="signal_structure",
                 params={
                     "cusum_threshold": {"type": "float", "low": 0.010, "high": 0.06},
-                    "target_signal_density": {"type": "float", "low": 10.0, "high": 40.0},
+                    "target_signal_density": {"type": "float", "low": 20.0, "high": 100.0},
                     "min_event_spacing": {"type": "int", "low": 0, "high": 10},
                 },
                 priority=1,
@@ -9636,7 +9636,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 cusum_threshold = float(params.get("cusum_threshold", 0.015))
                 cusum_threshold = max(0.010, min(0.035, cusum_threshold))
                 target_signal_density = float(params.get("target_signal_density", 20.0))
-                target_signal_density = max(5.0, min(50.0, target_signal_density))
+                target_signal_density = max(5.0, min(100.0, target_signal_density))
 
                 # --- Recompute realized returns ---
                 # NO FUTURE LEAKAGE in volatility-based thresholds:
@@ -10898,7 +10898,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l2_vol_penalty_high = 0.25
         l2_vol_penalty_high = float(np.clip(l2_vol_penalty_high, 0.0, 1.0))
         layer2_search_space = {
-            "profit_floor_tx_mult": {"type": "float", "low": 1.0, "high": 4.0},
+            "profit_floor_tx_mult": {"type": "float", "low": 0.5, "high": 3.0},
             "sl_atr_mult": {"type": "float", "low": 0.5, "high": 3.0},
             "risk_reward_ratio": {"type": "float", "low": 1.0, "high": 5.0},
             "horizon_bars": {"type": "int", "low": 6, "high": 48},

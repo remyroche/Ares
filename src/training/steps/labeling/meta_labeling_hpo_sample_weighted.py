@@ -7088,6 +7088,8 @@ def calculate_hpo_utility(
     # Probability-Return Correlation
     prob_return_corr: Optional[float] = None,
     w_prob_return_corr: float = 0.1,
+    # Magnitude Awareness (User Suggestion)
+    profitability_multiplier: float = 0.0,
 ) -> float:
     """
     Compute a stable utility for HPO combining Sortino stability, AUC gate, trade density,
@@ -7112,6 +7114,7 @@ def calculate_hpo_utility(
         w_return: Weight for return contribution (applied after normalization)
         max_drawdown: Maximum drawdown (0.0 to 1.0)
         w_dd: Penalty weight for drawdown
+        profitability_multiplier: Multiplicative boost for high mean returns (default 0.0)
     
     Returns:
         Utility score. Returns -1.0 for rejection.
@@ -7264,6 +7267,18 @@ def calculate_hpo_utility(
                 modifier *= phi_prob_ret_corr
         except Exception:
             pass
+
+    # NEW: Magnitude/Profitability Multiplier (User Suggestion)
+    # Explicitly reward strategies with high mean returns per trade
+    if profitability_multiplier > 0.0 and mean_return is not None and mean_return > 0:
+        # Boost utility linearly with return magnitude (in %)
+        # e.g. 0.2% return (0.002) * 100 = 0.2
+        # if multiplier=50, boost = 1 + 0.2 * 50 = 11.0? No, that's too high.
+        # Let's assume multiplier is around 1.0-5.0
+        # If mean_return is 0.002 (20bps) and multiplier is 10.0:
+        # boost = 1 + 0.002 * 100.0 * 10.0 = 1 + 2.0 = 3.0x
+        phi_profit = 1.0 + (mean_return * 100.0 * profitability_multiplier)
+        modifier *= phi_profit
 
     # ISSUE #2 FIX: No log - direct multiplication
     utility_pre_clip = float(combined_base) * float(modifier)
@@ -16498,6 +16513,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 except Exception:
                     max_dd_dbg = None
                 
+                # Read magnitude multiplier from config (Layer 2)
+                try:
+                    l2_prof_mult = float(config.get("layer2_profitability_multiplier", 0.0))
+                except Exception:
+                    l2_prof_mult = 0.0
+
                 utility_dbg = calculate_hpo_utility(
                     folds_sharpe=folds_sharpe_dbg,  # Now Sortino ratios
                     auc=mean_auc_dbg,
@@ -16510,6 +16531,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     w_cal=0.0,
                     mean_return=mean_return_dbg,
                     max_drawdown=max_dd_dbg,
+                    profitability_multiplier=l2_prof_mult,
                 )
                 tprint_info(
                     "   Layer 2 debug: "
@@ -17793,6 +17815,28 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         except Exception:
                             pass
 
+                    # Optional: Magnitude-weighted training (User Suggestion)
+                    # If enabled, boost sample weights for high-magnitude return events
+                    # to force the model to focus on big moves.
+                    if bool(config.get("layer3_magnitude_weighted_training", False)):
+                        try:
+                            # Calculate return magnitudes for training set
+                            ret_tr = final_returns_arr[tr_idx]
+                            mag_tr = np.abs(ret_tr)
+
+                            # Simple linear scaling: 1.0 + (mag / mean_mag)
+                            # Clip to avoid extreme weights
+                            mean_mag = np.nanmean(mag_tr)
+                            if mean_mag > 1e-6:
+                                mag_factor = 1.0 + (mag_tr / mean_mag)
+                                mag_factor = np.clip(mag_factor, 1.0, 5.0)
+                                w_tr = w_tr * mag_factor
+
+                                # Normalize back to preserve effective sample size roughly
+                                w_tr = w_tr / np.mean(w_tr)
+                        except Exception:
+                            pass
+
                     # Handle degenerate folds (single-class train split) without crashing.
                     # This can happen in time-series CV when positives are sparse.
                     y_tr_unique = np.unique(y_tr.values)
@@ -18337,6 +18381,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     l3_w_prob_return_corr = 0.1
                 l3_w_prob_return_corr = float(np.clip(l3_w_prob_return_corr, 0.0, 0.5))
 
+                # Read magnitude multiplier from config (Layer 3)
+                try:
+                    l3_prof_mult = float(config.get("layer3_profitability_multiplier", 0.0))
+                except Exception:
+                    l3_prof_mult = 0.0
+
                 utility = calculate_hpo_utility(
                     folds_sharpe=sortino_arr,  # Now Sortino ratios (param name kept for backward compat)
                     auc=mean_auc_effective,
@@ -18354,6 +18404,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     max_drawdown=max_dd_l3,
                     prob_return_corr=prob_return_spearman,  # NEW: Probability-return correlation
                     w_prob_return_corr=l3_w_prob_return_corr,  # NEW: Weak weight (0.1)
+                    profitability_multiplier=l3_prof_mult,  # NEW: Magnitude awareness
                 )
 
                 if not np.isfinite(float(utility)):

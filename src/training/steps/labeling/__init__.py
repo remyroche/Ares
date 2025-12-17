@@ -49,12 +49,12 @@ from .feature_generation_meta_labeling_step import (
     DEFAULT_STOP_THRESHOLD,
     DEFAULT_TRANSACTION_COST,
 )
+from .label_based_layer_1 import run_layer1_optimization
 
 from .generate_weights_per_label import (
     generate_weights_per_label,
     compute_horizon_consistency,
     compute_uniqueness,
-    run_layer1_optimization,
 )
 
 # Sample weighting utilities (2025-12-11)

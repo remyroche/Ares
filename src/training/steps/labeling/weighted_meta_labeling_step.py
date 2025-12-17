@@ -79,12 +79,12 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     FeatureGenerationMetaLabelingStep,
 )
 
+from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
 # Import sample weighting utilities
 from src.training.steps.labeling.generate_weights_per_label import (
     generate_weights_per_label,
     compute_horizon_consistency,
     compute_uniqueness,
-    run_layer1_optimization,
 )
 
 # Import Kalman multi-triple-barrier labeling system

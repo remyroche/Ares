@@ -6,12 +6,14 @@ and calibration.
 Layer 2: Regime-Conditional Geometry Optimization (LabelBasedLayer2)
 - Optimizes Barrier Geometries (TP/SL/Horizon) per barrier family.
 - Selects diverse geometries.
-- Generates Bagged OOF Labels and Weights.
+- Generates Bagged OOF Labels and Weights (K-Fold OOF for analytics).
+- Also generates Production Geometries (Full Fit).
 
 Layer 3: Calibration & Meta-Model (LabelBasedLayer3)
 - Feature Engineering on Layer 2 outputs (Disagreement, Volatility).
 - Weights adjustment using Magnitude and Layer 1 weights.
-- Calibrated Probability generation using LGBM + Isotonic Regression.
+- Calibrated Probability generation using LGBM + Isotonic Regression (K-Fold OOF).
+- Final Model training on full dataset.
 
 This replaces the legacy HierarchicalParameterOptimizer loop.
 """
@@ -32,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import joblib
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -104,6 +107,23 @@ DEFAULT_CV_GAP_BARS: int = 24  # ~6 hours at 15m
 class ObjectiveComputationCache:
     """Cache for expensive computations in labeling_objective to avoid recomputation.
     
+    async def execute(self, config: dict) -> dict:
+        """
+        Execute the pipeline.
+        
+        Args:
+            config: Configuration dictionary.
+        """
+        # Load market data (using standard BaseStep mechanism)
+        market_data, _ = self.load_market_data_or_fail(config)
+        
+        # Generate primary signals (using default logic if not provided)
+        from src.training.steps.labeling.feature_generation_meta_labeling_step import generate_primary_signals
+        primary_signals = generate_primary_signals(market_data.copy())
+        
+        # Try load weights
+        target_sample_weight = None
+        # (Simulated for now as legacy loading is complex)
     Caches invariant computations that don't depend on HPO parameters:
     - ATR series (depends only on market_data)
     - Trend strength (depends only on market_data and config)
@@ -633,6 +653,19 @@ def compute_learnability_with_calibration(
                 except Exception:
                     fs_sample_weight = None
             
+        # ---------------------------------------------------------
+        # LAYER 2: Geometry Optimization & Bagged Labeling
+        # ---------------------------------------------------------
+        tprint_info(">>> Executing Layer 2: Geometry Optimization (OOF & Full)...")
+        
+        layer2 = LabelBasedLayer2(
+            transaction_cost=float(config.get('transaction_cost', 0.001)),
+            n_trials=int(config.get('layer2_n_trials', 30)),
+            n_splits=int(config.get('layer2_n_splits', 3)),
+            verbose=True
+        )
+        
+        # This now returns OOF labels AND Production Geometries
             # Train a quick fast model to get feature importance
             selector = lgb.LGBMClassifier(
                 n_estimators=50, max_depth=3, learning_rate=0.1, n_jobs=-1, 
@@ -14301,20 +14334,20 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             tprint_warning(" Insufficient events. Aborting.")
             return {"success": False}
         
-        # Unpack Layer 2 Artifacts
+        # Unpack Layer 2 Artifacts (OOF for Training/Analytics)
         l2_labels = l2_output['oof_labels']
-        l2_returns = l2_output['oof_returns'] # Weighted average return of geometries
+        l2_returns = l2_output['oof_returns']
         l2_weights = l2_output['weights']
         individual_geos = l2_output['individual_geometries']
         events_df = l2_output['events_df']
-        selected_trials = l2_output['selected_trials']
+        selected_trials = l2_output['selected_trials'] # Production Geometries
         
-        # Save Layer 2 selection report
+        # Save Layer 2 Production Geometries (Optimized on Full Data)
         with open(outcomes_dir / "layer2_selected_geometries.json", "w") as f:
             json.dump(selected_trials, f, indent=2, default=str)
             
         # ---------------------------------------------------------
-        # Weight Calculation for Layer 3
+        # Weight Calculation for Layer 3 (Based on OOF)
         # ---------------------------------------------------------
         # Formula: W_t = W_L2 * log(1 + |R_composite|) * W_L1
         
@@ -14340,10 +14373,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ---------------------------------------------------------
         # Data Assembly for Layer 3
         # ---------------------------------------------------------
-        tprint_info(">>> Preparing Data for Layer 3...")
+        tprint_info(">>> Preparing OOF Data for Layer 3...")
         
+        # Assemble OOF predictions from individual geometries
         geo_preds_df = pd.DataFrame(index=events_df.index)
         for uuid, preds in individual_geos.items():
+            # preds are already Series on the correct index (or reindex safe)
             geo_preds_df[uuid] = preds.reindex(events_df.index)
             
         geo_cols = list(geo_preds_df.columns)
@@ -14361,11 +14396,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         l3_input_df[target_col] = l2_labels
         
         # ---------------------------------------------------------
-        # LAYER 3: Calibration & Meta-Model
+        # LAYER 3: Calibration & Meta-Model (OOF & Final)
         # ---------------------------------------------------------
-        tprint_info(">>> Executing Layer 3: Calibration & Meta-Model...")
+        tprint_info(">>> Executing Layer 3: OOF Calibration & Production Model Training...")
         
-        val_export, calibrated_model = layer3_analyst_lgbm(
+        # This now returns OOF predictions for entire dataset and the Final Model
+        oof_export, final_model = layer3_analyst_lgbm(
             oof_df=l3_input_df,
             base_model_cols=geo_cols,
             target_col=target_col,
@@ -14373,11 +14409,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             sample_weight=w_final
         )
         
-        # Generate Diagnostics
+        # Generate Diagnostics (on OOF predictions)
         tprint_info(">>> Generating Layer 3 Diagnostics...")
         plot_diagnostics(
-            y_true=val_export[target_col],
-            y_prob=val_export['meta_prob'],
+            y_true=oof_export[target_col],
+            y_prob=oof_export['meta_prob'],
             output_path=str(outcomes_dir / "layer3_calibration_plot.png")
         )
         
@@ -14385,10 +14421,15 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # Artifacts & Return
         # ---------------------------------------------------------
         
-        val_export.to_csv(outcomes_dir / "layer3_validation_preds.csv")
+        # Save OOF Predictions (Full History)
+        oof_export.to_csv(outcomes_dir / "layer3_oof_preds.csv")
         
+        # Save Weights
         pd.DataFrame({'weight': w_final}).describe().to_csv(outcomes_dir / "layer3_weights_stats.csv")
         
+        # Save Final Model
+        joblib.dump(final_model, outcomes_dir / "layer3_final_model.joblib")
+
         tprint_success(f"Pipeline Completed. Artifacts saved to {outcomes_dir}")
         
         return {
@@ -14399,8 +14440,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 "n_geometries": len(geo_cols)
             },
             "artifacts": {
-                "val_preds": str(outcomes_dir / "layer3_validation_preds.csv"),
-                "calibration_plot": str(outcomes_dir / "layer3_calibration_plot.png")
+                "oof_preds": str(outcomes_dir / "layer3_oof_preds.csv"),
+                "calibration_plot": str(outcomes_dir / "layer3_calibration_plot.png"),
+                "final_model": str(outcomes_dir / "layer3_final_model.joblib"),
+                "layer2_geometries": str(outcomes_dir / "layer2_selected_geometries.json")
             }
         }
 

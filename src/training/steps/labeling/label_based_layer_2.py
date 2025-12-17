@@ -18,7 +18,7 @@ import pandas as pd
 import optuna
 import lightgbm as lgb
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit, KFold
 from sklearn.metrics import roc_auc_score, log_loss
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import spearmanr
@@ -86,47 +86,149 @@ class LabelBasedLayer2:
 
     def run(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Execute the full Layer 2 pipeline.
+        Execute the Layer 2 pipeline with OOF generation.
+
+        This method performs:
+        1. Full Optimization (to get production geometries).
+        2. K-Fold OOF Optimization (to get unbiased analytics/artifacts).
 
         Args:
             df: Input DataFrame containing 'close', 'vwap', 'volatility_1d',
                 'trend_regime', 'vol_regime', etc.
 
         Returns:
-            Dict containing OOF predictions, weights, diagnostics, and events_df.
+            Dict containing:
+            - 'oof_labels': OOF Weighted Consensus Labels (Series)
+            - 'oof_returns': OOF Weighted Consensus Returns (Series)
+            - 'weights': OOF Weights (Series)
+            - 'individual_geometries': OOF predictions per geometry channel (Dict[str, Series])
+            - 'events_df': Events DataFrame
+            - 'selected_trials': List[Dict] (Production geometries from full fit)
         """
-        logger.info("Starting Layer 2 Optimization...")
+        logger.info("Starting Layer 2 Pipeline...")
 
         # Step 0: Preparation
         self._validate_inputs(df)
         events_df = self._generate_events(df)
 
         if events_df.empty:
-            logger.warning("No events generated in Layer 2. Skipping optimization.")
+            logger.warning("No events generated in Layer 2. Skipping.")
             return {}
 
-        # Step 3: Run optimization per family
-        results = self._optimize_families(df, events_df)
+        # ---------------------------------------------------------------------
+        # Part A: Full Optimization (Production Artifacts)
+        # ---------------------------------------------------------------------
+        logger.info(">>> Layer 2: Running Full Optimization (Production)...")
+        full_results = self._optimize_families(df, events_df)
+        production_geometries = self._select_best_geometries(df, events_df, full_results)
 
-        if not results:
-            logger.warning("Optimization produced no valid results.")
-            return {}
+        # Store for reference
+        self.selected_geometries = production_geometries
 
-        # Steps 3.2 & 3.3: Select and Prune
-        self.selected_geometries = self._select_best_geometries(df, events_df, results)
+        # ---------------------------------------------------------------------
+        # Part B: OOF Optimization (Analytics Artifacts)
+        # ---------------------------------------------------------------------
+        logger.info(">>> Layer 2: Running OOF Optimization (Analytics)...")
 
-        if not self.selected_geometries:
-            logger.warning("No geometries selected after pruning.")
-            return {}
+        # Initialize storage for OOF results
+        indices = df.index
+        oof_labels = pd.Series(np.nan, index=indices)
+        oof_returns = pd.Series(np.nan, index=indices)
+        oof_weights = pd.Series(np.nan, index=indices)
 
-        # Step 3.4: Generate Output
-        output = self._bagged_labeling(df, events_df, self.selected_geometries)
+        # Derive families dynamically to avoid hardcoding
+        # We need standardize keys for consistent channels.
+        # We'll use the unique families found in the full events generation.
+        # However, events_df generation maps regimes to families.
+        # Let's dry run the mapping once to get all potential families.
+        # Or better, just use the set of families that *could* be generated.
+        # But _get_barrier_family logic is static.
+        families = ['Trend Continuation', 'Momentum', 'Mean Reversion']
+        max_rank = 4
+        oof_geo_preds = {}
+        for fam in families:
+            for r in range(max_rank):
+                key = f"{fam}_Rank{r}"
+                oof_geo_preds[key] = pd.Series(np.nan, index=indices)
 
-        # Add events_df to output for Layer 3 context
-        output["events_df"] = events_df
+        # K-Fold Split
+        kf = KFold(n_splits=5, shuffle=False)
 
-        logger.info("Layer 2 Complete.")
-        return output
+        # Iterate folds
+        fold_idx = 0
+        for train_idx, test_idx in kf.split(df):
+            fold_idx += 1
+            logger.info(f"   > Processing Fold {fold_idx}/5...")
+
+            # Create Train Slice
+            df_train = df.iloc[train_idx]
+
+            # Subset events
+            events_train = events_df.loc[events_df.index.intersection(df_train.index)]
+            events_test = events_df.loc[events_df.index.intersection(df.index[test_idx])]
+
+            if events_train.empty:
+                logger.warning(f"Fold {fold_idx}: No training events. Skipping.")
+                continue
+
+            # Optimize on Train
+            fold_results = self._optimize_families(df_train, events_train)
+            if not fold_results:
+                continue
+
+            fold_geometries = self._select_best_geometries(df_train, events_train, fold_results)
+            if not fold_geometries:
+                continue
+
+            # Rename/Standardize Geometries for consistent channels
+            geo_by_fam = {}
+            for g in fold_geometries:
+                geo_by_fam.setdefault(g.family, []).append(g)
+
+            standardized_geos = []
+            for fam, geos in geo_by_fam.items():
+                # Sort by final_score descending
+                geos_sorted = sorted(geos, key=lambda x: x.final_score, reverse=True)
+                for rank, g in enumerate(geos_sorted):
+                    # Assign standardized UUID
+                    g_copy = copy.deepcopy(g)
+                    g_copy.uuid = f"{fam}_Rank{rank}"
+                    standardized_geos.append(g_copy)
+
+            # Predict on Test (Bagged Labeling)
+            if not events_test.empty:
+                # CRITICAL FIX: Pass FULL `df` to _bagged_labeling, but only process `events_test`.
+                # This ensures compute_realized_returns can access price data beyond the fold boundary
+                # for proper barrier hits (lookahead).
+                fold_output = self._bagged_labeling(df, events_test, standardized_geos)
+
+                # Assign to OOF arrays
+                target_idx = events_test.index
+
+                oof_labels.loc[target_idx] = fold_output['oof_labels']
+                oof_returns.loc[target_idx] = fold_output['oof_returns']
+                oof_weights.loc[target_idx] = fold_output['weights']
+
+                # Assign individual geometry preds
+                for uuid, series in fold_output['individual_geometries'].items():
+                    if uuid in oof_geo_preds:
+                        oof_geo_preds[uuid].loc[target_idx] = series
+
+        # ---------------------------------------------------------------------
+        # Final Packaging
+        # ---------------------------------------------------------------------
+        final_geo_preds = {k: v for k, v in oof_geo_preds.items() if v.notna().any()}
+
+        logger.info("Layer 2 Pipeline Complete.")
+
+        return {
+            "oof_labels": oof_labels,
+            "oof_returns": oof_returns,
+            "weights": oof_weights,
+            "individual_geometries": final_geo_preds,
+            "events_df": events_df,
+            "selected_trials": [asdict(t) for t in production_geometries]
+        }
 
     def _validate_inputs(self, df: pd.DataFrame):
         """Ensure required columns exist."""

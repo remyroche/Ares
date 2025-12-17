@@ -7151,8 +7151,9 @@ def calculate_hpo_utility(
         # Formula: (mean_return - expected_mean) / expected_std * scale
         # Using simplified approach: clip to Sortino-like range
         normalized_return = float(mean_return) * 100.0  # Convert to percentage
-        # Soft clip to prevent dominating base_score
-        normalized_return = float(np.clip(normalized_return, -3.0, 5.0))
+        # Relaxed clip to allow high-magnitude strategies to shine (Layer 3 magnitude-aware)
+        # Previously clipped at 5.0 (5% mean return), now 15.0 to capture fat tails
+        normalized_return = float(np.clip(normalized_return, -5.0, 15.0))
         return_contribution = normalized_return * w_return
         if not np.isfinite(return_contribution):
             return_contribution = 0.0
@@ -13389,6 +13390,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             utility = float(psr_details.get("psr", 0.0)) * float(phi_trades)
             if not np.isfinite(float(utility)):
                 utility = 0.0
+
+            # MAGNITUDE AWARENESS (Layer 2): Add direct return contribution
+            # PSR is ratio-based and can favor low-vol/low-return strategies.
+            # We add a term proportional to mean return to reward absolute magnitude.
+            if trade_mean_return is not None and np.isfinite(trade_mean_return):
+                # 1% mean return -> +1.0 utility (approx)
+                # Similar scale to PSR which is often in [0, 3] range
+                mag_bonus = float(trade_mean_return) * 100.0
+                # Cap to prevent domination by single lucky trades, but allow up to 10.0
+                mag_bonus = float(np.clip(mag_bonus, -2.0, 10.0))
+                utility += mag_bonus
 
             # =====================================================================
             # UTILITY IMPROVEMENTS (2024-12): Magnitude-Weighted Win Rate Only

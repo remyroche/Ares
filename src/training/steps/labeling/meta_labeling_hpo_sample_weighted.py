@@ -24,6 +24,7 @@ from src.training.steps.labeling.multi_label_voting_utils import (
     compute_kalman_smoothed_price_and_volatility,
     compute_committee_voted_labels_full,
 )
+from src.training.steps.labeling.label_based_layer_0 import run_layer_0
 
 
 from typing import Any, Dict, List, Tuple, Optional
@@ -4728,73 +4729,92 @@ def sigmoid_gate(x: float, threshold: float, sharpness: float = 10.0, lower_boun
     return lower_bound + (1.0 - lower_bound) * sigmoid
 
 
-# ============================================================================
-# RTS SMOOTHER & KALMAN FILTER FUNCTIONS (For Label & Feature Generation)
-# ============================================================================
-
-def rts_smoother_1d(
+def kalman_filter_adaptive(
     prices: np.ndarray,
+    volume: Optional[np.ndarray],
+    vwap: Optional[np.ndarray],
     Q: float,
     R: float,
     init_val: float = None,
     init_cov: float = 1.0,
-) -> tuple:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Implements a 1D Rauch-Tung-Striebel Smoother (Local Level Model).
-    This is an ACAUSAL (zero-lag) smoother ideal for label generation.
-    
+    Adaptive 1D Kalman Filter (CAUSAL) with Volume-Weighted R and Dual Measurement.
+
+    Features:
+    1. Volume-Weighted R: R_t = R_base * (MedianVol / Vol_t)
+       High volume -> Low noise -> Trust measurement.
+    2. Dual Measurement: If VWAP is provided, observation is (Price + VWAP)/2 with R_eff = R_t / 2.
+       This treats VWAP as a second noisy observation of the same underlying price state.
+
     Model: x_t = x_{t-1} + w_t  (Process Noise Q)
-           z_t = x_t + v_t      (Measurement Noise R)
-    
+           z_t = x_t + v_t      (Measurement Noise R_t or R_eff)
+
     Args:
-        prices: Raw price series
-        Q: Process noise variance (higher = more responsive, less smooth)
-        R: Measurement noise variance (higher = more smooth)
+        prices: Raw price series (Close)
+        volume: Volume series for adaptive R (optional)
+        vwap: VWAP series for dual measurement (optional)
+        Q: Process noise variance
+        R: Base measurement noise variance
         init_val: Initial state value (default: first observation)
         init_cov: Initial covariance (default: 1.0)
-    
+
     Returns:
-        Tuple of (smoothed_state, smoothed_covariance)
+        Tuple of (filtered_state, filtered_covariance, kalman_gain)
     """
     n = len(prices)
     obs = np.asarray(prices, dtype=np.float64)
-    
-    # --- Forward Pass (Standard Kalman Filter) ---
+
+    # 1. Compute Adaptive R_t based on Volume
+    if volume is not None and len(volume) == n:
+        vol = np.asarray(volume, dtype=np.float64)
+        median_vol = np.nanmedian(vol)
+        if median_vol > 0:
+            vol_safe = np.where(vol < 1e-8, 1e-8, vol)
+            scale_factor = median_vol / vol_safe
+            scale_factor = np.clip(scale_factor, 0.1, 10.0)
+            R_t = R * scale_factor
+        else:
+            R_t = np.full(n, R, dtype=np.float64)
+    else:
+        R_t = np.full(n, R, dtype=np.float64)
+
+    # 2. Setup Observations (Dual Measurement Logic)
+    if vwap is not None and len(vwap) == n:
+        # Dual Measurement: z = [Close, VWAP]^T
+        # Simplified equivalent scalar update:
+        # z_eff = (Close + VWAP) / 2
+        # R_eff = R_t / 2 (assuming independent errors with same variance)
+        vwap_arr = np.asarray(vwap, dtype=np.float64)
+        obs_eff = (obs + vwap_arr) / 2.0
+        R_eff = R_t / 2.0
+    else:
+        obs_eff = obs
+        R_eff = R_t
+
     m = np.zeros(n)  # State means
     P = np.zeros(n)  # State covariances
-    
+    K_arr = np.zeros(n)  # Kalman gains
+
     # Initialization
     m[0] = init_val if init_val is not None else obs[0]
     P[0] = init_cov
-    
+    K_arr[0] = 0.5
+
     for t in range(1, n):
         # Time Update (Prediction)
-        m_minus = m[t-1]
-        P_minus = P[t-1] + Q
-        
+        m_minus = m[t - 1]
+        P_minus = P[t - 1] + Q
+
         # Measurement Update (Correction)
-        K = P_minus / (P_minus + R)  # Kalman Gain
-        m[t] = m_minus + K * (obs[t] - m_minus)
+        r_val = R_eff[t]
+
+        K = P_minus / (P_minus + r_val) if (P_minus + r_val) > 1e-12 else 0.5
+        K_arr[t] = K
+        m[t] = m_minus + K * (obs_eff[t] - m_minus)
         P[t] = (1 - K) * P_minus
-        
-    # --- Backward Pass (RTS Smoothing) ---
-    s_m = np.zeros(n)  # Smoothed means
-    s_P = np.zeros(n)  # Smoothed covariances
-    
-    # Last step is same as filter
-    s_m[-1] = m[-1]
-    s_P[-1] = P[-1]
-    
-    for t in range(n-2, -1, -1):
-        # Smoothing Gain
-        P_pred = P[t] + Q
-        J = P[t] / P_pred if P_pred > 1e-12 else 0.0
-        
-        # State Update (look-ahead correction)
-        s_m[t] = m[t] + J * (s_m[t+1] - m[t])
-        s_P[t] = P[t] + (J**2) * (s_P[t+1] - P_pred)
-    
-    return s_m, s_P
+
+    return m, P, K_arr
 
 
 def kalman_filter_1d(
@@ -4803,149 +4823,11 @@ def kalman_filter_1d(
     R: float,
     init_val: float = None,
     init_cov: float = 1.0,
-) -> tuple:
-    """
-    Standard 1D Kalman Filter (CAUSAL) for live feature generation.
-    
-    Model: x_t = x_{t-1} + w_t  (Process Noise Q)
-           z_t = x_t + v_t      (Measurement Noise R)
-    
-    Args:
-        prices: Raw price series
-        Q: Process noise variance
-        R: Measurement noise variance
-        init_val: Initial state value (default: first observation)
-        init_cov: Initial covariance (default: 1.0)
-    
-    Returns:
-        Tuple of (filtered_state, filtered_covariance, kalman_gain)
-    """
-    n = len(prices)
-    obs = np.asarray(prices, dtype=np.float64)
-    
-    m = np.zeros(n)  # State means
-    P = np.zeros(n)  # State covariances
-    K_arr = np.zeros(n)  # Kalman gains
-    
-    # Initialization
-    m[0] = init_val if init_val is not None else obs[0]
-    P[0] = init_cov
-    K_arr[0] = 0.5
-    
-    for t in range(1, n):
-        # Time Update (Prediction)
-        m_minus = m[t-1]
-        P_minus = P[t-1] + Q
-        
-        # Measurement Update (Correction)
-        K = P_minus / (P_minus + R) if (P_minus + R) > 1e-12 else 0.5
-        K_arr[t] = K
-        m[t] = m_minus + K * (obs[t] - m_minus)
-        P[t] = (1 - K) * P_minus
-    
-    return m, P, K_arr
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Legacy wrapper for backward compatibility."""
+    return kalman_filter_adaptive(prices, None, None, Q, R, init_val, init_cov)
 
 
-def robust_labeling_loss(
-    smoothed: np.ndarray,
-    raw: np.ndarray,
-    alpha: float = 1.0,
-    beta: float = 1.0,
-    gamma: float = 1.0,
-    is_acausal: bool = True,
-) -> tuple:
-    """
-    Compute loss for labeling optimization (RTS Smoother tuning).
-    
-    Optimizes Signal-to-Noise Ratio by balancing:
-    1. Smoothness (minimal wiggle / 2nd derivative)
-    2. Tracking Error (RMSE from raw prices)
-    3. Amplitude Fidelity (preserve ~95% of price volatility)
-    
-    Args:
-        smoothed: Smoothed price series from RTS
-        raw: Raw price series
-        alpha: Weight for smoothness penalty
-        beta: Weight for tracking error penalty
-        gamma: Weight for amplitude error penalty
-        is_acausal: If True (RTS), enforces zero-lag checking
-    
-    Returns:
-        Tuple of (total_loss, details_dict)
-    """
-    s = np.asarray(smoothed, dtype=np.float64)
-    r = np.asarray(raw, dtype=np.float64)
-    
-    # Returns for stationarity
-    s_ret = np.diff(s)
-    r_ret = np.diff(r)
-    raw_vol = np.std(r_ret) + 1e-9
-
-    # --- Component 1: Smoothness (Normalized) ---
-    # Goal: Minimal "wiggle" (2nd derivative)
-    second_diff = np.diff(s, n=2)
-    smooth_error = np.mean(second_diff**2) / (raw_vol**2)
-
-    # --- Component 2: Tracking Error ---
-    if is_acausal:
-        # RTS: Direct RMSE (no lag expected)
-        rmse = np.sqrt(np.mean((s - r)**2))
-        tracking_error = rmse / raw_vol
-    else:
-        # Causal filter: Allow 1-bar lag
-        tau = 1
-        rmse = np.sqrt(np.mean((s[:-tau] - r[tau:])**2))
-        tracking_error = rmse / raw_vol
-
-    # --- Component 3: Amplitude Fidelity ---
-    # CRITICAL FOR LABELS: Ensure we don't "shrink" the events.
-    std_s = np.std(s_ret)
-    std_r = np.std(r_ret)
-    
-    # Target 95% volatility retention
-    # Penalty for over-smoothing (ratio < 0.95) or noise amplification (ratio > 1.05)
-    amp_ratio = std_s / (std_r + 1e-9)
-    amp_error = (amp_ratio - 0.95)**2
-
-    # --- Total Loss ---
-    total_loss = (alpha * smooth_error) + (beta * tracking_error) + (gamma * amp_error)
-    
-    return total_loss, {
-        "loss": total_loss,
-        "smooth": smooth_error,
-        "track": tracking_error,
-        "amp": amp_error,
-        "amp_ratio": amp_ratio,
-    }
-
-
-def smooth_prices_rts(
-    prices: pd.Series,
-    Q: float,
-    R: float,
-) -> pd.Series:
-    """
-    Smooth a price series using RTS Smoother for label generation.
-    
-    RTS is ACAUSAL (uses future data) - only for training labels, NOT live features.
-    For live features, use kalman_filter_1d instead.
-    
-    Args:
-        prices: Raw price series
-        Q: Process noise variance (from Stage 0 optimization)
-        R: Measurement noise variance (from Stage 0 optimization)
-    
-    Returns:
-        Smoothed price series as pandas Series
-    """
-    smoothed, _ = rts_smoother_1d(
-        prices=prices.values,
-        Q=Q,
-        R=R,
-        init_val=None,
-        init_cov=1.0,
-    )
-    return pd.Series(smoothed, index=prices.index, name="rts_smoothed_close")
 
 
 def _log_normalize(arr: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
@@ -6403,10 +6285,21 @@ def generate_kalman_features(
     
     # --- Price-Based Kalman Features ---
     
+    # Extract optional series for adaptive filtering
+    volume_values = market_data["volume"].values if "volume" in market_data.columns else None
+    vwap_values = market_data["vwap"].values if "vwap" in market_data.columns else None
+
     # 1. Filtered OHLC
-    kf_close, kf_close_P, _ = kalman_filter_1d(close, Q=kalman_Q, R=kalman_R)
-    kf_high, kf_high_P, _ = kalman_filter_1d(high, Q=kalman_Q, R=kalman_R)
-    kf_low, kf_low_P, _ = kalman_filter_1d(low, Q=kalman_Q, R=kalman_R)
+    # Use Volume-Weighted R for all. Use Dual Measurement (VWAP) for Close only.
+    kf_close, kf_close_P, _ = kalman_filter_adaptive(
+        close, volume=volume_values, vwap=vwap_values, Q=kalman_Q, R=kalman_R
+    )
+    kf_high, kf_high_P, _ = kalman_filter_adaptive(
+        high, volume=volume_values, vwap=None, Q=kalman_Q, R=kalman_R
+    )
+    kf_low, kf_low_P, _ = kalman_filter_adaptive(
+        low, volume=volume_values, vwap=None, Q=kalman_Q, R=kalman_R
+    )
     
     # Store as log-returns relative to raw (normalized difference)
     features["KF_Close_LogRet"] = _log_normalize((kf_close - close) / (close + 1e-9))
@@ -10641,513 +10534,40 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     'combined': -1e9,
                 }
 
-        def kalman_objective(params: Dict[str, Any]) -> float:
-            """
-            Stage 0: RTS Smoother Optimization for Label Generation.
-            
-            Objective: Maximize Signal-to-Noise Ratio (SNR) of the raw price series.
-            Uses RTS (Rauch-Tung-Striebel) smoother which is ACAUSAL (zero-lag) - 
-            ideal for generating training labels.
-            
-            The optimized Q and R values will also be used in the standard (causal)
-            Kalman Filter for live feature generation.
-            
-            Loss components:
-            1. Smoothness: Minimal "wiggle" (2nd derivative)
-            2. Tracking Error: RMSE from raw prices (bias/oversmoothing penalty)
-            3. Amplitude Fidelity: Preserve ~95% of price volatility
-            """
-            Q = params['kalman_Q']
-            R = params['kalman_R']
-            
-            # Get raw close prices
-            raw_close = close_series.values
-            
-            if len(raw_close) < 100:
-                return -10.0  # Reject if insufficient data
-            
-            try:
-                # Run RTS Smoother (acausal, zero-lag)
-                smoothed_close, smoothed_cov = rts_smoother_1d(
-                    prices=raw_close,
-                    Q=Q,
-                    R=R,
-                    init_val=None,
-                    init_cov=1.0,
-                )
-                
-                # Compute robust labeling loss
-                # Loss weights: alpha=smoothness, beta=tracking, gamma=amplitude
-                loss, details = robust_labeling_loss(
-                    smoothed=smoothed_close,
-                    raw=raw_close,
-                    alpha=1.0,   # Smoothness weight
-                    beta=1.0,    # Tracking error weight
-                    gamma=1.0,   # Amplitude fidelity weight
-                    is_acausal=True,  # RTS is acausal
-                )
-                
-                # Optimizer maximizes, so return negative loss
-                # Also add bonus for amplitude ratio being close to 0.95
-                amp_ratio = details.get("amp_ratio", 0.95)
-                amp_bonus = max(0, 0.1 - abs(amp_ratio - 0.95))  # Small bonus for good amplitude
-                
-                score = -loss + amp_bonus
-                
-                return float(score) if np.isfinite(score) else -10.0
-                
-            except Exception as e:
-                tprint_warning(f"[KALMAN_OBJ_ERROR] {e}")
-                return -10.0
-
-        # Run Stage 0 optimization
-        kalman_loss: float = float("nan")
-        kalman_loss_details: Dict[str, Any] = {}
-
-        stage0_loaded_from: Optional[str] = None
-        if stage_rank["stage0"] < start_rank:
-            loaded_params, loaded_path = _load_stage_best_params("stage0")
-            best_kalman_params = dict(loaded_params or {})
-            stage0_loaded_from = str(loaded_path) if loaded_path is not None else None
-            if not best_kalman_params:
-                best_kalman_params = {"kalman_Q": 1e-4, "kalman_R": 0.01}
-            kalman_result = {"best_params": dict(best_kalman_params), "best_value": 0.0, "history": []}
-            tprint_info(
-                f"♻️ Stage 0 skipped (start_at={start_at_canonical}); loaded best params from {stage0_loaded_from}"
-            )
-        else:
-            kalman_optimizer = BayesianTPEOptimizer(
-                config=OptimizationConfig(
-                    n_trials=60,
-                    execution_mode="full",
-                    direction="maximize",
-                    seed=get_reproducible_random_state(DEFAULT_RANDOM_SEED, offset=0)
-                )
-            )
-            kalman_result = kalman_optimizer.optimize(objective=kalman_objective, search_space=kalman_search_space)
-            best_kalman_params = kalman_result.get("best_params", {})
-
-        # Log the results with loss details
-        best_Q = best_kalman_params.get("kalman_Q")
-        best_R = best_kalman_params.get("kalman_R")
-        try:
-            best_Q = float(best_Q) if best_Q is not None else float("nan")
-        except Exception:
-            best_Q = float("nan")
-        try:
-            best_R = float(best_R) if best_R is not None else float("nan")
-        except Exception:
-            best_R = float("nan")
-        if not np.isfinite(best_Q) or best_Q <= 0.0:
-            best_Q = 1e-4
-        if not np.isfinite(best_R) or best_R <= 0.0:
-            best_R = 0.01
-        # Compute final loss details for logging
-        try:
-            final_smoothed, _ = rts_smoother_1d(close_series.values, Q=best_Q, R=best_R)
-            final_loss, final_details = robust_labeling_loss(final_smoothed, close_series.values, is_acausal=True)
-            kalman_loss = float(final_loss)
-            kalman_loss_details = final_details or {}
-            tprint_success(
-                f"✅ Stage 0 Complete. Loss: {final_loss:.4f} "
-                f"(smooth={final_details['smooth']:.4f}, track={final_details['track']:.4f}, "
-                f"amp={final_details['amp']:.4f}, amp_ratio={final_details['amp_ratio']:.3f})"
-            )
-        except Exception:
-            try:
-                bv = kalman_result.get("best_value", 0.0) if isinstance(kalman_result, dict) else 0.0
-                bv = float(bv) if bv is not None and np.isfinite(float(bv)) else 0.0
-            except Exception:
-                bv = 0.0
-            tprint_success(f"✅ Stage 0 Complete. Best Score: {bv:.4f}")
-
-        tprint_info(f"   Best RTS/Kalman Params: Q={best_Q:.2e}, R={best_R:.2e}")
-        tprint_info("   Note: RTS (acausal) for labels, Kalman (causal) for live features")
-
-        hpo_stage_reports: Dict[str, Any] = {}
-
-        # Persist Stage 0 trial diagnostics for offline analysis
-        stage0_csv: Optional[Path] = None
-        try:
-            kalman_history = kalman_result.get("history", []) if isinstance(kalman_result, dict) else []
-            stage0_rows = []
-            for trial in kalman_history:
-                params = trial.get("params", {}) if isinstance(trial, dict) else {}
-                q_val = float(params.get("kalman_Q", 1e-4))
-                r_val = float(params.get("kalman_R", 0.01))
-
-                # Recompute loss components for this (Q, R) pair
-                try:
-                    smoothed_trial, _ = rts_smoother_1d(
-                        prices=close_series.values,
-                        Q=q_val,
-                        R=r_val,
-                        init_val=None,
-                        init_cov=1.0,
-                    )
-                    loss_trial, details_trial = robust_labeling_loss(
-                        smoothed=smoothed_trial,
-                        raw=close_series.values,
-                        is_acausal=True,
-                    )
-                except Exception:
-                    loss_trial, details_trial = float("nan"), {}
-
-                row = {
-                    "trial_number": trial.get("trial_number") if isinstance(trial, dict) else None,
-                    "kalman_Q": q_val,
-                    "kalman_R": r_val,
-                    "score": float(trial.get("value", float("nan"))) if isinstance(trial, dict) else float("nan"),
-                    "loss": float(loss_trial),
-                    "smooth": float(details_trial.get("smooth", float("nan"))),
-                    "track": float(details_trial.get("track", float("nan"))),
-                    "amp": float(details_trial.get("amp", float("nan"))),
-                    "amp_ratio": float(details_trial.get("amp_ratio", float("nan"))),
-                }
-                stage0_rows.append(row)
-
-            if stage0_rows:
-                ts_stage0 = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-                stage0_csv = outcomes_dir / f"hpo_stage0_kalman_trials_{symbol}_{timeframe}_{ts_stage0}.csv"
-                pd.DataFrame(stage0_rows).to_csv(stage0_csv, index=False)
-                tprint_info(f"   💾 Saved Stage 0 Kalman trial diagnostics to {stage0_csv}")
-        except Exception as stage0_exc:
-            tprint_warning(f"   ⚠️ Failed to save Stage 0 Kalman trial diagnostics: {stage0_exc}")
-
-        try:
-            stage0_report = _write_hpo_stage_report(
-                outcomes_dir=outcomes_dir,
-                run_timestamp=str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")),
-                stage_id="stage0_kalman",
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                best_params=dict(best_kalman_params) if isinstance(best_kalman_params, dict) else {},
-                metrics={
-                    "best_value": kalman_result.get("best_value", None),
-                    "loss": kalman_loss,
-                    "loss_details": kalman_loss_details,
-                },
-                search_space=kalman_search_space,
-                trials_csv_path=stage0_csv,
-                history_json_path=None,
-            )
-            hpo_stage_reports["stage0"] = stage0_report
-        except Exception as stage0_report_exc:
-            tprint_warning(f"   ⚠️ Failed to write Stage 0 report: {stage0_report_exc}")
-
         # ------------------------------------------------------------------
-        # 0.5) COMMITTEE VOTING OPTIMIZATION (PRE-STEP)
+        # RUN LAYER 0 (Kalman/RTS Optimization + Committee Pre-Step)
         # ------------------------------------------------------------------
-        enable_committee_voting_hpo = bool(config.get("enable_committee_voting_hpo", True))
-        enable_committee_weight_factor = bool(config.get("enable_committee_weight_factor", True))
-        enable_committee_pre_step = bool(config.get("enable_committee_pre_step", True))
-        enable_committee_pre_step = bool(enable_committee_pre_step and (enable_committee_voting_hpo or enable_committee_weight_factor))
+        layer0_output = run_layer_0(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            direction=direction,
+            market_data=market_data,
+            primary_signals=primary_signals,
+            config=config,
+            outcomes_dir=outcomes_dir,
+            start_rank=start_rank,
+            stage_rank=stage_rank,
+            start_at_canonical=start_at_canonical,
+            load_stage_best_params=load_stage_best_params,
+        )
 
-        committee_configs: List[TripleBarrierConfig] = []
-        committee_names: List[str] = []
-        committee_event_idx: Optional[pd.DatetimeIndex] = None
-        committee_label_matrix_values: Optional[np.ndarray] = None
-        committee_returns_matrix_values: Optional[np.ndarray] = None
-        committee_durations_matrix_values: Optional[np.ndarray] = None
+        # Unpack Layer 0 results into local variables for compatibility
+        best_kalman_params = layer0_output.best_kalman_params
+        enable_committee_voting_hpo = layer0_output.enable_committee_voting_hpo
+        enable_committee_weight_factor = layer0_output.enable_committee_weight_factor
+        enable_committee_pre_step = layer0_output.enable_committee_pre_step
+        best_committee_params = layer0_output.best_committee_params
+        committee_loaded_from = layer0_output.committee_loaded_from
+        committee_configs = layer0_output.committee_configs
+        committee_names = layer0_output.committee_names
+        committee_event_idx = layer0_output.committee_event_idx
+        committee_label_matrix_values = layer0_output.committee_label_matrix_values
+        committee_returns_matrix_values = layer0_output.committee_returns_matrix_values
+        committee_durations_matrix_values = layer0_output.committee_durations_matrix_values
+        committee_confidence_matrix_values = layer0_output.committee_confidence_matrix_values
+        advanced_gating_pipeline = layer0_output.advanced_gating_pipeline
 
-        best_committee_params: Dict[str, Any] = {
-            "w_scalp": 1.0,
-            "w_swing": 1.0,
-            "w_trend": 1.0,
-            "w_breakout": 0.5,
-            "w_vwap_rev": 0.5,
-            "w_vol_shock": 0.5,
-            "consensus_quantile": float(config.get("committee_consensus_quantile_default", 0.90)),
-            "consensus_threshold": float(config.get("consensus_threshold", 0.5)),
-        }
-        committee_loaded_from: Optional[str] = None
-
-        if enable_committee_pre_step:
-            tprint_info("🧪 Committee pre-step: optimizing committee voting weights...")
-
-            # Build committee configs (6 experts)
-            base_profiles = {
-                "scalp": (1.2, 0.6, 8),
-                "swing": (1.8, 0.9, 12),
-                "trend": (2.4, 1.2, 24),
-            }
-            vol_scalars = {"lower": 0.8, "upper": 1.2}
-            for p_name, (tp_base, sl_base, h_base) in base_profiles.items():
-                for v_name, v_scalar in vol_scalars.items():
-                    committee_configs.append(
-                        TripleBarrierConfig(
-                            tp_multiplier=tp_base * v_scalar,
-                            sl_multiplier=sl_base * v_scalar,
-                            horizon=h_base,
-                        )
-                    )
-                    committee_names.append(f"{p_name}_{v_name}")
-
-            # Pre-compute committee matrices (events x experts)
-            try:
-                best_Q_c = best_kalman_params.get("kalman_Q", 1e-4)
-                best_R_c = best_kalman_params.get("kalman_R", 0.01)
-
-                kalman_price_smooth_c, kalman_vol_smooth_c = compute_kalman_smoothed_price_and_volatility(
-                    prices=market_data["close"],
-                    process_noise=best_Q_c,
-                    measurement_noise=best_R_c,
-                    vol_window=20,
-                )
-                mk_data_voting_c = market_data.copy()
-                mk_data_voting_c["kalman_price"] = kalman_price_smooth_c
-                mk_data_voting_c["kalman_volatility"] = kalman_vol_smooth_c
-
-                committee_results_c = compute_multi_triple_barrier_outcomes_vectorized(
-                    market_data=mk_data_voting_c,
-                    primary_signals=primary_signals,
-                    configs=committee_configs,
-                    transaction_cost=DEFAULT_TRANSACTION_COST,
-                )
-
-                event_mask_c = primary_signals["consensus"] != 0
-                committee_event_idx = pd.DatetimeIndex(primary_signals[event_mask_c].index)
-
-                # Optionally append new experts so pre-step + downstream stay consistent.
-                new_expert_scores = None
-                new_expert_conf = None
-                try:
-                    from src.training.steps.labeling.layer2_advanced_logic import compute_new_experts_matrix, NEW_EXPERT_NAMES
-
-                    dir_raw = str(direction).lower()
-                    dir_sign = 1
-                    if dir_raw in {"short", "sell", "-1", "s"}:
-                        dir_sign = -1
-
-                    new_expert_scores, new_expert_conf = compute_new_experts_matrix(
-                        market_data=mk_data_voting_c,
-                        event_idx=pd.DatetimeIndex(committee_event_idx),
-                        direction=dir_sign,
-                        breakout_lookback=20,
-                        vwap_lookback=20,
-                        vol_lookback=20,
-                    )
-                    committee_names.extend(list(NEW_EXPERT_NAMES))
-                except Exception:
-                    new_expert_scores = None
-                    new_expert_conf = None
-
-                n_base_experts = int(len(committee_configs))
-                n_new_experts = 3 if new_expert_scores is not None else 0
-                n_total_experts = int(n_base_experts + n_new_experts)
-
-                committee_label_matrix_values = np.zeros(
-                    (len(committee_event_idx), n_total_experts),
-                    dtype=np.int8,
-                )
-                committee_returns_matrix_values = np.full(
-                    (len(committee_event_idx), n_total_experts),
-                    np.nan,
-                    dtype=np.float32,
-                )
-                committee_durations_matrix_values = np.full(
-                    (len(committee_event_idx), n_total_experts),
-                    np.nan,
-                    dtype=np.float32,
-                )
-                committee_confidence_matrix_values = np.full(
-                    (len(committee_event_idx), n_total_experts),
-                    np.nan,
-                    dtype=np.float32,
-                )
-
-                for i, res in enumerate(committee_results_c):
-                    lbls = res["labels"].reindex(committee_event_idx).fillna(0).values.astype(int)
-                    rets = res["returns"].reindex(committee_event_idx).values.astype(np.float32)
-                    durs_s = res.get("durations")
-                    if not isinstance(durs_s, pd.Series):
-                        durs_s = res.get("event_durations")
-                    if isinstance(durs_s, pd.Series):
-                        dur_vals = durs_s.reindex(committee_event_idx).values.astype(np.float32)
-                    else:
-                        try:
-                            h = float(getattr(committee_configs[i], "horizon", 1.0))
-                        except Exception:
-                            h = 1.0
-                        dur_vals = np.full(int(len(committee_event_idx)), float(h), dtype=np.float32)
-                    conf = res.get("confidence")
-                    if isinstance(conf, pd.Series):
-                        conf_vals = conf.reindex(committee_event_idx).values.astype(np.float32)
-                    else:
-                        conf_vals = np.full(int(len(committee_event_idx)), 1.0, dtype=np.float32)
-                    committee_label_matrix_values[:, i] = lbls
-                    committee_returns_matrix_values[:, i] = rets
-                    committee_durations_matrix_values[:, i] = dur_vals
-                    committee_confidence_matrix_values[:, i] = conf_vals
-
-                # Add new experts as extra columns (if available)
-                if new_expert_scores is not None and new_expert_conf is not None and n_new_experts == 3:
-                    try:
-                        avg_base_ret = float(np.nanmean(np.abs(committee_returns_matrix_values[:, :n_base_experts])))
-                        if (not np.isfinite(avg_base_ret)) or avg_base_ret < 1e-6:
-                            avg_base_ret = 0.001
-                    except Exception:
-                        avg_base_ret = 0.001
-
-                    try:
-                        med_dur = float(np.nanmedian(committee_durations_matrix_values[:, :n_base_experts]))
-                        if (not np.isfinite(med_dur)) or med_dur < 1.0:
-                            med_dur = 12.0
-                    except Exception:
-                        med_dur = 12.0
-
-                    for j in range(3):
-                        col_idx = n_base_experts + j
-                        scores_j = np.asarray(new_expert_scores[:, j], dtype=float)
-                        conf_j = np.asarray(new_expert_conf[:, j], dtype=float)
-                        committee_label_matrix_values[:, col_idx] = np.sign(scores_j).astype(np.int8)
-                        committee_returns_matrix_values[:, col_idx] = (scores_j * avg_base_ret).astype(np.float32)
-                        committee_durations_matrix_values[:, col_idx] = np.full(int(len(committee_event_idx)), med_dur, dtype=np.float32)
-                        committee_confidence_matrix_values[:, col_idx] = np.clip(conf_j, 0.0, 1.0).astype(np.float32)
-
-                tprint_success(
-                    f"✅ Committee pre-step matrices: {committee_label_matrix_values.shape} (Events x Experts)"
-                )
-                # Log new expert integration status
-                if n_new_experts > 0:
-                    tprint_info(
-                        f"   [committee pre-step] New experts integrated: {n_new_experts} "
-                        f"(total={n_total_experts}, names={committee_names[-n_new_experts:]})"
-                    )
-                    # Log per-expert activity rates
-                    for j in range(n_new_experts):
-                        col_idx = n_base_experts + j
-                        lbl_col = committee_label_matrix_values[:, col_idx]
-                        n_pos = int(np.sum(lbl_col > 0))
-                        n_neg = int(np.sum(lbl_col < 0))
-                        n_zero = int(np.sum(lbl_col == 0))
-                        active_rate = (n_pos + n_neg) / max(len(lbl_col), 1)
-                        mean_conf = float(np.mean(committee_confidence_matrix_values[:, col_idx]))
-                        tprint_info(
-                            f"   [committee pre-step] {committee_names[col_idx]}: "
-                            f"+={n_pos}, -={n_neg}, 0={n_zero} (active={active_rate:.1%}, mean_conf={mean_conf:.3f})"
-                        )
-            except Exception as committee_matrix_exc:
-                tprint_warning(f"⚠️ Committee pre-step matrix build failed: {committee_matrix_exc}")
-                committee_event_idx = None
-                committee_label_matrix_values = None
-                committee_returns_matrix_values = None
-                committee_durations_matrix_values = None
-                committee_confidence_matrix_values = None
-
-            # Optimize committee voting weights (or load)
-            if (
-                committee_label_matrix_values is not None
-                and committee_returns_matrix_values is not None
-                and committee_durations_matrix_values is not None
-                and committee_event_idx is not None
-            ):
-                if stage_rank.get("committee", 1) < start_rank:
-                    loaded_params, loaded_path = _load_stage_best_params("committee")
-                    if isinstance(loaded_params, dict) and loaded_params:
-                        best_committee_params.update(dict(loaded_params))
-                    committee_loaded_from = str(loaded_path) if loaded_path is not None else None
-                    tprint_info(
-                        f"♻️ Committee pre-step skipped (start_at={start_at_canonical}); loaded best params from {committee_loaded_from}"
-                    )
-                else:
-                    # Legacy committee pre-step optimizer removed.
-                    # We keep best_committee_params as defaults unless an existing best-params artifact is available.
-                    loaded_params, loaded_path = _load_stage_best_params("committee")
-                    if isinstance(loaded_params, dict) and loaded_params:
-                        best_committee_params.update(dict(loaded_params))
-                        committee_loaded_from = str(loaded_path) if loaded_path is not None else None
-                        tprint_info(f"♻️ Loaded committee best params from {committee_loaded_from}")
-                    else:
-                        tprint_info("♻️ Committee pre-step optimizer removed; using default committee weights")
-
-                tprint_success(f"✅ Committee pre-step ready. Params: {best_committee_params}")
-
-        # ------------------------------------------------------------------
-        # ADVANCED GATING PIPELINE (fit on committee pre-step data)
-        # ------------------------------------------------------------------
-        advanced_gating_pipeline: Optional[AdvancedGatingPipeline] = None
-        try:
-            enable_advanced_gating = bool(config.get("enable_advanced_gating", True))
-            if (
-                enable_advanced_gating
-                and committee_label_matrix_values is not None
-                and committee_returns_matrix_values is not None
-                and committee_confidence_matrix_values is not None
-                and committee_event_idx is not None
-            ):
-                tprint_info("🧪 Fitting Advanced Gating Pipeline (meta-gate, calibration, specialization)...")
-                n_experts_adv = int(committee_label_matrix_values.shape[1])
-                
-                # Get advanced gating config
-                adv_cfg = config.get("advanced_gating", {})
-                if not isinstance(adv_cfg, dict):
-                    adv_cfg = {}
-                
-                advanced_gating_pipeline = AdvancedGatingPipeline(
-                    n_experts=n_experts_adv,
-                    enable_regime_barriers=bool(adv_cfg.get("enable_regime_barriers", True)),
-                    enable_meta_gate=bool(adv_cfg.get("enable_meta_gate", True)),
-                    enable_calibration=bool(adv_cfg.get("enable_calibration", True)),
-                    enable_abstention_aware=bool(adv_cfg.get("enable_abstention_aware", True)),
-                    enable_specialization=bool(adv_cfg.get("enable_specialization", True)),
-                    enable_diversity=bool(adv_cfg.get("enable_diversity", True)),
-                    meta_gate_mode=str(adv_cfg.get("meta_gate_mode", "weights")),
-                    calibration_method=str(adv_cfg.get("calibration_method", "isotonic")),
-                    coverage_min=float(adv_cfg.get("coverage_min", 0.3)),
-                    consensus_threshold=float(adv_cfg.get("consensus_threshold", 0.5)),
-                    specialization_strength=float(adv_cfg.get("specialization_strength", 0.5)),
-                    diversity_lambda=float(adv_cfg.get("diversity_lambda", 0.1)),
-                )
-                
-                # Compute regime labels for training
-                regime_labels_train = compute_regime_labels_for_events(
-                    market_data=market_data,
-                    event_idx=pd.DatetimeIndex(committee_event_idx),
-                )
-                
-                # Build base weights from best_committee_params
-                w_scalp_adv = float(best_committee_params.get("w_scalp", 1.0))
-                w_swing_adv = float(best_committee_params.get("w_swing", 1.0))
-                w_trend_adv = float(best_committee_params.get("w_trend", 1.0))
-                if n_experts_adv > 6:
-                    w_breakout_adv = float(best_committee_params.get("w_breakout", 0.5))
-                    w_vwap_adv = float(best_committee_params.get("w_vwap_rev", 0.5))
-                    w_vol_shock_adv = float(best_committee_params.get("w_vol_shock", 0.5))
-                    base_weights_adv = np.array([
-                        w_scalp_adv, w_scalp_adv, w_swing_adv, w_swing_adv, w_trend_adv, w_trend_adv,
-                        w_breakout_adv, w_vwap_adv, w_vol_shock_adv
-                    ], dtype=float)
-                else:
-                    base_weights_adv = np.array([
-                        w_scalp_adv, w_scalp_adv, w_swing_adv, w_swing_adv, w_trend_adv, w_trend_adv
-                    ], dtype=float)
-                base_weights_adv = base_weights_adv / (np.sum(base_weights_adv) + 1e-8)
-                
-                # Compute simple consensus scores for training
-                lbl_train = np.asarray(committee_label_matrix_values, dtype=float)
-                conf_train = np.asarray(committee_confidence_matrix_values, dtype=float)
-                fired_train = lbl_train != 0
-                sign_w = np.where(fired_train, np.sign(lbl_train), 0.0) * conf_train * base_weights_adv.reshape(1, -1)
-                denom_train = np.sum(fired_train.astype(float) * conf_train * base_weights_adv.reshape(1, -1), axis=1) + 1e-8
-                consensus_train = np.sum(sign_w, axis=1) / denom_train
-                
-                # Fit the pipeline
-                advanced_gating_pipeline.fit(
-                    market_data=market_data,
-                    event_idx=pd.DatetimeIndex(committee_event_idx),
-                    expert_returns=np.asarray(committee_returns_matrix_values, dtype=float),
-                    expert_labels=lbl_train,
-                    expert_confidences=conf_train,
-                    consensus_scores=consensus_train,
-                    regime_labels=regime_labels_train,
-                )
-                tprint_success(f"✅ Advanced Gating Pipeline fitted (n_experts={n_experts_adv})")
-        except Exception as adv_exc:
-            tprint_warning(f"⚠️ Advanced Gating Pipeline fitting failed: {adv_exc}")
-            advanced_gating_pipeline = None
 
         # ------------------------------------------------------------------
         # 1. LAYER 1: WEIGHTING OPTIMIZATION
@@ -11460,6 +10880,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 # using the optimized parameters
                 kalman_price_smooth, kalman_vol_smooth = compute_kalman_smoothed_price_and_volatility(
                     prices=market_data['close'],
+                    volume=market_data.get('volume', None),
+                    vwap=market_data.get('vwap', None),
                     process_noise=best_Q,
                     measurement_noise=best_R,
                     vol_window=20

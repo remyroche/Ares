@@ -50,7 +50,6 @@ from src.training.steps.labeling.generate_weights_per_label import (
     generate_weights_per_label,
     compute_horizon_consistency,
     compute_uniqueness,
-    run_layer1_optimization,
 )
 from src.training.steps.labeling.signal_spacing_utils import (
     apply_signal_spacing_filter,

@@ -36,6 +36,7 @@ def get_reproducible_random_state(base_seed: int = DEFAULT_RANDOM_SEED, offset: 
 
 def rts_smoother_1d(
     prices: np.ndarray,
+    volume: Optional[np.ndarray],
     Q: float,
     R: float,
     init_val: float = None,
@@ -43,6 +44,25 @@ def rts_smoother_1d(
 ) -> tuple:
     n = len(prices)
     obs = np.asarray(prices, dtype=np.float64)
+
+    # Adaptive R scaling based on volume
+    # High Volume -> Low Noise (Trust Price) -> Low R
+    # R_t = R_base * (MedianVol / Vol_t)
+    if volume is not None and len(volume) == n:
+        vol = np.asarray(volume, dtype=np.float64)
+        median_vol = np.nanmedian(vol)
+        if median_vol > 0:
+            # Avoid division by zero
+            vol_safe = np.where(vol < 1e-8, 1e-8, vol)
+            # Scaling factor: High vol -> Factor < 1 -> R decreases
+            scale_factor = median_vol / vol_safe
+            # Clip to prevent extreme scaling (e.g. 0.1x to 10x)
+            scale_factor = np.clip(scale_factor, 0.1, 10.0)
+            R_t = R * scale_factor
+        else:
+            R_t = np.full(n, R, dtype=np.float64)
+    else:
+        R_t = np.full(n, R, dtype=np.float64)
 
     m = np.zeros(n)
     P = np.zeros(n)
@@ -54,7 +74,10 @@ def rts_smoother_1d(
         m_minus = m[t - 1]
         P_minus = P[t - 1] + Q
 
-        K = P_minus / (P_minus + R)
+        # Use time-varying R
+        r_val = R_t[t]
+
+        K = P_minus / (P_minus + r_val)
         m[t] = m_minus + K * (obs[t] - m_minus)
         P[t] = (1 - K) * P_minus
 
@@ -147,6 +170,11 @@ def run_layer_0(
     load_stage_best_params: Callable[[str], Tuple[Dict[str, Any], Optional[Path]]],
 ) -> Layer0Output:
     close_series = market_data["close"]
+    volume_series = market_data.get("volume", None)
+
+    volume_values = None
+    if volume_series is not None:
+        volume_values = volume_series.values
 
     tprint_info("🧪 Stage 0: Optimizing Kalman Signal Parameters...")
     kalman_search_space = {
@@ -163,6 +191,7 @@ def run_layer_0(
         try:
             smoothed_close, _ = rts_smoother_1d(
                 prices=raw_close,
+                volume=volume_values,
                 Q=Q,
                 R=R,
                 init_val=None,
@@ -268,8 +297,11 @@ def run_layer_0(
                 committee_names.append(f"{p_name}_{v_name}")
 
         try:
+            # Pass volume_values here to align with RTS logic
             kalman_price_smooth, kalman_vol_smooth = compute_kalman_smoothed_price_and_volatility(
                 prices=market_data["close"],
+                volume=volume_series,  # Updated to pass volume
+                vwap=market_data.get("vwap", None), # Updated to pass VWAP
                 process_noise=float(best_Q),
                 measurement_noise=float(best_R),
                 vol_window=20,
@@ -383,6 +415,8 @@ def run_layer_0(
             )
         except Exception as committee_matrix_exc:
             tprint_warning(f"⚠️ Committee pre-step matrix build failed: {committee_matrix_exc}")
+            import traceback
+            traceback.print_exc()
             committee_event_idx = None
             committee_label_matrix_values = None
             committee_returns_matrix_values = None
@@ -512,4 +546,3 @@ def run_layer_0(
         committee_confidence_matrix_values=committee_confidence_matrix_values,
         advanced_gating_pipeline=advanced_gating_pipeline,
     )
-

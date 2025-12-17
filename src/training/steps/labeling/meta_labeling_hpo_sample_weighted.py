@@ -7068,7 +7068,7 @@ def calculate_hpo_utility(
     folds_sharpe: np.ndarray,  # Now actually Sortino ratios (name kept for backward compat)
     auc: float,
     trades_per_day: float,
-    lambda_vol: float = 0.4,  # CHANGED: Reduced from 0.8 to 0.4 for Sortino (higher variance)
+    lambda_vol: float = 1.2,
     w_auc: float = 0.5,  # Softer AUC gate
     w_den: float = 0.15,  # Much lower density power
     calibration_brier: Optional[float] = None,
@@ -7134,8 +7134,9 @@ def calculate_hpo_utility(
     if not (np.isfinite(avg_sortino) and np.isfinite(vol_sortino)):
         return float(clip_min_v)
 
-    # Base score: mean Sortino minus fold variance penalty (reduced lambda for Sortino)
+    # Base score: mean Sharpe/Sortino minus fold variance penalty
     base_score = avg_sortino - (lambda_vol * vol_sortino)
+    base_score = float(np.sign(base_score) * np.log1p(abs(float(base_score))))
     if not np.isfinite(base_score):
         base_score = 0.0
 
@@ -12233,25 +12234,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if int(pd.Series(l2_labels_bin.values).nunique()) < 2:
                     raise ValueError("Layer2 labels have <2 classes")
                 
-                # Use sign(log-returns) as training target to predict profitability directly
-                # Log-transform compresses outliers for better ML stability
-                # This addresses the model-return correlation problem
-                try:
-                    l2_returns_arr = l2_returns_clean.reindex(l2_t_events).values.astype(float)
-                    # Apply log-transform to compress outliers
-                    l2_log_returns_arr = log_returns_fees_adjusted(
-                        l2_returns_arr,
-                        already_net=True,  # returns already have fees subtracted
-                        winsorize_pct=0.01,
-                    )
-                    if bool(layer2_econ_win_enabled):
-                        # For econ_win_floor, convert to log-space threshold
-                        log_floor = float(np.sign(layer2_econ_win_floor) * np.log1p(abs(layer2_econ_win_floor)))
-                        y_train_target = pd.Series((l2_log_returns_arr > log_floor).astype(int), index=l2_t_events)
-                    else:
-                        y_train_target = pd.Series((l2_log_returns_arr > 0).astype(int), index=l2_t_events)
-                except Exception:
-                    y_train_target = l2_labels_bin
+                y_train_target = l2_labels_bin
                 
                 cv_preds_raw, cv_preds, folds_sharpe, mean_brier, mean_ece, mean_mce = _cross_val_predict_proba_and_fold_sharpes_weighted(
                     estimator=fast_model,
@@ -12842,19 +12825,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     cv_fail_reason = "single_class_labels"
                     raise ValueError("Layer2 labels have <2 classes")
                 
-                # Use sign(log-returns) as training target to predict profitability directly
-                # Log-transform compresses outliers for better ML stability
-                try:
-                    l2_returns_arr = l2_returns_clean.reindex(l2_t_events).values.astype(float)
-                    # Apply log-transform to compress outliers
-                    l2_log_returns_arr = log_returns_fees_adjusted(
-                        l2_returns_arr,
-                        already_net=True,
-                        winsorize_pct=0.01,
-                    )
-                    y_train_target = pd.Series((l2_log_returns_arr > 0).astype(int), index=l2_t_events)
-                except Exception:
-                    y_train_target = l2_labels_bin
+                y_train_target = l2_labels_bin
                 
                 cv_preds_raw, cv_preds, folds_sharpe, mean_brier, mean_ece, mean_mce = _cross_val_predict_proba_and_fold_sharpes_weighted(
                     estimator=fast_model,

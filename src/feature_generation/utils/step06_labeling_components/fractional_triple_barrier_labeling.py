@@ -13,7 +13,7 @@ Implements continuous labeling instead of binary classification for better
 gradient flow and more nuanced risk management.
 """
 
-from typing import Any
+from typing import Any, Dict, Optional
 
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 import numpy as np
@@ -67,7 +67,7 @@ class FractionalTripleBarrierLabeling:
         stop_loss_multiplier: float = 0.001,
         time_barrier_minutes: int = 30,
         max_lookahead: int = 100,
-        fractional_config: dict[str, Any] | None = None,
+        fractional_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Initialize fractional triple barrier labeling.
 
@@ -106,8 +106,8 @@ class FractionalTripleBarrierLabeling:
     def apply_fractional_triple_barrier_labeling(
         self,
         data: pd.DataFrame,
-        regime_labels: np.ndarray | None = None,
-        volatility_series: pd.Series | None = None,
+        regime_labels: Optional[np.ndarray] = None,
+        volatility_series: Optional[pd.Series] = None,
     ) -> pd.DataFrame:
         """Apply fractional triple barrier labeling.
 
@@ -156,9 +156,9 @@ class FractionalTripleBarrierLabeling:
     def _calculate_fractional_components(
         self,
         labeled_data: pd.DataFrame,
-        regime_labels: np.ndarray | None = None,
-        volatility_series: pd.Series | None = None,
-    ) -> dict[str, np.ndarray]:
+        regime_labels: Optional[np.ndarray] = None,
+        volatility_series: Optional[pd.Series] = None,
+    ) -> Dict[str, np.ndarray]:
         """Calculate individual fractional components."""
         n = len(labeled_data)
         components = {
@@ -234,7 +234,7 @@ class FractionalTripleBarrierLabeling:
     def _calculate_volatility_scores(
         self,
         labeled_data: pd.DataFrame,
-        volatility_series: pd.Series | None = None,
+        volatility_series: Optional[pd.Series] = None,
     ) -> np.ndarray:
         """Calculate volatility-normalized scores."""
         scores = np.zeros(len(labeled_data))
@@ -255,7 +255,7 @@ class FractionalTripleBarrierLabeling:
 
     def _combine_fractional_components(
         self,
-        components: dict[str, np.ndarray],
+        components: Dict[str, np.ndarray],
     ) -> np.ndarray:
         """Combine fractional components into final labels."""
         weights = {
@@ -279,7 +279,7 @@ class FractionalTripleBarrierLabeling:
     def _calculate_confidence_scores(
         self,
         labeled_data: pd.DataFrame,
-        components: dict[str, np.ndarray],
+        components: Dict[str, np.ndarray],
     ) -> np.ndarray:
         """Calculate confidence scores for fractional labels."""
         # Base confidence from barrier hit certainty
@@ -303,7 +303,7 @@ class FractionalTripleBarrierLabeling:
         max_conf = self.fractional_config["max_confidence_threshold"]
         return np.clip(final_confidence, min_conf, max_conf)
 
-    def get_fractional_label_statistics(self, labeled_data: pd.DataFrame) -> dict[str, Any]:
+    def get_fractional_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
         """Get statistics about fractional labels."""
         return {
             "total_samples": len(labeled_data),

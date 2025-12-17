@@ -11469,7 +11469,7 @@ class LabelBasedPipelineStep(BaseStep):
                 }
             else:
                 try:
-                    from src.training.steps.labeling.generate_weights_per_label import run_layer1_optimization
+                    from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
                     best_weighting_params = run_layer1_optimization(
                         symbol=symbol,
                         timeframe=timeframe,

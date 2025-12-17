@@ -79,8 +79,8 @@ from src.training.steps.labeling.generate_weights_per_label import (
     compute_label_agreement_consistency,
     compute_return_sign_consistency,
     compute_uniqueness,
-    run_layer1_optimization,
 )
+from src.training.steps.labeling.label_based_layer_1 import execute_layer1_step
 from src.training.steps.labeling.confident_learning import (
     filter_noisy_labels,
     compute_label_quality_scores,
@@ -11317,81 +11317,26 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             best_weighting_params = dict(loaded_params or {})
             layer1_loaded_from = str(loaded_path) if loaded_path is not None else None
             tprint_info(
-                f"♻️ Layer 1 skipped (start_at={start_at_canonical}); loaded best params from {layer1_loaded_from}"
-            )
-        else:
-            if len(baseline_t_events) < 50:
-                tprint_warning(f"⚠️ Too few baseline events ({len(baseline_t_events)}) for Layer 1. Using defaults.")
-                best_weighting_params = {
-                    'mag_compression': 0.8, 'learn_slope': 10.0, 'learn_center': 0.4,
-                    'uniq_intensity': 2.0, 'exp_mag': 1.5, 'exp_learn': 1.0,
-                    'exp_uniq': 1.5, 'exp_cross': 1.0, 'downside_multiplier': 1.0
-                }
-            else:
-                try:
-                    from src.training.steps.labeling.generate_weights_per_label import run_layer1_optimization
-                    best_weighting_params = run_layer1_optimization(
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        market_data=market_data,
-                        labels=baseline_returns_clean,
-                        committee_agreement_scores=committee_agreement_scores_l1,
-                        committee_mag_factors=committee_mag_factors_l1,
-                        n_trials=int(config.get("layer1_n_trials", 60)),
-                        objective_mode=str(config.get("layer1_objective_mode", "proxy")),
-                    )
-                except Exception as e:
-                    tprint_warning(f"⚠️ Layer 1 optimization failed: {e}. Using defaults.")
-                    best_weighting_params = {
-                        'mag_compression': 0.8, 'learn_slope': 10.0, 'learn_center': 0.4,
-                        'uniq_intensity': 2.0, 'exp_mag': 1.5, 'exp_learn': 1.0,
-                        'exp_uniq': 1.5, 'exp_cross': 1.0, 'downside_multiplier': 1.0
-                    }
+        # Use new extracted function for Layer 1 Execution
+        loaded_params, loaded_path = None, None
+        if stage_rank["layer1"] < start_rank:
+            loaded_params, loaded_path = _load_stage_best_params("layer1")
 
-        tprint_success(f"✅ Layer 1 Complete. Best Weighting Params: {best_weighting_params}")
-
-        # Persist Layer 1 params immediately
-        l1_path: Optional[Path] = None
-        try:
-            ts = config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            l1_path = Path("outcomes") / f"hpo_layer1_best_params_{symbol}_{timeframe}_{ts}.json"
-            l1_payload = {
-                "best_params": best_weighting_params,
-                "timestamp": ts,
+        best_weighting_params = execute_layer1_step(
+            symbol=symbol,
+            timeframe=timeframe,
+            market_data=market_data,
+            baseline_t_events=baseline_t_events,
+            baseline_returns_clean=baseline_returns_clean,
+            committee_agreement_scores_l1=committee_agreement_scores_l1,
+            committee_mag_factors_l1=committee_mag_factors_l1,
+            config=config,
+            start_rank=start_rank,
+            layer1_rank=stage_rank["layer1"],
+            loaded_params=loaded_params,
+            loaded_path=loaded_path
+        )
             }
-            l1_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(l1_path, "w") as f:
-                json.dump(l1_payload, f, indent=2, default=str)
-            tprint_info(f"   💾 Saved Layer 1 best params to {l1_path}")
-        except Exception as l1_exc:
-            tprint_warning(f"   ⚠️ Failed to save Layer 1 params: {l1_exc}")
-
-        try:
-            l1_trials_csv = _find_latest_path(
-                outcomes_dir=outcomes_dir,
-                pattern=f"hpo_layer1_trials_{symbol}_{timeframe}_*.csv",
-            )
-            l1_report = _write_hpo_stage_report(
-                outcomes_dir=outcomes_dir,
-                run_timestamp=str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")),
-                stage_id="layer1_weighting",
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                best_params=dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {},
-                metrics={
-                    "best_params_path": str(l1_path) if l1_path is not None else None,
-                },
-                search_space=None,
-                trials_csv_path=l1_trials_csv,
-                history_json_path=None,
-            )
-            hpo_stage_reports["layer1"] = l1_report
-        except Exception as l1_report_exc:
-            tprint_warning(f"   ⚠️ Failed to write Layer 1 report: {l1_report_exc}")
-
-        # Layer 2 is forced to Option C (standard / non-leaky) only.
         layer2_use_option_c = True
         layer2_mode = "standard"
         tprint_info("🔧 Layer 2: Option C only (standard / non-leaky)")

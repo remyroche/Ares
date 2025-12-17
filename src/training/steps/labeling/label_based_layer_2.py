@@ -93,7 +93,7 @@ class LabelBasedLayer2:
                 'trend_regime', 'vol_regime', etc.
 
         Returns:
-            Dict containing OOF predictions, weights, and diagnostics.
+            Dict containing OOF predictions, weights, diagnostics, and events_df.
         """
         logger.info("Starting Layer 2 Optimization...")
 
@@ -106,7 +106,6 @@ class LabelBasedLayer2:
             return {}
 
         # Step 3: Run optimization per family
-        # This includes Steps 1, 2, 4 (inside the loop)
         results = self._optimize_families(df, events_df)
 
         if not results:
@@ -122,6 +121,10 @@ class LabelBasedLayer2:
 
         # Step 3.4: Generate Output
         output = self._bagged_labeling(df, events_df, self.selected_geometries)
+
+        # Add events_df to output for Layer 3 context
+        output["events_df"] = events_df
+
         logger.info("Layer 2 Complete.")
         return output
 
@@ -610,63 +613,141 @@ class LabelBasedLayer2:
         events_df: pd.DataFrame,
         geometries: List[GeometryTrial]
     ) -> Dict[str, Any]:
-        """Step 3.4: Generate final bagged outputs."""
+        """
+        Step 3.4: Generate final bagged outputs with advanced weighting checks.
 
-        composite_labels = pd.Series(index=events_df.index, dtype=float)
-        composite_weights = pd.Series(index=events_df.index, dtype=float)
+        Outputs:
+        - Weighted Consensus Labels
+        - Weighted Consensus Returns
+        - Event Weights (capped and normalized)
+        """
 
+        # Ensure family assignment is up to date
         events_df['family'] = events_df.apply(
             lambda x: self._get_barrier_family(x['trend_regime'], x['vol_regime']),
             axis=1
         )
 
-        # Family-level caps Check
-        family_counts = events_df['family'].value_counts(normalize=True)
-        for fam, prop in family_counts.items():
-            if prop > 0.6:
-                logger.warning(f"Family {fam} dominates with {prop:.1%} of label mass. Monoculture risk.")
-
+        # Organize geometries by family
         geo_by_fam = {}
         for g in geometries:
             geo_by_fam.setdefault(g.family, []).append(g)
 
-        oof_preds = {}
+        # Storage for aggregation
+        composite_labels = pd.Series(index=events_df.index, dtype=float)
+        composite_returns = pd.Series(index=events_df.index, dtype=float)
+        composite_weights = pd.Series(index=events_df.index, dtype=float)
+        oof_preds = {} # Store individual geometry predictions
 
+        # Iterate by family (since events are disjoint by family)
         for family, fam_geos in geo_by_fam.items():
             fam_mask = events_df['family'] == family
             fam_events = events_df[fam_mask]
 
             if fam_events.empty: continue
 
-            weighted_sum = np.zeros(len(fam_events))
-            total_weight = 0.0
+            # Temporary storage for this family's calculations
+            # Dimensions: (n_events, n_geometries)
+            n_events = len(fam_events)
+            n_geos = len(fam_geos)
 
-            # Normalize weights within family
-            # Sum of scores for this family
-            fam_total_score = sum(g.final_score for g in fam_geos)
+            geo_labels_mat = np.zeros((n_events, n_geos))
+            geo_returns_mat = np.zeros((n_events, n_geos))
+            geo_scores_mat = np.zeros((n_events, n_geos))
+            valid_mask_mat = np.zeros((n_events, n_geos), dtype=bool)
 
-            for g in fam_geos:
-                lbls, _ = self._compute_labels(df, fam_events, family=family, **g.params)
+            for i, g in enumerate(fam_geos):
+                # Compute labels/returns for this geometry
+                lbls, rets = self._compute_labels(df, fam_events, family=family, **g.params)
 
-                # Normalized weight
-                w = g.final_score / (fam_total_score + 1e-12)
-
-                vals = lbls.fillna(0.5).values
-
-                weighted_sum += vals * w
-                total_weight += w
-
+                # Store individual geometry output
                 oof_preds[g.uuid] = lbls
 
-            if total_weight > 0:
-                agg = weighted_sum / total_weight
-                composite_labels.loc[fam_events.index] = agg
-                composite_weights.loc[fam_events.index] = total_weight
-            else:
-                composite_labels.loc[fam_events.index] = 0.5
+                # Align to fam_events index
+                lbls_aligned = lbls.reindex(fam_events.index)
+                rets_aligned = rets.reindex(fam_events.index)
+
+                # Identify valid labels (not NaN)
+                not_na = lbls_aligned.notna()
+
+                # Fill matrices
+                geo_labels_mat[not_na, i] = lbls_aligned[not_na]
+                geo_returns_mat[not_na, i] = rets_aligned[not_na]
+                geo_scores_mat[not_na, i] = g.final_score
+                valid_mask_mat[not_na, i] = True
+
+            # --- Per-Geometry Capping Logic ---
+            # Raw total score per event
+            # Sum of scores of VALID geometries for each event
+            event_total_score = np.sum(geo_scores_mat * valid_mask_mat, axis=1)
+
+            # Max contribution per geometry: 30% of event total
+            max_contrib = 0.3 * event_total_score
+
+            # Broadcast max_contrib to match geometry dimension
+            max_contrib_mat = max_contrib[:, np.newaxis]
+
+            # Cap the weights: min(score, max_contrib)
+            # Only apply to valid geometries (invalid have score 0 anyway in calculation,
+            # but let's be explicit: capped_weight should be 0 if invalid)
+            capped_weights_mat = np.minimum(geo_scores_mat, max_contrib_mat)
+            capped_weights_mat[~valid_mask_mat] = 0.0
+
+            # Final Event Weight (sum of capped weights)
+            final_event_weights = np.sum(capped_weights_mat, axis=1)
+
+            # Avoid division by zero
+            safe_weights = final_event_weights.copy()
+            safe_weights[safe_weights == 0] = 1.0 # arbitrary, will be 0 in result anyway
+
+            # Weighted Consensus Calculation
+            # Weighted Average Label
+            w_labels_sum = np.sum(geo_labels_mat * capped_weights_mat, axis=1)
+            consensus_labels = w_labels_sum / safe_weights
+
+            # Weighted Average Return
+            w_returns_sum = np.sum(geo_returns_mat * capped_weights_mat, axis=1)
+            consensus_returns = w_returns_sum / safe_weights
+
+            # Handle events with no valid geometries
+            no_valid_geo = final_event_weights == 0
+            consensus_labels[no_valid_geo] = np.nan
+            consensus_returns[no_valid_geo] = np.nan
+
+            # Assign to main storage
+            composite_labels.loc[fam_events.index] = consensus_labels
+            composite_returns.loc[fam_events.index] = consensus_returns
+            composite_weights.loc[fam_events.index] = final_event_weights
+
+        # --- Global Family Normalization (Max 60% of total mass) ---
+        # "weights[event.family == fam] = np.minimum(weights[event.family == fam], family_cap)"
+
+        # Fill NaNs in weights with 0
+        composite_weights = composite_weights.fillna(0.0)
+
+        total_weight_global = composite_weights.sum()
+
+        if total_weight_global > 0:
+            for family in geo_by_fam.keys():
+                fam_mask = events_df['family'] == family
+                fam_total_weight = composite_weights[fam_mask].sum()
+
+                # Cap at 60% of GLOBAL total
+                family_cap = 0.6 * total_weight_global
+
+                if fam_total_weight > family_cap:
+                    scale_factor = family_cap / fam_total_weight
+                    logger.info(f"Scaling down family {family} by {scale_factor:.4f} (Total: {fam_total_weight:.2f} > Cap: {family_cap:.2f})")
+                    composite_weights.loc[fam_mask] *= scale_factor
+
+        # Normalize final weights to mean=1.0 for stability
+        mean_weight = composite_weights.mean()
+        if mean_weight > 0:
+            composite_weights /= mean_weight
 
         return {
             "oof_labels": composite_labels,
+            "oof_returns": composite_returns,
             "weights": composite_weights,
             "individual_geometries": oof_preds,
             "selected_trials": [asdict(t) for t in geometries]

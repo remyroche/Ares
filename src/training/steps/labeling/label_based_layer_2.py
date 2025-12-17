@@ -227,7 +227,7 @@ class LabelBasedLayer2:
         (
             realized_returns,
             binary_labels,
-            _, _, _, _, _, _
+            _, event_durations, _, _, _, _
         ) = compute_realized_returns(
             df=df,
             signals=signals,
@@ -240,8 +240,16 @@ class LabelBasedLayer2:
         )
 
         # Filter to our specific events
+        # Note: compute_realized_returns might return labels for all signals
         subset_labels = binary_labels.reindex(events_df.index)
         subset_returns = realized_returns.reindex(events_df.index)
+        subset_durations = event_durations.reindex(events_df.index)
+
+        # Filter events shorter than 1 bar (noise reduction) - requested in review
+        # Note: durations < 1 are theoretically impossible if horizon >= 1, but check anyway
+        valid_duration = subset_durations >= 1.0
+        subset_labels.loc[~valid_duration] = np.nan
+        subset_returns.loc[~valid_duration] = np.nan
 
         return subset_labels, subset_returns
 
@@ -348,10 +356,7 @@ class LabelBasedLayer2:
             'log_loss': np.mean([avg_ll_lgbm, avg_ll_linear]),
             'auc_lgbm': avg_auc_lgbm,
             'auc_linear': avg_auc_linear,
-            'passed': (avg_auc_lgbm >= 0.52) or (avg_auc_linear >= 0.52) # "If AUC < 0.52 on either probe -> geometry rejected" - Interpreted as both must fail to reject? Or one fails = reject? User said "on either probe -> geometry rejected". Wait, "If AUC < 0.52 on either probe" usually means if *any* is < 0.52, reject. So both must be >= 0.52.
-            # Correction: "If AUC < 0.52 on either probe -> geometry rejected" implies:
-            # Reject if (auc_lgbm < 0.52) OR (auc_linear < 0.52).
-            # So Pass if (auc_lgbm >= 0.52) AND (auc_linear >= 0.52).
+            'passed': (avg_auc_lgbm >= 0.52) and (avg_auc_linear >= 0.52)
         }
 
     def _check_stability(
@@ -365,13 +370,21 @@ class LabelBasedLayer2:
         """
         A. Stability under perturbation
         Perturb TP/SL/H by ±10-20% and require graceful degradation.
+        Checks:
+        1. Returns don't flip sign
+        2. Mean return doesn't drop by > 30%
+        3. Variance doesn't explode (optional, checked via Sharpe proxy)
         """
         perturbations = [0.9, 1.1]
-        scores = []
 
-        # We don't rerun probes fully (too expensive), just check return stability or raw Sharpe?
-        # User said "require graceful degradation, not collapse".
-        # Usually implies re-running the labeling and basic metric check.
+        base_labels, base_returns = self._compute_labels(df, events_df, family=family, **trial_params)
+        base_mean_ret = base_returns.mean()
+
+        if np.isnan(base_mean_ret): return False
+
+        # If base return is negative, it's already bad, but maybe stable.
+        # But we only select good geometries.
+        if base_mean_ret < 0: return False
 
         for p in perturbations:
             perturbed_params = copy.deepcopy(trial_params)
@@ -382,16 +395,19 @@ class LabelBasedLayer2:
 
             labels, returns = self._compute_labels(df, events_df, family=family, **perturbed_params)
 
-            # Simple stability metric: Mean Return
             mean_ret = returns.mean()
-            if np.isnan(mean_ret): mean_ret = -1.0
+            if np.isnan(mean_ret): return False
 
-            # If returns flip sign or drop > 50%, unstable
-            # Comparing raw return to base return (which we don't have easily accessible here unless passed)
-            # We'll just check if it stays positive if base was positive?
-            # Or just return True for now if not catastrophic.
+            # Check 1: Sign flip
+            if mean_ret < 0:
+                logger.debug(f"Stability failed: Returns flipped sign (base={base_mean_ret:.5f}, pert={mean_ret:.5f})")
+                return False
 
-            if mean_ret < -0.001: # Significant loss
+            # Check 2: Relative drop threshold (max 30% reduction)
+            # If mean_ret is significantly lower than base_mean_ret
+            # Allow some noise, but drop > 30% is suspicious
+            if mean_ret < base_mean_ret * 0.7:
+                logger.debug(f"Stability failed: Returns dropped > 30% (base={base_mean_ret:.5f}, pert={mean_ret:.5f})")
                 return False
 
         return True
@@ -413,9 +429,15 @@ class LabelBasedLayer2:
 
         unique_families = events_df['family'].unique()
 
+        # Enhanced Probe Features
         probe_features = pd.DataFrame(index=df.index)
         probe_features['vol_1d'] = df['volatility_1d']
         probe_features['ret_1'] = df['close'].pct_change().fillna(0)
+        # Add lagged returns and momentum as requested
+        probe_features['ret_5'] = df['close'].pct_change(5).fillna(0)
+        probe_features['ret_20'] = df['close'].pct_change(20).fillna(0)
+        # Rolling volatility
+        probe_features['vol_5'] = probe_features['ret_1'].rolling(5).std().fillna(0)
 
         for family in unique_families:
             logger.info(f"Optimizing family: {family}")
@@ -455,22 +477,11 @@ class LabelBasedLayer2:
                 count = labels.notna().sum()
                 if count < 20: return -1.0
 
-                # Label Turnover / Duration check
-                # We don't have duration explicitly returned by _compute_labels wrapper,
-                # but we can infer or compute it if needed.
-                # Or just assume 'horizon' roughly correlates.
-                # "Reject geometries that create excessive turnover" -> check count relative to time?
-                # Or if duration is too short.
-                # Since we use First Touch, actual duration < horizon.
-                # If too many trades end instantly, it's noise.
-                # We'll rely on profit floor in compute_realized_returns to handle noise.
-
+                # Align features to events
                 X_probe = probe_features.loc[labels.index]
                 probe_res = self._train_probes(X_probe, labels)
 
-                # Strict Gate
-                # "If AUC < 0.52 on either probe -> geometry rejected"
-                if (probe_res['auc_lgbm'] < 0.52) or (probe_res['auc_linear'] < 0.52):
+                if not probe_res['passed']:
                     learnability = 0.0
                 else:
                     learnability = probe_res['auc']
@@ -491,7 +502,7 @@ class LabelBasedLayer2:
                     stability=np.log1p(count),
                     balance=balance,
                     raw_metrics=probe_res,
-                    uuid=str(trial.number)
+                    uuid=f"{family}_{trial.number}"
                 )
                 trial_results.append(t_obj)
 
@@ -534,7 +545,6 @@ class LabelBasedLayer2:
             fam_selected = []
 
             # Helper to normalize params for distance calculation
-            # We need bounds to normalize
             tp_vals = [t.params['tp_mult'] for t in top_tier]
             sl_vals = [t.params['sl_mult'] for t in top_tier]
             h_vals = [t.params['horizon'] for t in top_tier]
@@ -560,21 +570,16 @@ class LabelBasedLayer2:
             if not fam_selected: continue
 
             # Pick others maximizing normalized distance
-            for _ in range(3):
-                if len(top_tier) <= len(fam_selected): break
+            # Try to get at least 2 geometries per family if possible (Requirement 3.3)
+            # Loop until we have 4 or run out of candidates
 
+            candidate_pool = [t for t in top_tier if t not in fam_selected]
+
+            while len(fam_selected) < 4 and candidate_pool:
                 best_cand = None
                 max_dist = -1.0
 
-                for cand in top_tier:
-                    if cand in fam_selected: continue
-
-                    # Stability check (lazy evaluation)
-                    # We check stability only if it's a good diversity candidate?
-                    # No, we should check it before accepting.
-                    # But checking all is expensive.
-                    # We'll check stability only when about to pick.
-
+                for cand in candidate_pool:
                     dists = [np.linalg.norm(get_norm_vec(cand) - get_norm_vec(s)) for s in fam_selected]
                     min_d = min(dists)
 
@@ -583,18 +588,18 @@ class LabelBasedLayer2:
                         best_cand = cand
 
                 if best_cand:
-                    # Verify stability before adding
+                    # Stability check
                     fam_events = events_df[events_df['family'] == fam]
                     if self._check_stability(df, fam_events, best_cand.params, best_cand.final_score, fam):
                         fam_selected.append(best_cand)
-                    else:
-                        # Mark as invalid/visited by adding to a temporary ignore list?
-                        # For simplicity, we just skip it this round.
-                        # In a real implementation we'd remove from top_tier.
-                        top_tier.remove(best_cand)
-                        # Retry this iteration
-                        continue
 
+                    candidate_pool.remove(best_cand)
+                else:
+                    break
+
+            # Require at least 2 geometries? Or just prefer?
+            # "Select 2-4 complementary geometries per family"
+            # If we only found 1 stable one, we keep it.
             selected.extend(fam_selected)
 
         return selected
@@ -616,13 +621,10 @@ class LabelBasedLayer2:
         )
 
         # Family-level caps Check
-        # "no family > X% of total label mass"
-        # We check the proportion of events covered by each family
         family_counts = events_df['family'].value_counts(normalize=True)
         for fam, prop in family_counts.items():
-            if prop > 0.6: # Example threshold
+            if prop > 0.6:
                 logger.warning(f"Family {fam} dominates with {prop:.1%} of label mass. Monoculture risk.")
-                # We could downsample or cap weights here.
 
         geo_by_fam = {}
         for g in geometries:
@@ -639,16 +641,22 @@ class LabelBasedLayer2:
             weighted_sum = np.zeros(len(fam_events))
             total_weight = 0.0
 
+            # Normalize weights within family
+            # Sum of scores for this family
+            fam_total_score = sum(g.final_score for g in fam_geos)
+
             for g in fam_geos:
                 lbls, _ = self._compute_labels(df, fam_events, family=family, **g.params)
-                w = g.final_score
+
+                # Normalized weight
+                w = g.final_score / (fam_total_score + 1e-12)
 
                 vals = lbls.fillna(0.5).values
 
                 weighted_sum += vals * w
                 total_weight += w
 
-                oof_preds[f"{family}_{g.uuid}"] = lbls
+                oof_preds[g.uuid] = lbls
 
             if total_weight > 0:
                 agg = weighted_sum / total_weight

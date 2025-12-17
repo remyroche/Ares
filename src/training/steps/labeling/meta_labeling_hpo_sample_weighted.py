@@ -145,13 +145,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             json.dump(selected_trials, f, indent=2, default=str)
             
         # ---------------------------------------------------------
-        # Weight Calculation for Layer 3 (Based on OOF)
+        # Component Weights Preparation for Layer 3 Comparison
         # ---------------------------------------------------------
-        # Formula: W_t = W_L2 * log(1 + |R_composite|) * W_L1
         
         # Try load weights from config or previous step if passed
         target_sample_weight = config.get('target_sample_weight')
 
+        # Layer 1 Weights
         if target_sample_weight is not None:
              if len(target_sample_weight) == len(market_data):
                  w_l1_series = pd.Series(target_sample_weight, index=market_data.index)
@@ -162,14 +162,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         else:
              w_l1_aligned = pd.Series(1.0, index=events_df.index)
         
-        magnitude_factor = np.log1p(l2_returns.abs().fillna(0))
+        # Layer 2 Weights (Composite from Geometry Bagging)
+        w_l2_aligned = l2_weights # Already aligned to events_df
         
-        w_final_series = l2_weights * magnitude_factor * w_l1_aligned
-        
-        if w_final_series.mean() > 0:
-            w_final_series /= w_final_series.mean()
-        
-        w_final = w_final_series.values
+        # Net Returns (for Magnitude)
+        l2_returns_aligned = l2_returns # Already aligned to events_df
         
         # ---------------------------------------------------------
         # Data Assembly for Layer 3
@@ -199,17 +196,28 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ---------------------------------------------------------
         # LAYER 3: Calibration & Meta-Model (OOF & Final)
         # ---------------------------------------------------------
-        tprint_info(">>> Executing Layer 3: OOF Calibration & Production Model Training...")
+        tprint_info(">>> Executing Layer 3: Weighting Scheme Comparison & Training...")
         
-        # This now returns OOF predictions for entire dataset and the Final Model
+        # Passes components to allow Layer 3 to compare 7 weighting schemes
         oof_export, final_model = layer3_analyst_lgbm(
             oof_df=l3_input_df,
             base_model_cols=geo_cols,
             target_col=target_col,
             train_split_date=None,
-            sample_weight=w_final
+            layer1_weight=w_l1_aligned.values,
+            layer2_weight=w_l2_aligned.values,
+            net_returns=l2_returns_aligned.values
         )
         
+        # Calculate final composite weight for artifact saving (using Scheme 7 logic as default/reference)
+        # Note: The actual model training inside layer3 uses the BEST scheme found.
+        # But for 'weights_stats.csv', we save the reference composite one.
+        magnitude_factor = np.log1p(l2_returns.abs().fillna(0))
+        w_final_series = w_l2_aligned * magnitude_factor * w_l1_aligned
+        if w_final_series.mean() > 0:
+            w_final_series /= w_final_series.mean()
+        w_final = w_final_series.values
+
         # Generate Diagnostics (on OOF predictions)
         tprint_info(">>> Generating Layer 3 Diagnostics...")
         plot_diagnostics(

@@ -122,6 +122,37 @@ def run_layer0_kalman_vwap(
 
     if run_optimization or not best_params:
         def _objective(params: Dict[str, Any]) -> float:
+            # -------------------------------------------------------------------------
+            # VWAP & Volume Ratio Logic Explanation:
+            #
+            # The optimization here seeks to find Kalman Filter parameters (Q, R) and
+            # a 'VWAP Anchor' configuration that best balances signal smoothness with
+            # fidelity to true market price.
+            #
+            # VWAP Role:
+            # VWAP acts as a 'gravity center' for the smoothed price. Especially during
+            # periods of low liquidity (low volume), the raw Close price may be noisy
+            # or easily manipulated. VWAP serves as a more robust proxy for 'fair value'
+            # in these regimes.
+            #
+            # Volume Ratio (vol_rel):
+            # We calculate a Volume Ratio: vol_rel = Volume / RollingMeanVolume
+            # This ratio dynamically modulates the penalties in the loss function:
+            #
+            # 1. High Volume (vol_rel > 1):
+            #    - w_track (weight on Price error) increases.
+            #    - We trust the raw Price more because high volume implies better price discovery.
+            #    - The smoothed curve is pulled closer to the raw Price.
+            #
+            # 2. Low Volume (vol_rel < 1):
+            #    - w_vwap (weight on VWAP error) increases (inverse to vol_rel).
+            #    - We trust the VWAP more because low volume implies noise/drift.
+            #    - The smoothed curve is pulled closer to the VWAP.
+            #
+            # This "Volume Weighted Observation Noise" effectively uses the Volume Ratio
+            # to smooth the curve by anchoring it to VWAP when volume is low, and releasing
+            # it to track price when volume is high.
+            # -------------------------------------------------------------------------
             Q = float(params.get("kalman_Q", 1e-4))
             R = float(params.get("kalman_R", 0.01))
             vwap_lookback = int(params.get("vwap_lookback", 20))
@@ -185,7 +216,7 @@ def run_layer0_kalman_vwap(
 
         optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(
-                n_trials=int(config.get("layer0_n_trials", config.get("stage0_n_trials", 50))),
+                n_trials=int(config.get("layer0_n_trials", config.get("stage0_n_trials", 20))),
                 execution_mode=str(config.get("execution_mode", "light")),
                 direction="maximize",
                 seed=int(config.get("random_state", 42)),

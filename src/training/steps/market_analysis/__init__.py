@@ -19,7 +19,6 @@ from .components.sr_parameter_optimization import SRParameterOptimizationStep
 
 # Import regime steps (BaseStep versions)
 from .regime_clustering_step import RegimeClusteringStep
-from .regime_models_training_step import RegimeModelsTrainingStep
 from .regime_ensemble_training_step import RegimeEnsembleTrainingStep
 
 # Import regime feature selector (EnhancedRegimeFeatureSelector with unsupervised mode)
@@ -125,7 +124,6 @@ from src.training.steps.labeling import MetaLabelingHPOExperimentStep
 # Register market analysis steps
 step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
 step_registry.register("regime_clustering", RegimeClusteringStep)
-step_registry.register("regime_models_training", RegimeModelsTrainingStep)
 step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)
 step_registry.register("sr_clustering", SRClusteringComponent)
 step_registry.register("sr_detection", SRDetectionComponent)

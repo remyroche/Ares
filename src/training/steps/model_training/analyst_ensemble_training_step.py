@@ -15,6 +15,25 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import (
+    roc_auc_score,
+    log_loss,
+    brier_score_loss,
+    average_precision_score,
+)
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import RidgeClassifier
+from sklearn.ensemble import ExtraTreesClassifier
+
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except Exception:
+    lgb = None
+    LIGHTGBM_AVAILABLE = False
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -492,6 +511,21 @@ class AnalystEnsembleTrainingStep(BaseStep):
             disagreement_features = self._generate_disagreement_features(base_predictions)
             tprint(f"✅ Generated disagreement features: {disagreement_features.shape}", "SUCCESS")
 
+            try:
+                meta_result = self._train_meta_models_from_oof(
+                    base_predictions=base_predictions,
+                    disagreement_features=disagreement_features,
+                    config=config,
+                )
+            except Exception as meta_exc:
+                meta_result = {
+                    'success': False,
+                    'error': str(meta_exc),
+                    'artifacts': {},
+                    'metrics': {},
+                }
+                tprint(f"⚠️ Meta-model training failed: {meta_exc}", "WARNING")
+
             # Log disagreement feature generation with comprehensive preview
             from src.utils.tprint import tprint_data_preview
             tprint("=" * 80, "INFO")
@@ -632,8 +666,8 @@ class AnalystEnsembleTrainingStep(BaseStep):
 
             return {
                 'success': True,
-                'artifacts': result.get('artifacts', {}),
-                'metrics': result.get('metrics', {}),
+                'artifacts': {**(result.get('artifacts', {}) or {}), **(meta_result.get('artifacts', {}) or {})},
+                'metrics': {**(result.get('metrics', {}) or {}), **(meta_result.get('metrics', {}) or {})},
                 'model_path': model_path,
                 'metrics_files': metric_paths
             }
@@ -785,6 +819,293 @@ class AnalystEnsembleTrainingStep(BaseStep):
         except Exception as e:
             tprint(f"⚠️ Failed to generate category meta-features: {e}", "WARNING")
             return pd.DataFrame(index=base_predictions.index)
+
+    def _train_meta_models_from_oof(
+        self,
+        base_predictions: pd.DataFrame,
+        disagreement_features: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        symbol = str(config.get('symbol', 'ETHUSDT'))
+        exchange = str(config.get('exchange', 'binance'))
+        timeframe = str(config.get('timeframe', '15m'))
+        direction = str(config.get('direction', 'long'))
+
+        labeled_df = None
+        for artifact_name_candidate in [
+            f"labeled_data_{symbol}_{timeframe}",
+            'labeled_data',
+        ]:
+            try:
+                ld = self._get_artifact(artifact_name_candidate, artifact_type='data')
+                if isinstance(ld, pd.DataFrame) and not ld.empty:
+                    labeled_df = ld
+                    break
+            except Exception:
+                continue
+
+        if labeled_df is None or not isinstance(labeled_df, pd.DataFrame) or labeled_df.empty:
+            raise ValueError("Could not load labeled_data for meta-model training")
+
+        if direction == 'long':
+            target_col = 'binary_label_long' if 'binary_label_long' in labeled_df.columns else 'binary_label'
+        elif direction == 'short':
+            target_col = 'binary_label_short' if 'binary_label_short' in labeled_df.columns else 'binary_label'
+        else:
+            target_col = 'binary_label'
+
+        if target_col not in labeled_df.columns:
+            raise ValueError(f"labeled_data missing required target column '{target_col}'")
+
+        y_raw = labeled_df[target_col]
+        y_aligned = y_raw.reindex(base_predictions.index)
+        if y_aligned is None:
+            raise ValueError("Failed to align meta targets to base prediction index")
+
+        y_arr = pd.to_numeric(y_aligned, errors='coerce')
+        y_bin = (y_arr == 1).astype(float)
+        y_bin = y_bin.where(y_arr.notna())
+
+        X_base = base_predictions.select_dtypes(include=[np.number]).copy()
+        if X_base.empty:
+            raise ValueError("Base predictions contain no numeric columns for meta-model features")
+        X_base = X_base.replace([np.inf, -np.inf], np.nan)
+
+        X_dis = disagreement_features.select_dtypes(include=[np.number]).copy()
+        X_dis = X_dis.replace([np.inf, -np.inf], np.nan)
+
+        X = pd.concat([X_base, X_dis], axis=1)
+        X = X.loc[~X.index.duplicated(keep='first')]
+        y_bin = y_bin.reindex(X.index)
+
+        valid_mask = y_bin.notna()
+        if int(valid_mask.sum()) < 500:
+            raise ValueError(f"Insufficient labeled samples for meta-model training: n={int(valid_mask.sum())}")
+
+        Xv = X.loc[valid_mask].fillna(0.0)
+        yv = y_bin.loc[valid_mask].astype(int)
+
+        base_prob_cols = [
+            c for c in X_base.columns
+            if ('probability' in str(c).lower()) or ('abc_spec_' in str(c).lower()) or str(c).lower().endswith('_prob')
+        ]
+        if not base_prob_cols:
+            base_prob_cols = list(X_base.columns)
+
+        n_splits = int(config.get('meta_cv_splits', 5))
+        n_splits = max(2, min(10, n_splits))
+        tscv = TimeSeriesSplit(n_splits=n_splits)
+
+        def _safe_auc(y_true, y_score):
+            try:
+                if len(np.unique(y_true)) < 2:
+                    return float('nan')
+                return float(roc_auc_score(y_true, y_score))
+            except Exception:
+                return float('nan')
+
+        def _safe_pr_auc(y_true, y_score):
+            try:
+                if len(np.unique(y_true)) < 2:
+                    return float('nan')
+                return float(average_precision_score(y_true, y_score))
+            except Exception:
+                return float('nan')
+
+        def _safe_logloss(y_true, y_score):
+            try:
+                y_score = np.clip(np.asarray(y_score, dtype=float), 1e-6, 1 - 1e-6)
+                return float(log_loss(y_true, y_score))
+            except Exception:
+                return float('nan')
+
+        def _safe_brier(y_true, y_score):
+            try:
+                y_score = np.clip(np.asarray(y_score, dtype=float), 0.0, 1.0)
+                return float(brier_score_loss(y_true, y_score))
+            except Exception:
+                return float('nan')
+
+        def _oof_predict_proba(model_factory):
+            oof = np.full(len(Xv), np.nan, dtype=float)
+            X_arr = Xv.to_numpy(dtype=float)
+            y_arr_local = yv.to_numpy(dtype=int)
+            for train_idx, test_idx in tscv.split(X_arr):
+                model = model_factory()
+                model.fit(X_arr[train_idx], y_arr_local[train_idx])
+                if hasattr(model, 'predict_proba'):
+                    p = model.predict_proba(X_arr[test_idx])
+                    oof[test_idx] = np.asarray(p)[:, 1]
+                elif hasattr(model, 'decision_function'):
+                    s = model.decision_function(X_arr[test_idx])
+                    s = np.asarray(s, dtype=float).reshape(-1)
+                    oof[test_idx] = 1.0 / (1.0 + np.exp(-s))
+                else:
+                    pred = model.predict(X_arr[test_idx])
+                    oof[test_idx] = np.asarray(pred, dtype=float).reshape(-1)
+            return oof
+
+        preds = {}
+
+        avg_score = Xv[base_prob_cols].mean(axis=1).astype(float).values
+        preds['meta_avg'] = np.clip(avg_score, 0.0, 1.0)
+
+        def ridge_factory():
+            alpha = float(config.get('meta_ridge_alpha', 1.0))
+            return Pipeline([
+                ('scaler', StandardScaler(with_mean=True, with_std=True)),
+                ('model', RidgeClassifier(alpha=alpha, class_weight='balanced', random_state=42)),
+            ])
+        preds['meta_ridge'] = np.clip(_oof_predict_proba(ridge_factory), 0.0, 1.0)
+
+        def et_factory():
+            return ExtraTreesClassifier(
+                n_estimators=int(config.get('meta_et_n_estimators', 400)),
+                min_samples_leaf=int(config.get('meta_et_min_samples_leaf', 20)),
+                max_depth=None,
+                n_jobs=-1,
+                random_state=42,
+            )
+        preds['meta_extratrees'] = np.clip(_oof_predict_proba(et_factory), 0.0, 1.0)
+
+        if LIGHTGBM_AVAILABLE and lgb is not None:
+            def lgb_factory():
+                params = {
+                    'n_estimators': int(config.get('meta_lgbm_n_estimators', 600)),
+                    'learning_rate': float(config.get('meta_lgbm_learning_rate', 0.02)),
+                    'max_depth': int(config.get('meta_lgbm_max_depth', 4)),
+                    'num_leaves': int(config.get('meta_lgbm_num_leaves', 31)),
+                    'subsample': float(config.get('meta_lgbm_subsample', 0.7)),
+                    'colsample_bytree': float(config.get('meta_lgbm_colsample_bytree', 0.7)),
+                    'min_child_samples': int(config.get('meta_lgbm_min_child_samples', 50)),
+                    'reg_alpha': float(config.get('meta_lgbm_reg_alpha', 1.0)),
+                    'reg_lambda': float(config.get('meta_lgbm_reg_lambda', 1.0)),
+                    'objective': 'binary',
+                    'metric': 'binary_logloss',
+                    'verbosity': -1,
+                    'n_jobs': -1,
+                    'random_state': 42,
+                }
+                return lgb.LGBMClassifier(**params)
+
+            preds['meta_lgbm'] = np.clip(_oof_predict_proba(lgb_factory), 0.0, 1.0)
+
+        metrics_rows = []
+        for name, p in preds.items():
+            mask = np.isfinite(p)
+            if mask.sum() < 50:
+                continue
+            yt = yv.to_numpy(dtype=int)[mask]
+            ps = np.asarray(p, dtype=float)[mask]
+            metrics_rows.append({
+                'model': name,
+                'n_samples': int(mask.sum()),
+                'auc': _safe_auc(yt, ps),
+                'pr_auc': _safe_pr_auc(yt, ps),
+                'logloss': _safe_logloss(yt, ps),
+                'brier': _safe_brier(yt, ps),
+                'mean_pred': float(np.nanmean(ps)) if ps.size else float('nan'),
+            })
+
+        metrics_df = pd.DataFrame(metrics_rows).set_index('model') if metrics_rows else pd.DataFrame()
+        best_model = None
+        if not metrics_df.empty:
+            sort_cols = []
+            if 'auc' in metrics_df.columns:
+                sort_cols.append('auc')
+            if 'logloss' in metrics_df.columns:
+                sort_cols.append('logloss')
+
+            if sort_cols:
+                tmp = metrics_df.copy()
+                tmp['_auc_rank'] = (-tmp['auc']).rank(method='average') if 'auc' in tmp.columns else 0
+                tmp['_ll_rank'] = (tmp['logloss']).rank(method='average') if 'logloss' in tmp.columns else 0
+                tmp['_score'] = tmp['_auc_rank'] + tmp['_ll_rank']
+                best_model = str(tmp['_score'].idxmin())
+            else:
+                best_model = str(metrics_df.index[0])
+
+        meta_oof = pd.DataFrame(index=X.index)
+        for name, p in preds.items():
+            series = pd.Series(p, index=Xv.index)
+            meta_oof[name] = series.reindex(meta_oof.index)
+
+        if best_model is not None and best_model in meta_oof.columns:
+            meta_oof['meta_best'] = meta_oof[best_model]
+
+        ts_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path('outcomes')
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+        artifacts: Dict[str, Any] = {}
+        try:
+            meta_path = self._save_artifact(
+                data=meta_oof,
+                artifact_name='analyst_meta_predictions_oof',
+                artifact_type='data',
+                data_category='predictions',
+            )
+            artifacts['analyst_meta_predictions_oof'] = meta_path
+            tprint(f"✅ Saved analyst_meta_predictions_oof: {meta_oof.shape}", "SUCCESS")
+        except Exception as save_exc:
+            tprint(f"⚠️ Failed to save analyst_meta_predictions_oof: {save_exc}", "WARNING")
+
+        if not metrics_df.empty:
+            try:
+                metrics_path = self._save_artifact(
+                    data=metrics_df,
+                    artifact_name='analyst_meta_model_metrics',
+                    artifact_type='data',
+                    data_category='predictions',
+                )
+                artifacts['analyst_meta_model_metrics'] = metrics_path
+            except Exception:
+                pass
+
+            try:
+                csv_path = out_dir / f"analyst_meta_model_comparison_{symbol}_{exchange}_{timeframe}_{direction}_{ts_str}.csv"
+                metrics_df.reset_index().to_csv(csv_path, index=False)
+            except Exception:
+                csv_path = None
+
+            try:
+                md_path = out_dir / f"analyst_meta_model_report_{symbol}_{exchange}_{timeframe}_{direction}_{ts_str}.md"
+                lines = []
+                lines.append(f"# Analyst Meta Model Report ({symbol} {exchange} {timeframe} {direction})")
+                lines.append("")
+                lines.append(f"Timestamp (UTC): {ts_str}")
+                lines.append("")
+                if best_model is not None:
+                    lines.append(f"Best model: `{best_model}`")
+                    lines.append("")
+                try:
+                    lines.append(metrics_df.sort_values('auc', ascending=False).to_markdown())
+                except Exception:
+                    lines.append(metrics_df.to_string())
+                md_path.write_text("\n".join(lines))
+            except Exception:
+                md_path = None
+
+            meta_metrics = {
+                'meta_best_model': best_model,
+                'meta_metrics_csv': str(csv_path) if csv_path is not None else None,
+                'meta_report_md': str(md_path) if md_path is not None else None,
+            }
+        else:
+            meta_metrics = {
+                'meta_best_model': best_model,
+                'meta_metrics_csv': None,
+                'meta_report_md': None,
+            }
+
+        return {
+            'success': True,
+            'artifacts': artifacts,
+            'metrics': meta_metrics,
+        }
 
     def _generate_disagreement_features(self, base_predictions: pd.DataFrame) -> pd.DataFrame:
         """

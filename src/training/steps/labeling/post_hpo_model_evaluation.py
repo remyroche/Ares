@@ -49,6 +49,7 @@ import lightgbm as lgb
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.pipeline_standards import PipelineStandards
 from src.utils.ml_common.validation.thresholding import optimize_threshold
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 logger = logging.getLogger(__name__)
 
@@ -1016,7 +1017,7 @@ def run_post_hpo_evaluation(
     save_artifacts: bool = True,
     optimize_thresholds: bool = True,
     enable_calibration: bool = True,
-    transaction_cost: float = 0.001,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     embargo: Optional[pd.Timedelta] = None,
 ) -> Dict[str, Any]:
     """

@@ -73,11 +73,11 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     # Constants
     DEFAULT_PROFIT_THRESHOLD,
     DEFAULT_STOP_THRESHOLD,
-    DEFAULT_TRANSACTION_COST,
     ECON_MIN_RETURN_MULTIPLE,
     # The base step class
     FeatureGenerationMetaLabelingStep,
 )
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
 # Import sample weighting utilities

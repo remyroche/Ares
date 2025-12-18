@@ -15,6 +15,8 @@ from typing import Dict, Iterable, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 # Kalman filtering imports
 try:
     from pykalman import KalmanFilter
@@ -78,7 +80,7 @@ def generate_tpsl_label_sets(
     market_data: pd.DataFrame,
     primary_signals: pd.DataFrame,
     specs: Iterable[TPSLSpec],
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     min_event_spacing: int = 2,
 ) -> Dict[str, Dict[str, pd.Series]]:
     """
@@ -465,7 +467,7 @@ def assemble_label_methods_for_voting(
     tpsl_specs: Iterable[TPSLSpec],
     volatility: Optional[pd.Series] = None,
     regimes: Optional[pd.Series] = None,
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
 ) -> Tuple[Dict[str, pd.Series], Dict[str, Dict[str, pd.Series]]]:
     """
     Convenience helper to build all label methods (TPSL + quantile + regime-aware).
@@ -520,7 +522,7 @@ def generate_fixed_horizon_trinary_labels(
     profit: float,
     stop: float,
     horizon: int,
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     name: str = "",
 ) -> Tuple[str, pd.Series]:
     """Fixed horizon triple-barrier labels (1 profit, -1 stop, 0 timeout)."""
@@ -543,7 +545,7 @@ def generate_atr_adjusted_trinary_labels(
     atr_window: int = 14,
     atr_mult: float = 2.0,
     horizon: int = 24,
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     name: str = "atr_dynamic",
 ) -> Tuple[str, pd.Series]:
     """ATR-adjusted triple-barrier labels: profit/stop = atr_mult * ATR / close."""
@@ -758,7 +760,7 @@ def compute_multi_triple_barrier_outcomes_vectorized(
     configs: List[TripleBarrierConfig],
     kalman_price_col: str = 'kalman_price',
     kalman_vol_col: str = 'kalman_volatility',
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     chunk_size: int = 2000,
     enable_regime_conditional: bool = True,
     direction: Optional[str] = None,
@@ -1006,7 +1008,7 @@ def compute_multi_triple_barrier_outcomes(
     configs: List[TripleBarrierConfig],
     kalman_price_col: str = 'kalman_price',
     kalman_vol_col: str = 'kalman_volatility',
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     direction: Optional[str] = None,
 ) -> List[Dict[str, pd.Series]]:
     """
@@ -1099,7 +1101,7 @@ def kalman_multi_triple_barrier_labels(
     kalman_process_noise: float = 1e-5,
     kalman_measurement_noise: float = 1e-3,
     vol_window: int = 20,
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     economic_floor_multiplier: float = 0.25,
     consensus_threshold: float = 0.6,
     return_detailed_results: bool = False,

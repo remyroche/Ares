@@ -18,6 +18,7 @@ Key Statistical Methods:
 
 import numpy as np
 import pandas as pd
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -123,7 +124,7 @@ class AdvancedValidationConfig:
     # Economic significance thresholds
     min_sharpe_ratio: float = 0.5
     min_information_ratio: float = 0.3
-    transaction_cost: float = 0.0008
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
 
     # Parallel processing
     n_jobs: int = -1

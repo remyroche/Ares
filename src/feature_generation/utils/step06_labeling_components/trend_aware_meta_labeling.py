@@ -32,6 +32,7 @@ import pandas as pd
 from src.core.decorators import handles_errors
 from src.utils.logger import get_logger
 from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 # Import numba for acceleration if available
 try:
@@ -186,7 +187,7 @@ class TrendAwareTripleBarrierConfig:
     base_stop_loss_multiplier: float = 0.003
     time_barrier_minutes: int = 30
     max_lookahead: int = 100
-    transaction_cost: float = 0.0008
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
     binary_classification: bool = True
     
     # Trend adjustment parameters

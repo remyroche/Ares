@@ -11,6 +11,7 @@ from typing import Any
 from typing import Callable
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 steps_dir = os.path.join(current_dir, '..')
@@ -187,7 +188,7 @@ class OptimizedTripleBarrierLabeling:
     """
     @log_important_calls
 
-    def __init__(self, profit_take_multiplier: float = 0.004, stop_loss_multiplier: float = 0.003, time_barrier_minutes: int = 30, max_lookahead: int = 100, binary_classification: bool = True, transaction_cost: float = 0.0008) -> None:
+    def __init__(self, profit_take_multiplier: float = 0.004, stop_loss_multiplier: float = 0.003, time_barrier_minutes: int = 30, max_lookahead: int = 100, binary_classification: bool = True, transaction_cost: float = DEFAULT_TRANSACTION_COST) -> None:
         """Initialize the optimized triple barrier labeling."
 
         Args:

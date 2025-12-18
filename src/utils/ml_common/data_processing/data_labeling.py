@@ -41,6 +41,7 @@ from src.utils.data_processing_utils import DataProcessingUtils
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 # Import ML Common utilities for cross-validation (use compatibility exports)
 from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
@@ -78,7 +79,7 @@ class TripleBarrierConfig:
     sl_mult: float = 1.0  # Stop loss multiplier
     min_holding_period: int = 1
     max_holding_period: int = 100
-    transaction_cost: float = 0.001
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
     barrier_type: BarrierType = BarrierType.FIXED
     regime_aware: bool = False
     fractional_support: bool = False

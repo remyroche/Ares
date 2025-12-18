@@ -52,6 +52,8 @@ from src.core.decorators.logging import log_execution_time, log_call
 import datetime
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 try:
     from src.utils.dataframe_guards import guard_dataframe_nulls, handle_errors, with_tracing_span
 except ImportError:
@@ -85,7 +87,7 @@ except Exception:
 # Constants for improved risk management
 DEFAULT_PROFIT_TAKE_MULTIPLIER = 0.004  # 0.4% - more conservative
 DEFAULT_STOP_LOSS_MULTIPLIER = 0.003    # 0.3% - more conservative
-GLOBAL_TRANSACTION_COST = 0.0008        # 0.08% global standard transaction cost (entry + exit combined)
+GLOBAL_TRANSACTION_COST = DEFAULT_TRANSACTION_COST
 MIN_BARRIER_MULTIPLIER = 0.001          # Minimum 0.1% barrier
 MAX_BARRIER_MULTIPLIER = 0.05           # Maximum 5% barrier
 EPSILON = 1e-10                         # Numerical stability constant
@@ -784,117 +786,25 @@ def benchmark_improved_triple_barrier_methods(data: pd.DataFrame) -> dict[str, f
     """Benchmark improved triple barrier labeling methods."""
     import time
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    if data is None or getattr(data, "empty", True):
+        return {
+            "original_time": 0.0,
+            "improved_time": 0.0,
+            "improvement_factor": 0.0,
+        }
 
-except ImportError:
-
-    cp = None
-
-    start_time = time.time()
-    time.sleep(0.1)
-    original_time = time.time() - start_time
+    # We only benchmark the improved vectorized labeling here.
+    # The original implementation is not available in this module in a reliable way.
+    original_time = 0.0
 
     optimizer = OptimizedTripleBarrierLabelingImproved()
     start_time = time.time()
     optimizer.apply_triple_barrier_labeling_vectorized(data)
-    improved_time = time.time() - start_time
+    improved_time = float(time.time() - start_time)
 
+    improvement_factor = (original_time / improved_time) if improved_time > 0 else 0.0
     return {
-        'original_time': original_time,
-        'improved_time': improved_time,
-        'improvement_factor': original_time / improved_time if improved_time > 0 else 0
+        "original_time": float(original_time),
+        "improved_time": float(improved_time),
+        "improvement_factor": float(improvement_factor),
     }
-
-if __name__ == '__main__':
-    # Test the improved implementation
-    dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
-    data = pd.DataFrame({
-        'open': np.random.uniform(100, 110, 1000),
-        'high': np.random.uniform(105, 115, 1000),
-        'low': np.random.uniform(95, 105, 1000),
-        'close': np.random.uniform(100, 110, 1000),
-        'volume': np.random.uniform(1000, 10000, 1000)
-    }, index=dates)
-
-    optimizer = OptimizedTripleBarrierLabelingImproved()
-    labeled_data = optimizer.apply_triple_barrier_labeling_vectorized(data)
-    results = benchmark_improved_triple_barrier_methods(data)
-
-    tprint(f'Improved benchmark results: {results}')
-    tprint(f'\nImproved profit tracking results:')
-    if len(labeled_data) > 0:
-        tprint(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['net_profit_pct'].describe()}")
-        tprint(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['net_profit_pct'].describe()}")
-        tprint(f"Transaction costs: {labeled_data['transaction_cost'].sum():.4f}")
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

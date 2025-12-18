@@ -51,7 +51,10 @@ class PurgedKFoldTime:
                 left_bound_time = val_start_time - purge_delta
                 right_bound_time = val_end_time + embargo_delta
                 in_window = (index >= left_bound_time) & (index <= right_bound_time)
-                train_mask[in_window.values] = False
+                if hasattr(in_window, 'values'):
+                    train_mask[in_window.values] = False
+                else:
+                    train_mask[in_window] = False
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]
             else:
@@ -100,7 +103,11 @@ class PurgedKFoldTime:
                 left_bound_time = val_start_time - purge_delta
                 right_bound_time = val_end_time + embargo_delta
                 in_window = (index >= left_bound_time) & (index <= right_bound_time)
-                train_mask[in_window.values] = False
+                # in_window might be numpy array or Series depending on index type
+                if hasattr(in_window, 'values'):
+                     train_mask[in_window.values] = False
+                else:
+                     train_mask[in_window] = False
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]
             else:

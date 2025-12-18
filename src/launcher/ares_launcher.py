@@ -241,7 +241,7 @@ class SimplifiedAresLauncher:
                 'sticky_finite_hmm_regime_discovery',  # Sticky Finite HMM regime discovery (K=5, VB inference)
                 'rolling_hmm_regime_discovery',  # Rolling HMM regime discovery with EWMA features and HPO
                 'regime_feature_selection',  # Enhanced regime feature selection
-                'regime_models_training', 'regime_ensemble_training'
+                'regime_ensemble_training'
             ],
             'PRE_TRAINING': [
                 'feature_generation_data_validation_step',
@@ -308,7 +308,6 @@ def create_cli_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Run a single step (positional argument)
-  python ares_launcher.py regime_models_training --symbol ETHUSDT --execution-mode light
   python ares_launcher.py regime_ensemble_training --symbol ETHUSDT --execution-mode light
 
   # Run a single step (named argument)
@@ -332,7 +331,6 @@ Examples:
   python ares_launcher.py --run-both-interaction-modes --symbol ETHUSDT --timeframe 15m
 
   # REGIME TRAINING (ML models and ensembles)
-  python ares_launcher.py --regime-models-training --symbol ETHUSDT --execution-mode light
   python ares_launcher.py --regime-ensemble-training --symbol ETHUSDT --execution-mode light
 
   # Legacy compatibility
@@ -341,7 +339,7 @@ Examples:
     )
 
     # Positional argument for step name (optional)
-    parser.add_argument('command', nargs='?', type=str, help='Step name to execute (e.g., regime_models_training, regime_ensemble_training)')
+    parser.add_argument('command', nargs='?', type=str, help='Step name to execute (e.g., regime_ensemble_training)')
 
     # Step execution options
     step_group = parser.add_mutually_exclusive_group(required=False)
@@ -368,7 +366,6 @@ Examples:
     # Regime discovery options
     regime_group = parser.add_mutually_exclusive_group()
     regime_group.add_argument('--rolling-hmm-regime-discovery', action='store_true', help='Run Rolling HMM regime discovery with EWMA features and HPO')
-    regime_group.add_argument('--regime-models-training', action='store_true', help='Train machine learning models for regime classification')
     regime_group.add_argument('--regime-ensemble-training', action='store_true', help='Train ensemble models for regime classification using meta-learning')
     regime_group.add_argument('--hmm-macro-regime', action='store_true', help='Run HMM macro alpha / macro regime step from Rolling HMM outputs')
     regime_group.add_argument('--xgb-meso-regime', action='store_true', help='Run XGB Meso Trend regime step')
@@ -439,8 +436,9 @@ Examples:
         default=None,
         choices=[
             'layer0', 'layer1', 'layer2', 'feature_selection', 'layer3',
+            'layer4',
             'stage0', 'kalman', 'weighting', 'trading', 'model',
-            '0', '1', '2', '3', 'fs'
+            '0', '1', '2', '3', '4', 'fs'
         ],
         help=(
             'Start multi-stage meta-labeling HPO at a specific step. Steps before the start point '
@@ -879,7 +877,7 @@ async def main():
         logger.info(f"Detected feature generation shortcuts: {feature_step_flags}")
 
         # Only apply feature generation shortcuts if no other step was specified via positional command
-        # This prevents feature generation steps from interfering with other steps like regime_models_training
+        # This prevents feature generation steps from interfering with other steps like regime_ensemble_training
         if args.command:
             logger.warning(f"⚠️ Ignoring feature generation shortcuts because positional command '{args.command}' was provided")
         elif args.steps:
@@ -907,8 +905,7 @@ async def main():
         args.train_tactician_base, args.train_tactician_ensemble,
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
         args.rolling_hmm_regime_discovery,
-        args.regime_models_training, args.regime_ensemble_training,
-        args.regime_models_training, args.regime_ensemble_training,
+        args.regime_ensemble_training,
         args.hmm_macro_regime, args.xgb_meso_regime, args.final_parameters_optimization,
     ])
 
@@ -1119,16 +1116,10 @@ async def main():
         elif args.xgb_meso_regime:
             logger.info("Running XGB Meso Trend regime step")
             result = await launcher.run_step("xgb_meso_regime", config)
-            print(f"XGB Meso Trend regime step completed: {'✅ Success' if result.get(success) else '❌ Failed'}")
-        elif args.regime_models_training:
-            # Regime models training execution
-            logger.info("Training machine learning models for regime classification")
-            result = await launcher.run_step('regime_models_training', config)
-            print(f"Regime models training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
-
+            print(f"XGB Meso Trend regime step completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
         elif args.regime_ensemble_training:
             # Regime ensemble training execution
-            logger.info("Training ensemble models for regime classification using meta-learning")
+            logger.info("Training ensemble models for regime classification")
             result = await launcher.run_step('regime_ensemble_training', config)
             print(f"Regime ensemble training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 

@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 
 # Default round-trip transaction cost (buy + sell + slippage + spread)
 # 0.003 = 0.30% per complete trade
+# Agent: Never change this
 DEFAULT_TRANSACTION_COST: float = 0.003
 
 # Config key for overriding in YAML/JSON configs

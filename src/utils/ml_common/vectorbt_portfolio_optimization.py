@@ -24,6 +24,8 @@ import warnings
 from datetime import datetime, timedelta
 import time
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 # VectorBT imports
 try:
     import vectorbt as vbt
@@ -132,7 +134,7 @@ class OptimizationConfig:
     regime_threshold: float = 0.1
 
     # Transaction costs
-    transaction_cost: float = 0.001
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
     market_impact: float = 0.0005
 
     # Performance settings

@@ -17,6 +17,7 @@ Key Validation Components:
 
 import numpy as np
 import pandas as pd
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -82,8 +83,8 @@ class BacktestingConfig:
     ranking_quantiles: List[float] = field(default_factory=lambda: [0.8, 0.9, 0.95])
 
     # Transaction costs
-    transaction_cost: float = 0.0008  # 0.08% per trade
-    slippage: float = 0.0002  # 0.02% slippage
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
+    slippage: float = 0.0
 
     # Position sizing
     position_sizing_method: str = "equal_weight"  # "equal_weight", "volatility_scaled", "kelly"

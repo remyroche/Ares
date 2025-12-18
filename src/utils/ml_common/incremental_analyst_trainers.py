@@ -531,6 +531,12 @@ class BaseIncrementalTrainer(ABC):
             # Data selection
             train_mask = (aligned_data.index >= window.training_start) & (aligned_data.index < window.training_end)
             train_data = aligned_data.loc[train_mask].copy()
+
+            if '__target__' in train_data.columns:
+                try:
+                    train_data = train_data.loc[train_data['__target__'].notna()].copy()
+                except Exception:
+                    pass
             
             pred_mask = (aligned_data.index >= window.prediction_start) & (aligned_data.index < window.prediction_end)
             pred_data = aligned_data.loc[pred_mask].copy()
@@ -1272,6 +1278,180 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         # rely on global incremental training/HPO instead.
         base_params.pop("early_stopping_rounds", None)
 
+        if self._specialist_scheme in ('abc', 'abc_v1'):
+            sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
+            rng = np.random.RandomState(42)
+
+            y_arr = np.asarray(y, dtype=float).reshape(-1)
+            y_arr = np.nan_to_num(y_arr, nan=0.0)
+            unique_vals = np.unique(y_arr)
+            is_binaryish = bool(unique_vals.size <= 3 and set(unique_vals.tolist()).issubset({0.0, 1.0}))
+
+            if (not is_binaryish):
+                returns_proxy = y_arr
+            elif sample_weight is not None and len(sample_weight) == len(y_arr):
+                w = np.asarray(sample_weight, dtype=float)
+                w = np.nan_to_num(w, nan=1.0)
+                returns_proxy = (2.0 * y_arr - 1.0) * np.clip(w, 0.0, 10.0)
+            else:
+                returns_proxy = (2.0 * y_arr - 1.0)
+
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseConfig,
+                    get_focal_loss,
+                    get_sharpe_weights,
+                )
+                dd_cfg = DiversityDefenseConfig(sample_fraction=sample_frac, colsample_bytree=float(base_params.get('colsample_bytree', 0.5)))
+            except Exception:
+                dd_cfg = None
+                get_focal_loss = None
+                get_sharpe_weights = None
+
+            tanh_thresholds = []
+            try:
+                pos_vals = returns_proxy[np.isfinite(returns_proxy) & (returns_proxy > 0)]
+                if pos_vals.size >= 50:
+                    tanh_thresholds = [
+                        float(np.nanquantile(pos_vals, 0.60)),
+                        float(np.nanquantile(pos_vals, 0.75)),
+                        float(np.nanquantile(pos_vals, 0.90)),
+                    ]
+            except Exception:
+                tanh_thresholds = []
+            if len(tanh_thresholds) != 3:
+                tanh_thresholds = [0.003, 0.006, 0.009]
+
+            if get_sharpe_weights is not None:
+                try:
+                    y_series = pd.Series(returns_proxy)
+                    w_sharpe_12h = get_sharpe_weights(y_series, window_hours=12)
+                    w_sharpe_4d = get_sharpe_weights(y_series, window_hours=96)
+                    w_sharpe_dd = get_sharpe_weights(y_series, window_hours=24)
+                except Exception:
+                    w_sharpe_12h = np.ones_like(returns_proxy, dtype=float)
+                    w_sharpe_4d = np.ones_like(returns_proxy, dtype=float)
+                    w_sharpe_dd = np.ones_like(returns_proxy, dtype=float)
+            else:
+                w_sharpe_12h = np.ones_like(returns_proxy, dtype=float)
+                w_sharpe_4d = np.ones_like(returns_proxy, dtype=float)
+                w_sharpe_dd = np.ones_like(returns_proxy, dtype=float)
+
+            focal_std = None
+            focal_std2 = None
+            focal_asym_a = None
+            focal_asym_b = None
+            try:
+                if get_focal_loss is not None:
+                    focal_std = get_focal_loss(alpha=0.25, gamma=0.0)
+                    focal_std2 = get_focal_loss(alpha=0.25, gamma=2.0)
+                    focal_asym_a = get_focal_loss(alpha=0.25, gamma=5.0)
+                    focal_asym_b = get_focal_loss(alpha=0.75, gamma=2.0)
+            except Exception:
+                focal_std = None
+                focal_std2 = None
+                focal_asym_a = None
+                focal_asym_b = None
+
+            spec_defs = [
+                ('abc_sharpe_12h', 'sharpe', None, w_sharpe_12h),
+                ('abc_sharpe_4d', 'sharpe', None, w_sharpe_4d),
+                ('abc_sharpe_dd', 'sharpe', None, w_sharpe_dd),
+                ('abc_tanh_0', 'tanh', None, None),
+                ('abc_tanh_1', 'tanh', None, None),
+                ('abc_tanh_2', 'tanh', None, None),
+                ('abc_focal_std_0', 'focal', focal_std, None),
+                ('abc_focal_std_1', 'focal', focal_std2, None),
+                ('abc_focal_asym_0', 'focal', focal_asym_a, None),
+                ('abc_focal_asym_1', 'focal', focal_asym_b, None),
+            ]
+
+            models: List[Any] = []
+            specialist_types: List[Any] = []
+            new_boosters = []
+
+            n_specs = len(spec_defs)
+            has_warm_start = len(self._bagged_boosters) == n_specs
+
+            for spec_idx, (spec_name, spec_kind, fobj, weight_mult) in enumerate(spec_defs):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
+
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                n_rows_sub = min(n_rows_sub, n_samples)
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
+
+                X_bag = X[row_idx]
+                y_bag_raw = returns_proxy[row_idx]
+
+                if is_binaryish:
+                    y_base = y_arr[row_idx].astype(int)
+                else:
+                    y_base = (y_bag_raw > 0).astype(int)
+
+                if spec_kind == 'tanh':
+                    thr = tanh_thresholds[min(2, max(0, spec_idx - 3))]
+                    y_bag_target = (y_bag_raw > thr).astype(int)
+                else:
+                    y_bag_target = y_base
+
+                sw_bag = None
+                if sample_weight is not None and len(sample_weight) == len(y_arr):
+                    try:
+                        sw_bag = np.asarray(sample_weight, dtype=float)[row_idx]
+                    except Exception:
+                        sw_bag = None
+
+                if weight_mult is not None and len(weight_mult) == len(y_arr):
+                    try:
+                        w_m = np.asarray(weight_mult, dtype=float)[row_idx]
+                        w_m = np.nan_to_num(w_m, nan=1.0)
+                        if sw_bag is None:
+                            sw_bag = w_m
+                        else:
+                            sw_bag = np.asarray(sw_bag, dtype=float) * w_m
+                    except Exception:
+                        pass
+
+                if fobj is not None:
+                    if 'objective' in params:
+                        del params['objective']
+                    if 'metric' in params:
+                        del params['metric']
+                else:
+                    params['objective'] = 'binary'
+                    params['metric'] = params.get('metric', 'binary_logloss')
+
+                try:
+                    if fobj is not None:
+                        model = lgb.LGBMClassifier(objective=fobj, **params)
+                    else:
+                        model = lgb.LGBMClassifier(**params)
+
+                    init_model = self._bagged_boosters[spec_idx] if has_warm_start else None
+                    if sw_bag is not None:
+                        model.fit(X_bag, y_bag_target, sample_weight=sw_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag_target, init_model=init_model)
+
+                    models.append(model)
+                    specialist_types.append(spec_name)
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+                except Exception as e:
+                    logger.warning(f"Specialist {spec_name} failed during training: {e}")
+
+            if len(new_boosters) == len(models):
+                self._bagged_boosters = new_boosters
+
+            return BaggedLGBMClassifier(
+                models=models,
+                n_features=n_features,
+                specialist_types=specialist_types,
+                use_diversity_defense=True,
+                diversity_defense_config=dd_cfg,
+            )
+
         # ============================================================
         # STEP 0: Run DiversitySweep to optimize colsample_bytree
         # This is run ONCE at the start of training (first call only)
@@ -1544,6 +1724,102 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
             use_diversity_defense=self._use_diversity_defense,
             diversity_defense_config=self._dd_config,
         )
+
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        self._feature_cols = self._get_feature_cols(train_data)
+        if not self._feature_cols:
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+            self._feature_cols = ['__dummy_const__']
+
+        X = train_data[self._feature_cols].values.astype(np.float32)
+        X = np.nan_to_num(X, nan=0.0)
+        y = np.asarray(train_data['__target__'].values, dtype=float)
+
+        sw = None
+        if '__weight__' in train_data.columns:
+            try:
+                sw = np.asarray(train_data['__weight__'].values, dtype=float)
+            except Exception:
+                sw = None
+
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        sw_train = None
+        if sw is not None and len(sw) == len(X):
+            sw_train = sw[:len(X_train)]
+
+        bagged = self._train_bagged_model(X_train, y_train, sample_weight=sw_train, verbose=verbose)
+        calibrated_model = CalibratedModel(bagged, task_type='classification', calibration_method=self.config.calibration_method)
+        calibrated_model.fit_calibration(X_val, (y_val > 0).astype(int))
+        return calibrated_model
+
+    def _train_incremental(self, new_data: pd.DataFrame, full_train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(full_train_data)
+            if not self._feature_cols:
+                full_train_data = full_train_data.copy()
+                full_train_data['__dummy_const__'] = 0.0
+                self._feature_cols = ['__dummy_const__']
+
+        X = full_train_data[self._feature_cols].values.astype(np.float32)
+        X = np.nan_to_num(X, nan=0.0)
+        y = np.asarray(full_train_data['__target__'].values, dtype=float)
+
+        sw = None
+        if '__weight__' in full_train_data.columns:
+            try:
+                sw = np.asarray(full_train_data['__weight__'].values, dtype=float)
+            except Exception:
+                sw = None
+
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        sw_train = None
+        if sw is not None and len(sw) == len(X):
+            sw_train = sw[:len(X_train)]
+
+        bagged = self._train_bagged_model(X_train, y_train, sample_weight=sw_train, verbose=verbose)
+        calibrated_model = CalibratedModel(bagged, task_type='classification', calibration_method=self.config.calibration_method)
+        calibrated_model.fit_calibration(X_val, (y_val > 0).astype(int))
+        return calibrated_model
+
+    def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
+        if not self._feature_cols:
+            return pd.DataFrame({'prediction': 0, 'probability': 0.5}, index=pred_data.index)
+
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in pred_data:
+            pred_data = pred_data.copy()
+            pred_data['__dummy_const__'] = 0.0
+
+        X = pred_data[self._feature_cols].values.astype(np.float32)
+        X = np.nan_to_num(X, nan=0.0)
+
+        try:
+            p = np.asarray(self._current_model.predict(X), dtype=float).reshape(-1)
+        except Exception:
+            p = np.full(X.shape[0], 0.5, dtype=float)
+
+        p = np.clip(p, 0.0, 1.0)
+        pred = (p > 0.5).astype(int)
+        out = pd.DataFrame({'prediction': pred, 'probability': p}, index=pred_data.index)
+
+        if self._specialist_scheme in ('abc', 'abc_v1'):
+            try:
+                base_model = getattr(self._current_model, 'base_model', None)
+                if base_model is not None and hasattr(base_model, 'predict_diversity_defense'):
+                    dd = base_model.predict_diversity_defense(X)
+                    raw = dd.get('raw_preds')
+                    if isinstance(raw, np.ndarray) and raw.ndim == 2 and raw.shape[0] == len(out):
+                        for j in range(raw.shape[1]):
+                            out[f"abc_spec_{j:02d}"] = raw[:, j].astype(float)
+            except Exception:
+                pass
+
+        return out
+
+    def _run_burnin_hpo(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Optional[Dict[str, Any]]:
+        return None
+
+
 # Incremental NGBoost Trainer
 # ============================================================================
 

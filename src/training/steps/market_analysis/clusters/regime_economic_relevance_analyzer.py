@@ -26,6 +26,8 @@ import warnings
 from scipy import stats
 from sklearn.utils import resample
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 # Import tprint utilities
 try:
     from src.utils.tprint import (
@@ -187,7 +189,7 @@ class RegimeEconomicRelevanceAnalyzer:
     def __init__(self, 
                  risk_free_rate: float = 0.02,
                  trading_days_per_year: int = 252,
-                 transaction_cost: float = 0.001,
+                 transaction_cost: float = DEFAULT_TRANSACTION_COST,
                  significance_tests: bool = True,
                  n_permutations: int = 100,
                  block_size: Optional[int] = None,
@@ -198,7 +200,7 @@ class RegimeEconomicRelevanceAnalyzer:
         Args:
             risk_free_rate: Taux sans risque annualisé (défaut: 2%)
             trading_days_per_year: Nombre de jours de trading par an (défaut: 252)
-            transaction_cost: Coût de transaction par trade (défaut: 0.1%)
+            transaction_cost: Coût de transaction par trade (défaut: 0.3%)
             significance_tests: Activer les tests de signification (défaut: True)
             n_permutations: Nombre de permutations pour le test (défaut: 1000)
             block_size: Taille des blocs pour le test de permutation (auto si None)
@@ -1382,7 +1384,8 @@ class RegimeEconomicRelevanceAnalyzer:
                 tprint_info(f"\n{strategy_name}:")
                 for metric, p_value in metrics.items():
                     significance = "✅" if p_value < 0.05 else "❌"
-                    tprint_info(f"  {metric}: {p_value:.4f} {significance}")
+                    tprint_info(f"  {metric}: {p_value:.4f} ({significance})\n")
+            tprint_info("\n")
         
         elif 'confidence_intervals' in results:
             tprint_info("Test Bootstrap:")
@@ -1392,7 +1395,8 @@ class RegimeEconomicRelevanceAnalyzer:
                     observed = values.get('observed', 0)
                     p_value = values['p_value']
                     significance = "✅" if p_value < 0.05 else "❌"
-                    tprint_info(f"  {metric}: {observed:.4f} (p={p_value:.4f}) {significance}")
+                    tprint_info(f"  {metric}: {observed:.4f} (p={p_value:.4f}) ({significance})\n")
+            tprint_info("\n")
         
         tprint_info("=" * 60)
     
@@ -1456,7 +1460,7 @@ class RegimeEconomicRelevanceAnalyzer:
 def create_regime_economic_relevance_analyzer(
     risk_free_rate: float = 0.02,
     trading_days_per_year: int = 252,
-    transaction_cost: float = 0.001,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     significance_tests: bool = True,
     n_permutations: int = 100,
     block_size: Optional[int] = None,

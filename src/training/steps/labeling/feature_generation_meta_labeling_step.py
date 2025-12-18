@@ -39,6 +39,9 @@ import pandas as pd
 import numpy as np
 import gc
 import warnings
+import math
+
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 # ML/Stats libraries
 from sklearn.linear_model import LogisticRegression
@@ -102,6 +105,7 @@ from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
 from src.utils.pipeline_standards import PipelineStandards
 from src.training.utils.debug_utilities import create_enhanced_error_handler
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 from .labeled_data_schema import (
     LABELED_DATA_SCHEMA_VERSION,
     get_required_labeled_data_columns,
@@ -218,15 +222,15 @@ def _load_latest_labeling_hpo_params(
     return params, latest, source_key
 
 
-def create_triple_barrier_from_hpo(
-    symbol: str,
-    timeframe: str,
-    fallback_profit_take: float = 0.004,
-    fallback_stop_loss: float = 0.003,
+def create_optimized_triple_barrier_labeling(
+    best_params: Dict[str, Any],
+    market_data: pd.DataFrame,
+    fallback_profit_take: float = 0.02,
+    fallback_stop_loss: float = 0.01,
     fallback_time_barrier: int = 30,
     fallback_max_lookahead: int = 100,
     binary_classification: bool = True,
-    transaction_cost: float = 0.0008,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
 ) -> Tuple[Any, Dict[str, Any], bool]:
     """
     Create OptimizedTripleBarrierLabeling instance aligned with HPO results.
@@ -341,21 +345,19 @@ DEFAULT_PROFIT_THRESHOLD = 0.005  # 0.5% (reduced for better balance)
 DEFAULT_STOP_THRESHOLD = 0.0075  # 0.75% (increased for better balance)
 
 # Transaction cost: import from centralized module for consistency
-try:
-    from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
-except ImportError:
-    DEFAULT_TRANSACTION_COST = 0.003  # Fallback: 0.30% per round-trip trade
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 R_MULTIPLE_POS_THRESHOLD = 0.5
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-# Set to 2.0 (stricter: profit must exceed 2x transaction costs) for higher quality labels
-ECON_MIN_RETURN_MULTIPLE = 2.0
+# Set to 0.1 (relaxed: capture ANY profit > 0.1 * cost) to fix low trade count
+ECON_MIN_RETURN_MULTIPLE = 0.1
 TARGET_POWER = 1.5
-# Hard floor for profit targets to ensure viability after transaction costs
-PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
-PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.005
-# Default probability threshold for meta-gating (lowered from 0.65 for more trades)
-DEFAULT_PROBABILITY_THRESHOLD = 0.55
+# Hard floor for profit targets reduced to 20bps (0.2%) to allow scalping
+PROFIT_TARGET_FLOOR_BPS = 5  # 0.05% = 5 basis points (allow optimizer freedom)
+PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.0005  # 0.05%
+# Default probability threshold for meta-gating restored to 0.52
+DEFAULT_PROBABILITY_THRESHOLD = 0.52
+DEFAULT_PROFIT_THRESHOLD = 0.001 # 0.1% default
 # Default expected return threshold (lowered from 0.45% to 0.30%)
 DEFAULT_EXPECTED_RETURN_THRESHOLD = 0.003  # 0.30%
 
@@ -1089,7 +1091,7 @@ def compute_realized_returns(
     profit_threshold: Union[float, pd.Series] = 0.015,
     stop_threshold: Union[float, pd.Series] = 0.010,
     horizon: Union[int, pd.Series] = 16,
-    transaction_cost: float = 0.0005,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
     min_event_spacing: int = 2,
     volatility_series: Optional[pd.Series] = None,
     use_multiclass_labels: bool = False,  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
@@ -4916,7 +4918,7 @@ def create_meta_features(
             perm_entropy[:] = np.nan
             
             values = series.to_numpy()
-            n_perms = np.math.factorial(m)
+            n_perms = math.factorial(m)
             
             for i in range(window + m * delay, len(values)):
                 window_data = values[i-window:i]
@@ -10993,8 +10995,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             kalman_Q = float(config.get('kalman_Q', 1e-4))
             kalman_R = float(config.get('kalman_R', 0.01))
             vol_baseline_window = int(config.get('vol_baseline_window', 96))
-            profit_mult_min = float(config.get('profit_mult_min', 0.5))
-            profit_mult_max = float(config.get('profit_mult_max', 2.0))
+            profit_mult_min = float(config.get('profit_mult_min', 0.05))
+            profit_mult_max = float(config.get('profit_mult_max', 5.0))
             stop_mult_min = float(config.get('stop_mult_min', 0.5))
             stop_mult_max = float(config.get('stop_mult_max', 2.0))
             iso_min_prob_param = float(config.get('iso_min_prob', 0.0))

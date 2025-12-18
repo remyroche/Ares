@@ -6,7 +6,6 @@ analyst_config:
   execution_timeframe: 15m
   execution_frequency: 15m
   # Feature set selector for analyst_base:
-  #   A = default selected_feature_dataframe_50 (+ specialists)
   #   B = meta-gated feature set (labeled_data meta columns + specialist scalars)
   feature_set: B
   base_models:
@@ -96,6 +95,7 @@ analyst_config:
       model_type: LGBMRegressor
       use_float32: true
       use_isotonic_calibration: true
+      specialist_scheme: abc_v1
       # When true, restricts features to specialist scalars only. For meta-gated
       # Feature Set B we keep this disabled so models see both meta-labeling
       # features (meta_probability, volatility_1d, adaptive thresholds) and

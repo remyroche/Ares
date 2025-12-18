@@ -14,6 +14,7 @@ similar to validation frameworks used in HMM clustering research. It examines:
 
 import numpy as np
 import pandas as pd
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -71,7 +72,7 @@ class ValidationConfig:
     stability_overlap: float = 0.5
 
     # Economic validation
-    transaction_cost: float = 0.0008
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
     risk_free_rate: float = 0.02
     min_economic_significance: float = 0.001  # 0.1% minimum edge
 

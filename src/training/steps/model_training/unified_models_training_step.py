@@ -10,6 +10,7 @@ import yaml
 import os
 import pandas as pd
 import numpy as np
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
@@ -20,6 +21,11 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import psutil
 import gc
+
+from src.utils.ml_common.training_period_exclusion import (
+    filter_index_by_blocked_periods,
+    get_blocked_training_periods,
+)
 
 from src.training.steps.model_training.hpo_config import (
     HPOOrchestrator,
@@ -93,6 +99,83 @@ class UnifiedModelsTrainingStep(BaseStep):
         self.hpo_orchestrator = None
         self._specialist_feature_names = []
 
+    def _load_latest_hpo_feature_selection(self, symbol: str, timeframe: str, outcomes_dir: str) -> Optional[Dict[str, Any]]:
+        try:
+            base_dir = Path(outcomes_dir)
+            if not base_dir.exists():
+                return None
+            pattern = f"hpo_feature_selection_{symbol}_{timeframe}_*.json"
+            candidates = list(base_dir.glob(pattern))
+            if not candidates:
+                return None
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            latest = candidates[0]
+            import json
+            with open(latest, 'r') as f:
+                payload = json.load(f)
+            if isinstance(payload, dict):
+                payload['_path'] = str(latest)
+                return payload
+            return None
+        except Exception:
+            return None
+
+    def _flatten_final_optimized_parameters(self, optimized_parameters: Any) -> Dict[str, Any]:
+        flat: Dict[str, Any] = {}
+        if isinstance(optimized_parameters, dict):
+            for _, v in optimized_parameters.items():
+                if not isinstance(v, dict):
+                    continue
+                best_params = v.get('best_params')
+                if isinstance(best_params, dict):
+                    for pk, pv in best_params.items():
+                        flat[str(pk)] = pv
+        return flat
+
+    def _try_merge_final_optimized_parameters(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            symbol = config.get('symbol')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            original_step = getattr(self.artifact_manager, '_current_step_name', None)
+            try:
+                self.artifact_manager.set_context(
+                    step_name='final_parameters_optimization',
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                )
+                artifact_data = self._get_artifact('final_parameters_optimization_result', 'data')
+            finally:
+                if original_step:
+                    self.artifact_manager.set_context(step_name=original_step)
+
+            if artifact_data is None:
+                return config
+
+            payload = artifact_data
+            if isinstance(artifact_data, dict) and 'optimized_parameters' not in artifact_data:
+                nested = artifact_data.get('final_parameters_optimization_result')
+                if isinstance(nested, dict):
+                    payload = nested
+
+            optimized_parameters = payload.get('optimized_parameters') if isinstance(payload, dict) else None
+            flat_params = self._flatten_final_optimized_parameters(optimized_parameters)
+            if not flat_params:
+                return config
+
+            merged = dict(config)
+            merged.setdefault('final_optimized_parameters', flat_params)
+            if bool(merged.get('prefer_final_optimized_parameters', True)):
+                for k, v in flat_params.items():
+                    if k not in merged:
+                        merged[k] = v
+            return merged
+        except Exception:
+            return config
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute unified model training.
@@ -133,6 +216,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                 direction=direction # Add direction to context
             )
 
+            config = self._try_merge_final_optimized_parameters(dict(config))
+
             print(f"DEBUG: UnifiedModelsTrainingStep.execute called with training_type={training_type}")
             tprint_info(f"🚀 Starting Unified Models Training (Type: {training_type}) for {symbol} {timeframe} {direction}")
 
@@ -162,6 +247,29 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info("📥 STEP 1: RETRIEVING TRAINING DATA FROM ARTIFACTS")
             tprint_info("=" * 80)
             training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config, yaml_config)
+
+            try:
+                blocked_periods = get_blocked_training_periods(config)
+            except Exception:
+                blocked_periods = []
+
+            if blocked_periods and training_data is not None and isinstance(training_data, pd.DataFrame) and len(training_data) > 0:
+                try:
+                    before_n = int(len(training_data))
+                    allowed_index = filter_index_by_blocked_periods(training_data.index, blocked_periods)
+                    training_data = training_data.loc[allowed_index]
+                    if analyst_targets is not None:
+                        analyst_targets = analyst_targets.reindex(training_data.index)
+                    if tactician_targets is not None:
+                        tactician_targets = tactician_targets.reindex(training_data.index)
+
+                    after_n = int(len(training_data))
+                    tprint_info(
+                        f"🔒 Data integrity: excluded blocked periods ({len(blocked_periods)} ranges) "
+                        f"samples {before_n} → {after_n}"
+                    )
+                except Exception as exc:
+                    tprint_warning(f"⚠️ Failed to apply blocked-period exclusion: {exc}")
 
             # Apply robust, loss-aware preprocessing to targets to reduce the impact
             # of extreme outliers on regression models and HPO.
@@ -1622,6 +1730,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             training_data = None
             analyst_targets = None
             tactician_targets = None
+            analyst_base_dense_ready = False
 
             # --- FIX: Check for pre-loaded ensemble features/targets first ---
             if 'ensemble_features' in config:
@@ -1668,172 +1777,117 @@ class UnifiedModelsTrainingStep(BaseStep):
 
             feature_source_name = None
 
-            # Specialized path: analyst_base in BLANK mode should use wide ANALYST
-            # generated_features_15m filtered by the BLANK-mode selected features.
-            if is_blank_analyst_base:
-                # For BLANK analyst_base runs, we now rely exclusively on the
-                # final compact feature selection produced by
-                # feature_generation_final_feature_selection_step
-                # ('selected_feature_dataframe_50'). The legacy path that
-                # intersected BLANK selections with ANALYST generated_features_15m
-                # produced unstable feature sets and is no longer used to build
-                # training_data.
-                tprint_info(
-                    "   ℹ️ BLANK analyst_base: using 'selected_feature_dataframe_50' from "
-                    "feature_generation_final_feature_selection_step as the canonical "
-                    "training feature set."
+            if training_data is None and 'analyst_base' in training_type_local:
+                dense_base = None
+                try:
+                    original_step = getattr(self.artifact_manager, '_current_step_name', None)
+                    try:
+                        self.artifact_manager.set_context(
+                            step_name='feature_generation_interaction_generation_step',
+                            symbol=config.get('symbol', 'ETHUSDT'),
+                            exchange=config.get('exchange', 'binance'),
+                            timeframe=config.get('timeframe', '15m'),
+                            direction=config.get('direction', 'long'),
+                            model='analyst',
+                        )
+                        dense_base = self._get_artifact('analyst_combined_features', 'data')
+                    finally:
+                        if original_step:
+                            self.artifact_manager.set_context(step_name=original_step)
+                except Exception as e_dense:
+                    dense_base = None
+                    tprint_warning(f"⚠️ Failed to load analyst_combined_features for analyst_base: {e_dense}")
+
+                if dense_base is None or not isinstance(dense_base, pd.DataFrame) or dense_base.empty:
+                    raise ValueError(
+                        "❌ CRITICAL: No dense analyst feature DataFrame available for analyst_base. "
+                        "Required artifact: feature_generation_interaction_generation_step / analyst_combined_features"
+                    )
+
+                outcomes_dir = str(config.get('outcomes_dir', 'outcomes'))
+                hpo_payload = self._load_latest_hpo_feature_selection(
+                    symbol=str(config.get('symbol', '')),
+                    timeframe=str(config.get('timeframe', '')),
+                    outcomes_dir=outcomes_dir,
                 )
 
-            # If specialized path did not produce training_data, fall back to standard selected_feature_dataframe_* artifacts
-            if training_data is None:
-                # For BLANK analyst_base, first attempt to pick the longest-window
-                # selected_feature_dataframe_50 directly from the BLANK/FULL
-                # VersionedArtifactStores so we do not accidentally use a tiny
-                # 1204-row slice via the generic artifact path when much larger
-                # artifacts (e.g. 170k+ rows) are available.
-                if is_blank_analyst_base:
-                    try:
-                        symbol_cfg = config.get('symbol', 'ETHUSDT')
-                        exchange_cfg = config.get('exchange', 'binance')
-                        timeframe_cfg = config.get('timeframe', '15m')
-                        direction_cfg = config.get('direction', 'long')
+                require_hpo = bool(config.get('require_hpo_feature_selection_for_analyst_base', True))
+                hpo_selected = None
+                if isinstance(hpo_payload, dict):
+                    hpo_selected = hpo_payload.get('selected_features')
 
-                        # Require at least this many rows to consider a candidate
-                        # a valid long-window training frame. Default ~50k rows
-                        # (~520 days at 15m) ensures we have plenty of history
-                        # before later trimming to the 1-year blank window.
-                        min_rows_threshold = int(config.get('min_blank_training_rows', 50_000))
-
-                        # Collect candidate (store_path, version) pairs without
-                        # materializing all of them, then scan from most recent
-                        # to oldest and materialize at most a small number.
-                        candidate_versions: List[Tuple[str, str]] = []
-                        for mode_suffix in ['blank', 'full']:
-                            store_path = (
-                                f"versioned_artifacts/{symbol_cfg}_{exchange_cfg}_"
-                                f"{timeframe_cfg}_{direction_cfg}_{mode_suffix}"
-                            )
-                            try:
-                                store = VersionedArtifactStore(store_path)
-                                versions = store.list_versions()
-                            except Exception:
-                                continue
-
-                            for v in versions:
-                                if 'selected_feature_dataframe_50' in v:
-                                    candidate_versions.append((store_path, v))
-
-                        if candidate_versions:
-                            # Apply execution_mode preference before scanning:
-                            # - blank/light: consider all stores
-                            # - full: prefer *_full store; if none, fall back to all
-                            if execution_mode == "full":
-                                full_only = [cv for cv in candidate_versions if cv[0].endswith("_full")]
-                                if full_only:
-                                    candidate_versions = full_only
-
-                            # Sort by version string descending (newest first)
-                            candidate_versions_sorted = sorted(
-                                candidate_versions,
-                                key=lambda x: x[1],
-                                reverse=True,
-                            )
-
-                            max_versions_to_check = 5
-                            checked = 0
-                            for store_path, version in candidate_versions_sorted:
-                                if checked >= max_versions_to_check:
-                                    break
-                                checked += 1
-                                try:
-                                    store = VersionedArtifactStore(store_path)
-                                    view = store.get_view(version)
-                                    df = view.materialize()
-                                    if not isinstance(df, pd.DataFrame):
-                                        df = pd.DataFrame(df)
-                                    rows = len(df)
-                                    tprint_info(
-                                        f"   🔎 Evaluating candidate '{version}' from {store_path}: rows={rows}"
-                                    )
-                                    if rows >= min_rows_threshold:
-                                        training_data = df
-                                        feature_source_name = f"{store_path}:{version}"
-                                        tprint_success(
-                                            "✅ BLANK analyst_base: using long-window 'selected_feature_dataframe_50' from "
-                                            f"{store_path} version {version} with {rows} rows as training features "
-                                            f"(checked {checked} candidate(s))."
-                                        )
-                                        break
-                                    else:
-                                        tprint_info(
-                                            f"   ↪ Candidate '{version}' below min_rows_threshold "
-                                            f"({rows} < {min_rows_threshold}), skipping"
-                                        )
-                                except Exception as mat_exc:
-                                    tprint_warning(
-                                        f"⚠️ Failed to materialize candidate '{version}' from {store_path}: {mat_exc}"
-                                    )
-
-                            if training_data is None:
-                                tprint_warning(
-                                    "⚠️ BLANK analyst_base: no 'selected_feature_dataframe_50' candidate "
-                                    f"with >= {min_rows_threshold} rows found after checking up to "
-                                    f"{max_versions_to_check} version(s); falling back to generic artifact path."
-                                )
-                    except Exception as e_sel:
-                        tprint_warning(
-                            "⚠️ BLANK analyst_base: failed to select long-window "
-                            "selected_feature_dataframe_50 from VersionedArtifactStores; "
-                            f"falling back to generic artifact path: {e_sel}"
+                if not isinstance(hpo_selected, list) or not hpo_selected:
+                    if require_hpo:
+                        raise ValueError(
+                            "❌ CRITICAL: Missing HPO feature selection for analyst_base. "
+                            f"Expected file: {outcomes_dir}/hpo_feature_selection_{config.get('symbol')}_{config.get('timeframe')}_*.json"
                         )
+                    desired_cols = [
+                        c for c in dense_base.columns
+                        if c not in {'timestamp', 'target', 'label', 'target_long', 'target_short'}
+                        and not str(c).lower().endswith('_target')
+                        and not str(c).lower().endswith('_label')
+                    ]
+                else:
+                    desired_cols = [
+                        str(c) for c in hpo_selected
+                        if isinstance(c, (str, int, float))
+                    ]
+                    desired_cols = [
+                        c for c in desired_cols
+                        if c not in {'timestamp', 'target', 'label', 'target_long', 'target_short'}
+                        and not c.lower().endswith('_target')
+                        and not c.lower().endswith('_label')
+                    ]
 
-                # Prefer compact final feature selection for analyst_base; broad
-                # generated_features_* matrices are no longer used for training.
-                if training_data is None:
-                    if 'analyst_base' in training_type_local:
-                        # For analyst_base (including BLANK), require the final 50-feature
-                        # DataFrame from feature_generation_final_feature_selection_step.
-                        # Do not silently fall back to older selections; fail fast if
-                        # this artifact is unavailable or invalid.
-                        feature_artifact_names = [
-                            'selected_feature_dataframe_50',
-                        ]
-                    else:
-                    # Non-analyst_base training keeps the original behaviour
-                        feature_artifact_names = [
-                            f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features DataFrame (with size from config)
-                            'selected_feature_dataframe_60',                   # Standard 60-feature DataFrame
-                        ]
+                selected_cols = [c for c in desired_cols if c in dense_base.columns]
+                min_features = int(config.get('hpo_feature_selection_min_features', 30))
+                if require_hpo and len(selected_cols) < min_features:
+                    raise ValueError(
+                        "❌ CRITICAL: HPO feature selection produced too few usable columns for analyst_base. "
+                        f"usable={len(selected_cols)} min_required={min_features}"
+                    )
 
-                    tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
+                training_data = dense_base[selected_cols].copy()
+                feature_source_name = f"analyst_combined_features+hpo_feature_selection:{hpo_payload.get('_path') if isinstance(hpo_payload, dict) else 'none'}"
+                analyst_base_dense_ready = True
 
-                    for artifact_name in feature_artifact_names:
-                        try:
-                            tprint_info(f"   ↪ Trying '{artifact_name}'")
-                            training_data = self._get_artifact(artifact_name, 'data')
-                            if training_data is not None:
-                                feature_source_name = artifact_name
-                                tprint_success(
-                                    f"✅ Retrieved training features from '{artifact_name}': "
-                                    f"{training_data.shape if hasattr(training_data, 'shape') else type(training_data)}"
-                                )
-                                break
-                            else:
-                                tprint_warning(
-                                    f"⚠️ Artifact '{artifact_name}' returned None (metadata exists but data file missing?)"
-                                )
-                        except Exception as e:
-                            self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
-                            continue
+            # If analyst_base path did not produce training_data, fall back to standard selected_feature_dataframe_* artifacts
+            if training_data is None:
+                feature_artifact_names = [
+                    f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features DataFrame (with size from config)
+                    'selected_feature_dataframe_60',                   # Standard 60-feature DataFrame
+                ]
+
+                tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
+
+                for artifact_name in feature_artifact_names:
+                    try:
+                        tprint_info(f"   ↪ Trying '{artifact_name}'")
+                        training_data = self._get_artifact(artifact_name, 'data')
+                        if training_data is not None:
+                            feature_source_name = artifact_name
+                            tprint_success(
+                                f"✅ Retrieved training features from '{artifact_name}': "
+                                f"{training_data.shape if hasattr(training_data, 'shape') else type(training_data)}"
+                            )
+                            break
+                        else:
+                            tprint_warning(
+                                f"⚠️ Artifact '{artifact_name}' returned None (metadata exists but data file missing?)"
+                            )
+                    except Exception as e:
+                        self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                        continue
             
             # FAIL FAST: If no training data DataFrame found, raise error
             if training_data is None or not isinstance(training_data, pd.DataFrame):
                 if 'analyst_base' in training_type_local:
                     error_msg = (
                         "❌ CRITICAL: No training feature DataFrame found for analyst_base!\n"
-                        "   Required artifact (from 'feature_generation_final_feature_selection_step'):\n"
-                        "   - selected_feature_dataframe_50\n"
-                        "   No fallback to older selections or generated_features_15m is permitted."
+                        "   Required artifacts:\n"
+                        "   - feature_generation_interaction_generation_step / analyst_combined_features\n"
+                        "   - outcomes/hpo_feature_selection_{symbol}_{timeframe}_*.json"
                     )
                 else:
                     error_msg = (
@@ -1850,7 +1904,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # ================================================================
                 # ANALYST_BASE DENSE FEATURE RECONSTRUCTION
                 # ================================================================
-                # For analyst_base training, the selected_feature_dataframe_50 may
+                # For analyst_base training, the selected feature frame may
                 # be sparse (event-only rows). We want dense OOF predictions over
                 # the full 15m grid. To achieve this:
                 # 1. Extract selected feature column names from the sparse frame
@@ -1858,7 +1912,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # 3. Apply selected columns to dense frame, preserving all rows
                 #
                 # This ensures analyst_base models can predict on all 15m bars.
-                if 'analyst_base' in training_type_local:
+                if 'analyst_base' in training_type_local and not analyst_base_dense_ready:
                     selected_feature_cols = [
                         c for c in training_data.columns
                         if c not in {'timestamp', 'target', 'label', 'target_long', 'target_short'}
@@ -1890,21 +1944,78 @@ class UnifiedModelsTrainingStep(BaseStep):
                         dense_base = None
                     
                     if dense_base is not None and isinstance(dense_base, pd.DataFrame):
-                        # Find overlap between selected features and dense base
-                        overlap_cols = [c for c in selected_feature_cols if c in dense_base.columns]
-                        
-                        if len(overlap_cols) >= len(selected_feature_cols) * 0.5:  # At least 50% overlap
+                        desired_feature_cols = list(selected_feature_cols)
+                        prefer_hpo_for_dense = bool(
+                            config.get(
+                                'prefer_hpo_feature_selection_for_analyst_base',
+                                config.get('prefer_hpo_feature_selection', True),
+                            )
+                        )
+                        hpo_payload = None
+                        if prefer_hpo_for_dense:
+                            try:
+                                outcomes_dir = str(config.get('outcomes_dir', 'outcomes'))
+                                hpo_payload = self._load_latest_hpo_feature_selection(
+                                    symbol=str(config.get('symbol', '')),
+                                    timeframe=str(config.get('timeframe', '')),
+                                    outcomes_dir=outcomes_dir,
+                                )
+                            except Exception:
+                                hpo_payload = None
+
+                        if isinstance(hpo_payload, dict):
+                            hpo_selected = hpo_payload.get('selected_features')
+                            if isinstance(hpo_selected, list) and hpo_selected:
+                                hpo_cols = [
+                                    str(c) for c in hpo_selected
+                                    if isinstance(c, (str, int, float))
+                                ]
+                                hpo_cols = [
+                                    c for c in hpo_cols
+                                    if c not in {'timestamp', 'target', 'label', 'target_long', 'target_short'}
+                                    and not c.lower().endswith('_target')
+                                    and not c.lower().endswith('_label')
+                                ]
+
+                                max_hpo_feats = config.get('hpo_feature_selection_max_features_for_analyst_base')
+                                try:
+                                    if max_hpo_feats is not None:
+                                        max_hpo_feats = int(max_hpo_feats)
+                                except Exception:
+                                    max_hpo_feats = None
+                                if isinstance(max_hpo_feats, int) and max_hpo_feats > 0:
+                                    hpo_cols = hpo_cols[:max_hpo_feats]
+
+                                if hpo_cols:
+                                    desired_feature_cols = hpo_cols
+                                    tprint_info(
+                                        f"   🎯 Using HPO-selected feature list for dense reconstruction: "
+                                        f"n={len(desired_feature_cols)} from {hpo_payload.get('_path')}"
+                                    )
+
+                        overlap_cols = [c for c in desired_feature_cols if c in dense_base.columns]
+                        if desired_feature_cols != selected_feature_cols and (
+                            len(overlap_cols) < len(desired_feature_cols) * 0.5
+                        ):
+                            tprint_info(
+                                f"   ℹ️ Skipping HPO feature list: only {len(overlap_cols)}/{len(desired_feature_cols)} "
+                                "overlap with analyst_combined_features; falling back to selected_feature_dataframe columns"
+                            )
+                            desired_feature_cols = selected_feature_cols
+                            overlap_cols = [c for c in desired_feature_cols if c in dense_base.columns]
+
+                        if len(overlap_cols) >= len(desired_feature_cols) * 0.5:  # At least 50% overlap
                             sparse_rows = len(training_data)
                             dense_rows = len(dense_base)
-                            
+
                             tprint_info("=" * 80)
                             tprint_info("🔄 ANALYST_BASE DENSE FEATURE RECONSTRUCTION")
                             tprint_info("=" * 80)
                             tprint_info(f"   Sparse selected_feature_dataframe: {sparse_rows} rows")
                             tprint_info(f"   Dense analyst_combined_features: {dense_rows} rows")
-                            tprint_info(f"   Selected feature columns: {len(selected_feature_cols)}")
+                            tprint_info(f"   Selected feature columns: {len(desired_feature_cols)}")
                             tprint_info(f"   Overlap columns: {len(overlap_cols)}")
-                            
+
                             # Use dense base with selected columns
                             new_training_data = dense_base[overlap_cols].copy()
                             
@@ -1930,7 +2041,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                             tprint_info("=" * 80)
                         else:
                             tprint_info(
-                                f"   ℹ️ Skipping dense reconstruction: only {len(overlap_cols)}/{len(selected_feature_cols)} "
+                                f"   ℹ️ Skipping dense reconstruction: only {len(overlap_cols)}/{len(desired_feature_cols)} "
                                 f"columns overlap with analyst_combined_features"
                             )
                     else:
@@ -3127,6 +3238,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                 
                 tprint_info(f"   Data range: {data_start} → {data_end}")
                 tprint_info(f"   Execution mode: {execution_mode}")
+
+                sample_weight = None
+                if isinstance(training_data, pd.DataFrame) and 'target_sample_weight' in training_data.columns:
+                    try:
+                        sw_series = pd.to_numeric(training_data['target_sample_weight'], errors='coerce').fillna(1.0)
+                        sample_weight = sw_series.to_numpy(dtype=float)
+                        training_data = training_data.drop(columns=['target_sample_weight'])
+                        tprint_info("⚖️ Using target_sample_weight for incremental training (removed from features)")
+                    except Exception as sw_exc:
+                        tprint_warning(f"⚠️ Failed to use target_sample_weight as sample_weight: {sw_exc}")
+                        sample_weight = None
                 
                 # Create incremental trainer
                 model_id = f"{symbol}_{exchange}_{timeframe}"
@@ -3145,7 +3267,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                     y=analyst_targets,
                     data_start=data_start,
                     data_end=data_end,
-                    sample_weight=None,
+                    sample_weight=sample_weight,
                     verbose=True,
                     specialist_feature_names=self._specialist_feature_names
                 )
@@ -3563,6 +3685,45 @@ class UnifiedModelsTrainingStep(BaseStep):
                                                 artifacts['analyst_base_oof_metrics'] = oof_metrics_path
                                                 tprint_success(f"✅ Saved analyst_base_oof_metrics: {metrics_df.shape}")
                                                 tprint_info(f"   Path: {oof_metrics_path}")
+
+                                                try:
+                                                    corr_df = oof_df.corr(method='pearson', min_periods=50)
+                                                    corr_path = self._save_artifact(
+                                                        data=corr_df,
+                                                        artifact_name='analyst_base_oof_correlation',
+                                                        artifact_type='data',
+                                                        data_category='predictions'
+                                                    )
+                                                    artifacts['analyst_base_oof_correlation'] = corr_path
+                                                    tprint_success(f"✅ Saved analyst_base_oof_correlation: {corr_df.shape}")
+                                                    tprint_info(f"   Path: {corr_path}")
+
+                                                    if corr_df is not None and isinstance(corr_df, pd.DataFrame) and not corr_df.empty:
+                                                        abs_corr = corr_df.abs().copy()
+                                                        try:
+                                                            np.fill_diagonal(abs_corr.values, np.nan)
+                                                        except Exception:
+                                                            pass
+                                                        diversity_df = pd.DataFrame(
+                                                            {
+                                                                'avg_abs_corr': abs_corr.mean(axis=1, skipna=True),
+                                                                'median_abs_corr': abs_corr.median(axis=1, skipna=True),
+                                                                'min_abs_corr': abs_corr.min(axis=1, skipna=True),
+                                                                'max_abs_corr': abs_corr.max(axis=1, skipna=True),
+                                                            },
+                                                            index=corr_df.index,
+                                                        )
+                                                        diversity_path = self._save_artifact(
+                                                            data=diversity_df,
+                                                            artifact_name='analyst_base_oof_diversity',
+                                                            artifact_type='data',
+                                                            data_category='predictions'
+                                                        )
+                                                        artifacts['analyst_base_oof_diversity'] = diversity_path
+                                                        tprint_success(f"✅ Saved analyst_base_oof_diversity: {diversity_df.shape}")
+                                                        tprint_info(f"   Path: {diversity_path}")
+                                                except Exception as corr_exc:
+                                                    tprint_warning(f"⚠️ Failed to compute/save OOF correlation/diversity: {corr_exc}")
 
                                                 # Additionally, export a user-facing CSV comparing all base models
                                                 # for this analyst_base run so that a single training invocation

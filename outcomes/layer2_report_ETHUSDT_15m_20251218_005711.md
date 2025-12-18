@@ -1,0 +1,14 @@
+# Layer2 Report
+- timestamp: 20251218_005711
+- symbol: ETHUSDT
+- timeframe: 15m
+- n_bars: 34561
+- n_events: 18780
+- cache_hits: 197
+- cache_misses: 474
+- extracted_trials_per_family: {'Mean Reversion': 30, 'Trend Continuation': 30, 'Momentum': 30}
+- production_geometries_by_family: {}
+- production_geometries_n: 0
+- oof_labeled_events: 14989
+- oof_nonzero_weight_events: 14989
+- oof_geometry_channels: 3

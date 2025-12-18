@@ -26,6 +26,8 @@ import logging
 from datetime import datetime
 import os
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 # Initialize logger
 logger = logging.getLogger(__name__)
 
@@ -113,7 +115,7 @@ class TripleBarrierConfig:
     stop_loss_multiplier: float = 0.01
     time_barrier_minutes: int = 30
     max_lookahead: int = 100
-    transaction_cost: float = 0.001
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
     regime_aware: bool = True
     regime_column: str = "regime"
     enable_fractional_barriers: bool = False

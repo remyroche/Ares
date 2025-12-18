@@ -1,22 +1,17 @@
-
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import joblib
 
-from src.training.steps.labeling.advanced_gating_logic import AdvancedGatingPipeline, compute_regime_labels_for_events
-from src.training.steps.labeling.feature_generation_meta_labeling_step import DEFAULT_TRANSACTION_COST
 from src.training.steps.labeling.multi_label_voting_utils import (
-    TripleBarrierConfig,
     compute_kalman_smoothed_price_and_volatility,
-    compute_multi_triple_barrier_outcomes_vectorized,
 )
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, OptimizationConfig
-from src.utils.tprint import tprint_info, tprint_success, tprint_warning
 
 
 DEFAULT_RANDOM_SEED = 42
@@ -34,515 +29,295 @@ def get_reproducible_random_state(base_seed: int = DEFAULT_RANDOM_SEED, offset: 
     return int((base_seed_i + offset_i) % (2**31 - 1))
 
 
-def rts_smoother_1d(
-    prices: np.ndarray,
-    volume: Optional[np.ndarray],
-    Q: float,
-    R: float,
-    init_val: float = None,
-    init_cov: float = 1.0,
-) -> tuple:
-    n = len(prices)
-    obs = np.asarray(prices, dtype=np.float64)
-
-    # Adaptive R scaling based on volume
-    # High Volume -> Low Noise (Trust Price) -> Low R
-    # R_t = R_base * (MedianVol / Vol_t)
-    if volume is not None and len(volume) == n:
-        vol = np.asarray(volume, dtype=np.float64)
-        median_vol = np.nanmedian(vol)
-        if median_vol > 0:
-            # Avoid division by zero
-            vol_safe = np.where(vol < 1e-8, 1e-8, vol)
-            # Scaling factor: High vol -> Factor < 1 -> R decreases
-            scale_factor = median_vol / vol_safe
-            # Clip to prevent extreme scaling (e.g. 0.1x to 10x)
-            scale_factor = np.clip(scale_factor, 0.1, 10.0)
-            R_t = R * scale_factor
-        else:
-            R_t = np.full(n, R, dtype=np.float64)
-    else:
-        R_t = np.full(n, R, dtype=np.float64)
-
-    m = np.zeros(n)
-    P = np.zeros(n)
-
-    m[0] = init_val if init_val is not None else obs[0]
-    P[0] = init_cov
-
-    for t in range(1, n):
-        m_minus = m[t - 1]
-        P_minus = P[t - 1] + Q
-
-        # Use time-varying R
-        r_val = R_t[t]
-
-        K = P_minus / (P_minus + r_val)
-        m[t] = m_minus + K * (obs[t] - m_minus)
-        P[t] = (1 - K) * P_minus
-
-    s_m = np.zeros(n)
-    s_P = np.zeros(n)
-    s_m[-1] = m[-1]
-    s_P[-1] = P[-1]
-
-    for t in range(n - 2, -1, -1):
-        P_pred = P[t] + Q
-        J = P[t] / P_pred if P_pred > 1e-12 else 0.0
-        s_m[t] = m[t] + J * (s_m[t + 1] - m[t])
-        s_P[t] = P[t] + (J**2) * (s_P[t + 1] - P_pred)
-
-    return s_m, s_P
+def _rolling_sum_prefix(values: np.ndarray, window: int) -> np.ndarray:
+    v = np.asarray(values, dtype=float)
+    n = int(v.shape[0])
+    w = int(max(1, min(int(window), n)))
+    c = np.cumsum(np.where(np.isfinite(v), v, 0.0), dtype=float)
+    out = c.copy()
+    out[w:] = c[w:] - c[:-w]
+    return out
 
 
-def robust_labeling_loss(
-    smoothed: np.ndarray,
-    raw: np.ndarray,
-    alpha: float = 1.0,
-    beta: float = 1.0,
-    gamma: float = 1.0,
-    is_acausal: bool = True,
-) -> tuple:
-    s = np.asarray(smoothed, dtype=np.float64)
-    r = np.asarray(raw, dtype=np.float64)
-
-    s_ret = np.diff(s)
-    r_ret = np.diff(r)
-    raw_vol = np.std(r_ret) + 1e-9
-
-    second_diff = np.diff(s, n=2)
-    smooth_error = np.mean(second_diff**2) / (raw_vol**2)
-
-    if is_acausal:
-        rmse = np.sqrt(np.mean((s - r) ** 2))
-        tracking_error = rmse / raw_vol
-    else:
-        tau = 1
-        rmse = np.sqrt(np.mean((s[:-tau] - r[tau:]) ** 2))
-        tracking_error = rmse / raw_vol
-
-    std_s = np.std(s_ret)
-    std_r = np.std(r_ret)
-    amp_ratio = std_s / (std_r + 1e-9)
-    amp_error = (amp_ratio - 0.95) ** 2
-
-    total_loss = (alpha * smooth_error) + (beta * tracking_error) + (gamma * amp_error)
-    return total_loss, {
-        "loss": total_loss,
-        "smooth": smooth_error,
-        "track": tracking_error,
-        "amp": amp_error,
-        "amp_ratio": amp_ratio,
-    }
+def _ffill_nan(arr: np.ndarray, fallback: Optional[np.ndarray] = None) -> np.ndarray:
+    x = np.asarray(arr, dtype=float)
+    n = int(x.shape[0])
+    if n == 0:
+        return x
+    mask = np.isfinite(x)
+    if not bool(mask.any()):
+        if fallback is None:
+            return x
+        return np.asarray(fallback, dtype=float)
+    idx = np.where(mask, np.arange(n, dtype=int), 0)
+    idx = np.maximum.accumulate(idx)
+    out = x[idx]
+    if fallback is not None:
+        fb = np.asarray(fallback, dtype=float)
+        out = np.where(np.isfinite(out), out, fb)
+    return out
 
 
-@dataclass
-class Layer0Output:
-    best_kalman_params: Dict[str, Any]
-    enable_committee_voting_hpo: bool
-    enable_committee_weight_factor: bool
-    enable_committee_pre_step: bool
-    best_committee_params: Dict[str, Any]
-    committee_loaded_from: Optional[str]
-    committee_configs: List[TripleBarrierConfig]
-    committee_names: List[str]
-    committee_event_idx: Optional[pd.DatetimeIndex]
-    committee_label_matrix_values: Optional[np.ndarray]
-    committee_returns_matrix_values: Optional[np.ndarray]
-    committee_durations_matrix_values: Optional[np.ndarray]
-    committee_confidence_matrix_values: Optional[np.ndarray]
-    advanced_gating_pipeline: Optional[AdvancedGatingPipeline]
+def compute_rolling_vwap(
+    close: pd.Series,
+    volume: Optional[pd.Series],
+    lookback: int,
+) -> pd.Series:
+    close_s = pd.to_numeric(close, errors="coerce")
+    close_vals = close_s.to_numpy(dtype=float)
+    n = int(close_vals.shape[0])
+    lb = int(max(2, min(int(lookback), max(2, n))))
+
+    if volume is None:
+        sum_close = _rolling_sum_prefix(close_vals, lb)
+        denom = np.minimum(np.arange(1, n + 1, dtype=float), float(lb))
+        out = sum_close / (denom + 1e-12)
+        out = _ffill_nan(out, fallback=close_vals)
+        return pd.Series(out, index=close_s.index)
+
+    vol_s = pd.to_numeric(volume, errors="coerce")
+    vol_vals = vol_s.to_numpy(dtype=float)
+    if not bool(np.isfinite(vol_vals).any()):
+        sum_close = _rolling_sum_prefix(close_vals, lb)
+        denom = np.minimum(np.arange(1, n + 1, dtype=float), float(lb))
+        out = sum_close / (denom + 1e-12)
+        out = _ffill_nan(out, fallback=close_vals)
+        return pd.Series(out, index=close_s.index)
+
+    pv_vals = close_vals * np.where(np.isfinite(vol_vals), vol_vals, 0.0)
+    v_safe = np.where(np.isfinite(vol_vals) & (vol_vals > 0.0), vol_vals, 0.0)
+    sum_pv = _rolling_sum_prefix(pv_vals, lb)
+    sum_v = _rolling_sum_prefix(v_safe, lb)
+    out = sum_pv / (sum_v + 1e-12)
+    out = np.where(sum_v > 0.0, out, np.nan)
+    out = _ffill_nan(out, fallback=close_vals)
+    return pd.Series(out, index=close_s.index)
 
 
-def run_layer_0(
+def run_layer0_kalman_vwap(
     *,
-    symbol: str,
-    exchange: str,
-    timeframe: str,
-    direction: str,
     market_data: pd.DataFrame,
-    primary_signals: pd.DataFrame,
     config: Dict[str, Any],
     outcomes_dir: Path,
-    start_rank: int,
-    stage_rank: Dict[str, int],
-    start_at_canonical: str,
-    load_stage_best_params: Callable[[str], Tuple[Dict[str, Any], Optional[Path]]],
-) -> Layer0Output:
-    close_series = market_data["close"]
+    bundle_path: Optional[Path] = None,
+    run_optimization: bool = True,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    close_series = pd.to_numeric(market_data.get("close"), errors="coerce")
     volume_series = market_data.get("volume", None)
+    if isinstance(volume_series, pd.Series):
+        volume_series = pd.to_numeric(volume_series, errors="coerce")
 
-    volume_values = None
-    if volume_series is not None:
-        volume_values = volume_series.values
+    if bundle_path is None:
+        bundle_path = outcomes_dir / "layer0_kalman_bundle.joblib"
 
-    tprint_info("🧪 Stage 0: Optimizing Kalman Signal Parameters...")
-    kalman_search_space = {
-        "kalman_Q": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
-        "kalman_R": {"type": "float", "low": 1e-4, "high": 2e-1, "log": True},
-    }
-
-    def kalman_objective(params: Dict[str, Any]) -> float:
-        Q = float(params.get("kalman_Q", 1e-4))
-        R = float(params.get("kalman_R", 0.01))
-        raw_close = close_series.values
-        if len(raw_close) < 100:
-            return -10.0
+    best_params: Dict[str, Any] = {}
+    loaded_from: Optional[str] = None
+    if (not run_optimization) and bundle_path.exists():
         try:
-            smoothed_close, _ = rts_smoother_1d(
-                prices=raw_close,
-                volume=volume_values,
-                Q=Q,
-                R=R,
-                init_val=None,
-                init_cov=1.0,
-            )
-            loss, details = robust_labeling_loss(
-                smoothed=smoothed_close,
-                raw=raw_close,
-                alpha=1.0,
-                beta=1.0,
-                gamma=1.0,
-                is_acausal=True,
-            )
-            amp_ratio = float(details.get("amp_ratio", 0.95))
-            amp_bonus = max(0.0, 0.1 - abs(amp_ratio - 0.95))
-            score = -float(loss) + float(amp_bonus)
-            return float(score) if np.isfinite(score) else -10.0
-        except Exception as e:
-            tprint_warning(f"[KALMAN_OBJ_ERROR] {e}")
-            return -10.0
+            payload = joblib.load(bundle_path)
+            best_params = dict(payload.get("best_params", {}) or {})
+            loaded_from = str(bundle_path)
+        except Exception:
+            best_params = {}
 
-    stage0_loaded_from: Optional[str] = None
-    if stage_rank.get("stage0", 0) < int(start_rank):
-        loaded_params, loaded_path = load_stage_best_params("stage0")
-        best_kalman_params = dict(loaded_params or {})
-        stage0_loaded_from = str(loaded_path) if loaded_path is not None else None
-        if not best_kalman_params:
-            best_kalman_params = {"kalman_Q": 1e-4, "kalman_R": 0.01}
-        tprint_info(
-            f"♻️ Stage 0 skipped (start_at={start_at_canonical}); loaded best params from {stage0_loaded_from}"
-        )
-    else:
-        kalman_optimizer = BayesianTPEOptimizer(
-            config=OptimizationConfig(
-                n_trials=int(config.get("stage0_n_trials", 60)),
-                execution_mode="full",
-                direction="maximize",
-                seed=get_reproducible_random_state(42, offset=0),
-            )
-        )
-        kalman_result = kalman_optimizer.optimize(objective=kalman_objective, search_space=kalman_search_space)
-        best_kalman_params = dict(kalman_result.get("best_params", {}) or {})
+    if run_optimization or not best_params:
+        def _objective(params: Dict[str, Any]) -> float:
+            Q = float(params.get("kalman_Q", 1e-4))
+            R = float(params.get("kalman_R", 0.01))
+            vwap_lookback = int(params.get("vwap_lookback", 20))
+            vwap_lambda = float(params.get("vwap_lambda", 0.25))
 
-    try:
-        best_Q = float(best_kalman_params.get("kalman_Q", 1e-4))
-        best_R = float(best_kalman_params.get("kalman_R", 0.01))
-    except Exception:
-        best_Q, best_R = 1e-4, 0.01
-    if (not np.isfinite(best_Q)) or best_Q <= 0.0:
-        best_Q = 1e-4
-    if (not np.isfinite(best_R)) or best_R <= 0.0:
-        best_R = 0.01
-    best_kalman_params["kalman_Q"] = float(best_Q)
-    best_kalman_params["kalman_R"] = float(best_R)
-    tprint_info(f"   Best RTS/Kalman Params: Q={best_Q:.2e}, R={best_R:.2e}")
+            vwap_series = compute_rolling_vwap(close_series, volume_series, vwap_lookback)
+            vol_w = None
+            if volume_series is not None:
+                vol_vals = pd.to_numeric(volume_series, errors="coerce").to_numpy(dtype=float)
+                n = int(vol_vals.shape[0])
+                lb = int(max(2, min(int(vwap_lookback), max(2, n))))
+                vol_mean = _rolling_sum_prefix(np.where(np.isfinite(vol_vals), vol_vals, 0.0), lb)
+                denom = np.minimum(np.arange(1, n + 1, dtype=float), float(lb))
+                vol_mean = vol_mean / (denom + 1e-12)
+                vol_rel = vol_vals / (vol_mean + 1e-12)
+                w_track = np.clip(vol_rel, 0.1, 10.0)
+                w_vwap = np.clip(1.0 / (vol_rel + 1e-12), 0.1, 10.0)
+                vol_w = (w_track, w_vwap)
 
-    enable_committee_voting_hpo = bool(config.get("enable_committee_voting_hpo", True))
-    enable_committee_weight_factor = bool(config.get("enable_committee_weight_factor", True))
-    enable_committee_pre_step = bool(config.get("enable_committee_pre_step", True))
-    enable_committee_pre_step = bool(
-        enable_committee_pre_step and (enable_committee_voting_hpo or enable_committee_weight_factor)
-    )
-
-    best_committee_params: Dict[str, Any] = {
-        "w_scalp": 1.0,
-        "w_swing": 1.0,
-        "w_trend": 1.0,
-        "w_breakout": 0.5,
-        "w_vwap_rev": 0.5,
-        "w_vol_shock": 0.5,
-        "consensus_quantile": float(config.get("committee_consensus_quantile_default", 0.90)),
-        "consensus_threshold": float(config.get("consensus_threshold", 0.5)),
-    }
-    committee_loaded_from: Optional[str] = None
-
-    committee_configs: List[TripleBarrierConfig] = []
-    committee_names: List[str] = []
-
-    committee_event_idx: Optional[pd.DatetimeIndex] = None
-    committee_label_matrix_values: Optional[np.ndarray] = None
-    committee_returns_matrix_values: Optional[np.ndarray] = None
-    committee_durations_matrix_values: Optional[np.ndarray] = None
-    committee_confidence_matrix_values: Optional[np.ndarray] = None
-
-    if enable_committee_pre_step:
-        tprint_info("🧪 Committee pre-step: building committee matrices...")
-
-        base_profiles = {
-            "scalp": (1.2, 0.6, 8),
-            "swing": (1.8, 0.9, 12),
-            "trend": (2.4, 1.2, 24),
-        }
-        vol_scalars = {"lower": 0.8, "upper": 1.2}
-        for p_name, (tp_base, sl_base, h_base) in base_profiles.items():
-            for v_name, v_scalar in vol_scalars.items():
-                committee_configs.append(
-                    TripleBarrierConfig(
-                        tp_multiplier=tp_base * v_scalar,
-                        sl_multiplier=sl_base * v_scalar,
-                        horizon=h_base,
-                    )
-                )
-                committee_names.append(f"{p_name}_{v_name}")
-
-        try:
-            # Pass volume_values here to align with RTS logic
-            kalman_price_smooth, kalman_vol_smooth = compute_kalman_smoothed_price_and_volatility(
-                prices=market_data["close"],
-                volume=volume_series,  # Updated to pass volume
-                vwap=market_data.get("vwap", None), # Updated to pass VWAP
-                process_noise=float(best_Q),
-                measurement_noise=float(best_R),
-                vol_window=20,
-            )
-            mk_data_voting = market_data.copy()
-            mk_data_voting["kalman_price"] = kalman_price_smooth
-            mk_data_voting["kalman_volatility"] = kalman_vol_smooth
-
-            committee_results = compute_multi_triple_barrier_outcomes_vectorized(
-                market_data=mk_data_voting,
-                primary_signals=primary_signals,
-                configs=committee_configs,
-                transaction_cost=DEFAULT_TRANSACTION_COST,
-            )
-
-            event_mask = primary_signals["consensus"] != 0
-            committee_event_idx = pd.DatetimeIndex(primary_signals[event_mask].index)
-
-            new_expert_scores = None
-            new_expert_conf = None
             try:
-                from src.training.steps.labeling.layer2_advanced_logic import (
-                    NEW_EXPERT_NAMES,
-                    compute_new_experts_matrix,
+                smoothed_close, _smoothed_vol = compute_kalman_smoothed_price_and_volatility(
+                    prices=close_series,
+                    volume=volume_series,
+                    vwap=vwap_series,
+                    process_noise=Q,
+                    measurement_noise=R,
+                    vol_window=20,
                 )
 
-                dir_raw = str(direction).lower()
-                dir_sign = 1
-                if dir_raw in {"short", "sell", "-1", "s"}:
-                    dir_sign = -1
+                raw = close_series.to_numpy(dtype=float)
+                smooth = pd.to_numeric(smoothed_close, errors="coerce").to_numpy(dtype=float)
+                vwap_vals = pd.to_numeric(vwap_series, errors="coerce").to_numpy(dtype=float)
 
-                new_expert_scores, new_expert_conf = compute_new_experts_matrix(
-                    market_data=mk_data_voting,
-                    event_idx=pd.DatetimeIndex(committee_event_idx),
-                    direction=dir_sign,
-                    breakout_lookback=20,
-                    vwap_lookback=20,
-                    vol_lookback=20,
-                )
-                committee_names.extend(list(NEW_EXPERT_NAMES))
+                mask = np.isfinite(raw) & np.isfinite(smooth) & np.isfinite(vwap_vals)
+                if int(mask.sum()) < 100:
+                    return -10.0
+
+                raw_m = raw[mask]
+                smooth_m = smooth[mask]
+                vwap_m = vwap_vals[mask]
+                denom = float(np.nanstd(np.diff(raw_m))) + 1e-9
+
+                smooth_pen = float(np.mean(np.diff(smooth_m, n=2) ** 2) / (denom**2))
+
+                if vol_w is None:
+                    track_pen = float(np.mean((smooth_m - raw_m) ** 2) / (denom**2))
+                    vwap_pen = float(np.mean((smooth_m - vwap_m) ** 2) / (denom**2))
+                else:
+                    w_track, w_vwap = vol_w
+                    w_track_m = np.asarray(w_track, dtype=float)[mask]
+                    w_vwap_m = np.asarray(w_vwap, dtype=float)[mask]
+                    track_pen = float(np.mean(w_track_m * ((smooth_m - raw_m) ** 2)) / (denom**2))
+                    vwap_pen = float(np.mean(w_vwap_m * ((smooth_m - vwap_m) ** 2)) / (denom**2))
+
+                vwap_lambda = float(np.clip(vwap_lambda, 0.0, 0.5))
+                loss = smooth_pen + track_pen + vwap_lambda * vwap_pen
+                score = -float(loss)
+                return float(score) if np.isfinite(score) else -10.0
             except Exception:
-                new_expert_scores = None
-                new_expert_conf = None
+                return -10.0
 
-            n_base_experts = int(len(committee_configs))
-            n_new_experts = 3 if new_expert_scores is not None else 0
-            n_total_experts = int(n_base_experts + n_new_experts)
-
-            committee_label_matrix_values = np.zeros((len(committee_event_idx), n_total_experts), dtype=np.int8)
-            committee_returns_matrix_values = np.full(
-                (len(committee_event_idx), n_total_experts), np.nan, dtype=np.float32
+        optimizer = BayesianTPEOptimizer(
+            config=OptimizationConfig(
+                n_trials=int(config.get("layer0_n_trials", config.get("stage0_n_trials", 50))),
+                execution_mode=str(config.get("execution_mode", "light")),
+                direction="maximize",
+                seed=int(config.get("random_state", 42)),
             )
-            committee_durations_matrix_values = np.full(
-                (len(committee_event_idx), n_total_experts), np.nan, dtype=np.float32
-            )
-            committee_confidence_matrix_values = np.full(
-                (len(committee_event_idx), n_total_experts), np.nan, dtype=np.float32
-            )
+        )
+        search_space = {
+            "kalman_Q": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
+            "kalman_R": {"type": "float", "low": 1e-4, "high": 2e-1, "log": True},
+            "vwap_lookback": {"type": "int", "low": 10, "high": 200, "log": False},
+            "vwap_lambda": {"type": "float", "low": 0.0, "high": 0.5, "log": False},
+        }
+        opt_res = optimizer.optimize(objective=_objective, search_space=search_space)
+        best_params = dict(opt_res.get("best_params", {}) or {})
+        loaded_from = None
 
-            for i, res in enumerate(committee_results):
-                lbls = res["labels"].reindex(committee_event_idx).fillna(0).values.astype(int)
-                rets = res["returns"].reindex(committee_event_idx).values.astype(np.float32)
-                durs = res.get("durations")
-                if not isinstance(durs, pd.Series):
-                    durs = res.get("event_durations")
-                if isinstance(durs, pd.Series):
-                    dur_vals = durs.reindex(committee_event_idx).values.astype(np.float32)
-                else:
-                    dur_vals = np.full(int(len(committee_event_idx)), float(getattr(committee_configs[i], "horizon", 1.0)))
-                conf = res.get("confidence")
-                if isinstance(conf, pd.Series):
-                    conf_vals = conf.reindex(committee_event_idx).values.astype(np.float32)
-                else:
-                    conf_vals = np.full(int(len(committee_event_idx)), 1.0, dtype=np.float32)
-
-                committee_label_matrix_values[:, i] = lbls
-                committee_returns_matrix_values[:, i] = rets
-                committee_durations_matrix_values[:, i] = dur_vals
-                committee_confidence_matrix_values[:, i] = conf_vals
-
-            if new_expert_scores is not None and new_expert_conf is not None and n_new_experts == 3:
-                try:
-                    avg_base_ret = float(
-                        np.nanmean(np.abs(committee_returns_matrix_values[:, :n_base_experts]))
-                    )
-                    if (not np.isfinite(avg_base_ret)) or avg_base_ret < 1e-6:
-                        avg_base_ret = 0.001
-                except Exception:
-                    avg_base_ret = 0.001
-
-                try:
-                    med_dur = float(np.nanmedian(committee_durations_matrix_values[:, :n_base_experts]))
-                    if (not np.isfinite(med_dur)) or med_dur < 1.0:
-                        med_dur = 12.0
-                except Exception:
-                    med_dur = 12.0
-
-                for j in range(3):
-                    col_idx = n_base_experts + j
-                    scores_j = np.asarray(new_expert_scores[:, j], dtype=float)
-                    conf_j = np.asarray(new_expert_conf[:, j], dtype=float)
-                    committee_label_matrix_values[:, col_idx] = np.sign(scores_j).astype(np.int8)
-                    committee_returns_matrix_values[:, col_idx] = (scores_j * avg_base_ret).astype(np.float32)
-                    committee_durations_matrix_values[:, col_idx] = np.full(
-                        int(len(committee_event_idx)), med_dur, dtype=np.float32
-                    )
-                    committee_confidence_matrix_values[:, col_idx] = np.clip(conf_j, 0.0, 1.0).astype(np.float32)
-
-            tprint_success(
-                f"✅ Committee pre-step matrices: {committee_label_matrix_values.shape} (Events x Experts)"
-            )
-        except Exception as committee_matrix_exc:
-            tprint_warning(f"⚠️ Committee pre-step matrix build failed: {committee_matrix_exc}")
-            import traceback
-            traceback.print_exc()
-            committee_event_idx = None
-            committee_label_matrix_values = None
-            committee_returns_matrix_values = None
-            committee_durations_matrix_values = None
-            committee_confidence_matrix_values = None
-
-        loaded_params, loaded_path = load_stage_best_params("committee")
-        if isinstance(loaded_params, dict) and loaded_params:
-            best_committee_params.update(dict(loaded_params))
-            committee_loaded_from = str(loaded_path) if loaded_path is not None else None
-            tprint_info(f"♻️ Loaded committee best params from {committee_loaded_from}")
-
-    advanced_gating_pipeline: Optional[AdvancedGatingPipeline] = None
     try:
-        enable_advanced_gating = bool(config.get("enable_advanced_gating", True))
-        if (
-            enable_advanced_gating
-            and committee_label_matrix_values is not None
-            and committee_returns_matrix_values is not None
-            and committee_confidence_matrix_values is not None
-            and committee_event_idx is not None
-        ):
-            tprint_info("🧪 Fitting Advanced Gating Pipeline...")
-            n_experts_adv = int(committee_label_matrix_values.shape[1])
+        Q_best = float(best_params.get("kalman_Q", 1e-4))
+        R_best = float(best_params.get("kalman_R", 0.01))
+    except Exception:
+        Q_best, R_best = 1e-4, 0.01
 
-            adv_cfg = config.get("advanced_gating", {})
-            if not isinstance(adv_cfg, dict):
-                adv_cfg = {}
+    try:
+        vwap_lb = int(best_params.get("vwap_lookback", 20))
+    except Exception:
+        vwap_lb = 20
 
-            advanced_gating_pipeline = AdvancedGatingPipeline(
-                n_experts=n_experts_adv,
-                enable_regime_barriers=bool(adv_cfg.get("enable_regime_barriers", True)),
-                enable_meta_gate=bool(adv_cfg.get("enable_meta_gate", True)),
-                enable_calibration=bool(adv_cfg.get("enable_calibration", True)),
-                enable_abstention_aware=bool(adv_cfg.get("enable_abstention_aware", True)),
-                enable_specialization=bool(adv_cfg.get("enable_specialization", True)),
-                enable_diversity=bool(adv_cfg.get("enable_diversity", True)),
-                meta_gate_mode=str(adv_cfg.get("meta_gate_mode", "weights")),
-                calibration_method=str(adv_cfg.get("calibration_method", "isotonic")),
-                coverage_min=float(adv_cfg.get("coverage_min", 0.3)),
-                consensus_threshold=float(adv_cfg.get("consensus_threshold", 0.5)),
-                specialization_strength=float(adv_cfg.get("specialization_strength", 0.5)),
-                diversity_lambda=float(adv_cfg.get("diversity_lambda", 0.1)),
-            )
+    try:
+        vwap_lambda = float(best_params.get("vwap_lambda", 0.25))
+    except Exception:
+        vwap_lambda = 0.25
+    vwap_lambda = float(np.clip(vwap_lambda, 0.0, 0.5))
 
-            regime_labels_train = compute_regime_labels_for_events(
-                market_data=market_data,
-                event_idx=pd.DatetimeIndex(committee_event_idx),
-            )
+    vwap_series = market_data.get("vwap", None)
+    if not isinstance(vwap_series, pd.Series) or bool(pd.to_numeric(vwap_series, errors="coerce").isna().all()):
+        vwap_series = compute_rolling_vwap(close_series, volume_series, vwap_lb)
+        market_data["vwap"] = vwap_series
 
-            w_scalp_adv = float(best_committee_params.get("w_scalp", 1.0))
-            w_swing_adv = float(best_committee_params.get("w_swing", 1.0))
-            w_trend_adv = float(best_committee_params.get("w_trend", 1.0))
-            if n_experts_adv > 6:
-                w_breakout_adv = float(best_committee_params.get("w_breakout", 0.5))
-                w_vwap_adv = float(best_committee_params.get("w_vwap_rev", 0.5))
-                w_vol_shock_adv = float(best_committee_params.get("w_vol_shock", 0.5))
-                base_weights_adv = np.array(
-                    [
-                        w_scalp_adv,
-                        w_scalp_adv,
-                        w_swing_adv,
-                        w_swing_adv,
-                        w_trend_adv,
-                        w_trend_adv,
-                        w_breakout_adv,
-                        w_vwap_adv,
-                        w_vol_shock_adv,
-                    ],
-                    dtype=float,
-                )
-            else:
-                base_weights_adv = np.array(
-                    [
-                        w_scalp_adv,
-                        w_scalp_adv,
-                        w_swing_adv,
-                        w_swing_adv,
-                        w_trend_adv,
-                        w_trend_adv,
-                    ],
-                    dtype=float,
-                )
-            base_weights_adv = base_weights_adv / (np.sum(base_weights_adv) + 1e-8)
+    try:
+        kalman_price, kalman_vol = compute_kalman_smoothed_price_and_volatility(
+            prices=market_data["close"],
+            volume=market_data.get("volume", None),
+            vwap=market_data.get("vwap", None),
+            process_noise=float(Q_best),
+            measurement_noise=float(R_best),
+            vol_window=20,
+        )
+        market_data["kalman_price"] = kalman_price
+        market_data["kalman_volatility"] = kalman_vol
+    except Exception:
+        pass
 
-            lbl_train = np.asarray(committee_label_matrix_values, dtype=float)
-            conf_train = np.asarray(committee_confidence_matrix_values, dtype=float)
-            fired_train = lbl_train != 0
-            sign_w = (
-                np.where(fired_train, np.sign(lbl_train), 0.0)
-                * conf_train
-                * base_weights_adv.reshape(1, -1)
-            )
-            denom_train = (
-                np.sum(fired_train.astype(float) * conf_train * base_weights_adv.reshape(1, -1), axis=1)
-                + 1e-8
-            )
-            consensus_train = np.sum(sign_w, axis=1) / denom_train
+    payload = {
+        "best_params": {
+            "kalman_Q": float(Q_best),
+            "kalman_R": float(R_best),
+            "vwap_lookback": int(vwap_lb),
+            "vwap_lambda": float(vwap_lambda),
+        },
+        "loaded_from": loaded_from,
+    }
+    try:
+        joblib.dump(payload, bundle_path)
+    except Exception:
+        pass
 
-            advanced_gating_pipeline.fit(
-                market_data=market_data,
-                event_idx=pd.DatetimeIndex(committee_event_idx),
-                expert_returns=np.asarray(committee_returns_matrix_values, dtype=float),
-                expert_labels=lbl_train,
-                expert_confidences=conf_train,
-                consensus_scores=consensus_train,
-                regime_labels=regime_labels_train,
-            )
-            tprint_success(f"✅ Advanced Gating Pipeline fitted (n_experts={n_experts_adv})")
-    except Exception as adv_exc:
-        tprint_warning(f"⚠️ Advanced Gating Pipeline fitting failed: {adv_exc}")
-        advanced_gating_pipeline = None
+    try:
+        outcomes_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
 
-    return Layer0Output(
-        best_kalman_params=dict(best_kalman_params),
-        enable_committee_voting_hpo=bool(enable_committee_voting_hpo),
-        enable_committee_weight_factor=bool(enable_committee_weight_factor),
-        enable_committee_pre_step=bool(enable_committee_pre_step),
-        best_committee_params=dict(best_committee_params),
-        committee_loaded_from=committee_loaded_from,
-        committee_configs=list(committee_configs),
-        committee_names=list(committee_names),
-        committee_event_idx=committee_event_idx,
-        committee_label_matrix_values=committee_label_matrix_values,
-        committee_returns_matrix_values=committee_returns_matrix_values,
-        committee_durations_matrix_values=committee_durations_matrix_values,
-        committee_confidence_matrix_values=committee_confidence_matrix_values,
-        advanced_gating_pipeline=advanced_gating_pipeline,
-    )
+    try:
+        ts = str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
+    except Exception:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    try:
+        symbol = str(config.get("symbol", ""))
+    except Exception:
+        symbol = ""
+    try:
+        timeframe = str(config.get("timeframe", ""))
+    except Exception:
+        timeframe = ""
+
+    try:
+        idx = market_data.index
+        start_ts = str(idx.min()) if len(idx) else ""
+        end_ts = str(idx.max()) if len(idx) else ""
+    except Exception:
+        start_ts, end_ts = "", ""
+
+    try:
+        md_path = outcomes_dir / f"layer0_report_{symbol}_{timeframe}_{ts}.md"
+        lines = [
+            "# Layer0 Report\n",
+            f"- timestamp: {ts}\n",
+            f"- symbol: {symbol}\n",
+            f"- timeframe: {timeframe}\n",
+            f"- run_optimization: {bool(run_optimization)}\n",
+            f"- bundle_path: {str(bundle_path)}\n",
+            f"- loaded_from: {str(loaded_from) if loaded_from else ''}\n",
+            f"- n_bars: {int(len(market_data))}\n",
+            f"- date_range: {start_ts} -> {end_ts}\n",
+            "\n## Best Params\n",
+            f"- kalman_Q: {float(Q_best)}\n",
+            f"- kalman_R: {float(R_best)}\n",
+            f"- vwap_lookback: {int(vwap_lb)}\n",
+            f"- vwap_lambda: {float(vwap_lambda)}\n",
+        ]
+        md_path.write_text("".join(lines))
+    except Exception:
+        pass
+
+    try:
+        summary_row = {
+            "timestamp": ts,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "run_optimization": bool(run_optimization),
+            "loaded_from": str(loaded_from) if loaded_from else "",
+            "bundle_path": str(bundle_path),
+            "n_bars": int(len(market_data)),
+            "start": start_ts,
+            "end": end_ts,
+            "kalman_Q": float(Q_best),
+            "kalman_R": float(R_best),
+            "vwap_lookback": int(vwap_lb),
+            "vwap_lambda": float(vwap_lambda),
+        }
+        csv_path = outcomes_dir / f"layer0_summary_{symbol}_{timeframe}_{ts}.csv"
+        pd.DataFrame([summary_row]).to_csv(csv_path, index=False)
+    except Exception:
+        pass
+
+    return market_data, payload

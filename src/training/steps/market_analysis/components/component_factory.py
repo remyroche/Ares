@@ -30,7 +30,6 @@ from .sr_clustering import SRClusteringComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
 # Removed unused NAS-TAS components - system uses regime_models_training and regime_ensemble_training instead
 # NAS ensemble training component removed
-from .regime_models_training import RegimeModelsTrainingComponent
 from .regime_ensemble_training import RegimeEnsembleTrainingComponent
 # PID-based feature generation moved to pre_training stage
 
@@ -635,7 +634,6 @@ class ComponentFactory:
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
         # NAS/TAS components removed - no longer needed for market_analysis
-        'regime_models_training': RegimeModelsTrainingComponent,  # Regime detection models training
         'regime_ensemble_training': RegimeEnsembleTrainingComponent,  # Regime detection ensemble training
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed

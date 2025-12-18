@@ -20,6 +20,10 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_error
 from src.utils.versioned_artifacts.temporal_splits import TemporalSplitConfig
 from src.utils.ml_common.confidence_metrics import calculate_calibration_metrics
+from src.utils.ml_common.training_period_exclusion import (
+    filter_index_by_blocked_periods,
+    get_blocked_training_periods,
+)
 
 class GateTrainingStep(BaseStep):
     """
@@ -169,6 +173,25 @@ class GateTrainingStep(BaseStep):
                 f"[GateTrainingStep] common_idx length after alignment: {len(common_idx)}",
                 "INFO",
             )
+
+            try:
+                blocked_periods = get_blocked_training_periods(config)
+            except Exception:
+                blocked_periods = []
+
+            if blocked_periods and isinstance(common_idx, pd.DatetimeIndex) and len(common_idx) > 0:
+                try:
+                    before_n = int(len(common_idx))
+                    common_idx = filter_index_by_blocked_periods(common_idx, blocked_periods)
+                    after_n = int(len(common_idx))
+                    tprint(
+                        f"[GateTrainingStep] Data integrity: excluded blocked periods ({len(blocked_periods)} ranges) "
+                        f"samples {before_n} → {after_n}",
+                        "INFO",
+                    )
+                except Exception as exc:
+                    tprint_warning(f"[GateTrainingStep] Failed to apply blocked-period exclusion: {exc}")
+
             ohlcv_data = ohlcv_data.loc[common_idx]
             oof_preds = oof_preds.loc[common_idx]
 

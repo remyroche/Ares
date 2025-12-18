@@ -79,8 +79,8 @@ from src.training.steps.labeling.generate_weights_per_label import (
     compute_label_agreement_consistency,
     compute_return_sign_consistency,
     compute_uniqueness,
-    run_layer1_optimization,
 )
+from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
 from src.training.steps.labeling.confident_learning import (
     filter_noisy_labels,
     compute_label_quality_scores,
@@ -96,7 +96,7 @@ from src.training.steps.labeling.advanced_gating_logic import (
     apply_specialization_weights,
     compute_diversity_regularized_utility,
 )
-from src.training.steps.labeling.label_based_layer_0 import run_layer_0
+from src.training.steps.labeling.label_based_layer_0_committee import run_layer_0
 from src.training.steps.labeling.layer3_feature_cache import (
     save_layer3_features_to_cache,
     load_layer3_features_from_cache,

@@ -9,6 +9,10 @@ import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
 from scipy.stats import entropy
 from src.utils.tprint import tprint
+from src.feature_generation.categories.ensemble_disagreement import (
+    calculate_ensemble_disagreement_features,
+    get_core_feature_names,
+)
 
 
 class EnsembleMetaFeaturesGenerator:
@@ -118,7 +122,7 @@ class EnsembleMetaFeaturesGenerator:
         # 5. Disagreement features
         if include_disagreement:
             disagreement_features, disagreement_names = self._generate_disagreement_features(
-                base_predictions_list
+                base_predictions_dict
             )
             all_features.append(disagreement_features)
             feature_names.extend(disagreement_names)
@@ -336,24 +340,77 @@ class EnsembleMetaFeaturesGenerator:
     
     def _generate_disagreement_features(
         self,
-        predictions_list: List[np.ndarray]
+        base_predictions_dict: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray, List[str]]:
         """
         Generate disagreement features from predictions.
-
-        DEPRECATED: Use centralized disagreement features from
-        src.feature_generation.categories.ensemble_disagreement instead.
-
-        This method is kept for backwards compatibility but returns empty features.
-        All ensemble models should use the centralized disagreement calculator.
         """
-        n_samples = predictions_list[0].shape[0]
+        if not base_predictions_dict:
+            return np.zeros((0, 0)), []
 
-        # Return empty arrays - disagreement features now come from centralized calculator
-        features = np.zeros((n_samples, 0))
-        feature_names = []
+        # Infer sample count
+        first = next(iter(base_predictions_dict.values()))
+        first_arr = np.asarray(first)
+        n_samples = int(first_arr.shape[0]) if first_arr.ndim >= 1 else 0
+        if n_samples <= 0:
+            return np.zeros((0, 0)), []
 
-        return features, feature_names
+        model_probabilities: Dict[str, np.ndarray] = {}
+        model_predictions: Dict[str, np.ndarray] = {}
+
+        for name, pred in base_predictions_dict.items():
+            arr = np.asarray(pred)
+            if arr.ndim == 2 and arr.shape[1] >= 2:
+                # Classification probabilities
+                if arr.shape[1] == 2:
+                    p_pos = arr[:, 1].astype(float)
+                    model_probabilities[str(name)] = p_pos
+                    model_predictions[str(name)] = (p_pos - 0.5).astype(float)
+                else:
+                    # Multi-class: keep full distribution for entropy/divergence features.
+                    model_probabilities[str(name)] = arr.astype(float)
+                    # Direction proxy: confidence above uniform.
+                    uniform = 1.0 / float(arr.shape[1])
+                    model_predictions[str(name)] = (arr.max(axis=1) - uniform).astype(float)
+            else:
+                # Class predictions or already-1d probability
+                v = arr.reshape(-1).astype(float)
+                if v.size != n_samples:
+                    continue
+                model_probabilities[str(name)] = np.clip(v, 0.0, 1.0)
+                model_predictions[str(name)] = (np.clip(v, 0.0, 1.0) - 0.5).astype(float)
+
+        if not model_probabilities:
+            return np.zeros((n_samples, 0)), []
+
+        try:
+            disagree = calculate_ensemble_disagreement_features(
+                model_predictions=model_predictions,
+                model_probabilities=model_probabilities,
+                model_confidences=None,
+                feature_names=None,
+                logger=None,
+            )
+        except Exception:
+            disagree = {}
+
+        core = get_core_feature_names()
+        cols = []
+        names = []
+        for k in core:
+            v = disagree.get(k)
+            if v is None:
+                cols.append(np.zeros(n_samples, dtype=float))
+            else:
+                try:
+                    cols.append(np.asarray(v, dtype=float).reshape(-1))
+                except Exception:
+                    cols.append(np.zeros(n_samples, dtype=float))
+            names.append(f"ens_{k}")
+
+        mat = np.column_stack(cols) if cols else np.zeros((n_samples, 0))
+        mat = np.where(np.isfinite(mat), mat, 0.0)
+        return mat, names
 
 
 # Convenience function

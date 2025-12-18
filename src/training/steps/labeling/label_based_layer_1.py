@@ -1053,4 +1053,67 @@ def execute_layer1_step(
     except Exception as e:
         tprint_warning(f"⚠️ Failed to save Layer 1 best params: {e}")
 
+    try:
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        outcomes_dir = Path("outcomes")
+
+    try:
+        ts_report = str(config.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
+    except Exception:
+        ts_report = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    try:
+        ret_arr = pd.to_numeric(baseline_returns_clean, errors="coerce").astype(float)
+        n_evt = int(ret_arr.notna().sum())
+        pos_rate = float((ret_arr > 0.0).mean()) if n_evt > 0 else float("nan")
+        mean_ret = float(ret_arr.mean()) if n_evt > 0 else float("nan")
+        std_ret = float(ret_arr.std()) if n_evt > 1 else float("nan")
+    except Exception:
+        n_evt, pos_rate, mean_ret, std_ret = 0, float("nan"), float("nan"), float("nan")
+
+    try:
+        md_path = outcomes_dir / f"layer1_report_{symbol}_{timeframe}_{ts_report}.md"
+        lines = [
+            "# Layer1 Report\n",
+            f"- timestamp: {ts_report}\n",
+            f"- symbol: {symbol}\n",
+            f"- timeframe: {timeframe}\n",
+            f"- n_events: {n_evt}\n",
+            f"- pos_rate: {pos_rate}\n",
+            f"- mean_return: {mean_ret}\n",
+            f"- std_return: {std_ret}\n",
+            f"- loaded_from: {str(layer1_loaded_from) if layer1_loaded_from else ''}\n",
+            f"- saved_best_params: {str(l1_path) if l1_path else ''}\n",
+            "\n## Best Params\n",
+        ]
+        for k in sorted(best_weighting_params.keys()):
+            try:
+                lines.append(f"- {k}: {best_weighting_params.get(k)}\n")
+            except Exception:
+                continue
+        md_path.write_text("".join(lines))
+    except Exception:
+        pass
+
+    try:
+        summary_row: Dict[str, Any] = {
+            "timestamp": ts_report,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "n_events": int(n_evt),
+            "pos_rate": pos_rate,
+            "mean_return": mean_ret,
+            "std_return": std_ret,
+            "loaded_from": str(layer1_loaded_from) if layer1_loaded_from else "",
+            "saved_best_params": str(l1_path) if l1_path else "",
+        }
+        for k, v in (best_weighting_params or {}).items():
+            summary_row[f"param_{k}"] = v
+        csv_path = outcomes_dir / f"layer1_summary_{symbol}_{timeframe}_{ts_report}.csv"
+        pd.DataFrame([summary_row]).to_csv(csv_path, index=False)
+    except Exception:
+        pass
+
     return best_weighting_params

@@ -24,6 +24,7 @@ PERFORMANCE IMPROVEMENTS:
 import numpy as np
 import pandas as pd
 import warnings
+import math
 from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
@@ -921,7 +922,7 @@ class PermutationEntropyGenerator(BaseEntropyGenerator):
                         if p > 0:
                             entropy -= p * np.log2(p)
 
-                    max_entropy = np.log2(np.math.factorial(self.embedding_dim))
+                    max_entropy = np.log2(math.factorial(self.embedding_dim))
                     if max_entropy <= 0.0:
                         perm_entropy[i] = np.nan
                     else:

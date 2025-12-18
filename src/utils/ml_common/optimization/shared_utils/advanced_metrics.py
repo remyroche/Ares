@@ -15,6 +15,8 @@ from abc import ABC, abstractmethod
 import warnings
 warnings.filterwarnings('ignore')
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 # Try to import financial libraries
 try:
     import scipy.stats as stats
@@ -657,7 +659,7 @@ class EconomicMetricCalculator(BaseMetricCalculator):
     def _calculate_transaction_cost_impact(self, returns: np.ndarray) -> float:
         """Calculate transaction cost impact."""
         try:
-            transaction_cost = 0.001
+            transaction_cost = DEFAULT_TRANSACTION_COST
             net_returns = returns - transaction_cost
 
             original_return = np.sum(returns)

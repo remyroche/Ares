@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import contextlib
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+
 # Import the triple barrier components
 from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler,
@@ -53,7 +55,7 @@ class MarketAnalysisTripleBarrierConfig:
     stop_loss_multiplier: float = 0.001
     time_barrier_minutes: int = 30
     max_lookahead: int = 100
-    transaction_cost: float = 0.0008
+    transaction_cost: float = DEFAULT_TRANSACTION_COST
     binary_classification: bool = True
 
     # Regime awareness

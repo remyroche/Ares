@@ -151,11 +151,19 @@ class RegimeDetector:
                         models_path = artifact_file
                         break
                     else:
-                        raise FileNotFoundError(
-                            f"Regime models not found in {artifacts_dir}"
+                        # Base models are optional: we may rely on an ensemble-only setup.
+                        self.base_models = {}
+                        self.logger.warning(
+                            "⚠️ No regime_models_training artifacts found; continuing without base models."
                         )
+                        return
                 else:
-                    raise FileNotFoundError(f"Models directory not found: {artifacts_dir}")
+                    # Base models are optional: we may rely on an ensemble-only setup.
+                    self.base_models = {}
+                    self.logger.warning(
+                        "⚠️ Models directory not found; continuing without base models."
+                    )
+                    return
             
             self.logger.info(f"Loading regime models from: {models_path}")
             
@@ -229,9 +237,10 @@ class RegimeDetector:
                 tprint_info(f"✅ Loaded {len(self.base_models)} base models: {', '.join(model_names)}")
                 
         except FileNotFoundError as e:
-            error_msg = f"Regime models file not found: {e}"
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
+            # Base models are optional: allow ensemble-only usage.
+            self.base_models = {}
+            self.logger.warning(f"⚠️ Regime models file not found: {e}. Continuing without base models.")
+            return
         except Exception as e:
             error_msg = f"Failed to load base models: {e}"
             self.logger.error(f"❌ {error_msg}")

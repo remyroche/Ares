@@ -7,9 +7,9 @@ regime-conditional barrier optimization and ML learnability probes.
 It performs:
 1. Event generation based on volatility-scaled returns.
 2. Regime-conditional barrier family assignment.
-3. Independent optimization of barrier geometries (TP/SL/Horizon) per family using Optuna.
-4. Learnability assessment using cheap ML probes (Shallow LGBM, Linear) with multiple metrics.
-5. Selection of diverse, high-quality geometries with stability constraints.
+3. Independent optimization of barrier geometries (Kappa/Horizon) per family using Optuna.
+4. MFE/MAE Dominance Labeling: Label = 1 if MFE > Kappa * MAE.
+5. Stability checks (Time-Flip) and Learnability probes.
 6. Bagged output generation with family-level cap checks.
 """
 
@@ -59,7 +59,7 @@ def _normalized_binary_entropy(p: float) -> float:
 @dataclass
 class GeometryTrial:
     family: str
-    params: Dict[str, Any]  # TP, SL, Horizon
+    params: Dict[str, Any]  # Kappa, Horizon
     final_score: float
     learnability: float
     robust_magnitude: float
@@ -242,12 +242,6 @@ class LabelBasedLayer2:
         oof_weights = pd.Series(np.nan, index=indices)
 
         # Derive families dynamically to avoid hardcoding
-        # We need standardize keys for consistent channels.
-        # We'll use the unique families found in the full events generation.
-        # However, events_df generation maps regimes to families.
-        # Let's dry run the mapping once to get all potential families.
-        # Or better, just use the set of families that *could* be generated.
-        # But _get_barrier_family logic is static.
         families = ['Trend Continuation', 'Momentum', 'Mean Reversion']
         max_rank = 4
         oof_geo_preds = {}
@@ -395,8 +389,6 @@ class LabelBasedLayer2:
 
             # Predict on Test (Bagged Labeling)
             if not events_test.empty:
-                # Fold-pure labeling: allow lookahead only up to a bounded buffer beyond the
-                # test fold end so OOF analytics do not leak unlimited future information.
                 try:
                     max_h = int(
                         max(
@@ -424,8 +416,6 @@ class LabelBasedLayer2:
                 if fixed_lookahead is not None and fixed_lookahead > 0:
                     lookahead_bars = int(fixed_lookahead)
                 else:
-                    # compute_realized_returns can expand horizons up to ~2x when volatility_series is provided.
-                    # Use a conservative default buffer.
                     lookahead_bars = int(np.ceil(float(max_h) * float(lookahead_scale))) + 1
                     lookahead_bars = int(max(1, lookahead_bars))
 
@@ -586,12 +576,10 @@ class LabelBasedLayer2:
                 try:
                     fam = str(getattr(g, "family", ""))
                     params = getattr(g, "params", None)
-                    tp_mult = None
-                    sl_mult = None
+                    kappa = None
                     horizon = None
                     if isinstance(params, dict):
-                        tp_mult = params.get("tp_mult")
-                        sl_mult = params.get("sl_mult")
+                        kappa = params.get("kappa")
                         horizon = params.get("horizon")
 
                     mean_return = float("nan")
@@ -603,12 +591,11 @@ class LabelBasedLayer2:
 
                     try:
                         fam_events = events_df[events_df.get('family') == fam] if 'family' in events_df.columns else events_df
-                        if tp_mult is not None and sl_mult is not None and horizon is not None:
-                            _lbl, _ret = self._compute_labels(
+                        if kappa is not None and horizon is not None:
+                            _lbl, _ret = self._compute_dominance_labels(
                                 df=df,
                                 events_df=fam_events,
-                                tp_mult=float(tp_mult),
-                                sl_mult=float(sl_mult),
+                                kappa=float(kappa),
                                 horizon=int(horizon),
                                 family=fam,
                             )
@@ -898,21 +885,26 @@ class LabelBasedLayer2:
         )
         return pd.Series(families, index=events_df.index, dtype=object)
 
-    def _compute_labels(
+    def _compute_dominance_labels(
         self,
         df: pd.DataFrame,
         events_df: pd.DataFrame,
-        tp_mult: float,
-        sl_mult: float,
+        kappa: float,
         horizon: int,
-        family: str
+        family: str,
+        events_shift: int = 0
     ) -> Tuple[pd.Series, pd.Series]:
         """
-        Compute triple barrier labels for the given parameters.
+        Compute MFE/MAE dominance labels.
+        Label = 1 if MFE > Kappa * MAE (Directional Dominance).
 
-        Returns:
-            binary_labels: Series (1 for profit, 0 for loss/timeout)
-            realized_returns: Series of returns
+        Args:
+            df: Market data
+            events_df: Events to label
+            kappa: Dominance ratio threshold
+            horizon: Window size
+            family: Geometry family (defines direction)
+            events_shift: Shift event timestamps by N bars (for stability check)
         """
         try:
             direction_mode = str(getattr(self, "_current_config", {}).get("layer2_direction_mode", "lagged"))
@@ -923,11 +915,12 @@ class LabelBasedLayer2:
             self._df_cache_key(df),
             self._events_cache_key(events_df.index),
             str(family),
-            float(round(float(tp_mult), 8)),
-            float(round(float(sl_mult), 8)),
+            float(round(float(kappa), 8)),
             int(horizon),
+            int(events_shift),
             float(self.transaction_cost),
             str(direction_mode),
+            "dominance"
         )
         cached = self._labels_cache.get(cache_key)
         if cached is not None:
@@ -937,48 +930,140 @@ class LabelBasedLayer2:
 
         signals = self._get_or_build_signals(df, events_df, family)
 
-        # Adaptive thresholds: k * volatility
-        vol_aligned = df['volatility_1d'].fillna(0.0)
-        tp_series = vol_aligned * float(tp_mult)
-        sl_series = vol_aligned * float(sl_mult)
+        # Handle event shifting for stability check
+        # We need to calculate outcomes for the trade entered at t + shift
+        # but using the direction signal from t (persistence check)
+        # However, compute_realized_returns looks up signal at the entry time.
+        # So we must create a signals frame where the signal is present at t + shift.
+
+        target_events_idx = events_df.index
+        if events_shift != 0:
+            # Shift event timestamps by bars
+            # We map current event index position to new position
+            df_idx_locs = df.index.get_indexer(target_events_idx)
+            shifted_locs = df_idx_locs + events_shift
+
+            # Filter valid
+            valid_locs = (shifted_locs >= 0) & (shifted_locs < len(df))
+
+            if not np.any(valid_locs):
+                 # All shifted out of bounds
+                 return pd.Series(np.nan, index=target_events_idx), pd.Series(np.nan, index=target_events_idx)
+
+            # New timestamps
+            shifted_timestamps = df.index[shifted_locs[valid_locs]]
+
+            # We need signals at these new timestamps to match original direction
+            # Copy original signals to new timestamps
+            orig_signals = signals.loc[target_events_idx[valid_locs]]
+
+            # Create a temporary signals dataframe for the shifted calculation
+            # We assume no conflicting signals at the shifted times for simplicity of this check
+            temp_signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
+            temp_signals.loc[shifted_timestamps, 'consensus'] = orig_signals['consensus'].values
+
+            calc_signals = temp_signals
+            calc_events_idx = shifted_timestamps
+        else:
+            calc_signals = signals
+            calc_events_idx = target_events_idx
+
+        # Use Infinite Barriers to capture full window path
+        # TP/SL = Infinity implies exit only on timeout (end of horizon)
+        # compute_realized_returns will compute MFE/MAE over the full horizon
+        inf_threshold = pd.Series(float('inf'), index=df.index)
 
         (
             realized_returns,
-            binary_labels,
-            _, event_durations, _, _, _, _
+            _, _, _,
+            mfe_series,
+            mae_series,
+            _, _
         ) = compute_realized_returns(
             df=df,
-            signals=signals,
-            profit_threshold=tp_series,
-            stop_threshold=sl_series,
+            signals=calc_signals,
+            profit_threshold=inf_threshold,
+            stop_threshold=inf_threshold,
             horizon=horizon,
             transaction_cost=self.transaction_cost,
-            min_event_spacing=int(
-                max(
-                    0,
-                    int(getattr(self, '_current_config', {}).get('layer2_min_event_spacing_bars', 0) or 0),
-                )
-            ),
-            volatility_series=vol_aligned
+            min_event_spacing=0, # No spacing check for meta-labeling candidates
+            volatility_series=None # Fixed horizon
         )
 
-        # Filter to our specific events
-        # Note: compute_realized_returns might return labels for all signals
-        subset_labels = binary_labels.reindex(events_df.index)
-        subset_returns = realized_returns.reindex(events_df.index)
+        # Filter to events
+        subset_mfe = mfe_series.reindex(calc_events_idx)
+        subset_mae = mae_series.reindex(calc_events_idx)
+        subset_returns = realized_returns.reindex(calc_events_idx)
 
-        subset_durations = event_durations.reindex(events_df.index)
+        # Apply Dominance Logic
+        # Label = 1 if MFE > Kappa * MAE
+        # Also enforce a minimum noise floor: MFE > epsilon
+        # Epsilon = 2 * transaction_cost (ensure we beat costs significantly)
+        epsilon = 2.0 * self.transaction_cost
 
-        # Filter events shorter than 1 bar (noise reduction) - requested in review
-        # Note: durations < 1 are theoretically impossible if horizon >= 1, but check anyway
-        # IMPORTANT: missing durations should not invalidate an event (NaN >= 1 is False).
-        valid_duration = subset_durations.isna() | (subset_durations >= 1.0)
-        subset_labels.loc[~valid_duration] = np.nan
-        subset_returns.loc[~valid_duration] = np.nan
+        # Ensure MAE is non-zero to avoid division by zero (though < implies non-neg)
+        # MAE is absolute value in compute_realized_returns
+        safe_mae = subset_mae.replace(0.0, 1e-9)
 
-        result = (subset_labels, subset_returns)
+        dominance_ratio = subset_mfe / safe_mae
+
+        # Logic:
+        # 1. Dominance met: ratio > kappa
+        # 2. Significant move: mfe > epsilon
+        # 3. Direction confirmed (mfe is positive by definition, but net return check?)
+        #    Dominance implies we *could* have exited for profit.
+        #    We label "1" if the PATH allowed for a dominant win.
+
+        labels = (dominance_ratio > kappa) & (subset_mfe > epsilon)
+        binary_labels = labels.astype(float)
+
+        # For those that failed dominance, label is 0
+
+        # Map back to original event indices if shifted
+        if events_shift != 0:
+            final_labels = pd.Series(np.nan, index=target_events_idx)
+            final_returns = pd.Series(np.nan, index=target_events_idx)
+
+            final_labels.iloc[valid_locs] = binary_labels.values
+            final_returns.iloc[valid_locs] = subset_returns.values # This is "timeout" return
+        else:
+            final_labels = binary_labels
+            final_returns = subset_returns
+
+        # For Label=1, we assume we captured the move.
+        # Assign return = MFE (optimistic) or MFE - cost?
+        # Let's use MFE - cost to represent the "potential" captured.
+        # For Label=0, we assign the actual realized return at timeout (likely small or negative)
+        # subset_returns contains the return at horizon end (timeout).
+        # We update returns where label is 1
+
+        # Actually, let's keep it simple: Return = Net Return at Horizon.
+        # The Label indicates if it was a "Dominant" path.
+        # BUT: If we use this for weighting, a Label=1 with negative horizon return might be confusing.
+        # If Dominance is true, it means there existed a point `t < T` where `P_t` was good.
+        # We assign `MFE - cost` as the proxy return for successful dominance trades.
+
+        if events_shift == 0: # Only update returns for the primary calculation
+            success_mask = (final_labels == 1.0)
+            final_returns.loc[success_mask] = subset_mfe.loc[success_mask] - self.transaction_cost
+
+        result = (final_labels, final_returns)
         self._labels_cache[cache_key] = result
         return result
+
+    # Legacy wrapper for compatibility if needed, but we switch internal calls to _compute_dominance_labels
+    def _compute_labels(self, df, events_df, tp_mult=None, sl_mult=None, horizon=None, family=None, **kwargs):
+        # Adapt old signature to new logic if called with old params
+        # Use simple mapping if kappa not provided
+        kappa = kwargs.get('kappa')
+        if kappa is None:
+            # Heuristic: if TP=2, SL=1, Kappa=2
+            if tp_mult and sl_mult:
+                kappa = tp_mult / max(sl_mult, 1e-3)
+            else:
+                kappa = 2.0
+
+        return self._compute_dominance_labels(df, events_df, kappa, int(horizon), family)
 
     def _build_geometry_independent_event_features(
         self,
@@ -1140,7 +1225,7 @@ class LabelBasedLayer2:
             )
 
             fit_kwargs: Dict[str, Any] = {}
-            if w_arr is not None and w_arr.shape[0] == len(X_num):
+            if w_arr is not None and len(w_arr) == len(X_num):
                 fit_kwargs['sample_weight'] = w_arr[tr_idx]
 
             try:
@@ -1430,47 +1515,49 @@ class LabelBasedLayer2:
         family: str
     ) -> bool:
         """
-        A. Stability under perturbation
-        Perturb TP/SL/H by ±5% (reduced from 10% for scalping sensitivity) 
-        and require graceful degradation.
+        Stability check (Time-Flip):
+        Perturb start time by ±1 bar.
+        If labels flip frequently, discard.
         """
-        # Reduced perturbation range for tight-margin geometries
-        perturbations = [0.95, 1.05]
+        # 1. Base Labels
+        base_labels, _ = self._compute_dominance_labels(df, events_df, family=family, **trial_params)
 
-        base_labels, base_returns = self._compute_labels(df, events_df, family=family, **trial_params)
-        base_mean_ret = base_returns.mean()
+        # 2. Shifted Labels (+1 bar)
+        # Using events_shift=1
+        shift1_labels, _ = self._compute_dominance_labels(
+            df, events_df, family=family, events_shift=1, **trial_params
+        )
 
-        if np.isnan(base_mean_ret): return False
+        # 3. Shifted Labels (-1 bar)
+        # Using events_shift=-1
+        shift_neg1_labels, _ = self._compute_dominance_labels(
+             df, events_df, family=family, events_shift=-1, **trial_params
+        )
 
-        # Only select geometries starting with positive net returns
-        if base_mean_ret < 0: return False
+        # Align
+        idx = base_labels.dropna().index
 
-        for p in perturbations:
-            perturbed_params = copy.deepcopy(trial_params)
-            perturbed_params['tp_mult'] *= p
-            perturbed_params['sl_mult'] *= p
-            # Horizon is int
-            perturbed_params['horizon'] = int(max(1, perturbed_params['horizon'] * p))
+        b = base_labels.reindex(idx)
+        s1 = shift1_labels.reindex(idx)
+        sn1 = shift_neg1_labels.reindex(idx)
 
-            labels, returns = self._compute_labels(df, events_df, family=family, **perturbed_params)
+        valid = b.notna() & s1.notna() & sn1.notna()
+        if valid.sum() < 10:
+             return False # Not enough data to verify stability
 
-            mean_ret = returns.mean()
-            if np.isnan(mean_ret): return False
+        b_v = b[valid]
+        s1_v = s1[valid]
+        sn1_v = sn1[valid]
 
-            # Check 1: Excessive Sign flip
-            # Allow marginal negative returns in perturbed space (-transaction_cost/4) 
-            # to prevent rejecting tight-margin but robust scalping geometries.
-            floor = -self.transaction_cost / 4.0
-            if mean_ret < floor:
-                logger.debug(f"Stability failed: Returns dropped below floor (base={base_mean_ret:.5f}, pert={mean_ret:.5f}, floor={floor:.5f})")
-                return False
+        # Agreement Rate
+        agree1 = (b_v == s1_v).mean()
+        agree2 = (b_v == sn1_v).mean()
+        avg_agreement = (agree1 + agree2) / 2.0
 
-            # Check 2: Relative drop threshold (allow 40% reduction given tight margins)
-            if mean_ret < base_mean_ret * 0.6:
-                logger.debug(f"Stability failed: Return drop > 40% (base={base_mean_ret:.5f}, pert={mean_ret:.5f})")
-                return False
-                logger.debug(f"Stability failed: Returns dropped > 30% (base={base_mean_ret:.5f}, pert={mean_ret:.5f})")
-                return False
+        # Threshold: 85% agreement required
+        if avg_agreement < 0.85:
+             logger.debug(f"Stability failed: Flip rate too high (agreement={avg_agreement:.2f})")
+             return False
 
         return True
 
@@ -1542,23 +1629,19 @@ class LabelBasedLayer2:
 
                 if best is not None:
                     try:
-                        tp0 = float(best.params.get('tp_mult'))
-                        sl0 = float(best.params.get('sl_mult'))
+                        k0 = float(best.params.get('kappa'))
                         h0 = int(best.params.get('horizon'))
                     except Exception:
-                        tp0 = None
-                        sl0 = None
+                        k0 = None
                         h0 = None
 
-                    if tp0 is not None and sl0 is not None and h0 is not None:
+                    if k0 is not None and h0 is not None:
                         shrink = float(self._current_config.get('layer2_stage2_shrink', 0.25)) if isinstance(self._current_config, dict) else 0.25
                         shrink = float(np.clip(shrink, 0.05, 0.75))
                         b0 = self._current_param_bounds.get(str(family), {})
                         self._current_param_bounds[str(family)] = {
-                            'tp_low': float(max(b0.get('tp_low', 0.0), tp0 * (1.0 - shrink))),
-                            'tp_high': float(min(b0.get('tp_high', tp0 * (1.0 + shrink)), tp0 * (1.0 + shrink))),
-                            'sl_low': float(max(b0.get('sl_low', 0.0), sl0 * (1.0 - shrink))),
-                            'sl_high': float(min(b0.get('sl_high', sl0 * (1.0 + shrink)), sl0 * (1.0 + shrink))),
+                            'k_low': float(max(b0.get('k_low', 1.0), k0 * (1.0 - shrink))),
+                            'k_high': float(min(b0.get('k_high', k0 * (1.0 + shrink)), k0 * (1.0 + shrink))),
                             'h_low': int(max(b0.get('h_low', 1), int(max(1, round(h0 * (1.0 - shrink)))))),
                             'h_high': int(min(b0.get('h_high', int(max(2, round(h0 * (1.0 + shrink))))), int(max(2, round(h0 * (1.0 + shrink)))))),
                         }
@@ -1596,108 +1679,68 @@ class LabelBasedLayer2:
     ) -> float:
         """Extracted optimization objective to avoid nested function re-definition."""
         bounds = self._current_param_bounds.get(str(family)) if isinstance(getattr(self, '_current_param_bounds', None), dict) else None
-        if isinstance(bounds, dict) and all(k in bounds for k in ('tp_low', 'tp_high', 'sl_low', 'sl_high', 'h_low', 'h_high')):
-            tp_mult = trial.suggest_float('tp_mult', float(bounds['tp_low']), float(bounds['tp_high']))
-            sl_mult = trial.suggest_float('sl_mult', float(bounds['sl_low']), float(bounds['sl_high']))
-            horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
+
+        # Parameter Space: Kappa and Horizon
+        if isinstance(bounds, dict) and all(k in bounds for k in ('k_low', 'k_high', 'h_low', 'h_high')):
+             kappa = trial.suggest_float('kappa', float(bounds['k_low']), float(bounds['k_high']))
+             horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
         else:
-            # Fallback ranges
-            if family == 'Trend Continuation':
-                tp_mult = trial.suggest_float('tp_mult', 1.5, 4.0)
-                sl_mult = trial.suggest_float('sl_mult', 0.5, 1.5)
-                horizon = trial.suggest_int('horizon', 12, 48)
-            elif family == 'Momentum':
-                tp_mult = trial.suggest_float('tp_mult', 1.0, 4.0)
-                sl_mult = trial.suggest_float('sl_mult', 0.5, 1.5)
-                horizon = trial.suggest_int('horizon', 6, 24)
-            else: # Mean Reversion
-                tp_mult = trial.suggest_float('tp_mult', 0.5, 2.5)
-                sl_mult = trial.suggest_float('sl_mult', 0.3, 1.2)
-                horizon = trial.suggest_int('horizon', 4, 16)
+             # Default ranges
+             kappa = trial.suggest_float('kappa', 1.0, 6.0)
+             horizon = trial.suggest_int('horizon', 10, 100)
 
         # Compute labels
-        labels, returns = self._compute_labels(df, family_events, tp_mult, sl_mult, horizon, family)
+        labels, returns = self._compute_dominance_labels(df, family_events, kappa, horizon, family)
 
         # Metrics
         mean_ret = returns.mean()
         if np.isnan(mean_ret): mean_ret = -1.0
 
-        profit_to_cost = float('nan')
-        try:
-            cfg = getattr(self, '_current_config', {})
-            if not isinstance(cfg, dict):
-                cfg = {}
-        except Exception:
-            cfg = {}
-        try:
-            min_ptc = float(cfg.get('layer2_min_profit_to_cost', 1.5))
-        except Exception:
-            min_ptc = 1.5
+        # Positive Rate Filter (10-40%)
+        count = labels.notna().sum()
+        if count < 20:
+            return -1.0 # Too few samples
 
-        try:
-            tx_cost = float(self.transaction_cost)
-        except Exception:
-            tx_cost = 0.0
+        pos_rate = labels.mean()
 
-        try:
-            denom = abs(tx_cost)
-            if denom < 1e-12:
-                denom = 1e-12
-            profit_to_cost = float(mean_ret) / float(denom) if np.isfinite(mean_ret) else float('nan')
-        except Exception:
-            profit_to_cost = float('nan')
-
-        # Profit as a constraint
-        # NOTE: if mean_ret <= 0, we treat it as failure but SAVE the object so we can see it in logs/UI
-        if (not np.isfinite(mean_ret)) or (float(mean_ret) <= 0.0):
-            # Save failed trial
-            t_obj = GeometryTrial(
+        if pos_rate < 0.05 or pos_rate > 0.40: # Relaxed slightly for initial discovery, but strict on target
+             t_obj = GeometryTrial(
                 family=family,
-                params={'tp_mult': tp_mult, 'sl_mult': sl_mult, 'horizon': horizon},
+                params={'kappa': kappa, 'horizon': horizon},
                 final_score=-1.0,
                 learnability=0.0,
-                robust_magnitude=float(mean_ret) * 1000 if np.isfinite(mean_ret) else -999.0,
+                robust_magnitude=0.0,
                 stability=0.0,
                 balance=0.0,
-                raw_metrics={'passed': False, 'profit_to_cost': profit_to_cost},
+                raw_metrics={'passed': False, 'pos_rate': pos_rate},
                 uuid=f"{family}_{trial.number}"
             )
-            trial.set_user_attr("geometry_object", t_obj)
-            return -1.0
+             trial.set_user_attr("geometry_object", t_obj)
+             return -1.0
 
-        try:
-            if np.isfinite(profit_to_cost) and np.isfinite(min_ptc) and float(profit_to_cost) < float(min_ptc):
-                t_obj = GeometryTrial(
-                    family=family,
-                    params={'tp_mult': tp_mult, 'sl_mult': sl_mult, 'horizon': horizon},
-                    final_score=-1.0,
-                    learnability=0.0,
-                    robust_magnitude=float(mean_ret) * 1000,
-                    stability=0.0,
-                    balance=0.0,
-                    raw_metrics={'passed': False, 'profit_to_cost': profit_to_cost},
-                    uuid=f"{family}_{trial.number}"
-                )
-                trial.set_user_attr("geometry_object", t_obj)
-                return -1.0
-        except Exception:
-            pass
+        # Stability Check (Time-Flip)
+        # This is expensive, so maybe do it only if passed?
+        # But we need it for scoring.
+        # "Pick the geometry that is robust"
 
-        count = labels.notna().sum()
-        if count < 20: 
-            t_obj = GeometryTrial(
+        # We perform stability check here
+        # (This is cheaper than training ML probes, so good to do before)
+        is_stable = self._check_stability(df, family_events, {'kappa': kappa, 'horizon': horizon}, 0.0, family)
+
+        if not is_stable:
+             t_obj = GeometryTrial(
                 family=family,
-                params={'tp_mult': tp_mult, 'sl_mult': sl_mult, 'horizon': horizon},
+                params={'kappa': kappa, 'horizon': horizon},
                 final_score=-1.0,
                 learnability=0.0,
-                robust_magnitude=float(mean_ret) * 1000,
-                stability=np.log1p(count),
+                robust_magnitude=0.0,
+                stability=0.0,
                 balance=0.0,
-                raw_metrics={'passed': False, 'profit_to_cost': profit_to_cost},
+                raw_metrics={'passed': False, 'pos_rate': pos_rate, 'stable': False},
                 uuid=f"{family}_{trial.number}"
             )
-            trial.set_user_attr("geometry_object", t_obj)
-            return -1.0
+             trial.set_user_attr("geometry_object", t_obj)
+             return -1.0
 
         # Align features to events
         try:
@@ -1708,92 +1751,20 @@ class LabelBasedLayer2:
         global_feats = [f for f in getattr(self, '_global_probe_features', []) if f in X_geom.columns]
         X_probe = X_geom[global_feats] if global_feats else X_geom
 
-        # returns are already net of transaction cost
-        net_returns = returns.astype(float)
-        mag_weights = np.log1p(np.clip(net_returns.values, 0.0, None))
-        mag_weights = np.where(np.isfinite(mag_weights), mag_weights, 0.0)
-
         probe_weight = None
         if target_sample_weight_events is not None:
-            try:
+             # ... weight loading logic ...
+             try:
                 w_probe = target_sample_weight_events.reindex(labels.index)
                 w_probe = pd.to_numeric(w_probe, errors='coerce').astype(float)
                 w_probe = w_probe.replace([np.inf, -np.inf], np.nan).fillna(1.0)
                 w_probe = w_probe.clip(lower=0.0)
                 w_probe = w_probe.reindex(labels.dropna().index)
                 probe_weight = w_probe.values
-            except Exception:
+             except Exception:
                 probe_weight = None
-
-        if probe_weight is None:
-            try:
-                mag_s = pd.Series(mag_weights, index=labels.index)
-                probe_weight = mag_s.reindex(labels.dropna().index).fillna(0.0).values
-            except Exception:
-                probe_weight = None
-
-        weight_stats: Dict[str, float] = {}
-        try:
-            cfg_w = getattr(self, '_current_config', {})
-            if not isinstance(cfg_w, dict):
-                cfg_w = {}
-        except Exception:
-            cfg_w = {}
-
-        try:
-            warn_mass = float(cfg_w.get('layer2_min_pos_weight_mass_warn', 0.02))
-        except Exception:
-            warn_mass = 0.02
-
-        try:
-            y_clean = pd.to_numeric(labels.dropna(), errors='coerce').astype(float)
-            y_clean = y_clean.replace([np.inf, -np.inf], np.nan).dropna()
-            if probe_weight is not None and int(len(y_clean)) > 0:
-                w_clean = np.asarray(probe_weight, dtype=float)
-                if int(w_clean.size) == int(y_clean.size):
-                    w_clean = np.where(np.isfinite(w_clean), w_clean, 0.0)
-                    w_clean = np.clip(w_clean, 0.0, None)
-                    sum_w = float(np.sum(w_clean))
-                    pos_mask = (y_clean.values == 1.0)
-                    sum_w_pos = float(np.sum(w_clean[pos_mask]))
-                    sum_w_neg = float(np.sum(w_clean[~pos_mask]))
-                    pos_weight_mass = float(sum_w_pos / (sum_w + 1e-12))
-                    mean_w_pos = float(np.mean(w_clean[pos_mask])) if int(np.sum(pos_mask)) > 0 else float('nan')
-                    mean_w_neg = float(np.mean(w_clean[~pos_mask])) if int(np.sum(~pos_mask)) > 0 else float('nan')
-                    scale_pos_weight_eff = float(sum_w_neg / (sum_w_pos + 1e-12)) if sum_w_pos > 0 else float('inf')
-
-                    weight_stats = {
-                        'pos_weight_mass': pos_weight_mass,
-                        'mean_w_pos': mean_w_pos,
-                        'mean_w_neg': mean_w_neg,
-                        'scale_pos_weight_eff': scale_pos_weight_eff,
-                        'sum_w': sum_w,
-                        'sum_w_pos': sum_w_pos,
-                        'sum_w_neg': sum_w_neg,
-                    }
-
-                    logger.info(
-                        f"Layer2 weight-mass stats family={family}: pos_weight_mass={pos_weight_mass:.6g}, "
-                        f"mean_w_pos={mean_w_pos:.6g}, mean_w_neg={mean_w_neg:.6g}, "
-                        f"scale_pos_weight_eff={scale_pos_weight_eff:.6g}"
-                    )
-
-                    if np.isfinite(pos_weight_mass) and np.isfinite(warn_mass) and float(pos_weight_mass) < float(warn_mass):
-                        logger.warning(
-                            f"Layer2 weight-mass tiny (family={family}): pos_weight_mass={pos_weight_mass:.6g} < {warn_mass:.6g}. "
-                            "Class balancing may be neutralized by the combined weights."
-                        )
-        except Exception:
-            weight_stats = {}
 
         probe_res = self._train_probes(X_probe, labels, sample_weight=probe_weight, trial=trial)
-
-        if isinstance(weight_stats, dict) and weight_stats:
-            try:
-                probe_res = dict(probe_res or {})
-                probe_res.update(weight_stats)
-            except Exception:
-                pass
 
         if not probe_res['passed']:
             learnability = 0.0
@@ -1801,36 +1772,28 @@ class LabelBasedLayer2:
             learnability = probe_res['auc']
 
         # Degeneracy guardrail
-        try:
-            pos_ratio = float((labels.dropna() == 1).mean())
-        except Exception:
-            pos_ratio = float("nan")
-
-        entropy_norm = _normalized_binary_entropy(pos_ratio)
+        entropy_norm = _normalized_binary_entropy(pos_rate)
         degeneracy_floor = 0.25 + 0.75 * entropy_norm
 
-        # Sharpe-like magnitude: normalize by return volatility
+        # Magnitude bonus (using mean return of successful trades vs volatility)
         ret_std = float(returns.std())
         sharpe_proxy = float(mean_ret) / (ret_std + 1e-9)
-        
         mag_component = float(np.clip(sharpe_proxy, 0.0, 3.0))
 
         final_score = (1.0 + mag_component) * np.log1p(count) * degeneracy_floor * learnability
 
         t_obj = GeometryTrial(
             family=family,
-            params={'tp_mult': tp_mult, 'sl_mult': sl_mult, 'horizon': horizon},
+            params={'kappa': kappa, 'horizon': horizon},
             final_score=final_score,
             learnability=learnability,
             robust_magnitude=float(mean_ret) * 1000,
-            stability=np.log1p(count),
+            stability=1.0, # Passed stability check
             balance=degeneracy_floor,
-            raw_metrics=dict(probe_res, **{'profit_to_cost': profit_to_cost}),
+            raw_metrics=dict(probe_res, **{'pos_rate': pos_rate}),
             uuid=f"{family}_{trial.number}"
         )
         
-        # Save to trial user attrs (serialization might be an issue if optuna uses DB, but usually fine for in-memory)
-        # Using asdict for safety if needed, but GeometryTrial is dataclass
         trial.set_user_attr("geometry_object", t_obj)
         
         return final_score
@@ -1918,21 +1881,18 @@ class LabelBasedLayer2:
             fam_selected = []
 
             # Helper to normalize params for distance calculation
-            tp_vals = [t.params['tp_mult'] for t in top_tier]
-            sl_vals = [t.params['sl_mult'] for t in top_tier]
+            k_vals = [t.params['kappa'] for t in top_tier]
             h_vals = [t.params['horizon'] for t in top_tier]
 
-            if not tp_vals or not sl_vals or not h_vals:
+            if not k_vals or not h_vals:
                 continue
 
-            tp_range = max(tp_vals) - min(tp_vals) + 1e-6
-            sl_range = max(sl_vals) - min(sl_vals) + 1e-6
+            k_range = max(k_vals) - min(k_vals) + 1e-6
             h_range = max(h_vals) - min(h_vals) + 1e-6
 
             def get_norm_vec(t):
                 return np.array([
-                    (t.params['tp_mult'] - min(tp_vals)) / tp_range,
-                    (t.params['sl_mult'] - min(sl_vals)) / sl_range,
+                    (t.params['kappa'] - min(k_vals)) / k_range,
                     (t.params['horizon'] - min(h_vals)) / h_range
                 ])
 
@@ -1949,7 +1909,7 @@ class LabelBasedLayer2:
                     return ret_cache[key]
                 try:
                     fam_events_local = events_df[events_df['family'] == fam]
-                    _lbl, _ret = self._compute_labels(df, fam_events_local, family=fam, **t_obj.params)
+                    _lbl, _ret = self._compute_dominance_labels(df, fam_events_local, family=fam, **t_obj.params)
                     s = pd.to_numeric(_ret, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
                 except Exception:
                     s = pd.Series(0.0, index=events_df[events_df['family'] == fam].index)
@@ -1959,6 +1919,8 @@ class LabelBasedLayer2:
             # Pick best first (stable)
             for cand in top_tier:
                 fam_events = events_df[events_df['family'] == fam]
+                # Already checked stability in optimization loop for passed trials
+                # But double check if coming from fallback
                 if self._check_stability(df, fam_events, cand.params, cand.final_score, fam):
                     fam_selected.append(cand)
                     break
@@ -1973,9 +1935,6 @@ class LabelBasedLayer2:
                     continue
 
             # Pick others maximizing normalized distance
-            # Try to get at least 2 geometries per family if possible (Requirement 3.3)
-            # Loop until we have 4 or run out of candidates
-
             candidate_pool = [t for t in top_tier if t not in fam_selected]
 
             while len(fam_selected) < 4 and candidate_pool:
@@ -2013,9 +1972,6 @@ class LabelBasedLayer2:
                 else:
                     break
 
-            # Require at least 2 geometries? Or just prefer?
-            # "Select 2-4 complementary geometries per family"
-            # If we only found 1 stable one, we keep it.
             selected.extend(fam_selected)
 
         return selected
@@ -2034,7 +1990,7 @@ class LabelBasedLayer2:
         models = {}
         for g in geometries:
             try:
-                lbls, _ = self._compute_labels(df, events_df, family=g.family, **g.params)
+                lbls, _ = self._compute_dominance_labels(df, events_df, family=g.family, **g.params)
                 valid_lbls = lbls.dropna()
                 common_idx = valid_lbls.index.intersection(X_events.index)
                 
@@ -2115,7 +2071,7 @@ class LabelBasedLayer2:
 
             for i, g in enumerate(fam_geos):
                 # Compute labels/returns for this geometry
-                lbls, rets = self._compute_labels(df, fam_events, family=family, **g.params)
+                lbls, rets = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
 
                 # Store individual geometry output
                 # Store individual geometry output

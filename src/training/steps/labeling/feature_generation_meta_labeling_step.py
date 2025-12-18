@@ -13023,18 +13023,16 @@ def add_layer3_specific_features(
     df_out = df.copy()
 
     # 1. Ensemble Probability
-    if base_model_cols:
-        # Calculate mean of available base models
-        # Fill NaN with 0.5 (neutral) before averaging if any missing
-        # However, layer3 usually fills these before calling, but we'll be safe
-        valid_cols = [c for c in base_model_cols if c in df_out.columns]
-        if valid_cols:
-            df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
+    # Use existing if provided (e.g. from ensemble_disagreement), else calculate fallback
+    if 'ensemble_prob' not in df_out.columns:
+        if base_model_cols:
+            # Calculate mean of available base models
+            valid_cols = [c for c in base_model_cols if c in df_out.columns]
+            if valid_cols:
+                df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
+            else:
+                df_out['ensemble_prob'] = 0.5
         else:
-            df_out['ensemble_prob'] = 0.5
-    else:
-        # If no base models, assume neutral
-        if 'ensemble_prob' not in df_out.columns:
             df_out['ensemble_prob'] = 0.5
 
     # 2. Logit Probability & Momentum

@@ -155,6 +155,15 @@ def layer3_analyst_lgbm(
             except Exception:
                 df[col] = 0.0
 
+        # Extract ensemble_prob if calculated
+        try:
+            if "ensemble_prob" in disagree:
+                v = disagree.get("ensemble_prob")
+                if isinstance(v, pd.Series):
+                    df["ensemble_prob"] = pd.to_numeric(v.values, errors="coerce")
+        except Exception:
+            pass
+
         df[disagree_cols] = df[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
         meta_features = list(dict.fromkeys(base_model_cols + disagree_cols))
 

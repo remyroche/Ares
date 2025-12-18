@@ -33,7 +33,9 @@ import copy
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     compute_realized_returns,
     create_meta_features,
+    get_efficiency_ratio,
 )
+from src.training.steps.labeling.generate_weights_per_label import finalize_sample_weights
 
 from src.utils.purged_kfold import PurgedKFoldTime
 
@@ -893,9 +895,9 @@ class LabelBasedLayer2:
         horizon: int,
         family: str,
         events_shift: int = 0
-    ) -> Tuple[pd.Series, pd.Series]:
+    ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
         """
-        Compute MFE/MAE dominance labels.
+        Compute MFE/MAE dominance labels and related metrics.
         Label = 1 if MFE > Kappa * MAE (Directional Dominance).
 
         Args:
@@ -905,6 +907,9 @@ class LabelBasedLayer2:
             horizon: Window size
             family: Geometry family (defines direction)
             events_shift: Shift event timestamps by N bars (for stability check)
+
+        Returns:
+            Tuple: (final_labels, final_returns, subset_mfe, subset_mae)
         """
         try:
             direction_mode = str(getattr(self, "_current_config", {}).get("layer2_direction_mode", "lagged"))
@@ -920,7 +925,7 @@ class LabelBasedLayer2:
             int(events_shift),
             float(self.transaction_cost),
             str(direction_mode),
-            "dominance"
+            "dominance_full"
         )
         cached = self._labels_cache.get(cache_key)
         if cached is not None:
@@ -930,47 +935,29 @@ class LabelBasedLayer2:
 
         signals = self._get_or_build_signals(df, events_df, family)
 
-        # Handle event shifting for stability check
-        # We need to calculate outcomes for the trade entered at t + shift
-        # but using the direction signal from t (persistence check)
-        # However, compute_realized_returns looks up signal at the entry time.
-        # So we must create a signals frame where the signal is present at t + shift.
-
         target_events_idx = events_df.index
+        calc_signals = signals
+        calc_events_idx = target_events_idx
+        valid_locs = None
+
         if events_shift != 0:
-            # Shift event timestamps by bars
-            # We map current event index position to new position
             df_idx_locs = df.index.get_indexer(target_events_idx)
             shifted_locs = df_idx_locs + events_shift
-
-            # Filter valid
             valid_locs = (shifted_locs >= 0) & (shifted_locs < len(df))
 
             if not np.any(valid_locs):
-                 # All shifted out of bounds
-                 return pd.Series(np.nan, index=target_events_idx), pd.Series(np.nan, index=target_events_idx)
+                 empty_s = pd.Series(np.nan, index=target_events_idx)
+                 return empty_s, empty_s, empty_s, empty_s
 
-            # New timestamps
             shifted_timestamps = df.index[shifted_locs[valid_locs]]
-
-            # We need signals at these new timestamps to match original direction
-            # Copy original signals to new timestamps
             orig_signals = signals.loc[target_events_idx[valid_locs]]
 
-            # Create a temporary signals dataframe for the shifted calculation
-            # We assume no conflicting signals at the shifted times for simplicity of this check
             temp_signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
             temp_signals.loc[shifted_timestamps, 'consensus'] = orig_signals['consensus'].values
 
             calc_signals = temp_signals
             calc_events_idx = shifted_timestamps
-        else:
-            calc_signals = signals
-            calc_events_idx = target_events_idx
 
-        # Use Infinite Barriers to capture full window path
-        # TP/SL = Infinity implies exit only on timeout (end of horizon)
-        # compute_realized_returns will compute MFE/MAE over the full horizon
         inf_threshold = pd.Series(float('inf'), index=df.index)
 
         (
@@ -986,68 +973,42 @@ class LabelBasedLayer2:
             stop_threshold=inf_threshold,
             horizon=horizon,
             transaction_cost=self.transaction_cost,
-            min_event_spacing=0, # No spacing check for meta-labeling candidates
-            volatility_series=None # Fixed horizon
+            min_event_spacing=0,
+            volatility_series=None
         )
 
-        # Filter to events
         subset_mfe = mfe_series.reindex(calc_events_idx)
         subset_mae = mae_series.reindex(calc_events_idx)
         subset_returns = realized_returns.reindex(calc_events_idx)
 
-        # Apply Dominance Logic
-        # Label = 1 if MFE > Kappa * MAE
-        # Also enforce a minimum noise floor: MFE > epsilon
-        # Epsilon = 2 * transaction_cost (ensure we beat costs significantly)
         epsilon = 2.0 * self.transaction_cost
-
-        # Ensure MAE is non-zero to avoid division by zero (though < implies non-neg)
-        # MAE is absolute value in compute_realized_returns
         safe_mae = subset_mae.replace(0.0, 1e-9)
-
         dominance_ratio = subset_mfe / safe_mae
-
-        # Logic:
-        # 1. Dominance met: ratio > kappa
-        # 2. Significant move: mfe > epsilon
-        # 3. Direction confirmed (mfe is positive by definition, but net return check?)
-        #    Dominance implies we *could* have exited for profit.
-        #    We label "1" if the PATH allowed for a dominant win.
 
         labels = (dominance_ratio > kappa) & (subset_mfe > epsilon)
         binary_labels = labels.astype(float)
 
-        # For those that failed dominance, label is 0
-
-        # Map back to original event indices if shifted
         if events_shift != 0:
             final_labels = pd.Series(np.nan, index=target_events_idx)
             final_returns = pd.Series(np.nan, index=target_events_idx)
+            final_mfe = pd.Series(np.nan, index=target_events_idx)
+            final_mae = pd.Series(np.nan, index=target_events_idx)
 
             final_labels.iloc[valid_locs] = binary_labels.values
-            final_returns.iloc[valid_locs] = subset_returns.values # This is "timeout" return
+            final_returns.iloc[valid_locs] = subset_returns.values
+            final_mfe.iloc[valid_locs] = subset_mfe.values
+            final_mae.iloc[valid_locs] = subset_mae.values
         else:
             final_labels = binary_labels
             final_returns = subset_returns
+            final_mfe = subset_mfe
+            final_mae = subset_mae
 
-        # For Label=1, we assume we captured the move.
-        # Assign return = MFE (optimistic) or MFE - cost?
-        # Let's use MFE - cost to represent the "potential" captured.
-        # For Label=0, we assign the actual realized return at timeout (likely small or negative)
-        # subset_returns contains the return at horizon end (timeout).
-        # We update returns where label is 1
-
-        # Actually, let's keep it simple: Return = Net Return at Horizon.
-        # The Label indicates if it was a "Dominant" path.
-        # BUT: If we use this for weighting, a Label=1 with negative horizon return might be confusing.
-        # If Dominance is true, it means there existed a point `t < T` where `P_t` was good.
-        # We assign `MFE - cost` as the proxy return for successful dominance trades.
-
-        if events_shift == 0: # Only update returns for the primary calculation
+        if events_shift == 0:
             success_mask = (final_labels == 1.0)
-            final_returns.loc[success_mask] = subset_mfe.loc[success_mask] - self.transaction_cost
+            final_returns.loc[success_mask] = final_mfe.loc[success_mask] - self.transaction_cost
 
-        result = (final_labels, final_returns)
+        result = (final_labels, final_returns, final_mfe, final_mae)
         self._labels_cache[cache_key] = result
         return result
 
@@ -1063,7 +1024,8 @@ class LabelBasedLayer2:
             else:
                 kappa = 2.0
 
-        return self._compute_dominance_labels(df, events_df, kappa, int(horizon), family)
+        lbl, ret, _, _ = self._compute_dominance_labels(df, events_df, kappa, int(horizon), family)
+        return lbl, ret
 
     def _build_geometry_independent_event_features(
         self,
@@ -1520,17 +1482,17 @@ class LabelBasedLayer2:
         If labels flip frequently, discard.
         """
         # 1. Base Labels
-        base_labels, _ = self._compute_dominance_labels(df, events_df, family=family, **trial_params)
+        base_labels, _, _, _ = self._compute_dominance_labels(df, events_df, family=family, **trial_params)
 
         # 2. Shifted Labels (+1 bar)
         # Using events_shift=1
-        shift1_labels, _ = self._compute_dominance_labels(
+        shift1_labels, _, _, _ = self._compute_dominance_labels(
             df, events_df, family=family, events_shift=1, **trial_params
         )
 
         # 3. Shifted Labels (-1 bar)
         # Using events_shift=-1
-        shift_neg1_labels, _ = self._compute_dominance_labels(
+        shift_neg1_labels, _, _, _ = self._compute_dominance_labels(
              df, events_df, family=family, events_shift=-1, **trial_params
         )
 
@@ -1690,7 +1652,7 @@ class LabelBasedLayer2:
              horizon = trial.suggest_int('horizon', 10, 100)
 
         # Compute labels
-        labels, returns = self._compute_dominance_labels(df, family_events, kappa, horizon, family)
+        labels, returns, _, _ = self._compute_dominance_labels(df, family_events, kappa, horizon, family)
 
         # Metrics
         mean_ret = returns.mean()
@@ -1727,6 +1689,28 @@ class LabelBasedLayer2:
         # (This is cheaper than training ML probes, so good to do before)
         is_stable = self._check_stability(df, family_events, {'kappa': kappa, 'horizon': horizon}, 0.0, family)
 
+        # --- Noise Metrics ---
+
+        # 1. Flip Rate (Barrier Perturbation)
+        # Check label agreement under +/- 5% parameter perturbation
+        perturb_labels_k, _, _, _ = self._compute_dominance_labels(df, family_events, kappa * 1.05, horizon, family)
+        perturb_labels_h, _, _, _ = self._compute_dominance_labels(df, family_events, kappa, int(horizon * 1.05), family)
+
+        agree_k = (labels == perturb_labels_k).mean()
+        agree_h = (labels == perturb_labels_h).mean()
+        flip_rate = 1.0 - ((agree_k + agree_h) / 2.0)
+
+        # 2. Directional Entropy
+        # H = -p log p - (1-p) log(1-p)
+        p_safe = np.clip(pos_rate, 1e-9, 1.0 - 1e-9)
+        dir_entropy = -(p_safe * np.log(p_safe) + (1.0 - p_safe) * np.log(1.0 - p_safe))
+
+        # 3. Conditional IC (IC | ER bucket)
+        # Since we haven't trained a model yet for this specific geometry inside the loop (only probing next),
+        # we can't calculate IC of predictions yet.
+        # However, we can use the IC from the probe model if it passes.
+        # We will compute it AFTER probe training.
+
         if not is_stable:
              t_obj = GeometryTrial(
                 family=family,
@@ -1736,7 +1720,13 @@ class LabelBasedLayer2:
                 robust_magnitude=0.0,
                 stability=0.0,
                 balance=0.0,
-                raw_metrics={'passed': False, 'pos_rate': pos_rate, 'stable': False},
+                raw_metrics={
+                    'passed': False,
+                    'pos_rate': pos_rate,
+                    'stable': False,
+                    'flip_rate': flip_rate,
+                    'entropy': dir_entropy
+                },
                 uuid=f"{family}_{trial.number}"
             )
              trial.set_user_attr("geometry_object", t_obj)
@@ -1771,6 +1761,15 @@ class LabelBasedLayer2:
         else:
             learnability = probe_res['auc']
 
+        # Conditional IC Calculation (approximate using probe results if available)
+        # We don't have per-sample predictions from _train_probes easily without refactoring.
+        # _train_probes uses K-Fold internally and returns aggregated metrics.
+        # We will use the 'ic' from probe_res as a proxy for global IC.
+        # Calculating IC conditioned on ER buckets requires predictions aligned with events.
+        # Since _train_probes doesn't return OOF preds, we skip detailed conditional IC
+        # and just store the global IC in raw_metrics.
+        global_ic = probe_res.get('ic', 0.0)
+
         # Degeneracy guardrail
         entropy_norm = _normalized_binary_entropy(pos_rate)
         degeneracy_floor = 0.25 + 0.75 * entropy_norm
@@ -1790,7 +1789,12 @@ class LabelBasedLayer2:
             robust_magnitude=float(mean_ret) * 1000,
             stability=1.0, # Passed stability check
             balance=degeneracy_floor,
-            raw_metrics=dict(probe_res, **{'pos_rate': pos_rate}),
+            raw_metrics=dict(probe_res, **{
+                'pos_rate': pos_rate,
+                'flip_rate': flip_rate,
+                'entropy': dir_entropy,
+                'ic_global': global_ic
+            }),
             uuid=f"{family}_{trial.number}"
         )
         
@@ -2069,11 +2073,30 @@ class LabelBasedLayer2:
             geo_scores_mat = np.zeros((n_events, n_geos))
             valid_mask_mat = np.zeros((n_events, n_geos), dtype=bool)
 
+            # Pre-compute Efficiency Ratio for structure confidence
+            try:
+                # Use a standard window for ER or derive from config if possible
+                er_window = 50
+                # We need close prices for ER. df has 'close'.
+                er_series = get_efficiency_ratio(df['close'], window=er_window)
+                er_events = er_series.reindex(fam_events.index).fillna(0.0)
+
+                # Define ER min/max for normalization
+                er_min = 0.2
+                er_max = 0.8
+
+                w_structure_conf = np.clip((er_events.values - er_min) / (er_max - er_min), 0.0, 1.0)
+            except Exception:
+                w_structure_conf = np.ones(n_events)
+
+            # Accumulator for Wsignalgate across geometries
+            w_signalgate_accum = np.zeros(n_events)
+            w_signalgate_count = np.zeros(n_events)
+
             for i, g in enumerate(fam_geos):
                 # Compute labels/returns for this geometry
-                lbls, rets = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
+                lbls, rets, mfe, mae = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
 
-                # Store individual geometry output
                 # Store individual geometry output
                 # OOF Fix: Use trained model if available and X_events provided
                 pred_done = False
@@ -2100,6 +2123,8 @@ class LabelBasedLayer2:
                 # Align to fam_events index
                 lbls_aligned = lbls.reindex(fam_events.index)
                 rets_aligned = rets.reindex(fam_events.index)
+                mfe_aligned = mfe.reindex(fam_events.index).fillna(0.0)
+                mae_aligned = mae.reindex(fam_events.index).fillna(0.0)
 
                 # Identify valid labels (not NaN)
                 not_na = lbls_aligned.notna()
@@ -2110,6 +2135,22 @@ class LabelBasedLayer2:
                 geo_scores_mat[not_na, i] = g.final_score
                 valid_mask_mat[not_na, i] = True
 
+                # --- Compute Wsignalgate for this geometry ---
+                # Wmagnitude = ln(1 + MFE)
+                w_magnitude = np.log1p(np.maximum(0.0, mfe_aligned.values))
+
+                # Wsmoothness = ln(1 + MFE/MAE)
+                safe_mae = np.where(mae_aligned.values > 1e-9, mae_aligned.values, 1e-9)
+                w_smoothness = np.log1p(np.maximum(0.0, mfe_aligned.values / safe_mae))
+
+                # Wsignalgate_i
+                w_sig_i = w_magnitude * w_smoothness * w_structure_conf
+
+                # Accumulate for average
+                # Only accumulate where valid
+                w_signalgate_accum[not_na] += w_sig_i[not_na]
+                w_signalgate_count[not_na] += 1
+
             if geo_labels_mat.shape != geo_returns_mat.shape or geo_labels_mat.shape != geo_scores_mat.shape:
                 raise ValueError("Layer2 bagging: geometry matrices have inconsistent shapes")
             if geo_labels_mat.shape != valid_mask_mat.shape:
@@ -2117,10 +2158,6 @@ class LabelBasedLayer2:
 
             # --- Per-Geometry Capping Logic ---
             # Raw total score per event
-            # Sum of scores of VALID geometries for each event
-            # Scores must never be negative: negative scores lead to negative event weights and break downstream.
-            # If all selected geometries have non-positive scores (e.g. all failed probes), fall back to
-            # uniform weights over valid geometries.
             score_base_mat = np.maximum(geo_scores_mat, 0.0)
             score_base_mat[~valid_mask_mat] = 0.0
             all_zero_scores = bool(np.all(score_base_mat <= 0.0))
@@ -2136,23 +2173,21 @@ class LabelBasedLayer2:
             max_contrib_mat = max_contrib[:, np.newaxis]
 
             # Cap the weights: min(score, max_contrib)
-            # Only apply to valid geometries (invalid have score 0 anyway in calculation,
-            # but let's be explicit: capped_weight should be 0 if invalid)
             capped_weights_mat = np.minimum(score_base_mat, max_contrib_mat)
             capped_weights_mat[~valid_mask_mat] = 0.0
 
-            # Final Event Weight (sum of capped weights)
-            final_event_weights = np.sum(capped_weights_mat, axis=1)
+            # Final Event Weight (sum of capped weights) - used for consensus averaging
+            final_event_weights_consensus = np.sum(capped_weights_mat, axis=1)
 
             # Safety: ensure non-negative event weights
-            final_event_weights = np.where(np.isfinite(final_event_weights), final_event_weights, 0.0)
-            final_event_weights = np.maximum(final_event_weights, 0.0)
+            final_event_weights_consensus = np.where(np.isfinite(final_event_weights_consensus), final_event_weights_consensus, 0.0)
+            final_event_weights_consensus = np.maximum(final_event_weights_consensus, 0.0)
 
-            if final_event_weights.shape[0] != n_events:
-                raise ValueError("Layer2 bagging: final_event_weights shape mismatch")
+            if final_event_weights_consensus.shape[0] != n_events:
+                raise ValueError("Layer2 bagging: final_event_weights_consensus shape mismatch")
 
             # Avoid division by zero
-            safe_weights = final_event_weights.copy()
+            safe_weights = final_event_weights_consensus.copy()
             safe_weights[safe_weights == 0] = 1.0 # arbitrary, will be 0 in result anyway
 
             # Weighted Consensus Calculation
@@ -2165,9 +2200,26 @@ class LabelBasedLayer2:
             consensus_returns = w_returns_sum / safe_weights
 
             # Handle events with no valid geometries
-            no_valid_geo = final_event_weights == 0
+            no_valid_geo = final_event_weights_consensus == 0
             consensus_labels[no_valid_geo] = np.nan
             consensus_returns[no_valid_geo] = np.nan
+
+            # --- Final Weight Logic: Wsignalgate ---
+            # Average Wsignalgate across valid geometries for this event
+            avg_w_signalgate = np.divide(
+                w_signalgate_accum,
+                w_signalgate_count,
+                out=np.zeros_like(w_signalgate_accum),
+                where=w_signalgate_count > 0
+            )
+
+            # Apply MAD-based scaling to the aggregated weights to ensure comparability
+            # and robustness, consistent with Layer 0 scaling.
+            # finalize_sample_weights performs MAD clipping -> Mean centering (mean=1.0)
+            if np.sum(avg_w_signalgate) > 0:
+                final_event_weights = finalize_sample_weights(avg_w_signalgate)
+            else:
+                final_event_weights = np.zeros_like(avg_w_signalgate)
 
             # Assign to main storage
             composite_labels.loc[fam_events.index] = consensus_labels

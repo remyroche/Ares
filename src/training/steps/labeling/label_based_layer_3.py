@@ -21,6 +21,7 @@ import shap
 
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_meta_features,
+    add_layer3_specific_features,
 )
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
@@ -284,6 +285,36 @@ def layer3_analyst_lgbm(
         new_cols = [c for c in additional_feature_df.columns if c not in df.columns]
         if new_cols:
             df = pd.concat([df, additional_feature_df[new_cols]], axis=1)
+
+    # ---------------------------------------------------------
+    # NEW: Add Layer 3 Specific Features (Ensemble/Logit/Volume/Candle)
+    # ---------------------------------------------------------
+    try:
+        print("<< Adding Layer 3 Specific Features (Logit, Volume, Candle)...")
+        # Ensure df has market data columns if possible
+        if market_data is not None:
+            for c in ['volume', 'high', 'low', 'close']:
+                if c in market_data.columns and c not in df.columns:
+                    df[c] = market_data[c].reindex(df.index)
+
+        # Calculate new features
+        df = add_layer3_specific_features(df, base_model_cols)
+
+        # Add new feature names to the list of features to use
+        new_l3_features = [
+            'ensemble_prob', 'logit_prob',
+            'logit_momentum_5', 'logit_momentum_1',
+            'vol_at_signal', 'candle_shape', 'candle_shape_4'
+        ]
+
+        # Ensure they are in the dataframe before adding to list
+        new_l3_features = [f for f in new_l3_features if f in df.columns]
+
+        # Add to selected features so they are picked up by the model
+        selected_additional_features.extend(new_l3_features)
+
+    except Exception as e:
+        print(f"⚠️ Failed to add Layer 3 specific features: {e}")
 
     try:
         enable_mda_shap = bool(cfg.get('enable_mda_shap_selection_layer3', cfg.get('enable_mda_shap_selection', True)))

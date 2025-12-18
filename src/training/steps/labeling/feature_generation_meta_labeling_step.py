@@ -12997,3 +12997,89 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 'error': error_msg,
                 'elapsed_seconds': elapsed_time
             }
+
+def add_layer3_specific_features(
+    df: pd.DataFrame,
+    base_model_cols: List[str],
+) -> pd.DataFrame:
+    """
+    Add features specific to Layer 3 stacking logic.
+    These features are derived from base model probabilities and market data.
+
+    Includes:
+    - Ensemble Probability (arithmetic mean)
+    - Logit Probability & Momentum
+    - Volume at Signal (ratio vs 50-bar rolling mean)
+    - Candle Shape (current & 4-bar aggregate)
+
+    Args:
+        df: DataFrame containing base model columns and market data ('volume', 'high', 'low', 'close')
+        base_model_cols: List of column names for base model probabilities
+
+    Returns:
+        DataFrame with added feature columns.
+    """
+    # Create a copy to avoid SettingWithCopy warnings if df is a slice
+    df_out = df.copy()
+
+    # 1. Ensemble Probability
+    if base_model_cols:
+        # Calculate mean of available base models
+        # Fill NaN with 0.5 (neutral) before averaging if any missing
+        # However, layer3 usually fills these before calling, but we'll be safe
+        valid_cols = [c for c in base_model_cols if c in df_out.columns]
+        if valid_cols:
+            df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
+        else:
+            df_out['ensemble_prob'] = 0.5
+    else:
+        # If no base models, assume neutral
+        if 'ensemble_prob' not in df_out.columns:
+            df_out['ensemble_prob'] = 0.5
+
+    # 2. Logit Probability & Momentum
+    # Clip to avoid inf/nan in logit: [0.005, 0.995]
+    eps = 0.005
+    clipped_prob = df_out['ensemble_prob'].clip(eps, 1.0 - eps)
+    df_out['logit_prob'] = np.log(clipped_prob / (1.0 - clipped_prob))
+
+    df_out['logit_momentum_5'] = df_out['logit_prob'] - df_out['logit_prob'].shift(5)
+    df_out['logit_momentum_1'] = df_out['logit_prob'] - df_out['logit_prob'].shift(1)
+
+    # 3. Volume at Signal (Ratio vs 50-bar average)
+    if 'volume' in df_out.columns:
+        vol = df_out['volume'].replace(0, np.nan)
+        avg_vol = vol.rolling(window=50, min_periods=1).mean()
+        # Ratio: volume / avg_vol
+        df_out['vol_at_signal'] = vol / (avg_vol + 1e-8)
+        # Fill NaNs/Infs
+        df_out['vol_at_signal'] = df_out['vol_at_signal'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    else:
+        df_out['vol_at_signal'] = 1.0
+
+    # 4. Candle Shape: (High - Low) / Close
+    required_price_cols = ['high', 'low', 'close']
+    if all(c in df_out.columns for c in required_price_cols):
+        high = df_out['high']
+        low = df_out['low']
+        close = df_out['close'].replace(0, np.nan)
+
+        # Current bar shape
+        df_out['candle_shape'] = (high - low) / close
+
+        # 4-bar aggregated shape (as if it were a single longer bar)
+        # Rolling max high, rolling min low over last 4 bars
+        roll_high = high.rolling(window=4, min_periods=1).max()
+        roll_low = low.rolling(window=4, min_periods=1).min()
+
+        # Normalized by current close
+        df_out['candle_shape_4'] = (roll_high - roll_low) / close
+
+        # Cleanup
+        for c in ['candle_shape', 'candle_shape_4']:
+            df_out[c] = df_out[c].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    else:
+        df_out['candle_shape'] = 0.0
+        df_out['candle_shape_4'] = 0.0
+
+    return df_out

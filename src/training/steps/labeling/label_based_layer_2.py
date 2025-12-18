@@ -167,6 +167,39 @@ class LabelBasedLayer2:
         except Exception:
             self._global_probe_features = []
 
+        # Persist selected features
+        try:
+            cfg = getattr(self, "_current_config", {})
+            if not isinstance(cfg, dict):
+                cfg = {}
+        except Exception:
+            cfg = {}
+
+        try:
+            ts = str(cfg.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
+        except Exception:
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+        try:
+            symbol = str(cfg.get("symbol", ""))
+        except Exception:
+            symbol = ""
+        try:
+            timeframe = str(cfg.get("timeframe", ""))
+        except Exception:
+            timeframe = ""
+
+        try:
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+            if self._global_probe_features:
+                pd.Series(self._global_probe_features, name='feature').to_csv(
+                    outcomes_dir / f"layer2_selected_features_{symbol}_{timeframe}_{ts}.csv",
+                    index=False
+                )
+        except Exception as e:
+            logger.warning(f"Failed to persist layer2 selected features: {e}")
+
         # ---------------------------------------------------------------------
         # Part A: Full Optimization (Production Artifacts)
         # ---------------------------------------------------------------------
@@ -341,11 +374,19 @@ class LabelBasedLayer2:
 
             # OOF Fix: Train models on Train Split
             trained_models = None
-            if X_probe_events is not None and not X_probe_events.empty:
+
+            # Prepare X_oof (filtered features)
+            X_oof = X_probe_events
+            if X_oof is not None and not X_oof.empty and self._global_probe_features:
+                 valid_feats = [f for f in self._global_probe_features if f in X_oof.columns]
+                 if valid_feats:
+                     X_oof = X_oof[valid_feats]
+
+            if X_oof is not None and not X_oof.empty:
                 try:
                     trained_models = self._train_geometry_models(
                         df=df_train,
-                        X_events=X_probe_events, 
+                        X_events=X_oof,
                         events_df=events_train,
                         geometries=standardized_geos
                     )
@@ -400,7 +441,7 @@ class LabelBasedLayer2:
                     events_test, 
                     standardized_geos,
                     trained_models=trained_models,
-                    X_events=X_probe_events
+                    X_events=X_oof
                 )
 
                 try:
@@ -1177,47 +1218,6 @@ class LabelBasedLayer2:
             selected_features.append(col)
 
         return selected_features
-
-    def _select_features_for_geometry(
-        self,
-        X_events: pd.DataFrame,
-        labels: pd.Series,
-        realized_returns: pd.Series,
-        target_sample_weight: Optional[pd.Series] = None,
-        top_mdi: int = 200,
-        final_n: int = 70,
-    ) -> Tuple[List[str], np.ndarray, np.ndarray]:
-        y = labels.copy()
-        r = realized_returns.copy()
-        mask = y.notna() & r.notna()
-
-        X_use = X_events.loc[mask].copy()
-        y_use = y.loc[mask].astype(int)
-        r_use = r.loc[mask].astype(float)
-
-        # NOTE: returns from _compute_labels/compute_realized_returns are already net of transaction costs.
-        net_returns = r_use.astype(float)
-        weights = np.log1p(np.clip(net_returns.values, 0.0, None))
-        weights = np.where(np.isfinite(weights), weights, 0.0)
-
-        fs_weight = None
-        if target_sample_weight is not None:
-            try:
-                w_sel = target_sample_weight.reindex(X_use.index)
-                w_sel = pd.to_numeric(w_sel, errors='coerce').astype(float)
-                w_sel = w_sel.replace([np.inf, -np.inf], np.nan).fillna(1.0)
-                w_sel = w_sel.clip(lower=0.0)
-                fs_weight = w_sel.values
-            except Exception:
-                fs_weight = None
-
-        if fs_weight is None:
-            fs_weight = weights
-
-        ranked, mdi = self._rank_features_by_mean_mdi(X_use, y_use, sample_weight=fs_weight, n_splits=self.n_splits)
-        top_ranked = ranked[: min(int(top_mdi), len(ranked))]
-        selected = self._cheap_corr_prune(X_use, top_ranked, target_n=int(final_n), corr_threshold=0.95, max_rows=2000)
-        return selected, weights, net_returns.values
 
     def _train_probes(
         self,

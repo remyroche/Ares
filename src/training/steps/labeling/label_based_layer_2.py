@@ -594,7 +594,7 @@ class LabelBasedLayer2:
                     try:
                         fam_events = events_df[events_df.get('family') == fam] if 'family' in events_df.columns else events_df
                         if kappa is not None and horizon is not None:
-                            _lbl, _ret = self._compute_dominance_labels(
+                            _lbl, _ret, _, _ = self._compute_dominance_labels(
                                 df=df,
                                 events_df=fam_events,
                                 kappa=float(kappa),
@@ -673,7 +673,6 @@ class LabelBasedLayer2:
             "oof_returns": oof_returns,
             "weights": oof_weights,
             "individual_geometries": final_geo_preds,
-            "events_df": events_df,
             "selected_trials": [asdict(t) for t in production_geometries]
         }
 

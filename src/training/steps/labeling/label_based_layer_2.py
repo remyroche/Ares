@@ -11,6 +11,7 @@ It performs:
 4. MFE/MAE Dominance Labeling: Label = 1 if MFE > Kappa * MAE.
 5. Stability checks (Time-Flip) and Learnability probes.
 6. Bagged output generation with family-level cap checks.
+7. Enhanced LGBM training with Robust Focal Loss and Tree Variance calculation.
 """
 
 import numpy as np
@@ -24,6 +25,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import spearmanr
+from scipy.special import expit
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass, asdict
 import logging
@@ -57,6 +59,172 @@ def _normalized_binary_entropy(p: float) -> float:
     if h_max <= 0:
         return 0.0
     return float(np.clip(h / h_max, 0.0, 1.0))
+
+class RobustFocalLoss:
+    """
+    Focal Loss for LightGBM with numeric stability, auto-alpha, and optional gradient clipping.
+    Suitable for rare-event classification.
+    """
+
+    def __init__(self, train_labels, gamma=1.5, alpha=None, grad_clip=100.0, verbose=True):
+        """
+        Args:
+            train_labels: np.array of 0/1 labels
+            gamma: focusing parameter (1-2 typical)
+            alpha: positive class weight; if None, auto-computed from prevalence
+            grad_clip: optional max absolute gradient value
+            verbose: print alpha/gamma info
+        """
+        self.gamma = gamma
+        self.grad_clip = grad_clip
+
+        # --- ALPHA TUNING ---
+        if alpha is None:
+            n_pos = np.sum(train_labels == 1)
+            n_neg = np.sum(train_labels == 0)
+            if (n_pos + n_neg) > 0:
+                self.alpha = n_neg / (n_pos + n_neg)
+            else:
+                self.alpha = 0.5
+        else:
+            self.alpha = alpha
+
+        # Safety: enforce alpha in [0.5,0.95] to avoid extreme weighting
+        self.alpha = min(max(self.alpha, 0.5), 0.95)
+
+        if verbose:
+            try:
+                pos_frac = np.mean(train_labels)
+            except Exception:
+                pos_frac = 0.0
+            # logger.info(f"[Focal Loss] gamma={self.gamma}, alpha={self.alpha:.4f} (Pos fraction: {pos_frac:.2%})")
+
+    def __call__(self, preds, train_data):
+        """
+        Args:
+            preds: raw margins from LGBM
+            train_data: lgb.Dataset
+        Returns:
+            grad, hess: gradient and hessian arrays
+        """
+        labels = train_data.get_label()
+        p = expit(preds)  # convert raw score to probability
+        p = np.clip(p, 1e-15, 1 - 1e-15)  # prevent log(0)
+
+        # --- Common terms ---
+        term_pos = (1 - p) ** self.gamma
+        term_neg = p ** self.gamma
+
+        # --- Gradient ---
+        grad = (-self.alpha * term_pos * (1 - p - self.gamma * p * np.log(p)) * labels +
+                (1 - self.alpha) * term_neg * (p - self.gamma * (1 - p) * np.log(1 - p)) * (1 - labels))
+
+        # --- Hessian ---
+        hess = (self.alpha * term_pos * (1 - p) * (1 + (self.gamma - 1) * p * np.log(p)) * labels +
+                (1 - self.alpha) * term_neg * p * (1 + (self.gamma - 1) * (1 - p) * np.log(1 - p)) * (1 - labels))
+
+        # --- Gradient clipping ---
+        if self.grad_clip is not None:
+            grad = np.clip(grad, -self.grad_clip, self.grad_clip)
+
+        # --- Hessian stability ---
+        hess = np.maximum(hess, 1e-6)
+
+        return grad, hess
+
+def _calculate_tree_variance(booster, X) -> np.ndarray:
+    """
+    Calculate the variance of predictions across all trees in the ensemble (Tree Variation).
+
+    1. Get leaf indices for each sample.
+    2. Retrieve leaf values from the model dump.
+    3. Look up values for indices.
+    4. Compute variance across trees for each sample.
+    """
+    if booster is None:
+        return np.zeros(X.shape[0])
+
+    try:
+        # 1. Get leaf indices: (n_samples, n_trees)
+        leaf_indices = booster.predict(X, pred_leaf=True)
+
+        # 2. Parse model to get leaf values
+        # We need a lookup table: tree_index -> leaf_index -> leaf_value
+        model_dump = booster.dump_model()
+        trees = model_dump['tree_info']
+
+        # Build lookup table: values[tree_idx][leaf_idx] = value
+        # Note: leaf indices in predict() output are local to the tree
+
+        # Determine max leaf index to size the array correctly
+        # This might be sparse if not all leaves are present, but usually dense 0..num_leaves-1
+        max_leaf_idx = 0
+        for tree in trees:
+            if 'tree_structure' in tree:
+                nodes = [tree['tree_structure']]
+                while nodes:
+                    node = nodes.pop()
+                    if 'leaf_index' in node:
+                        max_leaf_idx = max(max_leaf_idx, node['leaf_index'])
+                    if 'left_child' in node:
+                        nodes.append(node['left_child'])
+                    if 'right_child' in node:
+                        nodes.append(node['right_child'])
+
+        n_trees = len(trees)
+        # Create a lookup array (n_trees, max_leaf_idx + 1) filled with NaN
+        # Using dictionary might be safer if indices are sparse, but array is faster
+        leaf_values_lookup = np.full((n_trees, max_leaf_idx + 1), np.nan)
+
+        for i, tree in enumerate(trees):
+            if 'tree_structure' in tree:
+                nodes = [tree['tree_structure']]
+                while nodes:
+                    node = nodes.pop()
+                    if 'leaf_index' in node:
+                        idx = node['leaf_index']
+                        val = node.get('leaf_value', 0.0)
+                        if idx <= max_leaf_idx:
+                            leaf_values_lookup[i, idx] = val
+                    if 'left_child' in node:
+                        nodes.append(node['left_child'])
+                    if 'right_child' in node:
+                        nodes.append(node['right_child'])
+
+        # 3. Vectorized lookup
+        # leaf_indices shape: (n_samples, n_trees)
+        # We want result shape: (n_samples, n_trees) containing values
+
+        n_samples = leaf_indices.shape[0]
+        n_trees_pred = leaf_indices.shape[1]
+
+        # Ensure we don't go out of bounds if predict returns more/less trees than dump
+        # (e.g. early stopping)
+        limit_trees = min(n_trees, n_trees_pred)
+
+        # Use numpy advanced indexing
+        # row indices: broadcast to (n_samples, limit_trees) -> 0..limit_trees-1
+        tree_indices = np.arange(limit_trees)
+
+        # Gather values
+        # collected_values[sample_i, tree_j] = leaf_values_lookup[tree_j, leaf_indices[sample_i, tree_j]]
+
+        subset_indices = leaf_indices[:, :limit_trees]
+        # Clip indices to be safe against weird dump/predict mismatches
+        subset_indices = np.clip(subset_indices, 0, max_leaf_idx)
+
+        collected_values = leaf_values_lookup[tree_indices, subset_indices]
+
+        # 4. Calculate Variance
+        # collected_values shape: (n_samples, limit_trees)
+        # Variance across trees (axis 1)
+        variance = np.nanvar(collected_values, axis=1)
+
+        return variance
+
+    except Exception as e:
+        logger.warning(f"Failed to calculate tree variance: {e}")
+        return np.zeros(X.shape[0])
 
 @dataclass
 class GeometryTrial:
@@ -143,6 +311,7 @@ class LabelBasedLayer2:
             - 'oof_returns': OOF Weighted Consensus Returns (Series)
             - 'weights': OOF Weights (Series)
             - 'individual_geometries': OOF predictions per geometry channel (Dict[str, Series])
+            - 'individual_variances': OOF variance per geometry channel (Dict[str, Series])
             - 'events_df': Events DataFrame
             - 'selected_trials': List[Dict] (Production geometries from full fit)
         """
@@ -247,10 +416,12 @@ class LabelBasedLayer2:
         families = ['Trend Continuation', 'Momentum', 'Mean Reversion']
         max_rank = 4
         oof_geo_preds = {}
+        oof_geo_vars = {} # Store variances
         for fam in families:
             for r in range(max_rank):
                 key = f"{fam}_Rank{r}"
                 oof_geo_preds[key] = pd.Series(np.nan, index=indices)
+                oof_geo_vars[key] = pd.Series(np.nan, index=indices)
 
         try:
             cfg_oof = getattr(self, "_current_config", {})
@@ -453,15 +624,20 @@ class LabelBasedLayer2:
                 oof_returns.loc[target_idx] = fold_output['oof_returns'].reindex(target_idx)
                 oof_weights.loc[target_idx] = fold_output['weights'].reindex(target_idx)
 
-                # Assign individual geometry preds
+                # Assign individual geometry preds and variances
                 for uuid, series in fold_output['individual_geometries'].items():
                     if uuid in oof_geo_preds:
                         oof_geo_preds[uuid].loc[target_idx] = series.reindex(target_idx)
+
+                for uuid, series in fold_output['individual_variances'].items():
+                    if uuid in oof_geo_vars:
+                        oof_geo_vars[uuid].loc[target_idx] = series.reindex(target_idx)
 
         # ---------------------------------------------------------------------
         # Final Packaging
         # ---------------------------------------------------------------------
         final_geo_preds = {k: v for k, v in oof_geo_preds.items() if v.notna().any()}
+        final_geo_vars = {k: v for k, v in oof_geo_vars.items() if v.notna().any()}
 
         try:
             cfg = getattr(self, "_current_config", {})
@@ -673,6 +849,7 @@ class LabelBasedLayer2:
             "oof_returns": oof_returns,
             "weights": oof_weights,
             "individual_geometries": final_geo_preds,
+            "individual_variances": final_geo_vars,
             "selected_trials": [asdict(t) for t in production_geometries]
         }
 
@@ -1989,6 +2166,8 @@ class LabelBasedLayer2:
         """
         Train simple LGBM models for each geometry on the provided training set
         to allow Out-Of-Sample prediction generation on the test set.
+
+        Updated to use RobustFocalLoss and specified hyperparameters.
         """
         models = {}
         for g in geometries:
@@ -2008,18 +2187,85 @@ class LabelBasedLayer2:
                     models[g.uuid] = None
                     continue
 
-                clf = lgb.LGBMClassifier(
-                    n_estimators=50, 
-                    max_depth=2,
-                    num_leaves=4,
-                    learning_rate=0.05,
-                    n_jobs=1,
-                    verbose=-1,
-                    random_state=42
-                )
-                clf.fit(X_train, y_train)
-                models[g.uuid] = clf
-            except Exception:
+                # --- New Hyperparameters ---
+                # 'boosting_type': 'gbdt',
+                # 'objective': 'binary', (overridden by fobj)
+                # 'metric': 'auc',
+                # 'max_depth': 5,
+                # 'num_leaves': 31,
+                # 'lambda_l1': 0.5,
+                # 'lambda_l2': 5.0,
+                # 'min_data_in_leaf': 50,
+                # 'feature_fraction': 0.8,
+                # 'bagging_fraction': 0.8,
+                # 'bagging_freq': 1,
+                # 'learning_rate': 0.02,
+                # 'n_estimators': 2000,
+                # 'is_unbalance': False,
+                # 'scale_pos_weight': 1
+
+                params = {
+                    'boosting_type': 'gbdt',
+                    'objective': 'binary',
+                    'metric': 'auc',
+                    'max_depth': 5,
+                    'num_leaves': 31,
+                    'lambda_l1': 0.5,
+                    'lambda_l2': 5.0,
+                    'min_data_in_leaf': 50,
+                    'feature_fraction': 0.8,
+                    'bagging_fraction': 0.8,
+                    'bagging_freq': 1,
+                    'learning_rate': 0.02,
+                    'n_estimators': 2000,
+                    'verbose': -1,
+                    'random_state': 42,
+                    'n_jobs': 1,
+                    # Disable internal imbalance handling as Focal Loss handles it
+                    'is_unbalance': False,
+                    'scale_pos_weight': 1
+                }
+
+                # Instantiate Focal Loss
+                focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=1.5)
+
+                # Create Dataset for training
+                train_ds = lgb.Dataset(X_train, label=y_train)
+
+                # Train with callbacks
+                # Note: We don't have a separate validation set here for early stopping in this specific function flow
+                # (it's OOF training on the full 'train' fold passed by the caller).
+                # To enable early stopping, we should split X_train internally or rely on n_estimators.
+                # Given the instruction to use early stopping (rounds=100), we'll do an internal split 90/10.
+
+                X_tr_inner, X_val_inner = X_train.iloc[:int(len(X_train)*0.9)], X_train.iloc[int(len(X_train)*0.9):]
+                y_tr_inner, y_val_inner = y_train.iloc[:int(len(y_train)*0.9)], y_train.iloc[int(len(y_train)*0.9):]
+
+                if len(y_val_inner) < 10:
+                    # Too small for split, train on full without early stopping
+                    booster = lgb.train(
+                        params,
+                        train_ds,
+                        fobj=focal_obj,
+                        num_boost_round=params['n_estimators']
+                    )
+                else:
+                    train_ds_inner = lgb.Dataset(X_tr_inner, label=y_tr_inner)
+                    val_ds_inner = lgb.Dataset(X_val_inner, label=y_val_inner, reference=train_ds_inner)
+
+                    booster = lgb.train(
+                        params,
+                        train_ds_inner,
+                        fobj=focal_obj,
+                        valid_sets=[train_ds_inner, val_ds_inner],
+                        callbacks=[
+                            lgb.early_stopping(stopping_rounds=100, verbose=False),
+                        ]
+                    )
+
+                models[g.uuid] = booster
+            except Exception as e:
+                logger.warning(f"Failed to train geometry model for {g.uuid}: {e}")
                 models[g.uuid] = None
         return models
 
@@ -2038,6 +2284,8 @@ class LabelBasedLayer2:
         - Weighted Consensus Labels
         - Weighted Consensus Returns
         - Event Weights (capped and normalized)
+        - Individual OOF Predictions (Probabilities)
+        - Individual OOF Variances (Tree Variance)
         """
 
         # Ensure family assignment is up to date
@@ -2053,7 +2301,8 @@ class LabelBasedLayer2:
         composite_labels = pd.Series(index=events_df.index, dtype=float)
         composite_returns = pd.Series(index=events_df.index, dtype=float)
         composite_weights = pd.Series(index=events_df.index, dtype=float)
-        oof_preds = {} # Store individual geometry predictions
+        oof_preds = {} # Store individual geometry predictions (probabilities)
+        oof_vars = {} # Store individual geometry variances
 
         # Iterate by family (since events are disjoint by family)
         for family, fam_geos in geo_by_fam.items():
@@ -2099,25 +2348,37 @@ class LabelBasedLayer2:
                 # Store individual geometry output
                 # OOF Fix: Use trained model if available and X_events provided
                 pred_done = False
+
+                # Initialize container
+                oof_preds[g.uuid] = pd.Series(np.nan, index=fam_events.index)
+                oof_vars[g.uuid] = pd.Series(np.nan, index=fam_events.index)
+
                 if trained_models is not None and X_events is not None and g.uuid in trained_models:
-                     clf = trained_models[g.uuid]
-                     if clf is not None:
+                     booster = trained_models[g.uuid]
+                     if booster is not None:
                          # Predict on fam_events
                          fam_indices = fam_events.index.intersection(X_events.index)
                          if not fam_indices.empty:
                              try:
-                                 probs = clf.predict_proba(X_events.loc[fam_indices])[:, 1]
-                                 oof_preds[g.uuid] = pd.Series(probs, index=fam_indices)
-                                 # Align to full fam_events if missing some
-                                 oof_preds[g.uuid] = oof_preds[g.uuid].reindex(fam_events.index)
+                                 X_subset = X_events.loc[fam_indices]
+
+                                 # 1. Prediction (Raw Margins -> Sigmoid)
+                                 raw_margins = booster.predict(X_subset)
+                                 # Sigmoid is mandatory for Focal Loss output!
+                                 probs = 1.0 / (1.0 + np.exp(-raw_margins))
+
+                                 # 2. Variance (Tree Variance)
+                                 variances = _calculate_tree_variance(booster, X_subset)
+
+                                 # Store
+                                 oof_preds[g.uuid].loc[fam_indices] = probs
+                                 oof_vars[g.uuid].loc[fam_indices] = variances
+
                                  pred_done = True
-                             except Exception:
-                                 logger.warning(f"OOF prediction failed for {g.uuid}")
+                             except Exception as e:
+                                 logger.warning(f"OOF prediction failed for {g.uuid}: {e}")
                 
-                if not pred_done:
-                    # CRITICAL FIX: Do NOT fall back to ground truth labels (lbls) for OOF features.
-                    # Use NaN (uncertainty) which will be filled with 0.5 in Layer 3.
-                    oof_preds[g.uuid] = pd.Series(np.nan, index=fam_events.index)
+                # If prediction failed or not available, leave as NaN (Layer 3 will handle fillna if needed, but for now we leave explicit NaN)
 
                 # Align to fam_events index
                 lbls_aligned = lbls.reindex(fam_events.index)
@@ -2268,5 +2529,6 @@ class LabelBasedLayer2:
             "oof_returns": composite_returns,
             "weights": composite_weights,
             "individual_geometries": oof_preds,
+            "individual_variances": oof_vars,
             "selected_trials": [asdict(t) for t in geometries]
         }

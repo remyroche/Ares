@@ -108,11 +108,24 @@ def layer3_analyst_lgbm(
     t0_all = time.perf_counter() if enable_timing else None
 
     # ---------------------------------------------------------
-    # 1. Feature Engineering: Ensemble Disagreement
+    # 1. Feature Engineering: Curated Feature Set
     # ---------------------------------------------------------
-    print("<< Generating Disagreement Features...")
+    print("<< Generating Curated Features...")
 
-    meta_features = []
+    # Define Disagreement Features
+    disagree_feature_names = [
+        "prediction_dispersion",
+        "confidence_gap",
+        "uncertainty",
+        "prediction_range",
+        "avg_divergence",
+        "max_confidence",
+        "disagreement_rate",
+        "snr_internal",
+        "snr_consensus"
+    ]
+    disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
+
     if not base_model_cols:
           print("⚠️ No base models provided for Layer 3 feature engineering!")
     else:
@@ -121,30 +134,47 @@ def layer3_analyst_lgbm(
         prob_dict = {str(c): df[c].astype(float).values for c in base_model_cols}
         pred_dict = {str(c): (df[c].astype(float).values - 0.5) for c in base_model_cols}
 
+        # Extract Variances from oof_df if available (assuming passed as additional columns)
+        # We need to identify variance columns corresponding to base models.
+        # Layer 2 should have produced them.
+        # Assuming convention: if base model is 'Trend Continuation_Rank0',
+        # look for 'Trend Continuation_Rank0_var' or similar if we strictly enforced naming.
+        # HOWEVER, Layer 2 'individual_variances' keys match 'individual_geometries' keys.
+        # So if base_model_cols contains keys like 'Trend Continuation_Rank0',
+        # we check if those keys exist in the variance map passed to Layer 3.
+        # Layer 3 receives `oof_df` which should contain both preds and vars.
+        # We need to infer variance column names.
+
+        var_dict = {}
+        # Try to find matching variance columns in oof_df
+        # Since Layer 2 saves to CSV and loads back, we rely on column naming convention or Metadata.
+        # For this implementation, we will look for columns with suffix "_var" matching base cols.
+        # But `LabelBasedLayer2.run` returns a dict with 'individual_variances'.
+        # The Orchestrator (calling script) must merge these into `oof_df` passed here.
+        # Let's assume the calling script appended them with '_var' suffix.
+
+        for c in base_model_cols:
+            var_col = f"{c}_var"
+            if var_col in df.columns:
+                var_dict[str(c)] = df[var_col].astype(float).values
+
+        if not var_dict:
+            print("⚠️ No variance columns found for base models. SNR Internal will be 0.")
+
         try:
             disagree = calculate_ensemble_disagreement_features(
                 model_predictions=pred_dict,
                 model_probabilities=prob_dict,
                 model_confidences=None,
+                model_variances=var_dict if var_dict else None,
                 feature_names=None,
                 logger=None,
             )
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ Disagreement calculation failed: {e}")
             disagree = {}
 
-        disagree_feature_names = [
-            "prediction_dispersion",
-            "confidence_gap",
-            "uncertainty",
-            "prediction_range",
-            "avg_divergence",
-            "max_confidence",
-            "disagreement_rate",
-        ]
-        disagree_cols = []
-        for k in disagree_feature_names:
-            col = f"ens_{k}"
-            disagree_cols.append(col)
+        for k, col in zip(disagree_feature_names, disagree_cols):
             try:
                 v = disagree.get(k)
                 if isinstance(v, pd.Series):
@@ -155,269 +185,73 @@ def layer3_analyst_lgbm(
                 df[col] = 0.0
 
         df[disagree_cols] = df[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-        meta_features = list(dict.fromkeys(base_model_cols + disagree_cols))
 
-    additional_feature_df = pd.DataFrame(index=df.index)
+    # Generate Time and Regime Features
+    # We strictly enforce the curated list: Time (hour, day_of_week) + Regime (trend, vol, ratios)
+
+    curated_feature_cols = []
+
     if market_data is not None and isinstance(market_data, pd.DataFrame) and not market_data.empty:
+        # Time Features
         try:
-            volume_available = bool('volume' in market_data.columns)
+            if not isinstance(market_data.index, pd.DatetimeIndex):
+                idx = pd.to_datetime(market_data.index)
+            else:
+                idx = market_data.index
 
-            signals_dummy = pd.DataFrame(index=market_data.index)
-            signals_dummy['consensus'] = 0.0
-
-            meta_full = create_meta_features(
-                df=market_data,
-                signals=signals_dummy,
-                volume_available=volume_available,
-                include_raw_signals=False,
-                use_kalman=True,
-            )
-
-            try:
-                enable_nn = bool(cfg.get('enable_nn_sequence_embeddings_layer3', cfg.get('enable_nn_sequence_embeddings', False)))
-            except Exception:
-                enable_nn = False
-
-            if enable_nn:
-                try:
-                    from src.training.steps.labeling.short_nn_sequence_template import (
-                        generate_nn_sequence_embeddings,
-                        load_cached_nn_embeddings,
-                    )
-
-                    nn_cfg = cfg.get('nn_sequence_encoder_layer3')
-                    if not isinstance(nn_cfg, dict):
-                        nn_cfg = cfg.get('nn_sequence_encoder')
-                    if not isinstance(nn_cfg, dict):
-                        nn_cfg = {}
-
-                    cache_path = nn_cfg.get('cache_path')
-                    seq_len = int(nn_cfg.get('seq_len', 24))
-                    embed_dim = int(nn_cfg.get('embed_dim', 8))
-                    device = str(nn_cfg.get('device', 'cpu'))
-                    encoder_type = str(nn_cfg.get('encoder_type', 'stacked'))
-                    use_conv = bool(nn_cfg.get('use_conv', True))
-                    use_lstm = bool(nn_cfg.get('use_lstm', True))
-                    use_attention = bool(nn_cfg.get('use_attention', False))
-                    pretrained_path = nn_cfg.get('pretrained_path', None)
-
-                    nn_embed = None
-                    if cache_path:
-                        try:
-                            nn_embed = load_cached_nn_embeddings(
-                                cache_path=str(cache_path),
-                                target_index=market_data.index,
-                            )
-                        except Exception:
-                            nn_embed = None
-
-                    if nn_embed is None:
-                        nn_embed = generate_nn_sequence_embeddings(
-                            market_data=market_data,
-                            encoder_type=encoder_type,
-                            seq_len=seq_len,
-                            embed_dim=embed_dim,
-                            use_conv=use_conv,
-                            use_lstm=use_lstm,
-                            use_attention=use_attention,
-                            device=device,
-                            pretrained_path=pretrained_path,
-                        )
-
-                    if nn_embed is not None and hasattr(nn_embed, 'columns') and len(nn_embed) > 0:
-                        nn_embed = nn_embed.reindex(meta_full.index)
-                        new_cols = [c for c in nn_embed.columns if c not in meta_full.columns]
-                        if new_cols:
-                            meta_full = pd.concat([meta_full, nn_embed[new_cols]], axis=1)
-                except Exception:
-                    pass
-
-            meta_selected = meta_full
-            try:
-                enable_de_prado = bool(cfg.get('enable_feature_selection_layer3', True))
-            except Exception:
-                enable_de_prado = True
-
-            if enable_de_prado and meta_full is not None and not meta_full.empty:
-                try:
-                    target_n = int(cfg.get('target_feature_count_layer3', cfg.get('target_feature_count', 70)))
-                except Exception:
-                    target_n = 70
-                try:
-                    corr_thr = float(cfg.get('feature_correlation_threshold_layer3', cfg.get('feature_correlation_threshold', 0.85)))
-                except Exception:
-                    corr_thr = 0.85
-
-                try:
-                    meta_selected, _ = select_features_with_quality(
-                        df_features=meta_full,
-                        target_n=target_n,
-                        correlation_threshold=corr_thr,
-                        generate_horizons=bool(cfg.get('enable_multi_horizon_features', True)),
-                        horizon_config=cfg.get('feature_horizon_config', {
-                            'Short': 5,
-                            'Medium': 20,
-                            'Long': 60,
-                        }),
-                        enable_cross_features=bool(cfg.get('enable_cross_features', True)),
-                        market_data=market_data,
-                        config=cfg,
-                        use_hierarchical=bool(cfg.get('use_hierarchical_selection', True)),
-                        use_lgbm_sweep=bool(cfg.get('use_lgbm_sweep', True)),
-                        lgbm_lookahead=int(cfg.get('lgbm_sweep_lookahead', 4)),
-                        lgbm_max_features=int(cfg.get('lgbm_max_features', 300)),
-                        quality_drop_percentile=float(cfg.get('quality_drop_percentile', 20.0)),
-                        symbol=str(cfg.get('symbol', '')),
-                        exchange=str(cfg.get('exchange', '')),
-                        timeframe=str(cfg.get('timeframe', '')),
-                        use_cache=bool(cfg.get('use_feature_selection_cache', True)),
-                        force_recompute=bool(cfg.get('force_recompute_features', False)),
-                    )
-                except Exception:
-                    meta_selected = meta_full
-
-            additional_feature_df = meta_selected.reindex(df.index).fillna(0.0)
+            df['hour'] = idx.hour
+            df['day_of_week'] = idx.dayofweek
+            curated_feature_cols.extend(['hour', 'day_of_week'])
         except Exception:
-            additional_feature_df = pd.DataFrame(index=df.index)
+            pass
 
-    if additional_feature_df is not None and not additional_feature_df.empty:
-        new_cols = [c for c in additional_feature_df.columns if c not in df.columns]
-        if new_cols:
-            df = pd.concat([df, additional_feature_df[new_cols]], axis=1)
-
-    try:
-        enable_mda_shap = bool(cfg.get('enable_mda_shap_selection_layer3', cfg.get('enable_mda_shap_selection', True)))
-    except Exception:
-        enable_mda_shap = True
-
-    selected_additional_features = list(additional_feature_df.columns)
-    if enable_mda_shap and additional_feature_df is not None and not additional_feature_df.empty:
+        # Regime Features
+        # Calculate on the fly if not present
         try:
-            geo_df_for_target = df[base_model_cols] if base_model_cols else pd.DataFrame(index=df.index)
-            geo_mean = geo_df_for_target.mean(axis=1, skipna=True)
-            geo_count = geo_df_for_target.notna().sum(axis=1)
-            y_joint = (geo_mean >= 0.5).astype(float)
-            y_joint.loc[geo_count <= 0] = np.nan
-
-            w_sel = None
-            try:
-                if layer1_weight is not None and layer2_weight is not None and net_returns is not None:
-                    w1 = np.asarray(layer1_weight, dtype=float).reshape(-1)
-                    w2 = np.asarray(layer2_weight, dtype=float).reshape(-1)
-                    rr = np.asarray(net_returns, dtype=float).reshape(-1)
-
-                    n = int(len(df))
-                    if w1.size != n:
-                        w1 = w1[:n] if w1.size >= n else np.pad(w1, (n - w1.size, 0), constant_values=1.0)
-                    if w2.size != n:
-                        w2 = w2[:n] if w2.size >= n else np.pad(w2, (n - w2.size, 0), constant_values=1.0)
-                    if rr.size != n:
-                        rr = rr[:n] if rr.size >= n else np.pad(rr, (n - rr.size, 0), constant_values=0.0)
-
-                    w_sel_arr = (w1 * w2 * np.log1p(np.abs(rr))).astype(float)
-                    w_sel_arr = np.where(np.isfinite(w_sel_arr) & (w_sel_arr > 0.0), w_sel_arr, 1.0)
-                    w_sel = pd.Series(w_sel_arr, index=df.index)
-                    if float(w_sel.mean()) > 1e-9:
-                        w_sel = w_sel / float(w_sel.mean())
-            except Exception:
-                w_sel = None
-
-            mda_shap_cfg = cfg.get('mda_shap_config_layer3')
-            if not isinstance(mda_shap_cfg, dict):
-                mda_shap_cfg = {
-                    'model_type': 'rf',
-                    'n_folds': int(cfg.get('cv_splits', 5)),
-                    'pre_filters': {
-                        'enable_lgbm_mdi_filter': True,
-                        'enable_correlation_filter': True,
-                        'enable_variance_filter': True,
-                        'enable_anova_filter': True,
-                    },
-                    'corr_threshold': 0.85,
-                    'top_clusters': 8,
-                    'shap_sample_size': min(1000, int(np.sum(y_joint.notna()))),
-                    'elbow_min_features': int(cfg.get('layer3_elbow_min_features', 40)),
-                    'max_selected_features': int(cfg.get('layer3_max_selected_features', 70)),
-                    'verbose': True,
-                }
-
-            extractor_cfg = cfg.get('regime_leaf_extractor_config')
-            if not isinstance(extractor_cfg, dict):
-                extractor_cfg = {}
+            close = market_data['close']
             
-            # Enforce defaults if empty to ensure we get features
-            if not extractor_cfg.get('enabled_targets'):
-                 # Default to Volatility and Trend Efficiency if not specified
-                 extractor_cfg['enabled_targets'] = ['regime_volatility', 'regime_trend_efficiency']
+            # Trend
+            # Simple moving average slope or similar proxy?
+            # Prompt asked for "basic regime features (trend, volatility, volume ratio on 16 and 64 periods)"
 
-            mda_shap_cfg.setdefault(
-                'regime_leaf_config',
-                {
-                    'enabled': bool(cfg.get('enable_regime_leaf_features', True)),
-                    'market_data': market_data,
-                    'X_base': None,
-                    'extractor_config': extractor_cfg,
-                    'random_state': int(cfg.get('random_state', 42)),
-                    'verbose': True,
-                },
-            )
+            # 1. Volatility (20 period)
+            vol_20 = close.pct_change().rolling(20).std()
+            df['volatility_20'] = vol_20
+            curated_feature_cols.append('volatility_20')
 
-            # NEW: Generate Regime Features BEFORE selection so they are available as candidates
-            try:
-                rl_cfg = mda_shap_cfg.get('regime_leaf_config') if isinstance(mda_shap_cfg, dict) else None
-                if isinstance(rl_cfg, dict) and bool(rl_cfg.get('enabled', False)) and market_data is not None:
-                    from src.training.steps.labeling.regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
-                    
-                    print("<< Extracting Regime Leaf Features...")
-                    rl_df = extract_regime_leaf_onehot_features(
-                        X=additional_feature_df,
-                        market_data=market_data,
-                        config=extractor_cfg,
-                        random_state=int(rl_cfg.get('random_state', 42)),
-                        verbose=bool(rl_cfg.get('verbose', True)),
-                    )
-                    
-                    if rl_df is not None and not getattr(rl_df, 'empty', True):
-                        # Align and merge
-                        rl_df = rl_df.reindex(additional_feature_df.index).fillna(0.0)
-                        # Drop columns that already exist to avoid duplicates
-                        new_rl_cols = [c for c in rl_df.columns if c not in additional_feature_df.columns]
-                        if new_rl_cols:
-                            additional_feature_df = pd.concat([additional_feature_df, rl_df[new_rl_cols]], axis=1)
-                            print(f"   Added {len(new_rl_cols)} regime features for selection.")
-            except Exception as e:
-                print(f"⚠️ Failed to generate Regime Features: {e}")
+            # 2. Trend (SMA 50 Slope proxy)
+            sma_50 = close.rolling(50).mean()
+            trend_score = (close - sma_50) / (sma_50 + 1e-9)
+            df['trend_score'] = trend_score
+            curated_feature_cols.append('trend_score')
 
-            selected_feats, selection_results = run_mda_shap_feature_selection(
-                X=additional_feature_df,
-                y=y_joint,
-                target_sample_weight=w_sel,
-                config=mda_shap_cfg,
-                artifact_router=None,
-                pipeline_context={
-                    'symbol': cfg.get('symbol'),
-                    'exchange': cfg.get('exchange'),
-                    'timeframe': cfg.get('timeframe'),
-                    'direction': cfg.get('direction'),
-                },
-            )
+            # 3. Volume Ratios (16 and 64)
+            if 'volume' in market_data.columns:
+                vol = market_data['volume']
 
-            # Update features based on selection
-            final_sel = [f for f in list(selected_feats or []) if isinstance(f, str) and f in additional_feature_df.columns]
-            if final_sel:
-                selected_additional_features = final_sel
+                # Vol Ratio 16: Vol / MA(Vol, 16)
+                ma_vol_16 = vol.rolling(16).mean()
+                vr_16 = vol / (ma_vol_16 + 1e-9)
+                df['vol_ratio_16'] = vr_16
+                curated_feature_cols.append('vol_ratio_16')
 
-            # Ensure selected features are in df
-            for col in selected_additional_features:
-                if col not in df.columns and col in additional_feature_df.columns:
-                    df[col] = additional_feature_df[col]
+                # Vol Ratio 64: Vol / MA(Vol, 64)
+                ma_vol_64 = vol.rolling(64).mean()
+                vr_64 = vol / (ma_vol_64 + 1e-9)
+                df['vol_ratio_64'] = vr_64
+                curated_feature_cols.append('vol_ratio_64')
 
         except Exception as e:
-            print(f"⚠️ Feature Selection Failed: {e}")
-            selected_additional_features = list(additional_feature_df.columns)
+            print(f"⚠️ Failed to generate regime features: {e}")
 
-    additional_features = [c for c in df.columns if c.startswith('vol_') or c.startswith('trend_') or c in ['volatility_1d']]
-    meta_features += [c for c in additional_features if c not in meta_features]
+    # Fill NaNs in new features
+    df[curated_feature_cols] = df[curated_feature_cols].fillna(0.0)
+
+    # FINAL FEATURE SELECTION
+    # Base Models + Disagreement + Curated Time/Regime
+    meta_features = list(dict.fromkeys(base_model_cols + disagree_cols + curated_feature_cols))
+
+    print(f"   Final Feature Set ({len(meta_features)}): {meta_features}")
 
     # Clean target
     try:
@@ -505,6 +339,7 @@ def layer3_analyst_lgbm(
 
     # Scheme 9: Class Balanced weighting - compensate for low base rate
     # Ensures winners and losers have equal aggregate weight in training
+    y_values = y_num.reindex(df.index).to_numpy()
     try:
         y_bin = (y_values > 0.5).astype(int)
         pos_count = np.sum(y_bin == 1)
@@ -547,19 +382,6 @@ def layer3_analyst_lgbm(
         'n_jobs': 1,
         'verbose': -1
     }
-
-    disagree_cols_all = [
-        "ens_prediction_dispersion",
-        "ens_confidence_gap",
-        "ens_uncertainty",
-        "ens_prediction_range",
-        "ens_avg_divergence",
-        "ens_max_confidence",
-        "ens_disagreement_rate",
-    ]
-    pinned = list(dict.fromkeys(base_model_cols + [c for c in disagree_cols_all if c in df.columns]))
-    selected_additional_features = [c for c in selected_additional_features if c in df.columns]
-    meta_features = list(dict.fromkeys(pinned + selected_additional_features))
 
     X = df[meta_features]
     y = df[target_col]

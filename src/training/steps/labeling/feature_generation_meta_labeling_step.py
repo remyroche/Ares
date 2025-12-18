@@ -621,466 +621,168 @@ def detect_cusum_events(
     return long_events, short_events
 
 
+def get_efficiency_ratio(close, window=50):
+    """
+    Returns Efficiency Ratio (ER) based on Price Changes.
+    """
+    diff = close.diff().abs()
+    change = close.diff(window).abs()
+    vol_sum = diff.rolling(window).sum()
+    er = change / vol_sum.replace(0, 1e-9) # Safety
+    return er.fillna(0)
+
 def generate_primary_signals(
     df: pd.DataFrame,
+    # Accept old arguments to prevent TypeErrors from callers
     rsi_period: int = 14,
-    rsi_period_long: int = 56,  # 4x longer for multi-timeframe
+    rsi_period_long: int = 56,
     sma_fast: int = 10,
     sma_slow: int = 30,
     momentum_period: int = 10,
-    rsi_oversold: float = 30.0,  
-    rsi_overbought: float = 70.0,  # LOOSER (was 70)
+    rsi_oversold: float = 30.0,
+    rsi_overbought: float = 70.0,
     macd_fast: int = 12,
     macd_slow: int = 26,
     macd_signal: int = 9,
-    macd_fast_long: int = 48,  # 4x longer
-    macd_slow_long: int = 104,  # 4x longer
-    macd_signal_long: int = 36,  # 4x longer
-    macd_threshold: float = 0.02,  # LOOSER difference threshold
-    momentum_threshold: Optional[float] = None,  # If None, will be auto-tuned
-    target_trades_per_day: float = 20.0,  # Target signal density (increased from 4.0 for more signals)
-    enable_dynamic_tuning: bool = True,  # Enable auto-tuning of momentum threshold
-    use_cusum_filter: bool = True,  # Use CUSUM filter instead of momentum threshold
-    cusum_threshold: float = 0.015,  # CUSUM threshold for event detection
-    # New parameters for enhanced signals
-    bb_window: int = 20,  # Bollinger Band window
-    bb_std: float = 2.0,  # Bollinger Band standard deviations
-    atr_period: int = 14,  # ATR period for breakout signals
-    atr_mult: float = 1.5,  # ATR multiplier for breakout threshold
-    volume_spike_threshold: float = 2.0,  # Volume spike threshold (multiples of mean)
-    range_window: int = 48,  # Range window for fade signals (12 hours at 15m)
-    mtf_lookback: int = 4,  # Multi-timeframe lookback (4 bars = 1 hour at 15m)
+    macd_fast_long: int = 48,
+    macd_slow_long: int = 104,
+    macd_signal_long: int = 36,
+    macd_threshold: float = 0.02,
+    momentum_threshold: Optional[float] = None,
+    target_trades_per_day: float = 20.0,
+    enable_dynamic_tuning: bool = True,
+    use_cusum_filter: bool = True,
+    cusum_threshold: float = 0.015,
+    bb_window: int = 20,
+    bb_std: float = 2.0,
+    atr_period: int = 14,
+    atr_mult: float = 1.5,
+    volume_spike_threshold: float = 2.0,
+    range_window: int = 48,
+    mtf_lookback: int = 4,
+    # New arguments for CUSUM generator
+    k: float = 0.5,
+    vol_window: int = 50,
+    er_window: int = 50,
+    er_min: float = 0.20,
+    alpha: float = 2.0,
+    beta: float = 0.5,
+    vol_power: float = 0.8,
 ) -> pd.DataFrame:
     """
-    Generate primary trading signals from technical indicators.
-
-    ENHANCED IMPROVEMENTS (2025-11-18):
-    - Removed volatility expansion FILTER → now a continuous FEATURE for ML
-    - Dynamic threshold tuning to target specific sample sizes (1-3 trades/day)
-    - Volatility weighting for consensus signals
-    - Signal funnel logging
-
-    CRITICAL: These signals are FIXED and must never be re-optimized during CV.
-    They define the "primary model" whose signals we will meta-label.
-
-    Returns:
-        DataFrame with signal columns including raw indicator values for meta-features
+    Generate primary trading signals using Kalman-smoothed, volume and volatility aware CUSUM.
+    Replaces all previous signal generators (MACD, RSI, etc).
     """
     signals = pd.DataFrame(index=df.index)
-    df_local = df.copy()
+    signals['consensus'] = 0
 
-    # SIGNAL FUNNEL TRACKING
-    funnel = {'total_bars': len(df)}
-    raw_signal_count = 0
+    # Data extraction
+    close = df['close']
+    volume = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
 
-    # ===== DYNAMIC THRESHOLD TUNING =====
-    # Auto-tune momentum_threshold to achieve target signal density
-    if enable_dynamic_tuning and momentum_threshold is None:
-        # Estimate dataset duration (bars_per_day depends on timeframe, assume 15m → 96 bars/day)
-        bars_per_day = 96  # 15m timeframe: 24h * 4 bars/hour = 96
-        n_days = len(df) / bars_per_day
-        target_total_signals = int(target_trades_per_day * n_days)
+    # 1. Convert to Log-Returns (Scale Invariant)
+    log_ret = np.log(close / close.shift(1)).fillna(0)
 
-        tprint(f"🔧 Dynamic threshold tuning: Target {target_trades_per_day:.1f} trades/day × {n_days:.1f} days = {target_total_signals} signals", "INFO")
-
-        # Binary search for optimal threshold
-        low_thresh, high_thresh = 0.001, 0.2  # Search range
-        best_thresh = 0.01  # Fallback
-        tolerance = 0.15  # Accept within 15% of target
-
-        for iteration in range(15):  # Max 15 iterations
-            mid_thresh = (low_thresh + high_thresh) / 2
-
-            # Test with candidate threshold (run momentum calc only)
-            test_momentum = df_local['close'].pct_change(momentum_period)
-            test_count_long = (test_momentum > mid_thresh).sum()
-            test_count_short = (test_momentum < -mid_thresh).sum()
-            test_count = test_count_long + test_count_short
-
-            error_ratio = abs(test_count - target_total_signals) / (target_total_signals + 1)
-
-            if error_ratio < tolerance:
-                best_thresh = mid_thresh
-                tprint(f"  ✓ Converged at iteration {iteration+1}: threshold={best_thresh:.4f} → {test_count} signals", "INFO")
-                break
-            elif test_count < target_total_signals:
-                high_thresh = mid_thresh  # Loosen (lower threshold)
-            else:
-                low_thresh = mid_thresh  # Tighten (raise threshold)
-
-            if iteration == 14:  # Last iteration
-                best_thresh = mid_thresh
-                tprint(f"  ⚠️ Max iterations reached: threshold={best_thresh:.4f} → {test_count} signals (target: {target_total_signals})", "WARNING")
-
-        momentum_threshold = best_thresh
-    elif momentum_threshold is None:
-        momentum_threshold = 0.006  # Default fallback
-
-    tprint(f"📊 Using momentum_threshold={momentum_threshold:.4f}", "INFO")
-
-    # ===== RSI SIGNALS (short + long term) =====
-    df_local['rsi'] = compute_rsi(df_local['close'], period=rsi_period)
-    df_local['rsi_long'] = compute_rsi(df_local['close'], period=rsi_period_long)
-
-    # Short-term RSI signals (LOOSER thresholds: 25/75)
-    signals['rsi'] = 0
-    signals.loc[df_local['rsi'] < rsi_oversold, 'rsi'] = 1
-    signals.loc[df_local['rsi'] > rsi_overbought, 'rsi'] = -1
-
-    # Long-term RSI signals (for trend confirmation)
-    signals['rsi_long'] = 0
-    signals.loc[df_local['rsi_long'] < rsi_oversold, 'rsi_long'] = 1
-    signals.loc[df_local['rsi_long'] > rsi_overbought, 'rsi_long'] = -1
-
-    # ===== MACD SIGNALS (short + long term) =====
-    macd, macd_signal_line, macd_hist = compute_macd(
-        df_local['close'], macd_fast, macd_slow, macd_signal
-    )
-    macd_long, macd_signal_long_line, macd_hist_long = compute_macd(
-        df_local['close'], macd_fast_long, macd_slow_long, macd_signal_long
-    )
-
-    df_local['macd'] = macd
-    df_local['macd_signal'] = macd_signal_line
-    df_local['macd_hist'] = macd_hist
-    df_local['macd_hist_long'] = macd_hist_long
-
-    # MACD signals (based on histogram and threshold)
-    signals['macd'] = 0
-    # Bullish: histogram positive AND difference > threshold
-    signals.loc[(macd_hist > 0) & (macd_hist > macd_threshold), 'macd'] = 1
-    # Bearish: histogram negative AND difference < -threshold
-    signals.loc[(macd_hist < 0) & (macd_hist < -macd_threshold), 'macd'] = -1
-
-    # Long-term MACD (for trend confirmation)
-    signals['macd_long'] = 0
-    signals.loc[(macd_hist_long > 0) & (macd_hist_long > macd_threshold), 'macd_long'] = 1
-    signals.loc[(macd_hist_long < 0) & (macd_hist_long < -macd_threshold), 'macd_long'] = -1
-
-    # ===== MOVING AVERAGE CROSSOVER =====
-    df_local['sma_fast'] = df_local['close'].rolling(sma_fast).mean()
-    df_local['sma_slow'] = df_local['close'].rolling(sma_slow).mean()
-    signals['ma'] = 0
-    signals.loc[df_local['sma_fast'] > df_local['sma_slow'], 'ma'] = 1
-    signals.loc[df_local['sma_fast'] < df_local['sma_slow'], 'ma'] = -1
-
-    # ===== MOMENTUM / CUSUM SIGNALS =====
-    if use_cusum_filter:
-        # Use CUSUM filter (de Prado's structural break detector)
-        log_returns = np.log(df_local['close']).diff()
-        cusum_long, cusum_short = detect_cusum_events(
-            log_returns,
-            threshold=cusum_threshold,
-            drift=0.0
-        )
-
-        signals['mom'] = 0
-        signals.loc[cusum_long, 'mom'] = 1
-        signals.loc[cusum_short, 'mom'] = -1
-
-        tprint(f"  CUSUM events: {cusum_long.sum()} long, {cusum_short.sum()} short", "INFO")
-    else:
-        # Use simple momentum threshold
-        df_local['momentum'] = df_local['close'].pct_change(momentum_period)
-        signals['mom'] = 0
-        signals.loc[df_local['momentum'] > momentum_threshold, 'mom'] = 1
-        signals.loc[df_local['momentum'] < -momentum_threshold, 'mom'] = -1
-
-    # ===== VOLATILITY EXPANSION CALCULATION =====
-    # Compute short and long volatility
-    log_ret = np.log(df_local['close']).diff()
-    vol_short = log_ret.rolling(20).std()  # Short-term volatility (20 bars ~5h on 15m)
-    vol_long = log_ret.rolling(96).std()   # Long-term volatility (96 bars ~1 day on 15m)
-
-    # Calculate volatility expansion ratio (NO LONGER A FILTER - now a feature for ML)
-    vol_expansion_ratio = vol_short / (vol_long + 1e-8)
-    vol_expansion_ratio = vol_expansion_ratio.fillna(1.0)
-
-    # Store volatility values for meta-features and diagnostics
-    signals['vol_short'] = vol_short
-    signals['vol_long'] = vol_long
-    signals['vol_expansion'] = vol_expansion_ratio  # Continuous ratio, not boolean
-
-    # ===== NEW SIGNALS: BOLLINGER BAND FADE =====
-    bb_mid = df_local['close'].rolling(bb_window).mean()
-    bb_std_series = df_local['close'].rolling(bb_window).std()
-    bb_upper = bb_mid + bb_std * bb_std_series
-    bb_lower = bb_mid - bb_std * bb_std_series
-
-    signals['bb_fade'] = 0
-    # Long when price touches/crosses lower band (mean-reversion signal)
-    signals.loc[df_local['close'] <= bb_lower, 'bb_fade'] = 1
-    # Short when price touches/crosses upper band (mean-reversion signal)
-    signals.loc[df_local['close'] >= bb_upper, 'bb_fade'] = -1
-
-    # Store BB values for features
-    signals['bb_upper'] = bb_upper
-    signals['bb_lower'] = bb_lower
-    signals['bb_mid'] = bb_mid
-    signals['bb_width'] = (bb_upper - bb_lower) / (bb_mid + 1e-8)
-
-    bb_width_mean = signals['bb_width'].rolling(96).mean()
-    bb_width_std = signals['bb_width'].rolling(96).std()
-    bb_width_z = (signals['bb_width'] - bb_width_mean) / (bb_width_std + 1e-8)
-    squeeze_flag = bb_width_z < -1.0
-    signals['bb_squeeze_flag'] = squeeze_flag.astype(int)
-    signals['bb_squeeze_breakout'] = 0
-    squeeze_prev = squeeze_flag.shift(1).fillna(False)
-    signals.loc[squeeze_prev & (df_local['close'] > bb_upper), 'bb_squeeze_breakout'] = 1
-    signals.loc[squeeze_prev & (df_local['close'] < bb_lower), 'bb_squeeze_breakout'] = -1
-
-    # ===== NEW SIGNALS: ATR BREAKOUT =====
-    atr_raw = (df_local['high'] - df_local['low']).rolling(atr_period).mean()
-    close_change = df_local['close'].diff()
-    atr_breakout_threshold = atr_mult * atr_raw
-
-    signals['atr_breakout'] = 0
-    # Long on strong upward breakout
-    signals.loc[close_change > atr_breakout_threshold, 'atr_breakout'] = 1
-    # Short on strong downward breakout
-    signals.loc[close_change < -atr_breakout_threshold, 'atr_breakout'] = -1
-
-    # ===== NEW SIGNALS: VOLUME SPIKE =====
-    if 'volume' in df_local.columns:
-        vol_mean = df_local['volume'].rolling(96).mean()  # 1-day mean
-        vol_ratio = df_local['volume'] / (vol_mean + 1e-8)
-        price_direction = np.sign(df_local['close'].diff())
-
-        signals['volume_spike'] = 0
-        # Volume spike in direction of price move
-        spike_mask = vol_ratio > volume_spike_threshold
-        signals.loc[spike_mask & (price_direction > 0), 'volume_spike'] = 1
-        signals.loc[spike_mask & (price_direction < 0), 'volume_spike'] = -1
-        signals['volume_ratio_signal'] = vol_ratio
-    else:
-        signals['volume_spike'] = 0
-        signals['volume_ratio_signal'] = 1.0
-
-    if 'vwap' in df_local.columns:
-        vwap_dist = (df_local['close'] - df_local['vwap']) / (df_local['vwap'] + 1e-8)
-        signals['vwap_dist'] = vwap_dist
-        signals['vwap_reversion'] = 0
-        signals.loc[vwap_dist < -0.005, 'vwap_reversion'] = 1
-        signals.loc[vwap_dist > 0.005, 'vwap_reversion'] = -1
-    else:
-        signals['vwap_dist'] = 0.0
-        signals['vwap_reversion'] = 0
-
-    # ===== NEW SIGNALS: RANGE FADE (Mean-Reversion at Range Extremes) =====
-    range_high = df_local['high'].rolling(range_window).max()
-    range_low = df_local['low'].rolling(range_window).min()
-    range_mid = (range_high + range_low) / 2
-    range_position = (df_local['close'] - range_low) / (range_high - range_low + 1e-8)
-
-    signals['range_fade'] = 0
-    # Long at bottom of range (mean-reversion)
-    signals.loc[range_position < 0.15, 'range_fade'] = 1
-    # Short at top of range (mean-reversion)
-    signals.loc[range_position > 0.85, 'range_fade'] = -1
-    signals['range_position'] = range_position
-
-    # ===== NEW SIGNALS: RSI MEAN-REVERSION (tighter thresholds for low-vol) =====
-    signals['rsi_mr'] = 0
-    # Less extreme thresholds than momentum RSI (35/65 vs 25/75)
-    signals.loc[df_local['rsi'] < 35, 'rsi_mr'] = 1
-    signals.loc[df_local['rsi'] > 65, 'rsi_mr'] = -1
-
-    # ===== NEW SIGNALS: MULTI-TIMEFRAME CONFLUENCE =====
-    # Use higher timeframe signals (aggregated from current data)
-    # 4-bar lookback = 1 hour at 15m timeframe
-    close_mtf = df_local['close'].rolling(mtf_lookback).mean()
-    momentum_mtf = close_mtf.pct_change(mtf_lookback * 2)  # 2-hour momentum
-
-    signals['mtf_trend'] = 0
-    signals.loc[momentum_mtf > 0.005, 'mtf_trend'] = 1  # Bullish MTF
-    signals.loc[momentum_mtf < -0.005, 'mtf_trend'] = -1  # Bearish MTF
-
-    # MTF confluence: current signal agrees with higher timeframe
-    current_momentum = df_local['close'].pct_change(momentum_period)
-    signals['mtf_confluence'] = 0
-    # Strong long: short-term momentum up AND MTF momentum up
-    signals.loc[(current_momentum > 0) & (momentum_mtf > 0), 'mtf_confluence'] = 1
-    # Strong short: short-term momentum down AND MTF momentum down
-    signals.loc[(current_momentum < 0) & (momentum_mtf < 0), 'mtf_confluence'] = -1
-
-    # ===== VOL-AWARE DUAL-MODE CONSENSUS =====
-    # Separate signal types into momentum and mean-reversion categories
-    momentum_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom', 'atr_breakout', 'volume_spike', 'mtf_trend', 'mtf_confluence', 'bb_squeeze_breakout']
-    mr_cols = ['bb_fade', 'range_fade', 'rsi_mr', 'vwap_reversion']
-
-    # Ensure all columns exist
-    for col in momentum_cols + mr_cols:
-        if col not in signals.columns:
-            signals[col] = 0
-
-    # Calculate scores for each signal type
-    momentum_score = signals[momentum_cols].sum(axis=1)
-    mr_score = signals[mr_cols].sum(axis=1)
-
-    # Vol ratio for regime detection (using linear formula, not thresholds)
-    vol_ratio = (vol_short / (vol_long + 1e-8)).fillna(1.0)
-
-    # Linear vol-aware weighting:
-    # vol_ratio < 0.7: favor mean-reversion (low vol, ranging market)
-    # vol_ratio > 1.3: favor momentum (high vol, trending market)
-    # Linear interpolation in between
-    # momentum_weight = clip((vol_ratio - 0.7) / 0.6, 0.2, 0.9)
-    # This gives: vol_ratio=0.7 → mom_weight=0.2, vol_ratio=1.3 → mom_weight=0.9
-    momentum_weight = np.clip((vol_ratio - 0.7) / 0.6, 0.2, 0.9)
-    mr_weight = 1.0 - momentum_weight
-
-    # Count raw signals for funnel
-    all_signal_cols = momentum_cols + mr_cols
-    raw_consensus = signals[all_signal_cols].sum(axis=1).apply(np.sign)
-    raw_signal_count = int((raw_consensus != 0).sum())
-    funnel['raw_signals'] = raw_signal_count
-    funnel['momentum_signals'] = int((momentum_score != 0).sum())
-    funnel['mr_signals'] = int((mr_score != 0).sum())
-
-    # Weighted consensus: blend momentum and mean-reversion based on vol regime
-    weighted_score = momentum_weight * momentum_score + mr_weight * mr_score
-    strict_consensus = weighted_score.apply(np.sign)
-
-    # Relax consensus slightly: where the strict vol-weighted consensus is 0 but
-    # there is a clear raw consensus, fall back to the raw consensus direction.
-    consensus_relaxed = strict_consensus.copy()
-    relaxed_mask = (consensus_relaxed == 0) & (raw_consensus != 0)
-    consensus_relaxed[relaxed_mask] = raw_consensus[relaxed_mask]
-    signals['consensus'] = consensus_relaxed
-
-    # Store diagnostic info
-    signals['momentum_weight'] = momentum_weight
-    signals['mr_weight'] = mr_weight
-    signals['vol_ratio_for_consensus'] = vol_ratio
-    signals['momentum_score'] = momentum_score
-    signals['mr_score'] = mr_score
-
-    # SIGNAL FUNNEL LOGGING
-    final_signal_count = int((signals['consensus'] != 0).sum())
-    funnel['final_signals'] = final_signal_count
-    funnel['raw_long_signals'] = int((raw_consensus > 0).sum())
-    funnel['raw_short_signals'] = int((raw_consensus < 0).sum())
-    funnel['final_long_signals'] = int((signals['consensus'] > 0).sum())
-    funnel['final_short_signals'] = int((signals['consensus'] < 0).sum())
-    funnel['relaxed_extra_signals'] = int(relaxed_mask.sum())
-    funnel['raw_to_final_ratio'] = float(final_signal_count) / max(raw_signal_count, 1)
-
-    # Attach funnel statistics to the signal DataFrame for downstream diagnostics
+    # Kalman Smoothing of Log Returns
+    # Using existing KalmanFilter1D class
     try:
-        signals.attrs['signal_funnel'] = funnel
-    except Exception:
-        pass
+        kf = KalmanFilter1D(Q=1e-5, R=0.01, initial_value=0.0)
+        # Note: filter_series returns (filtered, variance)
+        log_ret_smooth, _ = kf.filter_series(log_ret)
+        # Ensure it's a series
+        log_ret_smooth = pd.Series(log_ret_smooth, index=log_ret.index).fillna(0)
+    except Exception as e:
+        tprint(f"Kalman smoothing failed, using raw log returns: {e}", "WARNING")
+        log_ret_smooth = log_ret
 
-    tprint(f"📊 Signal Funnel (Vol-Aware Dual-Mode):", "INFO")
-    tprint(f"  Total bars: {funnel['total_bars']}", "INFO")
-    tprint(f"  Raw signals generated: {funnel['raw_signals']}", "INFO")
-    tprint(f"  Final consensus signals: {funnel['final_signals']} (ratio={funnel['raw_to_final_ratio']:.3f})", "INFO")
-    tprint(f"  Long/short raw: {funnel['raw_long_signals']}/{funnel['raw_short_signals']}", "INFO")
-    tprint(f"  Long/short final: {funnel['final_long_signals']}/{funnel['final_short_signals']}", "INFO")
-    tprint(f"  Relaxed extra signals (strict=0 but raw≠0): {funnel['relaxed_extra_signals']}", "INFO")
-    tprint(f"  ℹ️  Using linear vol-aware weighting: low-vol favors MR, high-vol favors momentum", "INFO")
+    # 2. Volatility (of Returns)
+    # Standard deviation of smoothed log-returns
+    vol_ret = log_ret_smooth.rolling(window=vol_window).std()
 
-    # Store raw indicator values for meta-features (signal disagreement, magnitude, etc.)
-    signals['rsi_value'] = df_local['rsi']
-    signals['rsi_long_value'] = df_local['rsi_long']
-    signals['macd_hist_value'] = df_local['macd_hist']
-    signals['macd_hist_long_value'] = df_local['macd_hist_long']
-    signals['sma_fast_value'] = df_local['sma_fast']
-    signals['sma_slow_value'] = df_local['sma_slow']
+    # 3. Efficiency Ratio (Regime)
+    er = get_efficiency_ratio(close, window=er_window)
 
-    if 'momentum' not in df_local.columns:
-        df_local['momentum'] = df_local['close'].pct_change(momentum_period)
+    # 4. Liquidity Factor
+    avg_vol = volume.rolling(vol_window).mean()
+    vol_ratio = avg_vol / volume.replace(0, 1)
+    vol_ratio_smooth = vol_ratio.rolling(5).mean()
+    liq_mod = np.clip(vol_ratio_smooth ** beta, 0.5, 2.0)
 
-    signals['momentum_value'] = df_local['momentum']
+    # --- CALCULATE THRESHOLD (h_t) ---
 
-    body = df_local['close'] - df_local.get('open', df_local['close'])
-    high_low_range = (df_local['high'] - df_local['low']).replace(0.0, np.nan)
-    upper_wick = df_local['high'] - df_local[['open', 'close']].max(axis=1)
-    lower_wick = df_local[['open', 'close']].min(axis=1) - df_local['low']
+    # A. Base Volatility Component
+    h_base = k * (vol_ret ** vol_power)
 
-    # ===== SIGNAL SPACING & PRIORITY FILTERING (New 2025-12-12) =====
-    # 1. Compute Consistency (Trend Smoothness)
-    # Use momentum_period for consistency horizon
-    df_local['consistency'] = compute_horizon_consistency(df_local['close'], horizon=momentum_period)
+    # B. Regime Component (Soft Suppression)
+    noise_factor = 1 - er
+    regime_mod = 1 + (alpha * noise_factor)
 
-    # 2. Compute Priority (Expected Weight) - HPO-Aligned
-    # Ensure ATR is available
-    if 'atr' not in df_local.columns:
-        # Re-calc ATR if not present (using atr_period from arguments)
-        df_local['atr'] = (df_local['high'] - df_local['low']).rolling(atr_period).mean()
+    # C. Final Dynamic Threshold
+    h_dynamic = h_base * regime_mod * liq_mod
 
-    # Pass vol_short as volatility proxy
-    signals['priority_score'] = compute_expected_signal_weight(
-        df_local,
-        atr_col='atr',
-        close_col='close',
-        consistency_col='consistency',  # Use computed consistency
-        vol_proxy_col='vol_short',     # Use short-term vol proxy
-        # Use smart defaults for pre-filtering (can be exposed as args later)
-        mag_compression=0.8,
-        exp_mag=1.0,
-        exp_uniq=1.0, 
-        exp_learn=1.0, 
-        downside_multiplier=1.5, # Penalize high-vol regimes in pre-filtering
-        uniq_intensity=1.0,
-        mag_clip_pct=0.99,
-    )
+    # --- HARD GATING ---
+    is_valid_regime = er > er_min
 
-    tprint_info(f"⚖️ Priority Score Stats: Mean={signals['priority_score'].mean():.4f}, Max={signals['priority_score'].max():.4f}")
+    # --- RUN CUSUM ---
+    # We need to reconstruct the loop to capture signals
 
-    # 3. Apply Spacing Filter
-    # 15m bars -> 96 bars/day. Min spacing 4 bars = 1 hour.
-    tprint_info(f"📉 Applying signal spacing filter (Target: {target_trades_per_day} signals/day)...")
-    
-    filtered_consensus, spacing_stats = apply_signal_spacing_filter(
-        signals['consensus'],
-        priority_col=signals['priority_score'],
-        min_spacing_bars=4,        # Force at least 1 hour between signals
-        max_signals_per_day=target_trades_per_day,
-        bars_per_day=96,           # Sane default for 15m
-    )
+    # Align data
+    # Reset index to iterate, but keep original index for result mapping
+    # Actually iterate over arrays is faster and easier for CUSUM state
 
-    # 4. Update Signals & Funnel
-    signals['consensus_raw'] = signals['consensus']  # Backup original
-    signals['consensus'] = filtered_consensus       # Overwrite with filtered
-    
-    funnel['spaced_signals'] = int((filtered_consensus != 0).sum())
-    funnel['spacing_reduction_pct'] = spacing_stats['reduction_pct']
-    
-    # Log spacing results
-    tprint(f"  🔻 Signal Spacing Results:", "INFO")
-    tprint(f"     Original: {spacing_stats['original_count']} signals", "INFO")
-    tprint(f"     Filtered: {spacing_stats['final_count']} signals ({spacing_stats['reduction_pct']:.1f}% reduction)", "INFO")
-    tprint(f"     Density: {spacing_stats['signals_per_day']:.1f} signals/day", "INFO")
+    r_arr = log_ret_smooth.to_numpy()
+    h_arr = h_dynamic.to_numpy()
+    valid_arr = is_valid_regime.to_numpy()
 
-    try:
-        signals.attrs['signal_funnel'] = funnel
-    except Exception:
-        pass
+    s_pos, s_neg = 0.0, 0.0
 
+    consensus_values = np.zeros(len(df))
 
+    for i in range(1, len(df)):
+        r_t = r_arr[i]
+        h_t = h_arr[i]
+        valid = valid_arr[i]
 
-    body_ratio = (body.abs() / (high_low_range + 1e-8)).fillna(0.0)
+        if np.isnan(r_t) or np.isnan(h_t):
+            continue
 
-    signals['trend_regime'] = 0
-    trend_window = 32
-    trend_mean = df_local['close'].rolling(trend_window).mean()
-    trend_slope = trend_mean.pct_change(max(trend_window // 2, 1))
-    atr_lookback = 14
-    atr_series = (df_local['high'] - df_local['low']).rolling(atr_lookback).mean()
-    atr_norm = atr_series / (df_local['close'] + 1e-8)
-    atr_threshold = atr_norm.median()
-    slope_threshold = 0.003
-    signals.loc[(trend_slope > slope_threshold) & (atr_norm > atr_threshold), 'trend_regime'] = 1
-    signals.loc[(trend_slope < -slope_threshold) & (atr_norm > atr_threshold), 'trend_regime'] = -1
+        if not valid:
+            s_pos, s_neg = 0.0, 0.0
+            continue
 
-    signals['candle_trend'] = 0
-    signals.loc[(body > 0) & (body_ratio > 0.6), 'candle_trend'] = 1
-    signals.loc[(body < 0) & (body_ratio > 0.6), 'candle_trend'] = -1
+        s_pos = max(0.0, s_pos + r_t)
+        s_neg = min(0.0, s_neg + r_t)
 
-    signals['candle_reversal'] = 0
-    signals.loc[(body > 0) & (lower_wick > 2.0 * body.abs()) & (body_ratio < 0.4), 'candle_reversal'] = 1
-    signals.loc[(body < 0) & (upper_wick > 2.0 * body.abs()) & (body_ratio < 0.4), 'candle_reversal'] = -1
+        if s_pos > h_t:
+            s_pos = 0.0
+            s_neg = 0.0
+            consensus_values[i] = 1 # Long signal
+
+        elif s_neg < -h_t:
+            s_pos = 0.0
+            s_neg = 0.0
+            consensus_values[i] = -1 # Short signal
+
+    signals['consensus'] = consensus_values
+
+    # Store some diagnostics in signals df if needed by build_meta_features_for_model
+    # We are stripping a lot, so we should check what's absolutely needed.
+    # The existing build_meta_features_for_model handles missing columns gracefully mostly.
+    # But let's add `vol_short` and `vol_long` if they are expected for vol_expansion features
+    signals['vol_short'] = vol_ret
+    # vol_long was 96 in original.
+    signals['vol_long'] = log_ret_smooth.rolling(96).std()
+
+    # Store signal funnel stats
+    final_count = int(np.sum(consensus_values != 0))
+    funnel = {
+        'total_bars': len(df),
+        'final_signals': final_count,
+        'generator': 'CUSUM_Kalman_VolAware'
+    }
+    signals.attrs['signal_funnel'] = funnel
+
+    tprint(f"📊 CUSUM Signal Generator: {final_count} signals generated", "INFO")
 
     return signals
 

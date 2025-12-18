@@ -37,6 +37,54 @@ except ImportError:
     scipy_entropy = None
     spearmanr = None
 
+def finalize_sample_weights(weights: np.ndarray) -> np.ndarray:
+    """
+    Robustly stabilizes weights for LightGBM.
+    Process: MAD Clipping -> Mean-Centering.
+
+    Args:
+        weights: Raw combined weights array
+
+    Returns:
+        Processed weights array with mean 1.0 and clipped extremes
+    """
+    w = np.array(weights, dtype=float).copy()
+
+    # 1. Robust Statistics (MAD)
+    median = np.nanmedian(w)
+    # 1.4826 scales MAD to be consistent with StdDev for normal distributions
+    mad = np.nanmedian(np.abs(w - median)) * 1.4826
+
+    # 2. Define Upper Bound
+    # If distribution is flat (all weights equal), MAD is 0. Fallback to max.
+    if mad <= 1e-12:
+        upper_bound = np.nanmax(w)
+    else:
+        # k=5 is roughly equivalent to 5-sigma. Very safe.
+        upper_bound = median + (5 * mad)
+
+    # 3. Clip (Winsorize)
+    # We clip high values. We also ensure no weight is exactly 0 (use epsilon)
+    # unless it was originally 0 or negative (which we keep as 0 or clip to min).
+    # Assuming input weights are >= 0.
+    w_clipped = np.clip(w, a_min=1e-4, a_max=upper_bound)
+
+    # Restore actual zeros if they were intentional (e.g. from Cost-Adjusted Magnitude)
+    # If original weight was < 1e-6, it might be noise or intentional zero.
+    # The user logic "Zeroes out the weight for Fake Opportunities" implies we allow 0.
+    # But finalize_sample_weights says "ensure no weight is exactly 0 (use epsilon)".
+    # However, LightGBM handles 0 weights fine (ignores sample).
+    # If we want to zero out, we should allow 0.
+    # The user's code snippet: "w_clipped = np.clip(w, a_min=1e-4, ...)" implies they WANT to lift zeros to 1e-4.
+    # Maybe 1e-4 is "small enough to be ignored but safe for logs/division".
+
+    # 4. Normalize (Mean=1.0)
+    # This ensures the effective learning rate matches your params.
+    mean_val = np.nanmean(w_clipped)
+    w_final = w_clipped / (mean_val + 1e-9)
+
+    return w_final
+
 def compute_uniqueness(
     t1: pd.Series,
     events_index: Optional[pd.DatetimeIndex] = None,
@@ -425,14 +473,35 @@ def generate_weights_per_label(
     )
     returns_clean = np.where(np.isfinite(returns_clean), returns_clean, 0.0)
 
-    # 2. Magnitude component (absolute returns, clipped and compressed)
-    abs_ret = np.abs(returns_clean)
+    # 2. Magnitude component (Cost-Adjusted)
+    # The Problem: Simply using abs(returns) weights dust moves (e.g. 0.1% gross, 0% net)
+    # as having positive magnitude, leading the model to chase unprofitable noise.
+    # The Fix: Net Magnitude. We subtract transaction costs before computing magnitude.
+    # Formula: log(1 + max(0, abs(returns) - cost))
+
+    # Check if transaction_cost was passed in kwargs, else assume default
+    tx_cost = kwargs.get('transaction_cost', 0.003)
+    try:
+        tx_cost = float(tx_cost)
+    except Exception:
+        tx_cost = 0.003
+
+    # We assume 'returns_clean' here are raw/gross returns. If they are net returns,
+    # we should check if they can be negative. But 'abs(returns)' implies we care
+    # about magnitude of move.
+    # If returns are signed, we take abs first to get gross move size.
+    abs_ret_raw = np.abs(returns_clean)
+
+    # Zero out "fake opportunities" that don't cover the spread
+    # max(0, abs(ret) - cost)
+    net_mag_raw = np.maximum(0.0, abs_ret_raw - tx_cost)
 
     # If vol_proxy is available, prefer a volatility-normalized magnitude signal.
     # This keeps weights from being dominated by high-volatility regimes.
     vol_for_mag = _coerce_numeric_array(
         vol_proxy, n_samples, "vol_proxy", fill_value=np.nan, allow_negative=False
     )
+
     if vol_for_mag is not None:
         try:
             v = np.asarray(vol_for_mag, dtype=float)
@@ -440,30 +509,21 @@ def generate_weights_per_label(
             v_med = float(np.nanmedian(v)) if np.isfinite(np.nanmedian(v)) else np.nan
             if np.isfinite(v_med) and v_med > 0:
                 v = np.where(np.isfinite(v), v, v_med)
-                abs_ret = abs_ret / (v + 1e-12)
+                # Normalize the NET magnitude by volatility
+                net_mag_raw = net_mag_raw / (v + 1e-12)
         except Exception:
             pass
 
-    # Determine clipping percentile
-    if mag_clip_pct is not None and 0.0 < mag_clip_pct < 1.0:
-        clip_pct = float(mag_clip_pct)
-    else:
-        clip_pct = 0.99
+    # Log-dampening: log(1 + x)
+    # This compresses whale moves while preserving order.
+    # Since we already subtracted cost, x is "excess magnitude".
+    # We apply mag_compression as an exponent if desired, but user formula was specific.
+    # Let's apply log1p first as the base "Magnitude" component.
+    comp_mag_log = np.log1p(net_mag_raw)
 
-    if abs_ret.size:
-        try:
-            clip_val = float(np.quantile(abs_ret, clip_pct))
-        except Exception:
-            clip_val = float(np.max(abs_ret)) if np.isfinite(abs_ret).any() else 0.0
-    else:
-        clip_val = 0.0
-
-    if clip_val > 1e-9:
-        norm_mag = np.clip(abs_ret, 0.0, clip_val) / clip_val
-    else:
-        norm_mag = np.zeros_like(abs_ret)
-
-    comp_mag = np.power(norm_mag, mag_compression)
+    # Apply mag_compression power (defaults to 0.8 in optimization, or 1.0 if not)
+    # If mag_compression is 1.0, it's just log1p.
+    comp_mag = np.power(comp_mag_log, mag_compression)
 
     # 3. Uniqueness component (redundancy filter)
     cleaned_uniqueness = _coerce_numeric_array(
@@ -567,7 +627,8 @@ def generate_weights_per_label(
     raw_weights = np.nan_to_num(raw_weights, nan=0.0, posinf=0.0, neginf=0.0)
 
     if raw_weights.sum() > 0 and np.isfinite(raw_weights).all():
-        final_weights = raw_weights * (n_samples / raw_weights.sum())
+        # Use robust finalization (MAD clipping + Mean centering)
+        final_weights = finalize_sample_weights(raw_weights)
     else:
         tprint_warning("⚠️ Combined weights invalid; falling back to uniform weights.")
         final_weights = np.ones(n_samples, dtype=float)

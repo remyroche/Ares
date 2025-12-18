@@ -17,6 +17,7 @@ from sklearn.metrics import (
 )
 from typing import List, Tuple, Optional, Any, Dict
 import copy
+import shap
 
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_meta_features,
@@ -1124,6 +1125,27 @@ def layer3_analyst_lgbm(
         lines.append(f"- honest_logloss: {float(honest_logloss) if np.isfinite(honest_logloss) else float('nan')}\n")
         lines.append(f"- honest_ece: {float(honest_ece) if np.isfinite(honest_ece) else float('nan')}\n")
         lines.append(f"- honest_brier: {float(honest_brier) if np.isfinite(honest_brier) else float('nan')}\n")
+
+        # Add Weighting Scheme Comparison Table
+        lines.append("\n## Weighting Scheme Comparison\n")
+
+        # Markdown table header
+        table_cols = ['Scheme', 'Score', 'AUC', 'LogLoss', 'ECE', 'Rating']
+        header = "| " + " | ".join(table_cols) + " |"
+        separator = "| " + " | ".join(["---"] * len(table_cols)) + " |"
+        lines.append(header + "\n")
+        lines.append(separator + "\n")
+
+        for _, row in results_df.iterrows():
+            row_str = "|"
+            for col in table_cols:
+                val = row[col]
+                if isinstance(val, float):
+                    row_str += f" {val:.4f} |"
+                else:
+                    row_str += f" {val} |"
+            lines.append(row_str + "\n")
+
         md_path.write_text(''.join(lines))
     except Exception:
         pass
@@ -1180,8 +1202,117 @@ def layer3_analyst_lgbm(
         dt = time.perf_counter() - t0_all
         print(f"Layer3 timing: total_seconds={dt:.3f}")
 
+    # ---------------------------------------------------------
+    # 7. SHAP Analysis
+    # ---------------------------------------------------------
+    _run_shap_analysis(final_model, X, outcomes_dir, symbol, timeframe, ts, md_path)
+
     # Return full dataframe with predictions + final model
     return df, final_model
+
+def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
+    """
+    Computes SHAP values for the final model and saves a summary plot.
+    Appends results to the markdown report.
+    """
+    print("\n>> Running SHAP Analysis on Production Model...")
+    try:
+        if model is None:
+            return
+
+        # Sample data for SHAP (max 1000 rows)
+        n_sample = min(1000, len(X))
+        if n_sample <= 0:
+            return
+
+        # Use random sampling for representativeness (or could use tail)
+        # Using tail is better for "current regime" explanation, random for global.
+        # Let's use random with fixed seed.
+        X_sample = X.sample(n=n_sample, random_state=42)
+
+        shap_values_list = []
+        estimators = []
+
+        # Extract estimators
+        if isinstance(model, CalibratedClassifierCV):
+            if hasattr(model, 'calibrated_classifiers_'):
+                for cc in model.calibrated_classifiers_:
+                    est = getattr(cc, 'estimator', None) or getattr(cc, 'base_estimator', None)
+                    if est:
+                        estimators.append(est)
+        else:
+            # Assume it's a direct LGBMRegressor or Classifier
+            estimators.append(model)
+
+        if not estimators:
+            print("⚠️ SHAP: Could not extract base estimators from model.")
+            return
+
+        print(f"   Aggregating SHAP values from {len(estimators)} estimators...")
+
+        # Calculate SHAP values
+        for est in estimators:
+            try:
+                explainer = shap.TreeExplainer(est)
+                vals = explainer.shap_values(X_sample)
+
+                # Handle binary classification output (list of arrays)
+                if isinstance(vals, list):
+                    # Usually index 1 is positive class
+                    if len(vals) == 2:
+                        vals = vals[1]
+                    else:
+                        vals = vals[0] # Fallback
+
+                shap_values_list.append(vals)
+            except Exception as e:
+                print(f"   ⚠️ Estimator SHAP failed: {e}")
+
+        if not shap_values_list:
+            return
+
+        # Average SHAP values
+        avg_shap_values = np.mean(shap_values_list, axis=0)
+
+        # 1. Summary Plot
+        plt.figure(figsize=(10, 8))
+        shap.summary_plot(avg_shap_values, X_sample, show=False, plot_size=(10, 8))
+
+        plot_filename = f"layer3_shap_{symbol}_{timeframe}_{ts}.png"
+        plot_path = output_dir / plot_filename
+        plt.savefig(plot_path, bbox_inches='tight')
+        plt.close()
+        print(f"   SHAP plot saved to: {plot_path}")
+
+        # 2. Text Summary (Top features)
+        # Calculate mean absolute SHAP value per feature
+        feature_importance = pd.DataFrame(
+            list(zip(X_sample.columns, np.abs(avg_shap_values).mean(0))),
+            columns=['feature', 'importance']
+        )
+        feature_importance.sort_values(by='importance', ascending=False, inplace=True)
+        top_20 = feature_importance.head(20)
+
+        print("\n   TOP 20 FEATURES BY SHAP IMPORTANCE:")
+        print(top_20.to_string(index=False))
+
+        # 3. Append to Markdown Report
+        if md_path and md_path.exists():
+            with open(md_path, 'a') as f:
+                f.write("\n\n## SHAP Feature Importance (Global)\n")
+                f.write(f"![SHAP Summary]({plot_filename})\n\n")
+
+                f.write("### Top 20 Features\n")
+                f.write("| Feature | Mean |SHAP| |\n")
+                f.write("| --- | --- |\n")
+                for _, row in top_20.iterrows():
+                    f.write(f"| {row['feature']} | {row['importance']:.6f} |\n")
+                f.write("\n")
+
+    except Exception as e:
+        print(f"⚠️ SHAP Analysis failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ---------------------------------------------------------
 # Helper: Advanced Diagnostic Plot (Unchanged)

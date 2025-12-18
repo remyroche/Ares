@@ -21,8 +21,8 @@ import shap
 
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_meta_features,
-    add_layer3_specific_features,
 )
+from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
 )
@@ -307,13 +307,20 @@ def layer3_analyst_lgbm(
                     df[c] = market_data[c].reindex(df.index)
 
         # Calculate new features
-        df = add_layer3_specific_features(df, base_model_cols)
+        df = generate_layer3_features(df, base_model_cols)
 
         # Add new feature names to the list of features to use
+        # (Updated to include regime features from GateModel)
         new_l3_features = [
             'ensemble_prob', 'logit_prob',
             'logit_momentum_5', 'logit_momentum_1',
-            'vol_at_signal', 'candle_shape', 'candle_shape_4'
+            'vol_at_signal', 'candle_shape', 'candle_shape_4',
+            # Regime features
+            'rv_short', 'rv_short_over_med', 'rv_z_short',
+            'slope_short', 'adx_proxy', 'snr',
+            'time_since_last_vol_spike', 'time_since_last_large_candle',
+            'choppiness_index', 'variance_ratio', 'permutation_entropy',
+            'hour_sin', 'hour_cos', 'is_weekend'
         ]
 
         # Ensure they are in the dataframe before adding to list

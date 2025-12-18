@@ -21,6 +21,7 @@ import shap
 
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_meta_features,
+    add_layer3_specific_features,
 )
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
@@ -184,6 +185,15 @@ def layer3_analyst_lgbm(
             except Exception:
                 df[col] = 0.0
 
+        # Extract ensemble_prob if calculated
+        try:
+            if "ensemble_prob" in disagree:
+                v = disagree.get("ensemble_prob")
+                if isinstance(v, pd.Series):
+                    df["ensemble_prob"] = pd.to_numeric(v.values, errors="coerce")
+        except Exception:
+            pass
+
         df[disagree_cols] = df[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     # Generate Time and Regime Features
@@ -203,7 +213,48 @@ def layer3_analyst_lgbm(
             df['day_of_week'] = idx.dayofweek
             curated_feature_cols.extend(['hour', 'day_of_week'])
         except Exception:
+            additional_feature_df = pd.DataFrame(index=df.index)
             pass
+
+    if additional_feature_df is not None and not additional_feature_df.empty:
+        new_cols = [c for c in additional_feature_df.columns if c not in df.columns]
+        if new_cols:
+            df = pd.concat([df, additional_feature_df[new_cols]], axis=1)
+
+    # ---------------------------------------------------------
+    # NEW: Add Layer 3 Specific Features (Ensemble/Logit/Volume/Candle)
+    # ---------------------------------------------------------
+    try:
+        print("<< Adding Layer 3 Specific Features (Logit, Volume, Candle)...")
+        # Ensure df has market data columns if possible
+        if market_data is not None:
+            for c in ['volume', 'high', 'low', 'close']:
+                if c in market_data.columns and c not in df.columns:
+                    df[c] = market_data[c].reindex(df.index)
+
+        # Calculate new features
+        df = add_layer3_specific_features(df, base_model_cols)
+
+        # Add new feature names to the list of features to use
+        new_l3_features = [
+            'ensemble_prob', 'logit_prob',
+            'logit_momentum_5', 'logit_momentum_1',
+            'vol_at_signal', 'candle_shape', 'candle_shape_4'
+        ]
+
+        # Ensure they are in the dataframe before adding to list
+        new_l3_features = [f for f in new_l3_features if f in df.columns]
+
+        # Add to selected features so they are picked up by the model
+        selected_additional_features.extend(new_l3_features)
+
+    except Exception as e:
+        print(f"⚠️ Failed to add Layer 3 specific features: {e}")
+
+    try:
+        enable_mda_shap = bool(cfg.get('enable_mda_shap_selection_layer3', cfg.get('enable_mda_shap_selection', True)))
+    except Exception:
+        enable_mda_shap = True
 
         # Regime Features
         # Calculate on the fly if not present
@@ -567,6 +618,31 @@ def layer3_analyst_lgbm(
             ece = _fast_expected_calibration_error(y_true_binary, y_prob_eval, n_bins=10)
             score = 100 * (auc - 0.5) + 50 * (0.693 - ll) - 200 * ece
 
+            # --- Top 30% Quantile Metrics ---
+            top30_tpd = float('nan')
+            top30_wr = float('nan')
+            try:
+                if len(y_prob_eval) > 0:
+                    # Calculate threshold (70th percentile)
+                    thr_70 = np.percentile(y_prob_eval, 70)
+                    mask_top30 = y_prob_eval >= thr_70
+
+                    n_top30 = np.sum(mask_top30)
+
+                    # Win Rate
+                    if n_top30 > 0:
+                        top30_wr = float(np.mean(y_true_binary[mask_top30]))
+
+                    # Trades Per Day
+                    # Use full df time range for normalization
+                    if isinstance(df.index, pd.DatetimeIndex) and len(df.index) > 1:
+                        total_seconds = (df.index[-1] - df.index[0]).total_seconds()
+                        n_days = total_seconds / 86400.0
+                        if n_days > 0:
+                            top30_tpd = float(n_top30 / n_days)
+            except Exception:
+                pass
+
             # Interpretability Rating (raised thresholds for meaningful classification)
             if score < 0: rating = "Toxic"
             elif score < 0.2: rating = "Weak"
@@ -603,6 +679,8 @@ def layer3_analyst_lgbm(
                 "AUC": auc,
                 "LogLoss": ll,
                 "ECE": ece,
+                "Top30_TPD": top30_tpd,
+                "Top30_Win": top30_wr,
                 "FoldAUC_mean": auc_stats["mean"],
                 "FoldAUC_std": auc_stats["std"],
                 "FoldAUC_min": auc_stats["min"],
@@ -628,6 +706,7 @@ def layer3_analyst_lgbm(
                 "Scheme": name,
                 "Score": -999,
                 "AUC": 0, "LogLoss": 99, "ECE": 99, "Rating": "Failed",
+                "Top30_TPD": float('nan'), "Top30_Win": float('nan'),
                 "FoldAUC_mean": float('nan'),
                 "FoldAUC_std": float('nan'),
                 "FoldAUC_min": float('nan'),
@@ -711,6 +790,7 @@ def layer3_analyst_lgbm(
             c
             for c in [
                 'Scheme', 'Score', 'AUC', 'LogLoss', 'ECE', 'Rating',
+                'Top30_TPD', 'Top30_Win',
                 'FoldAUC_mean', 'FoldAUC_std', 'FoldAUC_min', 'FoldAUC_max', 'FoldAUC_n',
                 'FoldLogLoss_mean', 'FoldLogLoss_std', 'FoldLogLoss_min', 'FoldLogLoss_max', 'FoldLogLoss_n',
                 'FoldECE_mean', 'FoldECE_std', 'FoldECE_min', 'FoldECE_max', 'FoldECE_n',
@@ -721,14 +801,17 @@ def layer3_analyst_lgbm(
     except Exception:
         pass
 
-    print("\n" + "="*60)
+    print("\n" + "="*85)
     print("   LAYER 3 WEIGHTING SCHEME COMPARISON")
-    print("="*60)
-    print(f"{'Scheme':<15} | {'Score':<8} | {'AUC':<6} | {'LogLoss':<8} | {'ECE':<6} | {'Rating'}")
-    print("-" * 75)
+    print("="*85)
+    print(f"{'Scheme':<15} | {'Score':<8} | {'AUC':<6} | {'LogLoss':<8} | {'ECE':<6} | {'T30_TPD':<7} | {'T30_Win%':<8} | {'Rating'}")
+    print("-" * 100)
     for row in results_df.itertuples(index=False):
-        print(f"{row.Scheme:<15} | {row.Score:>8.4f} | {row.AUC:>6.4f} | {row.LogLoss:>8.4f} | {row.ECE:>6.4f} | {row.Rating}")
-    print("-" * 75)
+        # Handle formatting safely
+        tpd_s = f"{row.Top30_TPD:.1f}" if np.isfinite(row.Top30_TPD) else "nan"
+        win_s = f"{row.Top30_Win:.3f}" if np.isfinite(row.Top30_Win) else "nan"
+        print(f"{row.Scheme:<15} | {row.Score:>8.4f} | {row.AUC:>6.4f} | {row.LogLoss:>8.4f} | {row.ECE:>6.4f} | {tpd_s:>7} | {win_s:>8} | {row.Rating}")
+    print("-" * 100)
 
     print(f"\n🏆 WINNER: {best_scheme_name} (Score: {best_score:.4f})")
 
@@ -952,7 +1035,7 @@ def layer3_analyst_lgbm(
         lines.append("\n## Weighting Scheme Comparison\n")
 
         # Markdown table header
-        table_cols = ['Scheme', 'Score', 'AUC', 'LogLoss', 'ECE', 'Rating']
+        table_cols = ['Scheme', 'Score', 'AUC', 'LogLoss', 'ECE', 'Top30_TPD', 'Top30_Win', 'Rating']
         header = "| " + " | ".join(table_cols) + " |"
         separator = "| " + " | ".join(["---"] * len(table_cols)) + " |"
         lines.append(header + "\n")
@@ -961,9 +1044,12 @@ def layer3_analyst_lgbm(
         for _, row in results_df.iterrows():
             row_str = "|"
             for col in table_cols:
-                val = row[col]
+                val = row.get(col, float('nan'))
                 if isinstance(val, float):
-                    row_str += f" {val:.4f} |"
+                    if col == 'Top30_TPD':
+                         row_str += f" {val:.1f} |"
+                    else:
+                         row_str += f" {val:.4f} |"
                 else:
                     row_str += f" {val} |"
             lines.append(row_str + "\n")

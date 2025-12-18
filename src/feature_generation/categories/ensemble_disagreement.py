@@ -7,7 +7,7 @@ This module provides centralized disagreement features for all ensemble models
 Disagreement features capture model uncertainty and disagreement to improve
 ensemble predictions and risk management.
 
-Core Features (6 features used by all ensemble models):
+Core Features (9 features used by all ensemble models):
 1. prediction_dispersion: Variance of predictions across models
 2. confidence_gap: Margin between top predictions
 3. uncertainty: Normalized entropy (uncertainty measure)
@@ -15,6 +15,8 @@ Core Features (6 features used by all ensemble models):
 5. avg_divergence: Average pairwise model divergence
 6. max_confidence: Highest confidence among models
 7. disagreement_rate: Proportion of models disagreeing on direction
+8. snr_internal: Mean Probability / Mean Internal Variance
+9. snr_consensus: Ensemble Mean Probability / StdDev of Model Predictions
 """
 
 import numpy as np
@@ -46,19 +48,23 @@ class EnsembleDisagreementFeatures:
         model_predictions: Dict[str, np.ndarray],
         model_probabilities: Dict[str, np.ndarray],
         model_confidences: Optional[Dict[str, np.ndarray]] = None,
+        model_variances: Optional[Dict[str, np.ndarray]] = None,
         feature_names: Optional[List[str]] = None
     ) -> Dict[str, pd.Series]:
         """
         Calculate core disagreement features from model predictions.
 
         This is the main entry point for calculating disagreement features.
+        Returns the core features used by all ensemble models.
         Returns the 8 core features used by all ensemble models.
 
         Args:
             model_predictions: Dict mapping model names to prediction arrays
             model_probabilities: Dict mapping model names to probability arrays
             model_confidences: Optional dict mapping model names to confidence arrays
+            model_variances: Optional dict mapping model names to internal variance arrays (tree variance)
             feature_names: Optional list of specific features to calculate
+                          (if None, calculates all core features)
                           (if None, calculates all 8 core features)
 
         Returns:
@@ -107,6 +113,13 @@ class EnsembleDisagreementFeatures:
                 model_predictions, index
             )
 
+            # 8. SNR Internal
+            features['snr_internal'] = self._calculate_snr_internal(
+                model_probabilities, model_variances, index
+            )
+
+            # 9. SNR Consensus
+            features['snr_consensus'] = self._calculate_snr_consensus(
             # 8. Ensemble Probability (arithmetic mean of probabilities)
             features['ensemble_prob'] = self._calculate_ensemble_probability(
                 model_probabilities, index
@@ -448,6 +461,83 @@ class EnsembleDisagreementFeatures:
             self.logger.error(f"Error calculating disagreement rate: {e}")
             return pd.Series(0.0, index=index)
 
+    def _calculate_snr_internal(
+        self,
+        model_probabilities: Dict[str, np.ndarray],
+        model_variances: Optional[Dict[str, np.ndarray]],
+        index: pd.Index
+    ) -> pd.Series:
+        """
+        SNRInternal = Mean(All Base Probabilities) / Mean(All Internal Variances)
+        """
+        try:
+            if not model_probabilities:
+                return pd.Series(0.0, index=index)
+
+            # Mean Prob
+            # Use just the positive class probability (index 1 if 2D, or scalar if 1D)
+            # stack_probability_tensor normalizes everything to 2 classes [neg, pos]
+            # so we want mean of class 1.
+            tensor = self._stack_probability_tensor(model_probabilities, index)
+            if tensor.size == 0:
+                return pd.Series(0.0, index=index)
+
+            # tensor: (n_models, n_samples, n_classes)
+            # Assuming class 1 is positive
+            mean_probs = tensor[:, :, 1].mean(axis=0)
+
+            if not model_variances:
+                # If no variances provided, infinite SNR (or 0 to be safe/conservative?)
+                # If variance is unknown, SNR is undefined. Let's return 0 for safety.
+                return pd.Series(0.0, index=index)
+
+            # Stack variances
+            # Variances are scalars per sample per model
+            # We reuse _stack_prediction_matrix structure logic
+            var_matrix = self._stack_prediction_matrix(model_variances, index)
+            if var_matrix.size == 0:
+                return pd.Series(0.0, index=index)
+
+            mean_vars = np.mean(var_matrix, axis=0)
+
+            # Avoid div by zero
+            snr = np.divide(mean_probs, mean_vars, out=np.zeros_like(mean_probs), where=mean_vars>1e-9)
+
+            return pd.Series(snr, index=index)
+
+        except Exception as e:
+            self.logger.error(f"Error calculating SNR Internal: {e}")
+            return pd.Series(0.0, index=index)
+
+    def _calculate_snr_consensus(
+        self,
+        model_probabilities: Dict[str, np.ndarray],
+        index: pd.Index
+    ) -> pd.Series:
+        """
+        SNRConsensus = Ensemble Mean Prob / StdDev(Model Predictions)
+        """
+        try:
+            if not model_probabilities:
+                return pd.Series(0.0, index=index)
+
+            tensor = self._stack_probability_tensor(model_probabilities, index)
+            if tensor.size == 0:
+                return pd.Series(0.0, index=index)
+
+            # probs: (n_models, n_samples)
+            probs = tensor[:, :, 1]
+
+            mean_prob = probs.mean(axis=0)
+            std_prob = probs.std(axis=0)
+
+            snr = np.divide(mean_prob, std_prob, out=np.zeros_like(mean_prob), where=std_prob>1e-9)
+
+            return pd.Series(snr, index=index)
+
+        except Exception as e:
+            self.logger.error(f"Error calculating SNR Consensus: {e}")
+            return pd.Series(0.0, index=index)
     def _calculate_ensemble_probability(
         self,
         model_probabilities: Dict[str, np.ndarray],
@@ -494,6 +584,8 @@ class EnsembleDisagreementFeatures:
             'avg_divergence': zero.copy(),
             'max_confidence': zero.copy(),
             'disagreement_rate': zero.copy(),
+            'snr_internal': zero.copy(),
+            'snr_consensus': zero.copy()
             'ensemble_prob': pd.Series(0.5, index=index)
         }
 
@@ -504,6 +596,7 @@ def calculate_ensemble_disagreement_features(
     model_predictions: Dict[str, np.ndarray],
     model_probabilities: Dict[str, np.ndarray],
     model_confidences: Optional[Dict[str, np.ndarray]] = None,
+    model_variances: Optional[Dict[str, np.ndarray]] = None,
     feature_names: Optional[List[str]] = None,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, pd.Series]:
@@ -514,6 +607,7 @@ def calculate_ensemble_disagreement_features(
         model_predictions: Dict mapping model names to prediction arrays
         model_probabilities: Dict mapping model names to probability arrays
         model_confidences: Optional dict mapping model names to confidence arrays
+        model_variances: Optional dict mapping model names to internal variance arrays
         feature_names: Optional list of specific features to calculate
         logger: Optional logger instance
 
@@ -522,7 +616,7 @@ def calculate_ensemble_disagreement_features(
     """
     calculator = EnsembleDisagreementFeatures(logger=logger)
     return calculator.calculate_disagreement_features(
-        model_predictions, model_probabilities, model_confidences, feature_names
+        model_predictions, model_probabilities, model_confidences, model_variances, feature_names
     )
 
 
@@ -531,6 +625,7 @@ def get_core_feature_names() -> List[str]:
     Get list of core disagreement feature names.
 
     Returns:
+        List of 9 core feature names used by all ensemble models
         List of 8 core feature names used by all ensemble models
     """
     return [
@@ -541,5 +636,7 @@ def get_core_feature_names() -> List[str]:
         'avg_divergence',
         'max_confidence',
         'disagreement_rate',
+        'snr_internal',
+        'snr_consensus'
         'ensemble_prob'
     ]

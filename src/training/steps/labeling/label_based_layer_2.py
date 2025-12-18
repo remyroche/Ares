@@ -1558,16 +1558,21 @@ class LabelBasedLayer2:
             except Exception:
                 pass
 
-            # Split n_trials into stage1 (broad) and stage2 (fine)
-            n_stage1 = int(max(5, int(self.n_trials * 0.6)))
-            n_stage2 = int(max(0, int(self.n_trials) - int(n_stage1)))
+            # Use a single, continuous optimization stage with TPESampler
+            # This allows Optuna to explore the full space naturally ('do it on its own')
+            # without artificial bounds narrowing.
+            # We add n_startup_trials to ensure good initial coverage.
+            sampler = optuna.samplers.TPESampler(
+                seed=int(self.random_state),
+                n_startup_trials=10,
+                multivariate=True  # beneficial if kappa/horizon interact
+            )
 
-            # Add MedianPruner to optimize computational resources
             study = optuna.create_study(
                 direction="maximize",
+                sampler=sampler,
                 pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0, interval_steps=1)
             )
-            trial_results = []
 
             # Use partial to pass context to the extracted objective method
             from functools import partial
@@ -1580,41 +1585,7 @@ class LabelBasedLayer2:
                 target_sample_weight_events=target_sample_weight_events
             )
 
-            study.optimize(obj_func, n_trials=int(n_stage1))
-
-            if n_stage2 > 0:
-                # Narrow bounds around best params
-                best_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-                best_trials = sorted(best_trials, key=lambda t: float(t.value) if t.value is not None else -1e9, reverse=True)
-                best = best_trials[0] if best_trials else None
-
-                if best is not None:
-                    try:
-                        k0 = float(best.params.get('kappa'))
-                        h0 = int(best.params.get('horizon'))
-                    except Exception:
-                        k0 = None
-                        h0 = None
-
-                    if k0 is not None and h0 is not None:
-                        shrink = float(self._current_config.get('layer2_stage2_shrink', 0.25)) if isinstance(self._current_config, dict) else 0.25
-                        shrink = float(np.clip(shrink, 0.05, 0.75))
-                        b0 = self._current_param_bounds.get(str(family), {})
-                        self._current_param_bounds[str(family)] = {
-                            'k_low': float(max(b0.get('k_low', 1.0), k0 * (1.0 - shrink))),
-                            'k_high': float(min(b0.get('k_high', k0 * (1.0 + shrink)), k0 * (1.0 + shrink))),
-                            'h_low': int(max(b0.get('h_low', 1), int(max(1, round(h0 * (1.0 - shrink)))))),
-                            'h_high': int(min(b0.get('h_high', int(max(2, round(h0 * (1.0 + shrink))))), int(max(2, round(h0 * (1.0 + shrink)))))),
-                        }
-
-                refine = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=int(self.random_state)))
-                refine.optimize(obj_func, n_trials=int(n_stage2))
-                # Merge refine trials into the first study for extraction
-                for t in refine.trials:
-                    try:
-                        study.add_trial(t)
-                    except Exception:
-                        pass
+            study.optimize(obj_func, n_trials=int(self.n_trials))
 
             results[family] = self._extract_trials_from_study(study)
 

@@ -3437,6 +3437,67 @@ def create_meta_features(
     log_ret = np.log(df['close']).diff()
     features['log_ret'] = log_ret
 
+    # Range Expansion Features (Continuous)
+    try:
+        hl_range = df['high'] - df['low']
+        # Use 6-period rolling median as baseline
+        median_hl = hl_range.rolling(6).median()
+        # Ratio of current range to median range
+        range_expansion_ratio = hl_range / (median_hl + 1e-9)
+        features['range_expansion_ratio'] = range_expansion_ratio
+
+        # Internal binary mask for derivative features
+        range_expansion_mask = (range_expansion_ratio > 1.0).astype(float)
+    except Exception as e:
+        tprint(f"⚠️ Failed to generate range expansion features: {e}", "WARNING")
+        range_expansion_mask = pd.Series(0.0, index=df.index)
+
+    # Volume Normalization & Derivatives
+    if volume_available:
+        try:
+            # 1. De-seasonalize Volume (using 20-period rolling mean as expectation proxy)
+            # Standard Relative Volume: Current / Expectation
+            vol_expected = df['volume'].rolling(20).mean()
+            vt_adj = df['volume'] / (vol_expected + 1e-9)
+
+            # 2. Conditional Normalization
+            # Vt_rel = Vt_adj / EWMA(Vt_adj)
+            vt_rel = vt_adj / (vt_adj.ewm(span=14).mean() + 1e-9)
+
+            # 3. Log-transformation and clipping (xt)
+            xt = np.log(vt_rel + 1e-9).clip(-3, 3)
+
+            # Helper for ATR
+            def _local_atr(high, low, close, window):
+                tr1 = high - low
+                tr2 = (high - close.shift(1)).abs()
+                tr3 = (low - close.shift(1)).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                return tr.rolling(window).mean()
+
+            atr_14 = _local_atr(df['high'], df['low'], df['close'], 14)
+            atr_safe = atr_14.replace(0, np.nan).fillna(method='ffill') + 1e-9
+
+            # Helper for EMA Slope
+            ema_14 = df['close'].ewm(span=14).mean()
+            ema_slope_normalized = (ema_14 - ema_14.shift(1)) / atr_safe
+
+            # 4. Derivative Features
+            # Move confirmation: xt * |rt| / ATRt
+            features['vol_move_confirmation'] = xt * log_ret.abs() / atr_safe
+
+            # Breakout validation: xt * 1[RangeExpt]
+            features['vol_breakout_validation'] = xt * range_expansion_mask
+
+            # Trend persistence: xt * EMA-slopet
+            features['vol_trend_persistence'] = xt * ema_slope_normalized
+
+            # Liquidity-adjusted momentum: (rt / ATRt) * tanh(xt)
+            features['vol_liquidity_momentum'] = (log_ret / atr_safe) * np.tanh(xt)
+
+        except Exception as e:
+            tprint(f"⚠️ Failed to generate volume derivative features: {e}", "WARNING")
+
     _interaction_norm_cache: Dict[str, np.ndarray] = {}
 
     def _norm_for_interaction(values: Any, name: str) -> np.ndarray:

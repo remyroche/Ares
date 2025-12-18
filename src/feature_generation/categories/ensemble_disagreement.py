@@ -52,14 +52,14 @@ class EnsembleDisagreementFeatures:
         Calculate core disagreement features from model predictions.
 
         This is the main entry point for calculating disagreement features.
-        Returns the 7 core features used by all ensemble models.
+        Returns the 8 core features used by all ensemble models.
 
         Args:
             model_predictions: Dict mapping model names to prediction arrays
             model_probabilities: Dict mapping model names to probability arrays
             model_confidences: Optional dict mapping model names to confidence arrays
             feature_names: Optional list of specific features to calculate
-                          (if None, calculates all 7 core features)
+                          (if None, calculates all 8 core features)
 
         Returns:
             Dict containing disagreement features as pandas Series
@@ -105,6 +105,11 @@ class EnsembleDisagreementFeatures:
             # 7. Disagreement Rate (proportion disagreeing on direction)
             features['disagreement_rate'] = self._calculate_disagreement_rate(
                 model_predictions, index
+            )
+
+            # 8. Ensemble Probability (arithmetic mean of probabilities)
+            features['ensemble_prob'] = self._calculate_ensemble_probability(
+                model_probabilities, index
             )
 
             # Filter by requested feature names if provided
@@ -443,6 +448,41 @@ class EnsembleDisagreementFeatures:
             self.logger.error(f"Error calculating disagreement rate: {e}")
             return pd.Series(0.0, index=index)
 
+    def _calculate_ensemble_probability(
+        self,
+        model_probabilities: Dict[str, np.ndarray],
+        index: pd.Index
+    ) -> pd.Series:
+        """
+        Calculate arithmetic mean of model probabilities.
+        """
+        try:
+            if not model_probabilities:
+                return pd.Series(0.5, index=index)
+
+            # Use tensor stacking to get (n_models, n_samples, n_classes)
+            tensor = self._stack_probability_tensor(model_probabilities, index)
+
+            if tensor.size == 0:
+                return pd.Series(0.5, index=index)
+
+            # Average probabilities across models
+            # tensor shape: (n_models, n_samples, n_classes)
+            # We want the probability of the positive class (index 1)
+            # If binary: shape is (n_models, n_samples, 2), take index 1
+            avg_probs = tensor.mean(axis=0)
+
+            if avg_probs.ndim == 2 and avg_probs.shape[1] >= 2:
+                return pd.Series(avg_probs[:, 1], index=index)
+            elif avg_probs.ndim == 1:
+                return pd.Series(avg_probs, index=index)
+            else:
+                return pd.Series(0.5, index=index)
+
+        except Exception as e:
+            self.logger.error(f"Error calculating ensemble probability: {e}")
+            return pd.Series(0.5, index=index)
+
     def _get_default_features(self, index: pd.Index) -> Dict[str, pd.Series]:
         """Get default disagreement features when calculation fails."""
         zero = pd.Series(0.0, index=index)
@@ -453,7 +493,8 @@ class EnsembleDisagreementFeatures:
             'prediction_range': zero.copy(),
             'avg_divergence': zero.copy(),
             'max_confidence': zero.copy(),
-            'disagreement_rate': zero.copy()
+            'disagreement_rate': zero.copy(),
+            'ensemble_prob': pd.Series(0.5, index=index)
         }
 
 
@@ -490,7 +531,7 @@ def get_core_feature_names() -> List[str]:
     Get list of core disagreement feature names.
 
     Returns:
-        List of 7 core feature names used by all ensemble models
+        List of 8 core feature names used by all ensemble models
     """
     return [
         'prediction_dispersion',
@@ -499,5 +540,6 @@ def get_core_feature_names() -> List[str]:
         'prediction_range',
         'avg_divergence',
         'max_confidence',
-        'disagreement_rate'
+        'disagreement_rate',
+        'ensemble_prob'
     ]

@@ -22,6 +22,9 @@ import shap
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_meta_features,
 )
+from src.training.steps.labeling.generate_weights_per_label import (
+    finalize_sample_weights,
+)
 from src.training.steps.labeling.label_based_pipeline import (
     select_features_with_quality,
 )
@@ -466,36 +469,39 @@ def layer3_analyst_lgbm(
     # ---------------------------------------------------------
     # 2. Define Weighting Schemes
     # ---------------------------------------------------------
+    # Note: All schemes are finalized using robust MAD scaling (finalize_sample_weights)
+    # to ensure they are comparable and standardized (mean=1.0, clipped extremes).
     schemes = {}
 
     # Scheme 1: target_sample_weight (layer1)
-    schemes["S1_L1"] = w_l1
+    schemes["S1_L1"] = finalize_sample_weights(w_l1)
 
     # Scheme 2: target_sample_weight * final composite weight (layer2)
-    schemes["S2_L1_L2"] = w_l1 * w_l2
+    schemes["S2_L1_L2"] = finalize_sample_weights(w_l1 * w_l2)
 
     # Scheme 3: final composite weight (layer2)
-    schemes["S3_L2"] = w_l2
+    schemes["S3_L2"] = finalize_sample_weights(w_l2)
 
     # Scheme 4: log(1+NetReturns) for magnitude integration
-    schemes["S4_Mag"] = magnitude_log
+    schemes["S4_Mag"] = finalize_sample_weights(magnitude_log)
 
     # Scheme 5: target_sample_weight * log(1+NetReturns)
-    schemes["S5_L1_Mag"] = w_l1 * magnitude_log
+    schemes["S5_L1_Mag"] = finalize_sample_weights(w_l1 * magnitude_log)
 
     # Scheme 6: final composite weight * log(1+NetReturns)
-    schemes["S6_L2_Mag"] = w_l2 * magnitude_log
+    schemes["S6_L2_Mag"] = finalize_sample_weights(w_l2 * magnitude_log)
 
     # Scheme 7: target_sample_weight * final composite weight * log(1+NetReturns)
-    schemes["S7_All"] = w_l1 * w_l2 * magnitude_log
+    schemes["S7_All"] = finalize_sample_weights(w_l1 * w_l2 * magnitude_log)
 
     # Scheme 8: Asymmetric weighting - downweight losing trades (loss aversion)
     loss_mask = ret_vec < 0
-    schemes["S8_Asymmetric"] = np.where(
+    raw_s8 = np.where(
         loss_mask,
         w_l2 * 0.9,  # Downweight losing trades
         w_l2 * 1.1   # Boost winning trades
     )
+    schemes["S8_Asymmetric"] = finalize_sample_weights(raw_s8)
 
     # Scheme 9: Class Balanced weighting - compensate for low base rate
     # Ensures winners and losers have equal aggregate weight in training
@@ -505,18 +511,12 @@ def layer3_analyst_lgbm(
         neg_count = np.sum(y_bin == 0)
         if pos_count > 0 and neg_count > 0:
             scale_pos = neg_count / pos_count
-            schemes["S9_ClassBalanced"] = np.where(y_bin == 1, w_l2 * scale_pos, w_l2)
+            raw_s9 = np.where(y_bin == 1, w_l2 * scale_pos, w_l2)
         else:
-            schemes["S9_ClassBalanced"] = w_l2
+            raw_s9 = w_l2
+        schemes["S9_ClassBalanced"] = finalize_sample_weights(raw_s9)
     except Exception:
-        schemes["S9_ClassBalanced"] = w_l2
-
-    # Normalize all weights to mean=1.0 for stability
-    for k in schemes:
-        if schemes[k].mean() > 1e-9:
-            schemes[k] = schemes[k] / schemes[k].mean()
-        else:
-            schemes[k] = np.ones_like(schemes[k]) # Fallback for zero weights
+        schemes["S9_ClassBalanced"] = finalize_sample_weights(w_l2)
 
     # ---------------------------------------------------------
     # 3. Comparative Evaluation (2-Phase Scheme Pruning)

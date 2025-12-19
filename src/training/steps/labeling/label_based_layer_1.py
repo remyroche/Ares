@@ -433,6 +433,14 @@ def run_layer1_optimization(
                 except Exception:
                     er_feat = pd.Series(0.5, index=t_events)
 
+                # 7. Trend Strength (SMA Deviation)
+                try:
+                    sma50 = close.rolling(window=50).mean()
+                    trend_dev = (close - sma50) / (sma50 + 1e-9)
+                    trend_feat = trend_dev.reindex(t_events)
+                except Exception:
+                    trend_feat = pd.Series(0.0, index=t_events)
+
                 X_df_proxy = (
                     pd.DataFrame(
                         {
@@ -444,7 +452,8 @@ def run_layer1_optimization(
                             "rsi14": rsi_feat,
                             "bb_pct_b": bb_pct_b_feat,
                             "stoch_k": stoch_k_feat,
-                            "er": er_feat
+                            "er": er_feat,
+                            "trend_dev": trend_feat
                         },
                         index=t_events,
                     )

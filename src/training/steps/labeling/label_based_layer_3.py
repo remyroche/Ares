@@ -479,6 +479,7 @@ def layer3_analyst_lgbm(
     # New arguments for Scheme comparison
     layer1_weight: Optional[np.ndarray] = None,
     layer2_weight: Optional[np.ndarray] = None,
+    layer2_weight_quality: Optional[np.ndarray] = None,
     net_returns: Optional[np.ndarray] = None,
     market_data: Optional[pd.DataFrame] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -643,11 +644,25 @@ def layer3_analyst_lgbm(
 
     w_l1_s = _require_series_aligned(layer1_weight, "layer1_weight")
     w_l2_s = _require_series_aligned(layer2_weight, "layer2_weight")
+
+    w_qual_s = None
+    if layer2_weight_quality is not None:
+        try:
+            w_qual_s = _require_series_aligned(layer2_weight_quality, "layer2_weight_quality")
+        except Exception:
+            w_qual_s = None
+
     ret_s = _require_series_aligned(net_returns, "net_returns")
 
     # After target dropna, align by index (no reordering)
     w_l1 = w_l1_s.reindex(df.index).values
     w_l2 = w_l2_s.reindex(df.index).values
+
+    if w_qual_s is not None:
+        w_qual = w_qual_s.reindex(df.index).values
+    else:
+        w_qual = np.ones_like(w_l1)
+
     ret_vec = ret_s.reindex(df.index).values
 
     if len(w_l1) != len(df) or len(w_l2) != len(df) or len(ret_vec) != len(df):
@@ -671,6 +686,7 @@ def layer3_analyst_lgbm(
     # Always ensure finite weights before MAD-scaling.
     w_l1 = _coerce_weights(w_l1)
     w_l2 = _coerce_weights(w_l2)
+    w_qual = _coerce_weights(w_qual)
     magnitude_log = _coerce_weights(magnitude_log)
 
     # Scheme 1: target_sample_weight (layer1)
@@ -724,6 +740,12 @@ def layer3_analyst_lgbm(
         schemes["S9_ClassBalanced"] = raw_s9
     except Exception:
         schemes["S9_ClassBalanced"] = w_l2
+
+    # Scheme 10: Layer 1 + Quality Weight (explicit soft labels)
+    schemes["S10_L1_Qual"] = (w_l1 * w_qual)
+
+    # Scheme 11: Just Quality Weight
+    schemes["S11_Qual"] = w_qual
 
     # ---------------------------------------------------------
     # 3. Comparative Evaluation (2-Phase Scheme Pruning)

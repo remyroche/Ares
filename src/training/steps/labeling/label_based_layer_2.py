@@ -1491,7 +1491,7 @@ class LabelBasedLayer2:
 
         vol_series = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float)
         vol_series = vol_series.replace([np.inf, -np.inf], np.nan)
-        vol_series = vol_series.fillna(method='ffill').fillna(method='bfill')
+        vol_series = vol_series.ffill().bfill()
         vol_series = vol_series.clip(lower=1e-8)
 
         # Enforce minimum profit threshold to cover transaction costs (Root Cause 3: Mis-specified Labels)
@@ -2256,9 +2256,9 @@ class LabelBasedLayer2:
             pr_best = float('nan')
 
         try:
-            auc_thr = float(getattr(self, '_current_config', {}).get('layer2_probe_auc_threshold', 0.515))
+            auc_thr = float(getattr(self, '_current_config', {}).get('layer2_probe_auc_threshold', 0.53))
         except Exception:
-            auc_thr = 0.515
+            auc_thr = 0.53
         try:
             pr_margin = float(getattr(self, '_current_config', {}).get('layer2_probe_pr_margin', 0.01))
         except Exception:
@@ -2657,12 +2657,14 @@ class LabelBasedLayer2:
 
         unique_families = events_df['family'].unique()
 
-        X_events = self._build_geometry_independent_event_features(df, events_df)
-        try:
-            probe_features = self._select_global_probe_features(X_events)
-        except Exception:
-            probe_features = []
+        # Build feature matrix once
+        X_events_all = self._build_geometry_independent_event_features(df, events_df)
         target_sample_weight_events = self._get_target_sample_weight_for_events(df, events_df)
+
+        # Initialize param bounds safely
+        self._current_param_bounds = getattr(self, '_current_param_bounds', {})
+        if not isinstance(self._current_param_bounds, dict):
+            self._current_param_bounds = {}
 
         for family in unique_families:
             logger.info(f"Optimizing family: {family}")
@@ -2674,22 +2676,44 @@ class LabelBasedLayer2:
                 logger.warning(f"Not enough events for family {family} ({len(family_events)}). Skipping.")
                 continue
 
+            # Feature Selection PER FAMILY
+            # This ensures the "Trend" specialist sees trend features, etc.
+            try:
+                X_fam = X_events_all.reindex(family_events.index)
+                probe_features = self._select_global_probe_features(X_fam)
+            except Exception:
+                probe_features = []
+
             try:
                 logger.info(
                     f"Layer2 Optimize family={family}: n_events={int(len(family_events))}, n_trials={int(self.n_trials)}, "
-                    f"probe_feats={int(len(getattr(self, '_global_probe_features', []) or []))}"
+                    f"probe_feats={int(len(probe_features))}"
                 )
             except Exception:
                 pass
 
+            # Define family-specific parameter bounds (heuristics)
+            # Trend: Needs room to run (larger horizon), higher RR (kappa)
+            # Momentum: Fast moves (shorter horizon), moderate RR
+            # Mean Reversion: Quick snaps (short horizon), tighter RR
+            fam_bounds = {}
+            if family == 'Trend Continuation':
+                fam_bounds = {'k_low': 1.5, 'k_high': 6.0, 'h_low': 20, 'h_high': 100}
+            elif family == 'Momentum':
+                fam_bounds = {'k_low': 2.0, 'k_high': 8.0, 'h_low': 5, 'h_high': 40}
+            elif family == 'Mean Reversion':
+                fam_bounds = {'k_low': 1.0, 'k_high': 4.0, 'h_low': 10, 'h_high': 60}
+            else:
+                fam_bounds = {'k_low': 1.0, 'k_high': 6.0, 'h_low': 10, 'h_high': 100}
+
+            # Update current param bounds for this family
+            self._current_param_bounds[str(family)] = fam_bounds
+
             # Use a single, continuous optimization stage with TPESampler
-            # This allows Optuna to explore the full space naturally ('do it on its own')
-            # without artificial bounds narrowing.
-            # We add n_startup_trials to ensure good initial coverage.
             sampler = optuna.samplers.TPESampler(
                 seed=int(self.random_state),
                 n_startup_trials=10,
-                multivariate=True  # beneficial if kappa/horizon interact
+                multivariate=True
             )
 
             study = optuna.create_study(
@@ -2705,7 +2729,7 @@ class LabelBasedLayer2:
                 df=df,
                 family=family,
                 family_events=family_events,
-                X_events=X_events,
+                X_events=X_events_all,
                 probe_features=probe_features,
                 target_sample_weight_events=target_sample_weight_events
             )
@@ -2739,6 +2763,7 @@ class LabelBasedLayer2:
         bounds = self._current_param_bounds.get(str(family)) if isinstance(getattr(self, '_current_param_bounds', None), dict) else None
 
         # Parameter Space: Kappa and Horizon
+        # Use family-specific bounds if available
         if isinstance(bounds, dict) and all(k in bounds for k in ('k_low', 'k_high', 'h_low', 'h_high')):
              kappa = trial.suggest_float('kappa', float(bounds['k_low']), float(bounds['k_high']))
              horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
@@ -3800,13 +3825,38 @@ class LabelBasedLayer2:
                 where=w_signalgate_count > 0
             )
 
+            # --- Trade Quality Soft Weighting (Soft Labels) ---
+            # Calculate w_quality based on consensus return magnitude and volatility.
+            # Scaling: 0.5 to 2.0 based on z-score of return.
+            # w = 0.5 + 1.5 * sigmoid( return / (vol * 2.0) )
+            # This boosts high-quality trades (high sharpe/return) and dampens weak ones.
+            try:
+                ret_vals = consensus_returns.fillna(0.0).values
+                vol_vals = df['volatility_1d'].reindex(fam_events.index).ffill().fillna(0.0).values
+
+                # Z-score proxy
+                safe_vol = np.where(vol_vals > 1e-9, vol_vals, 1e-9)
+                z_score = ret_vals / safe_vol
+
+                # Sigmoid scaling to [0.5, 2.0]
+                # Center around z=0 (neutral) -> sigmoid(0)=0.5 -> w=0.5+0.75=1.25 (base)
+                # If z huge -> sigmoid(10)=1 -> w=0.5+1.5=2.0
+                # If z neg -> sigmoid(-10)=0 -> w=0.5+0=0.5
+                sig = 1.0 / (1.0 + np.exp(-1.0 * z_score))
+                w_quality = 0.5 + 1.5 * sig
+            except Exception:
+                w_quality = np.ones_like(avg_w_signalgate)
+
+            # Multiply pre-existing weights (w_signalgate) by w_quality
+            weighted_raw = avg_w_signalgate * w_quality
+
             # Apply MAD-based scaling to the aggregated weights to ensure comparability
             # and robustness, consistent with Layer 0 scaling.
             # finalize_sample_weights performs MAD clipping -> Mean centering (mean=1.0)
-            if np.sum(avg_w_signalgate) > 0:
-                final_event_weights = finalize_sample_weights(avg_w_signalgate)
+            if np.sum(weighted_raw) > 0:
+                final_event_weights = finalize_sample_weights(weighted_raw)
             else:
-                final_event_weights = np.zeros_like(avg_w_signalgate)
+                final_event_weights = np.zeros_like(weighted_raw)
 
             # Assign to main storage
             composite_labels.loc[fam_events.index] = consensus_labels
@@ -3936,10 +3986,25 @@ class LabelBasedLayer2:
         except Exception:
             pass
 
+        # Calculate global quality weights (for all events) for Layer 3 usage
+        try:
+            # Reconstruct global quality weight series
+            # We computed w_quality per family block above, need to stitch it or recompute global.
+            # Recomputing global is cleaner.
+            c_ret = composite_returns.fillna(0.0)
+            c_vol = df['volatility_1d'].reindex(composite_returns.index).ffill().fillna(0.0)
+            safe_v = np.where(c_vol > 1e-9, c_vol, 1e-9)
+            z = c_ret / safe_v
+            sig = 1.0 / (1.0 + np.exp(-1.0 * z))
+            quality_weights = pd.Series(0.5 + 1.5 * sig, index=composite_returns.index)
+        except Exception:
+            quality_weights = pd.Series(1.0, index=composite_returns.index)
+
         return {
             "oof_labels": l2_score,
             "oof_returns": composite_returns,
             "weights": composite_weights,
+            "quality_weights": quality_weights,
             "l2_score": l2_score,
             "l2_label": l2_label,
             "l2_confidence": l2_confidence,

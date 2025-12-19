@@ -172,7 +172,7 @@ def run_layer1_optimization(
     committee_agreement_scores: Optional[Union[np.ndarray, pd.Series, list]] = None,
     committee_mag_factors: Optional[Union[np.ndarray, pd.Series, list]] = None,
     n_trials: int = 60,
-    objective_mode: str = "proxy",
+    objective_mode: str = "predictive_cv",
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
     uniqueness_horizon_bars: int = 24,
 ) -> Dict[str, Any]:
@@ -362,9 +362,9 @@ def run_layer1_optimization(
             event_consistency = None
 
         try:
-            objective_mode_local = str(objective_mode or "proxy").strip().lower()
+            objective_mode_local = str(objective_mode or "predictive_cv").strip().lower()
         except Exception:
-            objective_mode_local = "proxy"
+            objective_mode_local = "predictive_cv"
 
         def _predictive_cv_score(
             weights: np.ndarray,
@@ -383,9 +383,29 @@ def run_layer1_optimization(
                 ret3 = close.pct_change(3).reindex(t_events_local)
                 ret6 = close.pct_change(6).reindex(t_events_local)
                 vol20 = close.pct_change().rolling(20).std().reindex(t_events_local)
+
+                # Add RSI feature for better baseline predictability
+                try:
+                    delta = close.diff()
+                    gain = delta.clip(lower=0.0)
+                    loss = -delta.clip(upper=0.0)
+                    avg_gain = gain.rolling(window=14, min_periods=1).mean()
+                    avg_loss = loss.rolling(window=14, min_periods=1).mean()
+                    rs = avg_gain / (avg_loss + 1e-9)
+                    rsi = 100.0 - (100.0 / (1.0 + rs))
+                    rsi_feat = rsi.reindex(t_events_local)
+                except Exception:
+                    rsi_feat = pd.Series(50.0, index=t_events_local)
+
                 X_df = (
                     pd.DataFrame(
-                        {"ret1": ret1, "ret3": ret3, "ret6": ret6, "vol20": vol20},
+                        {
+                            "ret1": ret1,
+                            "ret3": ret3,
+                            "ret6": ret6,
+                            "vol20": vol20,
+                            "rsi14": rsi_feat
+                        },
                         index=t_events_local,
                     )
                     .replace([np.inf, -np.inf], np.nan)

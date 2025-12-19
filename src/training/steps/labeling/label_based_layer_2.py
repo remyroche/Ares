@@ -90,8 +90,8 @@ class RobustFocalLoss:
         else:
             self.alpha = alpha
 
-        # Safety: enforce alpha in [0.5,0.95] to avoid extreme weighting
-        self.alpha = min(max(self.alpha, 0.5), 0.95)
+        # Safety: enforce alpha in [0.01,0.99] to allow user-specified downweighting (e.g. 0.25)
+        self.alpha = min(max(self.alpha, 0.01), 0.99)
 
         if verbose:
             try:
@@ -3334,35 +3334,26 @@ class LabelBasedLayer2:
                     continue
 
                 # --- New Hyperparameters ---
-                # 'boosting_type': 'gbdt',
-                # 'objective': 'binary', (overridden by fobj)
-                # 'metric': 'auc',
-                # 'max_depth': 5,
-                # 'num_leaves': 31,
-                # 'lambda_l1': 0.5,
-                # 'lambda_l2': 5.0,
-                # 'min_data_in_leaf': 50,
-                # 'feature_fraction': 0.8,
-                # 'bagging_fraction': 0.8,
-                # 'bagging_freq': 1,
-                # 'learning_rate': 0.02,
-                # 'n_estimators': 2000,
-                # 'is_unbalance': False,
-                # 'scale_pos_weight': 1
+                # Aligned with "Default Start" recommendations:
+                # - gamma=0.75, alpha=0.25
+                # - num_leaves=127, max_depth=-1 (deep trees)
+                # - lr=0.05, n_est=1000
+                # - minimal regularization (l1=0, l2=0)
 
                 params = {
                     'boosting_type': 'gbdt',
                     'objective': 'binary',
-                    'metric': 'auc',
-                    'max_depth': 5,
-                    'num_leaves': 31,
-                    'lambda_l1': 1.0,
-                    'lambda_l2': 5.0,
-                    'min_data_in_leaf': 30,
-                    'feature_fraction': 0.8,
-                    'bagging_fraction': 0.8,
+                    'metric': 'binary_logloss',
+                    'max_depth': -1,
+                    'num_leaves': 127,
+                    'lambda_l1': 0.0,
+                    'lambda_l2': 0.0,
+                    'min_data_in_leaf': 50,
+                    'min_sum_hessian_in_leaf': 1e-3,
+                    'feature_fraction': 0.9,
+                    'bagging_fraction': 0.9,
                     'bagging_freq': 1,
-                    'learning_rate': 0.02,
+                    'learning_rate': 0.05,
                     'n_estimators': 1000,
                     'verbose': -1,
                     'random_state': 42,
@@ -3377,7 +3368,8 @@ class LabelBasedLayer2:
                 }
 
                 # Instantiate Focal Loss
-                focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=1.5)
+                # Recommended: gamma=0.75 (mild hunting), alpha=0.25 (optional imbalance control)
+                focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=0.75, alpha=0.25)
                 params['objective'] = focal_obj
 
                 # Create Dataset for training

@@ -1165,6 +1165,20 @@ def _compute_snr_metrics(y_true: pd.Series, y_returns: Optional[pd.Series] = Non
     n_negative = int((y_true == 0).sum())
     n_total = len(y_true)
     
+    # Handle continuous labels by thresholding if strict 0/1 counts fail
+    if n_positive == 0 and n_negative == 0 and n_total > 0:
+        y_vals = pd.to_numeric(y_true, errors='coerce').dropna()
+        if len(y_vals) > 0:
+            # Assume soft labels
+            n_positive = int((y_vals >= 0.5).sum())
+            n_negative = int((y_vals < 0.5).sum())
+            # For SNR calculations, we use a binary mask derived from threshold
+            y_true_binary = (y_vals >= 0.5).astype(int)
+        else:
+            y_true_binary = y_true # Keep as is if empty
+    else:
+        y_true_binary = y_true
+
     if n_positive == 0 or n_negative == 0:
         return {
             "n_positive": n_positive,
@@ -1181,8 +1195,12 @@ def _compute_snr_metrics(y_true: pd.Series, y_returns: Optional[pd.Series] = Non
     
     if y_returns is not None and len(y_returns) == len(y_true):
         try:
-            pos_returns = y_returns[y_true == 1].dropna()
-            neg_returns = y_returns[y_true == 0].dropna()
+            # Use binary mask (potentially derived from threshold)
+            pos_mask = (y_true_binary == 1)
+            neg_mask = (y_true_binary == 0)
+
+            pos_returns = y_returns[pos_mask].dropna()
+            neg_returns = y_returns[neg_mask].dropna()
             
             if len(pos_returns) > 1 and len(neg_returns) > 1:
                 pos_mean = float(pos_returns.mean())
@@ -1580,6 +1598,11 @@ def run_label_quality(
 
     n_positive = int((binary_labels == 1.0).sum())
     n_negative = int((binary_labels == 0.0).sum())
+
+    # Fallback for soft labels (e.g. l2_consensus_target)
+    if n_positive == 0 and n_negative == 0 and n_labeled > 0:
+        n_positive = int((binary_labels >= 0.5).sum())
+        n_negative = int((binary_labels < 0.5).sum())
     positive_rate = n_positive / n_labeled if n_labeled > 0 else 0.0
     coverage = n_labeled / n_samples if n_samples > 0 else 0.0
 

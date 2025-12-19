@@ -1293,8 +1293,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if (not np.isfinite(soft_scale)) or soft_scale <= 0.0:
                     soft_scale = 2.0
                 denom = float(deadband) if np.isfinite(deadband) and float(deadband) > 1e-12 else 1e-3
+
+                # Robust clipping for returns (prevent extreme outliers from skewing sigmoid)
+                # Clip returns to [P01, P99] or MAD-based bounds if needed.
+                # Here we clip z-score directly to [-5, 5] (more conservative than -10, 10)
+                # to ensure we don't saturate too easily, while still allowing strong signals.
                 z = pd.to_numeric(r / float(denom), errors="coerce").astype(float)
-                z = z.clip(lower=-10.0, upper=10.0)
+                z = z.clip(lower=-5.0, upper=5.0)
+
                 econ_soft = 1.0 / (1.0 + np.exp(-float(soft_scale) * z))
                 econ_soft = econ_soft.where(r.notna())
                 l3_target = econ_soft
@@ -1368,10 +1374,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # LAYER 3: Calibration & Meta-Model (OOF & Final)
             # ---------------------------------------------------------
             tprint_info(">>> Executing Layer 3: Weighting Scheme Comparison & Training...")
-            
-            # Passes components to allow Layer 3 to compare 7 weighting schemes
-            oof_export, final_model = layer3_analyst_lgbm(
-                oof_df=l3_input_df,
+
+            # --- Target Variant 1: Economic Target (Default) ---
+            tprint_info("   [Target A] Training on Economic Target (continuous)...")
+            l3_input_econ = l3_input_df.copy()
+            l3_input_econ[target_col] = l3_target  # Economic target (soft)
+
+            oof_export_econ, final_model_econ = layer3_analyst_lgbm(
+                oof_df=l3_input_econ,
                 base_model_cols=geo_cols,
                 target_col=target_col,
                 train_split_date=None,
@@ -1381,6 +1391,98 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 market_data=market_data,
                 config=config,
             )
+            
+            # --- Target Variant 2: Binary Consensus (Layer 2) ---
+            tprint_info("   [Target B] Training on Binary Consensus (Layer 2)...")
+            l3_input_bin = l3_input_df.copy()
+            # Restore binary labels from Layer 2 (l2_labels is binary thresholded at 0.5)
+            l2_labels_binary = l2_labels.reindex(l3_input_bin.index)
+            l3_input_bin[target_col] = l2_labels_binary
+
+            oof_export_bin, final_model_bin = layer3_analyst_lgbm(
+                oof_df=l3_input_bin,
+                base_model_cols=geo_cols,
+                target_col=target_col,
+                train_split_date=None,
+                layer1_weight=w_l1_aligned,
+                layer2_weight=w_l2_aligned,
+                net_returns=l2_returns_aligned,
+                market_data=market_data,
+                config=config,
+            )
+
+            # --- Compare and Select Winner ---
+            # We compare ScoreL3 from the 'Winner' scheme of each run.
+            # We need to extract the score from the report data or recompute.
+            # Since layer3_analyst_lgbm returns (df, model) and prints/saves report internally,
+            # we need to look at the summary CSVs it generated or calculate metrics now.
+
+            # Helper to get score from OOF
+            def _quick_score(df_oof, t_col):
+                met = _compute_layer3_metrics(df_oof, target_col=t_col, prob_col="meta_prob")
+                if "error" in met: return -999.0
+                # ScoreL3 approximation
+                auc = met.get("auc", 0.5)
+                ll = met.get("log_loss", 0.693)
+                ece = met.get("ece", 0.0)
+                return 100 * (auc - 0.5) + 50 * (0.693 - ll) - 200 * ece
+
+            # Note: For Economic Target run, target_col has soft labels.
+            # For Binary Target run, target_col has binary labels.
+            # Metrics are comparable if we evaluate against the specific target used for training?
+            # Or should we evaluate both against the Economic outcome?
+            # Usually we select based on the target it was trained for (internal consistency).
+
+            score_econ = _quick_score(oof_export_econ, target_col)
+            score_bin = _quick_score(oof_export_bin, target_col) # uses binary labels in this DF
+
+            tprint_info(f"   [Comparison] Economic Target Score: {score_econ:.4f}")
+            tprint_info(f"   [Comparison] Binary Target Score:   {score_bin:.4f}")
+
+            # Create Comparison Table
+            comp_rows = [
+                {"Target_Type": "Economic (Soft)", "Score": score_econ, "Used_For_Production": False},
+                {"Target_Type": "Binary (L2)",     "Score": score_bin,  "Used_For_Production": False}
+            ]
+
+            # Logic: Default to Economic unless Binary is significantly better?
+            # Or trust the user preference?
+            # Current default is Economic.
+            # If user explicitly wants binary, they set layer3_use_econ_target=False.
+            # But here we force-ran both.
+            # Let's keep Economic as primary unless configured otherwise, or if Binary is strictly better.
+            # Actually, standardizing on Economic is the design intent. We'll keep Econ as production
+            # but export both metrics.
+
+            # Allow config override to pick binary
+            force_binary = not bool(config.get("layer3_use_econ_target", True))
+
+            if force_binary:
+                tprint_info("   [Selection] Config forced Binary Target.")
+                oof_export = oof_export_bin
+                final_model = final_model_bin
+                comp_rows[1]["Used_For_Production"] = True
+            else:
+                tprint_info("   [Selection] Defaulting to Economic Target.")
+                oof_export = oof_export_econ
+                final_model = final_model_econ
+                comp_rows[0]["Used_For_Production"] = True
+
+            # Save Comparison Table
+            try:
+                comp_df = pd.DataFrame(comp_rows)
+                comp_path = outcomes_dir / f"layer3_target_comparison_{ts_run}.csv"
+                comp_df.to_csv(comp_path, index=False)
+
+                # Append to Report
+                md_path = outcomes_dir / f"layer3_report_{config.get('symbol')}_{config.get('timeframe')}_{ts_run}.md"
+                if md_path.exists():
+                    with open(md_path, "a") as f:
+                        f.write("\n\n## Target Definition Comparison\n")
+                        f.write(comp_df.to_markdown(index=False))
+                        f.write("\n")
+            except Exception:
+                pass
             
             # Calculate final composite weight for artifact saving (using Scheme 7 logic as default/reference)
             # Note: The actual model training inside layer3 uses the BEST scheme found.

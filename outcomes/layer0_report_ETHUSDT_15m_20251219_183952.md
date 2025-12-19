@@ -1,5 +1,5 @@
 # Layer0 Report
-- timestamp: 20251218_225701
+- timestamp: 20251219_183952
 - symbol: ETHUSDT
 - timeframe: 15m
 - run_optimization: False

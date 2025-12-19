@@ -45,27 +45,27 @@ from src.utils.purged_kfold import PurgedKFoldTime
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Constants for Layer 2 Model Training (defaults/fixed)
+# Constants for Layer 2 Model Training (defaults/fixed) - Less Regularized
 LAYER2_MODEL_CONSTANTS = {
     'boosting_type': 'gbdt',
     'objective': 'binary',
     'metric': 'binary_logloss',
     'max_depth': -1,
     'learning_rate': 0.05,
-    'lambda_l1': 0.1,
-    'lambda_l2': 0.2,
-    'min_data_in_leaf': 30,
+    'lambda_l1': 0.05,      # Reduced from 0.1
+    'lambda_l2': 0.1,       # Reduced from 0.2
+    'min_data_in_leaf': 20, # Reduced from 30
     'min_sum_hessian_in_leaf': 1e-3,
-    'feature_fraction': 0.8,
-    'bagging_fraction': 0.8,
-    'bagging_freq': 2,
+    'feature_fraction': 0.9, # Increased from 0.8
+    'bagging_fraction': 0.9,  # Increased from 0.8
+    'bagging_freq': 1,       # Reduced from 3
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,
     'is_unbalance': False,
     'scale_pos_weight': 1,
-    'min_gain_to_split': 0.005,
-    'min_child_weight': 0.001,
+    'min_gain_to_split': 0.003, # Reduced from 0.005
+    'min_child_weight': 0.0005, # Reduced from 0.001
 }
 
 def _normalized_binary_entropy(p: float) -> float:
@@ -2922,18 +2922,18 @@ class LabelBasedLayer2:
              kappa = trial.suggest_float('kappa', float(bounds['k_low']), float(bounds['k_high']))
              horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
         else:
-             # Default ranges
-             kappa = trial.suggest_float('kappa', 1.0, 6.0)
-             horizon = trial.suggest_int('horizon', 10, 100)
+             # Default ranges (expanded for better coverage)
+             kappa = trial.suggest_float('kappa', 0.8, 8.0)
+             horizon = trial.suggest_int('horizon', 8, 120)
 
         try:
-            sl_low = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_low', 0.5))
+            sl_low = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_low', 0.3))
         except Exception:
-            sl_low = 0.5
+            sl_low = 0.3
         try:
-            sl_high = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_high', 3.0))
+            sl_high = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_high', 4.0))
         except Exception:
-            sl_high = 3.0
+            sl_high = 4.0
         if (not np.isfinite(sl_low)) or sl_low <= 0.0:
             sl_low = 0.5
         if (not np.isfinite(sl_high)) or sl_high <= float(sl_low):
@@ -2969,10 +2969,10 @@ class LabelBasedLayer2:
         # --- OPTIMIZATION: Tighter Pre-Filters ---
         # If the geometry is fundamentally poor in terms of base statistics, don't waste time on probes.
         try:
-             min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.08))
-             max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.65))
+             min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.05))
+             max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.75))
         except Exception:
-             min_rate, max_rate = 0.08, 0.65
+             min_rate, max_rate = 0.05, 0.75
 
         if pos_rate < min_rate or pos_rate > max_rate: 
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=pos_rate_limit, pos_rate={pos_rate:.3f}, range=[{min_rate}, {max_rate}]")
@@ -2991,9 +2991,9 @@ class LabelBasedLayer2:
              return -1.0
 
         try:
-            profit_mode = str(getattr(self, '_current_config', {}).get('layer2_profitability_mode', 'trade_mean'))
+            profit_mode = str(getattr(self, '_current_config', {}).get('layer2_profitability_mode', 'overall'))
         except Exception:
-            profit_mode = 'trade_mean'
+            profit_mode = 'overall'
         profit_mode = str(profit_mode).strip().lower()
 
         try:
@@ -3042,16 +3042,16 @@ class LabelBasedLayer2:
         # Stability Check (Time-Flip)
         # Configurable frequency + optional subsampling to reduce compute.
         try:
-            stability_every = int(getattr(self, '_current_config', {}).get('layer2_stability_every_n_trials', 1))
+            stability_every = int(getattr(self, '_current_config', {}).get('layer2_stability_every_n_trials', 3))
         except Exception:
-            stability_every = 1
+            stability_every = 3
         if stability_every <= 0:
             stability_every = 1
 
         try:
-            stability_sample_frac = float(getattr(self, '_current_config', {}).get('layer2_stability_sample_frac', 1.0))
+            stability_sample_frac = float(getattr(self, '_current_config', {}).get('layer2_stability_sample_frac', 0.7))
         except Exception:
-            stability_sample_frac = 1.0
+            stability_sample_frac = 0.7
         if (not np.isfinite(stability_sample_frac)) or stability_sample_frac <= 0.0:
             stability_sample_frac = 1.0
         stability_sample_frac = float(min(1.0, stability_sample_frac))

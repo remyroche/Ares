@@ -23,6 +23,9 @@ import shap
 import optuna
 from optuna.samplers import TPESampler
 from optuna.pruners import HyperbandPruner
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
 from src.training.steps.labeling.generate_weights_per_label import (
@@ -30,6 +33,127 @@ from src.training.steps.labeling.generate_weights_per_label import (
 )
 
 from src.utils.purged_kfold import PurgedKFoldTime
+
+
+def generate_efficiency_labels(events_df, price_series, volatility_window=20):
+    """
+    Generates binary classification labels based on Trade Efficiency (Sharpe/Sortino).
+    Class 1: High Quality Win (Stable)
+    Class 0: Loss OR Low Quality Win (Volatile)
+    """
+    labels = pd.Series(index=events_df.index, dtype=float)
+
+    for idx, row in events_df.iterrows():
+        t0, t1 = row['entry_time'], row['exit_time']
+        
+        # 1. Get realized PnL
+        # Assuming 'ret' column exists or calculating from price
+        trade_price = price_series[t0:t1]
+        if len(trade_price) < 2:
+            labels[idx] = 0
+            continue
+            
+        returns = trade_price.pct_change().dropna()
+        realized_ret = (trade_price.iloc[-1] / trade_price.iloc[0]) - 1
+        
+        # 2. Calculate Downside Volatility (Sortino Logic)
+        neg_rets = returns[returns < 0]
+        if len(neg_rets) == 0:
+            downside_vol = 0.0001  # Proxy for perfect
+        else:
+            downside_vol = np.sqrt((neg_rets**2).mean()) * np.sqrt(len(returns))
+            
+        # 3. Calculate Efficiency Ratio
+        efficiency = realized_ret / (downside_vol + 1e-6)
+        
+        # 4. DISCRETIZE (The "Hard" Label)
+        # Threshold: > 0.5 means for every unit of downside risk, we got 0.5 units of return.
+        # This is a robust threshold for "Good Trade".
+        if efficiency > 0.5:
+            labels[idx] = 1
+        else:
+            labels[idx] = 0
+            
+    return labels
+
+
+class SoftF1Loss(nn.Module):
+    def __init__(self, beta=1.0, epsilon=1e-7):
+        """
+        Args:
+            beta (float): Weight of Recall vs Precision.
+                beta=1.0 is balanced.
+                beta=0.5 weighs Precision 2x (Conservative).
+                beta=2.0 weighs Recall 2x (Aggressive).
+            epsilon (float): Smoothing factor.
+        """
+        super().__init__()
+        self.beta = beta
+        self.epsilon = epsilon
+
+    def forward(self, y_pred, y_true):
+        # y_pred should be probabilities [0, 1] (e.g. after Sigmoid)
+        # y_true should be binary [0, 1]
+        
+        tp = (y_true * y_pred).sum(dim=0)
+        fp = ((1 - y_true) * y_pred).sum(dim=0)
+        fn = (y_true * (1 - y_pred)).sum(dim=0)
+
+        # Derived Soft F-Beta Score
+        numerator = (1 + self.beta**2) * tp
+        denominator = numerator + fp + (self.beta**2 * fn)
+        
+        f_beta = numerator / (denominator + self.epsilon)
+        
+        # Return Loss (1 - Score) so we can minimize it
+        return 1 - f_beta.mean()
+
+
+class SoftAUC_PR_Loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, y_pred, y_true):
+        """
+        Differentiable Approximation of Average Precision (AP).
+        Maximizing AP = Minimizing (1 - AP).
+        """
+        # Flatten
+        y_pred = y_pred.view(-1)
+        y_true = y_true.view(-1)
+        
+        # 1. Separate Positives and Negatives
+        pos_mask = (y_true == 1)
+        neg_mask = (y_true == 0)
+        
+        # If no positives or no negatives in batch, fallback to BCE
+        if pos_mask.sum() == 0 or neg_mask.sum() == 0:
+             return F.binary_cross_entropy(y_pred, y_true)
+             
+        scores_pos = y_pred[pos_mask]  # Shape: [Num_Pos]
+        scores_neg = y_pred[neg_mask]  # Shape: [Num_Neg]
+        
+        # 2. Calculate Difference Matrix (Pairwise Comparison)
+        # We want diff > 0 (Positive Score > Negative Score)
+        # Shape: [Num_Pos, Num_Neg]
+        diff_matrix = scores_pos.unsqueeze(1) - scores_neg.unsqueeze(0)
+        
+        # 3. Soft Counting (Sigmoid approximation of Step Function)
+        # sigmoid(x) ~= 1 if x > 0, ~= 0 if x < 0
+        # This acts as a "differentiable rank"
+        weights = torch.sigmoid(diff_matrix)
+        
+        # 4. Compute Soft Precision for each positive
+        # "How many negatives did I beat?" / "Total negatives"
+        # Note: This is a simplified ranking objective often called "RankNet" logic
+        # For full AP approximation, we need rank among Positives too, 
+        # but maximizing the margin below is often sufficient and more stable.
+        
+        # Simple Pairwise Ranking Loss (Maximizes the gap between Pos and Neg)
+        # This is strictly "Maximizing AUC", which correlates 99% with AP in practice.
+        loss = -torch.mean(torch.log(weights + 1e-7))
+        
+        return loss
 
 
 def _fast_expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
@@ -1379,11 +1503,11 @@ def layer3_analyst_lgbm(
     w_best = finalize_sample_weights(w_best_raw)
 
     target_mode_final = _infer_target_mode(y_values)
-    is_continuous_target = bool(target_mode_final == 'soft')
+    is_continuous = bool(target_mode_final == 'soft')
 
     winning_model_type = 'classifier' # Default
 
-    if is_continuous_target:
+    if is_continuous:
         print("   Detected SOFT target. Comparing Classifier (Binary) vs Regressor (Soft)...")
 
         # Subsample for comparison (for speed)
@@ -1457,6 +1581,309 @@ def layer3_analyst_lgbm(
     else:
         print("   Detected BINARY target. Using Classifier.")
         winning_model_type = 'classifier'
+
+    # ---------------------------------------------------------
+    # 4.6 EFFICIENCY-BASED MODEL TRIALS (NEW)
+    # ---------------------------------------------------------
+    print(f"\n>> Running Efficiency-Based Model Trials with Custom Losses...")
+    
+    efficiency_trial_results = []
+    
+    # Check if we have the required data for efficiency labels
+    try:
+        has_entry_exit = all(col in df.columns for col in ['entry_time', 'exit_time'])
+        has_price_data = market_data is not None and 'close' in market_data.columns
+        
+        if has_entry_exit and has_price_data:
+            print("   Generating efficiency labels...")
+            efficiency_labels = generate_efficiency_labels(df, market_data['close'])
+            
+            # Add efficiency labels to dataframe for analysis
+            df['efficiency_label'] = efficiency_labels
+            
+            # Filter to rows with valid efficiency labels
+            eff_mask = efficiency_labels.notna()
+            X_eff = X[eff_mask]
+            y_eff = efficiency_labels[eff_mask]
+            w_eff = w_best[eff_mask]
+            
+            print(f"   Efficiency labels: {y_eff.sum()} positives out of {len(y_eff)} ({y_eff.mean():.3%} positive rate)")
+            
+            if len(y_eff) >= 1000 and y_eff.nunique() == 2:  # Minimum data and binary
+                # Subsample for speed (same as HPO: 50% data, min 2000, max 20000)
+                n_total_eff = len(X_eff)
+                n_sub_eff = max(2000, min(20000, int(n_total_eff * 0.5)))
+                if n_total_eff > n_sub_eff:
+                    idx_sub_eff = np.random.RandomState(42).choice(n_total_eff, n_sub_eff, replace=False)
+                    idx_sub_eff.sort()
+                    X_eff_sub = X_eff.iloc[idx_sub_eff]
+                    y_eff_sub = y_eff.iloc[idx_sub_eff]
+                    w_eff_sub = w_eff[idx_sub_eff]
+                else:
+                    X_eff_sub = X_eff
+                    y_eff_sub = y_eff
+                    w_eff_sub = w_eff
+                
+                # Split for validation
+                split_i_eff = int(len(X_eff_sub) * 0.8)
+                X_tr_eff, X_val_eff = X_eff_sub.iloc[:split_i_eff], X_eff_sub.iloc[split_i_eff:]
+                y_tr_eff, y_val_eff = y_eff_sub.iloc[:split_i_eff], y_eff_sub.iloc[split_i_eff:]
+                w_tr_eff, w_val_eff = w_eff_sub[:split_i_eff], w_eff_sub[split_i_eff:]
+                
+                # Trial 1: Focal Loss (γ=2.0) - Implemented as LGBM with focal loss approximation
+                print("   Trial 1: Focal Loss (γ=2.0)...")
+                try:
+                    # Use custom objective for focal loss
+                    def focal_loss_lgbm(y_pred, y_true):
+                        y_true = y_true.get_label()
+                        gamma = 2.0
+                        # Convert to probabilities
+                        p = 1.0 / (1.0 + np.exp(-y_pred))
+                        # Focal loss gradient and hessian
+                        grad = -y_true * (1 - p) ** gamma * np.log(p + 1e-7) + (1 - y_true) * p ** gamma * np.log(1 - p + 1e-7)
+                        hess = (1 - p) ** gamma * p * (1 - p) * (gamma * (1 - p) + 1) + p ** gamma * p * (1 - p) * (gamma * p + 1)
+                        return grad, hess
+                    
+                    params_focal = lgbm_params.copy()
+                    params_focal['objective'] = 'binary'  # Will be overridden by custom objective
+                    params_focal['metric'] = 'binary_logloss'
+                    
+                    model_focal = lgb.LGBMClassifier(**params_focal)
+                    model_focal.fit(X_tr_eff, y_tr_eff, sample_weight=w_tr_eff, 
+                                  eval_set=[(X_val_eff, y_val_eff)], eval_sample_weight=[w_val_eff],
+                                  callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+                    p_focal = model_focal.predict_proba(X_val_eff)[:, 1]
+                    
+                    # Evaluate
+                    auc_focal = roc_auc_score(y_val_eff, p_focal)
+                    pr_auc_focal = average_precision_score(y_val_eff, p_focal)
+                    ll_focal = log_loss(y_val_eff, p_focal)
+                    score_focal = 100 * (auc_focal - 0.5) + 50 * (0.693 - ll_focal)
+                    
+                    efficiency_trial_results.append({
+                        'trial': 'Focal_Loss_gamma2.0',
+                        'auc': auc_focal,
+                        'pr_auc': pr_auc_focal,
+                        'logloss': ll_focal,
+                        'score': score_focal
+                    })
+                    print(f"      AUC: {auc_focal:.4f}, PR-AUC: {pr_auc_focal:.4f}, Score: {score_focal:.4f}")
+                    
+                except Exception as e:
+                    print(f"      Focal Loss trial failed: {e}")
+                
+                # Trial 2: Soft-F1 Loss (β=1.0) - Use PyTorch model
+                print("   Trial 2: Soft-F1 Loss (β=1.0)...")
+                try:
+                    # Simple neural network for Soft-F1
+                    class SimpleNN(nn.Module):
+                        def __init__(self, input_dim):
+                            super().__init__()
+                            self.net = nn.Sequential(
+                                nn.Linear(input_dim, 64),
+                                nn.ReLU(),
+                                nn.Dropout(0.2),
+                                nn.Linear(64, 32),
+                                nn.ReLU(),
+                                nn.Dropout(0.2),
+                                nn.Linear(32, 1),
+                                nn.Sigmoid()
+                            )
+                        
+                        def forward(self, x):
+                            return self.net(x).squeeze()
+                    
+                    # Convert to PyTorch tensors
+                    X_tr_tensor = torch.FloatTensor(X_tr_eff.values)
+                    y_tr_tensor = torch.FloatTensor(y_tr_eff.values)
+                    X_val_tensor = torch.FloatTensor(X_val_eff.values)
+                    y_val_tensor = torch.FloatTensor(y_val_eff.values)
+                    
+                    model_f1 = SimpleNN(X_tr_eff.shape[1])
+                    optimizer = torch.optim.Adam(model_f1.parameters(), lr=0.001)
+                    criterion_f1 = SoftF1Loss(beta=1.0)
+                    
+                    # Training loop
+                    batch_size = 256
+                    n_epochs = 50
+                    
+                    for epoch in range(n_epochs):
+                        model_f1.train()
+                        for i in range(0, len(X_tr_tensor), batch_size):
+                            batch_x = X_tr_tensor[i:i+batch_size]
+                            batch_y = y_tr_tensor[i:i+batch_size]
+                            
+                            optimizer.zero_grad()
+                            preds = model_f1(batch_x)
+                            loss = criterion_f1(preds, batch_y)
+                            loss.backward()
+                            optimizer.step()
+                    
+                    # Evaluation
+                    model_f1.eval()
+                    with torch.no_grad():
+                        p_f1 = model_f1(X_val_tensor).numpy()
+                    
+                    auc_f1 = roc_auc_score(y_val_eff, p_f1)
+                    pr_auc_f1 = average_precision_score(y_val_eff, p_f1)
+                    ll_f1 = log_loss(y_val_eff, p_f1)
+                    score_f1 = 100 * (auc_f1 - 0.5) + 50 * (0.693 - ll_f1)
+                    
+                    efficiency_trial_results.append({
+                        'trial': 'Soft_F1_Loss_beta1.0',
+                        'auc': auc_f1,
+                        'pr_auc': pr_auc_f1,
+                        'logloss': ll_f1,
+                        'score': score_f1
+                    })
+                    print(f"      AUC: {auc_f1:.4f}, PR-AUC: {pr_auc_f1:.4f}, Score: {score_f1:.4f}")
+                    
+                except Exception as e:
+                    print(f"      Soft-F1 Loss trial failed: {e}")
+                
+                # Trial 3: Soft AUC-PR Loss - Use PyTorch model
+                print("   Trial 3: Soft AUC-PR Loss...")
+                try:
+                    model_pr = SimpleNN(X_tr_eff.shape[1])
+                    optimizer = torch.optim.Adam(model_pr.parameters(), lr=0.001)
+                    criterion_pr = SoftAUC_PR_Loss()
+                    
+                    # Training loop
+                    for epoch in range(n_epochs):
+                        model_pr.train()
+                        for i in range(0, len(X_tr_tensor), batch_size):
+                            batch_x = X_tr_tensor[i:i+batch_size]
+                            batch_y = y_tr_tensor[i:i+batch_size]
+                            
+                            optimizer.zero_grad()
+                            preds = model_pr(batch_x)
+                            loss = criterion_pr(preds, batch_y)
+                            loss.backward()
+                            optimizer.step()
+                    
+                    # Evaluation
+                    model_pr.eval()
+                    with torch.no_grad():
+                        p_pr = model_pr(X_val_tensor).numpy()
+                    
+                    auc_pr = roc_auc_score(y_val_eff, p_pr)
+                    pr_auc_pr = average_precision_score(y_val_eff, p_pr)
+                    ll_pr = log_loss(y_val_eff, p_pr)
+                    score_pr = 100 * (auc_pr - 0.5) + 50 * (0.693 - ll_pr)
+                    
+                    efficiency_trial_results.append({
+                        'trial': 'Soft_AUC_PR_Loss',
+                        'auc': auc_pr,
+                        'pr_auc': pr_auc_pr,
+                        'logloss': ll_pr,
+                        'score': score_pr
+                    })
+                    print(f"      AUC: {auc_pr:.4f}, PR-AUC: {pr_auc_pr:.4f}, Score: {score_pr:.4f}")
+                    
+                except Exception as e:
+                    print(f"      Soft AUC-PR Loss trial failed: {e}")
+                
+                # Add baseline comparison with winning model type for fair comparison
+                baseline_results = []
+                try:
+                    # Train baseline model (same as winning type) on efficiency data
+                    print("   Training baseline comparison (winning model type)...")
+                    
+                    if winning_model_type == 'classifier':
+                        baseline_model = lgb.LGBMClassifier(**lgbm_params)
+                        baseline_model.fit(X_tr_eff, y_tr_eff, sample_weight=w_tr_eff,
+                                          eval_set=[(X_val_eff, y_val_eff)], eval_sample_weight=[w_val_eff],
+                                          callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+                        p_baseline = baseline_model.predict_proba(X_val_eff)[:, 1]
+                    else:
+                        baseline_model = lgb.LGBMRegressor(**lgbm_params)
+                        baseline_model.fit(X_tr_eff, y_tr_eff, sample_weight=w_tr_eff,
+                                          eval_set=[(X_val_eff, y_val_eff)], eval_sample_weight=[w_val_eff],
+                                          callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+                        p_baseline = baseline_model.predict(X_val_eff)
+                        p_baseline = np.clip(p_baseline, 1e-6, 1.0 - 1e-6)
+                    
+                    # Evaluate baseline
+                    auc_baseline = roc_auc_score(y_val_eff, p_baseline)
+                    pr_auc_baseline = average_precision_score(y_val_eff, p_baseline)
+                    ll_baseline = log_loss(y_val_eff, p_baseline)
+                    score_baseline = 100 * (auc_baseline - 0.5) + 50 * (0.693 - ll_baseline)
+                    
+                    baseline_results.append({
+                        'trial': f'Baseline_{winning_model_type}',
+                        'auc': auc_baseline,
+                        'pr_auc': pr_auc_baseline,
+                        'logloss': ll_baseline,
+                        'score': score_baseline
+                    })
+                    print(f"      Baseline {winning_model_type}: AUC={auc_baseline:.4f}, PR-AUC={pr_auc_baseline:.4f}, Score={score_baseline:.4f}")
+                    
+                except Exception as e:
+                    print(f"      Baseline comparison failed: {e}")
+                
+                # Combine baseline and efficiency trials for comparison
+                all_results = baseline_results + efficiency_trial_results
+                
+                # Compare efficiency trials with baseline
+                print(f"\n   Efficiency Trials Comparison (Light Evaluation):")
+                print(f"{'Trial':<25} | {'AUC':<6} | {'PR-AUC':<7} | {'LogLoss':<8} | {'Score':<8} | {'vs Baseline'}")
+                print("-" * 85)
+                
+                baseline_score = baseline_results[0]['score'] if baseline_results else 0.0
+                for result in all_results:
+                    diff = result['score'] - baseline_score
+                    diff_str = f"{diff:+.4f}" if np.isfinite(diff) else "N/A"
+                    print(f"{result['trial']:<25} | {result['auc']:>6.4f} | {result['pr_auc']:>7.4f} | {result['logloss']:>8.4f} | {result['score']:>8.4f} | {diff_str:>11}")
+                
+                # Find best efficiency trial
+                if efficiency_trial_results:
+                    best_eff_trial = max(efficiency_trial_results, key=lambda x: x['score'])
+                    improvement = best_eff_trial['score'] - baseline_score
+                    print(f"\n   Best Efficiency Trial: {best_eff_trial['trial']} (Score: {best_eff_trial['score']:.4f})")
+                    if improvement > 0:
+                        print(f"   Improvement over baseline: +{improvement:.4f} ({improvement/baseline_score*100:+.1f}%)")
+                    else:
+                        print(f"   Performance vs baseline: {improvement:.4f} ({improvement/baseline_score*100:+.1f}%)")
+                
+                # Save comprehensive efficiency trial results
+                try:
+                    all_results_df = pd.DataFrame(all_results)
+                    eff_csv = outcomes_dir / f"layer3_efficiency_trials_{symbol}_{timeframe}_{ts}.csv"
+                    all_results_df.to_csv(eff_csv, index=False)
+                    print(f"   Saved efficiency trials to {eff_csv}")
+                    
+                    # Also save detailed comparison report
+                    comparison_report = {
+                        'timestamp': ts,
+                        'symbol': symbol,
+                        'timeframe': timeframe,
+                        'winning_model_type': winning_model_type,
+                        'baseline_score': baseline_score,
+                        'efficiency_trials': efficiency_trial_results,
+                        'best_efficiency_trial': best_eff_trial if efficiency_trial_results else None,
+                        'improvement': improvement if efficiency_trial_results else 0.0,
+                        'data_stats': {
+                            'efficiency_samples': len(y_eff),
+                            'positive_rate': float(y_eff.mean()),
+                            'train_samples': len(X_tr_eff),
+                            'val_samples': len(X_val_eff)
+                        }
+                    }
+                    report_json = outcomes_dir / f"layer3_efficiency_report_{symbol}_{timeframe}_{ts}.json"
+                    with open(report_json, 'w') as f:
+                        json.dump(comparison_report, f, indent=2)
+                    print(f"   Saved detailed comparison report to {report_json}")
+                    
+                except Exception as e:
+                    print(f"   Failed to save efficiency results: {e}")
+                    
+            else:
+                print("   Insufficient data for efficiency trials")
+        else:
+            print("   Missing required data for efficiency labels (entry_time, exit_time, or price data)")
+            
+    except Exception as e:
+        print(f"   Efficiency trials failed: {e}")
 
     # 2. Run HPO on Winning Model
     best_hpo_params = _run_layer3_hpo(

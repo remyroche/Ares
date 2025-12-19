@@ -8,26 +8,26 @@
 
 ## High-Level Summary
 - Label coverage: 100.0% (labeled / total samples)
-- Label positive rate: 38.8%
-- Label economic SNR (post-filter, label=1): 3.568
-- Label effect size (post-filter Cohen's d): 8.705
-- Aleatoric uncertainty fraction (|return| < cost): 0.0%
+- Label positive rate: 36.0%
+- Label economic SNR (post-filter, label=1): 0.000
+- Label effect size (post-filter Cohen's d): N/A
+- Aleatoric uncertainty fraction (|return| < cost): 7.5%
 
-- Learnability mean CV AUC: 0.4726
-- Learnability score (AUC - 0.5 * std): 0.4063
-- Label balance (entropy score): 0.9635
-- Combined label-quality score: 0.5735
+- Learnability mean CV AUC: N/A
+- Learnability score (AUC - 0.5 * std): N/A
+- Label balance (entropy score): 0.0000
+- Combined label-quality score: N/A
 
-- Probe model mean AUC: 0.4222
-- Probe model stability score: 0.6413
-- Probe model mean Brier score: 0.2595
-- Probe global AUC (all folds combined): 0.5414
-- Probe pseudo-R^2 (y vs predicted prob): -0.0773
-- Probe permutation p-value (AUC): 0.114
-- Model-level SNR (p_hat pos vs neg): -0.0773
+- Probe model mean AUC: N/A
+- Probe model stability score: 0.0000
+- Probe model mean Brier score: N/A
+- Probe global AUC (all folds combined): N/A
+- Probe pseudo-R^2 (y vs predicted prob): -0.2924
+- Probe permutation p-value (AUC): N/A
+- Model-level SNR (p_hat pos vs neg): -0.2924
 
-- Label-quality summary score: 0.925 (Rating: Great)
-- Learnability summary score: 0.573 (Rating: Pass)
+- Label-quality summary score: 0.400 (Rating: Pass)
+- Learnability summary score: 1.000 (Rating: Great)
 - Model-robustness summary score: 0.000 (Rating: Bad)
 
 ## Metric Definitions (brief)
@@ -50,53 +50,53 @@
 **Timeframe**: 15m
 
 ## Summary
-- Total samples: 536
-- Labeled samples: 536 (coverage=100.0%)
-- Positive labels: 208 (38.8%)
-- Negative labels: 328
+- Total samples: 3499
+- Labeled samples: 3499 (coverage=100.0%)
+- Positive labels: 1258 (36.0%)
+- Negative labels: 2241
 
 ## Retention
-- Pre-filter events (realized_return not NaN): 536
-- Pre-filter pos/neg (raw econ > cost): 208 / 328
-- Post-filter labeled events: 536
-- Post-filter pos/neg (binary_label): 208 / 328
-- Total retention: 100.0%
-- Positive retention: 100.0%
-- Negative retention: 100.0%
+- Pre-filter events (realized_return not NaN): 3484
+- Pre-filter pos/neg (raw econ > cost): 1233 / 2251
+- Post-filter labeled events: 3499
+- Post-filter pos/neg (binary_label): 1258 / 2241
+- Total retention: 100.4%
+- Positive retention: 102.0%
+- Negative retention: 99.6%
 
 ## Economic Separation and SNR
-- Pre-filter mean return (label=1/0): 1.55% / -1.50%
-- Post-filter mean return (label=1/0): 1.55% / -1.50%
-- Pre-filter Cohen's d: 8.705
-- Post-filter Cohen's d: 8.705
-- Pre-filter SNR (label=1): 3.568
-- Post-filter SNR (label=1): 3.568
+- Pre-filter mean return (label=1/0): 0.85% / -0.96%
+- Post-filter mean return (label=1/0): 0.00% / 0.00%
+- Pre-filter Cohen's d: 4.016
+- Post-filter Cohen's d: nan
+- Pre-filter SNR (label=1): 2.274
+- Post-filter SNR (label=1): 0.000
 
 ## Label Overlap and Cost Metrics
 - Label overlap (mis-signed P&L share): 0.0%
 - Transaction cost (approx per event): 0.300%
-- Unconditional mean event return: -0.31%
-- Mean return (label=1) minus cost: 1.25%
-- Fraction of labeled events with |return| < cost: 0.0%
-- Aleatoric uncertainty fraction (|return| < cost): 0.0%
+- Unconditional mean event return: -0.32%
+- Mean return (label=1) minus cost: -0.30%
+- Fraction of labeled events with |return| < cost: 7.5%
+- Aleatoric uncertainty fraction (|return| < cost): 7.5%
 
 ## High-Probability Buckets (by meta_probability, isotonic expected returns)
 
 ## Enhanced Volatility Buckets (by volatility_1d)
-- Vol low: n=179, pos_rate=59.2%, mean_ret=0.31%, Sharpe=0.23, vol_range=[0.0040, 0.0048]
-- Vol mid: n=178, pos_rate=31.5%, mean_ret=-0.51%, Sharpe=-0.37, vol_range=[0.0040, 0.0048]
-- Vol high: n=179, pos_rate=25.7%, mean_ret=-0.74%, Sharpe=-0.45, vol_range=[0.0040, 0.0048]
+- Vol low: n=1166, pos_rate=0.0%, mean_ret=-0.28%, Sharpe=-0.42, vol_range=[0.0027, 0.0037]
+- Vol mid: n=1166, pos_rate=0.0%, mean_ret=-0.28%, Sharpe=-0.31, vol_range=[0.0027, 0.0037]
+- Vol high: n=1167, pos_rate=0.0%, mean_ret=-0.41%, Sharpe=-0.32, vol_range=[0.0027, 0.0037]
 
 ## Interpretation Hints
 - Coverage (100.0%): High coverage (>20%): many labeled events; check for redundancy or label noise.
-- Post-filter effect size (Cohen's d=8.705): Very large separation; labels are strongly aligned with economic outcomes.
-- Post-filter SNR (label=1): 3.568 → High SNR: positive-label returns are well separated from noise.
-- Retention (total=100.0%): Filters keep a substantial share of events; label density is relatively high.
+- Post-filter effect size (Cohen's d=nan): Effect size not available (insufficient data).
+- Post-filter SNR (label=1): 0.000 → Low SNR: positive-label returns are noisy relative to their mean.
+- Retention (total=100.4%): Filters keep a substantial share of events; label density is relatively high.
 
 ## Overall Label-Quality Score
-- Score (0-1): 0.925
-- Rating: Great
-- Summary: Strong label quality with good coverage, separation and economic margins.
+- Score (0-1): 0.400
+- Rating: Pass
+- Summary: Mixed label quality; some usable signal but economic separation or coverage may be modest.
 
 ### Label-Learnability
 **Symbol**: ETHUSDT
@@ -104,28 +104,28 @@
 **Timeframe**: 15m
 
 ## Summary
-- Valid labeled samples: 536
-- Positive label rate: 38.8%
+- Valid labeled samples: 3499
+- Positive label rate: 39.3%
 
 ## Learnability
-- Mean CV AUC: 0.4726
-- Learnability score (AUC - 0.5 * std): 0.4063
+- Mean CV AUC: nan
+- Learnability score (AUC - 0.5 * std): nan
 
 ## Entropy / Balance
-- Balance score: 0.9635
+- Balance score: 0.0000
 
 ## Combined Label-Quality Objective
-- Combined score: 0.5735
+- Combined score: nan
 
 ## Interpretation Hints
-- Learnability (mean AUC=0.4726): Mean CV AUC < 0.55 → very weak learnability; labels are close to random.
-- Balance (entropy score=0.9635): Entropy score ≥ 0.8 → labels are well balanced.
-- Combined score (0.5735): Combined score 0.4–0.6 → mixed quality; may be adequate for robust models.
+- Learnability (mean AUC=nan): Mean CV AUC ≥ 0.70 → strong learnability; labels are easy to learn.
+- Balance (entropy score=0.0000): Entropy score < 0.5 → labels are highly imbalanced or dominated by one class.
+- Combined score (nan): Combined score ≥ 0.6 → good overall label quality.
 
 ## Overall Learnability Score
-- Score (0-1): 0.573
-- Rating: Pass
-- Summary: Combined score 0.4–0.6 → mixed quality; may be adequate for robust models.
+- Score (0-1): 1.000
+- Rating: Great
+- Summary: Combined score ≥ 0.6 → good overall label quality.
 
 ### Model-Robustness
 **Symbol**: ETHUSDT
@@ -133,88 +133,69 @@
 **Timeframe**: 15m
 
 ## Fold Metrics
-- Fold 1: n_train=91, n_test=89, AUC=0.2558, Brier=0.3216, AP=0.4077
-- Fold 2: n_train=180, n_test=89, AUC=0.3010, Brier=0.2965, AP=0.3579
-- Fold 3: n_train=269, n_test=89, AUC=0.6900, Brier=0.2277, AP=0.7335
-- Fold 4: n_train=358, n_test=89, AUC=0.4180, Brier=0.2439, AP=0.2269
-- Fold 5: n_train=447, n_test=89, AUC=0.4461, Brier=0.2079, AP=0.2679
+- Fold 1: n_train=584, n_test=467, AUC=nan, Brier=nan, AP=nan
+- Fold 2: n_train=1167, n_test=583, AUC=nan, Brier=nan, AP=nan
+- Fold 3: n_train=1750, n_test=583, AUC=nan, Brier=nan, AP=nan
+- Fold 4: n_train=2333, n_test=583, AUC=nan, Brier=nan, AP=nan
+- Fold 5: n_train=2916, n_test=583, AUC=nan, Brier=nan, AP=nan
 
 ## Summary
-- Mean AUC: 0.4222 (std=0.1514)
-- Mean Brier: 0.2595 (std=0.0428)
-- Mean AP: 0.3988 (std=0.1791)
-- Stability score (1 - std(AUC)/mean(AUC)): 0.6413
+- Mean AUC: nan (std=nan)
+- Mean Brier: nan (std=nan)
+- Mean AP: nan (std=nan)
+- Stability score (1 - std(AUC)/mean(AUC)): 0.0000
 
 ## Interpretation Hints
-- Mean AUC (0.4222): Mean CV AUC < 0.55 → robust models may still struggle; signal is weak.
-- Stability score (0.6413): Stability score < 0.8 → performance is quite unstable across time splits.
-- Mean Brier (0.2595): Mean Brier > 0.25 → probabilities are poorly calibrated or close to random.
+- Mean AUC (nan): Mean CV AUC ≥ 0.70 → strong predictive power for the probe model.
+- Stability score (0.0000): Stability score < 0.8 → performance is quite unstable across time splits.
+- Mean Brier (nan): Mean Brier ≤ 0.18 → reasonably well-calibrated probabilities.
 
 ## Advanced Robustness Diagnostics
-- Global AUC (all folds combined): 0.5414
-- Pseudo-R^2 (y vs predicted prob): -0.0773
-- Pseudo-R^2 95% CI: [-0.1446, -0.0217]
-- Permutation p-value for global AUC: 0.1144
-- Model-level SNR (p_hat pos vs neg): 0.1453
+- Global AUC (all folds combined): N/A
+- Pseudo-R^2 (y vs predicted prob): -0.2924
+- Pseudo-R^2 95% CI: [-0.3357, -0.2556]
+- Permutation p-value for global AUC: N/A
+- Model-level SNR (p_hat pos vs neg): N/A
 
 ## Label-Shuffle CV Sanity Check
-- Shuffled mean AUC: 0.5026
-- Shuffled std AUC: 0.0287
-- Shuffled folds: 200
+- Shuffled mean AUC: N/A
+- Shuffled std AUC: N/A
+- Shuffled folds: 0
 
 ## Strict Forward Holdout
-- Holdout AUC: 0.5011
-- Holdout Brier: 0.2077
-- Holdout AP: 0.2558
-- Holdout train / test: 311 / 134
+- Holdout AUC: N/A
+- Holdout Brier: N/A
+- Holdout AP: N/A
+- Holdout train / test: 0 / 0
 
 ## Single-Feature Leakage Scan
 - Max single-feature AUC: N/A
 - AUC threshold for suspicion: N/A
 
 ## Naive Baseline Comparison (constant probability)
-- Baseline AUC: 0.4496 | Probe AUC: 0.4222 | Delta: -0.0274
-- Baseline Brier: 0.2527 | Probe Brier: 0.2595 | Delta (baseline - probe): -0.0068
-- Baseline AP: 0.3813 | Probe AP: 0.3988 | Delta: 0.0175
+- Baseline AUC: N/A | Probe AUC: N/A | Delta: N/A
+- Baseline Brier: N/A | Probe Brier: N/A | Delta (baseline - probe): N/A
+- Baseline AP: N/A | Probe AP: N/A | Delta: N/A
 
 ## Residual Diagnostics
-- Residual pattern strength (max - min mean residual across probability deciles): 0.4460
-- Residual lag-1 autocorrelation: 0.5876
+- Residual pattern strength (max - min mean residual across probability deciles): 0.5576
+- Residual lag-1 autocorrelation: 0.5634
 
 ## Model Family Comparison (LightGBM vs LogisticRegression)
-- Mean AUC LightGBM: 0.4222 | LogisticRegression: N/A
+- Mean AUC LightGBM: N/A | LogisticRegression: N/A
 - Comment: Not applicable in label_based mode (no probe model training).
 
 ## Regime-Specific AUC Breakdown
 - No regime-specific breakdown available (volatility or HMM regimes not found)
 
 ## Temporal AUC Evolution
-- Mean rolling AUC: 0.4046
-- Min rolling AUC: 0.1795
-- Max rolling AUC: 0.7545
-- AUC at start: 0.1859
-- AUC at end: 0.5954
-- Plot saved: `outcomes/temporal_auc_ETHUSDT_15m_20251218_231643.png`
-**Interpretation**: If rolling AUC declines over time, model performance degrades on recent data.
+- Insufficient data for temporal AUC analysis
 
 ## Feature Importance Stability Analysis
-- Feature importance std (across CV folds): 1.7906
-- Importance concentration (top 20 features): 80.233%
-- Top features (with stability):
-  - Feature 9: mean=26.8000, std=9.3680
-  - Feature 4: mean=14.6000, std=4.7582
-  - Feature 40: mean=11.8000, std=4.2615
-  - Feature 53: mean=10.8000, std=4.0200
-  - Feature 49: mean=9.4000, std=3.8781
-  - Feature 50: mean=9.2000, std=2.9257
-  - Feature 11: mean=8.4000, std=3.7736
-  - Feature 41: mean=8.4000, std=2.9394
-  - Feature 12: mean=8.0000, std=5.0200
-  - Feature 58: mean=7.4000, std=3.3823
-**Interpretation**: High std_importance across folds suggests unstable features (overfitting risk).
+- No feature importance data available
 
 ## Label Noise Estimation (Confident Learning)
-- N confident predictions (confidence ≥ 0.9): 1
+- N confident predictions (confidence ≥ 0.9): 15
 - N mislabeled candidates (confident but wrong): 0
 - Estimated label noise rate: 0.000%
 - False negative rate (confident): 0.000%
@@ -235,84 +216,110 @@
 
 ## Overview
 - Date range: 287 days
-- Valid samples: 536
+- Valid samples: 2784
 
 ## Model Calibration
-- Brier Score: 0.2680
-- Expected Calibration Error (ECE): 0.1275
-- Max Calibration Error (MCE): 0.7732
+- Brier Score: nan
+- Expected Calibration Error (ECE): nan
+- Max Calibration Error (MCE): nan
 
 ### Calibration Interpretation
-- Brier > 0.25 → Poorly calibrated probabilities.
-- ECE 0.05-0.15 → Moderate calibration error.
+- Brier score not available.
+- ECE not available.
 
 ## Trading Metrics by Probability Threshold
 
+### Threshold 0.55
+- **Trades**: 354 (1.23/day)
+- **Mean Return/Trade**: -0.3199%
+- **PnL/Day**: -0.3946%
+- **Win Rate**: 0.0%
+- **Sharpe Ratio**: -5.836
+- **Max Drawdown**: -68.15%
+- **Final Equity**: 0.3156
+- **Max Consecutive Losses**: 0
+- **Avg Consecutive Losses**: 0.00
+- **Win-Rate Stability**: 1.000
+
 ### Threshold 0.60
-- **Trades**: 132 (0.46/day)
-- **Mean Return/Trade**: -0.4959%
-- **PnL/Day**: -0.2281%
-- **Win Rate**: 31.1%
-- **Sharpe Ratio**: -3.483
-- **Max Drawdown**: -54.60%
-- **Final Equity**: 0.5097
-- **Max Consecutive Losses**: 13
-- **Avg Consecutive Losses**: 5.69
-- **Win-Rate Stability**: 0.865
+- **Trades**: 222 (0.77/day)
+- **Mean Return/Trade**: -0.2993%
+- **PnL/Day**: -0.2315%
+- **Win Rate**: 0.0%
+- **Sharpe Ratio**: -4.136
+- **Max Drawdown**: -49.63%
+- **Final Equity**: 0.5074
+- **Max Consecutive Losses**: 0
+- **Avg Consecutive Losses**: 0.00
+- **Win-Rate Stability**: 1.000
 
 ### Threshold 0.65
-- **Trades**: 71 (0.25/day)
-- **Mean Return/Trade**: -0.6022%
-- **PnL/Day**: -0.1490%
-- **Win Rate**: 28.2%
-- **Sharpe Ratio**: -2.983
-- **Max Drawdown**: -36.40%
-- **Final Equity**: 0.6446
-- **Max Consecutive Losses**: 10
-- **Avg Consecutive Losses**: 5.67
-- **Win-Rate Stability**: 0.844
+- **Trades**: 123 (0.43/day)
+- **Mean Return/Trade**: -0.3479%
+- **PnL/Day**: -0.1491%
+- **Win Rate**: 0.0%
+- **Sharpe Ratio**: -3.430
+- **Max Drawdown**: -35.50%
+- **Final Equity**: 0.6463
+- **Max Consecutive Losses**: 0
+- **Avg Consecutive Losses**: 0.00
+- **Win-Rate Stability**: 1.000
 
 ### Threshold 0.70
-- **Trades**: 28 (0.10/day)
-- **Mean Return/Trade**: -0.8526%
-- **PnL/Day**: -0.0832%
-- **Win Rate**: 21.4%
-- **Sharpe Ratio**: -2.690
-- **Max Drawdown**: -23.23%
-- **Final Equity**: 0.7837
-- **Max Consecutive Losses**: 10
-- **Avg Consecutive Losses**: 4.40
-- **Win-Rate Stability**: 0.862
+- **Trades**: 64 (0.22/day)
+- **Mean Return/Trade**: -0.3931%
+- **PnL/Day**: -0.0877%
+- **Win Rate**: 0.0%
+- **Sharpe Ratio**: -2.832
+- **Max Drawdown**: -25.20%
+- **Final Equity**: 0.7741
+- **Max Consecutive Losses**: 0
+- **Avg Consecutive Losses**: 0.00
+- **Win-Rate Stability**: 1.000
 
 ### Threshold 0.75
-- **Trades**: 23 (0.08/day)
-- **Mean Return/Trade**: -0.8361%
-- **PnL/Day**: -0.0670%
-- **Win Rate**: 21.7%
-- **Sharpe Ratio**: -2.263
-- **Max Drawdown**: -20.54%
-- **Final Equity**: 0.8214
-- **Max Consecutive Losses**: 11
-- **Avg Consecutive Losses**: 4.50
-- **Win-Rate Stability**: 0.811
+- **Trades**: 34 (0.12/day)
+- **Mean Return/Trade**: -0.4195%
+- **PnL/Day**: -0.0497%
+- **Win Rate**: 0.0%
+- **Sharpe Ratio**: -2.141
+- **Max Drawdown**: -15.04%
+- **Final Equity**: 0.8649
+- **Max Consecutive Losses**: 0
+- **Avg Consecutive Losses**: 0.00
+- **Win-Rate Stability**: 1.000
+
+### Threshold 0.80
+- **Trades**: 16 (0.06/day)
+- **Mean Return/Trade**: -0.6056%
+- **PnL/Day**: -0.0338%
+- **Win Rate**: 0.0%
+- **Sharpe Ratio**: -2.196
+- **Max Drawdown**: -12.16%
+- **Final Equity**: 0.9065
+- **Max Consecutive Losses**: 0
+- **Avg Consecutive Losses**: 0.00
+- **Win-Rate Stability**: nan
 
 ## Summary Table
 
 | Threshold | Trades | Trades/Day | Mean Return | PnL/Day | Win Rate | Sharpe | Max DD | Consec Losses |
 |-----------|--------|------------|-------------|---------|----------|--------|--------|---------------|
-| 0.60 | 132 | 0.46 | -0.496% | -0.228% | 31.1% | -3.48 | -54.6% | 13 |
-| 0.65 | 71 | 0.25 | -0.602% | -0.149% | 28.2% | -2.98 | -36.4% | 10 |
-| 0.70 | 28 | 0.10 | -0.853% | -0.083% | 21.4% | -2.69 | -23.2% | 10 |
-| 0.75 | 23 | 0.08 | -0.836% | -0.067% | 21.7% | -2.26 | -20.5% | 11 |
+| 0.55 | 354 | 1.23 | -0.320% | -0.395% | 0.0% | -5.84 | -68.2% | 0 |
+| 0.60 | 222 | 0.77 | -0.299% | -0.232% | 0.0% | -4.14 | -49.6% | 0 |
+| 0.65 | 123 | 0.43 | -0.348% | -0.149% | 0.0% | -3.43 | -35.5% | 0 |
+| 0.70 | 64 | 0.22 | -0.393% | -0.088% | 0.0% | -2.83 | -25.2% | 0 |
+| 0.75 | 34 | 0.12 | -0.420% | -0.050% | 0.0% | -2.14 | -15.0% | 0 |
+| 0.80 | 16 | 0.06 | -0.606% | -0.034% | 0.0% | -2.20 | -12.2% | 0 |
 
 ## Regime-Specific Recommended Thresholds
 
 - **Regime** `vol_low`:
-  - prob_threshold = 0.60
-  - trades/day ≈ 0.089
-  - mean_return ≈ 0.6408%
-  - Sharpe ≈ 2.398
-  - n_trades = 25
+  - prob_threshold = 0.65
+  - trades/day ≈ 0.072
+  - mean_return ≈ 0.0236%
+  - Sharpe ≈ 0.132
+  - n_trades = 16
 
 ## Label Quality, Learnability and Robustness Reference
 

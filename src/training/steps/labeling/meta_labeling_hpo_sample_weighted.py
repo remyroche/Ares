@@ -959,6 +959,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             individual_geos = l2_bundle["individual_geos"]
             events_df = l2_bundle["events_df"]
             selected_trials = l2_bundle.get("selected_trials")
+            l2_quality_weights = l2_bundle.get("l2_quality_weights")
             if not isinstance(selected_trials, list):
                 selected_trials = []
             if len(selected_trials) == 0:
@@ -1089,6 +1090,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     "individual_geos": individual_geos,
                     "events_df": events_df,
                     "selected_trials": selected_trials,
+                    "l2_quality_weights": l2_quality_weights,
                 },
                 layer2_bundle_path,
             )

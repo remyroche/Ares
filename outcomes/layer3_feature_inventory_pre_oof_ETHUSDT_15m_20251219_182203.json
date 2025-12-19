@@ -1,12 +1,12 @@
 {
   "stage": "pre_oof",
-  "timestamp": "20251218_231601",
+  "timestamp": "20251219_182203",
   "symbol": "ETHUSDT",
   "timeframe": "15m",
-  "n_rows": 536,
-  "n_features": 46,
+  "n_rows": 3499,
+  "n_features": 50,
   "target_col": "l2_consensus_target",
   "meta_prob_col": null,
   "tail_frac": 0.2,
-  "split_idx": 428
+  "split_idx": 2799
 }

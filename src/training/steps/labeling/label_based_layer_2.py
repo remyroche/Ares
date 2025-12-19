@@ -361,6 +361,7 @@ class LabelBasedLayer2:
 
         # Step 0: Preparation
         df = self._validate_inputs(df)
+        df = self._precompute_geometry_base_features(df)
         events_df = self._generate_events(df)
 
         if events_df.empty:
@@ -1141,6 +1142,159 @@ class LabelBasedLayer2:
         except Exception as e:
             logger.warning(f"Failed to extract tree diagnostics: {e}")
             return {'n_features_used': 0.0, 'avg_depth': 0.0, 'max_depth': 0.0}
+
+    def _precompute_geometry_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Pre-compute rolling metrics needed for geometry-specific features.
+        Adds columns to df (on a copy) if they don't exist.
+        """
+        df_out = df.copy()
+
+        # 1. ATR-14
+        if 'geo_atr_14' not in df_out.columns:
+            try:
+                high = df_out['high'] if 'high' in df_out.columns else df_out['close']
+                low = df_out['low'] if 'low' in df_out.columns else df_out['close']
+                close = df_out['close']
+                prev_close = close.shift(1)
+                tr1 = (high - low).abs()
+                tr2 = (high - prev_close).abs()
+                tr3 = (low - prev_close).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                df_out['geo_atr_14'] = tr.rolling(14).mean()
+            except Exception:
+                df_out['geo_atr_14'] = np.nan
+
+        # 2. Recent Returns (10, 20 bars)
+        if 'geo_ret_10' not in df_out.columns:
+            df_out['geo_ret_10'] = df_out['close'].pct_change(10).abs() # Magnitude
+        if 'geo_ret_20' not in df_out.columns:
+            df_out['geo_ret_20'] = df_out['close'].pct_change(20).abs() # Magnitude
+
+        # 3. Range-50, Min-50, Max-50
+        if 'geo_range_50' not in df_out.columns:
+            try:
+                high = df_out['high'] if 'high' in df_out.columns else df_out['close']
+                low = df_out['low'] if 'low' in df_out.columns else df_out['close']
+                h50 = high.rolling(50).max()
+                l50 = low.rolling(50).min()
+                df_out['geo_max_50'] = h50
+                df_out['geo_min_50'] = l50
+                df_out['geo_range_50'] = h50 - l50
+            except Exception:
+                df_out['geo_range_50'] = np.nan
+                df_out['geo_max_50'] = np.nan
+                df_out['geo_min_50'] = np.nan
+
+        return df_out
+
+    def _compute_specific_geometry_features(
+        self,
+        df: pd.DataFrame,
+        events_index: pd.Index,
+        params: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """
+        Compute geometry-specific features for a given set of events and parameters.
+        These features depend on kappa/sl_mult and thus vary per geometry.
+
+        Features:
+        - Volatility / Stop Size
+        - Volatility / Target Size
+        - Return(10/20) / Stop Size
+        - Return(10/20) / Target Size
+        - ATR / Stop Size
+        - ATR / Target Size
+        - Range / Stop Size
+        - Range / Target Size
+        - Normalized Dist from Min/Max
+        """
+        if events_index.empty:
+            return pd.DataFrame()
+
+        # Extract params
+        kappa = float(params.get('kappa', 2.0))
+        sl_mult = float(params.get('sl_mult', 1.0))
+
+        # Get subset of DF aligned with events
+        # We need historical context for rolling features, but _precompute_geometry_base_features
+        # already put them in df. So we just need values at events_index.
+
+        try:
+            subset = df.reindex(events_index)
+
+            vol = subset['volatility_1d'].fillna(0.0)
+
+            # ATR Handling: ensure we have Price-unit ATR
+            close = subset['close']
+            atr_price = subset.get('geo_atr_14')
+            if atr_price is None or atr_price.isna().all():
+                # Fallback: estimate ATR as Vol * Close
+                atr_price = vol * close
+            atr_price = atr_price.fillna(0.0)
+
+            # ATR Percentage (for ratios against stop_size)
+            atr_pct = atr_price / close
+            atr_pct = atr_pct.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+
+            # Compute Stop and Target Sizes (Percentage distance)
+            # Enforce min profit logic from _compute_dominance_labels
+            min_profit = self.transaction_cost * 1.1
+
+            # Target Size (Percentage)
+            target_size = np.maximum(kappa * vol, min_profit)
+            target_size = target_size.replace(0.0, np.nan) # Avoid div/0
+
+            # Stop Size (Percentage)
+            stop_size = sl_mult * vol
+            stop_size = stop_size.replace(0.0, np.nan)
+
+            # Features
+            feats = pd.DataFrame(index=events_index)
+
+            # 1. Volatility Ratios
+            feats['geo_vol_to_stop'] = vol / stop_size
+            feats['geo_vol_to_target'] = vol / target_size
+
+            # 2. Recent Return Ratios
+            ret10 = subset.get('geo_ret_10', pd.Series(0, index=events_index)).fillna(0.0)
+            ret20 = subset.get('geo_ret_20', pd.Series(0, index=events_index)).fillna(0.0)
+
+            feats['geo_ret10_to_stop'] = ret10 / stop_size
+            feats['geo_ret20_to_stop'] = ret20 / stop_size
+            feats['geo_ret10_to_target'] = ret10 / target_size
+            feats['geo_ret20_to_target'] = ret20 / target_size
+
+            # 3. ATR Ratios (Normalized: Percentage / Percentage)
+            feats['geo_atr_to_stop'] = atr_pct / stop_size
+            feats['geo_atr_to_target'] = atr_pct / target_size
+
+            # 4. Range Ratios
+            rng50 = subset.get('geo_range_50', atr_price * 3.0).fillna(0.0)
+            # Normalize range to percentage (range / close) to match stop_size units
+            rng50_pct = rng50 / close
+
+            feats['geo_range_to_stop'] = rng50_pct / stop_size
+            feats['geo_range_to_target'] = rng50_pct / target_size
+
+            # 5. Normalized Distance from Local Extremum
+            # (Close - Min) / ATR_Price  -> Price / Price = Ratio (Stationary)
+            min50 = subset.get('geo_min_50', close)
+            max50 = subset.get('geo_max_50', close)
+
+            safe_atr = atr_price.replace(0.0, np.nan)
+
+            feats['geo_dist_from_min'] = (close - min50) / safe_atr
+            feats['geo_dist_from_max'] = (max50 - close) / safe_atr
+
+            # Fill NaNs/Infs
+            feats = feats.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+            return feats
+
+        except Exception as e:
+            logger.warning(f"Failed to compute specific geometry features: {e}")
+            return pd.DataFrame(index=events_index)
 
     def _validate_inputs(self, df: pd.DataFrame) -> pd.DataFrame:
         """Ensure required columns exist. Returns (potentially modified) copy of df."""
@@ -3521,7 +3675,17 @@ class LabelBasedLayer2:
                      models[g.uuid] = None
                      continue
 
+                # Generate specific geometry features
+                geo_features = self._compute_specific_geometry_features(df, common_idx, g.params)
+
                 X_train = X_events.loc[common_idx]
+
+                # Append geometry features
+                if not geo_features.empty:
+                    # Align index just in case
+                    geo_features = geo_features.reindex(common_idx).fillna(0.0)
+                    X_train = pd.concat([X_train, geo_features], axis=1)
+
                 y_train = valid_lbls.loc[common_idx]
                 
                 if len(y_train.unique()) < 2:
@@ -3669,6 +3833,9 @@ class LabelBasedLayer2:
                 # Compute labels/returns for this geometry
                 lbls, rets, mfe, mae = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
 
+                # Generate specific geometry features for all events in this family block
+                geo_features = self._compute_specific_geometry_features(df, fam_events.index, g.params)
+
                 # Store individual geometry output
                 # OOF Fix: Use trained model if available and X_events provided
                 pred_done = False
@@ -3685,6 +3852,11 @@ class LabelBasedLayer2:
                          if not fam_indices.empty:
                              try:
                                  X_subset = X_events.loc[fam_indices]
+
+                                 # Append geometry features
+                                 if not geo_features.empty:
+                                     geo_subset = geo_features.reindex(fam_indices).fillna(0.0)
+                                     X_subset = pd.concat([X_subset, geo_subset], axis=1)
 
                                  # 1. Prediction (Raw Margins -> Sigmoid)
                                  raw_margins = booster.predict(X_subset)

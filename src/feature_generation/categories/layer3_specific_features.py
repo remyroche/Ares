@@ -206,7 +206,7 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
     # Magnitude-weighted agreement
     magnitudes = pd.concat([mom_4.abs(), mom_12.abs()], axis=1)
     weighted = signs.values * magnitudes.values
-    # Removed: features['momentum_weighted_agreement'] = pd.Series(weighted.sum(axis=1), index=df.index)
+    features['momentum_weighted_agreement'] = pd.Series(weighted.sum(axis=1), index=df.index)
 
     # Trend consistency (rolling sign agreement over last 12 bars)
     features['trend_consistency_12'] = np.sign(mom_12).rolling(12).mean().abs()
@@ -267,17 +267,26 @@ def generate_layer3_features(
 
     # 1. Ensemble Probability
     # Use existing if provided (e.g. from ensemble_disagreement), else calculate fallback
+    valid_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
+
     if 'ensemble_prob' not in df_out.columns:
-        if base_model_cols:
-            # Calculate mean of available base models
-            valid_cols = [c for c in base_model_cols if c in df_out.columns]
-            if valid_cols:
-                df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
-            else:
-                df_out['ensemble_prob'] = 0.5
+        if valid_cols:
+            df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
         else:
             df_out['ensemble_prob'] = 0.5
     
+    # 1a. Explicitly add Base Model Predictions & Confidence Extremes
+    if valid_cols:
+        # Root Cause 2: "Excluding base model confidence"
+        # We add Max/Min probabilities to capture if *any* model is highly confident.
+        df_out['max_base_prob'] = df_out[valid_cols].max(axis=1)
+        df_out['min_base_prob'] = df_out[valid_cols].min(axis=1)
+        df_out['base_prob_range'] = df_out['max_base_prob'] - df_out['min_base_prob']
+    else:
+        df_out['max_base_prob'] = 0.5
+        df_out['min_base_prob'] = 0.5
+        df_out['base_prob_range'] = 0.0
+
     # 1a. Explicitly add Base Model Predictions as numerical features
     for col in base_model_cols:
         if col in df_out.columns and col != 'ensemble_prob':
@@ -356,6 +365,17 @@ def generate_layer3_features(
         df_out['vol_at_signal'] = df_out['vol_at_signal'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
     else:
         df_out['vol_at_signal'] = 1.0
+
+    # 3b. Payoff Asymmetry (Volatility vs Cost)
+    # Root Cause 2: "Ignoring volatility / payoff asymmetry"
+    # We estimate risk/reward capacity by comparing volatility to an assumed cost.
+    # Hardcoded cost proxy (0.003) is used as it's not passed here, but relative magnitude matters most.
+    if 'volatility_1d' in df_out.columns:
+        vol_1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(float)
+        df_out['volatility_risk_ratio'] = vol_1d / 0.003
+        df_out['volatility_risk_ratio'] = df_out['volatility_risk_ratio'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    else:
+        df_out['volatility_risk_ratio'] = 1.0
 
     # 4. Candle Shape: (High - Low) / Close
     required_price_cols = ['high', 'low', 'close']

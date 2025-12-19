@@ -382,13 +382,15 @@ def layer3_analyst_lgbm(
         [
             # Ensemble/core
             'ensemble_prob',
+            'max_base_prob', 'min_base_prob', 'base_prob_range', # Added for RC 2 (Confidence)
             'logit_prob', 'logit_momentum_5', 'logit_momentum_1',
-            'vol_at_signal', 'candle_shape', 'candle_shape_4',
+            'vol_at_signal', 'volatility_risk_ratio', # Added for RC 2 (Payoff Asymmetry)
+            'candle_shape', 'candle_shape_4',
             'base_pred_mean', 'base_pred_std', 'base_pred_range',
             # Cross-timeframe momentum agreement
             'momentum_agreement',
             'momentum_agreement_abs',
-            # Removed: 'momentum_weighted_agreement',
+            'momentum_weighted_agreement', # Re-enabled
             'trend_consistency_12',
             # Disagreement
             'ens_prediction_dispersion',
@@ -583,18 +585,18 @@ def layer3_analyst_lgbm(
     best_model_artifacts = None # To store OOF preds and Final Model
 
     lgbm_params = {
-        'objective': 'binary',
-        'metric': 'binary_logloss',
+        'objective': 'cross_entropy',
+        'metric': 'xentropy',
         'n_estimators': 800,
         'learning_rate': 0.02,
         'max_depth': 7,
         'num_leaves': 63,
         'subsample': 0.8,
         'colsample_bytree': 0.8,
-        'reg_alpha': 1.0,
-        'reg_lambda': 2.0,
+        'reg_alpha': 0.1,
+        'reg_lambda': 0.1,
         'min_child_samples': 20,
-        'min_gain_to_split': 0.005,
+        'min_gain_to_split': 0.001,
         'feature_fraction': 0.8,
         'bagging_fraction': 0.8,
         'bagging_freq': 1,

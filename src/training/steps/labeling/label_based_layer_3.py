@@ -559,12 +559,17 @@ def layer3_analyst_lgbm(
             'ens_snr_internal',
             'ens_snr_consensus',
             # Regime/time (GateModel-derived)
-            'rv_short', 'rv_short_over_med', 'rv_z_short',
             'slope_short', 'adx_proxy', 'momentum_short', 'snr',
             'time_since_last_vol_spike', 'time_since_last_large_candle',
             'choppiness_index', 'variance_ratio', 'permutation_entropy',
             'hour', 'day_of_week', 'hour_sin', 'hour_cos', 'is_weekend',
             'efficiency_ratio',
+            # Geometry Features
+            'geo_rolling_mae', 'geo_mae_volatility', 'geo_efficiency_ratio',
+            'geo_median_time_to_stop', 'geo_median_time_to_target', 'geo_time_asymmetry',
+            'geo_prob_target_shrunk', 'geo_prob_stop_shrunk', 'geo_expected_payoff',
+            # Price Position
+            'price_position_in_range',
         ]
     )
 

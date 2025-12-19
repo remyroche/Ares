@@ -19,6 +19,125 @@ from src.feature_generation.categories.ensemble_disagreement import (
     calculate_ensemble_disagreement_features,
 )
 
+def shrink(x, n, prior, k=50):
+    """
+    De Prado's shrinkage estimator.
+    x: Observed mean (e.g., empirical hit rate)
+    n: Number of observations
+    prior: Prior belief (e.g., 0.5)
+    k: Shrinkage factor (speed of convergence)
+    """
+    # Weight of the prior decreases as n increases
+    w = k / (n + k)
+    return (1 - w) * x + w * prior
+
+def compute_geometry_features(events_df: pd.DataFrame, window_size: int = 50) -> pd.DataFrame:
+    """
+    Computes 'Geometry' features based on the path characteristics of PAST trades.
+
+    Includes:
+    - Fragility (Avg MAE of winners)
+    - Time Geometry (Speed of stops vs targets)
+    - Empirical Payoff (Shrinkage-adjusted expectancy)
+    """
+    # Ensure we are sorted by entry time to prevent lookahead bias
+    if 'entry_time' in events_df.columns:
+        df = events_df.sort_values('entry_time').copy()
+    else:
+        df = events_df.copy()
+
+    # Initialize output features
+    feats = pd.DataFrame(index=df.index)
+
+    # -------------------------------------------------------------
+    # 1. Fragility Geometry (MAE/MFE)
+    # -------------------------------------------------------------
+    # We only look at CLOSED trades to compute statistics for OPENING trades.
+    # We use .shift(1) to strictly enforce "past events only".
+
+    # Normalized MAE (How much heat do we take?)
+    # We fillna(0) for MAE because a missing MAE usually implies 0 (immediate win),
+    # but strictly checking your data generation logic is safer.
+    if 'mae_norm' in df.columns and 'mfe_norm' in df.columns:
+        mae_series = df['mae_norm'].fillna(0)
+        mfe_series = df['mfe_norm'].fillna(0)
+
+        # Rolling Average MAE (The "Pain" Index)
+        # If this is rising, the strategy is getting lucky (surviving deep drawdowns).
+        feats['geo_rolling_mae'] = mae_series.rolling(window=window_size).mean().shift(1)
+
+        # Rolling MAE Volatility
+        # Inconsistent MAE implies unstable execution.
+        feats['geo_mae_volatility'] = mae_series.rolling(window=window_size).std().shift(1)
+
+        # MFE/MAE Ratio (The "Efficiency" Index)
+        # High is good. Low implies we risk $1 to make $0.1 momentarily.
+        # Add epsilon to avoid div by zero.
+        feats['geo_efficiency_ratio'] = (
+            mfe_series.rolling(window=window_size).mean() /
+            (mae_series.rolling(window=window_size).mean() + 1e-4)
+        ).shift(1)
+
+    # -------------------------------------------------------------
+    # 2. Time Geometry (Tau)
+    # -------------------------------------------------------------
+    # Convert timestamps to float seconds or integer ticks for calculation
+    # Assuming tau_stop/target are timestamps. If indices, skip conversion.
+    if 'tau_stop' in df.columns and 'tau_target' in df.columns and 'entry_time' in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df['entry_time']):
+            dur_stop = (df['tau_stop'] - df['entry_time']).dt.total_seconds()
+            dur_target = (df['tau_target'] - df['entry_time']).dt.total_seconds()
+        else:
+            dur_stop = df['tau_stop'] - df['entry_time']
+            dur_target = df['tau_target'] - df['entry_time']
+
+        # Rolling Median Duration for Stops vs Targets
+        # We use median to be robust against outliers (stuck trades).
+        feats['geo_median_time_to_stop'] = dur_stop.rolling(window=window_size, min_periods=10).median().shift(1)
+        feats['geo_median_time_to_target'] = dur_target.rolling(window=window_size, min_periods=10).median().shift(1)
+
+        # Time Asymmetry: Are winners faster than losers?
+        # > 1.0 implies we hold losers longer (dangerous).
+        # < 1.0 implies we cut losers fast (good).
+        feats['geo_time_asymmetry'] = (
+            feats['geo_median_time_to_stop'] /
+            (feats['geo_median_time_to_target'] + 1e-4)
+        )
+
+    # -------------------------------------------------------------
+    # 3. Empirical Payoff (Shrinkage)
+    # -------------------------------------------------------------
+    # This implements your specific "expected_normalized_payoff" logic
+    # but in a rolling, vectorized way.
+
+    if 'hit_target' in df.columns and 'hit_stop' in df.columns and 'stop_size' in df.columns and 'target_size' in df.columns:
+        # Rolling count of hits
+        wins = df['hit_target'].rolling(window=window_size).sum().shift(1)
+        losses = df['hit_stop'].rolling(window=window_size).sum().shift(1)
+        counts = wins + losses
+
+        # Shrinkage-adjusted Win Rate (Probability of Target)
+        # Prior = 0.5 (Assumption of random chance)
+        raw_win_rate = wins / (counts + 1e-9)
+        feats['geo_prob_target_shrunk'] = shrink(raw_win_rate, counts, prior=0.5, k=window_size/2)
+
+        # Shrinkage-adjusted Loss Rate (Probability of Stop)
+        raw_loss_rate = losses / (counts + 1e-9)
+        feats['geo_prob_stop_shrunk'] = shrink(raw_loss_rate, counts, prior=0.5, k=window_size/2)
+
+        # Implied Payoff
+        # We take the CURRENT trade's R:R ratio (target_size / stop_size)
+        # and combine it with HISTORICAL probabilities.
+        # lambda_rr = Stop / Target (Cost / Reward)
+        current_lambda = df['stop_size'] / (df['target_size'] + 1e-9)
+
+        feats['geo_expected_payoff'] = (
+            feats['geo_prob_target_shrunk'] -
+            (current_lambda * feats['geo_prob_stop_shrunk'])
+        )
+
+    return feats.fillna(0)
+
 def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute regime features based on GateModel logic.
@@ -40,15 +159,14 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     log_ret = np.log(close / close.shift(1))
 
     # 1. Volatility Features
-    features['rv_short'] = log_ret.rolling(window=12).std() * np.sqrt(12)
-    rv_med = log_ret.rolling(window=48).std() * np.sqrt(48)
-    features['rv_short_over_med'] = features['rv_short'] / (rv_med + 1e-8)
+    rv_short = log_ret.rolling(window=12).std() * np.sqrt(12)
+    # rv_short, rv_short_over_med, rv_z_short removed from output as per request
 
     tr = (high - low) / close
     atr_short = tr.rolling(window=12).mean()
 
     rv_long = log_ret.rolling(window=200).std()
-    features['rv_z_short'] = (features['rv_short'] - rv_long) / (rv_long + 1e-8)
+    # rv_z_short removed
 
     # 2. Trend Strength Features
     log_price = np.log(close)
@@ -67,12 +185,12 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # 3. Momentum
     features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
-    features['snr'] = features['momentum_short'].abs() / (features['rv_short'] + 1e-8)
+    features['snr'] = features['momentum_short'].abs() / (rv_short + 1e-8)
 
     # 4. New Features (Vol Spike, Large Candle, Time)
-    rv_mean = features['rv_short'].rolling(window=100, min_periods=20).mean()
-    rv_std = features['rv_short'].rolling(window=100, min_periods=20).std()
-    rv_z = (features['rv_short'] - rv_mean) / (rv_std + 1e-8)
+    rv_mean = rv_short.rolling(window=100, min_periods=20).mean()
+    rv_std = rv_short.rolling(window=100, min_periods=20).std()
+    rv_z = (rv_short - rv_mean) / (rv_std + 1e-8)
 
     is_vol_spike = (rv_z > 2.0).astype(int)
 
@@ -413,6 +531,25 @@ def generate_layer3_features(
             mom_feats = _compute_cross_tf_momentum_agreement(df_out)
             for col in mom_feats.columns:
                 df_out[col] = mom_feats[col]
+    except Exception:
+        pass
+
+    # 7. Geometry Features
+    try:
+        geo_feats = compute_geometry_features(df_out)
+        for col in geo_feats.columns:
+            df_out[col] = geo_feats[col]
+    except Exception:
+        pass
+
+    # 8. Price Position in Range
+    try:
+        if 'close' in df_out.columns:
+            close = df_out['close']
+            roll_max = close.rolling(50).max()
+            roll_min = close.rolling(50).min()
+            range_len = roll_max - roll_min
+            df_out['price_position_in_range'] = (close - roll_min) / (range_len + 1e-8)
     except Exception:
         pass
 

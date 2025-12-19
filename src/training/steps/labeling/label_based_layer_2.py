@@ -1344,7 +1344,7 @@ class LabelBasedLayer2:
 
         vol_series = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float)
         vol_series = vol_series.replace([np.inf, -np.inf], np.nan)
-        vol_series = vol_series.fillna(method='ffill').fillna(method='bfill')
+        vol_series = vol_series.ffill().bfill()
         vol_series = vol_series.clip(lower=1e-8)
 
         profit_thr = float(kappa) * vol_series
@@ -2376,6 +2376,11 @@ class LabelBasedLayer2:
         # Build feature matrix once
         X_events_all = self._build_geometry_independent_event_features(df, events_df)
         target_sample_weight_events = self._get_target_sample_weight_for_events(df, events_df)
+
+        # Initialize param bounds safely
+        self._current_param_bounds = getattr(self, '_current_param_bounds', {})
+        if not isinstance(self._current_param_bounds, dict):
+            self._current_param_bounds = {}
 
         for family in unique_families:
             logger.info(f"Optimizing family: {family}")
@@ -3559,7 +3564,7 @@ class LabelBasedLayer2:
             # This boosts high-quality trades (high sharpe/return) and dampens weak ones.
             try:
                 ret_vals = consensus_returns.fillna(0.0).values
-                vol_vals = df['volatility_1d'].reindex(fam_events.index).fillna(method='ffill').fillna(0.0).values
+                vol_vals = df['volatility_1d'].reindex(fam_events.index).ffill().fillna(0.0).values
 
                 # Z-score proxy
                 safe_vol = np.where(vol_vals > 1e-9, vol_vals, 1e-9)
@@ -3719,7 +3724,7 @@ class LabelBasedLayer2:
             # We computed w_quality per family block above, need to stitch it or recompute global.
             # Recomputing global is cleaner.
             c_ret = composite_returns.fillna(0.0)
-            c_vol = df['volatility_1d'].reindex(composite_returns.index).fillna(method='ffill').fillna(0.0)
+            c_vol = df['volatility_1d'].reindex(composite_returns.index).ffill().fillna(0.0)
             safe_v = np.where(c_vol > 1e-9, c_vol, 1e-9)
             z = c_ret / safe_v
             sig = 1.0 / (1.0 + np.exp(-1.0 * z))

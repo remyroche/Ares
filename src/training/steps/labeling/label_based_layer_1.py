@@ -172,7 +172,7 @@ def run_layer1_optimization(
     committee_agreement_scores: Optional[Union[np.ndarray, pd.Series, list]] = None,
     committee_mag_factors: Optional[Union[np.ndarray, pd.Series, list]] = None,
     n_trials: int = 60,
-    objective_mode: str = "proxy",
+    objective_mode: str = "predictive_cv",
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
     uniqueness_horizon_bars: int = 24,
 ) -> Dict[str, Any]:
@@ -362,36 +362,121 @@ def run_layer1_optimization(
             event_consistency = None
 
         try:
-            objective_mode_local = str(objective_mode or "proxy").strip().lower()
+            objective_mode_local = str(objective_mode or "predictive_cv").strip().lower()
         except Exception:
-            objective_mode_local = "proxy"
+            objective_mode_local = "predictive_cv"
 
-        def _predictive_cv_score(
-            weights: np.ndarray,
-            returns_arr_local: np.ndarray,
-            t_events_local: pd.Index,
-            close_series_local: pd.Series,
-            n_splits: int = 3,
-        ) -> float:
+        # Pre-compute features for predictive CV objective
+        X_proxy_arr: Optional[np.ndarray] = None
+        y_proxy_arr: Optional[np.ndarray] = None
+
+        if objective_mode_local == "predictive_cv":
             try:
-                y = (np.asarray(returns_arr_local, dtype=float) > 0.0).astype(int)
-                if int(np.unique(y).size) < 2:
-                    return -10.0
+                y_proxy_arr = (np.asarray(returns_arr, dtype=float) > 0.0).astype(int)
 
-                close = close_series_local.astype(float)
-                ret1 = close.pct_change(1).reindex(t_events_local)
-                ret3 = close.pct_change(3).reindex(t_events_local)
-                ret6 = close.pct_change(6).reindex(t_events_local)
-                vol20 = close.pct_change().rolling(20).std().reindex(t_events_local)
-                X_df = (
+                close = close_series.astype(float)
+
+                # 1. Returns (Momentum)
+                ret1 = close.pct_change(1).reindex(t_events)
+                ret3 = close.pct_change(3).reindex(t_events)
+                ret6 = close.pct_change(6).reindex(t_events)
+
+                # 2. Volatility (Risk)
+                vol20 = close.pct_change().rolling(20).std()
+                vol100 = close.pct_change().rolling(100).std()
+                rel_vol = (vol20 / (vol100 + 1e-9)).reindex(t_events)
+                vol20 = vol20.reindex(t_events)
+
+                # 3. RSI-14 (Oscillator)
+                try:
+                    delta = close.diff()
+                    gain = delta.clip(lower=0.0)
+                    loss = -delta.clip(upper=0.0)
+                    avg_gain = gain.rolling(window=14, min_periods=1).mean()
+                    avg_loss = loss.rolling(window=14, min_periods=1).mean()
+                    rs = avg_gain / (avg_loss + 1e-9)
+                    rsi = 100.0 - (100.0 / (1.0 + rs))
+                    rsi_feat = rsi.reindex(t_events)
+                except Exception:
+                    rsi_feat = pd.Series(50.0, index=t_events)
+
+                # 4. Bollinger Bands %B (Trend/Mean Rev)
+                try:
+                    bb_ma = close.rolling(window=20).mean()
+                    bb_std = close.rolling(window=20).std()
+                    bb_pct_b = (close - bb_ma) / (2 * bb_std + 1e-9)
+                    bb_pct_b_feat = bb_pct_b.reindex(t_events)
+                except Exception:
+                    bb_pct_b_feat = pd.Series(0.0, index=t_events)
+
+                # 5. Stochastic %K (Range Position)
+                try:
+                    # Use High/Low if available, else roll close
+                    if 'high' in market_data.columns and 'low' in market_data.columns:
+                        high_roll = market_data['high'].rolling(14).max()
+                        low_roll = market_data['low'].rolling(14).min()
+                    else:
+                        high_roll = close.rolling(14).max()
+                        low_roll = close.rolling(14).min()
+
+                    stoch_k = (close - low_roll) / (high_roll - low_roll + 1e-9)
+                    stoch_k_feat = stoch_k.reindex(t_events)
+                except Exception:
+                    stoch_k_feat = pd.Series(0.5, index=t_events)
+
+                # 6. Efficiency Ratio (Trend Quality)
+                try:
+                    change = close.diff(10).abs()
+                    path = close.diff(1).abs().rolling(10).sum()
+                    er = change / (path + 1e-9)
+                    er_feat = er.reindex(t_events)
+                except Exception:
+                    er_feat = pd.Series(0.5, index=t_events)
+
+                # 7. Trend Strength (SMA Deviation)
+                try:
+                    sma50 = close.rolling(window=50).mean()
+                    trend_dev = (close - sma50) / (sma50 + 1e-9)
+                    trend_feat = trend_dev.reindex(t_events)
+                except Exception:
+                    trend_feat = pd.Series(0.0, index=t_events)
+
+                X_df_proxy = (
                     pd.DataFrame(
-                        {"ret1": ret1, "ret3": ret3, "ret6": ret6, "vol20": vol20},
-                        index=t_events_local,
+                        {
+                            "ret1": ret1,
+                            "ret3": ret3,
+                            "ret6": ret6,
+                            "vol20": vol20,
+                            "rel_vol": rel_vol,
+                            "rsi14": rsi_feat,
+                            "bb_pct_b": bb_pct_b_feat,
+                            "stoch_k": stoch_k_feat,
+                            "er": er_feat,
+                            "trend_dev": trend_feat
+                        },
+                        index=t_events,
                     )
                     .replace([np.inf, -np.inf], np.nan)
                     .fillna(0.0)
                 )
-                X = X_df.values.astype(float)
+                X_proxy_arr = X_df_proxy.values.astype(float)
+            except Exception as e_feat:
+                tprint_warning(f"⚠️ Failed to generate features for Layer 1 predictive CV: {e_feat}")
+                X_proxy_arr = None
+
+        def _predictive_cv_score(
+            weights: np.ndarray,
+            X_in: np.ndarray,
+            y_in: np.ndarray,
+            n_splits: int = 3,
+        ) -> float:
+            try:
+                if X_in is None or y_in is None:
+                    return -10.0
+
+                if int(np.unique(y_in).size) < 2:
+                    return -10.0
 
                 w = np.asarray(weights, dtype=float)
                 w = np.where(np.isfinite(w) & (w > 0.0), w, 0.0)
@@ -405,35 +490,16 @@ def run_layer1_optimization(
                 if n_samples_local < (n_splits + 1) * 10:
                     return -10.0
 
-                try:
-                    from src.utils.purged_kfold import PurgedKFoldTime
+                # For predictive CV in HPO, simple TimeSeriesSplit is sufficient and robust
+                tscv = TimeSeriesSplit(n_splits=n_splits)
+                splits = tscv.split(X_in)
 
-                    if isinstance(t_events_local, pd.DatetimeIndex) and len(t_events_local) == n_samples_local:
-                        try:
-                            diffs = pd.Series(pd.DatetimeIndex(t_events_local)).diff().dropna()
-                            bar_delta = diffs.median() if len(diffs) else pd.Timedelta(minutes=15)
-                        except Exception:
-                            bar_delta = pd.Timedelta(minutes=15)
-
-                        if not isinstance(bar_delta, pd.Timedelta) or bar_delta <= pd.Timedelta(0):
-                            bar_delta = pd.Timedelta(minutes=15)
-
-                        purge = bar_delta * 12
-                        embargo = bar_delta * 12
-                        splitter = PurgedKFoldTime(n_splits=n_splits, purge=purge, embargo=embargo)
-                        splits = splitter.split_positions(n_samples_local, index=pd.DatetimeIndex(t_events_local))
-                    else:
-                        tscv = TimeSeriesSplit(n_splits=n_splits)
-                        splits = tscv.split(X)
-                except Exception:
-                    tscv = TimeSeriesSplit(n_splits=n_splits)
-                    splits = tscv.split(X)
                 fold_aucs: List[float] = []
                 fold_prs: List[float] = []
 
                 for tr_idx, te_idx in splits:
-                    y_tr = y[tr_idx]
-                    y_te = y[te_idx]
+                    y_tr = y_in[tr_idx]
+                    y_te = y_in[te_idx]
                     if int(np.unique(y_tr).size) < 2 or int(np.unique(y_te).size) < 2:
                         continue
 
@@ -442,8 +508,8 @@ def run_layer1_optimization(
                         max_iter=500,
                         n_jobs=1,
                     )
-                    model.fit(X[tr_idx], y_tr, sample_weight=w[tr_idx])
-                    p_te = model.predict_proba(X[te_idx])[:, 1]
+                    model.fit(X_in[tr_idx], y_tr, sample_weight=w[tr_idx])
+                    p_te = model.predict_proba(X_in[te_idx])[:, 1]
 
                     sw_te = w[te_idx]
                     try:
@@ -727,12 +793,11 @@ def run_layer1_optimization(
                     else:
                         weights = np.ones(len(returns_arr), dtype=float)
 
-                if objective_mode_local == "predictive_cv":
+                if objective_mode_local == "predictive_cv" and X_proxy_arr is not None and y_proxy_arr is not None:
                     score = _predictive_cv_score(
                         weights=np.asarray(weights, dtype=float),
-                        returns_arr_local=returns_arr,
-                        t_events_local=t_events,
-                        close_series_local=close_series,
+                        X_in=X_proxy_arr,
+                        y_in=y_proxy_arr,
                         n_splits=3,
                     )
                 else:

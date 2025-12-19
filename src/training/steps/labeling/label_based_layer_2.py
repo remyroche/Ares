@@ -7,8 +7,8 @@ regime-conditional barrier optimization and ML learnability probes.
 It performs:
 1. Event generation based on volatility-scaled returns.
 2. Regime-conditional barrier family assignment.
-3. Independent optimization of barrier geometries (Kappa/Horizon) per family using Optuna.
-4. MFE/MAE Dominance Labeling: Label = 1 if MFE > Kappa * MAE.
+3. Independent optimization of barrier geometries (TP/SL/Dominance/Horizon) per family using Optuna.
+4. MFE/MAE Dominance Labeling: Label = 1 if (Exit==Profit/Trail) AND (MFE / MAE >= DominanceRatio).
 5. Stability checks (Time-Flip) and Learnability probes.
 6. Bagged output generation with family-level cap checks.
 7. Enhanced LGBM training with Robust Focal Loss and Tree Variance calculation.
@@ -93,13 +93,6 @@ class RobustFocalLoss:
         # Safety: enforce alpha in [0.5,0.95] to avoid extreme weighting
         self.alpha = min(max(self.alpha, 0.5), 0.95)
 
-        if verbose:
-            try:
-                pos_frac = np.mean(train_labels)
-            except Exception:
-                pos_frac = 0.0
-            # logger.info(f"[Focal Loss] gamma={self.gamma}, alpha={self.alpha:.4f} (Pos fraction: {pos_frac:.2%})")
-
     def __call__(self, preds, train_data):
         """
         Args:
@@ -136,11 +129,6 @@ class RobustFocalLoss:
 def _calculate_tree_variance(booster, X) -> np.ndarray:
     """
     Calculate the variance of predictions across all trees in the ensemble (Tree Variation).
-
-    1. Get leaf indices for each sample.
-    2. Retrieve leaf values from the model dump.
-    3. Look up values for indices.
-    4. Compute variance across trees for each sample.
     """
     if booster is None:
         return np.zeros(X.shape[0])
@@ -151,23 +139,14 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
         
         # Ensure 2D (n_samples, n_trees)
         if leaf_indices_raw.ndim == 1:
-            # If 1D, it could be (n_samples,) if 1 tree, or (n_trees,) if 1 sample.
-            # predict(pred_leaf=True) usually returns (N, T).
-            # If 1D, assume it's (N,) for 1 tree.
             leaf_indices = leaf_indices_raw.reshape(-1, 1)
         else:
             leaf_indices = leaf_indices_raw
 
         # 2. Parse model to get leaf values
-        # We need a lookup table: tree_index -> leaf_index -> leaf_value
         model_dump = booster.dump_model()
         trees = model_dump['tree_info']
 
-        # Build lookup table: values[tree_idx][leaf_idx] = value
-        # Note: leaf indices in predict() output are local to the tree
-
-        # Determine max leaf index to size the array correctly
-        # This might be sparse if not all leaves are present, but usually dense 0..num_leaves-1
         max_leaf_idx = 0
         for tree in trees:
             if 'tree_structure' in tree:
@@ -182,8 +161,6 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
                         nodes.append(node['right_child'])
 
         n_trees = len(trees)
-        # Create a lookup array (n_trees, max_leaf_idx + 1) filled with NaN
-        # Using dictionary might be safer if indices are sparse, but array is faster
         leaf_values_lookup = np.full((n_trees, max_leaf_idx + 1), np.nan)
 
         for i, tree in enumerate(trees):
@@ -202,32 +179,15 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
                         nodes.append(node['right_child'])
 
         # 3. Vectorized lookup
-        # leaf_indices shape: (n_samples, n_trees)
-        # We want result shape: (n_samples, n_trees) containing values
-
-        n_samples = leaf_indices.shape[0]
         n_trees_pred = leaf_indices.shape[1]
-
-        # Ensure we don't go out of bounds if predict returns more/less trees than dump
-        # (e.g. early stopping)
         limit_trees = min(n_trees, n_trees_pred)
-
-        # Use numpy advanced indexing
-        # row indices: broadcast to (n_samples, limit_trees) -> 0..limit_trees-1
         tree_indices = np.arange(limit_trees)
-
-        # Gather values
-        # collected_values[sample_i, tree_j] = leaf_values_lookup[tree_j, leaf_indices[sample_i, tree_j]]
-
         subset_indices = leaf_indices[:, :limit_trees]
-        # Clip indices to be safe against weird dump/predict mismatches
         subset_indices = np.clip(subset_indices, 0, max_leaf_idx)
 
         collected_values = leaf_values_lookup[tree_indices, subset_indices]
 
         # 4. Calculate Variance
-        # collected_values shape: (n_samples, limit_trees)
-        # Variance across trees (axis 1)
         variance = np.nanvar(collected_values, axis=1)
 
         return variance
@@ -239,7 +199,7 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
 @dataclass
 class GeometryTrial:
     family: str
-    params: Dict[str, Any]  # Kappa, Horizon
+    params: Dict[str, Any]  # tp_mult, dominance_ratio, sl_mult, horizon
     final_score: float
     learnability: float
     robust_magnitude: float
@@ -395,20 +355,8 @@ class LabelBasedLayer2:
         except Exception:
             pass
 
+        # Strictly select best geometries. If none pass, we fail (no fallback).
         production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=True)
-        if not production_geometries:
-            try:
-                cfg_prod = getattr(self, "_current_config", {})
-                if not isinstance(cfg_prod, dict):
-                    cfg_prod = {}
-            except Exception:
-                cfg_prod = {}
-            try:
-                fallback_enabled = bool(cfg_prod.get('layer2_production_fallback_enabled', True))
-            except Exception:
-                fallback_enabled = True
-            if fallback_enabled:
-                production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=False)
 
         try:
             by_fam: Dict[str, int] = {}
@@ -433,8 +381,7 @@ class LabelBasedLayer2:
             )
             raise ValueError(
                 "Layer2 failed: No production geometries passed validation gates. "
-                "Check logs for [GATE_REJECT] messages. Gates: "
-                "pos_rate 10-40%, mean_ret > transaction_cost, stability >=85%, probe AUC >=0.52"
+                "Strict quality control prevented fallback."
             )
 
         # Store for reference
@@ -583,8 +530,11 @@ class LabelBasedLayer2:
             except Exception:
                 pass
 
-            fold_geometries = self._select_best_geometries(df_train, events_train, fold_results, require_passed=False)
+            # STRICT SELECTION IN OOF TOO
+            fold_geometries = self._select_best_geometries(df_train, events_train, fold_results, require_passed=True)
             if not fold_geometries:
+                # If nothing passed in this fold, we skip the fold. Layer 3 will see NaNs which is correct.
+                logger.warning(f"Fold {fold_idx}: No geometries passed strict selection. Skipping.")
                 continue
 
             try:
@@ -877,11 +827,13 @@ class LabelBasedLayer2:
                 try:
                     fam = str(getattr(g, "family", ""))
                     params = getattr(g, "params", None)
-                    kappa = None
+                    tp_mult = None
+                    dominance_ratio = None
                     sl_mult = None
                     horizon = None
                     if isinstance(params, dict):
-                        kappa = params.get("kappa")
+                        tp_mult = params.get("tp_mult")
+                        dominance_ratio = params.get("dominance_ratio")
                         sl_mult = params.get("sl_mult")
                         horizon = params.get("horizon")
 
@@ -894,11 +846,12 @@ class LabelBasedLayer2:
 
                     try:
                         fam_events = events_df[events_df.get('family') == fam] if 'family' in events_df.columns else events_df
-                        if kappa is not None and horizon is not None:
+                        if tp_mult is not None and horizon is not None:
                             _lbl, _ret, _, _ = self._compute_dominance_labels(
                                 df=df,
                                 events_df=fam_events,
-                                kappa=float(kappa),
+                                tp_mult=float(tp_mult),
+                                dominance_ratio=float(dominance_ratio) if dominance_ratio is not None else 1.0,
                                 horizon=int(horizon),
                                 family=fam,
                                 sl_mult=(float(sl_mult) if sl_mult is not None else None),
@@ -974,9 +927,9 @@ class LabelBasedLayer2:
             "oof_labels": oof_scores,
             "oof_returns": oof_returns,
             "weights": oof_weights,
-            "l2_score": oof_scores,
-            "l2_label": oof_labels,
-            "l2_confidence": oof_confidence,
+            "l2_score": l2_score,
+            "l2_label": l2_label,
+            "l2_confidence": l2_confidence,
             "individual_geometries": final_geo_preds,
             "individual_variances": final_geo_vars,
             "events_df": events_df,
@@ -1253,7 +1206,8 @@ class LabelBasedLayer2:
         self,
         df: pd.DataFrame,
         events_df: pd.DataFrame,
-        kappa: float,
+        tp_mult: float,
+        dominance_ratio: float,
         horizon: int,
         family: str,
         events_shift: int = 0,
@@ -1261,12 +1215,13 @@ class LabelBasedLayer2:
     ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
         """
         Compute TP/SL(+optional trailing) exit-model labels and related metrics.
-        Label = 1 if the trade exits via profit barrier (or trailing), else 0.
+        Label = 1 if (Exit == Profit OR Exit == Trailing) AND (MFE / MAE >= dominance_ratio).
 
         Args:
             df: Market data
             events_df: Events to label
-            kappa: Dominance ratio threshold
+            tp_mult: Take-Profit multiplier (of volatility)
+            dominance_ratio: MFE/MAE threshold
             horizon: Window size
             family: Geometry family (defines direction)
             events_shift: Shift event timestamps by N bars (for stability check)
@@ -1301,7 +1256,8 @@ class LabelBasedLayer2:
             self._df_cache_key(df),
             self._events_cache_key(events_df.index),
             str(family),
-            float(round(float(kappa), 8)),
+            float(round(float(tp_mult), 8)),
+            float(round(float(dominance_ratio), 8)),
             float(round(float(sl_mult_eff), 8)),
             int(horizon),
             int(events_shift),
@@ -1309,7 +1265,7 @@ class LabelBasedLayer2:
             str(direction_mode),
             float(trail_mult) if trail_mult is not None else None,
             int(max(0, int(getattr(self, '_current_config', {}).get('layer2_min_event_spacing', 4) if isinstance(getattr(self, '_current_config', {}), dict) else 4))),
-            "tpsl_full"
+            "tpsl_full_dominance"
         )
         cached = self._labels_cache.get(cache_key)
         if cached is not None:
@@ -1347,7 +1303,7 @@ class LabelBasedLayer2:
         vol_series = vol_series.fillna(method='ffill').fillna(method='bfill')
         vol_series = vol_series.clip(lower=1e-8)
 
-        profit_thr = float(kappa) * vol_series
+        profit_thr = float(tp_mult) * vol_series
         stop_thr = float(sl_mult_eff) * vol_series
 
         atr_series = None
@@ -1396,7 +1352,16 @@ class LabelBasedLayer2:
         subset_mae = mae_series.reindex(calc_events_idx)
         subset_exit = exit_reasons.reindex(calc_events_idx)
 
-        binary_labels = subset_exit.astype(str).isin(['profit', 'trailing']).astype(float)
+        # Labels: Profit (or trailing) Exit AND MFE/MAE >= dominance_ratio
+        is_profit_exit = subset_exit.astype(str).isin(['profit', 'trailing'])
+
+        # Calculate Dominance (MFE / MAE)
+        mae_safe = subset_mae.replace(0.0, 1e-9).abs()
+        dominance = subset_mfe.abs() / mae_safe
+
+        is_dominant = (dominance >= float(dominance_ratio))
+
+        binary_labels = (is_profit_exit & is_dominant).astype(float)
         binary_labels = binary_labels.where(subset_returns.notna())
 
         if events_shift != 0:
@@ -1422,1024 +1387,26 @@ class LabelBasedLayer2:
     # Legacy wrapper for compatibility if needed, but we switch internal calls to _compute_dominance_labels
     def _compute_labels(self, df, events_df, tp_mult=None, sl_mult=None, horizon=None, family=None, **kwargs):
         # Adapt old signature to new logic if called with old params
-        # Use simple mapping if kappa not provided
         kappa = kwargs.get('kappa')
-        if kappa is None:
-            # Heuristic: if TP=2, SL=1, Kappa=2
-            if tp_mult and sl_mult:
-                kappa = tp_mult / max(sl_mult, 1e-3)
-            else:
-                kappa = 2.0
 
-        lbl, ret, _, _ = self._compute_dominance_labels(df, events_df, kappa, int(horizon), family, sl_mult=sl_mult)
-        return lbl, ret
+        if tp_mult is None and kappa is not None:
+            tp_mult = float(kappa)
+        if tp_mult is None:
+            tp_mult = 2.0
+            
+        # Use kappa as dominance ratio if present, else default 1.0 or heuristic
+        dominance_ratio = float(kappa) if kappa is not None else 1.0
 
-    def _build_geometry_independent_event_features(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """Build one feature matrix for all events, independent of TP/SL/Horizon geometry."""
-        signals = pd.DataFrame(index=df.index)
-        try:
-            if self._primary_signals is not None and 'consensus' in self._primary_signals.columns:
-                consensus = pd.to_numeric(self._primary_signals['consensus'].reindex(df.index), errors='coerce').astype(float)
-                consensus = consensus.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            else:
-                consensus = np.sign(df['close'].pct_change()).fillna(0.0)
-                consensus = consensus.replace([np.inf, -np.inf], 0.0)
-            signals['consensus'] = consensus.astype(float)
-        except Exception as e:
-            logger.warning(f"Error building consensus signal: {e}")
-            signals['consensus'] = 0.0
-
-        try:
-            volume_available = ('volume' in df.columns) and bool(pd.to_numeric(df['volume'], errors='coerce').notna().any())
-        except Exception as e:
-            logger.warning(f"Error checking volume availability: {e}")
-            volume_available = False
-
-        meta_features = create_meta_features(
+        lbl, ret, _, _ = self._compute_dominance_labels(
             df=df,
-            signals=signals,
-            volume_available=volume_available,
-            include_raw_signals=False,
-            use_kalman=True,
-            drop_regime_context_features=bool(getattr(self, '_current_config', {}).get('layer2_drop_regime_context_features', False)),
+            events_df=events_df,
+            tp_mult=float(tp_mult),
+            dominance_ratio=float(dominance_ratio),
+            horizon=int(horizon),
+            family=family,
+            sl_mult=sl_mult
         )
-
-        try:
-            meta_features = meta_features.replace([np.inf, -np.inf], np.nan)
-            meta_features = meta_features.apply(pd.to_numeric, errors='coerce')
-        except Exception as e:
-            logger.debug(f"Meta features cleanup failed: {e}")
-
-        try:
-            forbidden_exact = {
-                "vol_ratio",
-                "vol_expansion",
-                "returns_std_50",
-                "volume_spike_ema",
-                "event_r_multiple_mean_last_50",
-            }
-            forbidden_prefixes = ("zigzag_",)
-            forbidden_substrings = (
-                "zigzag",
-                "pivot",
-                "swing",
-                "renko",
-                "last_",
-                "last_50",
-                "last_100",
-                "cumulative",
-                "streak",
-                "vol_expansion",
-                "signal_density",
-            )
-            cols_to_drop = []
-            for col in list(meta_features.columns):
-                col_str = str(col)
-                col_lower = col_str.lower()
-                if col_str in forbidden_exact:
-                    cols_to_drop.append(col_str)
-                    continue
-                if any(col_str.startswith(pref) for pref in forbidden_prefixes):
-                    cols_to_drop.append(col_str)
-                    continue
-                if any(sub in col_lower for sub in forbidden_substrings):
-                    cols_to_drop.append(col_str)
-            if cols_to_drop:
-                meta_features = meta_features.drop(columns=list(set(cols_to_drop)), errors='ignore')
-        except Exception:
-            pass
-
-        enable_regime_leaf = True
-        try:
-            enable_regime_leaf = bool(getattr(self, '_current_config', {}).get('enable_regime_leaf_features', True))
-        except Exception:
-            enable_regime_leaf = True
-
-        if enable_regime_leaf:
-            try:
-                from src.training.steps.labeling.regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
-
-                extractor_cfg = {
-                    "enabled_targets": [
-                        "regime_trendiness",
-                        "regime_volatility",
-                        "regime_trend_efficiency",
-                        "regime_memory",
-                    ],
-                    "inputs": {
-                        "input_source": "provided_x",
-                        "alignment": {"enabled": True, "method": "ffill"},
-                    },
-                    "onehot": {"enabled": True},
-                    "interaction_feature": {"enabled": True, "include_base": True},
-                    "reporting": {"enabled": False},
-                }
-
-                rl_df = extract_regime_leaf_onehot_features(
-                    X=meta_features,
-                    market_data=df,
-                    config=extractor_cfg,
-                    random_state=int(getattr(self, '_current_config', {}).get('random_state', 42)),
-                    verbose=False,
-                )
-                if rl_df is not None and not getattr(rl_df, 'empty', True):
-                    rl_df = rl_df.reindex(meta_features.index).fillna(0.0)
-                    meta_features = pd.concat([meta_features, rl_df], axis=1)
-            except Exception as e:
-                logger.debug(f"Regime leaf extraction failed: {e}")
-
-        X_events = meta_features.reindex(events_df.index)
-        try:
-            X_events = X_events.replace([np.inf, -np.inf], np.nan)
-        except Exception as e:
-            logger.debug(f"X_events cleanup failed: {e}")
-        return X_events
-
-    def _get_target_sample_weight_for_events(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame,
-    ) -> Optional[pd.Series]:
-        """Align config-provided target_sample_weight (diagnostic column) to events."""
-        cfg = getattr(self, '_current_config', {})
-        raw = None
-        try:
-            raw = cfg.get('target_sample_weight') if isinstance(cfg, dict) else None
-        except Exception:
-            raw = None
-
-        if raw is None:
-            return None
-
-        try:
-            if isinstance(raw, pd.Series):
-                w_full = raw.reindex(df.index)
-            else:
-                arr = np.asarray(raw, dtype=float).reshape(-1)
-                if arr.shape[0] == len(df.index):
-                    w_full = pd.Series(arr, index=df.index)
-                elif arr.shape[0] > len(df.index):
-                    w_full = pd.Series(arr[: len(df.index)], index=df.index)
-                else:
-                    padded = np.ones(len(df.index), dtype=float)
-                    if arr.shape[0] > 0:
-                        padded[: arr.shape[0]] = arr
-                    w_full = pd.Series(padded, index=df.index)
-
-            w_events = w_full.reindex(events_df.index)
-            w_events = pd.to_numeric(w_events, errors='coerce').astype(float)
-            w_events = w_events.replace([np.inf, -np.inf], np.nan).fillna(1.0)
-            w_events = w_events.clip(lower=0.0)
-            return w_events
-        except Exception:
-            return None
-
-    def _rank_features_by_mean_mdi(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        sample_weight: Optional[np.ndarray] = None,
-        n_splits: int = 5,
-    ) -> Tuple[List[str], np.ndarray]:
-        X_num = X.fillna(0.0)
-        y_num = y.astype(int)
-        w_arr = None
-        if sample_weight is not None:
-            try:
-                w_arr = np.asarray(sample_weight, dtype=float).reshape(-1)
-            except Exception:
-                w_arr = None
-
-        tscv = TimeSeriesSplit(n_splits=n_splits)
-        importances_sum = np.zeros(X_num.shape[1], dtype=float)
-        n_used = 0
-
-        for tr_idx, te_idx in tscv.split(X_num):
-            X_tr = X_num.iloc[tr_idx]
-            y_tr = y_num.iloc[tr_idx]
-            X_te = X_num.iloc[te_idx]
-            y_te = y_num.iloc[te_idx]
-
-            if y_tr.nunique() < 2 or y_te.nunique() < 2:
-                continue
-
-            model = lgb.LGBMClassifier(
-                n_estimators=100,
-                max_depth=6,
-                num_leaves=31,
-                learning_rate=0.1,
-                random_state=self.random_state,
-                n_jobs=1,
-                verbose=-1,
-            )
-
-            fit_kwargs: Dict[str, Any] = {}
-            if w_arr is not None and len(w_arr) == len(X_num):
-                fit_kwargs['sample_weight'] = w_arr[tr_idx]
-
-            try:
-                model.fit(
-                    X_tr, y_tr,
-                    eval_set=[(X_te, y_te)],
-                    callbacks=[lgb.early_stopping(10, verbose=False)],
-                    **fit_kwargs
-                )
-                imp = np.asarray(model.feature_importances_, dtype=float)
-                if imp.shape[0] == importances_sum.shape[0]:
-                    importances_sum += imp
-                    n_used += 1
-            except Exception as e:
-                # logger.debug(f"Feature ranking fit failed: {e}")
-                continue
-
-        if n_used <= 0:
-            ranked = list(X_num.columns)
-            return ranked, np.ones(len(ranked), dtype=float)
-
-        mean_imp = importances_sum / float(max(1, n_used))
-        order = np.argsort(mean_imp)[::-1]
-        ranked_features = [str(X_num.columns[i]) for i in order]
-        return ranked_features, mean_imp
-
-    def _aggregate_geometry_labels_for_feature_selection(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame,
-        geometries: List[GeometryTrial],
-    ) -> pd.Series:
-        if events_df is None or getattr(events_df, 'empty', True) or not geometries:
-            return pd.Series(np.nan, index=getattr(events_df, 'index', pd.Index([])), dtype=float)
-
-        events_local = events_df
-        if 'family' not in events_local.columns:
-            try:
-                events_local = events_local.copy()
-                events_local['family'] = self._assign_barrier_families(events_local)
-            except Exception:
-                events_local = events_df
-
-        sum_w = pd.Series(0.0, index=events_local.index, dtype=float)
-        sum_lbl = pd.Series(0.0, index=events_local.index, dtype=float)
-
-        for g in list(geometries):
-            try:
-                fam = str(getattr(g, 'family', ''))
-                if 'family' in events_local.columns:
-                    fam_events = events_local[events_local['family'] == fam]
-                else:
-                    fam_events = events_local
-                if fam_events.empty:
-                    continue
-
-                lbls, _, _, _ = self._compute_dominance_labels(df, fam_events, family=fam, **getattr(g, 'params', {}))
-                lbls = pd.to_numeric(lbls, errors='coerce').astype(float).reindex(fam_events.index)
-                valid = lbls.notna()
-                if not bool(valid.any()):
-                    continue
-
-                w_g = float(getattr(g, 'final_score', 1.0))
-                if (not np.isfinite(w_g)) or w_g <= 0.0:
-                    w_g = 1.0
-
-                idx = lbls.index[valid]
-                sum_lbl.loc[idx] = sum_lbl.loc[idx] + (w_g * lbls.loc[idx])
-                sum_w.loc[idx] = sum_w.loc[idx] + float(w_g)
-            except Exception:
-                continue
-
-        y_soft = pd.Series(np.nan, index=events_local.index, dtype=float)
-        valid_w = sum_w > 0.0
-        if bool(valid_w.any()):
-            y_soft.loc[valid_w] = (sum_lbl.loc[valid_w] / sum_w.loc[valid_w]).astype(float)
-
-        y_bin = pd.Series(np.nan, index=events_local.index, dtype=float)
-        try:
-            y_bin.loc[valid_w] = (y_soft.loc[valid_w] >= 0.5).astype(float)
-        except Exception:
-            pass
-        return y_bin
-
-    def _select_supervised_features_for_events(
-        self,
-        X_events_full: pd.DataFrame,
-        y_target: pd.Series,
-        layer1_weight_events: Optional[pd.Series],
-    ) -> List[str]:
-        if X_events_full is None or getattr(X_events_full, 'empty', True) or y_target is None:
-            return []
-
-        valid = y_target.notna()
-        try:
-            n_valid = int(valid.sum())
-        except Exception:
-            n_valid = 0
-        if n_valid < 100:
-            return []
-
-        y_clean = pd.to_numeric(y_target.loc[valid], errors='coerce').astype(float)
-        if int(y_clean.nunique()) < 2:
-            return []
-
-        X_clean = X_events_full.loc[valid].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-        w_arr = None
-        if layer1_weight_events is not None:
-            try:
-                w_s = pd.to_numeric(layer1_weight_events.reindex(X_clean.index), errors='coerce').astype(float)
-                w_s = w_s.replace([np.inf, -np.inf], np.nan).fillna(1.0)
-                w_s = w_s.clip(lower=0.0)
-                w_arr = w_s.to_numpy(dtype=float, copy=False)
-            except Exception:
-                w_arr = None
-
-        cfg = getattr(self, '_current_config', {})
-        if not isinstance(cfg, dict):
-            cfg = {}
-
-        try:
-            target_n = int(cfg.get('layer2_supervised_feature_count', cfg.get('layer2_probe_feature_count', 70)))
-        except Exception:
-            target_n = 70
-
-        try:
-            corr_threshold = float(cfg.get('layer2_supervised_corr_threshold', cfg.get('layer2_probe_corr_threshold', 0.95)))
-        except Exception:
-            corr_threshold = 0.95
-
-        try:
-            max_rows = int(cfg.get('layer2_supervised_corr_rows', cfg.get('layer2_probe_corr_rows', 2000)))
-        except Exception:
-            max_rows = 2000
-
-        try:
-            n_splits = int(cfg.get('layer2_supervised_mdi_splits', getattr(self, 'n_splits', 3)))
-        except Exception:
-            n_splits = int(getattr(self, 'n_splits', 3))
-        n_splits = int(max(2, min(n_splits, max(2, int(n_valid // 50)))))
-
-        ranked, _ = self._rank_features_by_mean_mdi(
-            X_clean,
-            y_clean.astype(int),
-            sample_weight=w_arr,
-            n_splits=n_splits,
-        )
-
-        selected = self._cheap_corr_prune(
-            X_clean,
-            ranked_features=[str(c) for c in ranked],
-            target_n=int(target_n),
-            corr_threshold=float(corr_threshold),
-            max_rows=int(max_rows),
-        )
-        return [c for c in selected if c in X_events_full.columns]
-
-    def _subsample_rows_for_proxy(self, df: pd.DataFrame, max_rows: int, seed: int = 42) -> pd.DataFrame:
-        if max_rows <= 0:
-            return df
-        n_rows = len(df)
-        if n_rows <= max_rows:
-            return df
-        rng = np.random.default_rng(seed)
-        sample_idx = rng.choice(n_rows, size=max_rows, replace=False)
-        return df.iloc[sample_idx]
-
-    def _cheap_corr_prune(
-        self,
-        X: pd.DataFrame,
-        ranked_features: List[str],
-        target_n: int = 70,
-        corr_threshold: float = 0.95,
-        max_rows: int = 2000,
-    ) -> List[str]:
-        sorted_cols = [c for c in ranked_features if c in X.columns]
-        if not sorted_cols:
-            return []
-
-        df_valid = X[sorted_cols].copy().fillna(0.0)
-        df_sample = self._subsample_rows_for_proxy(df_valid, max_rows=max_rows, seed=42)
-        try:
-            corr_matrix = df_sample.corr().abs()
-        except Exception:
-            return sorted_cols[:target_n]
-
-        cols = list(corr_matrix.columns)
-        corr_arr = corr_matrix.to_numpy(copy=False)
-        col_to_idx = {c: i for i, c in enumerate(cols)}
-
-        selected_idx: List[int] = []
-        selected_features: List[str] = []
-        for col in sorted_cols:
-            if len(selected_features) >= target_n:
-                break
-
-            i = col_to_idx.get(col)
-            if i is None:
-                continue
-
-            if selected_idx:
-                if bool(np.any(corr_arr[i, selected_idx] > float(corr_threshold))):
-                    continue
-
-            selected_idx.append(i)
-            selected_features.append(col)
-
-        return selected_features
-
-    def _train_probes(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        sample_weight: Optional[np.ndarray] = None,
-        trial: Optional[optuna.Trial] = None,
-    ) -> Dict[str, float]:
-        """
-        Step 4: Cheap ML learnability probes.
-        Train Shallow LGBM and Linear Model.
-        """
-        valid = y.notna()
-        X_clean = X.loc[valid].fillna(0.0)
-        y_clean = y.loc[valid].astype(int)
-
-        w_clean = None
-        if sample_weight is not None:
-            try:
-                w_arr = np.asarray(sample_weight, dtype=float).reshape(-1)
-                if w_arr.shape[0] == int(valid.sum()):
-                    w_clean = w_arr
-            except Exception:
-                w_clean = None
-
-        if len(y_clean) < 50 or y_clean.nunique() < 2:
-            return {'auc': 0.5, 'log_loss': 1.0, 'ic': 0.0, 'passed': False}
-
-        # --- OPTIMIZATION: Sampling ---
-        try:
-            sample_rate = float(getattr(self, '_current_config', {}).get('layer2_probe_sampling_rate', 1.0))
-        except Exception:
-            sample_rate = 1.0
-            
-        if sample_rate < 1.0 and len(y_clean) > 200:
-            step = int(1.0 / sample_rate)
-            X_clean = X_clean.iloc[::step]
-            y_clean = y_clean.iloc[::step]
-            if w_clean is not None:
-                w_clean = w_clean[::step]
-                
-        # --- OPTIMIZATION: Feature Limit ---
-        try:
-             feat_limit = int(getattr(self, '_current_config', {}).get('layer2_probe_feature_limit', 0))
-        except Exception:
-             feat_limit = 0
-             
-        if feat_limit > 0 and X_clean.shape[1] > feat_limit:
-             X_clean = X_clean.iloc[:, :feat_limit]
-
-        tscv = TimeSeriesSplit(n_splits=self.n_splits)
-
-        # Models
-        lgbm = lgb.LGBMClassifier(
-            n_estimators=100,
-            max_depth=6,
-            num_leaves=31,
-            learning_rate=0.1,
-            verbose=-1,
-            random_state=self.random_state,
-            n_jobs=1
-        )
-
-        linear = LinearRegression(n_jobs=1)
-
-        scaler = StandardScaler()
-
-        metrics = {
-            'lgbm_auc': [], 'lgbm_ic': [], 'lgbm_ll': [], 'lgbm_pr': [],
-            'lin_auc': [], 'lin_ic': [], 'lin_ll': [], 'lin_pr': []
-        }
-
-        fold_idx = 0
-        try:
-            # --- OPTIMIZATION CONFIG ---
-            try:
-                linear_only_auc = float(getattr(self, '_current_config', {}).get('layer2_probe_linear_only_auc', 0.65))
-            except Exception:
-                linear_only_auc = 0.65
-            
-            for train_index, test_index in tscv.split(X_clean):
-                X_train, X_test = X_clean.iloc[train_index], X_clean.iloc[test_index]
-                y_train, y_test = y_clean.iloc[train_index], y_clean.iloc[test_index]
-
-                if y_train.nunique() < 2 or y_test.nunique() < 2:
-                    continue
-
-                # --- OPTIMIZATION: Linear First ---
-                X_train_scaled = scaler.fit_transform(X_train)
-                X_test_scaled = scaler.transform(X_test)
-
-                if w_clean is not None:
-                    linear.fit(X_train_scaled, y_train, sample_weight=w_clean[train_index])
-                else:
-                    linear.fit(X_train_scaled, y_train)
-                
-                raw_scores = linear.predict(X_test_scaled)
-                raw_scores = np.asarray(raw_scores, dtype=float)
-                raw_scores = np.clip(raw_scores, -20.0, 20.0)
-                p_linear = expit(raw_scores)
-                p_linear = np.clip(np.asarray(p_linear, dtype=float), 1e-6, 1.0 - 1e-6)
-
-                sw_te = w_clean[test_index] if w_clean is not None else None
-                try:
-                    auc_lin = roc_auc_score(y_test, p_linear, sample_weight=sw_te) if sw_te is not None else roc_auc_score(y_test, p_linear)
-                    metrics['lin_auc'].append(float(auc_lin))
-                except Exception:
-                    auc_lin = 0.5
-
-                try:
-                    ll_lin = log_loss(y_test, p_linear, sample_weight=sw_te) if sw_te is not None else log_loss(y_test, p_linear)
-                    metrics['lin_ll'].append(float(ll_lin))
-                except Exception:
-                    pass
-
-                try:
-                    ic_lin, _ = spearmanr(y_test, p_linear)
-                    metrics['lin_ic'].append(float(ic_lin) if np.isfinite(ic_lin) else 0.0)
-                except Exception:
-                    pass
-
-                try:
-                    pr_lin = average_precision_score(y_test, p_linear, sample_weight=sw_te) if sw_te is not None else average_precision_score(y_test, p_linear)
-                    metrics['lin_pr'].append(float(pr_lin))
-                except Exception:
-                    pass
-
-                # Skip LGBM if Linear is already very good OR if it's very bad in first fold
-                skip_lgbm = (auc_lin >= linear_only_auc) or (fold_idx == 0 and auc_lin < 0.48)
-
-                if not skip_lgbm:
-                    n_train = int(len(X_train))
-                    val_n = int(max(10, min(int(np.floor(0.2 * n_train)), n_train - 1)))
-                    use_es = bool(val_n >= 10 and n_train - val_n >= 10)
-
-                    if use_es:
-                        X_tr2 = X_train.iloc[:-val_n]
-                        y_tr2 = y_train.iloc[:-val_n]
-                        X_val2 = X_train.iloc[-val_n:]
-                        y_val2 = y_train.iloc[-val_n:]
-                        if y_tr2.nunique() < 2 or y_val2.nunique() < 2:
-                            use_es = False
-
-                    if w_clean is not None and use_es:
-                        w_tr2 = w_clean[train_index][:-val_n]
-                        lgbm.fit(
-                            X_tr2, y_tr2,
-                            sample_weight=w_tr2,
-                            eval_set=[(X_val2, y_val2)],
-                            callbacks=[lgb.early_stopping(10, verbose=False)]
-                        )
-                    elif w_clean is not None:
-                        lgbm.fit(
-                            X_train, y_train,
-                            sample_weight=w_clean[train_index],
-                        )
-                    elif use_es:
-                        lgbm.fit(
-                            X_tr2, y_tr2,
-                            eval_set=[(X_val2, y_val2)],
-                            callbacks=[lgb.early_stopping(10, verbose=False)]
-                        )
-                    else:
-                        lgbm.fit(
-                            X_train, y_train,
-                        )
-                    p_lgbm = lgbm.predict_proba(X_test)[:, 1]
-                    p_lgbm = np.clip(np.asarray(p_lgbm, dtype=float), 1e-6, 1.0 - 1e-6)
-
-                    try:
-                        auc_val = roc_auc_score(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else roc_auc_score(y_test, p_lgbm)
-                        metrics['lgbm_auc'].append(auc_val)
-                        metrics['lgbm_ll'].append(log_loss(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else log_loss(y_test, p_lgbm))
-                        ic, _ = spearmanr(y_test, p_lgbm)
-                        metrics['lgbm_ic'].append(ic if not np.isnan(ic) else 0.0)
-
-                        try:
-                            pr_val = average_precision_score(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else average_precision_score(y_test, p_lgbm)
-                            metrics['lgbm_pr'].append(float(pr_val))
-                        except Exception:
-                            pass
-                        
-                        if trial is not None:
-                            trial.report(auc_val, step=fold_idx)
-                            if trial.should_prune():
-                                raise optuna.TrialPruned()
-                    except optuna.TrialPruned:
-                        raise
-                    except Exception:
-                        pass
-                else:
-                    # Sync metrics or report Linear AUC to Optuna if skipping LGBM
-                    if trial is not None:
-                        trial.report(auc_lin, step=fold_idx)
-                        if trial.should_prune():
-                            raise optuna.TrialPruned()
-
-                # --- OPTIMIZATION: Tiered Folding (Early Exit) ---
-                # If after 2 folds the performance is clearly not promising, stop.
-                if fold_idx == 1:
-                    current_avg = np.mean(metrics['lgbm_auc'] if metrics['lgbm_auc'] else metrics['lin_auc'])
-                    if current_avg < 0.515:
-                        break
-
-                fold_idx += 1
-
-        except optuna.TrialPruned:
-            raise
-        except Exception as e:
-            logger.warning(f"Probe failure: {e}")
-            return {'auc': 0.5, 'log_loss': 1.0, 'ic': 0.0, 'passed': False}
-
-        if not metrics['lgbm_auc'] and not metrics['lin_auc']:
-            return {'auc': 0.5, 'log_loss': 1.0, 'ic': 0.0, 'passed': False}
-
-        auc_lgbm = np.asarray(metrics['lgbm_auc'], dtype=float)
-        auc_lin = np.asarray(metrics['lin_auc'], dtype=float)
-        pr_lgbm = np.asarray(metrics.get('lgbm_pr') or [], dtype=float)
-        pr_lin = np.asarray(metrics.get('lin_pr') or [], dtype=float)
-
-        avg_auc_lgbm = float(np.mean(auc_lgbm)) if auc_lgbm.size else float('nan')
-        avg_auc_linear = float(np.mean(auc_lin)) if auc_lin.size else float('nan')
-
-        avg_ic_lgbm = float(np.mean(np.asarray(metrics.get('lgbm_ic') or [], dtype=float))) if metrics.get('lgbm_ic') else float('nan')
-        avg_ic_linear = float(np.mean(np.asarray(metrics.get('lin_ic') or [], dtype=float))) if metrics.get('lin_ic') else float('nan')
-
-        avg_ll_lgbm = float(np.mean(np.asarray(metrics.get('lgbm_ll') or [], dtype=float))) if metrics.get('lgbm_ll') else float('nan')
-        avg_ll_linear = float(np.mean(np.asarray(metrics.get('lin_ll') or [], dtype=float))) if metrics.get('lin_ll') else float('nan')
-
-        auc_pool = []
-        if np.isfinite(avg_auc_lgbm):
-            auc_pool.append(float(avg_auc_lgbm))
-        if np.isfinite(avg_auc_linear):
-            auc_pool.append(float(avg_auc_linear))
-        final_auc = float(np.median(auc_pool)) if auc_pool else 0.5
-        auc_std = float(np.std(np.concatenate([auc_lgbm, auc_lin])) if (auc_lgbm.size + auc_lin.size) > 0 else float('nan'))
-
-        # PR-AUC baseline is the positive class rate.
-        try:
-            pos_rate = float(y_clean.mean())
-        except Exception:
-            pos_rate = float('nan')
-        pr_baseline = float(pos_rate) if np.isfinite(pos_rate) else float('nan')
-        pr_best = float('nan')
-        try:
-            pr_pool = []
-            if pr_lgbm.size:
-                pr_pool.append(float(np.mean(pr_lgbm)))
-            if pr_lin.size:
-                pr_pool.append(float(np.mean(pr_lin)))
-            if pr_pool:
-                pr_best = float(np.median(pr_pool))
-        except Exception:
-            pr_best = float('nan')
-
-        try:
-            auc_thr = float(getattr(self, '_current_config', {}).get('layer2_probe_auc_threshold', 0.515))
-        except Exception:
-            auc_thr = 0.515
-        try:
-            pr_margin = float(getattr(self, '_current_config', {}).get('layer2_probe_pr_margin', 0.01))
-        except Exception:
-            pr_margin = 0.01
-        pr_thr = float(pr_baseline + pr_margin) if np.isfinite(pr_baseline) else float('nan')
-
-        passed_auc = bool(np.isfinite(final_auc) and (final_auc >= float(auc_thr)))
-        passed_pr = bool((not np.isfinite(pr_thr)) or (np.isfinite(pr_best) and (pr_best >= pr_thr)))
-        passed = bool(passed_auc and passed_pr)
-
-        ic_pool = []
-        if np.isfinite(avg_ic_lgbm):
-            ic_pool.append(float(avg_ic_lgbm))
-        if np.isfinite(avg_ic_linear):
-            ic_pool.append(float(avg_ic_linear))
-        ll_pool = []
-        if np.isfinite(avg_ll_lgbm):
-            ll_pool.append(float(avg_ll_lgbm))
-        if np.isfinite(avg_ll_linear):
-            ll_pool.append(float(avg_ll_linear))
-
-        return {
-            'auc': final_auc,
-            'auc_std': auc_std,
-            'pr_auc': pr_best,
-            'pr_auc_baseline': pr_baseline,
-            'ic': float(np.mean(ic_pool)) if ic_pool else 0.0,
-            'log_loss': float(np.mean(ll_pool)) if ll_pool else 1.0,
-            'auc_lgbm': float(avg_auc_lgbm) if np.isfinite(avg_auc_lgbm) else float('nan'),
-            'auc_lgbm_light': float(avg_auc_lgbm) if np.isfinite(avg_auc_lgbm) else float('nan'),
-            'auc_linear': float(avg_auc_linear) if np.isfinite(avg_auc_linear) else float('nan'),
-            'pr_auc_lgbm': float(np.mean(pr_lgbm)) if pr_lgbm.size else float('nan'),
-            'pr_auc_linear': float(np.mean(pr_lin)) if pr_lin.size else float('nan'),
-            'passed': passed,
-        }
-
-    def _train_full_lgbm_probe(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        sample_weight: Optional[np.ndarray] = None,
-    ) -> Dict[str, float]:
-        valid = y.notna()
-        X_clean = X.loc[valid].fillna(0.0)
-        y_clean = y.loc[valid].astype(int)
-
-        w_clean = None
-        if sample_weight is not None:
-            try:
-                w_arr = np.asarray(sample_weight, dtype=float).reshape(-1)
-                if w_arr.shape[0] == int(valid.sum()):
-                    w_clean = w_arr
-            except Exception:
-                w_clean = None
-
-        if len(y_clean) < 100 or y_clean.nunique() < 2:
-            return {'auc_full': 0.5, 'auc_std_full': float('nan'), 'pr_auc_full': float('nan'), 'ic_full': 0.0, 'log_loss_full': 1.0}
-
-        try:
-            cfg = getattr(self, '_current_config', {})
-            if not isinstance(cfg, dict):
-                cfg = {}
-        except Exception:
-            cfg = {}
-
-        try:
-            sample_rate = float(cfg.get('layer2_full_probe_sampling_rate', 1.0))
-        except Exception:
-            sample_rate = 1.0
-
-        if sample_rate < 1.0 and len(y_clean) > 400:
-            step = int(max(1, np.floor(1.0 / max(1e-9, sample_rate))))
-            X_clean = X_clean.iloc[::step]
-            y_clean = y_clean.iloc[::step]
-            if w_clean is not None:
-                w_clean = w_clean[::step]
-
-        try:
-            feat_limit = int(cfg.get('layer2_full_probe_feature_limit', 0))
-        except Exception:
-            feat_limit = 0
-        if feat_limit > 0 and X_clean.shape[1] > feat_limit:
-            X_clean = X_clean.iloc[:, :feat_limit]
-
-        params_default = {
-            'n_estimators': 2000,
-            'learning_rate': 0.05,
-            'max_depth': 7,
-            'num_leaves': 63,
-            'min_data_in_leaf': 20,
-            'feature_fraction': 0.9,
-            'bagging_fraction': 0.9,
-            'bagging_freq': 1,
-            'lambda_l1': 0.1,
-            'lambda_l2': 1.0,
-            'min_gain_to_split': 0.005,
-            'verbose': -1,
-            'random_state': int(getattr(self, 'random_state', 42)),
-            'n_jobs': 1,
-        }
-        try:
-            params_cfg = cfg.get('layer2_full_probe_params')
-            if isinstance(params_cfg, dict) and params_cfg:
-                params_default.update({k: v for k, v in params_cfg.items()})
-        except Exception:
-            pass
-
-        tscv = TimeSeriesSplit(n_splits=int(max(2, getattr(self, 'n_splits', 3))))
-
-        aucs: List[float] = []
-        prs: List[float] = []
-        ics: List[float] = []
-        lls: List[float] = []
-
-        for train_index, test_index in tscv.split(X_clean):
-            X_train, X_test = X_clean.iloc[train_index], X_clean.iloc[test_index]
-            y_train, y_test = y_clean.iloc[train_index], y_clean.iloc[test_index]
-            if y_train.nunique() < 2 or y_test.nunique() < 2:
-                continue
-
-            sw_te = w_clean[test_index] if w_clean is not None else None
-
-            n_train = int(len(X_train))
-            val_n = int(max(20, min(int(np.floor(0.2 * n_train)), n_train - 1)))
-            use_es = bool(val_n >= 20 and n_train - val_n >= 20)
-
-            if use_es:
-                X_tr2 = X_train.iloc[:-val_n]
-                y_tr2 = y_train.iloc[:-val_n]
-                X_val2 = X_train.iloc[-val_n:]
-                y_val2 = y_train.iloc[-val_n:]
-                if y_tr2.nunique() < 2 or y_val2.nunique() < 2:
-                    use_es = False
-
-            model = lgb.LGBMClassifier(**params_default)
-
-            if w_clean is not None and use_es:
-                w_tr2 = w_clean[train_index][:-val_n]
-                model.fit(
-                    X_tr2, y_tr2,
-                    sample_weight=w_tr2,
-                    eval_set=[(X_val2, y_val2)],
-                    callbacks=[lgb.early_stopping(30, verbose=False)],
-                )
-            elif w_clean is not None:
-                model.fit(X_train, y_train, sample_weight=w_clean[train_index])
-            elif use_es:
-                model.fit(
-                    X_tr2, y_tr2,
-                    eval_set=[(X_val2, y_val2)],
-                    callbacks=[lgb.early_stopping(30, verbose=False)],
-                )
-            else:
-                model.fit(X_train, y_train)
-
-            p = model.predict_proba(X_test)[:, 1]
-            p = np.clip(np.asarray(p, dtype=float), 1e-6, 1.0 - 1e-6)
-
-            try:
-                aucs.append(float(roc_auc_score(y_test, p, sample_weight=sw_te) if sw_te is not None else roc_auc_score(y_test, p)))
-            except Exception:
-                pass
-            try:
-                lls.append(float(log_loss(y_test, p, sample_weight=sw_te) if sw_te is not None else log_loss(y_test, p)))
-            except Exception:
-                pass
-            try:
-                pr = average_precision_score(y_test, p, sample_weight=sw_te) if sw_te is not None else average_precision_score(y_test, p)
-                prs.append(float(pr))
-            except Exception:
-                pass
-            try:
-                ic, _ = spearmanr(y_test, p)
-                ics.append(float(ic) if np.isfinite(ic) else 0.0)
-            except Exception:
-                pass
-
-        if not aucs:
-            return {'auc_full': 0.5, 'auc_std_full': float('nan'), 'pr_auc_full': float('nan'), 'ic_full': 0.0, 'log_loss_full': 1.0}
-
-        auc_arr = np.asarray(aucs, dtype=float)
-        pr_arr = np.asarray(prs, dtype=float)
-
-        return {
-            'auc_full': float(np.mean(auc_arr)),
-            'auc_std_full': float(np.std(auc_arr)) if auc_arr.size else float('nan'),
-            'pr_auc_full': float(np.mean(pr_arr)) if pr_arr.size else float('nan'),
-            'ic_full': float(np.mean(np.asarray(ics, dtype=float))) if ics else 0.0,
-            'log_loss_full': float(np.mean(np.asarray(lls, dtype=float))) if lls else 1.0,
-        }
-
-    def _check_stability(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame,
-        trial_params: Dict[str, Any],
-        base_score: float,
-        family: str
-    ) -> bool:
-        """
-        Stability check (Time-Flip):
-        Perturb start time by ±1 bar.
-        If labels flip frequently, discard.
-        """
-        # 1. Base Labels
-        base_labels, _, _, _ = self._compute_dominance_labels(df, events_df, family=family, **trial_params)
-
-        # 2. Shifted Labels (+1 bar)
-        # Using events_shift=1
-        shift1_labels, _, _, _ = self._compute_dominance_labels(
-            df, events_df, family=family, events_shift=1, **trial_params
-        )
-
-        # 3. Shifted Labels (-1 bar)
-        # Using events_shift=-1
-        shift_neg1_labels, _, _, _ = self._compute_dominance_labels(
-             df, events_df, family=family, events_shift=-1, **trial_params
-        )
-
-        # Align
-        idx = base_labels.dropna().index
-
-        b = base_labels.reindex(idx)
-        s1 = shift1_labels.reindex(idx)
-        sn1 = shift_neg1_labels.reindex(idx)
-
-        valid = b.notna() & s1.notna() & sn1.notna()
-        if valid.sum() < 10:
-             return False # Not enough data to verify stability
-
-        b_v = b[valid]
-        s1_v = s1[valid]
-        sn1_v = sn1[valid]
-
-        # Agreement Rate
-        agree1 = (b_v == s1_v).mean()
-        agree2 = (b_v == sn1_v).mean()
-        avg_agreement = (agree1 + agree2) / 2.0
-
-        # Threshold: Configurable (default 0.85)
-        try:
-            stability_threshold = float(getattr(self, '_current_config', {}).get('layer2_stability_threshold', 0.82))
-        except Exception:
-            stability_threshold = 0.82
-
-        if avg_agreement < stability_threshold:
-             logger.debug(f"Stability failed: Flip rate too high (agreement={avg_agreement:.2f} < {stability_threshold})")
-             return False
-
-        return True
-
-    def _optimize_families(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame
-    ) -> Dict[str, List[GeometryTrial]]:
-        """
-        Run Optuna optimization for each barrier family.
-        """
-        results: Dict[str, List[GeometryTrial]] = {}
-
-        events_df = events_df.copy()
-        events_df['family'] = self._assign_barrier_families(events_df)
-
-        unique_families = events_df['family'].unique()
-
-        X_events = self._build_geometry_independent_event_features(df, events_df)
-        try:
-            probe_features = self._select_global_probe_features(X_events)
-        except Exception:
-            probe_features = []
-        target_sample_weight_events = self._get_target_sample_weight_for_events(df, events_df)
-
-        for family in unique_families:
-            logger.info(f"Optimizing family: {family}")
-
-            family_mask = events_df['family'] == family
-            family_events = events_df[family_mask]
-
-            if len(family_events) < 50:
-                logger.warning(f"Not enough events for family {family} ({len(family_events)}). Skipping.")
-                continue
-
-            try:
-                logger.info(
-                    f"Layer2 Optimize family={family}: n_events={int(len(family_events))}, n_trials={int(self.n_trials)}, "
-                    f"probe_feats={int(len(getattr(self, '_global_probe_features', []) or []))}"
-                )
-            except Exception:
-                pass
-
-            # Use a single, continuous optimization stage with TPESampler
-            # This allows Optuna to explore the full space naturally ('do it on its own')
-            # without artificial bounds narrowing.
-            # We add n_startup_trials to ensure good initial coverage.
-            sampler = optuna.samplers.TPESampler(
-                seed=int(self.random_state),
-                n_startup_trials=10,
-                multivariate=True  # beneficial if kappa/horizon interact
-            )
-
-            study = optuna.create_study(
-                direction="maximize",
-                sampler=sampler,
-                pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0, interval_steps=1)
-            )
-
-            # Use partial to pass context to the extracted objective method
-            from functools import partial
-            obj_func = partial(
-                self._optimization_objective,
-                df=df,
-                family=family,
-                family_events=family_events,
-                X_events=X_events,
-                probe_features=probe_features,
-                target_sample_weight_events=target_sample_weight_events
-            )
-
-            study.optimize(obj_func, n_trials=int(self.n_trials))
-
-            results[family] = self._extract_trials_from_study(study)
-
-            try:
-                n_ext = int(len(results.get(family) or []))
-                logger.info(
-                    f"Layer2 Optimize family={family}: extracted_trials={n_ext}, cache_hits={int(getattr(self, '_cache_hits', 0))}, "
-                    f"cache_misses={int(getattr(self, '_cache_misses', 0))}"
-                )
-            except Exception:
-                pass
-
-        return results
+        return lbl, ret
 
     def _optimization_objective(
         self,
@@ -2452,33 +1419,39 @@ class LabelBasedLayer2:
         target_sample_weight_events: Optional[pd.Series]
     ) -> float:
         """Extracted optimization objective to avoid nested function re-definition."""
-        bounds = self._current_param_bounds.get(str(family)) if isinstance(getattr(self, '_current_param_bounds', None), dict) else None
+        # Parameter Suggestion
+        # tp_mult (1.0 - 6.0)
+        tp_mult = trial.suggest_float('tp_mult', 1.0, 6.0)
+        # dominance_ratio (1.0 - 4.0)
+        dominance_ratio = trial.suggest_float('dominance_ratio', 1.0, 4.0)
+        # sl_mult (0.5 - 3.0)
+        sl_mult = trial.suggest_float('sl_mult', 0.5, 3.0)
+        # horizon (10 - 50)
+        horizon = trial.suggest_int('horizon', 10, 50)
 
-        # Parameter Space: Kappa and Horizon
-        if isinstance(bounds, dict) and all(k in bounds for k in ('k_low', 'k_high', 'h_low', 'h_high')):
-             kappa = trial.suggest_float('kappa', float(bounds['k_low']), float(bounds['k_high']))
-             horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
-        else:
-             # Default ranges
-             kappa = trial.suggest_float('kappa', 1.0, 6.0)
-             horizon = trial.suggest_int('horizon', 10, 100)
-
-        try:
-            sl_low = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_low', 0.5))
-        except Exception:
-            sl_low = 0.5
-        try:
-            sl_high = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_high', 3.0))
-        except Exception:
-            sl_high = 3.0
-        if (not np.isfinite(sl_low)) or sl_low <= 0.0:
-            sl_low = 0.5
-        if (not np.isfinite(sl_high)) or sl_high <= float(sl_low):
-            sl_high = float(max(float(sl_low) + 0.5, 3.0))
-        sl_mult = trial.suggest_float('sl_mult', float(sl_low), float(sl_high))
+        # Enforce Constraint: tp_mult >= 1.5 * sl_mult
+        min_tp = 1.5 * sl_mult
+        if tp_mult < min_tp:
+            # Adjust tp_mult to meet constraint rather than reject trial
+            # This allows Optuna to learn the constraint region or just work with valid params
+            tp_mult = min_tp
+            if tp_mult > 6.0:
+                # If adjustment pushes it out of bounds, clip and reduce SL instead
+                tp_mult = 6.0
+                sl_mult = tp_mult / 1.5
+                # if sl_mult < 0.5... strict constraint might be tricky.
+                # but let's assume valid regions exist.
 
         # Compute labels
-        labels, returns, _, _ = self._compute_dominance_labels(df, family_events, kappa, horizon, family, sl_mult=sl_mult)
+        labels, returns, _, _ = self._compute_dominance_labels(
+            df,
+            family_events,
+            tp_mult=tp_mult,
+            dominance_ratio=dominance_ratio,
+            horizon=horizon,
+            family=family,
+            sl_mult=sl_mult
+        )
 
         # Metrics
         mean_ret = returns.mean()
@@ -2501,8 +1474,6 @@ class LabelBasedLayer2:
 
         pos_rate = labels.mean()
 
-        pos_rate = labels.mean()
-
         # --- OPTIMIZATION: Tighter Pre-Filters ---
         # If the geometry is fundamentally poor in terms of base statistics, don't waste time on probes.
         try:
@@ -2515,7 +1486,7 @@ class LabelBasedLayer2:
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=pos_rate_limit, pos_rate={pos_rate:.3f}, range=[{min_rate}, {max_rate}]")
              t_obj = GeometryTrial(
                 family=family,
-                params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                params={'tp_mult': tp_mult, 'dominance_ratio': dominance_ratio, 'sl_mult': sl_mult, 'horizon': horizon},
                 final_score=-1.0,
                 learnability=0.0,
                 robust_magnitude=0.0,
@@ -2557,7 +1528,7 @@ class LabelBasedLayer2:
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unprofitable, mean_ret={mean_ret:.5f}")
              t_obj = GeometryTrial(
                 family=family,
-                params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                params={'tp_mult': tp_mult, 'dominance_ratio': dominance_ratio, 'sl_mult': sl_mult, 'horizon': horizon},
                 final_score=-1.0,
                 learnability=0.0,
                 robust_magnitude=0.0,
@@ -2605,7 +1576,7 @@ class LabelBasedLayer2:
             is_stable = self._check_stability(
                 df,
                 fam_events_for_checks,
-                {'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                {'tp_mult': tp_mult, 'dominance_ratio': dominance_ratio, 'sl_mult': sl_mult, 'horizon': horizon},
                 0.0,
                 family,
             )
@@ -2613,7 +1584,7 @@ class LabelBasedLayer2:
                  logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unstable")
                  t_obj = GeometryTrial(
                     family=family,
-                    params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                    params={'tp_mult': tp_mult, 'dominance_ratio': dominance_ratio, 'sl_mult': sl_mult, 'horizon': horizon},
                     final_score=-1.0,
                     learnability=0.0,
                     robust_magnitude=0.0,
@@ -2637,9 +1608,10 @@ class LabelBasedLayer2:
             perturb_every = 1
 
         if (trial.number % int(perturb_every)) == 0:
-            perturb_labels_k, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa * 1.05, horizon, family, sl_mult=sl_mult)
-            perturb_labels_sl, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, horizon, family, sl_mult=sl_mult * 1.05)
-            perturb_labels_h, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, int(horizon * 1.05), family, sl_mult=sl_mult)
+            # Small perturbation to params
+            perturb_labels_k, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, tp_mult * 1.05, dominance_ratio, horizon, family, sl_mult=sl_mult)
+            perturb_labels_sl, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, tp_mult, dominance_ratio, horizon, family, sl_mult=sl_mult * 1.05)
+            perturb_labels_h, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, tp_mult, dominance_ratio, int(horizon * 1.05), family, sl_mult=sl_mult)
 
             base_lbl = labels.reindex(fam_events_for_checks.index)
             agree_k = (base_lbl == perturb_labels_k).mean()
@@ -2664,7 +1636,7 @@ class LabelBasedLayer2:
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unstable_recheck")
              t_obj = GeometryTrial(
                 family=family,
-                params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                params={'tp_mult': tp_mult, 'dominance_ratio': dominance_ratio, 'sl_mult': sl_mult, 'horizon': horizon},
                 final_score=-1.0,
                 learnability=0.0,
                 robust_magnitude=0.0,
@@ -2735,7 +1707,7 @@ class LabelBasedLayer2:
 
         t_obj = GeometryTrial(
             family=family,
-            params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+            params={'tp_mult': tp_mult, 'dominance_ratio': dominance_ratio, 'sl_mult': sl_mult, 'horizon': horizon},
             final_score=final_score,
             learnability=learnability,
             robust_magnitude=float(mean_ret) * 1000,
@@ -2787,12 +1759,16 @@ class LabelBasedLayer2:
         family_medians = {}
         for fam, trials in family_results.items():
             trials_all = list(trials or [])
-            trials_use = [t for t in trials_all if _is_passed_trial(t)] if require_passed else trials_all
+            # Filter logic: if require_passed is True, filter.
+            # If False (OOF), we also want to filter by passed to maintain consistency/quality if possible.
+            # However, if nothing passed in OOF, we might want to return nothing (as per strict request).
+            trials_use = [t for t in trials_all if _is_passed_trial(t)]
 
-            # In OOF mode, if nothing passed but we have trials, we still want a ranking
-            # so we can pick a stable/diverse subset for analytics.
-            if (not require_passed) and (not trials_use) and trials_all:
-                trials_use = trials_all
+            # Note: Removed the fallback "if not trials_use then trials_use = trials_all"
+            # as we want strict acceptance.
+
+            if not trials_use:
+                continue
 
             trials_sorted = sorted(trials_use, key=lambda x: float(getattr(x, 'final_score', -1.0)), reverse=True)
             top_k = trials_sorted[:10]
@@ -2804,13 +1780,8 @@ class LabelBasedLayer2:
         sorted_families = sorted(family_medians.items(), key=lambda x: x[1], reverse=True)
         keep_families = [f[0] for f in sorted_families[:3]]
         if not keep_families:
-            keep_families = [str(k) for k in family_results.keys()]
-
-        keep_families = [
-            fam
-            for fam in keep_families
-            if fam in family_results and isinstance(family_results.get(fam), list) and len(family_results.get(fam)) > 0
-        ]
+            # If no family has any passed trial, we return empty list
+            return []
 
         selected = []
 
@@ -2818,14 +1789,10 @@ class LabelBasedLayer2:
         for fam in keep_families:
             trials_all = list(family_results.get(fam) or [])
 
-            if require_passed:
-                trials = [t for t in trials_all if _is_passed_trial(t)]
-                if not trials:
-                    continue
-            else:
-                trials = [t for t in trials_all if np.isfinite(float(getattr(t, 'final_score', -1.0)))]
-                if not trials and trials_all:
-                    trials = trials_all
+            # Strict filtering
+            trials = [t for t in trials_all if _is_passed_trial(t)]
+            if not trials:
+                continue
 
             trials.sort(key=lambda x: float(getattr(x, 'final_score', -1.0)), reverse=True)
             n_top = max(2, int(len(trials) * 0.2))
@@ -2957,29 +1924,32 @@ class LabelBasedLayer2:
             fam_selected = []
 
             # Helper to normalize params for distance calculation
-            k_vals = [t.params.get('kappa') for t in top_tier]
-            sl_vals = [t.params.get('sl_mult') for t in top_tier]
-            h_vals = [t.params.get('horizon') for t in top_tier]
+            tp_vals = [float(t.params.get('tp_mult', 0.0)) for t in top_tier]
+            dom_vals = [float(t.params.get('dominance_ratio', 0.0)) for t in top_tier]
+            sl_vals = [float(t.params.get('sl_mult', 1.0)) for t in top_tier]
+            h_vals = [float(t.params.get('horizon', 0.0)) for t in top_tier]
 
-            k_vals_f = [float(v) for v in k_vals if v is not None and np.isfinite(float(v))]
-            sl_vals_f = [float(v) for v in sl_vals if v is not None and np.isfinite(float(v))]
-            h_vals_f = [float(v) for v in h_vals if v is not None and np.isfinite(float(v))]
+            # Avoid empty ranges
+            def _get_range(vals):
+                if not vals: return 1.0
+                return max(vals) - min(vals) + 1e-6
 
-            if (not k_vals_f) or (not h_vals_f):
-                continue
+            tp_range = _get_range(tp_vals)
+            dom_range = _get_range(dom_vals)
+            sl_range = _get_range(sl_vals)
+            h_range = _get_range(h_vals)
 
-            if not sl_vals_f:
-                sl_vals_f = [1.0]
-
-            k_range = max(k_vals_f) - min(k_vals_f) + 1e-6
-            sl_range = max(sl_vals_f) - min(sl_vals_f) + 1e-6
-            h_range = max(h_vals_f) - min(h_vals_f) + 1e-6
+            tp_min = min(tp_vals) if tp_vals else 0.0
+            dom_min = min(dom_vals) if dom_vals else 0.0
+            sl_min = min(sl_vals) if sl_vals else 0.0
+            h_min = min(h_vals) if h_vals else 0.0
 
             def get_norm_vec(t):
                 return np.array([
-                    (float(t.params.get('kappa', 0.0)) - min(k_vals_f)) / k_range,
-                    (float(t.params.get('sl_mult', 1.0)) - min(sl_vals_f)) / sl_range,
-                    (float(t.params.get('horizon', 0.0)) - min(h_vals_f)) / h_range,
+                    (float(t.params.get('tp_mult', 0.0)) - tp_min) / tp_range,
+                    (float(t.params.get('dominance_ratio', 0.0)) - dom_min) / dom_range,
+                    (float(t.params.get('sl_mult', 1.0)) - sl_min) / sl_range,
+                    (float(t.params.get('horizon', 0.0)) - h_min) / h_range,
                 ])
 
             # Outcome-space diversification: avoid selecting highly correlated return series
@@ -3006,19 +1976,13 @@ class LabelBasedLayer2:
             for cand in top_tier:
                 fam_events = events_df[events_df['family'] == fam]
                 # Already checked stability in optimization loop for passed trials
-                # But double check if coming from fallback
                 if self._check_stability(df, fam_events, cand.params, cand.final_score, fam):
                     fam_selected.append(cand)
                     break
 
             if not fam_selected:
-                # Production mode should never fall back to a failing/unstable geometry.
-                if require_passed:
-                    continue
-                try:
-                    fam_selected.append(top_tier[0])
-                except Exception:
-                    continue
+                # No stable geometry in top tier? Strict check => skip family
+                continue
 
             # Pick others maximizing normalized distance
             candidate_pool = [t for t in top_tier if t not in fam_selected]
@@ -3187,495 +2151,3 @@ class LabelBasedLayer2:
             selected = kept
 
         return selected
-
-    def _train_geometry_models(
-        self,
-        df: pd.DataFrame,
-        X_events: pd.DataFrame,
-        events_df: pd.DataFrame,
-        geometries: List[GeometryTrial]
-    ) -> Dict[str, Any]:
-        """
-        Train simple LGBM models for each geometry on the provided training set
-        to allow Out-Of-Sample prediction generation on the test set.
-
-        Updated to use RobustFocalLoss and specified hyperparameters.
-        """
-        models = {}
-        for g in geometries:
-            try:
-                lbls, _, _, _ = self._compute_dominance_labels(df, events_df, family=g.family, **g.params)
-                valid_lbls = lbls.dropna()
-                common_idx = valid_lbls.index.intersection(X_events.index)
-                
-                if len(common_idx) < 20: 
-                     models[g.uuid] = None
-                     continue
-
-                X_train = X_events.loc[common_idx]
-                y_train = valid_lbls.loc[common_idx]
-                
-                if len(y_train.unique()) < 2:
-                    models[g.uuid] = None
-                    continue
-
-                # --- New Hyperparameters ---
-                # 'boosting_type': 'gbdt',
-                # 'objective': 'binary', (overridden by fobj)
-                # 'metric': 'auc',
-                # 'max_depth': 5,
-                # 'num_leaves': 31,
-                # 'lambda_l1': 0.5,
-                # 'lambda_l2': 5.0,
-                # 'min_data_in_leaf': 50,
-                # 'feature_fraction': 0.8,
-                # 'bagging_fraction': 0.8,
-                # 'bagging_freq': 1,
-                # 'learning_rate': 0.02,
-                # 'n_estimators': 2000,
-                # 'is_unbalance': False,
-                # 'scale_pos_weight': 1
-
-                params = {
-                    'boosting_type': 'gbdt',
-                    'objective': 'binary',
-                    'metric': 'auc',
-                    'max_depth': 5,
-                    'num_leaves': 31,
-                    'lambda_l1': 1.0,
-                    'lambda_l2': 5.0,
-                    'min_data_in_leaf': 30,
-                    'feature_fraction': 0.8,
-                    'bagging_fraction': 0.8,
-                    'bagging_freq': 1,
-                    'learning_rate': 0.02,
-                    'n_estimators': 1000,
-                    'verbose': -1,
-                    'random_state': 42,
-                    'n_jobs': 1,
-                    # Disable internal imbalance handling as Focal Loss handles it
-                    'is_unbalance': False,
-                    'scale_pos_weight': 1,
-                    # Add min_gain_to_split to prevent -inf gain issues
-                    'min_gain_to_split': 0.005,
-                    # Add regularization to prevent overfitting
-                    'min_child_weight': 0.001,
-                }
-
-                # Instantiate Focal Loss
-                focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=1.5)
-                params['objective'] = focal_obj
-
-                # Create Dataset for training
-                train_ds = lgb.Dataset(X_train, label=y_train)
-
-                # Train with callbacks
-                # Note: We don't have a separate validation set here for early stopping in this specific function flow
-                # (it's OOF training on the full 'train' fold passed by the caller).
-                # To enable early stopping, we should split X_train internally or rely on n_estimators.
-                # Given the instruction to use early stopping (rounds=100), we'll do an internal split 90/10.
-
-                X_tr_inner, X_val_inner = X_train.iloc[:int(len(X_train)*0.9)], X_train.iloc[int(len(X_train)*0.9):]
-                y_tr_inner, y_val_inner = y_train.iloc[:int(len(y_train)*0.9)], y_train.iloc[int(len(y_train)*0.9):]
-
-                if len(y_val_inner) < 10:
-                    # Too small for split, train on full without early stopping
-                    booster = lgb.train(
-                        params,
-                        train_ds,
-                        num_boost_round=params.get('n_estimators', 500)
-                    )
-                else:
-                    train_ds_inner = lgb.Dataset(X_tr_inner, label=y_tr_inner)
-                    val_ds_inner = lgb.Dataset(X_val_inner, label=y_val_inner, reference=train_ds_inner)
-
-                    booster = lgb.train(
-                        params,
-                        train_ds_inner,
-                        valid_sets=[train_ds_inner, val_ds_inner],
-                        num_boost_round=params.get('n_estimators', 500),
-                        callbacks=[
-                            lgb.early_stopping(stopping_rounds=100, verbose=False),
-                        ]
-                    )
-
-                models[g.uuid] = booster
-            except Exception as e:
-                logger.warning(f"Failed to train geometry model for {g.uuid}: {e}")
-                models[g.uuid] = None
-        return models
-
-    def _bagged_labeling(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame,
-        geometries: List[GeometryTrial],
-        trained_models: Optional[Dict[str, Any]] = None,
-        X_events: Optional[pd.DataFrame] = None
-    ) -> Dict[str, Any]:
-        """
-        Step 3.4: Generate final bagged outputs with advanced weighting checks.
-
-        Outputs:
-        - Weighted Consensus Labels
-        - Weighted Consensus Returns
-        - Event Weights (capped and normalized)
-        - Individual OOF Predictions (Probabilities)
-        - Individual OOF Variances (Tree Variance)
-        """
-
-        # Ensure family assignment is up to date
-        events_df = events_df.copy()
-        events_df['family'] = self._assign_barrier_families(events_df)
-
-        # Organize geometries by family
-        geo_by_fam = {}
-        for g in geometries:
-            geo_by_fam.setdefault(g.family, []).append(g)
-
-        # Storage for aggregation
-        composite_labels = pd.Series(index=events_df.index, dtype=float)
-        composite_prob = pd.Series(index=events_df.index, dtype=float)
-        composite_returns = pd.Series(index=events_df.index, dtype=float)
-        composite_weights = pd.Series(index=events_df.index, dtype=float)
-        oof_preds = {} # Store individual geometry predictions (probabilities)
-        oof_vars = {} # Store individual geometry variances
-
-        # Iterate by family (since events are disjoint by family)
-        for family, fam_geos in geo_by_fam.items():
-            fam_mask = events_df['family'] == family
-            fam_events = events_df[fam_mask]
-
-            if fam_events.empty: continue
-
-            # Temporary storage for this family's calculations
-            # Dimensions: (n_events, n_geometries)
-            n_events = len(fam_events)
-            n_geos = len(fam_geos)
-
-            geo_labels_mat = np.zeros((n_events, n_geos))
-            geo_returns_mat = np.zeros((n_events, n_geos))
-            geo_probs_mat = np.zeros((n_events, n_geos))
-            geo_scores_mat = np.zeros((n_events, n_geos))
-            valid_mask_mat = np.zeros((n_events, n_geos), dtype=bool)
-
-            # Pre-compute Efficiency Ratio for structure confidence
-            try:
-                # Use a standard window for ER or derive from config if possible
-                er_window = 50
-                # We need close prices for ER. df has 'close'.
-                er_series = get_efficiency_ratio(df['close'], window=er_window)
-                er_events = er_series.reindex(fam_events.index).fillna(0.0)
-
-                # Define ER min/max for normalization
-                er_min = 0.2
-                er_max = 0.8
-
-                w_structure_conf = np.clip((er_events.values - er_min) / (er_max - er_min), 0.0, 1.0)
-            except Exception:
-                w_structure_conf = np.ones(n_events)
-
-            # Accumulator for Wsignalgate across geometries
-            w_signalgate_accum = np.zeros(n_events)
-            w_signalgate_count = np.zeros(n_events)
-
-            for i, g in enumerate(fam_geos):
-                # Compute labels/returns for this geometry
-                lbls, rets, mfe, mae = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
-
-                # Store individual geometry output
-                # OOF Fix: Use trained model if available and X_events provided
-                pred_done = False
-
-                # Initialize container
-                oof_preds[g.uuid] = pd.Series(np.nan, index=fam_events.index)
-                oof_vars[g.uuid] = pd.Series(np.nan, index=fam_events.index)
-
-                if trained_models is not None and X_events is not None and g.uuid in trained_models:
-                     booster = trained_models[g.uuid]
-                     if booster is not None:
-                         # Predict on fam_events
-                         fam_indices = fam_events.index.intersection(X_events.index)
-                         if not fam_indices.empty:
-                             try:
-                                 X_subset = X_events.loc[fam_indices]
-
-                                 # 1. Prediction (Raw Margins -> Sigmoid)
-                                 raw_margins = booster.predict(X_subset)
-                                 # Sigmoid is mandatory for Focal Loss output!
-                                 probs = 1.0 / (1.0 + np.exp(-raw_margins))
-
-                                 # 2. Variance (Tree Variance)
-                                 variances = _calculate_tree_variance(booster, X_subset)
-
-                                 # Store
-                                 oof_preds[g.uuid].loc[fam_indices] = probs
-                                 oof_vars[g.uuid].loc[fam_indices] = variances
-
-                                 pred_done = True
-                             except Exception as e:
-                                 logger.warning(f"OOF prediction failed for {g.uuid}: {e}")
-                
-                # If prediction failed or not available, leave as NaN (Layer 3 will handle fillna if needed, but for now we leave explicit NaN)
-
-                # Align to fam_events index
-                lbls_aligned = lbls.reindex(fam_events.index)
-                rets_aligned = rets.reindex(fam_events.index)
-                mfe_aligned = mfe.reindex(fam_events.index).fillna(0.0)
-                mae_aligned = mae.reindex(fam_events.index).fillna(0.0)
-
-                # Identify valid labels (not NaN)
-                not_na = lbls_aligned.notna()
-
-                # Fill matrices
-                geo_labels_mat[not_na, i] = lbls_aligned[not_na]
-                geo_returns_mat[not_na, i] = rets_aligned[not_na]
-                geo_scores_mat[not_na, i] = g.final_score
-                valid_mask_mat[not_na, i] = True
-
-                try:
-                    prob_s = oof_preds.get(g.uuid)
-                    if isinstance(prob_s, pd.Series):
-                        prob_aligned = pd.to_numeric(prob_s.reindex(fam_events.index), errors='coerce').astype(float)
-                    else:
-                        prob_aligned = pd.Series(np.nan, index=fam_events.index, dtype=float)
-                    prob_vals = prob_aligned.to_numpy(dtype=float, copy=False)
-                    fill_mask = (~np.isfinite(prob_vals)) & not_na.to_numpy(dtype=bool, copy=False)
-                    if np.any(fill_mask):
-                        prob_vals = prob_vals.copy()
-                        prob_vals[fill_mask] = pd.to_numeric(lbls_aligned, errors='coerce').astype(float).fillna(0.0).to_numpy(dtype=float, copy=False)[fill_mask]
-                    prob_vals = np.where(np.isfinite(prob_vals), prob_vals, 0.0)
-                    prob_vals = np.clip(prob_vals, 0.0, 1.0)
-                    geo_probs_mat[:, i] = prob_vals
-                except Exception:
-                    geo_probs_mat[not_na, i] = lbls_aligned[not_na].astype(float)
-
-                # --- Compute Wsignalgate for this geometry ---
-                # Wmagnitude = ln(1 + MFE)
-                w_magnitude = np.log1p(np.maximum(0.0, mfe_aligned.values))
-
-                # Wsmoothness = ln(1 + MFE/MAE)
-                safe_mae = np.where(mae_aligned.values > 1e-9, mae_aligned.values, 1e-9)
-                w_smoothness = np.log1p(np.maximum(0.0, mfe_aligned.values / safe_mae))
-
-                # Wsignalgate_i
-                w_sig_i = w_magnitude * w_smoothness * w_structure_conf
-
-                # Accumulate for average
-                # Only accumulate where valid
-                w_signalgate_accum[not_na] += w_sig_i[not_na]
-                w_signalgate_count[not_na] += 1
-
-            if geo_labels_mat.shape != geo_returns_mat.shape or geo_labels_mat.shape != geo_scores_mat.shape:
-                raise ValueError("Layer2 bagging: geometry matrices have inconsistent shapes")
-            if geo_labels_mat.shape != valid_mask_mat.shape:
-                raise ValueError("Layer2 bagging: valid mask has inconsistent shape")
-
-            # --- Per-Geometry Capping Logic ---
-            # Raw total score per event
-            score_base_mat = np.maximum(geo_scores_mat, 0.0)
-            score_base_mat[~valid_mask_mat] = 0.0
-            all_zero_scores = bool(np.all(score_base_mat <= 0.0))
-            if all_zero_scores:
-                score_base_mat = valid_mask_mat.astype(float)
-
-            event_total_score = np.sum(score_base_mat, axis=1)
-
-            # Max contribution per geometry: 30% of event total
-            max_contrib = 0.3 * event_total_score
-
-            # Broadcast max_contrib to match geometry dimension
-            max_contrib_mat = max_contrib[:, np.newaxis]
-
-            # Cap the weights: min(score, max_contrib)
-            capped_weights_mat = np.minimum(score_base_mat, max_contrib_mat)
-            capped_weights_mat[~valid_mask_mat] = 0.0
-
-            # Final Event Weight (sum of capped weights) - used for consensus averaging
-            final_event_weights_consensus = np.sum(capped_weights_mat, axis=1)
-
-            # Safety: ensure non-negative event weights
-            final_event_weights_consensus = np.where(np.isfinite(final_event_weights_consensus), final_event_weights_consensus, 0.0)
-            final_event_weights_consensus = np.maximum(final_event_weights_consensus, 0.0)
-
-            if final_event_weights_consensus.shape[0] != n_events:
-                raise ValueError("Layer2 bagging: final_event_weights_consensus shape mismatch")
-
-            # Avoid division by zero
-            safe_weights = final_event_weights_consensus.copy()
-            safe_weights[safe_weights == 0] = 1.0 # arbitrary, will be 0 in result anyway
-
-            # Weighted Consensus Calculation
-            # Weighted Average Probability
-            w_labels_sum = np.sum(geo_labels_mat * capped_weights_mat, axis=1)
-            consensus_labels = w_labels_sum / safe_weights
-
-            w_probs_sum = np.sum(geo_probs_mat * capped_weights_mat, axis=1)
-            consensus_prob = w_probs_sum / safe_weights
-
-            # Weighted Average Return
-            w_returns_sum = np.sum(geo_returns_mat * capped_weights_mat, axis=1)
-            consensus_returns = w_returns_sum / safe_weights
-
-            # Handle events with no valid geometries
-            no_valid_geo = final_event_weights_consensus == 0
-            consensus_labels[no_valid_geo] = np.nan
-            consensus_returns[no_valid_geo] = np.nan
-            consensus_prob[no_valid_geo] = np.nan
-
-            # --- Final Weight Logic: Wsignalgate ---
-            # Average Wsignalgate across valid geometries for this event
-            avg_w_signalgate = np.divide(
-                w_signalgate_accum,
-                w_signalgate_count,
-                out=np.zeros_like(w_signalgate_accum),
-                where=w_signalgate_count > 0
-            )
-
-            # Apply MAD-based scaling to the aggregated weights to ensure comparability
-            # and robustness, consistent with Layer 0 scaling.
-            # finalize_sample_weights performs MAD clipping -> Mean centering (mean=1.0)
-            if np.sum(avg_w_signalgate) > 0:
-                final_event_weights = finalize_sample_weights(avg_w_signalgate)
-            else:
-                final_event_weights = np.zeros_like(avg_w_signalgate)
-
-            # Assign to main storage
-            composite_labels.loc[fam_events.index] = consensus_labels
-            composite_prob.loc[fam_events.index] = consensus_prob
-            composite_returns.loc[fam_events.index] = consensus_returns
-            composite_weights.loc[fam_events.index] = final_event_weights
-
-        # --- Global Family Normalization (Max 60% of total mass) ---
-        # "weights[event.family == fam] = np.minimum(weights[event.family == fam], family_cap)"
-
-        # Fill NaNs in weights with 0
-        composite_weights = composite_weights.fillna(0.0)
-        composite_weights = composite_weights.clip(lower=0.0)
-
-        try:
-            uniq_enabled = bool(getattr(self, '_current_config', {}).get('layer2_uniqueness_enabled', True))
-        except Exception:
-            uniq_enabled = True
-        if uniq_enabled and int(len(events_df.index)) > 0 and int(len(df.index)) > 1:
-            try:
-                max_h = 0
-                for g in list(geometries or []):
-                    try:
-                        if isinstance(getattr(g, 'params', None), dict):
-                            h = int(g.params.get('horizon', 0))
-                            if h > max_h:
-                                max_h = h
-                    except Exception:
-                        continue
-                horizon = int(getattr(self, '_current_config', {}).get('layer2_uniqueness_horizon', max_h))
-                horizon = int(max(1, horizon))
-
-                idx = df.index
-                pos = idx.get_indexer(events_df.index)
-                valid_pos = pos >= 0
-                pos_v = pos[valid_pos]
-                if pos_v.size > 0:
-                    end_pos = np.minimum(pos_v + horizon, int(len(idx) - 1))
-                    diff = np.zeros(int(len(idx)) + 1, dtype=float)
-                    diff[pos_v] += 1.0
-                    diff[end_pos + 1] -= 1.0
-                    conc = np.cumsum(diff)[:-1]
-                    conc = np.maximum(conc, 1.0)
-                    inv = 1.0 / conc
-                    inv_cum = np.cumsum(inv)
-                    start = pos_v
-                    end = end_pos
-                    prev = np.zeros_like(start, dtype=float)
-                    mask_prev = start > 0
-                    if np.any(mask_prev):
-                        prev[mask_prev] = inv_cum[start[mask_prev] - 1]
-                    sum_inv = inv_cum[end] - prev
-                    lengths = (end - start + 1).astype(float)
-                    uniq = np.divide(sum_inv, lengths, out=np.ones_like(sum_inv), where=lengths > 0)
-
-                    uniq_series = pd.Series(1.0, index=events_df.index, dtype=float)
-                    uniq_series.iloc[np.where(valid_pos)[0]] = uniq
-
-                    try:
-                        alpha = float(getattr(self, '_current_config', {}).get('layer2_uniqueness_alpha', 1.0))
-                    except Exception:
-                        alpha = 1.0
-                    if (not np.isfinite(alpha)) or float(alpha) < 0.0:
-                        alpha = 1.0
-                    mult = np.power(np.clip(uniq_series.values, 0.0, 1.0), float(alpha))
-                    composite_weights *= pd.Series(mult, index=events_df.index)
-            except Exception:
-                pass
-
-        # If everything is zero (can happen when all geometries fail), fall back to unit weights on labeled events.
-        try:
-            labeled_mask_global = composite_labels.notna()
-        except Exception:
-            labeled_mask_global = None
-        if float(composite_weights.sum()) <= 0.0 and labeled_mask_global is not None:
-            try:
-                composite_weights.loc[labeled_mask_global] = 1.0
-            except Exception:
-                pass
-
-        total_weight_global = composite_weights.sum()
-
-        if total_weight_global > 0:
-            for family in geo_by_fam.keys():
-                fam_mask = events_df['family'] == family
-                fam_total_weight = composite_weights[fam_mask].sum()
-
-                # Cap at 60% of GLOBAL total
-                family_cap = 0.6 * total_weight_global
-
-                if fam_total_weight > family_cap:
-                    scale_factor = family_cap / fam_total_weight
-                    logger.info(f"Scaling down family {family} by {scale_factor:.4f} (Total: {fam_total_weight:.2f} > Cap: {family_cap:.2f})")
-                    composite_weights.loc[fam_mask] *= scale_factor
-
-        # Normalize final weights to mean=1.0 for stability
-        mean_weight = composite_weights.mean()
-        if (mean_weight is not None) and float(mean_weight) > 0:
-            composite_weights /= float(mean_weight)
-
-        score_thr = 0.5
-        try:
-            score_thr = float(getattr(self, '_current_config', {}).get('layer2_score_threshold', 0.5))
-        except Exception:
-            score_thr = 0.5
-        if (not np.isfinite(score_thr)) or float(score_thr) <= 0.0 or float(score_thr) >= 1.0:
-            score_thr = 0.5
-
-        l2_score = composite_prob
-        l2_label = pd.Series(np.nan, index=l2_score.index, dtype=float)
-        try:
-            valid = composite_labels.notna()
-            l2_label.loc[valid] = (
-                pd.to_numeric(composite_labels[valid], errors='coerce').astype(float) >= float(score_thr)
-            ).astype(float)
-        except Exception:
-            pass
-
-        l2_confidence = pd.Series(np.nan, index=l2_score.index, dtype=float)
-        try:
-            s = pd.to_numeric(l2_score, errors='coerce').astype(float).clip(lower=0.0, upper=1.0)
-            p = np.clip(s.to_numpy(dtype=float, copy=False), 1e-12, 1.0 - 1e-12)
-            h = -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p))
-            conf = 1.0 - (h / float(np.log(2.0)))
-            l2_confidence.loc[:] = np.where(np.isfinite(conf), conf, np.nan)
-            l2_confidence = l2_confidence.clip(lower=0.0, upper=1.0).where(l2_score.notna())
-        except Exception:
-            pass
-
-        return {
-            "oof_labels": l2_score,
-            "oof_returns": composite_returns,
-            "weights": composite_weights,
-            "l2_score": l2_score,
-            "l2_label": l2_label,
-            "l2_confidence": l2_confidence,
-            "individual_geometries": oof_preds,
-            "individual_variances": oof_vars,
-            "selected_trials": [asdict(t) for t in geometries]
-        }

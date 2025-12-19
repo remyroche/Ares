@@ -3506,14 +3506,21 @@ class LabelBasedLayer2:
             safe_weights[safe_weights == 0] = 1.0 # arbitrary, will be 0 in result anyway
 
             # Weighted Consensus Calculation
-            # Weighted Average Probability
-            w_labels_sum = np.sum(geo_labels_mat * capped_weights_mat, axis=1)
-            consensus_labels = w_labels_sum / safe_weights
+            # Aggregation Logic: "At Least One" (Max) for Labels/Probs to prevent signal dilution.
+            # Weighted Average is too conservative for diverse specialist geometries.
 
-            w_probs_sum = np.sum(geo_probs_mat * capped_weights_mat, axis=1)
-            consensus_prob = w_probs_sum / safe_weights
+            # Use max(probability) to capture the strongest signal
+            # Mask out invalid geometries first (0.0 prob is valid, but nan/masked should be ignored)
+            # geo_probs_mat is already filled with 0.0 or valid probs.
+            # We want max over valid geometries.
 
-            # Weighted Average Return
+            # For labels (0/1): Max is equivalent to Logical OR
+            consensus_labels = np.max(geo_labels_mat * valid_mask_mat.astype(float), axis=1)
+
+            # For probs: Max probability
+            consensus_prob = np.max(geo_probs_mat * valid_mask_mat.astype(float), axis=1)
+
+            # Weighted Average Return (Keep conservative for PnL estimation)
             w_returns_sum = np.sum(geo_returns_mat * capped_weights_mat, axis=1)
             consensus_returns = w_returns_sum / safe_weights
 

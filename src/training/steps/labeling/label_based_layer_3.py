@@ -583,8 +583,8 @@ def layer3_analyst_lgbm(
     best_model_artifacts = None # To store OOF preds and Final Model
 
     lgbm_params = {
-        'objective': 'binary',
-        'metric': 'binary_logloss',
+        'objective': 'cross_entropy',
+        'metric': 'xentropy',
         'n_estimators': 800,
         'learning_rate': 0.02,
         'max_depth': 7,

@@ -998,6 +998,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l2_labels = l2_output.get('l2_label', l2_output.get('oof_labels'))
             l2_returns = l2_output['oof_returns']
             l2_weights = l2_output['weights']
+            l2_quality_weights = l2_output.get('quality_weights')
             individual_geos = l2_output['individual_geometries']
             events_df = l2_output['events_df']
             selected_trials = l2_output.get('selected_trials')  # Production Geometries
@@ -1387,6 +1388,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 train_split_date=None,
                 layer1_weight=w_l1_aligned,
                 layer2_weight=w_l2_aligned,
+                layer2_weight_quality=l2_quality_weights,
                 net_returns=l2_returns_aligned,
                 market_data=market_data,
                 config=config,
@@ -1406,6 +1408,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 train_split_date=None,
                 layer1_weight=w_l1_aligned,
                 layer2_weight=w_l2_aligned,
+                layer2_weight_quality=l2_quality_weights,
                 net_returns=l2_returns_aligned,
                 market_data=market_data,
                 config=config,

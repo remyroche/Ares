@@ -494,13 +494,7 @@ def generate_weights_per_label(
 
     # Zero out "fake opportunities" that don't cover the spread
     # max(0, abs(ret) - cost)
-    #
-    # UPDATE: For weighting, we care about the magnitude of the signal, not just
-    # net profitability (which is handled by the Label itself). Subtracting cost
-    # here aggressively zeros out small but valid price moves near the decision
-    # boundary. We use raw absolute return instead to preserve signal gradient.
-    # net_mag_raw = np.maximum(0.0, abs_ret_raw - tx_cost)
-    net_mag_raw = abs_ret_raw
+    net_mag_raw = np.maximum(0.0, abs_ret_raw - tx_cost)
 
     # If vol_proxy is available, prefer a volatility-normalized magnitude signal.
     # This keeps weights from being dominated by high-volatility regimes.

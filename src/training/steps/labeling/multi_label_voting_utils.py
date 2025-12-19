@@ -18,10 +18,8 @@ import pandas as pd
 from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 # Kalman filtering imports
-try:
-    from pykalman import KalmanFilter
-except ImportError:
-    KalmanFilter = None
+# Kalman filtering imports
+from numba import njit
 
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     ECON_MIN_RETURN_MULTIPLE,
@@ -595,6 +593,70 @@ def generate_quantile_rank_trinary_labels(
     return name, labels
 
 
+@njit
+def _numba_kalman_filter(
+    observations: np.ndarray,
+    transition_matrix: np.ndarray,
+    transition_covariance: np.ndarray,
+    observation_matrices: np.ndarray,
+    observation_covariances: np.ndarray,
+    initial_state_mean: np.ndarray,
+    initial_state_covariance: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    JIT-compiled Kalman Filter implementation.
+    Standard KF equations for time-varying matrices.
+    """
+    n_timesteps, n_dim_obs = observations.shape
+    n_dim_state = len(initial_state_mean)
+    
+    # Storage for filtered estimates
+    filtered_state_means = np.zeros((n_timesteps, n_dim_state))
+    filtered_state_covariances = np.zeros((n_timesteps, n_dim_state, n_dim_state))
+    
+    # Current state estimates
+    current_state_mean = initial_state_mean.copy()
+    current_state_cov = initial_state_covariance.copy()
+    
+    for t in range(n_timesteps):
+        # 1. Predict
+        # x_{t|t-1} = F * x_{t-1|t-1}
+        # P_{t|t-1} = F * P_{t-1|t-1} * F^T + Q
+        pred_state_mean = transition_matrix @ current_state_mean
+        pred_state_cov = transition_matrix @ current_state_cov @ transition_matrix.T + transition_covariance
+        
+        # 2. Update
+        # y_tilde = z_t - H_t * x_{t|t-1}
+        # S_t = H_t * P_{t|t-1} * H_t^T + R_t
+        # K_t = P_{t|t-1} * H_t^T * S_t^{-1}
+        # x_{t|t} = x_{t|t-1} + K_t * y_tilde
+        # P_{t|t} = (I - K_t * H_t) * P_{t|t-1}
+        
+        H = observation_matrices[t]
+        R = observation_covariances[t]
+        z = observations[t]
+        
+        # Skip update if observation is NaN
+        if np.isnan(z).any():
+            current_state_mean = pred_state_mean
+            current_state_cov = pred_state_cov
+        else:
+            y_tilde = z - H @ pred_state_mean
+            S = H @ pred_state_cov @ H.T + R
+            # Invert S (2x2 or 1x1 usually)
+            # For robustness, we can use pseudo-inverse logic or direct linear solve
+            # Since dim is small (1 or 2), linalg.solve is fine
+            K = pred_state_cov @ H.T @ np.linalg.inv(S)
+            
+            current_state_mean = pred_state_mean + K @ y_tilde
+            current_state_cov = (np.eye(n_dim_state) - K @ H) @ pred_state_cov
+            
+        filtered_state_means[t] = current_state_mean
+        filtered_state_covariances[t] = current_state_cov
+        
+    return filtered_state_means, filtered_state_covariances
+
+
 def compute_kalman_smoothed_price_and_volatility(
     prices: pd.Series,
     volume: Optional[pd.Series] = None,
@@ -604,13 +666,8 @@ def compute_kalman_smoothed_price_and_volatility(
     vol_window: int = 20
 ) -> Tuple[pd.Series, pd.Series]:
     """
-    Compute Kalman-smoothed price and volatility.
-
-    Supports adaptive observation noise scaling based on volume:
-    R_t = R_base * (Median_Volume / Volume_t)
-
-    If VWAP is provided, implements dual measurement (Close, VWAP) of latent Price state.
-
+    Compute Kalman-smoothed price and volatility using Numba optimization.
+    
     Args:
         prices: Price series to smooth (Close)
         volume: Volume series for adaptive noise scaling
@@ -618,29 +675,26 @@ def compute_kalman_smoothed_price_and_volatility(
         process_noise: Kalman process noise parameter (Q)
         measurement_noise: Kalman measurement noise parameter (R_base)
         vol_window: Rolling window for volatility estimation
-
+    
     Returns:
         Tuple of (kalman_smoothed_price, kalman_volatility)
     """
-    if KalmanFilter is None:
-        raise ImportError("pykalman is required for Kalman smoothing. Install with: pip install pykalman")
-
     # Align all inputs
     df_in = pd.DataFrame({'close': prices})
     if volume is not None:
         df_in['volume'] = volume
     if vwap is not None:
         df_in['vwap'] = vwap
-
+        
     # Clean NaN
     df_clean = df_in.dropna()
     if len(df_clean) < 10:
-        raise ValueError("Insufficient data for Kalman filtering")
-
+         # Fallback if too little data
+        return prices, pd.Series(0.0, index=prices.index)
+        
     n_timesteps = len(df_clean)
-
+    
     # 1. Calculate Adaptive Measurement Noise (R_t)
-    # R_t_scalar = R_base * (MedianVol / Vol_t)
     R_t_values = np.full(n_timesteps, measurement_noise)
     if 'volume' in df_clean.columns:
         vol_arr = df_clean['volume'].values
@@ -650,68 +704,60 @@ def compute_kalman_smoothed_price_and_volatility(
             scale_factor = median_vol / vol_safe
             scale_factor = np.clip(scale_factor, 0.1, 10.0)
             R_t_values = measurement_noise * scale_factor
-
-    # 2. Setup Kalman Filter
+            
+    # 2. Setup Matrices (Consistent with Numba function signature)
     # State: [price, velocity]
-    initial_state_mean = np.array([df_clean['close'].iloc[0], 0])
+    initial_state_mean = np.array([df_clean['close'].iloc[0], 0.0], dtype=float)
     initial_state_covariance = np.eye(2) * 1e-3
-    transition_matrix = np.array([[1, 1], [0, 1]])
+    transition_matrix = np.array([[1.0, 1.0], [0.0, 1.0]])
     transition_covariance = np.eye(2) * process_noise
-
-    # Observation setup depends on VWAP availability
+    
+    # Observation setup
     if 'vwap' in df_clean.columns:
-        # Dual Measurement: Observe [Close, VWAP]
-        # H = [[1, 0], [1, 0]]
-        # R_t matrix is 2x2 diagonal
-        n_dim_obs = 2
-        observation_matrices = np.array([[[1, 0], [1, 0]] for _ in range(n_timesteps)])
-        observations = np.column_stack((df_clean['close'].values, df_clean['vwap'].values))
-
-        # Construct time-varying R matrices
-        observation_covariance = np.zeros((n_timesteps, 2, 2))
-        observation_covariance[:, 0, 0] = R_t_values
-        observation_covariance[:, 1, 1] = R_t_values # Assume VWAP has similar noise characteristics
+        # Dual Measurement: [Close, VWAP]
+        observation_matrices = np.array([[[1.0, 0.0], [1.0, 0.0]] for _ in range(n_timesteps)])
+        observations = np.column_stack((df_clean['close'].values, df_clean['vwap'].values)).astype(float)
+        
+        observation_covariances = np.zeros((n_timesteps, 2, 2))
+        observation_covariances[:, 0, 0] = R_t_values
+        observation_covariances[:, 1, 1] = R_t_values
     else:
-        # Single Measurement: Observe [Close]
-        # H = [[1, 0]]
-        n_dim_obs = 1
-        observation_matrices = np.array([[[1, 0]] for _ in range(n_timesteps)])
-        observations = df_clean['close'].values[:, np.newaxis]
+        # Single Measurement: [Close]
+        observation_matrices = np.array([[[1.0, 0.0]] for _ in range(n_timesteps)])
+        observations = df_clean['close'].values[:, np.newaxis].astype(float)
+        
+        observation_covariances = np.zeros((n_timesteps, 1, 1))
+        # Ensure correct shape assignment
+        observation_covariances[:, 0, 0] = R_t_values
 
-        # Construct time-varying R matrices
-        observation_covariance = R_t_values.reshape(-1, 1, 1)
-
-    kf = KalmanFilter(
-        transition_matrices=transition_matrix,
-        observation_matrices=observation_matrices,
-        initial_state_mean=initial_state_mean,
-        initial_state_covariance=initial_state_covariance,
-        transition_covariance=transition_covariance,
-        observation_covariance=observation_covariance
+    # 3. Compile & Run (First run might be slow due to JIT, subsequent are fast)
+    filtered_means, _ = _numba_kalman_filter(
+        observations,
+        transition_matrix,
+        transition_covariance,
+        observation_matrices,
+        observation_covariances,
+        initial_state_mean,
+        initial_state_covariance
     )
-
-    # Apply Kalman filter
-    # Use em() to estimate parameters if needed, but here we fix them based on inputs
-    filtered_state_means, _ = kf.filter(observations)
-
-    # Extract smoothed price (first component of state)
+    
+    # Extract smoothed price
     smoothed_price = pd.Series(
-        filtered_state_means[:, 0],
+        filtered_means[:, 0],
         index=df_clean.index,
         name='kalman_price'
     )
-
-    # Compute Kalman volatility from residuals
-    # Reindex to original price index, forward filling any gaps
-    smoothed_price = smoothed_price.reindex(prices.index).fillna(method='ffill')
-
-    residuals = np.log(smoothed_price.astype(float).abs() + 1e-12).diff()
+    
+    # Compute Kalman volatility
+    smoothed_price_full = smoothed_price.reindex(prices.index).ffill()
+    
+    residuals = np.log(smoothed_price_full.astype(float).abs() + 1e-12).diff()
     kalman_volatility = (
-        residuals.rolling(vol_window).std().abs() * smoothed_price.astype(float).abs()
-    ).fillna(method='bfill')
-    kalman_volatility = kalman_volatility.reindex(prices.index).fillna(method='ffill')
-
-    return smoothed_price, kalman_volatility
+        residuals.rolling(vol_window).std().abs() * smoothed_price_full.astype(float).abs()
+    ).bfill()
+    kalman_volatility = kalman_volatility.reindex(prices.index).ffill()
+    
+    return smoothed_price_full, kalman_volatility
 
 
 def compute_regime_vol_scalar(

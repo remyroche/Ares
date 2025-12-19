@@ -120,6 +120,8 @@ class EnsembleDisagreementFeatures:
 
             # 9. SNR Consensus
             features['snr_consensus'] = self._calculate_snr_consensus(
+                model_probabilities, index
+            )
             # 8. Ensemble Probability (arithmetic mean of probabilities)
             features['ensemble_prob'] = self._calculate_ensemble_probability(
                 model_probabilities, index
@@ -220,21 +222,13 @@ class EnsembleDisagreementFeatures:
         tensor = np.stack(tensors, axis=0)
 
         # Normalize per sample to ensure valid probabilities
-        normalised = np.zeros_like(tensor)
         n_classes = tensor.shape[2] if tensor.ndim == 3 else 0
-
         if n_classes == 0:
             return tensor
 
-        for model_idx in range(tensor.shape[0]):
-            for sample_idx in range(tensor.shape[1]):
-                row = tensor[model_idx, sample_idx]
-                total = row.sum()
-                if total <= 0:
-                    normalised[model_idx, sample_idx] = np.full(n_classes, 1.0 / n_classes)
-                else:
-                    normalised[model_idx, sample_idx] = row / total
-
+        row_sums = tensor.sum(axis=2, keepdims=True)
+        uniform = np.full((1, 1, n_classes), 1.0 / float(n_classes), dtype=float)
+        normalised = np.where(row_sums > 0.0, tensor / row_sums, uniform)
         return normalised
 
     def _calculate_prediction_dispersion(
@@ -585,7 +579,7 @@ class EnsembleDisagreementFeatures:
             'max_confidence': zero.copy(),
             'disagreement_rate': zero.copy(),
             'snr_internal': zero.copy(),
-            'snr_consensus': zero.copy()
+            'snr_consensus': zero.copy(),
             'ensemble_prob': pd.Series(0.5, index=index)
         }
 

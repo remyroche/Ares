@@ -4,36 +4,26 @@ import lightgbm as lgb
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
+import json
 from pathlib import Path
 from datetime import datetime
 from scipy.stats import spearmanr
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
-from sklearn.model_selection import TimeSeriesSplit, KFold
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
     log_loss,
     brier_score_loss,
     roc_auc_score,
-    accuracy_score
+    average_precision_score,
 )
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from typing import List, Tuple, Optional, Any, Dict
-import copy
 import shap
 
-from src.training.steps.labeling.feature_generation_meta_labeling_step import (
-    create_meta_features,
-)
 from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
-)
-from src.training.steps.labeling.label_based_pipeline import (
-    select_features_with_quality,
-)
-from src.training.steps.labeling.mda_shap_feature_selection import (
-    run_mda_shap_feature_selection,
-)
-from src.feature_generation.categories.ensemble_disagreement import (
-    calculate_ensemble_disagreement_features,
 )
 
 from src.utils.purged_kfold import PurgedKFoldTime
@@ -73,6 +63,258 @@ def _fast_expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_b
 
     return float(np.sum((counts[nonzero] / n) * np.abs(mean_prob[nonzero] - mean_true[nonzero])))
 
+
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=float)
+    x = np.clip(x, -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def _logit(p: np.ndarray) -> np.ndarray:
+    p = np.asarray(p, dtype=float)
+    p = np.clip(p, 1e-12, 1.0 - 1e-12)
+    return np.log(p / (1.0 - p))
+
+
+def _clip_probs(p: np.ndarray, low: float, high: float) -> np.ndarray:
+    arr = np.asarray(p, dtype=float)
+    lo = float(low)
+    hi = float(high)
+    if (not np.isfinite(lo)) or lo <= 0.0:
+        lo = 1e-6
+    if (not np.isfinite(hi)) or hi >= 1.0:
+        hi = 1.0 - 1e-6
+    if hi <= lo:
+        hi = min(1.0 - 1e-6, lo + 1e-3)
+    return np.clip(arr, lo, hi)
+
+
+def _fit_temperature(y_true: np.ndarray, p_cal: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> float:
+    y = np.asarray(y_true, dtype=float).reshape(-1)
+    p = np.asarray(p_cal, dtype=float).reshape(-1)
+
+    m = np.isfinite(y) & np.isfinite(p)
+    y = y[m]
+    p = p[m]
+
+    if y.size < 50:
+        return 1.0
+
+    try:
+        if int(np.unique(y).size) < 2:
+            return 1.0
+    except Exception:
+        return 1.0
+
+    w = None
+    if sample_weight is not None:
+        try:
+            w0 = np.asarray(sample_weight, dtype=float).reshape(-1)
+            w0 = w0[m]
+            w0 = np.where(np.isfinite(w0), w0, 1.0)
+            w = w0
+        except Exception:
+            w = None
+
+    z = _logit(p)
+    temps = np.concatenate([
+        np.linspace(0.6, 1.8, 25),
+        np.linspace(2.0, 6.0, 21),
+    ])
+    best_t = 1.0
+    best_loss = float('inf')
+    for t in temps:
+        try:
+            pt = _sigmoid(z / float(t))
+            loss = float(log_loss(y.astype(int), pt, labels=[0, 1], sample_weight=w))
+            if np.isfinite(loss) and loss < best_loss:
+                best_loss = loss
+                best_t = float(t)
+        except Exception:
+            continue
+    return float(best_t) if np.isfinite(best_t) and best_t > 0.0 else 1.0
+
+
+def _apply_temperature(p: np.ndarray, temperature: float) -> np.ndarray:
+    t = float(temperature)
+    if (not np.isfinite(t)) or t <= 1e-9:
+        t = 1.0
+    return _sigmoid(_logit(p) / t)
+
+
+def _dump_layer3_feature_inventory(
+    df: pd.DataFrame,
+    feature_cols: List[str],
+    target_col: str,
+    outcomes_dir: Path,
+    symbol: str,
+    timeframe: str,
+    ts: str,
+    stage: str,
+    cfg: Optional[Dict[str, Any]] = None,
+    meta_prob_col: str = 'meta_prob',
+) -> None:
+    try:
+        if df is None or df.empty:
+            return
+        if not feature_cols:
+            return
+
+        try:
+            include_spearman = bool(cfg.get('layer3_feature_inventory_include_spearman', True)) if isinstance(cfg, dict) else True
+        except Exception:
+            include_spearman = True
+
+        try:
+            tail_frac = float(cfg.get('layer3_feature_inventory_tail_frac', 0.2)) if isinstance(cfg, dict) else 0.2
+        except Exception:
+            tail_frac = 0.2
+        if (not np.isfinite(tail_frac)) or tail_frac <= 0.05 or tail_frac >= 0.5:
+            tail_frac = 0.2
+
+        n = int(df.shape[0])
+        split_idx = int(max(0, min(n, int(np.floor(n * (1.0 - tail_frac))))))
+        split_idx = int(max(1, min(n - 1, split_idx))) if n >= 2 else 0
+
+        y = pd.to_numeric(df.get(target_col), errors='coerce').astype(float) if target_col in df.columns else None
+        p = pd.to_numeric(df.get(meta_prob_col), errors='coerce').astype(float) if meta_prob_col in df.columns else None
+
+        rows = []
+        for col in feature_cols:
+            if col not in df.columns:
+                continue
+
+            s = pd.to_numeric(df[col], errors='coerce').astype(float)
+            arr = s.to_numpy(dtype=float, copy=False)
+            finite = np.isfinite(arr)
+            n_finite = int(np.sum(finite))
+            n_nan = int(arr.size - n_finite)
+            pct_nan = float(n_nan / max(1, arr.size))
+
+            mean = float(np.nanmean(arr)) if n_finite > 0 else float('nan')
+            std = float(np.nanstd(arr)) if n_finite > 1 else float('nan')
+            vmin = float(np.nanmin(arr)) if n_finite > 0 else float('nan')
+            vmax = float(np.nanmax(arr)) if n_finite > 0 else float('nan')
+
+            p01 = float(np.nanpercentile(arr, 1)) if n_finite > 10 else float('nan')
+            p50 = float(np.nanpercentile(arr, 50)) if n_finite > 0 else float('nan')
+            p99 = float(np.nanpercentile(arr, 99)) if n_finite > 10 else float('nan')
+
+            zero_frac = float(np.mean((arr[finite] == 0.0))) if n_finite > 0 else float('nan')
+
+            def _pearson(a: np.ndarray, b: pd.Series) -> float:
+                try:
+                    bv = b.to_numpy(dtype=float, copy=False)
+                    m = np.isfinite(a) & np.isfinite(bv)
+                    if int(np.sum(m)) < 10:
+                        return float('nan')
+                    aa = a[m]
+                    bb = bv[m]
+                    if float(np.nanstd(aa)) <= 1e-12 or float(np.nanstd(bb)) <= 1e-12:
+                        return float('nan')
+                    return float(np.corrcoef(aa, bb)[0, 1])
+                except Exception:
+                    return float('nan')
+
+            corr_target = _pearson(arr, y) if y is not None else float('nan')
+            corr_meta = _pearson(arr, p) if p is not None else float('nan')
+
+            spearman_target = float('nan')
+            spearman_meta = float('nan')
+            if include_spearman and (y is not None):
+                try:
+                    m = np.isfinite(arr) & np.isfinite(y.to_numpy(dtype=float, copy=False))
+                    if int(np.sum(m)) >= 10:
+                        spearman_target = float(spearmanr(arr[m], y.to_numpy(dtype=float, copy=False)[m]).correlation)
+                except Exception:
+                    spearman_target = float('nan')
+            if include_spearman and (p is not None):
+                try:
+                    m = np.isfinite(arr) & np.isfinite(p.to_numpy(dtype=float, copy=False))
+                    if int(np.sum(m)) >= 10:
+                        spearman_meta = float(spearmanr(arr[m], p.to_numpy(dtype=float, copy=False)[m]).correlation)
+                except Exception:
+                    spearman_meta = float('nan')
+
+            drift_smd = float('nan')
+            drift_nan_delta = float('nan')
+            try:
+                if n >= 2 and 0 < split_idx < n:
+                    a0 = arr[:split_idx]
+                    a1 = arr[split_idx:]
+                    m0 = np.isfinite(a0)
+                    m1 = np.isfinite(a1)
+                    if int(np.sum(m0)) >= 10 and int(np.sum(m1)) >= 10:
+                        mu0 = float(np.nanmean(a0))
+                        mu1 = float(np.nanmean(a1))
+                        sd0 = float(np.nanstd(a0))
+                        sd1 = float(np.nanstd(a1))
+                        pool = float(np.sqrt(0.5 * (sd0 * sd0 + sd1 * sd1)))
+                        drift_smd = float(abs(mu1 - mu0) / (pool + 1e-12))
+                    drift_nan_delta = float((np.mean(~m1) - np.mean(~m0)))
+            except Exception:
+                drift_smd = float('nan')
+
+            rows.append(
+                {
+                    'feature': str(col),
+                    'n': int(arr.size),
+                    'n_finite': n_finite,
+                    'n_nan': n_nan,
+                    'pct_nan': pct_nan,
+                    'mean': mean,
+                    'std': std,
+                    'min': vmin,
+                    'p01': p01,
+                    'p50': p50,
+                    'p99': p99,
+                    'max': vmax,
+                    'zero_frac': zero_frac,
+                    'pearson_target': corr_target,
+                    'pearson_meta_prob': corr_meta,
+                    'spearman_target': spearman_target,
+                    'spearman_meta_prob': spearman_meta,
+                    'drift_smd': drift_smd,
+                    'drift_nan_delta': drift_nan_delta,
+                }
+            )
+
+        if not rows:
+            return
+
+        inv_df = pd.DataFrame(rows)
+        try:
+            inv_df = inv_df.sort_values(['pct_nan', 'drift_smd'], ascending=[True, False])
+        except Exception:
+            pass
+
+        try:
+            out_csv = outcomes_dir / f"layer3_feature_inventory_{stage}_{symbol}_{timeframe}_{ts}.csv"
+            inv_df.to_csv(out_csv, index=False)
+        except Exception:
+            pass
+
+        try:
+            meta = {
+                'stage': str(stage),
+                'timestamp': str(ts),
+                'symbol': str(symbol),
+                'timeframe': str(timeframe),
+                'n_rows': int(n),
+                'n_features': int(len(feature_cols)),
+                'target_col': str(target_col),
+                'meta_prob_col': str(meta_prob_col) if meta_prob_col in df.columns else None,
+                'tail_frac': float(tail_frac),
+                'split_idx': int(split_idx),
+            }
+            out_json = outcomes_dir / f"layer3_feature_inventory_{stage}_{symbol}_{timeframe}_{ts}.json"
+            out_json.write_text(json.dumps(meta, indent=2))
+        except Exception:
+            pass
+    except Exception:
+        return
+
+
 def layer3_analyst_lgbm(
     oof_df: pd.DataFrame,
     base_model_cols: List[str],
@@ -111,205 +353,83 @@ def layer3_analyst_lgbm(
     # ---------------------------------------------------------
     # 1. Feature Engineering: Curated Feature Set
     # ---------------------------------------------------------
-    print("<< Generating Curated Features...")
+    print("<< Generating Layer 3 Features (centralized in generate_layer3_features)...")
 
-    # Define Disagreement Features
-    disagree_feature_names = [
-        "prediction_dispersion",
-        "confidence_gap",
-        "uncertainty",
-        "prediction_range",
-        "avg_divergence",
-        "max_confidence",
-        "disagreement_rate",
-        "snr_internal",
-        "snr_consensus"
-    ]
-    disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
-
-    if not base_model_cols:
-          print("⚠️ No base models provided for Layer 3 feature engineering!")
+    # Base models are probabilities; keep them centered around 0.5 when missing.
+    if base_model_cols:
+        safe_base_cols = [c for c in base_model_cols if c in df.columns]
+        if safe_base_cols:
+            df[safe_base_cols] = df[safe_base_cols].replace([np.inf, -np.inf], np.nan).fillna(0.5)
     else:
-        df[base_model_cols] = df[base_model_cols].fillna(0.5)
+        safe_base_cols = []
 
-        prob_dict = {str(c): df[c].astype(float).values for c in base_model_cols}
-        pred_dict = {str(c): (df[c].astype(float).values - 0.5) for c in base_model_cols}
-
-        # Extract Variances from oof_df if available (assuming passed as additional columns)
-        # We need to identify variance columns corresponding to base models.
-        # Layer 2 should have produced them.
-        # Assuming convention: if base model is 'Trend Continuation_Rank0',
-        # look for 'Trend Continuation_Rank0_var' or similar if we strictly enforced naming.
-        # HOWEVER, Layer 2 'individual_variances' keys match 'individual_geometries' keys.
-        # So if base_model_cols contains keys like 'Trend Continuation_Rank0',
-        # we check if those keys exist in the variance map passed to Layer 3.
-        # Layer 3 receives `oof_df` which should contain both preds and vars.
-        # We need to infer variance column names.
-
-        var_dict = {}
-        # Try to find matching variance columns in oof_df
-        # Since Layer 2 saves to CSV and loads back, we rely on column naming convention or Metadata.
-        # For this implementation, we will look for columns with suffix "_var" matching base cols.
-        # But `LabelBasedLayer2.run` returns a dict with 'individual_variances'.
-        # The Orchestrator (calling script) must merge these into `oof_df` passed here.
-        # Let's assume the calling script appended them with '_var' suffix.
-
-        for c in base_model_cols:
-            var_col = f"{c}_var"
-            if var_col in df.columns:
-                var_dict[str(c)] = df[var_col].astype(float).values
-
-        if not var_dict:
-            print("⚠️ No variance columns found for base models. SNR Internal will be 0.")
-
-        try:
-            disagree = calculate_ensemble_disagreement_features(
-                model_predictions=pred_dict,
-                model_probabilities=prob_dict,
-                model_confidences=None,
-                model_variances=var_dict if var_dict else None,
-                feature_names=None,
-                logger=None,
-            )
-        except Exception as e:
-            print(f"⚠️ Disagreement calculation failed: {e}")
-            disagree = {}
-
-        for k, col in zip(disagree_feature_names, disagree_cols):
-            try:
-                v = disagree.get(k)
-                if isinstance(v, pd.Series):
-                    df[col] = pd.to_numeric(v.values, errors="coerce")
-                else:
-                    df[col] = 0.0
-            except Exception:
-                df[col] = 0.0
-
-        # Extract ensemble_prob if calculated
-        try:
-            if "ensemble_prob" in disagree:
-                v = disagree.get("ensemble_prob")
-                if isinstance(v, pd.Series):
-                    df["ensemble_prob"] = pd.to_numeric(v.values, errors="coerce")
-        except Exception:
-            pass
-
-        df[disagree_cols] = df[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-    # Generate Time and Regime Features
-    # We strictly enforce the curated list: Time (hour, day_of_week) + Regime (trend, vol, ratios)
-
-    curated_feature_cols = []
-
+    # Attach OHLCV inputs for Layer 3 feature computation (volume/candle/regime).
     if market_data is not None and isinstance(market_data, pd.DataFrame) and not market_data.empty:
-        # Time Features
-        try:
-            if not isinstance(market_data.index, pd.DatetimeIndex):
-                idx = pd.to_datetime(market_data.index)
-            else:
-                idx = market_data.index
+        for c in ['volume', 'high', 'low', 'close']:
+            if c in market_data.columns:
+                df[c] = market_data[c].reindex(df.index)
 
-            df['hour'] = idx.hour
-            df['day_of_week'] = idx.dayofweek
-            curated_feature_cols.extend(['hour', 'day_of_week'])
-        except Exception:
-            additional_feature_df = pd.DataFrame(index=df.index)
-            pass
-
-    if additional_feature_df is not None and not additional_feature_df.empty:
-        new_cols = [c for c in additional_feature_df.columns if c not in df.columns]
-        if new_cols:
-            df = pd.concat([df, additional_feature_df[new_cols]], axis=1)
-
-    # ---------------------------------------------------------
-    # NEW: Add Layer 3 Specific Features (Ensemble/Logit/Volume/Candle)
-    # ---------------------------------------------------------
+    # Centralized feature engineering (adds ensemble/disagreement/logit/regime/time features)
     try:
-        print("<< Adding Layer 3 Specific Features (Logit, Volume, Candle)...")
-        # Ensure df has market data columns if possible
-        if market_data is not None:
-            for c in ['volume', 'high', 'low', 'close']:
-                if c in market_data.columns and c not in df.columns:
-                    df[c] = market_data[c].reindex(df.index)
+        df = generate_layer3_features(df, safe_base_cols)
+    except Exception as e:
+        print(f"⚠️ generate_layer3_features failed: {e}")
 
-        # Calculate new features
-        df = generate_layer3_features(df, base_model_cols)
-
-        # Add new feature names to the list of features to use
-        # (Updated to include regime features from GateModel)
-        new_l3_features = [
-            'ensemble_prob', 'logit_prob',
-            'logit_momentum_5', 'logit_momentum_1',
+    # Centralized feature list (only keep columns that exist)
+    candidate_features = []
+    candidate_features.extend(safe_base_cols)
+    candidate_features.extend(
+        [
+            # Ensemble/core
+            'ensemble_prob',
+            'logit_prob', 'logit_momentum_5', 'logit_momentum_1',
             'vol_at_signal', 'candle_shape', 'candle_shape_4',
-            # Regime features
+            'base_pred_mean', 'base_pred_std', 'base_pred_range',
+            # Cross-timeframe momentum agreement
+            'momentum_agreement',
+            'momentum_agreement_abs',
+            # Removed: 'momentum_weighted_agreement',
+            'trend_consistency_12',
+            # Disagreement
+            'ens_prediction_dispersion',
+            'ens_confidence_gap',
+            'ens_uncertainty',
+            'ens_prediction_range',
+            'ens_avg_divergence',
+            'ens_max_confidence',
+            'ens_disagreement_rate',
+            'ens_snr_internal',
+            'ens_snr_consensus',
+            # Regime/time (GateModel-derived)
             'rv_short', 'rv_short_over_med', 'rv_z_short',
-            'slope_short', 'adx_proxy', 'snr',
+            'slope_short', 'adx_proxy', 'momentum_short', 'snr',
             'time_since_last_vol_spike', 'time_since_last_large_candle',
             'choppiness_index', 'variance_ratio', 'permutation_entropy',
-            'hour_sin', 'hour_cos', 'is_weekend'
+            'hour', 'day_of_week', 'hour_sin', 'hour_cos', 'is_weekend',
+            'efficiency_ratio',
         ]
+    )
 
-        # Ensure they are in the dataframe before adding to list
-        new_l3_features = [f for f in new_l3_features if f in df.columns]
+    # Optional context columns already present on events
+    for c in ['volatility_1d']:
+        if c in df.columns:
+            candidate_features.append(c)
 
-        # Add to selected features so they are picked up by the model
-        selected_additional_features.extend(new_l3_features)
+    meta_features = [c for c in list(dict.fromkeys(candidate_features)) if c in df.columns]
 
-    except Exception as e:
-        print(f"⚠️ Failed to add Layer 3 specific features: {e}")
-
-    try:
-        enable_mda_shap = bool(cfg.get('enable_mda_shap_selection_layer3', cfg.get('enable_mda_shap_selection', True)))
-    except Exception:
-        enable_mda_shap = True
-
-        # Regime Features
-        # Calculate on the fly if not present
-        try:
-            close = market_data['close']
-            
-            # Trend
-            # Simple moving average slope or similar proxy?
-            # Prompt asked for "basic regime features (trend, volatility, volume ratio on 16 and 64 periods)"
-
-            # 1. Volatility (20 period)
-            vol_20 = close.pct_change().rolling(20).std()
-            df['volatility_20'] = vol_20
-            curated_feature_cols.append('volatility_20')
-
-            # 2. Trend (SMA 50 Slope proxy)
-            sma_50 = close.rolling(50).mean()
-            trend_score = (close - sma_50) / (sma_50 + 1e-9)
-            df['trend_score'] = trend_score
-            curated_feature_cols.append('trend_score')
-
-            # 3. Volume Ratios (16 and 64)
-            if 'volume' in market_data.columns:
-                vol = market_data['volume']
-
-                # Vol Ratio 16: Vol / MA(Vol, 16)
-                ma_vol_16 = vol.rolling(16).mean()
-                vr_16 = vol / (ma_vol_16 + 1e-9)
-                df['vol_ratio_16'] = vr_16
-                curated_feature_cols.append('vol_ratio_16')
-
-                # Vol Ratio 64: Vol / MA(Vol, 64)
-                ma_vol_64 = vol.rolling(64).mean()
-                vr_64 = vol / (ma_vol_64 + 1e-9)
-                df['vol_ratio_64'] = vr_64
-                curated_feature_cols.append('vol_ratio_64')
-
-        except Exception as e:
-            print(f"⚠️ Failed to generate regime features: {e}")
-
-    # Fill NaNs in new features
-    df[curated_feature_cols] = df[curated_feature_cols].fillna(0.0)
-
-    # FINAL FEATURE SELECTION
-    # Base Models + Disagreement + Curated Time/Regime
-    meta_features = list(dict.fromkeys(base_model_cols + disagree_cols + curated_feature_cols))
+    # Ensure numeric + stable missingness handling
+    other_cols = [c for c in meta_features if c not in set(safe_base_cols)]
+    if other_cols:
+        df[other_cols] = df[other_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     print(f"   Final Feature Set ({len(meta_features)}): {meta_features}")
+    
+    # [VERIFICATION] Log presence of critical features
+    has_mom = 'momentum_agreement' in meta_features
+    has_dis = any(c.startswith('ens_') for c in meta_features)
+    base_feats = [c for c in meta_features if c in safe_base_cols]
+    print(f"   [FEATURE_CHECK] Momentum Agreement: {has_mom}, Disagreement: {has_dis}")
+    print(f"   [FEATURE_CHECK] Base Models Included ({len(base_feats)}): {base_feats}")
 
     # Clean target
     try:
@@ -324,7 +444,29 @@ def layer3_analyst_lgbm(
             df.loc[np.isclose(df[target_col].astype(float), neutral_value, atol=1e-12), target_col] = np.nan
     except Exception:
         pass
+    # Add logging for target dropna analysis
+    initial_rows = len(df)
+    nan_counts = df.isna().sum()
+    target_nan_count = nan_counts.get(target_col, 0)
+    
+    print(f"\n=== TARGET DROPNA ANALYSIS ===")
+    print(f"Initial rows: {initial_rows}")
+    print(f"Target column '{target_col}' NaN count: {target_nan_count}")
+    
+    # Show top 10 columns with most NaNs
+    top_nans = nan_counts.sort_values(ascending=False).head(10)
+    print(f"Top 10 columns with NaNs:")
+    for col, count in top_nans.items():
+        if count > 0:
+            pct = (count / initial_rows) * 100
+            print(f"  {col}: {count} ({pct:.1f}%)")
+    
     df = df.dropna(subset=[target_col])
+    final_rows = len(df)
+    rows_dropped = initial_rows - final_rows
+    
+    print(f"After target dropna: {final_rows} rows ({rows_dropped} dropped, {(rows_dropped/initial_rows)*100:.1f}% loss)")
+    print("=" * 35)
 
     # Tight alignment: require Series aligned to oof_df.index.
     # Avoid silent truncation/padding because it invalidates OOF + scheme selection.
@@ -354,9 +496,13 @@ def layer3_analyst_lgbm(
     if len(w_l1) != len(df) or len(w_l2) != len(df) or len(ret_vec) != len(df):
         raise ValueError("Layer3 internal alignment error: weight/return lengths do not match df after target filtering")
 
-    # Calculate Magnitude Factor: log(1 + max(NetReturns, 0))
-    # Only positive returns contribute to magnitude - losses should not boost weight
+    # Outcome-derived magnitude factor (optional; see cfg['layer3_allow_outcome_weighting']).
     magnitude_log = np.log1p(np.clip(ret_vec, 0, None))
+
+    def _coerce_weights(w: np.ndarray) -> np.ndarray:
+        arr = np.asarray(w, dtype=float).reshape(-1)
+        arr = np.where(np.isfinite(arr), arr, 1.0)
+        return arr
 
     # ---------------------------------------------------------
     # 2. Define Weighting Schemes
@@ -365,35 +511,46 @@ def layer3_analyst_lgbm(
     # to ensure they are comparable and standardized (mean=1.0, clipped extremes).
     schemes = {}
 
+    # Always ensure finite weights before MAD-scaling.
+    w_l1 = _coerce_weights(w_l1)
+    w_l2 = _coerce_weights(w_l2)
+    magnitude_log = _coerce_weights(magnitude_log)
+
     # Scheme 1: target_sample_weight (layer1)
-    schemes["S1_L1"] = finalize_sample_weights(w_l1)
+    schemes["S1_L1"] = w_l1
 
     # Scheme 2: target_sample_weight * final composite weight (layer2)
-    schemes["S2_L1_L2"] = finalize_sample_weights(w_l1 * w_l2)
+    schemes["S2_L1_L2"] = (w_l1 * w_l2)
 
     # Scheme 3: final composite weight (layer2)
-    schemes["S3_L2"] = finalize_sample_weights(w_l2)
+    schemes["S3_L2"] = w_l2
 
-    # Scheme 4: log(1+NetReturns) for magnitude integration
-    schemes["S4_Mag"] = finalize_sample_weights(magnitude_log)
+    try:
+        allow_outcome_weighting = bool(cfg.get('layer3_allow_outcome_weighting', False))
+    except Exception:
+        allow_outcome_weighting = False
 
-    # Scheme 5: target_sample_weight * log(1+NetReturns)
-    schemes["S5_L1_Mag"] = finalize_sample_weights(w_l1 * magnitude_log)
+    if allow_outcome_weighting:
+        # Scheme 4: log(1+NetReturns) for magnitude integration
+        schemes["S4_Mag"] = magnitude_log
 
-    # Scheme 6: final composite weight * log(1+NetReturns)
-    schemes["S6_L2_Mag"] = finalize_sample_weights(w_l2 * magnitude_log)
+        # Scheme 5: target_sample_weight * log(1+NetReturns)
+        schemes["S5_L1_Mag"] = (w_l1 * magnitude_log)
 
-    # Scheme 7: target_sample_weight * final composite weight * log(1+NetReturns)
-    schemes["S7_All"] = finalize_sample_weights(w_l1 * w_l2 * magnitude_log)
+        # Scheme 6: final composite weight * log(1+NetReturns)
+        schemes["S6_L2_Mag"] = (w_l2 * magnitude_log)
 
-    # Scheme 8: Asymmetric weighting - downweight losing trades (loss aversion)
-    loss_mask = ret_vec < 0
-    raw_s8 = np.where(
-        loss_mask,
-        w_l2 * 0.9,  # Downweight losing trades
-        w_l2 * 1.1   # Boost winning trades
-    )
-    schemes["S8_Asymmetric"] = finalize_sample_weights(raw_s8)
+        # Scheme 7: target_sample_weight * final composite weight * log(1+NetReturns)
+        schemes["S7_All"] = (w_l1 * w_l2 * magnitude_log)
+
+        # Scheme 8: Asymmetric weighting - downweight losing trades (loss aversion)
+        loss_mask = ret_vec < 0
+        raw_s8 = np.where(
+            loss_mask,
+            w_l2 * 0.9,  # Downweight losing trades
+            w_l2 * 1.1   # Boost winning trades
+        )
+        schemes["S8_Asymmetric"] = raw_s8
 
     # Scheme 9: Class Balanced weighting - compensate for low base rate
     # Ensures winners and losers have equal aggregate weight in training
@@ -407,9 +564,9 @@ def layer3_analyst_lgbm(
             raw_s9 = np.where(y_bin == 1, w_l2 * scale_pos, w_l2)
         else:
             raw_s9 = w_l2
-        schemes["S9_ClassBalanced"] = finalize_sample_weights(raw_s9)
+        schemes["S9_ClassBalanced"] = raw_s9
     except Exception:
-        schemes["S9_ClassBalanced"] = finalize_sample_weights(w_l2)
+        schemes["S9_ClassBalanced"] = w_l2
 
     # ---------------------------------------------------------
     # 3. Comparative Evaluation (2-Phase Scheme Pruning)
@@ -417,7 +574,7 @@ def layer3_analyst_lgbm(
     # Phase 1: Quick screening on fold 1 only for all schemes
     # Phase 2: Full 5-fold evaluation for top 3 schemes
     # This reduces training calls from 105+ to ~66 (37% reduction)
-    print("\n>> Phase 1: Quick Screening (8 Schemes, Fold 1 Only)...")
+    print(f"\n>> Phase 1: Quick Screening ({len(schemes)} Schemes, Fold 1 Only)...")
 
     results = []
 
@@ -428,17 +585,21 @@ def layer3_analyst_lgbm(
     lgbm_params = {
         'objective': 'binary',
         'metric': 'binary_logloss',
-        'n_estimators': 200,
-        'learning_rate': 0.03,
-        'max_depth': 4,
-        'num_leaves': 16,
+        'n_estimators': 800,
+        'learning_rate': 0.02,
+        'max_depth': 7,
+        'num_leaves': 63,
         'subsample': 0.8,
         'colsample_bytree': 0.8,
         'reg_alpha': 1.0,
-        'reg_lambda': 1.0,
-        'random_state': 42,
-        'n_jobs': 1,
-        'verbose': -1
+        'reg_lambda': 2.0,
+        'min_child_samples': 20,
+        'min_gain_to_split': 0.005,
+        'feature_fraction': 0.8,
+        'bagging_fraction': 0.8,
+        'bagging_freq': 1,
+        'verbose': -1,
+        'n_jobs': 1
     }
 
     X = df[meta_features]
@@ -453,7 +614,7 @@ def layer3_analyst_lgbm(
         n_splits = int(cfg.get('cv_splits', 5))
     except Exception:
         n_splits = 5
-    n_splits = int(max(2, n_splits))
+    n_splits = int(max(3, min(8, n_splits)))  # Ensure 3-8 splits for robust CV
 
     # Infer bar duration
     bar_td = None
@@ -476,12 +637,13 @@ def layer3_analyst_lgbm(
 
     if purge_bars <= 0:
         try:
-            # Match triple-barrier max lookahead default (conservative).
-            purge_bars = int(cfg.get('layer3_max_lookahead_bars', 100))
+            # Reduced purge to preserve more data
+            purge_bars = int(cfg.get('layer3_max_lookahead_bars', 50))
         except Exception:
-            purge_bars = 100
+            purge_bars = 50
     if embargo_bars <= 0:
-        embargo_bars = int(max(1, int(purge_bars // 2)))
+        # Reduced embargo to preserve more data
+        embargo_bars = int(max(1, int(purge_bars // 3)))
 
     if bar_td is not None and isinstance(bar_td, pd.Timedelta) and pd.notna(bar_td):
         purge = bar_td * int(max(0, purge_bars))
@@ -494,77 +656,179 @@ def layer3_analyst_lgbm(
     fold_indices = list(cv.split(df))
 
     # Helper function to evaluate a scheme on specific folds
-    def evaluate_scheme(name, w_vec, fold_list, calibration_method: str = 'isotonic'):
+    try:
+        calibration_method_default = str(cfg.get('layer3_calibration_method', 'isotonic'))
+    except Exception:
+        calibration_method_default = 'isotonic'
+    if calibration_method_default not in {'isotonic', 'sigmoid'}:
+        calibration_method_default = 'isotonic'
+
+    try:
+        calibration_cv_splits = int(cfg.get('layer3_calibration_cv_splits', 3))
+    except Exception:
+        calibration_cv_splits = 3
+    calibration_cv_splits = int(max(3, min(5, calibration_cv_splits)))  # More robust calibration
+
+    def _infer_target_mode(y_arr: np.ndarray) -> str:
+        try:
+            forced = cfg.get('layer3_target_mode', 'auto')
+        except Exception:
+            forced = 'auto'
+        forced = str(forced).strip().lower()
+        if forced in {'binary', 'soft', 'continuous'}:
+            return 'soft' if forced in {'soft', 'continuous'} else 'binary'
+
+        yv = np.asarray(y_arr, dtype=float).reshape(-1)
+        m = np.isfinite(yv)
+        if not bool(np.any(m)):
+            return 'binary'
+        yv = yv[m]
+        u = np.unique(yv)
+        if u.size <= 0:
+            return 'binary'
+        if np.all(np.isclose(u, 0.0)) or np.all(np.isclose(u, 1.0)):
+            return 'binary'
+        if np.all(np.isin(u, [0.0, 1.0])):
+            return 'binary'
+
+        # Only treat as soft if explicitly allowed and values are within [0,1].
+        try:
+            allow_soft = bool(cfg.get('layer3_allow_soft_targets', True))
+        except Exception:
+            allow_soft = True
+        if allow_soft and float(np.nanmin(yv)) >= 0.0 - 1e-12 and float(np.nanmax(yv)) <= 1.0 + 1e-12:
+            return 'soft'
+        return 'binary'
+
+    def evaluate_scheme(name, w_vec, fold_list, calibration_method: Optional[str] = None):
         oof_probs = np.full(len(df), np.nan)
         fold_metrics = []
         try:
-            # Determine if target is continuous (soft labels)
-            unique_y = np.unique(y_values)
-            is_continuous = len(unique_y) > 2 or (len(unique_y) > 0 and not np.array_equal(unique_y, [0.0, 1.0]) and not np.array_equal(unique_y, [0, 1]))
+            target_mode = _infer_target_mode(y_values)
+            is_continuous = bool(target_mode == 'soft')
+
+            try:
+                clip_low = float(cfg.get('layer3_prob_clip_low', 0.0025)) if isinstance(cfg, dict) else 0.0025
+            except Exception:
+                clip_low = 0.0025
+            try:
+                clip_high = float(cfg.get('layer3_prob_clip_high', 0.9975)) if isinstance(cfg, dict) else 0.9975
+            except Exception:
+                clip_high = 0.9975
+
+            try:
+                walkforward_only = bool(cfg.get('layer3_walkforward_only', True)) if isinstance(cfg, dict) else True
+            except Exception:
+                walkforward_only = True
+
+            try:
+                calib_tail_frac = float(cfg.get('layer3_calibration_tail_frac', 0.20)) if isinstance(cfg, dict) else 0.20
+            except Exception:
+                calib_tail_frac = 0.20
+            if (not np.isfinite(calib_tail_frac)) or calib_tail_frac <= 0.05 or calib_tail_frac >= 0.5:
+                calib_tail_frac = 0.20
+
+            try:
+                temp_scaling = bool(cfg.get('layer3_temperature_scaling_enabled', True)) if isinstance(cfg, dict) else True
+            except Exception:
+                temp_scaling = True
             
             for fold_idx in fold_list:
                 train_idx, test_idx = fold_indices[fold_idx]
-                X_train, X_test = X_values[train_idx], X_values[test_idx]
-                y_train = y_values[train_idx]
-                w_train = w_vec[train_idx]
+                train_idx = np.asarray(train_idx, dtype=int)
+                test_idx = np.asarray(test_idx, dtype=int)
+                train_idx = np.sort(train_idx)
+                test_idx = np.sort(test_idx)
+
+                if walkforward_only and test_idx.size > 0:
+                    cutoff = int(test_idx.min())
+                    train_idx = train_idx[train_idx < cutoff]
+
+                if train_idx.size < 50 or test_idx.size < 10:
+                    continue
+
+                X_train_full = X_values[train_idx]
+                X_test = X_values[test_idx]
+                y_train_full = y_values[train_idx]
+                w_train_full = finalize_sample_weights(w_vec[train_idx])
+
+                n_train = int(len(train_idx))
+                calib_n = int(max(30, min(int(np.floor(float(calib_tail_frac) * float(n_train))), n_train - 30)))
+                fit_n = int(max(30, n_train - calib_n))
+
+                X_fit = X_train_full[:fit_n]
+                y_fit = y_train_full[:fit_n]
+                w_fit = w_train_full[:fit_n]
+
+                X_cal = X_train_full[fit_n:]
+                y_cal = y_train_full[fit_n:]
+                w_cal = w_train_full[fit_n:]
 
                 if is_continuous:
                     # Use Regressor for soft labels (minimizing MSE/Brier score or similar)
                     # objective='regression' (l2) or 'binary' (logloss)? 
                     # If soft labels are probs, regression (MSE) is robust.
                     reg = lgb.LGBMRegressor(**lgbm_params)
-                    reg.fit(X_train, y_train, sample_weight=w_train)
+                    reg.fit(X_fit, y_fit, sample_weight=w_fit)
                     probs = reg.predict(X_test)
-                    probs = np.clip(probs, 0.0, 1.0) # Ensure valid prob range
+                    probs = _clip_probs(probs, clip_low, clip_high)
                 else:
-                    # Discrete labels: Use Classifier + Calibration
-                    # Dynamic Calibration Selection: Sigmoid vs Isotonic
-                    # Split training data to evaluate which method calibrates better
-                    
-                    calib_method_to_use = 'isotonic' # Default
-                    
-                    try:
-                         # Use last 20% of training data for calibration validation
-                         n_tr = len(X_train)
-                         if n_tr > 200:
-                             split_idx = int(n_tr * 0.8)
-                             X_cal_tr, X_cal_val = X_train[:split_idx], X_train[split_idx:]
-                             y_cal_tr, y_cal_val = y_train[:split_idx], y_train[split_idx:]
-                             w_cal_tr = w_train[:split_idx] if w_train is not None else None
-                             
-                             base_cal = lgb.LGBMClassifier(**lgbm_params)
-                             base_cal.fit(X_cal_tr, y_cal_tr, sample_weight=w_cal_tr)
-                             
-                             # Test Isotonic
-                             iso = CalibratedClassifierCV(base_cal, method='isotonic', cv='prefit')
-                             iso.fit(X_cal_val, y_cal_val) # Actually CalibratedClassifierCV with prefit expects validation data in fit
-                             p_iso = iso.predict_proba(X_cal_val)[:, 1]
-                             ece_iso = _fast_expected_calibration_error(y_cal_val, p_iso)
-                             
-                             # Test Sigmoid
-                             sig = CalibratedClassifierCV(base_cal, method='sigmoid', cv='prefit')
-                             sig.fit(X_cal_val, y_cal_val)
-                             p_sig = sig.predict_proba(X_cal_val)[:, 1]
-                             ece_sig = _fast_expected_calibration_error(y_cal_val, p_sig)
-                             
-                             if ece_sig < ece_iso:
-                                 calib_method_to_use = 'sigmoid'
-                                 
-                             # print(f"   [Calib] Fold {fold_idx}: Iso ECE={ece_iso:.4f}, Sig ECE={ece_sig:.4f} -> Used {calib_method_to_use}")
-                    except Exception as e:
-                         # Fallback to config default or isotonic
-                         calib_method_to_use = str(calibration_method)
+                    # Discrete labels: fit on earlier slice, calibrate on tail slice strictly before test.
+                    calib_method_to_use = str(calibration_method or calibration_method_default)
+                    if calib_method_to_use not in {'isotonic', 'sigmoid'}:
+                        calib_method_to_use = calibration_method_default
 
-                    # Final Fit with selected method using internal CV (more robust than prefit split)
-                    tscv_inner = TimeSeriesSplit(n_splits=3)
+                    try:
+                        y_fit = (np.asarray(y_fit, dtype=float) >= 0.5).astype(int)
+                        y_cal_bin = (np.asarray(y_cal, dtype=float) >= 0.5).astype(int)
+                    except Exception:
+                        y_fit = np.asarray(y_fit)
+                        y_cal_bin = np.asarray(y_cal)
+
                     base_est = lgb.LGBMClassifier(**lgbm_params)
-                    calib_clf = CalibratedClassifierCV(
-                        estimator=base_est,
-                        method=calib_method_to_use,
-                        cv=tscv_inner
-                    )
-                    calib_clf.fit(X_train, y_train, sample_weight=w_train)
-                    probs = calib_clf.predict_proba(X_test)[:, 1]
+                    base_est.fit(X_fit, y_fit, sample_weight=w_fit)
+
+                    p_test_raw = base_est.predict_proba(X_test)[:, 1]
+                    p_cal_raw = base_est.predict_proba(X_cal)[:, 1]
+
+                    p_test_raw = _clip_probs(p_test_raw, clip_low, clip_high)
+                    p_cal_raw = _clip_probs(p_cal_raw, clip_low, clip_high)
+
+                    p_test_cal = p_test_raw
+                    p_cal_cal = p_cal_raw
+
+                    if calib_method_to_use == 'isotonic':
+                        try:
+                            iso = IsotonicRegression(out_of_bounds='clip')
+                            iso.fit(p_cal_raw, y_cal_bin.astype(float), sample_weight=w_cal)
+                            p_test_cal = iso.predict(p_test_raw)
+                            p_cal_cal = iso.predict(p_cal_raw)
+                        except Exception:
+                            p_test_cal = p_test_raw
+                            p_cal_cal = p_cal_raw
+                    else:
+                        try:
+                            z_cal = _logit(p_cal_raw).reshape(-1, 1)
+                            lr = LogisticRegression(solver='lbfgs', max_iter=200)
+                            lr.fit(z_cal, y_cal_bin.astype(int), sample_weight=w_cal)
+                            p_test_cal = lr.predict_proba(_logit(p_test_raw).reshape(-1, 1))[:, 1]
+                            p_cal_cal = lr.predict_proba(z_cal)[:, 1]
+                        except Exception:
+                            p_test_cal = p_test_raw
+                            p_cal_cal = p_cal_raw
+
+                    p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
+                    p_cal_cal = _clip_probs(p_cal_cal, clip_low, clip_high)
+
+                    if temp_scaling:
+                        try:
+                            t_hat = _fit_temperature(y_cal_bin.astype(int), p_cal_cal, sample_weight=w_cal)
+                        except Exception:
+                            t_hat = 1.0
+                        p_test_cal = _apply_temperature(p_test_cal, t_hat)
+                        p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
+
+                    probs = p_test_cal
                 
                 oof_probs[test_idx] = probs
 
@@ -580,6 +844,10 @@ def layer3_analyst_lgbm(
                         else:
                             y_fold_bin = y_fold_true
                         try:
+                            pr_auc_f = float(average_precision_score(y_fold_bin, y_fold_prob)) if int(np.unique(y_fold_bin).size) >= 2 else float('nan')
+                        except Exception:
+                            pr_auc_f = float('nan')
+                        try:
                             auc_f = float(roc_auc_score(y_fold_bin, y_fold_prob)) if int(np.unique(y_fold_bin).size) >= 2 else float('nan')
                         except Exception:
                             auc_f = float('nan')
@@ -591,7 +859,7 @@ def layer3_analyst_lgbm(
                             ece_f = float(_fast_expected_calibration_error(y_fold_bin, y_fold_prob, n_bins=10))
                         except Exception:
                             ece_f = float('nan')
-                        fold_metrics.append({"fold": int(fold_idx), "auc": auc_f, "logloss": ll_f, "ece": ece_f})
+                        fold_metrics.append({"fold": int(fold_idx), "auc": auc_f, "pr_auc": pr_auc_f, "logloss": ll_f, "ece": ece_f})
                 except Exception:
                     pass
 
@@ -615,15 +883,46 @@ def layer3_analyst_lgbm(
                  y_true_binary = y_true_eval
 
             try:
+                allow_flip = bool(cfg.get('layer3_auto_flip_probabilities', True)) if isinstance(cfg, dict) else True
+            except Exception:
+                allow_flip = True
+
+            if (not is_continuous) and allow_flip:
+                try:
+                    auc_raw = float(roc_auc_score(y_true_binary, y_prob_eval))
+                    if np.isfinite(auc_raw) and auc_raw < 0.5:
+                        oof_probs[mask] = 1.0 - oof_probs[mask]
+                        y_prob_eval = 1.0 - y_prob_eval
+                except Exception:
+                    pass
+
+            try:
                 auc = roc_auc_score(y_true_binary, y_prob_eval)
             except ValueError:
                 auc = 0.5 # Handle single class edge case
                 
-            ll = log_loss(y_true_binary, y_prob_eval) # Log loss against binary truth or soft? sklearn log_loss supports soft y_true? Yes.
-            # But let's use binary target for standard metrics for now to avoid confusion
-            
+            try:
+                pr_auc = float(average_precision_score(y_true_binary, y_prob_eval)) if int(np.unique(y_true_binary).size) >= 2 else float('nan')
+            except Exception:
+                pr_auc = float('nan')
+
+            pos_rate = float(np.mean(y_true_binary)) if y_true_binary.size > 0 else float('nan')
+            try:
+                pr_auc_w = float(cfg.get('layer3_pr_auc_weight', 50.0)) if isinstance(cfg, dict) else 50.0
+            except Exception:
+                pr_auc_w = 50.0
+            if not np.isfinite(pr_auc_w):
+                pr_auc_w = 50.0
+
+            ll = log_loss(y_true_binary, y_prob_eval)
             ece = _fast_expected_calibration_error(y_true_binary, y_prob_eval, n_bins=10)
-            score = 100 * (auc - 0.5) + 50 * (0.693 - ll) - 200 * ece
+            pr_delta = (pr_auc - pos_rate) if (np.isfinite(pr_auc) and np.isfinite(pos_rate)) else 0.0
+            score = 100 * (auc - 0.5) + 50 * (0.693 - ll) - 200 * ece + float(pr_auc_w) * float(pr_delta)
+
+            try:
+                brier = float(brier_score_loss(y_true_binary, y_prob_eval))
+            except Exception:
+                brier = float('nan')
 
             # --- Top 30% Quantile Metrics ---
             top30_tpd = float('nan')
@@ -677,15 +976,29 @@ def layer3_analyst_lgbm(
                 }
 
             auc_stats = _fold_stats("auc")
+            pr_stats = _fold_stats("pr_auc")
             ll_stats = _fold_stats("logloss")
             ece_stats = _fold_stats("ece")
+
+            wv = np.asarray(w_vec, dtype=float).reshape(-1)
+            wv = wv[np.isfinite(wv)]
+            ess_ratio = float('nan')
+            try:
+                if wv.size > 0:
+                    ess = (np.sum(wv) ** 2) / (np.sum(wv * wv) + 1e-12)
+                    ess_ratio = float(ess / float(wv.size))
+            except Exception:
+                pass
 
             return {
                 "Scheme": name,
                 "Score": score,
                 "AUC": auc,
+                "PR_AUC": pr_auc,
                 "LogLoss": ll,
                 "ECE": ece,
+                "Brier": brier,
+                "Weight_ESS_Ratio": ess_ratio,
                 "Top30_TPD": top30_tpd,
                 "Top30_Win": top30_wr,
                 "FoldAUC_mean": auc_stats["mean"],
@@ -693,6 +1006,11 @@ def layer3_analyst_lgbm(
                 "FoldAUC_min": auc_stats["min"],
                 "FoldAUC_max": auc_stats["max"],
                 "FoldAUC_n": auc_stats["n"],
+                "FoldPRAUC_mean": pr_stats["mean"],
+                "FoldPRAUC_std": pr_stats["std"],
+                "FoldPRAUC_min": pr_stats["min"],
+                "FoldPRAUC_max": pr_stats["max"],
+                "FoldPRAUC_n": pr_stats["n"],
                 "FoldLogLoss_mean": ll_stats["mean"],
                 "FoldLogLoss_std": ll_stats["std"],
                 "FoldLogLoss_min": ll_stats["min"],
@@ -712,13 +1030,18 @@ def layer3_analyst_lgbm(
             return {
                 "Scheme": name,
                 "Score": -999,
-                "AUC": 0, "LogLoss": 99, "ECE": 99, "Rating": "Failed",
+                "AUC": 0, "PR_AUC": float('nan'), "LogLoss": 99, "ECE": 99, "Rating": "Failed",
                 "Top30_TPD": float('nan'), "Top30_Win": float('nan'),
                 "FoldAUC_mean": float('nan'),
                 "FoldAUC_std": float('nan'),
                 "FoldAUC_min": float('nan'),
                 "FoldAUC_max": float('nan'),
                 "FoldAUC_n": 0,
+                "FoldPRAUC_mean": float('nan'),
+                "FoldPRAUC_std": float('nan'),
+                "FoldPRAUC_min": float('nan'),
+                "FoldPRAUC_max": float('nan'),
+                "FoldPRAUC_n": 0,
                 "FoldLogLoss_mean": float('nan'),
                 "FoldLogLoss_std": float('nan'),
                 "FoldLogLoss_min": float('nan'),
@@ -732,11 +1055,18 @@ def layer3_analyst_lgbm(
                 "oof_probs": None, "w_vec": w_vec
             }
 
-    # Phase 1: Quick screening on fold 0 only
+    # Phase 1: Quick screening on 2 folds (first + last) for stability
     phase1_results = []
+    try:
+        screen_folds = [0, int(max(0, len(fold_indices) - 1))]
+        screen_folds = list(dict.fromkeys([int(f) for f in screen_folds if 0 <= int(f) < int(len(fold_indices))]))
+        if not screen_folds:
+            screen_folds = [0]
+    except Exception:
+        screen_folds = [0]
     for name, w_vec in schemes.items():
         print(f"   Screening {name}...")
-        result = evaluate_scheme(name, w_vec, [0], calibration_method='sigmoid')  # Only fold 0
+        result = evaluate_scheme(name, w_vec, screen_folds, calibration_method=calibration_method_default)
         phase1_results.append(result)
 
     # Sort by score and take top 3 for full evaluation
@@ -749,7 +1079,7 @@ def layer3_analyst_lgbm(
     # Phase 2: Full 5-fold evaluation for top 3 schemes
     for name in top_scheme_names:
         print(f"   Full evaluation: {name}...")
-        result = evaluate_scheme(name, schemes[name], list(range(len(fold_indices))), calibration_method='isotonic')  # All folds
+        result = evaluate_scheme(name, schemes[name], list(range(len(fold_indices))), calibration_method=calibration_method_default)  # All folds
         results.append(result)
 
         if result["Score"] > best_score:
@@ -796,9 +1126,10 @@ def layer3_analyst_lgbm(
         export_cols = [
             c
             for c in [
-                'Scheme', 'Score', 'AUC', 'LogLoss', 'ECE', 'Rating',
+                'Scheme', 'Score', 'AUC', 'PR_AUC', 'LogLoss', 'ECE', 'Brier', 'Weight_ESS_Ratio', 'Rating',
                 'Top30_TPD', 'Top30_Win',
                 'FoldAUC_mean', 'FoldAUC_std', 'FoldAUC_min', 'FoldAUC_max', 'FoldAUC_n',
+                'FoldPRAUC_mean', 'FoldPRAUC_std', 'FoldPRAUC_min', 'FoldPRAUC_max', 'FoldPRAUC_n',
                 'FoldLogLoss_mean', 'FoldLogLoss_std', 'FoldLogLoss_min', 'FoldLogLoss_max', 'FoldLogLoss_n',
                 'FoldECE_mean', 'FoldECE_std', 'FoldECE_min', 'FoldECE_max', 'FoldECE_n',
             ]
@@ -808,16 +1139,33 @@ def layer3_analyst_lgbm(
     except Exception:
         pass
 
+    try:
+        _dump_layer3_feature_inventory(
+            df=df,
+            feature_cols=meta_features,
+            target_col=target_col,
+            outcomes_dir=outcomes_dir,
+            symbol=symbol,
+            timeframe=timeframe,
+            ts=ts,
+            stage='pre_oof',
+            cfg=cfg,
+            meta_prob_col='meta_prob',
+        )
+    except Exception:
+        pass
+
     print("\n" + "="*85)
     print("   LAYER 3 WEIGHTING SCHEME COMPARISON")
     print("="*85)
-    print(f"{'Scheme':<15} | {'Score':<8} | {'AUC':<6} | {'LogLoss':<8} | {'ECE':<6} | {'T30_TPD':<7} | {'T30_Win%':<8} | {'Rating'}")
+    print(f"{'Scheme':<15} | {'Score':<8} | {'AUC':<6} | {'PR_AUC':<7} | {'LogLoss':<8} | {'ECE':<6} | {'T30_TPD':<7} | {'T30_Win%':<8} | {'Rating'}")
     print("-" * 100)
     for row in results_df.itertuples(index=False):
         # Handle formatting safely
         tpd_s = f"{row.Top30_TPD:.1f}" if np.isfinite(row.Top30_TPD) else "nan"
         win_s = f"{row.Top30_Win:.3f}" if np.isfinite(row.Top30_Win) else "nan"
-        print(f"{row.Scheme:<15} | {row.Score:>8.4f} | {row.AUC:>6.4f} | {row.LogLoss:>8.4f} | {row.ECE:>6.4f} | {tpd_s:>7} | {win_s:>8} | {row.Rating}")
+        pr_s = f"{row.PR_AUC:.4f}" if hasattr(row, 'PR_AUC') and np.isfinite(row.PR_AUC) else "nan"
+        print(f"{row.Scheme:<15} | {row.Score:>8.4f} | {row.AUC:>6.4f} | {pr_s:>7} | {row.LogLoss:>8.4f} | {row.ECE:>6.4f} | {tpd_s:>7} | {win_s:>8} | {row.Rating}")
     print("-" * 100)
 
     print(f"\n🏆 WINNER: {best_scheme_name} (Score: {best_score:.4f})")
@@ -833,12 +1181,33 @@ def layer3_analyst_lgbm(
     print(f">> Training Final Production Model using {best_scheme_name}...")
 
     df['meta_prob'] = best_model_artifacts['oof_probs']
-    w_best = best_model_artifacts['w_vec']
+    w_best_raw = best_model_artifacts['w_vec']
+    w_best = finalize_sample_weights(w_best_raw)
+
+    try:
+        _dump_layer3_feature_inventory(
+            df=df,
+            feature_cols=meta_features,
+            target_col=target_col,
+            outcomes_dir=outcomes_dir,
+            symbol=symbol,
+            timeframe=timeframe,
+            ts=ts,
+            stage='post_oof',
+            cfg=cfg,
+            meta_prob_col='meta_prob',
+        )
+    except Exception:
+        pass
 
     honest_auc = float('nan')
+    honest_pr_auc = float('nan')
     honest_logloss = float('nan')
     honest_ece = float('nan')
     honest_brier = float('nan')
+    honest_temperature = float('nan')
+    honest_prob_clip_low = float('nan')
+    honest_prob_clip_high = float('nan')
     honest_n_train = 0
     honest_n_test = 0
     honest_holdout_start = None
@@ -901,21 +1270,87 @@ def layer3_analyst_lgbm(
                 y_test = y_test[mask_te]
 
                 if len(y_train) >= 50 and len(y_test) >= 50:
+                    try:
+                        clip_low = float(cfg.get('layer3_prob_clip_low', 0.0025)) if isinstance(cfg, dict) else 0.0025
+                    except Exception:
+                        clip_low = 0.0025
+                    try:
+                        clip_high = float(cfg.get('layer3_prob_clip_high', 0.9975)) if isinstance(cfg, dict) else 0.9975
+                    except Exception:
+                        clip_high = 0.9975
+
+                    try:
+                        calib_tail_frac = float(cfg.get('layer3_calibration_tail_frac', 0.20)) if isinstance(cfg, dict) else 0.20
+                    except Exception:
+                        calib_tail_frac = 0.20
+                    if (not np.isfinite(calib_tail_frac)) or calib_tail_frac <= 0.05 or calib_tail_frac >= 0.5:
+                        calib_tail_frac = 0.20
+
+                    try:
+                        temp_scaling = bool(cfg.get('layer3_temperature_scaling_enabled', True)) if isinstance(cfg, dict) else True
+                    except Exception:
+                        temp_scaling = True
+
+                    n_tr = int(len(y_train))
+                    calib_n = int(max(30, min(int(np.floor(float(calib_tail_frac) * float(n_tr))), n_tr - 30)))
+                    fit_n = int(max(30, n_tr - calib_n))
+
+                    X_fit = X_train[:fit_n]
+                    y_fit = y_train[:fit_n]
+                    w_fit = w_train[:fit_n]
+
+                    X_cal = X_train[fit_n:]
+                    y_cal = y_train[fit_n:]
+                    w_cal = w_train[fit_n:]
+
                     base_est = lgb.LGBMClassifier(**lgbm_params)
-                    tscv_inner = TimeSeriesSplit(n_splits=3)
-                    calib_clf = CalibratedClassifierCV(
-                        estimator=base_est,
-                        method='isotonic',
-                        cv=tscv_inner,
-                    )
-                    calib_clf.fit(X_train, y_train.astype(int), sample_weight=w_train)
-                    p_test = calib_clf.predict_proba(X_test)[:, 1]
+                    base_est.fit(X_fit, y_fit.astype(int), sample_weight=w_fit)
+
+                    p_test_raw = base_est.predict_proba(X_test)[:, 1]
+                    p_cal_raw = base_est.predict_proba(X_cal)[:, 1]
+
+                    p_test_raw = _clip_probs(p_test_raw, clip_low, clip_high)
+                    p_cal_raw = _clip_probs(p_cal_raw, clip_low, clip_high)
+
+                    p_test_cal = p_test_raw
+                    p_cal_cal = p_cal_raw
+
+                    try:
+                        iso = IsotonicRegression(out_of_bounds='clip')
+                        iso.fit(p_cal_raw, y_cal.astype(float), sample_weight=w_cal)
+                        p_test_cal = iso.predict(p_test_raw)
+                        p_cal_cal = iso.predict(p_cal_raw)
+                    except Exception:
+                        p_test_cal = p_test_raw
+                        p_cal_cal = p_cal_raw
+
+                    p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
+                    p_cal_cal = _clip_probs(p_cal_cal, clip_low, clip_high)
+
+                    t_hat = 1.0
+                    if temp_scaling:
+                        try:
+                            t_hat = _fit_temperature(y_cal.astype(int), p_cal_cal, sample_weight=w_cal)
+                        except Exception:
+                            t_hat = 1.0
+                        p_test_cal = _apply_temperature(p_test_cal, t_hat)
+                        p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
+
+                    p_test = p_test_cal
+                    honest_temperature = float(t_hat)
+                    honest_prob_clip_low = float(clip_low)
+                    honest_prob_clip_high = float(clip_high)
 
                     y_bin = y_test.astype(int)
                     if int(np.unique(y_bin).size) >= 2:
                         honest_auc = float(roc_auc_score(y_bin, p_test))
+                        try:
+                            honest_pr_auc = float(average_precision_score(y_bin, p_test))
+                        except Exception:
+                            honest_pr_auc = float('nan')
                     else:
                         honest_auc = float('nan')
+                        honest_pr_auc = float('nan')
                     honest_logloss = float(log_loss(y_bin, p_test))
                     honest_ece = float(_fast_expected_calibration_error(y_bin, p_test, n_bins=10))
                     try:
@@ -926,8 +1361,11 @@ def layer3_analyst_lgbm(
         pass
 
     # Detect continuous again for final training (should match above)
-    unique_y = np.unique(y_values)
-    is_continuous = len(unique_y) > 2 or (len(unique_y) > 0 and not np.array_equal(unique_y, [0.0, 1.0]) and not np.array_equal(unique_y, [0, 1]))
+    try:
+        target_mode_final = _infer_target_mode(y_values)
+    except Exception:
+        target_mode_final = 'binary'
+    is_continuous = bool(target_mode_final == 'soft')
 
     try:
         if is_continuous:
@@ -935,7 +1373,7 @@ def layer3_analyst_lgbm(
              final_model.fit(X, y, sample_weight=w_best)
         else:
             final_base = lgb.LGBMClassifier(**lgbm_params)
-            final_tscv = TimeSeriesSplit(n_splits=3)
+            final_tscv = TimeSeriesSplit(n_splits=calibration_cv_splits)
             final_model = CalibratedClassifierCV(
                 estimator=final_base,
                 method='isotonic',
@@ -951,7 +1389,8 @@ def layer3_analyst_lgbm(
     # 6. Final Diagnostics (on Best OOF)
     # ---------------------------------------------------------
     # Just reusing the print layout from before for consistency
-    mask = ~np.isnan(df['meta_prob'])
+    meta_prob_numeric = pd.to_numeric(df['meta_prob'], errors='coerce')
+    mask = ~meta_prob_numeric.isna()
     y_true = y[mask]
     y_prob = df.loc[mask, 'meta_prob']
 
@@ -1004,9 +1443,17 @@ def layer3_analyst_lgbm(
                  except Exception:
                      score_brier = float('nan')
 
+    pr_auc_oof = float('nan')
+    try:
+        if len(y_true_metrics) > 0 and int(np.unique(y_true_metrics).size) >= 2:
+            pr_auc_oof = float(average_precision_score(y_true_metrics, y_prob))
+    except Exception:
+        pr_auc_oof = float('nan')
+
     metrics = {
         "Log Loss": f"{score_logloss:.5f}",
         "AUC":      f"{score_auc:.5f}",
+        "PR AUC":   f"{pr_auc_oof:.5f}" if np.isfinite(pr_auc_oof) else "nan",
         "IC":       f"{score_ic:.5f}",
         "ECE":      f"{score_ece:.5f}",
         "MCE":      f"{score_mce:.5f}",
@@ -1027,22 +1474,26 @@ def layer3_analyst_lgbm(
             f"- winner_score: {float(best_score) if best_score is not None else float('nan')}\n",
             "\n## Winner Metrics (OOF)\n",
         ]
-        for k in ['AUC', 'Log Loss', 'ECE', 'IC', 'MCE', 'Brier']:
+        for k in ['AUC', 'PR AUC', 'Log Loss', 'ECE', 'IC', 'MCE', 'Brier']:
             if k in metrics:
                 lines.append(f"- {k}: {metrics[k]}\n")
         lines.append("\n## Honest Holdout Metrics (Forward Tail)\n")
         lines.append(f"- n_train: {int(honest_n_train)}\n")
         lines.append(f"- n_holdout: {int(honest_n_test)}\n")
         lines.append(f"- honest_auc: {float(honest_auc) if np.isfinite(honest_auc) else float('nan')}\n")
+        lines.append(f"- honest_pr_auc: {float(honest_pr_auc) if np.isfinite(honest_pr_auc) else float('nan')}\n")
         lines.append(f"- honest_logloss: {float(honest_logloss) if np.isfinite(honest_logloss) else float('nan')}\n")
         lines.append(f"- honest_ece: {float(honest_ece) if np.isfinite(honest_ece) else float('nan')}\n")
         lines.append(f"- honest_brier: {float(honest_brier) if np.isfinite(honest_brier) else float('nan')}\n")
+        lines.append(f"- honest_temperature: {float(honest_temperature) if np.isfinite(honest_temperature) else float('nan')}\n")
+        lines.append(f"- honest_prob_clip_low: {float(honest_prob_clip_low) if np.isfinite(honest_prob_clip_low) else float('nan')}\n")
+        lines.append(f"- honest_prob_clip_high: {float(honest_prob_clip_high) if np.isfinite(honest_prob_clip_high) else float('nan')}\n")
 
         # Add Weighting Scheme Comparison Table
         lines.append("\n## Weighting Scheme Comparison\n")
 
         # Markdown table header
-        table_cols = ['Scheme', 'Score', 'AUC', 'LogLoss', 'ECE', 'Top30_TPD', 'Top30_Win', 'Rating']
+        table_cols = ['Scheme', 'Score', 'AUC', 'PR_AUC', 'LogLoss', 'ECE', 'Top30_TPD', 'Top30_Win', 'Rating']
         header = "| " + " | ".join(table_cols) + " |"
         separator = "| " + " | ".join(["---"] * len(table_cols)) + " |"
         lines.append(header + "\n")
@@ -1065,6 +1516,66 @@ def layer3_analyst_lgbm(
     except Exception:
         pass
 
+    # --- Additional diagnostics: rolling AUC + regime breakdown ---
+    try:
+        diag_rows = []
+        idx = df.index
+        if isinstance(idx, pd.DatetimeIndex) and int(len(idx)) >= 200:
+            y_all = pd.to_numeric(df[target_col], errors='coerce').astype(float)
+            p_all = pd.to_numeric(df['meta_prob'], errors='coerce').astype(float)
+            m = y_all.notna() & p_all.notna()
+            if int(m.sum()) >= 200:
+                y_bin_all = (y_all[m].values >= 0.5).astype(int)
+                p_bin_all = np.asarray(p_all[m].values, dtype=float)
+                # Rolling windows by time (10 equal bins)
+                n = int(len(p_bin_all))
+                edges = np.linspace(0, n, 11, dtype=int)
+                for i in range(10):
+                    a = int(edges[i])
+                    b = int(edges[i + 1])
+                    if b - a < 50:
+                        continue
+                    yy = y_bin_all[a:b]
+                    pp = p_bin_all[a:b]
+                    if int(np.unique(yy).size) < 2:
+                        continue
+                    diag_rows.append({
+                        'slice': f'rolling_decile_{i}',
+                        'n': int(b - a),
+                        'auc': float(roc_auc_score(yy, pp)),
+                        'pr_auc': float(average_precision_score(yy, pp)),
+                        'ece': float(_fast_expected_calibration_error(yy, pp, n_bins=10)),
+                    })
+
+        # Regime breakdown if available
+        for reg_col in ['trend_regime', 'vol_regime']:
+            if reg_col in df.columns:
+                reg = df[reg_col].astype(str)
+                for val in sorted(reg.dropna().unique()):
+                    mask_r = (reg == val)
+                    y_r = pd.to_numeric(df.loc[mask_r, target_col], errors='coerce').astype(float)
+                    p_r = pd.to_numeric(df.loc[mask_r, 'meta_prob'], errors='coerce').astype(float)
+                    mm = y_r.notna() & p_r.notna()
+                    if int(mm.sum()) < 50:
+                        continue
+                    yy = (y_r[mm].values >= 0.5).astype(int)
+                    pp = np.asarray(p_r[mm].values, dtype=float)
+                    if int(np.unique(yy).size) < 2:
+                        continue
+                    diag_rows.append({
+                        'slice': f'{reg_col}={val}',
+                        'n': int(mm.sum()),
+                        'auc': float(roc_auc_score(yy, pp)),
+                        'pr_auc': float(average_precision_score(yy, pp)),
+                        'ece': float(_fast_expected_calibration_error(yy, pp, n_bins=10)),
+                    })
+
+        if diag_rows:
+            diag_path = outcomes_dir / f"layer3_temporal_regime_diagnostics_{symbol}_{timeframe}_{ts}.csv"
+            pd.DataFrame(diag_rows).to_csv(diag_path, index=False)
+    except Exception:
+        pass
+
     try:
         summary_row = {
             'timestamp': ts,
@@ -1076,12 +1587,14 @@ def layer3_analyst_lgbm(
             'winner_scheme': str(best_scheme_name),
             'winner_score': float(best_score) if best_score is not None else float('nan'),
             'auc': float(score_auc),
+            'pr_auc': float(pr_auc_oof) if np.isfinite(pr_auc_oof) else float('nan'),
             'logloss': float(score_logloss),
             'ece': float(score_ece),
             'ic': float(score_ic),
             'mce': float(score_mce),
             'brier': float(score_brier),
             'honest_auc': float(honest_auc) if np.isfinite(honest_auc) else float('nan'),
+            'honest_pr_auc': float(honest_pr_auc) if np.isfinite(honest_pr_auc) else float('nan'),
             'honest_logloss': float(honest_logloss) if np.isfinite(honest_logloss) else float('nan'),
             'honest_ece': float(honest_ece) if np.isfinite(honest_ece) else float('nan'),
             'honest_brier': float(honest_brier) if np.isfinite(honest_brier) else float('nan'),
@@ -1237,10 +1750,12 @@ def plot_diagnostics(y_true, y_prob, output_path=None):
     Plots Reliability Diagram (Calibration) AND Probability Density (Resolution).
     """
     try:
-        # Remove NaNs
-        mask = ~np.isnan(y_prob) & ~np.isnan(y_true)
-        y_true = y_true[mask]
-        y_prob = y_prob[mask]
+        # Remove NaNs with robust numeric casting
+        y_prob_numeric = pd.to_numeric(y_prob, errors='coerce')
+        y_true_numeric = pd.to_numeric(y_true, errors='coerce')
+        mask = ~y_prob_numeric.isna() & ~y_true_numeric.isna()
+        y_true = y_true_numeric[mask]
+        y_prob = y_prob_numeric[mask]
 
         if len(y_true) == 0:
             return

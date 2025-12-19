@@ -1,0 +1,316 @@
+{
+  "section": "model_robustness",
+  "cv_splits": 5,
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "n_train": 91,
+      "n_test": 89,
+      "auc": 0.24720528455284552,
+      "brier": 0.31644043592912996,
+      "ap": 0.4167693048172729,
+      "auc_logistic": NaN,
+      "brier_logistic": NaN,
+      "ap_logistic": NaN
+    },
+    {
+      "fold": 2,
+      "n_train": 180,
+      "n_test": 89,
+      "auc": 0.42948717948717946,
+      "brier": 0.29523059898525317,
+      "ap": 0.4041003641755366,
+      "auc_logistic": NaN,
+      "brier_logistic": NaN,
+      "ap_logistic": NaN
+    },
+    {
+      "fold": 3,
+      "n_train": 269,
+      "n_test": 89,
+      "auc": 0.6875,
+      "brier": 0.22586880469473067,
+      "ap": 0.678483328803356,
+      "auc_logistic": NaN,
+      "brier_logistic": NaN,
+      "ap_logistic": NaN
+    },
+    {
+      "fold": 4,
+      "n_train": 358,
+      "n_test": 89,
+      "auc": 0.4528985507246377,
+      "brier": 0.249905523836088,
+      "ap": 0.23513030444032829,
+      "auc_logistic": NaN,
+      "brier_logistic": NaN,
+      "ap_logistic": NaN
+    },
+    {
+      "fold": 5,
+      "n_train": 447,
+      "n_test": 89,
+      "auc": 0.47549019607843135,
+      "brier": 0.2055447755270519,
+      "ap": 0.23591407868238,
+      "auc_logistic": NaN,
+      "brier_logistic": NaN,
+      "ap_logistic": NaN
+    }
+  ],
+  "summary": {
+    "mean_auc": 0.45851624216861875,
+    "std_auc": 0.1401772037156762,
+    "mean_brier": 0.25859802779445074,
+    "std_brier": 0.04159110168484041,
+    "mean_ap": 0.3940794761837748,
+    "std_ap": 0.16234649985085808,
+    "stability_score": 0.6942808334401226,
+    "n_folds": 5
+  },
+  "advanced": {
+    "global_auc": 0.5537144784551817,
+    "pseudo_r2": -0.0795361003034849,
+    "pseudo_r2_ci_low": -0.1561736108990534,
+    "pseudo_r2_ci_high": -0.01576860731455034,
+    "model_snr": 0.18110114009975703,
+    "perm_pvalue_auc": 0.04975124378109453,
+    "residual_pattern_strength": 0.5467882256088944,
+    "residual_lag1_autocorr": 0.5864251020243862,
+    "model_family": {
+      "mean_auc_lightgbm": 0.45851624216861875,
+      "mean_auc_logistic": null,
+      "comment": "Not applicable in label_based mode (no probe model training)."
+    },
+    "baseline": {
+      "auc": 0.44746605953284424,
+      "brier": 0.25019195449714826,
+      "ap": 0.3726877420173935,
+      "delta_auc": 0.011050182635774508,
+      "delta_brier": -0.008406073297302474,
+      "delta_ap": 0.021391734166381293
+    },
+    "label_shuffle_cv": {
+      "n_folds": 200,
+      "mean_auc": 0.5040829749557298,
+      "std_auc": 0.02871671386642369
+    },
+    "strict_holdout": {
+      "n_train": 311,
+      "n_test": 134,
+      "auc": 0.4780978097809781,
+      "brier": 0.21399124772068745,
+      "ap": 0.2435890829298094
+    },
+    "single_feature_leakage": {
+      "max_auc": null,
+      "auc_threshold": null
+    }
+  },
+  "regime_analysis": {
+    "regime_aucs": {},
+    "temporal_auc": {
+      "temporal_aucs": [
+        0.2164685908319185,
+        0.23083333333333328,
+        0.38327205882352944,
+        0.4037698412698413,
+        0.38794567062818336,
+        0.25162337662337664,
+        0.31510416666666663,
+        0.3194444444444444,
+        0.36583333333333334,
+        0.4694041867954911,
+        0.47435897435897434,
+        0.5025466893039049,
+        0.4197860962566845,
+        0.35619047619047617,
+        0.40697674418604646,
+        0.534965034965035,
+        0.5416666666666667,
+        0.7141706924315621,
+        0.7994791666666667,
+        0.7028508771929824,
+        0.5133333333333333,
+        0.5377777777777777,
+        0.49593495934959353,
+        0.5813008130081301,
+        0.5775,
+        0.5476190476190476,
+        0.42460317460317454,
+        0.30570409982174684,
+        0.28095238095238095,
+        0.38669438669438666,
+        0.3925438596491228,
+        0.47727272727272724,
+        0.637061403508772
+      ],
+      "temporal_indices": [
+        25,
+        37,
+        49,
+        61,
+        73,
+        85,
+        97,
+        109,
+        121,
+        133,
+        145,
+        157,
+        169,
+        181,
+        193,
+        205,
+        217,
+        229,
+        241,
+        253,
+        265,
+        277,
+        289,
+        301,
+        313,
+        325,
+        337,
+        349,
+        361,
+        373,
+        385,
+        397,
+        409
+      ]
+    },
+    "temporal_auc_plot": "outcomes/temporal_auc_ETHUSDT_15m_20251218_232249.png"
+  },
+  "feature_importance_stability": {
+    "feature_importance_std": 1.835980324947117,
+    "importance_concentration": 0.811320754713154,
+    "top_features": [
+      {
+        "feature_idx": 9,
+        "mean_importance": 29.2,
+        "std_importance": 9.987992791347018
+      },
+      {
+        "feature_idx": 4,
+        "mean_importance": 13.6,
+        "std_importance": 4.223742416388575
+      },
+      {
+        "feature_idx": 11,
+        "mean_importance": 12.0,
+        "std_importance": 5.403702434442518
+      },
+      {
+        "feature_idx": 40,
+        "mean_importance": 11.8,
+        "std_importance": 4.118252056394801
+      },
+      {
+        "feature_idx": 50,
+        "mean_importance": 10.8,
+        "std_importance": 0.7483314773547882
+      },
+      {
+        "feature_idx": 53,
+        "mean_importance": 10.6,
+        "std_importance": 3.6110940170535577
+      },
+      {
+        "feature_idx": 49,
+        "mean_importance": 10.2,
+        "std_importance": 6.20966987850401
+      },
+      {
+        "feature_idx": 12,
+        "mean_importance": 8.4,
+        "std_importance": 5.607138307550474
+      },
+      {
+        "feature_idx": 58,
+        "mean_importance": 8.2,
+        "std_importance": 3.059411708155671
+      },
+      {
+        "feature_idx": 41,
+        "mean_importance": 7.2,
+        "std_importance": 2.1354156504062622
+      },
+      {
+        "feature_idx": 2,
+        "mean_importance": 6.8,
+        "std_importance": 6.8527366796047255
+      },
+      {
+        "feature_idx": 39,
+        "mean_importance": 5.8,
+        "std_importance": 3.1240998703626617
+      },
+      {
+        "feature_idx": 34,
+        "mean_importance": 5.4,
+        "std_importance": 2.5768197453450252
+      },
+      {
+        "feature_idx": 46,
+        "mean_importance": 5.2,
+        "std_importance": 3.655133376499413
+      },
+      {
+        "feature_idx": 38,
+        "mean_importance": 5.0,
+        "std_importance": 3.0983866769659336
+      },
+      {
+        "feature_idx": 0,
+        "mean_importance": 4.6,
+        "std_importance": 5.276362383309167
+      },
+      {
+        "feature_idx": 52,
+        "mean_importance": 4.6,
+        "std_importance": 2.33238075793812
+      },
+      {
+        "feature_idx": 55,
+        "mean_importance": 4.4,
+        "std_importance": 2.5768197453450252
+      },
+      {
+        "feature_idx": 35,
+        "mean_importance": 4.2,
+        "std_importance": 1.9390719429665317
+      },
+      {
+        "feature_idx": 10,
+        "mean_importance": 4.0,
+        "std_importance": 3.63318042491699
+      }
+    ]
+  },
+  "label_noise_estimation": {
+    "n_confident_predictions": 7,
+    "n_mislabeled_candidates": 2,
+    "estimated_noise_rate": 0.2857142857142857,
+    "false_neg_rate_confident": 0.0,
+    "false_pos_rate_confident": 0.007462686567164179,
+    "mislabeled_indices": [
+      104,
+      157
+    ]
+  },
+  "summary_score": {
+    "score": 0.0,
+    "rating": "Bad",
+    "comment": "Probe model is weak or unstable across folds."
+  },
+  "meta": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "timestamp_utc": "20251218_232250"
+  }
+}

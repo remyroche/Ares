@@ -946,6 +946,16 @@ async def main():
         # Disable LGBM gating to allow more features through to final selection
         config.setdefault('enable_lgbm_feature_gating', False)
 
+        # --- Layer 2 Performance Optimizations ---
+        # 50% sampling for learnability probes (massive speedup)
+        config.setdefault('layer2_probe_sampling_rate', 0.5)
+        # Limit probes to top 30 features 
+        config.setdefault('layer2_probe_feature_limit', 30)
+        # Allow Linear model to skip LGBM if it's already conclusive
+        config.setdefault('layer2_probe_linear_only_auc', 0.65)
+        # Tighter profitability floor for L2 trials
+        config.setdefault('layer2_min_pos_rate', 0.10)
+
     # Optional interaction-generation configuration
     if getattr(args, 'min_interaction_mi_lift', None) is not None:
         config['min_interaction_mi_lift'] = float(args.min_interaction_mi_lift)

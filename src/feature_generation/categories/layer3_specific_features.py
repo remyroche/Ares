@@ -15,6 +15,10 @@ import itertools
 from scipy.stats import entropy
 from typing import List
 
+from src.feature_generation.categories.ensemble_disagreement import (
+    calculate_ensemble_disagreement_features,
+)
+
 def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute regime features based on GateModel logic.
@@ -56,8 +60,8 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
 
     tr_smooth = tr.rolling(window=14).sum()
-    plus_di = pd.Series(plus_dm).rolling(window=14).sum() / (tr_smooth + 1e-8)
-    minus_di = pd.Series(minus_dm).rolling(window=14).sum() / (tr_smooth + 1e-8)
+    plus_di = pd.Series(plus_dm, index=df.index).rolling(window=14).sum() / (tr_smooth + 1e-8)
+    minus_di = pd.Series(minus_dm, index=df.index).rolling(window=14).sum() / (tr_smooth + 1e-8)
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-8)
     features['adx_proxy'] = dx.rolling(window=14).mean()
 
@@ -107,47 +111,105 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # Permutation Entropy
     pe_window = 50
     pe_dim = 3
-    pe_values = close.values
+    pe_values = close.to_numpy(dtype=float, copy=False)
     pe_n = len(pe_values)
 
     if pe_n >= pe_window + pe_dim:
-        try:
-            from numpy.lib.stride_tricks import sliding_window_view
-            windows = sliding_window_view(pe_values, window_shape=pe_dim)
-        except ImportError:
-            shape = (pe_n - pe_dim + 1, pe_dim)
-            strides = (pe_values.strides[0], pe_values.strides[0])
-            windows = np.lib.stride_tricks.as_strided(pe_values, shape=shape, strides=strides)
+        a = pe_values[:-2]
+        b = pe_values[1:-1]
+        c = pe_values[2:]
 
-        patterns = np.argsort(windows, axis=1)
-        perms = list(itertools.permutations(range(pe_dim)))
-        perm_to_code = {p: i for i, p in enumerate(perms)}
-        codes = np.apply_along_axis(lambda x: perm_to_code[tuple(x)], 1, patterns)
+        codes = np.empty(pe_n - 2, dtype=np.int8)
 
-        code_series = pd.Series(codes, index=df.index[pe_dim - 1:])
+        case0 = (a <= b) & (b <= c)  # (0,1,2)
+        case1 = (a <= c) & (c < b)   # (0,2,1)
+        case2 = (b < a) & (a <= c)   # (1,0,2)
+        case3 = (b <= c) & (c < a)   # (1,2,0)
+        case4 = (c < a) & (a <= b)   # (2,0,1)
 
-        def calc_ent(x):
-            counts = np.unique(x, return_counts=True)[1]
-            probs = counts / counts.sum()
-            max_ent = np.log2(math.factorial(pe_dim))
-            ent = entropy(probs, base=2)
-            return ent / max_ent
+        codes[case0] = 0
+        codes[case1] = 1
+        codes[case2] = 2
+        codes[case3] = 3
+        codes[case4] = 4
+        codes[~(case0 | case1 | case2 | case3 | case4)] = 5  # (2,1,0)
 
-        rolling_ent = code_series.rolling(pe_window).apply(calc_ent, raw=True)
-        features['permutation_entropy'] = rolling_ent.reindex(df.index)
+        one_hot = np.eye(6, dtype=np.int32)[codes.astype(int)]
+        csum = np.vstack([np.zeros((1, 6), dtype=np.int32), np.cumsum(one_hot, axis=0)])
+
+        pe_ent = np.full(codes.shape[0], np.nan, dtype=float)
+        n_codes = int(codes.shape[0])
+        if n_codes >= pe_window:
+            end = np.arange(pe_window, n_codes + 1, dtype=int)
+            start = end - int(pe_window)
+            counts = csum[end] - csum[start]
+            probs = counts.astype(float) / float(pe_window)
+            logp = np.where(probs > 0.0, np.log2(probs), 0.0)
+            ent = -np.sum(probs * logp, axis=1)
+            pe_ent[int(pe_window) - 1:] = ent / float(np.log2(6.0))
+
+        features['permutation_entropy'] = pd.Series(pe_ent, index=df.index[pe_dim - 1:]).reindex(df.index)
     else:
         features['permutation_entropy'] = np.nan
 
     # Time Features
     if isinstance(df.index, pd.DatetimeIndex):
         hour = df.index.hour
+        # Removed: features['hour'] = hour
+        features['day_of_week'] = df.index.dayofweek
         features['hour_sin'] = np.sin(2 * np.pi * hour / 24)
         features['hour_cos'] = np.cos(2 * np.pi * hour / 24)
         features['is_weekend'] = (df.index.dayofweek >= 5).astype(int)
     else:
+        # Removed: features['hour'] = 0.0
+        features['day_of_week'] = 0.0
         features['hour_sin'] = 0.0
         features['hour_cos'] = 0.0
         features['is_weekend'] = 0
+
+    # Efficiency Ratio (Kaufman's)
+    er_window = 10
+    change = (close - close.shift(er_window)).abs()
+    volatility = close.diff().abs().rolling(er_window).sum()
+    features['efficiency_ratio'] = change / (volatility + 1e-8)
+
+    return features
+
+def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cross-Timeframe Momentum Agreement Features.
+
+    Measures agreement of momentum across multiple horizons.
+    Strong agreement = stronger directional conviction.
+    """
+    features = pd.DataFrame(index=df.index)
+    close = df['close']
+    
+    # Fill NAs to avoid propagation issues temporarily for calculation
+    close_filled = close.ffill().bfill()
+
+    # Momentum at different horizons
+    mom_4 = (close_filled / close_filled.shift(4) - 1).fillna(0)      # 1h at 15m
+    mom_12 = (close_filled / close_filled.shift(12) - 1).fillna(0)    # 3h at 15m
+    # Removed 12h and 24h as per user request
+    
+    # Sign agreement (how many horizons agree on direction)
+    signs = pd.concat([
+        np.sign(mom_4),
+        np.sign(mom_12)
+    ], axis=1)
+    
+    # Calculate agreement [-1, 1]
+    features['momentum_agreement'] = signs.mean(axis=1)
+    features['momentum_agreement_abs'] = features['momentum_agreement'].abs()
+
+    # Magnitude-weighted agreement
+    magnitudes = pd.concat([mom_4.abs(), mom_12.abs()], axis=1)
+    weighted = signs.values * magnitudes.values
+    # Removed: features['momentum_weighted_agreement'] = pd.Series(weighted.sum(axis=1), index=df.index)
+
+    # Trend consistency (rolling sign agreement over last 12 bars)
+    features['trend_consistency_12'] = np.sign(mom_12).rolling(12).mean().abs()
 
     return features
 
@@ -166,6 +228,8 @@ def generate_layer3_features(
     - Volume at Signal (ratio vs 50-bar rolling mean)
     - Candle Shape (current & 4-bar aggregate)
     - Regime/Structure features (Volatility, Trend, Complexity, etc.)
+    - Cross-Timeframe Momentum Agreement
+    - Base Model OOF Predictions
 
     Args:
         df: DataFrame containing base model columns and market data ('volume', 'high', 'low', 'close')
@@ -176,6 +240,30 @@ def generate_layer3_features(
     """
     # Create a copy to avoid SettingWithCopy warnings if df is a slice
     df_out = df.copy()
+
+    try:
+        if 'trend_regime' in df_out.columns:
+            tr = df_out['trend_regime'].astype(str).str.lower()
+            df_out['trend_regime_is_high'] = (tr == 'high').astype(float)
+            df_out['trend_regime_is_low'] = (tr == 'low').astype(float)
+        if 'vol_regime' in df_out.columns:
+            vr = df_out['vol_regime'].astype(str).str.lower()
+            df_out['vol_regime_is_high'] = (vr == 'high').astype(float)
+            df_out['vol_regime_is_low'] = (vr == 'low').astype(float)
+    except Exception:
+        pass
+
+    try:
+        if 'volatility_1d' in df_out.columns:
+            vol1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(float)
+            q33 = float(vol1d.quantile(0.33)) if vol1d.notna().any() else float('nan')
+            q67 = float(vol1d.quantile(0.67)) if vol1d.notna().any() else float('nan')
+            if np.isfinite(q33) and np.isfinite(q67) and q67 > q33:
+                df_out['vol_bucket_low'] = (vol1d <= q33).astype(float)
+                df_out['vol_bucket_mid'] = ((vol1d > q33) & (vol1d <= q67)).astype(float)
+                df_out['vol_bucket_high'] = (vol1d > q67).astype(float)
+    except Exception:
+        pass
 
     # 1. Ensemble Probability
     # Use existing if provided (e.g. from ensemble_disagreement), else calculate fallback
@@ -189,6 +277,65 @@ def generate_layer3_features(
                 df_out['ensemble_prob'] = 0.5
         else:
             df_out['ensemble_prob'] = 0.5
+    
+    # 1a. Explicitly add Base Model Predictions as numerical features
+    for col in base_model_cols:
+        if col in df_out.columns and col != 'ensemble_prob':
+            df_out[f"base_pred_{col}"] = pd.to_numeric(df_out[col], errors='coerce').fillna(0.5)
+
+    # 1b. Ensemble Disagreement Features (ens_*)
+    disagree_feature_names = [
+        "prediction_dispersion",
+        "confidence_gap",
+        "uncertainty",
+        "prediction_range",
+        "avg_divergence",
+        "max_confidence",
+        "disagreement_rate",
+        "snr_internal",
+        "snr_consensus",
+    ]
+    disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
+    for col in disagree_cols:
+        if col not in df_out.columns:
+            df_out[col] = 0.0
+
+    try:
+        valid_base_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
+        if valid_base_cols:
+            df_out[valid_base_cols] = df_out[valid_base_cols].astype(float).fillna(0.5)
+
+            prob_dict = {str(c): df_out[c].astype(float).values for c in valid_base_cols}
+            pred_dict = {str(c): (df_out[c].astype(float).values - 0.5) for c in valid_base_cols}
+
+            var_dict = {}
+            for c in valid_base_cols:
+                var_col = f"{c}_var"
+                if var_col in df_out.columns:
+                    try:
+                        var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(float).values
+                    except Exception:
+                        pass
+
+            disagree = calculate_ensemble_disagreement_features(
+                model_predictions=pred_dict,
+                model_probabilities=prob_dict,
+                model_confidences=None,
+                model_variances=var_dict if var_dict else None,
+                feature_names=None,
+                logger=None,
+            )
+
+            for k, col in zip(disagree_feature_names, disagree_cols):
+                v = disagree.get(k)
+                if isinstance(v, pd.Series) and len(v) == len(df_out):
+                    df_out[col] = pd.to_numeric(v.values, errors="coerce")
+                else:
+                    df_out[col] = 0.0
+    except Exception:
+        pass
+
+    df_out[disagree_cols] = df_out[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     # 2. Logit Probability & Momentum
     # Clip to avoid inf/nan in logit: [0.005, 0.995]
@@ -239,5 +386,14 @@ def generate_layer3_features(
     regime_feats = _compute_gate_regime_features(df_out)
     for col in regime_feats.columns:
         df_out[col] = regime_feats[col]
+
+    # 6. Cross-Timeframe Momentum Agreement
+    try:
+        if all(c in df_out.columns for c in ['close']):
+            mom_feats = _compute_cross_tf_momentum_agreement(df_out)
+            for col in mom_feats.columns:
+                df_out[col] = mom_feats[col]
+    except Exception:
+        pass
 
     return df_out

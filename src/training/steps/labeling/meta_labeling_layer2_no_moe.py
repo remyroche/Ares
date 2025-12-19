@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST, get_transaction_cost
+
 
 def layer2_hpo_block():
     tprint_info(f"🔧 Layer 2 mode: {layer2_mode} (enable_committee_voting_hpo={enable_committee_voting_hpo})")
@@ -502,6 +504,12 @@ def layer2_hpo_block():
         batch_volatility = full_volatility.reindex(l2_t_events).fillna(0).values
         batch_uniqueness = compute_uniqueness(t1_series, market_index=market_data.index)
 
+        best_weighting_params_local = dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {}
+        if "transaction_cost" not in best_weighting_params_local:
+            try:
+                best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+            except Exception:
+                best_weighting_params_local["transaction_cost"] = float(DEFAULT_TRANSACTION_COST)
         sample_weights = generate_weights_per_label(
             returns=l2_returns_clean.values,
             t_events=l2_t_events,
@@ -509,7 +517,7 @@ def layer2_hpo_block():
             consistency_scores=batch_consistency,
             uniqueness_scores=batch_uniqueness.values,
             vol_proxy=batch_volatility,
-            **best_weighting_params
+            **best_weighting_params_local
         )
 
         try:
@@ -654,6 +662,12 @@ def layer2_hpo_block():
         batch_volatility = full_volatility.reindex(l2_t_events).fillna(0).values
         batch_uniqueness = compute_uniqueness(t1_series, market_index=market_data.index)
 
+        best_weighting_params_local = dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {}
+        if "transaction_cost" not in best_weighting_params_local:
+            try:
+                best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+            except Exception:
+                best_weighting_params_local["transaction_cost"] = float(DEFAULT_TRANSACTION_COST)
         sample_weights = generate_weights_per_label(
             returns=l2_returns_clean.values,
             t_events=l2_t_events,
@@ -661,7 +675,7 @@ def layer2_hpo_block():
             consistency_scores=batch_consistency,
             uniqueness_scores=batch_uniqueness.values,
             vol_proxy=batch_volatility,
-            **best_weighting_params
+            **best_weighting_params_local
         )
 
         try:
@@ -1553,6 +1567,12 @@ def layer2_hpo_block():
             batch_consistency_dbg = full_consistency.reindex(dbg_t_events).fillna(1.0).values
             batch_volatility_dbg = full_volatility.reindex(dbg_t_events).fillna(0).values
             batch_uniqueness_dbg = compute_uniqueness(t1_series_dbg, market_index=market_data.index)
+            best_weighting_params_local = dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {}
+            if "transaction_cost" not in best_weighting_params_local:
+                try:
+                    best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+                except Exception:
+                    best_weighting_params_local["transaction_cost"] = float(DEFAULT_TRANSACTION_COST)
             sample_weights_dbg = generate_weights_per_label(
                 returns=dbg_returns_clean.values,
                 t_events=dbg_t_events,
@@ -1560,7 +1580,7 @@ def layer2_hpo_block():
                 consistency_scores=batch_consistency_dbg,
                 uniqueness_scores=batch_uniqueness_dbg.values,
                 vol_proxy=batch_volatility_dbg,
-                **best_weighting_params,
+                **best_weighting_params_local,
             )
             # Subset meta-features
             X_dbg = meta_features_full.loc[dbg_valid_idx].fillna(0)

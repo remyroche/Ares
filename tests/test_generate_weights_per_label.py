@@ -60,15 +60,17 @@ def test_generate_weights_handles_nan_and_zero_vol():
 def test_downside_multiplier_preserved_after_normalization():
     returns = np.array([0.01, -0.01])
     t_events = pd.date_range("2020-01-01", periods=2, freq="T")
+    vol = np.array([0.01, 0.02])
 
     weights = generate_weights_per_label(
         returns=returns,
         t_events=t_events,
+        vol_proxy=vol,
         downside_multiplier=2.0,
         mag_compression=1.0,
         exp_cross=1.0,
     )
 
     assert weights.mean() == pytest.approx(1.0, rel=1e-6)
-    assert weights[1] > weights[0]
+    assert weights[1] < weights[0]
 

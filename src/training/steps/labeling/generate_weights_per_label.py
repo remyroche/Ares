@@ -480,11 +480,11 @@ def generate_weights_per_label(
     # Formula: log(1 + max(0, abs(returns) - cost))
 
     # Check if transaction_cost was passed in kwargs, else assume default
-    tx_cost = kwargs.get('transaction_cost', 0.003)
+    tx_cost = kwargs.get('transaction_cost', 0.0)
     try:
         tx_cost = float(tx_cost)
     except Exception:
-        tx_cost = 0.003
+        tx_cost = 0.0
 
     # We assume 'returns_clean' here are raw/gross returns. If they are net returns,
     # we should check if they can be negative. But 'abs(returns)' implies we care
@@ -520,6 +520,20 @@ def generate_weights_per_label(
     # We apply mag_compression as an exponent if desired, but user formula was specific.
     # Let's apply log1p first as the base "Magnitude" component.
     comp_mag_log = np.log1p(net_mag_raw)
+
+    try:
+        if mag_clip_pct is not None:
+            pct = float(mag_clip_pct)
+            if np.isfinite(pct) and 0.0 < pct < 1.0:
+                v = comp_mag_log
+                v = v[np.isfinite(v)]
+                v = v[v > 0.0]
+                if int(v.size) >= 10:
+                    q = float(np.quantile(v, pct))
+                    if np.isfinite(q) and q > 0.0:
+                        comp_mag_log = np.minimum(comp_mag_log, q)
+    except Exception:
+        pass
 
     # Apply mag_compression power (defaults to 0.8 in optimization, or 1.0 if not)
     # If mag_compression is 1.0, it's just log1p.

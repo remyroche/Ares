@@ -2092,14 +2092,10 @@ class AdvancedFeatureEngineering:
             # Adaptive moving averages
             features.update(self._calculate_adaptive_moving_averages(price_data))
 
-            # Adaptive RSI
-            features.update(self._calculate_adaptive_rsi(price_data))
-
-            # Adaptive Bollinger Bands
-            features.update(self._calculate_adaptive_bollinger_bands(price_data))
-
-            # Adaptive MACD
-            features.update(self._calculate_adaptive_macd(price_data))
+            # Legacy indicators (RSI, BB, MACD) removed in favor of CUSUM-only approach
+            # features.update(self._calculate_adaptive_rsi(price_data))
+            # features.update(self._calculate_adaptive_bollinger_bands(price_data))
+            # features.update(self._calculate_adaptive_macd(price_data))
 
             return features
 

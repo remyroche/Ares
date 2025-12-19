@@ -911,6 +911,9 @@ def compute_sample_weights_for_events(
         uniqueness_aligned = uniqueness_aligned.values
     
     # Generate weights
+    weighting_params_local = dict(weighting_params) if isinstance(weighting_params, dict) else {}
+    if "transaction_cost" not in weighting_params_local:
+        weighting_params_local["transaction_cost"] = 0.0
     weights = generate_weights_per_label(
         returns=valid_returns.values,
         t_events=t_events,
@@ -918,7 +921,7 @@ def compute_sample_weights_for_events(
         consistency_scores=consistency_aligned,
         uniqueness_scores=uniqueness_aligned,
         vol_proxy=volatility_aligned,
-        **weighting_params
+        **weighting_params_local
     )
     
     # Map back to full index (non-labeled events get weight 0)

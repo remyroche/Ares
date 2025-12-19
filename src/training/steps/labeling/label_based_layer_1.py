@@ -27,12 +27,15 @@ except ImportError:
     spearmanr = None
 
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer,
     OptimizationConfig,
 )
 from src.training.steps.labeling.generate_weights_per_label import (
     generate_weights_per_label,
+    compute_multi_horizon_consistency,
+    compute_uniqueness_weights,
     _coerce_numeric_array,
 )
 
@@ -130,12 +133,30 @@ def safe_layer1_objective(
     vdp_corr = _safe_corr(w, vol_arr)
     vdp_penalty = max(0.0, vdp_corr - 0.6)
 
+    try:
+        w_sorted = np.sort(w_norm)[::-1]
+        k10 = int(max(1, round(0.10 * float(n))))
+        top10_share = float(np.sum(w_sorted[:k10]))
+    except Exception:
+        top10_share = 0.0
+
+    try:
+        w_median = float(np.median(w))
+        max_to_median = float(np.max(w) / (w_median + 1e-12)) if w_median > 0 else float(np.max(w))
+    except Exception:
+        max_to_median = 0.0
+
+    concentration_penalty = 0.0
+    concentration_penalty += 2.0 * max(0.0, top10_share - 0.25)
+    concentration_penalty += 0.05 * max(0.0, max_to_median - 5.0)
+
     score = (
         1.0 * mas
         + 1.5 * wes
         - 2.0 * nwp
         - 1.0 * uop_penalty
         - 1.0 * vdp_penalty
+        - 1.0 * concentration_penalty
     )
 
     if not np.isfinite(score):
@@ -152,6 +173,8 @@ def run_layer1_optimization(
     committee_mag_factors: Optional[Union[np.ndarray, pd.Series, list]] = None,
     n_trials: int = 60,
     objective_mode: str = "proxy",
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
+    uniqueness_horizon_bars: int = 24,
 ) -> Dict[str, Any]:
     """
     Run lightweight optimization for weighting parameters (Layer 1).
@@ -171,6 +194,7 @@ def run_layer1_optimization(
         'exp_uniq': 1.0,
         'exp_cross': 1.0,
         'downside_multiplier': 1.0,
+        'time_decay_halflife': 0.0,
         'committee_agreement_alpha': 0.5,
         'committee_mag_clip': 5.0,
     }
@@ -310,6 +334,32 @@ def run_layer1_optimization(
 
         # Convert concurrency into a simple uniqueness proxy (1 / concurrency)
         event_uniqueness = 1.0 / np.maximum(1.0, event_concurrency)
+        try:
+            uniq_h = int(uniqueness_horizon_bars)
+        except Exception:
+            uniq_h = 24
+        uniq_h = int(max(1, min(uniq_h, 500)))
+
+        try:
+            pos = idx.searchsorted(t_events)
+            pos = np.asarray(pos, dtype=int)
+            pos_end = np.clip(pos + uniq_h, 0, len(idx) - 1)
+            t1 = pd.Series(idx[pos_end], index=t_events)
+            uniq_series = compute_uniqueness_weights(t1, t_events, idx)
+            uniq_arr = uniq_series.reindex(t_events).astype(float).values
+            if uniq_arr.shape[0] == returns_arr.shape[0] and np.isfinite(uniq_arr).any():
+                event_uniqueness = np.where(np.isfinite(uniq_arr) & (uniq_arr > 0.0), uniq_arr, event_uniqueness)
+        except Exception:
+            pass
+
+        try:
+            cons_series = compute_multi_horizon_consistency(close_series, horizons=[6, 12, 24])
+            event_consistency = cons_series.reindex(t_events).replace([np.inf, -np.inf], np.nan).fillna(0.5).values
+            event_consistency = np.asarray(event_consistency, dtype=float)
+            if event_consistency.shape[0] != returns_arr.shape[0]:
+                event_consistency = None
+        except Exception:
+            event_consistency = None
 
         try:
             objective_mode_local = str(objective_mode or "proxy").strip().lower()
@@ -355,11 +405,33 @@ def run_layer1_optimization(
                 if n_samples_local < (n_splits + 1) * 10:
                     return -10.0
 
-                tscv = TimeSeriesSplit(n_splits=n_splits)
+                try:
+                    from src.utils.purged_kfold import PurgedKFoldTime
+
+                    if isinstance(t_events_local, pd.DatetimeIndex) and len(t_events_local) == n_samples_local:
+                        try:
+                            diffs = pd.Series(pd.DatetimeIndex(t_events_local)).diff().dropna()
+                            bar_delta = diffs.median() if len(diffs) else pd.Timedelta(minutes=15)
+                        except Exception:
+                            bar_delta = pd.Timedelta(minutes=15)
+
+                        if not isinstance(bar_delta, pd.Timedelta) or bar_delta <= pd.Timedelta(0):
+                            bar_delta = pd.Timedelta(minutes=15)
+
+                        purge = bar_delta * 12
+                        embargo = bar_delta * 12
+                        splitter = PurgedKFoldTime(n_splits=n_splits, purge=purge, embargo=embargo)
+                        splits = splitter.split_positions(n_samples_local, index=pd.DatetimeIndex(t_events_local))
+                    else:
+                        tscv = TimeSeriesSplit(n_splits=n_splits)
+                        splits = tscv.split(X)
+                except Exception:
+                    tscv = TimeSeriesSplit(n_splits=n_splits)
+                    splits = tscv.split(X)
                 fold_aucs: List[float] = []
                 fold_prs: List[float] = []
 
-                for tr_idx, te_idx in tscv.split(X):
+                for tr_idx, te_idx in splits:
                     y_tr = y[tr_idx]
                     y_te = y[te_idx]
                     if int(np.unique(y_tr).size) < 2 or int(np.unique(y_te).size) < 2:
@@ -528,11 +600,23 @@ def run_layer1_optimization(
                 'high': 1.5,
                 'log': True,
             },
+            'exp_learn': {
+                'type': 'float',
+                'low': 0.0,
+                'high': 1.5,
+                'log': False,
+            },
             'exp_uniq': {
                 'type': 'float',
                 'low': 1.0,
                 'high': 1.5,
                 'log': True,
+            },
+            'exp_cross': {
+                'type': 'float',
+                'low': 0.5,
+                'high': 2.0,
+                'log': False,
             },
 
             # --- D. ASYMMETRY (Risk Management) ---
@@ -548,6 +632,12 @@ def run_layer1_optimization(
                 'type': 'float',
                 'low': 0.95,
                 'high': 0.99,
+                'log': False,
+            },
+            'time_decay_halflife': {
+                'type': 'float',
+                'low': 0.0,
+                'high': 2.0,
                 'log': False,
             },
         }
@@ -576,10 +666,11 @@ def run_layer1_optimization(
                     returns=returns_arr,
                     t_events=t_events,
                     close_series=close_series,
-                    consistency_scores=None,
+                    consistency_scores=event_consistency,
                     label_quality_scores=cl_quality_scores,
                     uniqueness_scores=event_uniqueness,
                     vol_proxy=vol_proxy,
+                    transaction_cost=float(transaction_cost),
                     mag_compression=float(params.get('mag_compression', default_params['mag_compression'])),
                     learn_slope=float(default_params.get('learn_slope', 0.0)),
                     learn_center=float(default_params.get('learn_center', 0.5)),
@@ -587,11 +678,12 @@ def run_layer1_optimization(
                     quality_intensity=float(params.get('quality_intensity', default_params['quality_intensity'])),
                     quality_floor=float(params.get('quality_floor', default_params['quality_floor'])),
                     exp_mag=float(params.get('exp_mag', default_params['exp_mag'])),
-                    exp_learn=float(default_params.get('exp_learn', 1.0)),
+                    exp_learn=float(params.get('exp_learn', default_params.get('exp_learn', 1.0))),
                     exp_uniq=float(params.get('exp_uniq', default_params['exp_uniq'])),
-                    exp_cross=float(params.get('exp_cross', default_params['exp_cross'])),
+                    exp_cross=float(params.get('exp_cross', default_params.get('exp_cross', 1.0))),
                     downside_multiplier=float(params.get('downside_multiplier', default_params['downside_multiplier'])),
                     mag_clip_pct=float(params.get('mag_clip_pct', 0.99)),
+                    time_decay_halflife=float(params.get('time_decay_halflife', 0.0)),
                 )
                 if not np.isfinite(weights).all() or weights.sum() <= 0:
                     return -10.0
@@ -714,10 +806,11 @@ def run_layer1_optimization(
                         returns=returns_arr,
                         t_events=t_events,
                         close_series=close_series,
-                        consistency_scores=None,
+                        consistency_scores=event_consistency,
                         label_quality_scores=cl_quality_scores,
                         uniqueness_scores=event_uniqueness,
                         vol_proxy=vol_proxy,
+                        transaction_cost=float(transaction_cost),
                         mag_compression=float(params.get('mag_compression', default_params['mag_compression'])),
                         learn_slope=float(params.get('learn_slope', default_params['learn_slope'])),
                         learn_center=float(params.get('learn_center', default_params['learn_center'])),
@@ -725,11 +818,12 @@ def run_layer1_optimization(
                         quality_intensity=float(params.get('quality_intensity', default_params['quality_intensity'])),
                         quality_floor=float(params.get('quality_floor', default_params['quality_floor'])),
                         exp_mag=float(params.get('exp_mag', default_params['exp_mag'])),
-                        exp_learn=float(params.get('exp_learn', default_params['exp_learn'])),
+                        exp_learn=float(params.get('exp_learn', default_params.get('exp_learn', 1.0))),
                         exp_uniq=float(params.get('exp_uniq', default_params['exp_uniq'])),
-                        exp_cross=float(params.get('exp_cross', default_params['exp_cross'])),
+                        exp_cross=float(params.get('exp_cross', default_params.get('exp_cross', 1.0))),
                         downside_multiplier=float(params.get('downside_multiplier', default_params['downside_multiplier'])),
                         mag_clip_pct=float(params.get('mag_clip_pct', 0.99)),
+                        time_decay_halflife=float(params.get('time_decay_halflife', 0.0)),
                     )
                     if not np.isfinite(weights).all() or weights.sum() <= 0:
                         return {
@@ -1014,6 +1108,16 @@ def execute_layer1_step(
             }
         else:
             try:
+                try:
+                    tx_cost = float(config.get("transaction_cost", DEFAULT_TRANSACTION_COST))
+                except Exception:
+                    tx_cost = float(DEFAULT_TRANSACTION_COST)
+
+                try:
+                    uniq_h = int(config.get("layer1_uniqueness_horizon_bars", 24))
+                except Exception:
+                    uniq_h = 24
+
                 best_weighting_params = run_layer1_optimization(
                     symbol=symbol,
                     timeframe=timeframe,
@@ -1023,6 +1127,8 @@ def execute_layer1_step(
                     committee_mag_factors=committee_mag_factors_l1,
                     n_trials=int(config.get("layer1_n_trials", 60)),
                     objective_mode=str(config.get("layer1_objective_mode", "proxy")),
+                    transaction_cost=tx_cost,
+                    uniqueness_horizon_bars=uniq_h,
                 )
             except Exception as e:
                 tprint_warning(f"⚠️ Layer 1 optimization failed: {e}. Using defaults.")

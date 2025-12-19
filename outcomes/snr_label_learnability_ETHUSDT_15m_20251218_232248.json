@@ -1,0 +1,53 @@
+{
+  "section": "label_learnability",
+  "n_valid": 536,
+  "positive_rate": 0.3824626865671642,
+  "learnability": 0.4537355596287055,
+  "mean_auc": 0.5115688654753542,
+  "balance": 0.9597627873760458,
+  "combined": 0.6055437279529076,
+  "diagnostics": {
+    "mode": "label_based_meta_prob",
+    "folds": [
+      {
+        "fold": 1,
+        "n_train": 134,
+        "n_test": 134,
+        "auc": 0.38963963963963966,
+        "brier": 0.2935095615539467,
+        "ap": 0.47674875421538276
+      },
+      {
+        "fold": 2,
+        "n_train": 268,
+        "n_test": 134,
+        "auc": 0.6669691470054447,
+        "brier": 0.2405664848607317,
+        "ap": 0.5513581241597298
+      },
+      {
+        "fold": 3,
+        "n_train": 402,
+        "n_test": 134,
+        "auc": 0.4780978097809781,
+        "brier": 0.21399124772068745,
+        "ap": 0.2435890829298094
+      }
+    ],
+    "mean_auc": 0.5115688654753542,
+    "std_auc": 0.11566661169329737
+  },
+  "summary_score": {
+    "score": 0.6055437279529076,
+    "rating": "Great",
+    "comment": "Combined score \u2265 0.6 \u2192 good overall label quality."
+  },
+  "meta": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "timestamp_utc": "20251218_232248"
+  }
+}

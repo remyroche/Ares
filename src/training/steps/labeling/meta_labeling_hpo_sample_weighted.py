@@ -41,8 +41,16 @@ from src.utils.tprint import tprint_success, tprint_warning, tprint_info, tprint
 from src.training.steps.labeling.label_based_layer_0 import run_layer0_kalman_vwap
 from src.training.steps.labeling.label_based_layer_2 import LabelBasedLayer2
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm, plot_diagnostics
-# Import Layer 4
-from src.training.steps.labeling.label_based_layer_4 import Layer4PositionSizer
+# Import Layer 4 (Risk Filter) and Layer 5 (Position Sizing)
+from src.training.steps.labeling.label_based_layer_4 import (
+    Layer4RiskFilter,
+    compute_layer4_regime_features,
+    compute_final_score_dynamic,
+    compute_final_score_bayesian,
+    compute_final_score_ridge,
+    train_layer4_oof,
+)
+from src.training.steps.labeling.label_based_layer_5 import Layer5PositionSizer
 from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
 from src.training.steps.labeling.generate_weights_per_label import (
     compute_uniqueness,
@@ -366,7 +374,14 @@ def _compute_layer4_sweep_metrics(
         n_prob_ge_pmin = int(np.sum(p_gate))
 
         raw_rets = pd.to_numeric(oof_df[return_col], errors="coerce").to_numpy(dtype=float, copy=False)
-        net_rets = raw_rets - float(transaction_cost)
+        try:
+            tx_cost = float(transaction_cost)
+        except Exception:
+            tx_cost = 0.0
+        if (not np.isfinite(tx_cost)) or abs(float(tx_cost)) <= 1e-15:
+            net_rets = raw_rets
+        else:
+            net_rets = raw_rets - float(tx_cost)
         gate_rets = net_rets[p_gate]
         gate_rets = gate_rets[np.isfinite(gate_rets)]
         gate_avg_pnl = float(np.mean(gate_rets)) if gate_rets.size > 0 else float("nan")
@@ -391,7 +406,7 @@ def _compute_layer4_sweep_metrics(
         except Exception:
             pass
 
-        sizer = Layer4PositionSizer(
+        sizer = Layer5PositionSizer(
             oof_df=oof_df,
             p_col=p_col,
             target_col=target_col,
@@ -399,7 +414,7 @@ def _compute_layer4_sweep_metrics(
             p_min=float(p_min),
             p_max=float(p_max),
             gamma=float(gamma),
-            transaction_cost=float(transaction_cost),
+            transaction_cost=float(tx_cost),
         )
         sizes = sizer.calculate_sizing().to_numpy(dtype=float, copy=False)
         pnl = sizes * net_rets
@@ -452,7 +467,7 @@ def _compute_layer4_sweep_metrics(
         }
 
 
-def _write_layer4_pmin_sweep(
+def _write_layer5_pmin_sweep(
     outcomes_dir: Path,
     l4_input: pd.DataFrame,
     target_col: str,
@@ -481,7 +496,7 @@ def _write_layer4_pmin_sweep(
                 )
             )
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_path = outcomes_dir / f"layer4_pmin_sweep_{ts}.csv"
+        out_path = outcomes_dir / f"layer5_pmin_sweep_{ts}.csv"
         pd.DataFrame(rows).to_csv(out_path, index=False)
         return str(out_path)
     except Exception:
@@ -493,7 +508,8 @@ def _write_unified_label_based_report(
     context: Dict[str, Any],
     layer2_metrics: Dict[str, Any],
     layer3_metrics: Dict[str, Any],
-    layer4_metrics: Dict[str, Any],
+    layer4_risk_metrics: Dict[str, Any],
+    layer5_metrics: Dict[str, Any],
 ) -> Dict[str, str]:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = outcomes_dir / f"label_based_unified_report_{ts}.csv"
@@ -504,7 +520,8 @@ def _write_unified_label_based_report(
     for layer_name, metrics in [
         ("label_based_layer_2", layer2_metrics),
         ("label_based_layer_3", layer3_metrics),
-        ("label_based_layer_4", layer4_metrics),
+        ("label_based_layer_4", layer4_risk_metrics),
+        ("label_based_layer_5", layer5_metrics),
     ]:
         for k, v in (metrics or {}).items():
             rows.append({"layer": layer_name, "metric": str(k), "value": v})
@@ -517,7 +534,8 @@ def _write_unified_label_based_report(
         "context": context,
         "layer2": layer2_metrics,
         "layer3": layer3_metrics,
-        "layer4": layer4_metrics,
+        "layer4": layer4_risk_metrics,
+        "layer5": layer5_metrics,
         "csv_path": str(csv_path),
     }
     with open(json_path, "w") as f:
@@ -567,7 +585,9 @@ def _write_unified_label_based_report(
         md_lines.append("\n")
         md_lines.extend(_fmt_kv_block("Layer3 Metrics", layer3_metrics))
         md_lines.append("\n")
-        md_lines.extend(_fmt_kv_block("Layer4 Metrics", layer4_metrics))
+        md_lines.extend(_fmt_kv_block("Layer4 Metrics", layer4_risk_metrics))
+        md_lines.append("\n")
+        md_lines.extend(_fmt_kv_block("Layer5 Metrics", layer5_metrics))
 
         md_path.write_text("".join(md_lines))
     except Exception:
@@ -656,6 +676,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         """
         outcomes_dir = Path(config.get("outcomes_dir", "outcomes"))
         outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if not isinstance(config, dict):
+                config = {}
+        except Exception:
+            config = {}
+        try:
+            if config.get("run_timestamp") is None:
+                config["run_timestamp"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+        except Exception:
+            config["run_timestamp"] = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         start_at_raw = config.get("labeling_hpo_start_at")
         start_at = _normalize_labeling_start_at(start_at_raw)
@@ -856,13 +887,23 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             vol_proxy = vol_aligned.reindex(t_events).fillna(0.0).values
 
+            best_weighting_params_local = (
+                dict(best_weighting_params)
+                if isinstance(best_weighting_params, dict)
+                else {}
+            )
+            if "transaction_cost" not in best_weighting_params_local:
+                try:
+                    best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+                except Exception:
+                    best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(None))
             w_evt = generate_weights_per_label(
                 returns=baseline_evt.values,
                 t_events=t_events,
                 consistency_scores=cons_arr,
                 uniqueness_scores=uniq_arr,
                 vol_proxy=vol_proxy,
-                **(best_weighting_params if isinstance(best_weighting_params, dict) else {}),
+                **best_weighting_params_local,
             )
 
             target_sample_weight_series = pd.Series(1.0, index=market_data.index, dtype=float)
@@ -896,6 +937,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
         layer2_bundle_path = outcomes_dir / "layer2_oof_bundle.joblib"
         l2_labels = None
+        l2_score = None
+        l2_confidence = None
         l2_returns = None
         l2_weights = None
         individual_geos = None
@@ -909,6 +952,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 )
             l2_bundle = joblib.load(layer2_bundle_path)
             l2_labels = l2_bundle["l2_labels"]
+            l2_score = l2_bundle.get("l2_score")
+            l2_confidence = l2_bundle.get("l2_confidence")
             l2_returns = l2_bundle["l2_returns"]
             l2_weights = l2_bundle["l2_weights"]
             individual_geos = l2_bundle["individual_geos"]
@@ -918,6 +963,19 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 selected_trials = []
             if len(selected_trials) == 0:
                 tprint_warning("Layer2 production geometries are empty (loaded from bundle).")
+
+            try:
+                if isinstance(l2_labels, pd.Series):
+                    y = pd.to_numeric(l2_labels, errors="coerce").astype(float)
+                    uniq = np.unique(y.dropna().values)
+                    is_binary = bool(
+                        (uniq.size <= 2)
+                        and bool(np.all(np.isin(uniq, [0.0, 1.0])))
+                    )
+                    if not is_binary:
+                        l2_labels = (y >= 0.5).astype(float).where(y.notna())
+            except Exception:
+                pass
         else:
             # ---------------------------------------------------------
             # LAYER 2: Geometry Optimization & Bagged Labeling
@@ -935,7 +993,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l2_output = layer2.execute(market_data, config)
 
             # Unpack Layer 2 Artifacts (OOF for Training/Analytics)
-            l2_labels = l2_output['oof_labels']
+            l2_score = l2_output.get('l2_score')
+            l2_confidence = l2_output.get('l2_confidence')
+            l2_labels = l2_output.get('l2_label', l2_output.get('oof_labels'))
             l2_returns = l2_output['oof_returns']
             l2_weights = l2_output['weights']
             individual_geos = l2_output['individual_geometries']
@@ -951,10 +1011,27 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 try:
                     if isinstance(l2_labels, pd.Series):
                         l2_labels = l2_labels.reindex(evt_index)
+                    if isinstance(l2_score, pd.Series):
+                        l2_score = l2_score.reindex(evt_index)
+                    if isinstance(l2_confidence, pd.Series):
+                        l2_confidence = l2_confidence.reindex(evt_index)
                     if isinstance(l2_returns, pd.Series):
                         l2_returns = l2_returns.reindex(evt_index)
                     if isinstance(l2_weights, pd.Series):
                         l2_weights = l2_weights.reindex(evt_index)
+                except Exception:
+                    pass
+
+                try:
+                    if isinstance(l2_labels, pd.Series):
+                        y = pd.to_numeric(l2_labels, errors="coerce").astype(float)
+                        uniq = np.unique(y.dropna().values)
+                        is_binary = bool(
+                            (uniq.size <= 2)
+                            and bool(np.all(np.isin(uniq, [0.0, 1.0])))
+                        )
+                        if not is_binary:
+                            l2_labels = (y >= 0.5).astype(float).where(y.notna())
                 except Exception:
                     pass
 
@@ -986,8 +1063,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if int(max_horizon) > 0:
                     tprint_info(f"Layer2 max production horizon={int(max_horizon)}")
                     config = dict(config)
-                    config.setdefault('layer3_max_lookahead_bars', int(max_horizon))
-                    config.setdefault('layer2_oof_purge_bars', int(max_horizon))
+                    purge_bars_eff = int(max_horizon) * 2
+                    config.setdefault('layer3_max_lookahead_bars', int(purge_bars_eff))
+                    config.setdefault('layer2_oof_purge_bars', int(purge_bars_eff))
+                    config.setdefault('layer3_purge_bars', int(purge_bars_eff))
+                    config.setdefault('layer3_embargo_bars', int(max(1, int(max_horizon))))
+                    try:
+                        tf_minutes = _timeframe_to_minutes(config.get("timeframe", "15m"))
+                    except Exception:
+                        tf_minutes = 15
+                    config.setdefault('layer4_purge_minutes', int(max(60, int(tf_minutes) * int(purge_bars_eff))))
+                    config.setdefault('layer4_embargo_minutes', int(max(30, int(tf_minutes) * int(max_horizon))))
             except Exception:
                 pass
 
@@ -995,6 +1081,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             joblib.dump(
                 {
                     "l2_labels": l2_labels,
+                    "l2_score": l2_score,
+                    "l2_confidence": l2_confidence,
                     "l2_returns": l2_returns,
                     "l2_weights": l2_weights,
                     "individual_geos": individual_geos,
@@ -1024,16 +1112,55 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # Try load weights from config or previous step if passed
         target_sample_weight = config.get('target_sample_weight')
 
-        # Layer 1 Weights
-        if target_sample_weight is not None:
-             if len(target_sample_weight) == len(market_data):
-                 w_l1_series = pd.Series(target_sample_weight, index=market_data.index)
-                 w_l1_aligned = w_l1_series.reindex(events_df.index).fillna(1.0)
-             else:
-                 tprint_warning(f"Layer 1 weights length mismatch ({len(target_sample_weight)} vs {len(market_data)}). Using 1.0.")
-                 w_l1_aligned = pd.Series(1.0, index=events_df.index)
+        def _finalize_weight_series(w: pd.Series, name: str) -> pd.Series:
+            s = pd.to_numeric(w, errors='coerce').astype(float)
+            s = s.replace([np.inf, -np.inf], np.nan)
+            s = s.fillna(1.0)
+            s = s.clip(lower=0.0)
+            try:
+                m = float(s.mean())
+            except Exception:
+                m = 1.0
+            if (not np.isfinite(m)) or m <= 0.0:
+                tprint_warning(f"{name}: invalid mean weight; falling back to 1.0")
+                return pd.Series(1.0, index=s.index)
+            return s / m
+
+        # Layer 1 Weights (must end aligned to events_df.index)
+        w_l1_aligned: pd.Series
+        if target_sample_weight is None:
+            w_l1_aligned = pd.Series(1.0, index=events_df.index)
+        elif isinstance(target_sample_weight, pd.Series):
+            # Accept event-aligned weights (preferred)
+            w_l1_aligned = target_sample_weight.reindex(events_df.index)
+            if w_l1_aligned.isna().all():
+                tprint_warning(
+                    "Layer 1 target_sample_weight provided as Series but has no overlap with events_df.index; using 1.0"
+                )
+                w_l1_aligned = pd.Series(1.0, index=events_df.index)
+            else:
+                w_l1_aligned = _finalize_weight_series(w_l1_aligned, "layer1_weight")
         else:
-             w_l1_aligned = pd.Series(1.0, index=events_df.index)
+            try:
+                w_arr = np.asarray(target_sample_weight, dtype=float).reshape(-1)
+            except Exception:
+                w_arr = np.asarray([], dtype=float)
+
+            if int(w_arr.size) == int(len(events_df.index)):
+                w_l1_aligned = _finalize_weight_series(pd.Series(w_arr, index=events_df.index), "layer1_weight")
+            elif int(w_arr.size) == int(len(market_data.index)):
+                # bar-level weights -> reindex to events
+                w_l1_series = pd.Series(w_arr, index=market_data.index)
+                w_l1_aligned = _finalize_weight_series(
+                    w_l1_series.reindex(events_df.index),
+                    "layer1_weight",
+                )
+            else:
+                tprint_warning(
+                    "Layer 1 target_sample_weight length mismatch "
+                    f"(got {int(w_arr.size)}; expected {len(events_df.index)} [events] or {len(market_data.index)} [bars]). Using 1.0."
+                )
+                w_l1_aligned = pd.Series(1.0, index=events_df.index)
         
         # Layer 2 Weights (Composite from Geometry Bagging)
         w_l2_aligned = l2_weights # Already aligned to events_df
@@ -1055,8 +1182,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         geo_cols = list(geo_preds_df.columns)
         
         l3_input_df = geo_preds_df.copy()
-        
-        context_cols = ['volatility_1d']
+
+        context_cols = ['volatility_1d', 'trend_regime', 'vol_regime']
         for c in context_cols:
             if c in events_df.columns:
                 l3_input_df[c] = events_df[c]
@@ -1145,14 +1272,32 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 r = pd.Series(np.nan, index=l3_input_df.index, dtype=float)
 
-            econ_target = pd.Series(np.nan, index=l3_input_df.index, dtype=float)
             try:
-                econ_target.loc[r > float(deadband)] = 1.0
-                econ_target.loc[r < -float(deadband)] = 0.0
+                econ_target_mode = str(config.get("layer3_econ_target_mode", "soft")).strip().lower()
             except Exception:
-                pass
+                econ_target_mode = "soft"
 
-            l3_target = econ_target
+            if econ_target_mode in {"hard", "binary"}:
+                econ_target = pd.Series(np.nan, index=l3_input_df.index, dtype=float)
+                try:
+                    econ_target.loc[r > float(deadband)] = 1.0
+                    econ_target.loc[r < -float(deadband)] = 0.0
+                except Exception:
+                    pass
+                l3_target = econ_target
+            else:
+                try:
+                    soft_scale = float(config.get("layer3_econ_soft_scale", 2.0))
+                except Exception:
+                    soft_scale = 2.0
+                if (not np.isfinite(soft_scale)) or soft_scale <= 0.0:
+                    soft_scale = 2.0
+                denom = float(deadband) if np.isfinite(deadband) and float(deadband) > 1e-12 else 1e-3
+                z = pd.to_numeric(r / float(denom), errors="coerce").astype(float)
+                z = z.clip(lower=-10.0, upper=10.0)
+                econ_soft = 1.0 / (1.0 + np.exp(-float(soft_scale) * z))
+                econ_soft = econ_soft.where(r.notna())
+                l3_target = econ_soft
 
         try:
             target_all_nan = (not isinstance(l3_target, pd.Series)) or bool(pd.to_numeric(l3_target, errors="coerce").isna().all())
@@ -1170,6 +1315,45 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 l3_target = pd.Series(np.nan, index=l3_input_df.index, dtype=float)
 
         l3_input_df[target_col] = l3_target
+
+        try:
+            ts_run = str(config.get("run_timestamp") or datetime.now().strftime("%Y%m%d_%H%M%S"))
+        except Exception:
+            ts_run = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        try:
+            drop_rows = []
+            n_in = int(len(l3_input_df))
+            ret_s = pd.to_numeric(l2_returns.reindex(l3_input_df.index), errors="coerce")
+            tgt_s = pd.to_numeric(l3_target.reindex(l3_input_df.index), errors="coerce") if isinstance(l3_target, pd.Series) else pd.Series(np.nan, index=l3_input_df.index, dtype=float)
+            labeled_mask = tgt_s.notna()
+
+            try:
+                geo_cols_local = list(geo_cols or [])
+                if geo_cols_local:
+                    geo_non_missing = l3_input_df[geo_cols_local].notna().sum(axis=1)
+                    all_geo_missing = geo_non_missing <= 0
+                else:
+                    all_geo_missing = pd.Series(False, index=l3_input_df.index)
+            except Exception:
+                all_geo_missing = pd.Series(False, index=l3_input_df.index)
+
+            drop_rows.append({"metric": "n_rows_input", "count": n_in, "pct": 1.0})
+            drop_rows.append({"metric": "realized_return_nan", "count": int(ret_s.isna().sum()), "pct": float(ret_s.isna().mean()) if n_in > 0 else float('nan')})
+            drop_rows.append({"metric": "target_nan", "count": int(tgt_s.isna().sum()), "pct": float(tgt_s.isna().mean()) if n_in > 0 else float('nan')})
+            drop_rows.append({"metric": "filtered_by_labeled_mask", "count": int((~labeled_mask).sum()), "pct": float((~labeled_mask).mean()) if n_in > 0 else float('nan')})
+            drop_rows.append({"metric": "all_geo_preds_missing", "count": int(all_geo_missing.sum()), "pct": float(all_geo_missing.mean()) if n_in > 0 else float('nan')})
+
+            for c in ['volatility_1d', 'trend_regime', 'vol_regime']:
+                if c in l3_input_df.columns:
+                    s = pd.Series(l3_input_df[c], index=l3_input_df.index)
+                    miss = s.isna()
+                    drop_rows.append({"metric": f"{c}_missing", "count": int(miss.sum()), "pct": float(miss.mean()) if n_in > 0 else float('nan')})
+            out_drop = outcomes_dir / f"layer3_drop_reasons_{ts_run}.csv"
+            pd.DataFrame(drop_rows).to_csv(out_drop, index=False)
+            tprint_info(f"Layer3 drop reasons written: {out_drop}")
+        except Exception:
+            pass
 
         if start_at == "layer4":
             layer3_oof_path = outcomes_dir / "layer3_oof_preds.csv"
@@ -1240,15 +1424,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 }
 
         # ---------------------------------------------------------
-        # LAYER 4: Position Sizing & Portfolio Diagnostics
+        # LAYER 4: Risk Filter (ExtraTrees + Platt Calibration)
         # ---------------------------------------------------------
-        tprint_info(">>> Executing Layer 4: Position Sizing & Portfolio Diagnostics...")
+        tprint_info(">>> Executing Layer 4: Risk Filter (ExtraTrees + Platt Calibration)...")
 
-        # Prepare Data for Layer 4
-        # We need realized returns for backtesting. Layer 2 output 'oof_returns' is
-        # the realized return of the *best geometry* for that event (or average).
-        # We assume 'oof_export' is aligned with 'l2_returns'.
-
+        # Prepare Data for Layer 4 Risk Filter
         l4_input = oof_export.copy()
 
         try:
@@ -1267,6 +1447,133 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         if 'volatility_1d' not in l4_input.columns and 'volatility_1d' in l3_input_df.columns:
             l4_input['volatility_1d'] = l3_input_df['volatility_1d']
 
+        # Layer 4 Risk Filter Configuration
+        layer4_enabled = bool(config.get('layer4_risk_filter_enabled', True))
+        layer4_quantile_threshold = float(config.get('layer4_quantile_threshold', 0.6))
+        layer4_final_score_formula = str(config.get('layer4_final_score_formula', 'dynamic'))
+
+        p_col_for_sizing = 'meta_prob'
+
+        l4_risk_metrics = {}
+        l4_final_probs = l4_input['meta_prob'].copy()  # Default: use L3 probs directly
+
+        if layer4_enabled and market_data is not None:
+            try:
+                tprint_info("   Training Layer 4 Risk Filter OOF (no leakage)...")
+
+                try:
+                    l4_oof_folds = int(config.get('layer4_oof_folds', 5))
+                except Exception:
+                    l4_oof_folds = 5
+
+                try:
+                    grid_thresholds = config.get('layer4_grid_thresholds', [0.7, 0.6, 0.5, 0.4, 0.3])
+                    l3_grid_thresholds = [float(x) for x in (grid_thresholds or [])]
+                    if not l3_grid_thresholds:
+                        l3_grid_thresholds = [0.7, 0.6, 0.5, 0.4, 0.3]
+                except Exception:
+                    l3_grid_thresholds = [0.7, 0.6, 0.5, 0.4, 0.3]
+
+                l4_oof_df, l4_oof_metrics = train_layer4_oof(
+                    oof_df=l4_input,
+                    market_data=market_data,
+                    l3_prob_col='meta_prob',
+                    target_col=target_col,
+                    return_col='realized_return',
+                    l3_quantile_thresholds=l3_grid_thresholds,
+                    n_folds=l4_oof_folds,
+                    config=config,
+                )
+
+                if isinstance(l4_oof_df, pd.DataFrame) and (not l4_oof_df.empty) and ('layer4_prob' in l4_oof_df.columns):
+                    l4_input = l4_oof_df.copy()
+                    l4_probs = pd.to_numeric(l4_input['layer4_prob'], errors='coerce').to_numpy(dtype=float, copy=False)
+                    l3_probs_arr = pd.to_numeric(l4_input['meta_prob'], errors='coerce').to_numpy(dtype=float, copy=False)
+
+                    if layer4_final_score_formula == 'dynamic':
+                        final_scores = compute_final_score_dynamic(l3_probs_arr, l4_probs)
+                    elif layer4_final_score_formula == 'bayesian':
+                        final_scores = compute_final_score_bayesian(l3_probs_arr, l4_probs)
+                    elif layer4_final_score_formula == 'ridge':
+                        final_scores = compute_final_score_ridge(l3_probs_arr, l4_probs)
+                    else:
+                        final_scores = l3_probs_arr
+
+                    l4_input['final_score'] = final_scores
+                    l4_final_probs = pd.Series(final_scores, index=l4_input.index)
+                    p_col_for_sizing = 'final_score'
+
+                    # Train a final model on the full data for saving (evaluation uses OOF above)
+                    try:
+                        l4_regime_features = compute_layer4_regime_features(market_data)
+                        common_idx = l4_input.index.intersection(l4_regime_features.index)
+                        if len(common_idx) >= 100:
+                            X_full = l4_regime_features.loc[common_idx]
+                            y_full_raw = pd.to_numeric(l4_input.loc[common_idx, target_col], errors='coerce')
+                            l3_full = pd.to_numeric(l4_input.loc[common_idx, 'meta_prob'], errors='coerce')
+
+                            labeled = y_full_raw.notna() & pd.to_numeric(l3_full, errors='coerce').notna()
+                            if int(labeled.sum()) >= 100:
+                                X_fit = X_full.loc[labeled]
+                                y_fit = (pd.to_numeric(y_full_raw.loc[labeled], errors='coerce').astype(float) >= 0.5).astype(int)
+                                l3_fit = pd.to_numeric(l3_full.loc[labeled], errors='coerce')
+
+                                try:
+                                    include_l3_prob_feature = bool(config.get('layer4_include_l3_prob_feature', True))
+                                except Exception:
+                                    include_l3_prob_feature = True
+                                if include_l3_prob_feature:
+                                    X_fit = X_fit.copy()
+                                    X_fit['l3_prob'] = l3_fit
+
+                                l4_risk_filter = Layer4RiskFilter(
+                                    n_estimators=int(config.get('layer4_n_estimators', 100)),
+                                    max_depth=int(config.get('layer4_max_depth', 5)),
+                                    min_samples_leaf=int(config.get('layer4_min_samples_leaf', 20)),
+                                    l3_quantile_threshold=layer4_quantile_threshold,
+                                )
+                                l4_risk_filter.fit(X=X_fit, y_true=y_fit, l3_probs=l3_fit)
+                                if l4_risk_filter._is_fitted:
+                                    l4_model_path = outcomes_dir / "layer4_risk_filter.joblib"
+                                    l4_risk_filter.save(str(l4_model_path))
+                    except Exception:
+                        pass
+
+                    l4_risk_metrics = {
+                        'layer4_enabled': True,
+                        'layer4_quantile_threshold': layer4_quantile_threshold,
+                        'layer4_final_score_formula': layer4_final_score_formula,
+                        'layer4_n_samples': int(l4_input.shape[0]),
+                        'layer4_prob_mean': float(np.nanmean(l4_probs)),
+                        'layer4_prob_std': float(np.nanstd(l4_probs)),
+                        'final_score_mean': float(np.nanmean(final_scores)),
+                        'final_score_std': float(np.nanstd(final_scores)),
+                        'oof': l4_oof_metrics,
+                    }
+
+                    tprint_success(f"   Layer 4 Risk Filter OOF complete. Final score formula: {layer4_final_score_formula}")
+                else:
+                    tprint_warning("   Layer 4 Risk Filter OOF failed/empty. Using L3 probs directly.")
+                    l4_risk_metrics = {'layer4_enabled': False, 'reason': 'oof_failed_or_empty'}
+            except Exception as e:
+                tprint_warning(f"   Layer 4 Risk Filter error: {e}. Using L3 probs directly.")
+                l4_risk_metrics = {'layer4_enabled': False, 'reason': str(e)}
+        else:
+            l4_risk_metrics = {'layer4_enabled': False, 'reason': 'disabled_or_no_market_data'}
+
+        # Save Layer 4 metrics
+        with open(outcomes_dir / "layer4_risk_filter_metrics.json", "w") as f:
+            json.dump(l4_risk_metrics, f, indent=2, default=str)
+
+        # ---------------------------------------------------------
+        # LAYER 5: Position Sizing & Portfolio Diagnostics
+        # ---------------------------------------------------------
+        tprint_info(">>> Executing Layer 5: Position Sizing & Portfolio Diagnostics...")
+
+        # Use final_score (Layer4 OOF) if available, otherwise meta_prob
+        if 'final_score' in l4_input.columns:
+            p_col_for_sizing = 'final_score'
+
         # Initialize Sizer
         try:
             l4_tx_cost = float(config.get('layer4_transaction_cost', 0.0))
@@ -1274,18 +1581,31 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l4_tx_cost = 0.0
 
         try:
+            # 1. Start with config default
             layer4_p_min = float(config.get('layer4_p_min', 0.5))
-        except Exception:
+            
+            # 2. Dynamic Override: Use best threshold from Layer 4 OOF Grid if available
+            if isinstance(l4_risk_metrics, dict) and 'oof' in l4_risk_metrics:
+                best_cfg = l4_risk_metrics['oof'].get('best')
+                if best_cfg and 'l3_threshold' in best_cfg:
+                    best_thresh = float(best_cfg['l3_threshold'])
+                    if np.isfinite(best_thresh) and best_thresh > 1e-6:
+                        tprint_info(f"   [DYNAMIC_THRESHOLD] Overriding p_min {layer4_p_min:.4f} -> {best_thresh:.4f} (best l3_threshold from grid)")
+                        layer4_p_min = best_thresh
+                        
+        except Exception as e:
+            tprint_warning(f"   Could not determine dynamic p_min: {e}. Using default 0.5")
             layer4_p_min = 0.5
+
         try:
             layer4_p_max = float(config.get('layer4_p_max', 0.9))
         except Exception:
             layer4_p_max = 0.9
 
         try:
-            layer4_gate_mode = str(config.get('layer4_gate_mode', 'pnl_opt_quantile'))
+            layer4_gate_mode = str(config.get('layer4_gate_mode', 'top_k_per_day'))
         except Exception:
-            layer4_gate_mode = 'pnl_opt_quantile'
+            layer4_gate_mode = 'top_k_per_day'
         try:
             layer4_gate_quantile = config.get('layer4_gate_quantile')
             layer4_gate_quantile = float(layer4_gate_quantile) if layer4_gate_quantile is not None else None
@@ -1301,6 +1621,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             layer4_gate_top_k_per_day = int(layer4_gate_top_k_per_day) if layer4_gate_top_k_per_day is not None else None
         except Exception:
             layer4_gate_top_k_per_day = None
+
+        if str(layer4_gate_mode).strip().lower() == 'top_k_per_day' and (layer4_gate_top_k_per_day is None or int(layer4_gate_top_k_per_day) <= 0):
+            layer4_gate_top_k_per_day = 2
 
         try:
             layer4_gate_search_q_low = config.get('layer4_gate_search_q_low')
@@ -1323,9 +1646,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         except Exception:
             layer4_gate_search_max_iter = None
 
-        sizer = Layer4PositionSizer(
+        sizer = Layer5PositionSizer(
             oof_df=l4_input,
-            p_col='meta_prob',
+            p_col=p_col_for_sizing,  # Use final_score from Layer 4 if available, else meta_prob
             target_col=target_col,
             return_col='realized_return',
             transaction_cost=0.0, # CRITICAL: Layer 2 returns are ALREADY Net of costs. Do not double count.
@@ -1347,13 +1670,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
         traded_idx = None
         try:
-            if isinstance(getattr(sizer, "df", None), pd.DataFrame) and "layer4_size" in sizer.df.columns:
-                traded_mask = pd.to_numeric(sizer.df["layer4_size"], errors="coerce").astype(float) > 1e-4
+            if isinstance(getattr(sizer, "df", None), pd.DataFrame) and "layer5_size" in sizer.df.columns:
+                traded_mask = pd.to_numeric(sizer.df["layer5_size"], errors="coerce").astype(float) > 1e-4
                 traded_idx = sizer.df.index[traded_mask]
         except Exception:
             traded_idx = None
 
-        # Save Layer 4 Artifacts
+        # Save Layer 5 Artifacts
         sizer.save_artifacts(outcomes_dir)
 
         # Helper to sanitize keys for JSON (e.g. Intervals)
@@ -1368,15 +1691,22 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
 
 
-        with open(outcomes_dir / "layer4_performance_metrics.json", "w") as f:
+        with open(outcomes_dir / "layer5_performance_metrics.json", "w") as f:
             json.dump(l4_metrics_safe, f, indent=2, default=str)
 
-        tprint_success(f"Layer 4 Completed. Metrics: {json.dumps(l4_metrics_safe, indent=2, default=str)}")
+        tprint_success(f"Layer 5 Completed. Metrics: {json.dumps(l4_metrics_safe, indent=2, default=str)}")
 
         tprint_success(f"Pipeline Completed. Artifacts saved to {outcomes_dir}")
         
         layer2_metrics = _compute_layer2_metrics(l2_labels, l2_returns, l2_weights)
         layer3_metrics = _compute_layer3_metrics(oof_export, target_col=target_col, prob_col="meta_prob")
+        try:
+            mp = pd.to_numeric(oof_export.get('meta_prob'), errors='coerce') if isinstance(oof_export, pd.DataFrame) else None
+            if mp is not None:
+                layer3_metrics['meta_prob_nan'] = int(mp.isna().sum())
+                layer3_metrics['meta_prob_nan_pct'] = float(mp.isna().mean()) if int(len(mp)) > 0 else float('nan')
+        except Exception:
+            pass
         try:
             gate_idx = None
             try:
@@ -1413,11 +1743,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         except Exception:
             gamma = 1.2
 
-        sweep_path = _write_layer4_pmin_sweep(
+        sweep_path = _write_layer5_pmin_sweep(
             outcomes_dir=outcomes_dir,
             l4_input=l4_input,
             target_col=target_col,
-            p_col="meta_prob",
+            p_col=p_col_for_sizing,
             return_col="realized_return",
             p_max=p_max,
             gamma=gamma,
@@ -1435,7 +1765,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             },
             layer2_metrics=layer2_metrics,
             layer3_metrics=layer3_metrics,
-            layer4_metrics=dict(l4_metrics_safe, **({"pmin_sweep_csv": sweep_path} if sweep_path else {})),
+            layer4_risk_metrics=l4_risk_metrics,
+            layer5_metrics=dict(l4_metrics_safe, **({"pmin_sweep_csv": sweep_path} if sweep_path else {})),
         )
 
         snr_reports: Dict[str, Any] = {}
@@ -1485,8 +1816,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
         artifacts: Dict[str, Any] = {
             "layer2_geometries": str(outcomes_dir / "layer2_selected_geometries.json"),
-            "layer4_events": str(outcomes_dir / "layer4_sized_events.csv"),
-            "layer4_metrics": str(outcomes_dir / "layer4_performance_metrics.json"),
+            "layer5_events": str(outcomes_dir / "layer5_sized_events.csv"),
+            "layer5_metrics": str(outcomes_dir / "layer5_performance_metrics.json"),
             "unified_report_csv": unified_paths["csv"],
             "unified_report_json": unified_paths["json"],
             "snr_diagnostics": snr_reports,

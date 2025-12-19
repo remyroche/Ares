@@ -220,19 +220,26 @@ def _load_label_based_outputs(
 
     candidate_dirs.append(out_dir)
 
-    layer4_candidates: list[Path] = []
+    layer5_candidates: list[Path] = []
     layer3_candidates: list[Path] = []
 
     for d in candidate_dirs:
         if not d.exists():
             continue
 
-        layer4_candidates.extend(sorted(d.glob(f"layer4_sized_events_{symbol}_{timeframe}_*.csv")))
+        # Check for Layer 5 (position sizing) outputs
+        layer5_candidates.extend(sorted(d.glob(f"layer5_sized_events_{symbol}_{timeframe}_*.csv")))
+        # Fallback to old layer4 naming for backwards compatibility
+        layer5_candidates.extend(sorted(d.glob(f"layer4_sized_events_{symbol}_{timeframe}_*.csv")))
         layer3_candidates.extend(sorted(d.glob(f"layer3_oof_preds_{symbol}_{timeframe}_*.csv")))
 
+        fixed_l5 = d / "layer5_sized_events.csv"
+        if fixed_l5.exists():
+            layer5_candidates.append(fixed_l5)
+        # Fallback to old naming
         fixed_l4 = d / "layer4_sized_events.csv"
         if fixed_l4.exists():
-            layer4_candidates.append(fixed_l4)
+            layer5_candidates.append(fixed_l4)
 
         fixed_l3 = d / "layer3_oof_preds.csv"
         if fixed_l3.exists():
@@ -246,19 +253,19 @@ def _load_label_based_outputs(
             return None
         return sorted(existing, key=lambda p: p.stat().st_mtime, reverse=True)[0]
 
-    l4_path = _pick_latest(layer4_candidates)
+    l5_path = _pick_latest(layer5_candidates)
     l3_path = _pick_latest(layer3_candidates)
 
-    if l4_path is None and l3_path is None:
+    if l5_path is None and l3_path is None:
         raise FileNotFoundError(
             f"Could not locate label_based outputs in {candidate_dirs}. "
-            "Expected layer4_sized_events.csv or layer3_oof_preds.csv."
+            "Expected layer5_sized_events.csv or layer3_oof_preds.csv."
         )
 
-    l4_df = None
-    if l4_path is not None:
+    l4_df = None  # Keep variable name for compatibility with downstream code
+    if l5_path is not None:
         try:
-            l4_df = _read_indexed_csv(l4_path)
+            l4_df = _read_indexed_csv(l5_path)
         except Exception:
             l4_df = None
 
@@ -272,11 +279,15 @@ def _load_label_based_outputs(
     if isinstance(l3_df, pd.DataFrame) and not l3_df.empty:
         df = l3_df.copy()
         if isinstance(l4_df, pd.DataFrame) and not l4_df.empty:
-            join_cols = [
-                c
-                for c in ["realized_return", "volatility_1d", "layer4_size", "layer4_pnl"]
-                if c in l4_df.columns and c not in df.columns
+            join_candidates = [
+                "realized_return",
+                "volatility_1d",
+                "layer5_size",
+                "layer5_pnl",
+                "layer4_size",
+                "layer4_pnl",
             ]
+            join_cols = [c for c in join_candidates if c in l4_df.columns and c not in df.columns]
             if join_cols:
                 try:
                     df = df.join(l4_df[join_cols], how="left")
@@ -286,7 +297,7 @@ def _load_label_based_outputs(
         df = l4_df.copy()
     else:
         raise FileNotFoundError(
-            f"Found label_based files but failed to read them: layer3={l3_path}, layer4={l4_path}"
+            f"Found label_based files but failed to read them: layer3={l3_path}, layer5={l5_path}"
         )
 
     if "meta_probability" not in df.columns and "meta_prob" in df.columns:
@@ -300,6 +311,7 @@ def _load_label_based_outputs(
             "trade_return",
             "return",
             "pnl",
+            "layer5_pnl",
             "layer4_pnl",
         ]
         chosen = None
@@ -309,6 +321,12 @@ def _load_label_based_outputs(
                 break
         if chosen is not None:
             df["realized_return"] = pd.to_numeric(df[chosen], errors="coerce")
+
+    if "realized_return" not in df.columns and "layer5_pnl" in df.columns and "layer5_size" in df.columns:
+        pnl = pd.to_numeric(df["layer5_pnl"], errors="coerce")
+        size = pd.to_numeric(df["layer5_size"], errors="coerce")
+        denom = size.replace(0.0, np.nan)
+        df["realized_return"] = pnl / denom
 
     if "realized_return" not in df.columns and "layer4_pnl" in df.columns and "layer4_size" in df.columns:
         pnl = pd.to_numeric(df["layer4_pnl"], errors="coerce")
@@ -354,7 +372,7 @@ def _load_label_based_outputs(
     logger.info(
         "Loaded label_based outputs (layer3=%s, layer4=%s) with shape %s",
         str(l3_path) if l3_path is not None else None,
-        str(l4_path) if l4_path is not None else None,
+        str(l5_path) if l5_path is not None else None,
         df.shape,
     )
     return df

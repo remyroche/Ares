@@ -657,17 +657,18 @@ def generate_primary_signals(
     bb_std: float = 2.0,
     atr_period: int = 14,
     atr_mult: float = 1.5,
-    volume_spike_threshold: float = 2.0,
+    volume_spike_threshold: float = 1.5,
     range_window: int = 48,
     mtf_lookback: int = 4,
     # New arguments for CUSUM generator
-    k: float = 0.5,
+    k: float = 0.15,
     vol_window: int = 50,
     er_window: int = 50,
-    er_min: float = 0.20,
-    alpha: float = 2.0,
+    er_min: float = 0.00,
+    alpha: float = 0.1,
     beta: float = 0.5,
     vol_power: float = 0.8,
+    **kwargs
 ) -> pd.DataFrame:
     """
     Generate primary trading signals using Kalman-smoothed, volume and volatility aware CUSUM.
@@ -790,17 +791,22 @@ def generate_primary_signals(
 def compute_realized_returns(
     df: pd.DataFrame,
     signals: pd.DataFrame,
-    profit_threshold: Union[float, pd.Series] = 0.015,
-    stop_threshold: Union[float, pd.Series] = 0.010,
-    horizon: Union[int, pd.Series] = 16,
+    profit_threshold: Union[float, pd.Series, np.ndarray] = 0.015,
+    stop_threshold: Union[float, pd.Series, np.ndarray] = 0.010,
+    horizon: Union[int, pd.Series, np.ndarray] = 16,
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
     min_event_spacing: int = 2,
-    volatility_series: Optional[pd.Series] = None,
+    volatility_series: Optional[Union[pd.Series, np.ndarray]] = None,
     use_multiclass_labels: bool = False,  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
-    atr_series: Optional[pd.Series] = None,  # NEW: For trailing stops
-    trail_distance_atr_mult: Optional[Union[float, pd.Series]] = None,  # NEW: Trailing distance in ATR
+    atr_series: Optional[Union[pd.Series, np.ndarray]] = None,  # NEW: For trailing stops
+    trail_distance_atr_mult: Optional[Union[float, pd.Series, np.ndarray]] = None,  # NEW: Trailing distance in ATR
     use_soft_labels: bool = False,  # NEW: Continuous [0,1] labels using sigmoid transform
     soft_label_scale: float = 1.0,  # Scale factor for sigmoid (higher = sharper transition)
+    fast_mode: bool = False,
+    close_prices_arr: Optional[np.ndarray] = None,
+    high_prices_arr: Optional[np.ndarray] = None,
+    low_prices_arr: Optional[np.ndarray] = None,
+    consensus_signals_arr: Optional[np.ndarray] = None,
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
@@ -874,26 +880,47 @@ def compute_realized_returns(
     mae_series = pd.Series(index=df.index, dtype=float)
     mae_series[:] = np.nan
 
-    close_prices = df['close'].values
-    high_prices = df['high'].values if 'high' in df.columns else close_prices
-    low_prices = df['low'].values if 'low' in df.columns else close_prices
-    consensus_signals = signals['consensus'].values
+    if close_prices_arr is not None:
+        close_prices = np.asarray(close_prices_arr, dtype=float)
+    else:
+        close_prices = df['close'].values
+
+    if high_prices_arr is not None:
+        high_prices = np.asarray(high_prices_arr, dtype=float)
+    else:
+        high_prices = df['high'].values if 'high' in df.columns else close_prices
+
+    if low_prices_arr is not None:
+        low_prices = np.asarray(low_prices_arr, dtype=float)
+    else:
+        low_prices = df['low'].values if 'low' in df.columns else close_prices
+
+    if consensus_signals_arr is not None:
+        consensus_signals = np.asarray(consensus_signals_arr, dtype=float)
+    else:
+        consensus_signals = signals['consensus'].values
 
     # Convert thresholds to arrays for adaptive support
     if isinstance(profit_threshold, (int, float)):
         profit_thresholds = np.full(len(df), profit_threshold)
+    elif isinstance(profit_threshold, np.ndarray):
+        profit_thresholds = np.asarray(profit_threshold, dtype=float)
     else:
-        profit_thresholds = profit_threshold.values
+        profit_thresholds = profit_threshold.reindex(df.index).astype(float).values if len(profit_threshold) != len(df) else profit_threshold.astype(float).values
 
     if isinstance(stop_threshold, (int, float)):
         stop_thresholds = np.full(len(df), stop_threshold)
+    elif isinstance(stop_threshold, np.ndarray):
+        stop_thresholds = np.asarray(stop_threshold, dtype=float)
     else:
-        stop_thresholds = stop_threshold.values
+        stop_thresholds = stop_threshold.reindex(df.index).astype(float).values if len(stop_threshold) != len(df) else stop_threshold.astype(float).values
 
     trail_mult_values = None
     try:
         if isinstance(trail_distance_atr_mult, pd.Series):
             trail_mult_values = trail_distance_atr_mult.reindex(df.index).astype(float).values
+        elif isinstance(trail_distance_atr_mult, np.ndarray):
+            trail_mult_values = np.asarray(trail_distance_atr_mult, dtype=float)
         elif trail_distance_atr_mult is not None:
             trail_mult_values = np.full(len(df), float(trail_distance_atr_mult), dtype=float)
     except Exception:
@@ -901,12 +928,11 @@ def compute_realized_returns(
 
     # Prepare trailing stop arrays if enabled
     use_trailing = (atr_series is not None) and (trail_mult_values is not None) and bool(np.any(np.asarray(trail_mult_values, dtype=float) > 0.0))
-    # Ensure atr_values is aligned with df
     if use_trailing:
-        if len(atr_series) != len(df):
-            atr_values = atr_series.reindex(df.index).values
+        if isinstance(atr_series, np.ndarray):
+            atr_values = np.asarray(atr_series, dtype=float)
         else:
-            atr_values = atr_series.values
+            atr_values = atr_series.reindex(df.index).values if len(atr_series) != len(df) else atr_series.values
     else:
         atr_values = None
 
@@ -914,6 +940,8 @@ def compute_realized_returns(
     try:
         if isinstance(horizon, pd.Series):
             base_horizons = horizon.reindex(df.index).astype(float).values
+        elif isinstance(horizon, np.ndarray):
+            base_horizons = np.asarray(horizon, dtype=float)
         else:
             base_horizons = np.full(len(df), float(horizon), dtype=float)
     except Exception:
@@ -925,7 +953,10 @@ def compute_realized_returns(
     # Lower vol = More time needed (price moves slower in low vol environments)
     # Higher vol = Less time needed (price moves faster in high vol environments)
     if volatility_series is not None:
-        vol_array = volatility_series.reindex(df.index).values if len(volatility_series) != len(df) else volatility_series.values
+        if isinstance(volatility_series, np.ndarray):
+            vol_array = np.asarray(volatility_series, dtype=float)
+        else:
+            vol_array = volatility_series.reindex(df.index).values if len(volatility_series) != len(df) else volatility_series.values
         # Normalize volatility to [0, 1] range using quantiles
         vol_clean = vol_array[~np.isnan(vol_array)]
         if len(vol_clean) > 10:
@@ -952,6 +983,183 @@ def compute_realized_returns(
 
     i = 0
     n = len(df)
+
+    if bool(fast_mode) and (not use_trailing) and (not use_soft_labels) and (not use_multiclass_labels):
+        event_positions = np.flatnonzero(np.asarray(consensus_signals, dtype=float) != 0.0)
+        for i_evt in event_positions:
+            signal = float(consensus_signals[i_evt])
+            if (i_evt - last_event_idx) < int(min_event_spacing):
+                continue
+
+            event_horizon = int(dynamic_horizons[i_evt])
+            if i_evt + event_horizon >= n:
+                continue
+
+            entry_price = float(close_prices[i_evt])
+            profit_thr = float(profit_thresholds[i_evt])
+            stop_thr = float(stop_thresholds[i_evt])
+            if (not np.isfinite(entry_price)) or entry_price == 0.0:
+                continue
+            if (not np.isfinite(profit_thr)) or profit_thr < 0.0:
+                profit_thr = 0.0
+            if (not np.isfinite(stop_thr)) or stop_thr < 0.0:
+                stop_thr = 0.0
+
+            start = int(i_evt + 1)
+            end = int(i_evt + event_horizon + 1)
+            high_w = np.asarray(high_prices[start:end], dtype=float)
+            low_w = np.asarray(low_prices[start:end], dtype=float)
+
+            exit_price = None
+            exit_reason = None
+            event_end_idx = int(i_evt)
+
+            if signal > 0.0:
+                stop_price = entry_price * (1.0 - stop_thr)
+                tp_price = entry_price * (1.0 + profit_thr)
+
+                tp_hits = high_w >= tp_price
+                sl_hits = low_w <= stop_price
+
+                tp_j = int(np.argmax(tp_hits)) if bool(np.any(tp_hits)) else None
+                sl_j = int(np.argmax(sl_hits)) if bool(np.any(sl_hits)) else None
+
+                if tp_j is not None and sl_j is not None:
+                    if sl_j <= tp_j:
+                        event_end_idx = int(i_evt + 1 + sl_j)
+                        exit_price = float(stop_price)
+                        exit_reason = 'stop'
+                    else:
+                        event_end_idx = int(i_evt + 1 + tp_j)
+                        exit_price = float(tp_price)
+                        exit_reason = 'profit'
+                elif sl_j is not None:
+                    event_end_idx = int(i_evt + 1 + sl_j)
+                    exit_price = float(stop_price)
+                    exit_reason = 'stop'
+                elif tp_j is not None:
+                    event_end_idx = int(i_evt + 1 + tp_j)
+                    exit_price = float(tp_price)
+                    exit_reason = 'profit'
+                else:
+                    event_end_idx = int(min(i_evt + event_horizon, n - 1))
+                    final_close = float(close_prices[event_end_idx])
+                    exit_price = float(0.5 * (final_close + stop_price)) if final_close < stop_price else float(final_close)
+                    exit_reason = 'timeout'
+            else:
+                stop_price = entry_price * (1.0 + stop_thr)
+                tp_price = entry_price * (1.0 - profit_thr)
+
+                tp_hits = low_w <= tp_price
+                sl_hits = high_w >= stop_price
+
+                tp_j = int(np.argmax(tp_hits)) if bool(np.any(tp_hits)) else None
+                sl_j = int(np.argmax(sl_hits)) if bool(np.any(sl_hits)) else None
+
+                if tp_j is not None and sl_j is not None:
+                    if sl_j < tp_j:
+                        event_end_idx = int(i_evt + 1 + sl_j)
+                        exit_price = float(stop_price)
+                        exit_reason = 'stop'
+                    elif sl_j == tp_j:
+                        event_end_idx = int(i_evt + 1 + sl_j)
+                        exit_price = float(0.5 * (entry_price + stop_price))
+                        exit_reason = 'stop'
+                    else:
+                        event_end_idx = int(i_evt + 1 + tp_j)
+                        exit_price = float(tp_price)
+                        exit_reason = 'profit'
+                elif sl_j is not None:
+                    event_end_idx = int(i_evt + 1 + sl_j)
+                    exit_price = float(stop_price)
+                    exit_reason = 'stop'
+                elif tp_j is not None:
+                    event_end_idx = int(i_evt + 1 + tp_j)
+                    exit_price = float(tp_price)
+                    exit_reason = 'profit'
+                else:
+                    event_end_idx = int(min(i_evt + event_horizon, n - 1))
+                    final_close = float(close_prices[event_end_idx])
+                    exit_price = float(0.5 * (final_close + stop_price)) if final_close > stop_price else float(final_close)
+                    exit_reason = 'timeout'
+
+            if exit_price is None or exit_reason is None:
+                continue
+
+            seg_start = int(i_evt + 1)
+            seg_end = int(event_end_idx + 1)
+            if seg_end > seg_start:
+                high_seg = np.asarray(high_prices[seg_start:seg_end], dtype=float)
+                low_seg = np.asarray(low_prices[seg_start:seg_end], dtype=float)
+                if signal > 0.0:
+                    pnl_high = (high_seg - entry_price) / entry_price
+                    pnl_low = (low_seg - entry_price) / entry_price
+                    max_favorable = float(np.nanmax(np.where(np.isfinite(pnl_high), pnl_high, 0.0)))
+                    max_adverse = float(np.nanmin(np.where(np.isfinite(pnl_low), pnl_low, 0.0)))
+                    mae_val = abs(min(0.0, max_adverse))
+                else:
+                    pnl_high = (entry_price - high_seg) / entry_price
+                    pnl_low = (entry_price - low_seg) / entry_price
+                    max_favorable = float(np.nanmax(np.where(np.isfinite(pnl_low), pnl_low, 0.0)))
+                    max_adverse = float(np.nanmin(np.where(np.isfinite(pnl_high), pnl_high, 0.0)))
+                    mae_val = abs(min(0.0, max_adverse))
+            else:
+                max_favorable = 0.0
+                mae_val = 0.0
+
+            if signal > 0.0:
+                gross_return = (float(exit_price) - entry_price) / entry_price
+            else:
+                gross_return = (entry_price - float(exit_price)) / entry_price
+            net_return = float(gross_return) - float(transaction_cost)
+
+            event_length = int(event_end_idx - i_evt)
+
+            realized_returns.iloc[i_evt] = net_return
+            exit_reasons.iloc[i_evt] = exit_reason
+            event_durations.iloc[i_evt] = float(event_length)
+            mfe_series.iloc[i_evt] = float(max(0.0, max_favorable))
+            mae_series.iloc[i_evt] = float(max(0.0, mae_val))
+
+            econ_min_return = ECON_MIN_RETURN_MULTIPLE * transaction_cost
+            if abs(net_return) < float(econ_min_return):
+                unified_label = 0.0
+            else:
+                efficiency_ratio = 1.0 / np.log1p(float(max(1, event_length)))
+                velocity_adjusted_return = float(net_return) * float(efficiency_ratio)
+                risk_unit = float(stop_thr) if float(stop_thr) > 0.0 else float(profit_thr)
+                if risk_unit <= 0.0 or (not np.isfinite(risk_unit)):
+                    r_multiple = 0.0
+                else:
+                    r_multiple = float(velocity_adjusted_return) / float(risk_unit)
+                if r_multiple >= float(R_MULTIPLE_POS_THRESHOLD):
+                    unified_label = 1.0
+                elif net_return < 0.0:
+                    unified_label = 0.0
+                else:
+                    unified_label = 0.0
+
+                if exit_reason == 'timeout' and net_return > float(PROFITABLE_TIMEOUT_RETURN_THRESHOLD):
+                    unified_label = 1.0
+
+            binary_labels.iloc[i_evt] = float(unified_label)
+            if signal > 0.0:
+                binary_labels_long.iloc[i_evt] = float(unified_label)
+            else:
+                binary_labels_short.iloc[i_evt] = float(unified_label)
+
+            last_event_idx = int(i_evt)
+
+        return (
+            realized_returns,
+            binary_labels,
+            exit_reasons,
+            event_durations,
+            mfe_series,
+            mae_series,
+            binary_labels_long,
+            binary_labels_short,
+        )
 
     while i < n - 1:
         signal = consensus_signals[i]
@@ -3344,7 +3552,8 @@ def create_meta_features(
     signals: pd.DataFrame,
     volume_available: bool = True,
     include_raw_signals: bool = False,
-    use_kalman: bool = True
+    use_kalman: bool = True,
+    drop_regime_context_features: bool = True
 ) -> pd.DataFrame:
     """
     Create features for the meta-model.
@@ -3705,7 +3914,8 @@ def create_meta_features(
 
     # Compute raw indicators
     df_local = df.copy()
-    df_local['rsi'] = compute_rsi(df_local['close'], period=14)
+    # RSI removed - legacy indicator
+    # df_local['rsi'] = compute_rsi(df_local['close'], period=14)
     df_local['sma_fast'] = df_local['close'].rolling(10).mean()
     df_local['sma_slow'] = df_local['close'].rolling(30).mean()
     df_local['momentum'] = df_local['close'].pct_change(10)
@@ -3731,11 +3941,11 @@ def create_meta_features(
         features['kalman_trend'] = kalman_trend_values
         features['kalman_uncertainty'] = kalman_uncertainty_values
 
-        # Kalman-filtered RSI
-        kf_rsi = KalmanFilter1D(Q=1e-4, R=0.1, initial_value=50.0)
-        kalman_rsi, _ = kf_rsi.filter_series(df_local['rsi'])
-        kalman_rsi_values = _align_to_features(kalman_rsi, n_features)
-        features['rsi_kalman'] = kalman_rsi_values
+        # Kalman-filtered RSI removed
+        # kf_rsi = KalmanFilter1D(Q=1e-4, R=0.1, initial_value=50.0)
+        # kalman_rsi, _ = kf_rsi.filter_series(df_local['rsi'])
+        # kalman_rsi_values = _align_to_features(kalman_rsi, n_features)
+        # features['rsi_kalman'] = kalman_rsi_values
 
         # Kalman-filtered MA distance
         ma_distance = df_local['sma_fast'] - df_local['sma_slow']
@@ -3753,7 +3963,7 @@ def create_meta_features(
         # Keep raw for reference (diagnostic purposes)
     else:
         # Use raw indicators
-        features['rsi'] = df_local['rsi']
+        # features['rsi'] = df_local['rsi']
         features['ma_distance'] = df_local['sma_fast'] - df_local['sma_slow']
         features['momentum'] = df_local['momentum']
 
@@ -4248,37 +4458,39 @@ def create_meta_features(
             features['signal_strength_all'] = abs_signals.sum(axis=1).to_numpy()
             features['signal_count_active'] = (abs_signals > 0).sum(axis=1).to_numpy()
 
-        if 'rsi' in signals.columns and 'macd' in signals.columns:
-            align_series = np.sign(signals['rsi'] * signals['macd']).replace(0, 0)
-            if use_kalman:
-                features['signal_rsi_macd_alignment'] = _align_to_features(align_series, n_features)
-            else:
-                features['signal_rsi_macd_alignment'] = align_series.to_numpy()
+        # RSI/MACD alignment removed
+        # if 'rsi' in signals.columns and 'macd' in signals.columns:
+        #     align_series = np.sign(signals['rsi'] * signals['macd']).replace(0, 0)
+        #     if use_kalman:
+        #         features['signal_rsi_macd_alignment'] = _align_to_features(align_series, n_features)
+        #     else:
+        #         features['signal_rsi_macd_alignment'] = align_series.to_numpy()
 
-    if 'rsi_value' in signals.columns:
-        rsi_dist_series = (signals['rsi_value'] - 50.0).abs()
-        if use_kalman:
-            features['signal_rsi_distance_50'] = _align_to_features(rsi_dist_series, n_features)
-        else:
-            features['signal_rsi_distance_50'] = rsi_dist_series.to_numpy()
-    if 'rsi_long_value' in signals.columns:
-        rsi_long_dist_series = (signals['rsi_long_value'] - 50.0).abs()
-        if use_kalman:
-            features['signal_rsi_long_distance_50'] = _align_to_features(rsi_long_dist_series, n_features)
-        else:
-            features['signal_rsi_long_distance_50'] = rsi_long_dist_series.to_numpy()
-    if 'macd_hist_value' in signals.columns:
-        macd_hist_abs_series = signals['macd_hist_value'].abs()
-        if use_kalman:
-            features['signal_macd_hist_abs'] = _align_to_features(macd_hist_abs_series, n_features)
-        else:
-            features['signal_macd_hist_abs'] = macd_hist_abs_series.to_numpy()
-    if 'macd_hist_long_value' in signals.columns:
-        macd_hist_long_abs_series = signals['macd_hist_long_value'].abs()
-        if use_kalman:
-            features['signal_macd_hist_long_abs'] = _align_to_features(macd_hist_long_abs_series, n_features)
-        else:
-            features['signal_macd_hist_long_abs'] = macd_hist_long_abs_series.to_numpy()
+    # Signal-based RSI and MACD features removed
+    # if 'rsi_value' in signals.columns:
+    #     rsi_dist_series = (signals['rsi_value'] - 50.0).abs()
+    #     if use_kalman:
+    #         features['signal_rsi_distance_50'] = _align_to_features(rsi_dist_series, n_features)
+    #     else:
+    #         features['signal_rsi_distance_50'] = rsi_dist_series.to_numpy()
+    # if 'rsi_long_value' in signals.columns:
+    #     rsi_long_dist_series = (signals['rsi_long_value'] - 50.0).abs()
+    #     if use_kalman:
+    #         features['signal_rsi_long_distance_50'] = _align_to_features(rsi_long_dist_series, n_features)
+    #     else:
+    #         features['signal_rsi_long_distance_50'] = rsi_long_dist_series.to_numpy()
+    # if 'macd_hist_value' in signals.columns:
+    #     macd_hist_abs_series = signals['macd_hist_value'].abs()
+    #     if use_kalman:
+    #         features['signal_macd_hist_abs'] = _align_to_features(macd_hist_abs_series, n_features)
+    #     else:
+    #         features['signal_macd_hist_abs'] = macd_hist_abs_series.to_numpy()
+    # if 'macd_hist_long_value' in signals.columns:
+    #     macd_hist_long_abs_series = signals['macd_hist_long_value'].abs()
+    #     if use_kalman:
+    #         features['signal_macd_hist_long_abs'] = _align_to_features(macd_hist_long_abs_series, n_features)
+    #     else:
+    #         features['signal_macd_hist_long_abs'] = macd_hist_long_abs_series.to_numpy()
     if 'sma_fast_value' in signals.columns and 'sma_slow_value' in signals.columns:
         ma_dist_series = (signals['sma_fast_value'] - signals['sma_slow_value']) / (df['close'] + 1e-8)
         if use_kalman:
@@ -4308,14 +4520,15 @@ def create_meta_features(
             features['candle_reversal'] = signals['candle_reversal'].to_numpy()
 
     # Targeted trend×signal interaction features
-    if 'trend_regime' in features.columns and 'signal_macd_hist_abs' in features.columns:
-        tr_arr = np.asarray(features['trend_regime'])
-        macd_abs_arr = np.asarray(features['signal_macd_hist_abs'])
-        features['signal_trend_regime_x_macd_hist_abs'] = tr_arr * _norm_for_interaction(features['signal_macd_hist_abs'], 'signal_macd_hist_abs')
-    if 'candle_trend' in features.columns and 'signal_rsi_distance_50' in features.columns:
-        ct_arr = np.asarray(features['candle_trend'])
-        rsi_dist_arr = np.asarray(features['signal_rsi_distance_50'])
-        features['signal_candle_trend_x_rsi_distance_50'] = ct_arr * _norm_for_interaction(features['signal_rsi_distance_50'], 'signal_rsi_distance_50')
+    # Trend x Legacy Signal interactions removed
+    # if 'trend_regime' in features.columns and 'signal_macd_hist_abs' in features.columns:
+    #     tr_arr = np.asarray(features['trend_regime'])
+    #     macd_abs_arr = np.asarray(features['signal_macd_hist_abs'])
+    #     features['signal_trend_regime_x_macd_hist_abs'] = tr_arr * _norm_for_interaction(features['signal_macd_hist_abs'], 'signal_macd_hist_abs')
+    # if 'candle_trend' in features.columns and 'signal_rsi_distance_50' in features.columns:
+    #     ct_arr = np.asarray(features['candle_trend'])
+    #     rsi_dist_arr = np.asarray(features['signal_rsi_distance_50'])
+    #     features['signal_candle_trend_x_rsi_distance_50'] = ct_arr * _norm_for_interaction(features['signal_rsi_distance_50'], 'signal_rsi_distance_50')
 
     # ===== CROSS-TIMEFRAME FEATURES (1H, 4H AGGREGATIONS) =====
     # Aggregate 15m data to higher timeframes for multi-horizon analysis
@@ -5019,49 +5232,34 @@ def create_meta_features(
     except Exception:
         pass
 
-    # ------------------------------------------------------------------
-    # Avoid double-counting regime/volatility context.
-    # The regime leaf feature pipeline now has its own dedicated OHLCV-only
-    # regime embedding features (see regime_leaf_feature_extractor.py).
-    # Keep the categorical `volatility_regime` for diagnostics, but drop the
-    # numeric volatility-regime dummies and closely-related numeric regime
-    # context columns from the meta-model feature surface.
-    # ------------------------------------------------------------------
-    try:
-        drop_cols: List[str] = []
+    if drop_regime_context_features:
+        try:
+            drop_cols: List[str] = []
 
-        for c in [
-            # Volatility windows / ratios (regime context)
-            'volatility_1h',
-            'volatility_4h',
-            'volatility_1d',
-            'vol_of_vol',
-            'vol_ratio',
-            # Dummies derived from volatility_regime
-            'vol_regime_medium',
-            'vol_regime_high',
-            # Regime-age / persistence derived from volatility_regime
-            'volatility_regime_age',
-            # Direct interactions that re-introduce vol_ratio
-            'kalman_trend_x_vol_ratio',
-            'sma_slope_x_vol_ratio',
-            'price_vs_sma20_x_vol_ratio',
-            'range_position_x_vol_ratio',
-        ]:
-            if c in features.columns:
-                drop_cols.append(c)
+            for c in [
+                'volatility_1h',
+                'volatility_4h',
+                'volatility_1d',
+                'vol_of_vol',
+                'vol_ratio',
+                'vol_regime_medium',
+                'vol_regime_high',
+                'volatility_regime_age',
+                'kalman_trend_x_vol_ratio',
+                'sma_slope_x_vol_ratio',
+                'price_vs_sma20_x_vol_ratio',
+                'range_position_x_vol_ratio',
+            ]:
+                if c in features.columns:
+                    drop_cols.append(c)
 
-        # Defensive: drop any remaining volatility-regime dummy variants
-        drop_cols.extend([c for c in features.columns if c.startswith('vol_regime_')])
+            drop_cols.extend([c for c in features.columns if c.startswith('vol_regime_')])
+            drop_cols.extend([c for c in features.columns if 'volatility_regime' in str(c) and c != 'volatility_regime'])
 
-        # Also drop any explicitly volatility-regime-conditional features
-        # that may have been generated downstream.
-        drop_cols.extend([c for c in features.columns if 'volatility_regime' in str(c) and c != 'volatility_regime'])
-
-        if drop_cols:
-            features = features.drop(columns=sorted(set(drop_cols)), errors='ignore')
-    except Exception:
-        pass
+            if drop_cols:
+                features = features.drop(columns=sorted(set(drop_cols)), errors='ignore')
+        except Exception:
+            pass
 
     return features
 
@@ -5599,6 +5797,36 @@ def build_meta_features_for_model(
                         tprint(f"✅ [nn_sequence] Added {len(new_cols)} nn_embed_* features to meta feature matrix", "INFO")
     except Exception as nn_exc:
         tprint(f"⚠️ [nn_sequence] Failed to attach NN embeddings: {nn_exc}", "WARNING")
+
+    try:
+        enable_regime_leaf = False
+        extractor_cfg = {}
+        if isinstance(meta_feature_cfg, dict):
+            enable_regime_leaf = bool(meta_feature_cfg.get("enable_regime_leaf_features", False))
+            extractor_cfg = meta_feature_cfg.get("regime_leaf_extractor_config", {})
+            if not isinstance(extractor_cfg, dict):
+                extractor_cfg = {}
+
+        if enable_regime_leaf:
+            try:
+                from .regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
+
+                rl_df = extract_regime_leaf_onehot_features(
+                    X=meta_features_model,
+                    market_data=market_data,
+                    config=extractor_cfg,
+                    random_state=int(meta_feature_cfg.get("random_state", 42)) if isinstance(meta_feature_cfg, dict) else 42,
+                    verbose=bool(meta_feature_cfg.get("regime_leaf_verbose", False)) if isinstance(meta_feature_cfg, dict) else False,
+                )
+                if rl_df is not None and not getattr(rl_df, "empty", True):
+                    rl_df = rl_df.reindex(meta_features_model.index).fillna(0.0)
+                    new_cols = [c for c in rl_df.columns if c not in meta_features_model.columns]
+                    if new_cols:
+                        meta_features_model = pd.concat([meta_features_model, rl_df[new_cols]], axis=1)
+            except Exception as e_rl:
+                tprint(f"⚠️ [regime_leaf] Failed to attach regime leaf features: {e_rl}", "WARNING")
+    except Exception as rl_outer_exc:
+        tprint(f"⚠️ [regime_leaf] Unexpected failure attaching regime leaf features: {rl_outer_exc}", "WARNING")
 
     try:
         direction_src = None

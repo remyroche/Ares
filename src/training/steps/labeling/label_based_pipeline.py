@@ -106,6 +106,7 @@ from src.training.steps.labeling.layer3_feature_cache import (
     save_nn_embeddings_to_cache,
     load_nn_embeddings_from_cache,
 )
+from src.utils.ml_common.transaction_costs import get_transaction_cost
 from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     HierarchicalParameterOptimizer,
     OptimizationStage,
@@ -12254,6 +12255,12 @@ class LabelBasedPipelineStep(BaseStep):
                 except Exception:
                     pass
 
+            best_weighting_params_local = dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {}
+            if "transaction_cost" not in best_weighting_params_local:
+                try:
+                    best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+                except Exception:
+                    best_weighting_params_local["transaction_cost"] = float(DEFAULT_TRANSACTION_COST)
             sample_weights = generate_weights_per_label(
                 returns=l2_returns_clean.values,
                 t_events=l2_t_events,
@@ -12261,7 +12268,7 @@ class LabelBasedPipelineStep(BaseStep):
                 consistency_scores=batch_consistency,
                 uniqueness_scores=batch_uniqueness.values,
                 vol_proxy=batch_volatility,
-                **best_weighting_params
+                **best_weighting_params_local
             )
 
             try:
@@ -12911,6 +12918,12 @@ class LabelBasedPipelineStep(BaseStep):
             batch_volatility = full_volatility.reindex(l2_t_events).fillna(0).values
             batch_uniqueness = compute_uniqueness(t1_series, market_index=market_data.index)
 
+            best_weighting_params_local = dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {}
+            if "transaction_cost" not in best_weighting_params_local:
+                try:
+                    best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+                except Exception:
+                    best_weighting_params_local["transaction_cost"] = float(DEFAULT_TRANSACTION_COST)
             sample_weights = generate_weights_per_label(
                 returns=l2_returns_clean.values,
                 t_events=l2_t_events,
@@ -12918,7 +12931,7 @@ class LabelBasedPipelineStep(BaseStep):
                 consistency_scores=batch_consistency,
                 uniqueness_scores=batch_uniqueness.values,
                 vol_proxy=batch_volatility,
-                **best_weighting_params
+                **best_weighting_params_local
             )
 
             try:
@@ -16595,6 +16608,12 @@ class LabelBasedPipelineStep(BaseStep):
                 batch_consistency_dbg = full_consistency.reindex(dbg_t_events).fillna(1.0).values
                 batch_volatility_dbg = full_volatility.reindex(dbg_t_events).fillna(0).values
                 batch_uniqueness_dbg = compute_uniqueness(t1_series_dbg, market_index=market_data.index)
+                best_weighting_params_local = dict(best_weighting_params) if isinstance(best_weighting_params, dict) else {}
+                if "transaction_cost" not in best_weighting_params_local:
+                    try:
+                        best_weighting_params_local["transaction_cost"] = float(get_transaction_cost(config))
+                    except Exception:
+                        best_weighting_params_local["transaction_cost"] = float(DEFAULT_TRANSACTION_COST)
                 sample_weights_dbg = generate_weights_per_label(
                     returns=dbg_returns_clean.values,
                     t_events=dbg_t_events,
@@ -16602,7 +16621,7 @@ class LabelBasedPipelineStep(BaseStep):
                     consistency_scores=batch_consistency_dbg,
                     uniqueness_scores=batch_uniqueness_dbg.values,
                     vol_proxy=batch_volatility_dbg,
-                    **best_weighting_params,
+                    **best_weighting_params_local,
                 )
 
                 try:
@@ -16980,7 +16999,53 @@ class LabelBasedPipelineStep(BaseStep):
                     train_mask = np.ones(len(final_t_events_all), dtype=bool)
 
                 final_returns = pd.Series(weighted_returns.astype(float), index=final_t_events_all).iloc[train_mask]
-                final_labels = pd.Series((weighted_returns > 0).astype(float), index=final_t_events_all).iloc[train_mask]
+                
+                # =====================================================================
+                # OPTIONAL: Align Layer 3 target with economic deadband target
+                # =====================================================================
+                # Purpose: Use the same economic deadband labeling as Layer 2
+                # for consistency between layers when enabled via config.
+                # =====================================================================
+                use_econ_deadband_target = False
+                try:
+                    use_econ_deadband_target = bool(config.get("layer3_use_econ_deadband_target", False))
+                except Exception:
+                    use_econ_deadband_target = False
+                
+                if use_econ_deadband_target:
+                    try:
+                        # Compute economic deadband labels using the same logic as Layer 2
+                        vol_s = None
+                        try:
+                            vol_s = volatility_1d.reindex(final_t_events_all)
+                            if vol_s.isna().all():
+                                vol_s = None
+                        except Exception:
+                            vol_s = None
+                        
+                        econ_min_mult = float(config.get("econ_min_return_multiple", 1.0))
+                        if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
+                            econ_min_mult = 1.0
+                        
+                        # Compute vol-scaled returns and apply economic deadband
+                        vsr = compute_vol_scaled_returns_for_events(
+                            realized_returns=pd.Series(weighted_returns.astype(float), index=final_t_events_all),
+                            volatility=vol_s,
+                            econ_min_return_multiple=econ_min_mult,
+                        )
+                        # Economic deadband: positive only if return > econ_min_mult * transaction_cost
+                        econ_labels = (vsr > 0).astype(float)
+                        final_labels = econ_labels.iloc[train_mask]
+                        
+                        n_pos = int((final_labels > 0).sum())
+                        n_neg = int((final_labels <= 0).sum())
+                        pos_rate = float(n_pos) / (n_pos + n_neg) if (n_pos + n_neg) > 0 else 0.0
+                        tprint_info(f"   Layer 3: Using economic deadband target (pos_rate={pos_rate:.1%})")
+                    except Exception as econ_exc:
+                        tprint_warning(f"   Layer 3: Failed to create econ deadband target, falling back to sign-based: {econ_exc}")
+                        final_labels = pd.Series((weighted_returns > 0).astype(float), index=final_t_events_all).iloc[train_mask]
+                else:
+                    final_labels = pd.Series((weighted_returns > 0).astype(float), index=final_t_events_all).iloc[train_mask]
 
                 # =====================================================================
                 # NEW FIX: Continuous Labels for Model Training (Vol-Scaled Returns)
@@ -17391,19 +17456,6 @@ class LabelBasedPipelineStep(BaseStep):
             t1_series = pd.Series(t1_vals, index=final_t_events)
 
             batch_con_final = full_consistency.reindex(final_t_events).fillna(1.0).values
-            batch_vol_final = full_volatility.reindex(final_t_events).fillna(0).values
-            batch_uniq_final = compute_uniqueness(t1_series, market_index=market_data.index)
-
-            final_weights = generate_weights_per_label(
-                returns=final_returns.reindex(final_t_events).fillna(0.0).values,
-                t_events=final_t_events,
-                close_series=None,
-                consistency_scores=batch_con_final,
-                uniqueness_scores=batch_uniq_final.values,
-                vol_proxy=batch_vol_final,
-                **best_weighting_params
-            )
-
             try:
                 if committee_weight_factor_series is not None:
                     cf = committee_weight_factor_series.reindex(final_t_events).fillna(1.0).values.astype(float)

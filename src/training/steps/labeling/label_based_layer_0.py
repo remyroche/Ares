@@ -127,10 +127,16 @@ def run_layer0_kalman_vwap(
             vwap_lookback = int(params.get("vwap_lookback", 20))
             vwap_lambda = float(params.get("vwap_lambda", 0.25))
 
-            vwap_series = compute_rolling_vwap(close_series, volume_series, vwap_lookback)
+            # Optimization Subsampling: Use last 10,000 bars
+            n_eval = 10000
+            eval_close = close_series.iloc[-n_eval:] if len(close_series) > n_eval else close_series
+            eval_vol = volume_series.iloc[-n_eval:] if (volume_series is not None and len(volume_series) > n_eval) else volume_series
+            
+            vwap_series = compute_rolling_vwap(eval_close, eval_vol, vwap_lookback)
+            
             vol_w = None
-            if volume_series is not None:
-                vol_vals = pd.to_numeric(volume_series, errors="coerce").to_numpy(dtype=float)
+            if eval_vol is not None:
+                vol_vals = pd.to_numeric(eval_vol, errors="coerce").to_numpy(dtype=float)
                 n = int(vol_vals.shape[0])
                 lb = int(max(2, min(int(vwap_lookback), max(2, n))))
                 vol_mean = _rolling_sum_prefix(np.where(np.isfinite(vol_vals), vol_vals, 0.0), lb)
@@ -143,15 +149,15 @@ def run_layer0_kalman_vwap(
 
             try:
                 smoothed_close, _smoothed_vol = compute_kalman_smoothed_price_and_volatility(
-                    prices=close_series,
-                    volume=volume_series,
+                    prices=eval_close,
+                    volume=eval_vol,
                     vwap=vwap_series,
                     process_noise=Q,
                     measurement_noise=R,
                     vol_window=20,
                 )
 
-                raw = close_series.to_numpy(dtype=float)
+                raw = eval_close.to_numpy(dtype=float)
                 smooth = pd.to_numeric(smoothed_close, errors="coerce").to_numpy(dtype=float)
                 vwap_vals = pd.to_numeric(vwap_series, errors="coerce").to_numpy(dtype=float)
 
@@ -183,12 +189,19 @@ def run_layer0_kalman_vwap(
             except Exception:
                 return -10.0
 
+        exec_mode = str(config.get("execution_mode", "light")).lower()
+        # Reduce grid density from 5 to 4 for non-full modes to speed up evaluation
+        # (4^4 = 256 trials, vs 3^4=81 or 5^4=625)
+        grid_points = 4 if exec_mode in ["light", "blank"] else 5
+        
         optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(
                 n_trials=int(config.get("layer0_n_trials", config.get("stage0_n_trials", 50))),
-                execution_mode=str(config.get("execution_mode", "light")),
+                execution_mode=exec_mode,
                 direction="maximize",
                 seed=int(config.get("random_state", 42)),
+                coarse_grid_points=grid_points,
+                fine_grid_points=grid_points,
             )
         )
         search_space = {

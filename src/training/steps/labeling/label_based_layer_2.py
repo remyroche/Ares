@@ -488,6 +488,9 @@ class LabelBasedLayer2:
         oof_returns = pd.Series(np.nan, index=indices)
         oof_weights = pd.Series(np.nan, index=indices)
 
+        # Storage for Tree Diagnostics
+        all_tree_stats = []
+
         # Derive families dynamically to avoid hardcoding
         families = ['Trend Continuation', 'Momentum', 'Mean Reversion']
         max_rank = 4
@@ -673,6 +676,16 @@ class LabelBasedLayer2:
                 except Exception:
                     trained_models = None
 
+            # Collect Tree Diagnostics
+            if trained_models:
+                for uuid, model in trained_models.items():
+                    if model is not None:
+                        try:
+                            stats = self._extract_tree_diagnostics(model)
+                            all_tree_stats.append(stats)
+                        except Exception:
+                            pass
+
             # Predict on Test (Bagged Labeling)
             if not events_test.empty:
                 try:
@@ -826,6 +839,34 @@ class LabelBasedLayer2:
         except Exception:
             n_geo_channels = 0
 
+        # --- Diagnostics Calculation ---
+        try:
+            # 1. Signal Coverage
+            n_total_events = len(oof_scores)
+            n_signals = (oof_scores > 0.5).sum()
+            coverage_pct = (n_signals / n_total_events * 100.0) if n_total_events > 0 else 0.0
+
+            # 2. Entropy
+            # Clip to avoid log(0)
+            p_safe = oof_scores.clip(1e-9, 1.0 - 1e-9)
+            entropy_vals = -(p_safe * np.log(p_safe) + (1.0 - p_safe) * np.log(1.0 - p_safe))
+            entropy_mean = entropy_vals.mean()
+            entropy_std = entropy_vals.std()
+
+            # 3. Tree Stats
+            avg_feats_used = 0.0
+            avg_depth = 0.0
+            if all_tree_stats:
+                avg_feats_used = np.mean([s['n_features_used'] for s in all_tree_stats])
+                avg_depth = np.mean([s['avg_depth'] for s in all_tree_stats])
+        except Exception as e:
+            logger.warning(f"Error calculating diagnostics: {e}")
+            coverage_pct = 0.0
+            entropy_mean = 0.0
+            entropy_std = 0.0
+            avg_feats_used = 0.0
+            avg_depth = 0.0
+
         try:
             md_path = outcomes_dir / f"layer2_report_{symbol}_{timeframe}_{ts}.md"
             lines = [
@@ -843,6 +884,26 @@ class LabelBasedLayer2:
                 f"- oof_labeled_events: {oof_labeled}\n",
                 f"- oof_nonzero_weight_events: {oof_weight_nonzero}\n",
                 f"- oof_geometry_channels: {n_geo_channels}\n",
+                "\n## Diagnostics\n",
+                "### 1. Signal Coverage (First-Order Test)\n",
+                f"- **Coverage**: {coverage_pct:.2f}%\n",
+                "- **Diagnosis**:\n",
+                "  - < 5-10%: Under-hunting (over-regularised)\n",
+                "  - 20-50%: Healthy hunting regime\n",
+                "  - > 70%: Likely noise saturation\n",
+                "\n### 2. Prediction Entropy Distribution\n",
+                f"- **Mean Entropy**: {entropy_mean:.4f} (Max ~0.693)\n",
+                f"- **Entropy Std**: {entropy_std:.4f}\n",
+                "- **Diagnosis**:\n",
+                "  - Mass near 0 or 1: Over-confident / brittle\n",
+                "  - Mass near 0.5: Under-hunting\n",
+                "  - Wide distribution: Healthy\n",
+                "\n### 3. Feature Utilisation / Split Diversity\n",
+                f"- **Avg Features Used**: {avg_feats_used:.1f}\n",
+                f"- **Avg Leaf Depth**: {avg_depth:.2f}\n",
+                "- **Diagnosis**:\n",
+                "  - Few features, shallow: Over-regularised\n",
+                "  - Many features, deep: Expressive (desired)\n",
             ]
             md_path.write_text("".join(lines))
         except Exception:
@@ -994,6 +1055,59 @@ class LabelBasedLayer2:
                 if g_obj:
                     trials.append(g_obj)
         return trials
+
+    def _extract_tree_diagnostics(self, booster) -> Dict[str, float]:
+        """
+        Extract diagnostics from a trained LGBM booster.
+        Returns:
+            - n_features_used: Count of features with importance > 0
+            - avg_depth: Average depth of leaves across all trees
+            - max_depth: Maximum depth found
+        """
+        if booster is None:
+            return {'n_features_used': 0.0, 'avg_depth': 0.0, 'max_depth': 0.0}
+
+        try:
+            # 1. Feature Usage
+            imp = booster.feature_importance(importance_type='split')
+            n_features = int(np.sum(imp > 0))
+
+            # 2. Tree Depth
+            # dump_model returns a dict with 'tree_info' list
+            dump = booster.dump_model()
+            trees = dump.get('tree_info', [])
+
+            depths = []
+
+            for tree in trees:
+                if 'tree_structure' not in tree:
+                    continue
+
+                # Traverse tree to find leaf depths
+                # Stack: (node, depth)
+                stack = [(tree['tree_structure'], 0)]
+                while stack:
+                    node, d = stack.pop()
+                    if 'leaf_index' in node:
+                        # It's a leaf
+                        depths.append(d)
+                    else:
+                        if 'left_child' in node:
+                            stack.append((node['left_child'], d + 1))
+                        if 'right_child' in node:
+                            stack.append((node['right_child'], d + 1))
+
+            avg_depth = float(np.mean(depths)) if depths else 0.0
+            max_depth = float(np.max(depths)) if depths else 0.0
+
+            return {
+                'n_features_used': float(n_features),
+                'avg_depth': avg_depth,
+                'max_depth': max_depth
+            }
+        except Exception as e:
+            logger.warning(f"Failed to extract tree diagnostics: {e}")
+            return {'n_features_used': 0.0, 'avg_depth': 0.0, 'max_depth': 0.0}
 
     def _validate_inputs(self, df: pd.DataFrame) -> pd.DataFrame:
         """Ensure required columns exist. Returns (potentially modified) copy of df."""

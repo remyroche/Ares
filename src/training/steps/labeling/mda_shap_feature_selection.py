@@ -369,13 +369,13 @@ class MDA_SHAP_FeatureSelector:
 
         Formula (2025-12-16 update):
             Composite Score = MDA_mean * IC_weight * SHAP_weight / IR_rank
-        
+
         Where:
             - MDA_mean: Mean Decrease in Accuracy (permutation importance)
             - IC_weight: 1 + abs(mean_ic) to boost features with high target correlation
             - SHAP_weight: 1 + log(1 + shap_score) to incorporate SHAP importance
             - IR_rank: Ranking by Information Ratio (stability of IC across folds)
-        
+
         This addresses the problem where regime features dominate MDI because they
         have high variance, but don't correlate well with actual returns. The IC_weight
         term penalizes features with low target correlation.
@@ -1975,8 +1975,3 @@ __all__ = [
     "MDA_SHAP_FeatureSelector",
     "run_mda_shap_feature_selection"
 ]
-
-
-
-
-

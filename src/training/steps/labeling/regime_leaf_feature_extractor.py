@@ -457,38 +457,44 @@ def _score_leaf_pairs_effect_support(
             s = pd.to_numeric(leaves_oos[raw_col], errors="coerce")
         except Exception:
             continue
-        vc = s.dropna().value_counts()
-        n = float(max(1, int(vc.sum())))
-        if vc.empty:
-            continue
 
-        for leaf_val, cnt in vc.items():
-            try:
-                support = float(cnt) / float(n)
-            except Exception:
-                continue
-            if not np.isfinite(support):
-                continue
-            if support < float(min_support) or support > float(max_support):
-                continue
-            if support > float(dominant_support_max):
+        try:
+            df_col = pd.DataFrame({'leaf': s, 'y': y_vals}).dropna()
+            if df_col.empty:
                 continue
 
-            try:
-                mask = s.eq(float(leaf_val))
-                y_leaf = y_vals.where(mask)
-                y_leaf = y_leaf.replace([np.inf, -np.inf], np.nan).dropna()
-                if len(y_leaf) < 5:
+            n = len(df_col)
+            grouped = df_col.groupby('leaf')['y']
+
+            counts = grouped.count()
+            means = grouped.mean()
+
+            supports = counts / float(n)
+
+            for leaf_val, count in counts.items():
+                support = supports[leaf_val]
+
+                if support < float(min_support) or support > float(max_support):
                     continue
-                effect_z = float(abs(float(y_leaf.mean()) - float(y_mu)) / (float(y_sd) + 1e-12))
+                if support > float(dominant_support_max):
+                    continue
+                if count < 5:
+                    continue
+
+                leaf_mean = means[leaf_val]
+                effect_z = abs(leaf_mean - y_mu) / (y_sd + 1e-12)
+
                 if not np.isfinite(effect_z) or effect_z < float(min_effect_z):
                     continue
-                score = float(effect_z * np.sqrt(max(1e-12, support)))
+
+                score = effect_z * np.sqrt(max(1e-12, support))
                 if not np.isfinite(score):
                     continue
+
                 pair_scores.append((str(raw_col), float(leaf_val), float(score), float(support)))
-            except Exception:
-                continue
+
+        except Exception:
+            continue
 
     pair_scores_sorted = sorted(pair_scores, key=lambda x: x[2], reverse=True)
     if max_pairs is not None:
@@ -550,12 +556,12 @@ def _interaction_gating_features(
 ) -> pd.DataFrame:
     """
     Generate gating features for regime leaf interactions.
-    
+
     Default configuration reduces feature count to prevent overfitting:
     - include_sign: True  - directional indicator (+1/-1/0)
-    - include_soft: True  - tanh-scaled continuous version  
+    - include_soft: True  - tanh-scaled continuous version
     - include_bins: False - disabled by default (adds 2 dummy cols per target = 10 extra features)
-    
+
     Total features per target with defaults: 2 (sign + soft)
     Previously with bins enabled: 4 (sign + soft + 2 bins)
     """
@@ -1084,7 +1090,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 atr_min = atr.rolling(window=w, min_periods=max(5, w//4)).min()
                 atr_max = atr.rolling(window=w, min_periods=max(5, w//4)).max()
                 out[f"reg_ohlcv__atr_rank_w{w}"] = ((atr - atr_min) / (atr_max - atr_min + 1e-12)).clip(0.0, 1.0)
-                
+
             # Compression Ratio: Short-term range / Long-term range (BB Width proxy)
             # Using ATR ratio as proxy: ATR(short) / ATR(long)
             # Low values (< 1) imply compression, High values (> 1) imply expansion
@@ -1100,7 +1106,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
         # Multi-Horizon Regime Agreement
         # Proxies for Volatility (Log Ratio) and Trend (Returns) across scales
         try:
-            mh_windows = [8, 16, 32] 
+            mh_windows = [8, 16, 32]
             
             # 1. Volatility Proxies
             vol_proxies = []
@@ -1122,9 +1128,9 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 # Returns over w bars
                 tp = close.pct_change(periods=w).fillna(0.0)
                 trend_proxies.append(tp)
-            
+
             trend_proxy_df = pd.concat(trend_proxies, axis=1)
-            
+
             # Trend Agreement: Mean of Signs (1.0 = All Agree, 0.0 = Mixed)
             # We want "Agreement Strength" -> abs(mean(signs))
             # If 3 windows: (+1, +1, +1) -> mean 1.0 -> abs 1.0
@@ -1132,7 +1138,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             trend_signs = np.sign(trend_proxy_df)
             out["reg_ohlcv__trend_multi_horizon_agreement"] = trend_signs.mean(axis=1).abs()
             out["reg_ohlcv__trend_multi_horizon_mean"] = trend_proxy_df.mean(axis=1)
-            
+
         except Exception:
             out["reg_ohlcv__vol_multi_horizon_dispersion"] = 0.0
             out["reg_ohlcv__vol_multi_horizon_mean"] = 0.0
@@ -1143,7 +1149,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
         # TREND STRENGTH FEATURES (ADX, Donchian, Trend Persistence)
         # Added to improve performance in trending/volatile markets
         # =====================================================================
-        
+
         # --- ADX (Average Directional Index) ---
         # Measures trend strength regardless of direction (0-100 scale)
         # Windows: 16=4h, 24=6h, 32=8h at 15m timeframe
@@ -1155,7 +1161,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(adx_windows, (list, tuple)):
                 adx_windows = [16, 24, 32]
             adx_windows = [int(w) for w in adx_windows if int(w) >= 5]
-            
+
             for adx_w in adx_windows:
                 # True Range (already computed as `tr`)
                 # +DM (positive directional movement)
@@ -1163,47 +1169,47 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 low_diff = low.diff()
                 plus_dm = high_diff.where((high_diff > 0) & (high_diff > -low_diff), 0.0)
                 minus_dm = (-low_diff).where((low_diff < 0) & (-low_diff > high_diff), 0.0)
-                
+
                 # Smoothed averages (Wilder's smoothing = EWM with alpha=1/window)
                 alpha = 1.0 / float(adx_w)
                 atr_smooth = tr.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
                 plus_dm_smooth = plus_dm.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
                 minus_dm_smooth = minus_dm.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
-                
+
                 # +DI and -DI
                 plus_di = 100.0 * plus_dm_smooth / (atr_smooth + 1e-12)
                 minus_di = 100.0 * minus_dm_smooth / (atr_smooth + 1e-12)
-                
+
                 # DX = |+DI - -DI| / |+DI + -DI| * 100
                 di_sum = plus_di + minus_di
                 di_diff = (plus_di - minus_di).abs()
                 dx = 100.0 * di_diff / (di_sum + 1e-12)
-                
+
                 # ADX = smoothed DX
                 adx_val = dx.ewm(alpha=alpha, adjust=False, min_periods=max(5, adx_w // 4)).mean()
-                
+
                 out[f"reg_ohlcv__adx_w{adx_w}"] = adx_val.clip(0.0, 100.0)
                 out[f"reg_ohlcv__plus_di_w{adx_w}"] = plus_di.clip(0.0, 100.0)
                 out[f"reg_ohlcv__minus_di_w{adx_w}"] = minus_di.clip(0.0, 100.0)
                 # DI spread: bullish when positive
                 out[f"reg_ohlcv__di_spread_w{adx_w}"] = (plus_di - minus_di).clip(-100.0, 100.0)
-                
+
                 # --- ADX × Direction Interaction Features ---
                 # Combines trend strength with trend direction for macro_trend prediction
                 # Direction: sign of return over the window
                 htf_ret = close.pct_change(adx_w)
                 htf_dir = np.sign(htf_ret)
-                
+
                 # ADX × Direction: positive for strong uptrend, negative for strong downtrend
                 out[f"reg_ohlcv__adx_x_direction_w{adx_w}"] = (adx_val * htf_dir / 100.0).clip(-1.0, 1.0)
-                
+
                 # ADX × |Return|: trend strength weighted by move size
                 out[f"reg_ohlcv__adx_x_abs_ret_w{adx_w}"] = (adx_val * htf_ret.abs() * 10.0).clip(0.0, 10.0)
-                
+
                 # Directional trend score: ADX * DI_spread / 100 (captures both strength and direction)
                 di_spread_norm = (plus_di - minus_di) / 100.0  # -1 to +1
                 out[f"reg_ohlcv__directional_trend_w{adx_w}"] = (adx_val / 100.0 * di_spread_norm).clip(-1.0, 1.0)
-                
+
         except Exception:
             for w in [16, 24, 32]:
                 out[f"reg_ohlcv__adx_w{w}"] = np.nan
@@ -1213,7 +1219,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 out[f"reg_ohlcv__adx_x_direction_w{w}"] = 0.0
                 out[f"reg_ohlcv__adx_x_abs_ret_w{w}"] = 0.0
                 out[f"reg_ohlcv__directional_trend_w{w}"] = 0.0
-        
+
         # --- Donchian Channel Features ---
         # Position within channel (0=at low, 1=at high), channel width
         try:
@@ -1224,13 +1230,13 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(donch_windows, (list, tuple)):
                 donch_windows = [20, 50]
             donch_windows = [int(w) for w in donch_windows if int(w) >= 5]
-            
+
             for donch_w in donch_windows:
                 donch_high = high.rolling(window=donch_w, min_periods=max(5, donch_w // 4)).max()
                 donch_low = low.rolling(window=donch_w, min_periods=max(5, donch_w // 4)).min()
                 donch_mid = (donch_high + donch_low) / 2.0
                 donch_width = donch_high - donch_low
-                
+
                 # Position in channel (0-1 range)
                 out[f"reg_ohlcv__donch_position_w{donch_w}"] = ((close - donch_low) / (donch_width + 1e-12)).clip(0.0, 1.0)
                 # Width normalized by ATR
@@ -1240,7 +1246,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 # Breakout signals: close at/above high or at/below low
                 out[f"reg_ohlcv__donch_at_high_w{donch_w}"] = ((close >= donch_high * 0.998) & (donch_width > 0)).astype(float)
                 out[f"reg_ohlcv__donch_at_low_w{donch_w}"] = ((close <= donch_low * 1.002) & (donch_width > 0)).astype(float)
-                
+
         except Exception:
             for w in [20, 50]:
                 out[f"reg_ohlcv__donch_position_w{w}"] = np.nan
@@ -1248,41 +1254,41 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 out[f"reg_ohlcv__donch_mid_dist_w{w}"] = np.nan
                 out[f"reg_ohlcv__donch_at_high_w{w}"] = 0.0
                 out[f"reg_ohlcv__donch_at_low_w{w}"] = 0.0
-        
+
         # --- Trend Persistence Features ---
         # Consecutive up/down bars, streak strength
         try:
             # Up/Down classification
             is_up = (close > close.shift(1)).astype(int)
             is_down = (close < close.shift(1)).astype(int)
-            
+
             # Count consecutive up bars
             up_reset = (is_up != is_up.shift(1)).cumsum()
             consec_up = is_up.groupby(up_reset).cumsum()
             consec_up = consec_up.where(is_up == 1, 0)
-            
+
             # Count consecutive down bars
             down_reset = (is_down != is_down.shift(1)).cumsum()
             consec_down = is_down.groupby(down_reset).cumsum()
             consec_down = consec_down.where(is_down == 1, 0)
-            
+
             out["reg_ohlcv__consec_up_bars"] = consec_up.astype(float)
             out["reg_ohlcv__consec_down_bars"] = consec_down.astype(float)
             out["reg_ohlcv__consec_net_bars"] = (consec_up - consec_down).astype(float)
-            
+
             # Streak strength: consecutive count weighted by cumulative return
             streak_ret_up = ret.where(is_up == 1, 0.0).groupby(up_reset).cumsum()
             streak_ret_down = ret.where(is_down == 1, 0.0).groupby(down_reset).cumsum()
             out["reg_ohlcv__streak_strength_up"] = (consec_up * streak_ret_up.abs()).fillna(0.0)
             out["reg_ohlcv__streak_strength_down"] = (consec_down * streak_ret_down.abs()).fillna(0.0)
-            
+
             # Rolling trend persistence: how often are consecutive moves > N bars
             for persist_w in [24, 96]:
                 long_streak = ((consec_up >= 3) | (consec_down >= 3)).astype(float)
                 out[f"reg_ohlcv__trend_persist_rate_w{persist_w}"] = long_streak.rolling(
                     window=persist_w, min_periods=max(10, persist_w // 4)
                 ).mean()
-                
+
         except Exception:
             out["reg_ohlcv__consec_up_bars"] = 0.0
             out["reg_ohlcv__consec_down_bars"] = 0.0
@@ -1291,7 +1297,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             out["reg_ohlcv__streak_strength_down"] = 0.0
             out["reg_ohlcv__trend_persist_rate_w24"] = 0.0
             out["reg_ohlcv__trend_persist_rate_w96"] = 0.0
-        
+
         # --- Higher-Timeframe Trend ---
         # 4h and 1d equivalent trend signals using rolling windows
         try:
@@ -1302,20 +1308,20 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(htf_windows, (list, tuple)):
                 htf_windows = [16, 96]
             htf_windows = [int(w) for w in htf_windows if int(w) >= 4]
-            
+
             for htf_w in htf_windows:
                 # HTF close approximation (last close in window)
                 htf_close_start = close.shift(htf_w)
                 htf_return = ((close - htf_close_start) / (htf_close_start.abs() + 1e-12)).replace([np.inf, -np.inf], np.nan)
                 htf_direction = np.sign(htf_return)
-                
+
                 out[f"reg_ohlcv__htf_return_w{htf_w}"] = htf_return
                 out[f"reg_ohlcv__htf_direction_w{htf_w}"] = htf_direction
-                
+
                 # HTF trend strength: HTF return / ATR (momentum normalized by vol)
                 htf_atr = atr.rolling(window=htf_w, min_periods=max(5, htf_w // 4)).mean()
                 out[f"reg_ohlcv__htf_trend_strength_w{htf_w}"] = (htf_return.abs() / (htf_atr / close.abs() + 1e-12)).clip(0.0, 10.0)
-                
+
         except Exception:
             for w in [16, 96]:
                 out[f"reg_ohlcv__htf_return_w{w}"] = np.nan
@@ -1332,28 +1338,28 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(dom_windows, (list, tuple)):
                 dom_windows = [8, 16, 24]
             dom_windows = [int(w) for w in dom_windows if int(w) >= 4]
-            
+
             for dom_w in dom_windows:
                 # Count up vs down moves
                 n_up = (ret > 0).astype(float).rolling(window=dom_w, min_periods=max(3, dom_w // 4)).sum()
                 n_down = (ret < 0).astype(float).rolling(window=dom_w, min_periods=max(3, dom_w // 4)).sum()
-                
+
                 # Direction dominance: |n_up - n_down| / total moves (0 = choppy, 1 = trending)
                 total_moves = n_up + n_down
                 out[f"reg_ohlcv__direction_dominance_w{dom_w}"] = ((n_up - n_down).abs() / (total_moves + 1e-12)).clip(0.0, 1.0)
-                
+
                 # Signed direction bias (-1 = bearish, +1 = bullish)
                 out[f"reg_ohlcv__direction_bias_w{dom_w}"] = ((n_up - n_down) / (total_moves + 1e-12)).clip(-1.0, 1.0)
-                
+
                 # Up/Down ratio
                 out[f"reg_ohlcv__up_down_ratio_w{dom_w}"] = (n_up / (n_down + 1e-12)).clip(0.0, 10.0)
-                
+
         except Exception:
             for w in [8, 16, 24]:
                 out[f"reg_ohlcv__direction_dominance_w{w}"] = 0.5
                 out[f"reg_ohlcv__direction_bias_w{w}"] = 0.0
                 out[f"reg_ohlcv__up_down_ratio_w{w}"] = 1.0
-        
+
         # --- Trend Stability Features ---
         # Predict whether current trend will persist
         try:
@@ -1364,17 +1370,17 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(stab_windows, (list, tuple)):
                 stab_windows = [16, 24]
             stab_windows = [int(w) for w in stab_windows if int(w) >= 8]
-            
+
             for stab_w in stab_windows:
                 # Return autocorrelation (high = trending, low = mean-reverting)
                 ret_ac = ret.rolling(window=stab_w, min_periods=max(5, stab_w // 4)).corr(ret.shift(1))
                 out[f"reg_ohlcv__ret_autocorr_w{stab_w}"] = ret_ac.fillna(0.0).clip(-1.0, 1.0)
-                
+
                 # Volatility-adjusted momentum (trend strength adjusted for noise)
                 mom = close.pct_change(stab_w)
                 vol = ret.rolling(window=stab_w, min_periods=max(5, stab_w // 4)).std()
                 out[f"reg_ohlcv__vol_adj_momentum_w{stab_w}"] = (mom / (vol + 1e-12)).clip(-5.0, 5.0)
-                
+
                 # Price path linearity (R-squared of price vs time)
                 # High R² = smooth trend, Low R² = choppy
                 def rolling_r2(x):
@@ -1385,15 +1391,15 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                         return 0.0
                     corr = np.corrcoef(t, x)[0, 1]
                     return corr ** 2 if np.isfinite(corr) else 0.0
-                
+
                 out[f"reg_ohlcv__price_linearity_w{stab_w}"] = close.rolling(window=stab_w, min_periods=max(5, stab_w // 4)).apply(rolling_r2, raw=True).fillna(0.0)
-                
+
         except Exception:
             for w in [16, 24]:
                 out[f"reg_ohlcv__ret_autocorr_w{w}"] = 0.0
                 out[f"reg_ohlcv__vol_adj_momentum_w{w}"] = 0.0
                 out[f"reg_ohlcv__price_linearity_w{w}"] = 0.0
-        
+
         # --- Path Efficiency Change (delta of efficiency ratio) ---
         # Predicts if market is becoming more or less trendy
         try:
@@ -1417,24 +1423,24 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(mom_windows, (list, tuple)):
                 mom_windows = [8, 16, 32]
             mom_windows = [int(w) for w in mom_windows if int(w) >= 4]
-            
+
             for mom_w in mom_windows:
                 # Momentum (rate of change)
                 mom = (close / close.shift(mom_w) - 1.0).replace([np.inf, -np.inf], np.nan)
                 out[f"reg_ohlcv__momentum_w{mom_w}"] = mom.clip(-0.5, 0.5)
-                
+
                 # Momentum acceleration (change in momentum)
                 mom_prev = (close.shift(mom_w) / close.shift(2 * mom_w) - 1.0).replace([np.inf, -np.inf], np.nan)
                 mom_accel = (mom - mom_prev).fillna(0.0)
                 out[f"reg_ohlcv__momentum_accel_w{mom_w}"] = mom_accel.clip(-0.2, 0.2)
-                
+
                 # Momentum consistency (ratio of returns in same direction)
                 ret_signs = np.sign(ret)
                 sign_consistency = ret_signs.rolling(window=mom_w, min_periods=max(3, mom_w // 4)).apply(
                     lambda x: np.abs(np.sum(x)) / (len(x) + 1e-12), raw=True
                 )
                 out[f"reg_ohlcv__momentum_consistency_w{mom_w}"] = sign_consistency.fillna(0.0).clip(0.0, 1.0)
-            
+
             # Multi-horizon momentum divergence (short vs long momentum difference)
             if len(mom_windows) >= 2:
                 short_w = min(mom_windows)
@@ -1442,10 +1448,10 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 mom_short = (close / close.shift(short_w) - 1.0).replace([np.inf, -np.inf], np.nan)
                 mom_long = (close / close.shift(long_w) - 1.0).replace([np.inf, -np.inf], np.nan)
                 out["reg_ohlcv__momentum_divergence"] = (mom_short - mom_long).fillna(0.0).clip(-0.3, 0.3)
-                
+
                 # Momentum alignment (sign agreement between short/long)
                 out["reg_ohlcv__momentum_alignment"] = (np.sign(mom_short) == np.sign(mom_long)).astype(float)
-                
+
         except Exception:
             for w in [8, 16, 32]:
                 out[f"reg_ohlcv__momentum_w{w}"] = 0.0
@@ -1464,48 +1470,48 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(oflow_windows, (list, tuple)):
                 oflow_windows = [8, 24, 48]
             oflow_windows = [int(w) for w in oflow_windows if int(w) >= 4]
-            
+
             # 1. Trade Imbalance Proxy (Close position in candle range)
             candle_range = high - low
             close_position = (close - low) / (candle_range + 1e-12)  # 0-1, 1 = buying pressure
             out["reg_ohlcv__close_position"] = close_position.clip(0.0, 1.0)
-            
+
             # 2. Volume-Weighted Price Pressure
             if volume is not None:
                 # Buying volume proxy: (close-low)/(high-low) * volume
                 buy_vol_proxy = close_position * volume
                 sell_vol_proxy = (1.0 - close_position) * volume
                 out["reg_ohlcv__buy_sell_ratio"] = (buy_vol_proxy / (sell_vol_proxy + 1e-12)).clip(0.0, 10.0)
-            
+
             for oflow_w in oflow_windows:
                 # 3. Cumulative Volume Delta Proxy (CVD)
                 cvd = (close_position - 0.5) * volume if volume is not None else (close_position - 0.5)
                 cvd_rolling = cvd.rolling(window=oflow_w, min_periods=max(3, oflow_w // 4)).sum()
                 out[f"reg_ohlcv__cvd_proxy_w{oflow_w}"] = cvd_rolling.fillna(0.0)
-                
+
                 # 4. CVD momentum (speed of accumulation/distribution)
                 if volume is not None:
                     cvd_mom = cvd_rolling.diff(max(4, oflow_w // 6))
                     out[f"reg_ohlcv__cvd_momentum_w{oflow_w}"] = cvd_mom.fillna(0.0)
-                
+
                 # 5. Price-Volume Divergence (price up, volume down = weak)
                 price_trend = close.pct_change(oflow_w)
                 vol_trend = volume.pct_change(oflow_w) if volume is not None else pd.Series(0.0, index=close.index)
                 pv_diverg = np.sign(price_trend) * np.sign(vol_trend)  # -1 = divergence
                 out[f"reg_ohlcv__pv_divergence_w{oflow_w}"] = pv_diverg.fillna(0.0)
-                
+
                 # 6. Absorption Ratio (large candle with little price change = absorption)
                 price_change = close.diff(oflow_w).abs()
                 vol_sum = volume.rolling(window=oflow_w, min_periods=max(3, oflow_w // 4)).sum() if volume is not None else pd.Series(1.0, index=close.index)
                 absorption = vol_sum / (price_change + 1e-12)
                 out[f"reg_ohlcv__absorption_w{oflow_w}"] = absorption.clip(0.0, 1e6).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-                
+
                 # 7. Intrabar Volatility (wick-to-body ratio as uncertainty proxy)
                 body = (close - open_s).abs() if open_s is not None else close.diff().abs()
                 wick = candle_range - body
                 wick_ratio = wick / (candle_range + 1e-12)
                 out[f"reg_ohlcv__wick_ratio_ema_w{oflow_w}"] = wick_ratio.ewm(span=oflow_w).mean().clip(0.0, 1.0)
-                
+
         except Exception:
             out["reg_ohlcv__close_position"] = 0.5
             out["reg_ohlcv__buy_sell_ratio"] = 1.0
@@ -1526,21 +1532,21 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(ewm_halflifes, (list, tuple)):
                 ewm_halflifes = [12, 24, 48]
             ewm_halflifes = [int(h) for h in ewm_halflifes if int(h) >= 4]
-            
+
             for hl in ewm_halflifes:
                 # EWM volatility
                 ewm_vol = ret.ewm(halflife=hl).std()
                 out[f"reg_ohlcv__ewm_vol_h{hl}"] = ewm_vol.fillna(0.0)
-                
+
                 # EWM trend (price vs EWM mean)
                 ewm_mean = close.ewm(halflife=hl).mean()
                 ewm_trend = (close - ewm_mean) / (ewm_vol * close + 1e-12)
                 out[f"reg_ohlcv__ewm_trend_h{hl}"] = ewm_trend.clip(-5.0, 5.0).fillna(0.0)
-                
+
                 # EWM momentum
                 ewm_ret = ret.ewm(halflife=hl).mean()
                 out[f"reg_ohlcv__ewm_momentum_h{hl}"] = ewm_ret.fillna(0.0)
-            
+
             # Fast vs Slow EWM Divergence (MACD-like)
             if len(ewm_halflifes) >= 2:
                 fast_hl = min(ewm_halflifes)
@@ -1549,10 +1555,10 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 ewm_slow = close.ewm(halflife=slow_hl).mean()
                 ewm_div = (ewm_fast - ewm_slow) / (close * 0.01 + 1e-12)  # Normalize by 1%
                 out["reg_ohlcv__ewm_divergence"] = ewm_div.clip(-10.0, 10.0).fillna(0.0)
-                
+
                 # EWM divergence momentum
                 out["reg_ohlcv__ewm_divergence_momentum"] = ewm_div.diff(4).fillna(0.0)
-                
+
         except Exception:
             for h in [12, 24, 48]:
                 out[f"reg_ohlcv__ewm_vol_h{h}"] = 0.0
@@ -1567,30 +1573,30 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             regime_cfg = cfg.get("regime_age", {})
             if not isinstance(regime_cfg, dict):
                 regime_cfg = {}
-            
+
             # Volatility regime age
             vol_q = atr.rolling(window=96, min_periods=24).quantile(0.5)
             vol_regime = (atr > vol_q).astype(int)
             vol_regime_change = (vol_regime != vol_regime.shift(1)).astype(int)
             vol_regime_age = vol_regime_change.groupby(vol_regime_change.cumsum()).cumcount()
             out["reg_ohlcv__vol_regime_age"] = vol_regime_age.astype(float)
-            
+
             # Trend regime age (based on price vs SMA)
             sma_trend = close.rolling(window=24, min_periods=8).mean()
             trend_regime = (close > sma_trend).astype(int)
             trend_regime_change = (trend_regime != trend_regime.shift(1)).astype(int)
             trend_regime_age = trend_regime_change.groupby(trend_regime_change.cumsum()).cumcount()
             out["reg_ohlcv__trend_regime_age"] = trend_regime_age.astype(float)
-            
+
             # Normalized regime age (0 = just changed, 1 = typical duration)
             expected_regime_duration = 24.0  # bars
             out["reg_ohlcv__vol_regime_age_norm"] = (vol_regime_age / expected_regime_duration).clip(0.0, 3.0)
             out["reg_ohlcv__trend_regime_age_norm"] = (trend_regime_age / expected_regime_duration).clip(0.0, 3.0)
-            
+
             # Regime stability (fewer changes = more stable)
             regime_changes_24 = vol_regime_change.rolling(window=24, min_periods=8).sum()
             out["reg_ohlcv__regime_change_rate_24"] = regime_changes_24.fillna(0.0)
-            
+
         except Exception:
             out["reg_ohlcv__vol_regime_age"] = 0.0
             out["reg_ohlcv__trend_regime_age"] = 0.0
@@ -1605,21 +1611,21 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             if not isinstance(vel_cfg, dict):
                 vel_cfg = {}
             vel_lookback = int(vel_cfg.get("lookback", 4))
-            
+
             # Volatility velocity (is vol increasing or decreasing?)
             vol_velocity = atr.pct_change(vel_lookback).replace([np.inf, -np.inf], np.nan)
             out["reg_ohlcv__vol_velocity"] = vol_velocity.clip(-2.0, 2.0).fillna(0.0)
-            
+
             # Volatility acceleration (is velocity changing?)
             vol_accel = vol_velocity.diff(vel_lookback)
             out["reg_ohlcv__vol_acceleration"] = vol_accel.clip(-1.0, 1.0).fillna(0.0)
-            
+
             # Trend velocity (how fast is the trend changing?)
             trend_sma = close.rolling(window=24, min_periods=8).mean()
             trend_dist = close - trend_sma
             trend_velocity = trend_dist.diff(vel_lookback) / (atr + 1e-12)
             out["reg_ohlcv__trend_velocity"] = trend_velocity.clip(-5.0, 5.0).fillna(0.0)
-            
+
             # Volume velocity
             if volume is not None:
                 vol_sma = volume.rolling(window=24, min_periods=8).mean()
@@ -1627,7 +1633,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 out["reg_ohlcv__volume_velocity"] = vol_vol_velocity.clip(-2.0, 2.0).fillna(0.0)
             else:
                 out["reg_ohlcv__volume_velocity"] = 0.0
-                
+
         except Exception:
             out["reg_ohlcv__vol_velocity"] = 0.0
             out["reg_ohlcv__vol_acceleration"] = 0.0
@@ -1640,35 +1646,35 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             decay_cfg = cfg.get("lookback_decay", {})
             if not isinstance(decay_cfg, dict):
                 decay_cfg = {}
-            
+
             short_w = int(decay_cfg.get("short", 8))
             long_w = int(decay_cfg.get("long", 48))
-            
+
             # Volatility ratio (short/long)
             vol_short = ret.rolling(window=short_w, min_periods=max(3, short_w // 2)).std()
             vol_long = ret.rolling(window=long_w, min_periods=max(10, long_w // 2)).std()
             vol_ratio_sl = vol_short / (vol_long + 1e-12)
             out["reg_ohlcv__vol_ratio_short_long"] = vol_ratio_sl.clip(0.1, 5.0).fillna(1.0)
-            
+
             # Return mean ratio (recent vs long-term)
             ret_short = ret.rolling(window=short_w, min_periods=max(3, short_w // 2)).mean()
             ret_long = ret.rolling(window=long_w, min_periods=max(10, long_w // 2)).mean()
             ret_divergence = ret_short - ret_long
             out["reg_ohlcv__ret_divergence_sl"] = ret_divergence.fillna(0.0)
-            
+
             # Efficiency ratio comparison
             eff_short = close.diff(short_w).abs() / (close.diff().abs().rolling(window=short_w, min_periods=3).sum() + 1e-12)
             eff_long = close.diff(long_w).abs() / (close.diff().abs().rolling(window=long_w, min_periods=10).sum() + 1e-12)
             eff_ratio = eff_short / (eff_long + 1e-12)
             out["reg_ohlcv__efficiency_ratio_sl"] = eff_ratio.clip(0.1, 5.0).fillna(1.0)
-            
+
             # Correlation with recent data (rolling correlation of returns with time index)
             # High = trending, Low = mean-reverting
             recent_w = 24
             time_idx = pd.Series(np.arange(len(close)), index=close.index).astype(float)
             time_corr = close.rolling(window=recent_w, min_periods=max(10, recent_w // 2)).corr(time_idx)
             out["reg_ohlcv__recency_trend_corr"] = time_corr.clip(-1.0, 1.0).fillna(0.0)
-            
+
         except Exception:
             out["reg_ohlcv__vol_ratio_short_long"] = 1.0
             out["reg_ohlcv__ret_divergence_sl"] = 0.0
@@ -1710,14 +1716,14 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             # 2. Efficiency and Autocorr Deltas
             # Compute rolling features first if needed
             eff_window = 24
-            
+
             # Efficiency (Kaufman-like): Abs(TotalMove) / Sum(Abs(Moves))
             # Directional Move over W
             dir_move = close.diff(eff_window).abs()
             # Path Length over W (sum of 1-bar abs diffs)
             path_len = close.diff().abs().rolling(window=eff_window, min_periods=max(5, eff_window//2)).sum()
             eff_val = (dir_move / (path_len + 1e-12)).clip(0.0, 1.0)
-            
+
             out[f"reg_ohlcv__efficiency_w{eff_window}"] = eff_val
             out[f"reg_ohlcv__d_efficiency_w{eff_window}"] = eff_val.diff()
 
@@ -1725,7 +1731,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
             # Rolling 1-lag autocorrelation of returns
             mem_window = 24
             auto_corr = ret.rolling(window=mem_window, min_periods=max(10, mem_window//2)).corr(ret.shift(1)).fillna(0.0).clip(-0.99, 0.99)
-            
+
             out[f"reg_ohlcv__autocorr_w{mem_window}"] = auto_corr
             out[f"reg_ohlcv__d_autocorr_w{mem_window}"] = auto_corr.diff()
 
@@ -1817,11 +1823,11 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 # Resample to daily open prices
                 daily_open = close.resample('D').first().reindex(close.index).ffill()
                 out["reg_ohlcv__dist_from_open_day"] = (close / (daily_open + 1e-8) - 1.0).astype(float)
-                
+
                 # Distance from Weekly Open
                 weekly_open = close.resample('W').first().reindex(close.index).ffill()
                 out["reg_ohlcv__dist_from_open_week"] = (close / (weekly_open + 1e-8) - 1.0).astype(float)
-                
+
                 # Session Position (0.0 to 1.0)
                 # minute of day / 1440
                 minutes = out.index.hour * 60 + out.index.minute
@@ -2058,12 +2064,12 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 temporal_cfg = cfg.get("temporal_encoder", {})
                 if not isinstance(temporal_cfg, dict):
                     temporal_cfg = {}
-                
+
                 seq_len = int(temporal_cfg.get("seq_len", 24))
                 embed_dim = int(temporal_cfg.get("embed_dim", 8))
                 device = str(temporal_cfg.get("device", "cpu"))
                 pretrained_path = temporal_cfg.get("pretrained_path", None)
-                
+
                 temporal_embed = generate_temporal_embeddings(
                     market_data=market_data,
                     seq_len=seq_len,
@@ -2071,7 +2077,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                     device=device,
                     pretrained_path=pretrained_path,
                 )
-                
+
                 if temporal_embed is not None and len(temporal_embed) > 0:
                     temporal_embed = temporal_embed.reindex(out.index)
                     new_cols = [c for c in temporal_embed.columns if c not in out.columns]
@@ -2088,7 +2094,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 nn_cfg = cfg.get("nn_sequence_encoder", {})
                 if not isinstance(nn_cfg, dict):
                     nn_cfg = {}
-                
+
                 seq_len = int(nn_cfg.get("seq_len", 24))
                 embed_dim = int(nn_cfg.get("embed_dim", 8))
                 device = str(nn_cfg.get("device", "cpu"))
@@ -2097,7 +2103,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                 use_lstm = bool(nn_cfg.get("use_lstm", True))
                 use_attention = bool(nn_cfg.get("use_attention", False))
                 pretrained_path = nn_cfg.get("pretrained_path", None)
-                
+
                 nn_embed = generate_nn_sequence_embeddings(
                     market_data=market_data,
                     encoder_type=encoder_type,
@@ -2109,7 +2115,7 @@ def build_regime_embedding_features(market_data: pd.DataFrame, cfg: Dict[str, An
                     device=device,
                     pretrained_path=pretrained_path,
                 )
-                
+
                 if nn_embed is not None and len(nn_embed) > 0:
                     nn_embed = nn_embed.reindex(out.index)
                     new_cols = [c for c in nn_embed.columns if c not in out.columns]
@@ -2271,7 +2277,7 @@ def compute_regime_targets_from_ohlcv(
 
     for h in macro_trend_horizons:
         targets[f"regime_macro_trend_h{int(h)}"] = _compute_future_return(close, horizon=int(h))
-    
+
     # Normalize macro trend target by volatility to ensure consistent scale for LGBM (avoiding L1/L2 regularization collapse)
     # CHANGED: Convert from regression to CLASSIFICATION (+1/0/-1) since exact return prediction has IC=-0.01
     # Classification predicts trend direction: +1 (bullish), 0 (neutral), -1 (bearish)
@@ -2280,10 +2286,10 @@ def compute_regime_targets_from_ohlcv(
         raw_trend = targets[f"regime_macro_trend_h{h_max}"].astype(float)
     except Exception:
         raw_trend = _compute_future_return(close, horizon=h_max)
-    
+
     # Scale: vol_base * sqrt(h) approximates vol over horizon h
     trend_zscore = (raw_trend / (vol_base * np.sqrt(float(h_max)) + 1e-12)).replace([np.inf, -np.inf], np.nan)
-    
+
     # Convert to classification: thresholds at +/- 0.5 sigma (conservative)
     # +1 = bullish (zscore > 0.5), -1 = bearish (zscore < -0.5), 0 = neutral
     trend_class = pd.Series(0.0, index=close.index, dtype=float)
@@ -2330,7 +2336,7 @@ def compute_regime_targets_from_ohlcv(
     # Fallback to std if IQR is 0
     eff_std = eff_for_scale.rolling(window=efficiency_window*4, min_periods=efficiency_window).std()
     eff_scale = eff_iqr.fillna(eff_std).fillna(0.2) # Default scale 0.2
-    
+
     targets["regime_trend_efficiency"] = ((eff_for_scale - eff_med) / (eff_scale + 1e-12)).clip(-5.0, 5.0).astype(float)
 
     if volume_col in market_data.columns:
@@ -2381,22 +2387,22 @@ def compute_regime_targets_from_ohlcv(
             L_brk = 20
             H_brk = 12
             thresh_mult = 1.0
-            
+
             # Use raw high/low
             h_s = pd.to_numeric(market_data[high_col], errors="coerce")
             l_s = pd.to_numeric(market_data[low_col], errors="coerce")
-            
+
             past_h = h_s.rolling(L_brk).max()
             past_l = l_s.rolling(L_brk).min()
-            
+
             tr_brk = np.maximum(h_s - l_s, (h_s - close.shift(1)).abs())
             atr_brk = tr_brk.rolling(14).mean()
             thresh_val = atr_brk * thresh_mult
-            
+
             # Future max/min close - Checks if price SUSTAINS the break (close basis)
             f_max = close.shift(-H_brk).rolling(H_brk).max()
             f_min = close.shift(-H_brk).rolling(H_brk).min()
-            
+
             # Binary Breakout (1.0 = Breakout, 0.0 = Range)
             is_brk = ((f_max > (past_h + thresh_val)) | (f_min < (past_l - thresh_val))).astype(float)
             targets["regime_breakout"] = is_brk
@@ -2514,68 +2520,63 @@ def _leaf_summary_stats(
         global_mean = None
         global_std = None
 
-    rs = np.random.RandomState(int(random_state))
+    kept_set = set([int(x) for x in kept_leaf_ids])
 
-    for li in kept_leaf_ids:
-        try:
-            li_int = int(li)
-        except Exception:
-            continue
-        try:
-            mask = pd.to_numeric(raw_leaf_series, errors="coerce").astype(float).eq(float(li_int))
-        except Exception:
-            continue
+    leaf_vals = pd.to_numeric(raw_leaf_series, errors="coerce")
+    mask = leaf_vals.isin(kept_set)
+    if not mask.any():
+        return {}
 
-        n_rows = int(mask.sum())
-        y_leaf = pd.to_numeric(y_all.where(mask), errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    df_leaf = pd.DataFrame({'leaf': leaf_vals[mask], 'y': y_all[mask]})
 
-        y_stats: Dict[str, Any] = {"n": int(len(y_leaf))}
-        try:
-            if len(y_leaf) > 0:
-                y_stats.update(
-                    {
-                        "mean": float(y_leaf.mean()),
-                        "std": float(y_leaf.std()),
-                        "min": float(y_leaf.min()),
-                        "p25": float(y_leaf.quantile(0.25)),
-                        "p50": float(y_leaf.quantile(0.50)),
-                        "p75": float(y_leaf.quantile(0.75)),
-                        "max": float(y_leaf.max()),
-                    }
-                )
-        except Exception:
-            pass
+    grouped = df_leaf.groupby('leaf')['y']
+    stats = grouped.agg(['count', 'mean', 'std', 'min', 'max'])
+
+    for li_float, row in stats.iterrows():
+        li_int = int(li_float)
+
+        y_stats = {
+            "n": int(row['count']),
+            "mean": float(row['mean']),
+            "std": float(row['std']),
+            "min": float(row['min']),
+            "max": float(row['max']),
+        }
 
         top_features = []
-        try:
-            if global_mean is not None and global_std is not None and n_rows > 0:
-                idx = X_num.index[mask.values]
-                if len(idx) > int(max_samples_per_leaf):
-                    sel = rs.choice(np.arange(len(idx)), size=int(max_samples_per_leaf), replace=False)
-                    idx = idx[np.asarray(sel, dtype=int)]
-                X_leaf = X_num.reindex(idx)
-                leaf_mean = X_leaf.mean(numeric_only=True)
-                z = (leaf_mean - global_mean) / (global_std + 1e-12)
-                z = z.replace([np.inf, -np.inf], np.nan).dropna()
-                if not z.empty:
-                    topk = z.abs().sort_values(ascending=False).head(int(max(0, top_features_per_leaf)))
-                    for feat, z_val in topk.items():
-                        try:
-                            top_features.append(
-                                {
-                                    "feature": str(feat),
-                                    "z_diff": float(z_val),
-                                    "leaf_mean": float(leaf_mean.get(feat)),
-                                    "global_mean": float(global_mean.get(feat)),
-                                }
-                            )
-                        except Exception:
-                            continue
-        except Exception:
-            top_features = []
+        if global_mean is not None and global_std is not None:
+            try:
+                leaf_mask = (leaf_vals == li_int)
+                idx = X_num.index[leaf_mask]
+
+                n_samples = len(idx)
+                if n_samples > 0:
+                    if n_samples > max_samples_per_leaf:
+                        rs = np.random.RandomState(random_state + li_int)
+                        choice = rs.choice(n_samples, size=max_samples_per_leaf, replace=False)
+                        idx_sub = idx[choice]
+                        X_leaf = X_num.reindex(idx_sub)
+                    else:
+                        X_leaf = X_num.reindex(idx)
+
+                    leaf_mean = X_leaf.mean(numeric_only=True)
+                    z = (leaf_mean - global_mean) / (global_std + 1e-12)
+                    z = z.replace([np.inf, -np.inf], np.nan).dropna()
+
+                    if not z.empty:
+                        topk = z.abs().sort_values(ascending=False).head(max(0, top_features_per_leaf))
+                        for feat, z_val in topk.items():
+                            top_features.append({
+                                "feature": str(feat),
+                                "z_diff": float(z_val),
+                                "leaf_mean": float(leaf_mean.get(feat)),
+                                "global_mean": float(global_mean.get(feat)),
+                            })
+            except Exception:
+                pass
 
         out[li_int] = {
-            "n_rows": int(n_rows),
+            "n_rows": int(y_stats['n']),
             "y": y_stats,
             "top_features": top_features,
         }
@@ -3238,7 +3239,7 @@ def extract_regime_leaf_onehot_features(
                 # Sample background if train is too large
                 x_sample = X_train.sample(n=min(len(X_train), 200), random_state=42) if len(X_train) > 200 else X_train
                 shap_values = explainer.shap_values(x_sample)
-                
+
                 # Handle LightGBM/SHAP output formats (list for classifier, array for regressor)
                 if isinstance(shap_values, list):
                     # For binary classifier, index 1 is usually positive class
@@ -3248,7 +3249,7 @@ def extract_regime_leaf_onehot_features(
                         vals = shap_values[0]
                 else:
                     vals = shap_values
-                
+
                 if hasattr(vals, "values"): # If shap returned an object with values
                      vals = vals.values
 
@@ -3268,7 +3269,7 @@ def extract_regime_leaf_onehot_features(
                 last_top_mdi_features = feat_imp_mdi.head(5).index.tolist()
             except Exception:
                 pass
-                
+
             prediction_start_timestamp = pd.Timestamp.utcnow()
             try:
                 pred_test = np.asarray(model.predict(X_test), dtype=float).reshape(-1)
@@ -4326,16 +4327,16 @@ def generate_regime_feature_interactions(
 ) -> pd.DataFrame:
     """
     Generate interaction features between regime scores and key market indicators.
-    
+
     Creates products: RegimeScore * MarketFeature
     Targeting specific interactions: Volatility, Momentum (RSI), and Liquidity.
     Supports non-linear transformations (Squared, Threshold) to sharpen regime focus.
-    
+
     Args:
         feature_df: DataFrame with raw market features (must contain keys like 'volatility', 'rsi', etc.)
         regime_scores: DataFrame with regime leaf scores (e.g. from extract_regime_leaf_onehot_features)
         config: Configuration dictionary for interactions
-        
+
     Returns:
         DataFrame of interaction features
     """
@@ -4363,7 +4364,7 @@ def generate_regime_feature_interactions(
             "rsi": ["reg_ohlcv__rsi_14", "rsi_14", "rsi"],
             "volume": ["reg_ohlcv__volume_log1p_z", "volume_z"]
         })
-    
+
     interaction_types = config.get("interaction_types", ["linear", "squared", "threshold"])
     threshold_val = float(config.get("interaction_threshold", 0.5))
 

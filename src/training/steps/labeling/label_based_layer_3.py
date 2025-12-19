@@ -20,6 +20,9 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from typing import List, Tuple, Optional, Any, Dict
 import shap
+import optuna
+from optuna.samplers import TPESampler
+from optuna.pruners import HyperbandPruner
 
 from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
 from src.training.steps.labeling.generate_weights_per_label import (
@@ -313,6 +316,158 @@ def _dump_layer3_feature_inventory(
             pass
     except Exception:
         return
+
+
+def _run_layer3_hpo(
+    X: pd.DataFrame,
+    y: pd.Series,
+    w: np.ndarray,
+    model_type: str,  # 'classifier' or 'regressor'
+    n_trials: int = 40,
+) -> Dict[str, Any]:
+    """
+    Run HPO using Optuna for Layer 3.
+    """
+    print(f"\n>> Running HPO for {model_type} ({n_trials} trials)...")
+
+    # Subsample for speed if dataset is large (e.g. > 5000)
+    # Use 50% subsample with a min of 2000 rows
+    n_total = len(X)
+    n_sample = max(2000, int(n_total * 0.5))
+
+    if n_total > n_sample:
+        # Use random sampling for HPO speed, but keep time consistency if possible?
+        # Actually, for HPO ranking, random sample is usually fine and faster.
+        # We use a fixed seed for reproducibility.
+        sample_idx = np.random.RandomState(42).choice(n_total, n_sample, replace=False)
+        sample_idx.sort() # Preserve time order
+        X_hpo = X.iloc[sample_idx]
+        y_hpo = y.iloc[sample_idx]
+        w_hpo = w[sample_idx]
+    else:
+        X_hpo = X
+        y_hpo = y
+        w_hpo = w
+
+    # Split into Train/Val for HPO (simple TimeSeriesSplit or just holdout)
+    # Using simple holdout (last 20%) for speed
+    split_idx = int(len(X_hpo) * 0.8)
+    X_train, X_val = X_hpo.iloc[:split_idx], X_hpo.iloc[split_idx:]
+    y_train, y_val = y_hpo.iloc[:split_idx], y_hpo.iloc[split_idx:]
+    w_train, w_val = w_hpo[:split_idx], w_hpo[split_idx:]
+
+    def objective(trial):
+        # Hyperparameters
+        num_leaves = trial.suggest_int('num_leaves', 16, 256)
+        max_depth = trial.suggest_int('max_depth', 4, 8)
+        learning_rate = trial.suggest_float('learning_rate', 0.01, 0.05)
+        n_estimators = trial.suggest_int('n_estimators', 400, 800)
+        min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 20, 50)
+        min_sum_hessian_in_leaf = trial.suggest_float('min_sum_hessian_in_leaf', 1e-3, 1e-2)
+        lambda_l1 = trial.suggest_float('lambda_l1', 0.3, 0.7)
+        lambda_l2 = 2.0 * lambda_l1 # Constraint
+
+        params = {
+            'num_leaves': num_leaves,
+            'max_depth': max_depth,
+            'learning_rate': learning_rate,
+            'n_estimators': n_estimators,
+            'min_data_in_leaf': min_data_in_leaf,
+            'min_sum_hessian_in_leaf': min_sum_hessian_in_leaf,
+            'lambda_l1': lambda_l1,
+            'lambda_l2': lambda_l2,
+            'bagging_freq': 1,
+            'feature_fraction': 0.8,
+            'bagging_fraction': 0.8,
+            'n_jobs': 1,
+            'verbosity': -1
+        }
+
+        # Pruning callback
+        pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "binary_logloss" if model_type == 'classifier' else "xentropy")
+
+        try:
+            if model_type == 'classifier':
+                params['objective'] = 'binary'
+                params['metric'] = 'binary_logloss'
+                model = lgb.LGBMClassifier(**params)
+                model.fit(
+                    X_train, y_train,
+                    sample_weight=w_train,
+                    eval_set=[(X_val, y_val)],
+                    eval_sample_weight=[w_val],
+                    callbacks=[pruning_callback, lgb.early_stopping(stopping_rounds=30, verbose=False)]
+                )
+                preds = model.predict_proba(X_val)[:, 1]
+                # Score: AUC (Maximize)
+                # Note: ScoreL3 combines AUC, LogLoss, ECE.
+                # For HPO, maximizing AUC is a robust proxy, or minimize LogLoss.
+                # Let's maximize ScoreL3 approximation on validation set.
+                auc = roc_auc_score(y_val, preds)
+                ll = log_loss(y_val, preds)
+                # Approximate ScoreL3 (simplified)
+                score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
+                return score
+
+            else: # Regressor (Soft Target)
+                params['objective'] = 'cross_entropy'
+                params['metric'] = 'xentropy' # LogLoss for continuous targets
+                model = lgb.LGBMRegressor(**params)
+                model.fit(
+                    X_train, y_train,
+                    sample_weight=w_train,
+                    eval_set=[(X_val, y_val)],
+                    eval_sample_weight=[w_val],
+                    callbacks=[pruning_callback, lgb.early_stopping(stopping_rounds=30, verbose=False)]
+                )
+                preds = model.predict(X_val)
+                # Clip for safety
+                preds = np.clip(preds, 1e-6, 1.0 - 1e-6)
+
+                # Evaluation needs binary target for AUC?
+                # Regressor is trained on Soft Target.
+                # We can binarize y_val for AUC calculation
+                y_val_bin = (y_val > 0.5).astype(int)
+                if len(np.unique(y_val_bin)) < 2:
+                    return 0.0
+
+                auc = roc_auc_score(y_val_bin, preds)
+                ll = log_loss(y_val_bin, preds) # LogLoss against binary truth
+
+                score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
+                return score
+
+        except Exception as e:
+            # print(f"Trial failed: {e}")
+            return -999.0
+
+    study = optuna.create_study(
+        direction='maximize',
+        sampler=TPESampler(seed=42),
+        pruner=HyperbandPruner()
+    )
+    study.optimize(objective, n_trials=n_trials)
+
+    print(f"   Best HPO Score: {study.best_value:.4f}")
+    print(f"   Best Params: {study.best_params}")
+
+    # Reconstruct constrained params
+    best_p = study.best_params.copy()
+    best_p['lambda_l2'] = 2.0 * best_p['lambda_l1']
+    best_p['bagging_freq'] = 1
+    best_p['feature_fraction'] = 0.8
+    best_p['bagging_fraction'] = 0.8
+    best_p['n_jobs'] = 1
+    best_p['verbosity'] = -1
+
+    if model_type == 'classifier':
+        best_p['objective'] = 'binary'
+        best_p['metric'] = 'binary_logloss'
+    else:
+        best_p['objective'] = 'cross_entropy'
+        best_p['metric'] = 'xentropy'
+
+    return best_p
 
 
 def layer3_analyst_lgbm(
@@ -1183,13 +1338,113 @@ def layer3_analyst_lgbm(
         return df, None
 
     # ---------------------------------------------------------
-    # 5. Final Model Training (Production) using WINNER
+    # 4.5 CLASSIFIER vs REGRESSOR RACE & HPO
     # ---------------------------------------------------------
-    print(f">> Training Final Production Model using {best_scheme_name}...")
+    print(f"\n>> Running Classifier vs Regressor Race & HPO using {best_scheme_name} weights...")
 
-    df['meta_prob'] = best_model_artifacts['oof_probs']
+    # 1. Determine Winning Model Type (Classifier vs Regressor)
+    # If target is soft, we compare:
+    #   A) LGBMClassifier (Objective='binary', Target=Binarized)
+    #   B) LGBMRegressor (Objective='cross_entropy', Target=Soft)
+
+    # Get Best Weights
     w_best_raw = best_model_artifacts['w_vec']
     w_best = finalize_sample_weights(w_best_raw)
+
+    target_mode_final = _infer_target_mode(y_values)
+    is_continuous_target = bool(target_mode_final == 'soft')
+
+    winning_model_type = 'classifier' # Default
+
+    if is_continuous_target:
+        print("   Detected SOFT target. Comparing Classifier (Binary) vs Regressor (Soft)...")
+
+        # Subsample for comparison (for speed)
+        n_total = len(X)
+        n_sub = max(2000, int(n_total * 0.5))
+        if n_total > n_sub:
+             idx_sub = np.random.RandomState(42).choice(n_total, n_sub, replace=False)
+             idx_sub.sort()
+             X_sub = X.iloc[idx_sub]
+             y_sub = y.iloc[idx_sub]
+             w_sub = w_best[idx_sub]
+        else:
+             X_sub = X
+             y_sub = y
+             w_sub = w_best
+
+        # Split for validation
+        split_i = int(len(X_sub) * 0.8)
+        X_tr, X_val = X_sub.iloc[:split_i], X_sub.iloc[split_i:]
+        y_tr, y_val = y_sub.iloc[:split_i], y_sub.iloc[split_i:]
+        w_tr, w_val = w_sub[:split_i], w_sub[split_i:]
+
+        # Candidate A: Classifier (Binary)
+        # Binarize targets for training
+        y_tr_bin = (y_tr > 0.5).astype(int)
+        y_val_bin = (y_val > 0.5).astype(int)
+
+        params_clf = lgbm_params.copy()
+        params_clf['objective'] = 'binary'
+        params_clf['metric'] = 'binary_logloss'
+
+        model_clf = lgb.LGBMClassifier(**params_clf)
+        model_clf.fit(X_tr, y_tr_bin, sample_weight=w_tr, eval_set=[(X_val, y_val_bin)], eval_sample_weight=[w_val],
+                      callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+        p_clf = model_clf.predict_proba(X_val)[:, 1]
+
+        # Candidate B: Regressor (Soft)
+        params_reg = lgbm_params.copy()
+        params_reg['objective'] = 'cross_entropy'
+        params_reg['metric'] = 'xentropy'
+
+        model_reg = lgb.LGBMRegressor(**params_reg)
+        model_reg.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_val, y_val)], eval_sample_weight=[w_val],
+                      callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+        p_reg = model_reg.predict(X_val)
+        p_reg = np.clip(p_reg, 1e-6, 1.0 - 1e-6)
+
+        # Compare on Validation Set (ScoreL3 against Binary Truth)
+        # Note: We evaluate both against the BINARY truth for fair comparison of classification utility.
+        def _get_score(p_vec, y_true_bin):
+            try:
+                auc = roc_auc_score(y_true_bin, p_vec)
+                ll = log_loss(y_true_bin, p_vec)
+                return 100 * (auc - 0.5) + 50 * (0.693 - ll)
+            except:
+                return -999.0
+
+        score_clf = _get_score(p_clf, y_val_bin)
+        score_reg = _get_score(p_reg, y_val_bin)
+
+        print(f"   [Race] Classifier Score: {score_clf:.4f}")
+        print(f"   [Race] Regressor Score:  {score_reg:.4f}")
+
+        if score_reg > score_clf:
+            print("   => Winner: Regressor")
+            winning_model_type = 'regressor'
+        else:
+            print("   => Winner: Classifier")
+            winning_model_type = 'classifier'
+
+    else:
+        print("   Detected BINARY target. Using Classifier.")
+        winning_model_type = 'classifier'
+
+    # 2. Run HPO on Winning Model
+    best_hpo_params = _run_layer3_hpo(
+        X, y if winning_model_type == 'regressor' else (y > 0.5).astype(int),
+        w_best,
+        model_type=winning_model_type,
+        n_trials=40
+    )
+
+    # ---------------------------------------------------------
+    # 5. Final Model Training (Production) using WINNER
+    # ---------------------------------------------------------
+    print(f">> Training Final Production Model using {best_scheme_name} and Optimized Params...")
+
+    df['meta_prob'] = best_model_artifacts['oof_probs']
 
     try:
         _dump_layer3_feature_inventory(
@@ -1310,41 +1565,50 @@ def layer3_analyst_lgbm(
                     y_cal = y_train[fit_n:]
                     w_cal = w_train[fit_n:]
 
-                    base_est = lgb.LGBMClassifier(**lgbm_params)
-                    base_est.fit(X_fit, y_fit.astype(int), sample_weight=w_fit)
+                    # Use Best Params here for Honest Holdout as well
+                    if winning_model_type == 'regressor':
+                        # Use Regressor logic
+                        base_est = lgb.LGBMRegressor(**best_hpo_params)
+                        base_est.fit(X_fit, y_fit, sample_weight=w_fit) # Use raw y_fit (soft)
+                        p_test_cal = base_est.predict(X_test)
+                        p_cal_cal = base_est.predict(X_cal)
+                    else:
+                        # Use Classifier logic
+                        base_est = lgb.LGBMClassifier(**best_hpo_params)
+                        base_est.fit(X_fit, (y_fit >= 0.5).astype(int), sample_weight=w_fit)
 
-                    p_test_raw = base_est.predict_proba(X_test)[:, 1]
-                    p_cal_raw = base_est.predict_proba(X_cal)[:, 1]
+                        p_test_raw = base_est.predict_proba(X_test)[:, 1]
+                        p_cal_raw = base_est.predict_proba(X_cal)[:, 1]
 
-                    p_test_raw = _clip_probs(p_test_raw, clip_low, clip_high)
-                    p_cal_raw = _clip_probs(p_cal_raw, clip_low, clip_high)
+                        p_test_raw = _clip_probs(p_test_raw, clip_low, clip_high)
+                        p_cal_raw = _clip_probs(p_cal_raw, clip_low, clip_high)
 
-                    p_test_cal = p_test_raw
-                    p_cal_cal = p_cal_raw
-
-                    try:
-                        iso = IsotonicRegression(out_of_bounds='clip')
-                        iso.fit(p_cal_raw, y_cal.astype(float), sample_weight=w_cal)
-                        p_test_cal = iso.predict(p_test_raw)
-                        p_cal_cal = iso.predict(p_cal_raw)
-                    except Exception:
                         p_test_cal = p_test_raw
                         p_cal_cal = p_cal_raw
 
-                    p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
-                    p_cal_cal = _clip_probs(p_cal_cal, clip_low, clip_high)
-
-                    t_hat = 1.0
-                    if temp_scaling:
                         try:
-                            t_hat = _fit_temperature(y_cal.astype(int), p_cal_cal, sample_weight=w_cal)
+                            iso = IsotonicRegression(out_of_bounds='clip')
+                            iso.fit(p_cal_raw, y_cal.astype(float), sample_weight=w_cal)
+                            p_test_cal = iso.predict(p_test_raw)
+                            p_cal_cal = iso.predict(p_cal_raw)
                         except Exception:
-                            t_hat = 1.0
-                        p_test_cal = _apply_temperature(p_test_cal, t_hat)
+                            p_test_cal = p_test_raw
+                            p_cal_cal = p_cal_raw
+
                         p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
+                        p_cal_cal = _clip_probs(p_cal_cal, clip_low, clip_high)
+
+                        t_hat = 1.0
+                        if temp_scaling:
+                            try:
+                                t_hat = _fit_temperature(y_cal.astype(int), p_cal_cal, sample_weight=w_cal)
+                            except Exception:
+                                t_hat = 1.0
+                            p_test_cal = _apply_temperature(p_test_cal, t_hat)
+                            p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
 
                     p_test = p_test_cal
-                    honest_temperature = float(t_hat)
+                    honest_temperature = float(t_hat) if winning_model_type == 'classifier' else float('nan')
                     honest_prob_clip_low = float(clip_low)
                     honest_prob_clip_high = float(clip_high)
 
@@ -1368,30 +1632,22 @@ def layer3_analyst_lgbm(
         pass
 
     # Detect continuous again for final training (should match above)
+    # Use Winning Model Type here
     try:
-        target_mode_final = _infer_target_mode(y_values)
-    except Exception:
-        target_mode_final = 'binary'
-    is_continuous = bool(target_mode_final == 'soft')
-
-    try:
-        if is_continuous:
-             # CRITICAL FIX: Use cross_entropy/regression for soft labels
-             reg_params_final = lgbm_params.copy()
-             reg_params_final['objective'] = 'cross_entropy'
-             reg_params_final['metric'] = 'xentropy'
-
-             final_model = lgb.LGBMRegressor(**reg_params_final)
+        if winning_model_type == 'regressor':
+             # Use Regressor logic with best params
+             final_model = lgb.LGBMRegressor(**best_hpo_params)
              final_model.fit(X, y, sample_weight=w_best)
         else:
-            final_base = lgb.LGBMClassifier(**lgbm_params)
+            # Use Classifier logic with best params (and Calibration)
+            final_base = lgb.LGBMClassifier(**best_hpo_params)
             final_tscv = TimeSeriesSplit(n_splits=calibration_cv_splits)
             final_model = CalibratedClassifierCV(
                 estimator=final_base,
                 method='isotonic',
                 cv=final_tscv
             )
-            final_model.fit(X, y, sample_weight=w_best)
+            final_model.fit(X, (y >= 0.5).astype(int), sample_weight=w_best)
             
     except Exception as e:
         print(f"⚠️ Final model training failed: {e}")
@@ -1486,7 +1742,7 @@ def layer3_analyst_lgbm(
             f"- winner_score: {float(best_score) if best_score is not None else float('nan')}\n",
             "\n## Winner Metrics (OOF)\n",
         ]
-        for k in ['AUC', 'PR AUC', 'Log Loss', 'ECE', 'IC', 'MCE', 'Brier']:
+        for k, v in (metrics or {}).items():
             if k in metrics:
                 lines.append(f"- {k}: {metrics[k]}\n")
         lines.append("\n## Honest Holdout Metrics (Forward Tail)\n")

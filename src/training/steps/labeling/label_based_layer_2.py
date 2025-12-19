@@ -1347,7 +1347,12 @@ class LabelBasedLayer2:
         vol_series = vol_series.fillna(method='ffill').fillna(method='bfill')
         vol_series = vol_series.clip(lower=1e-8)
 
-        profit_thr = float(kappa) * vol_series
+        # Enforce minimum profit threshold to cover transaction costs (Root Cause 3: Mis-specified Labels)
+        # If profit target < cost, a "win" is still a net loss.
+        # We require TP to be at least 1.1x cost to consider it a valid target.
+        min_profit = self.transaction_cost * 1.1
+        profit_thr = np.maximum(float(kappa) * vol_series, min_profit)
+
         stop_thr = float(sl_mult_eff) * vol_series
 
         atr_series = None

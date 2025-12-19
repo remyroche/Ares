@@ -765,10 +765,15 @@ def layer3_analyst_lgbm(
                 w_cal = w_train_full[fit_n:]
 
                 if is_continuous:
-                    # Use Regressor for soft labels (minimizing MSE/Brier score or similar)
-                    # objective='regression' (l2) or 'binary' (logloss)? 
-                    # If soft labels are probs, regression (MSE) is robust.
-                    reg = lgb.LGBMRegressor(**lgbm_params)
+                    # Use Regressor for soft labels
+                    # CRITICAL FIX: Overwrite objective='binary' which causes saturation/collapse on soft labels in Regressor mode.
+                    # Use 'regression' (L2) or 'cross_entropy' (LogLoss for soft labels).
+                    # We use 'cross_entropy' (xentropy) as it matches the probabilistic intent.
+                    reg_params = lgbm_params.copy()
+                    reg_params['objective'] = 'cross_entropy' # or 'regression' / 'mse'
+                    reg_params['metric'] = 'xentropy' # or 'mse'
+
+                    reg = lgb.LGBMRegressor(**reg_params)
                     reg.fit(X_fit, y_fit, sample_weight=w_fit)
                     probs = reg.predict(X_test)
                     probs = _clip_probs(probs, clip_low, clip_high)
@@ -1369,7 +1374,12 @@ def layer3_analyst_lgbm(
 
     try:
         if is_continuous:
-             final_model = lgb.LGBMRegressor(**lgbm_params)
+             # CRITICAL FIX: Use cross_entropy/regression for soft labels
+             reg_params_final = lgbm_params.copy()
+             reg_params_final['objective'] = 'cross_entropy'
+             reg_params_final['metric'] = 'xentropy'
+
+             final_model = lgb.LGBMRegressor(**reg_params_final)
              final_model.fit(X, y, sample_weight=w_best)
         else:
             final_base = lgb.LGBMClassifier(**lgbm_params)

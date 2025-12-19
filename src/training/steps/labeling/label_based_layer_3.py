@@ -28,8 +28,127 @@ from src.feature_generation.categories.layer3_specific_features import generate_
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
 )
+# Import RobustFocalLoss from Layer 2
+from src.training.steps.labeling.label_based_layer_2 import RobustFocalLoss
+
+# Import PyTorch Losses
+try:
+    from src.training.steps.labeling.layer3_pytorch_losses import (
+        SoftF1Loss, SoftAUC_PR_Loss, PyTorchObjectiveWrapper
+    )
+    PYTORCH_LOSSES_AVAILABLE = True
+except ImportError:
+    PYTORCH_LOSSES_AVAILABLE = False
+    print("⚠️ PyTorch losses not available in Layer 3.")
 
 from src.utils.purged_kfold import PurgedKFoldTime
+
+
+def generate_efficiency_labels(events_df: pd.DataFrame, price_series: pd.Series) -> pd.Series:
+    """
+    Generates binary classification labels based on Trade Efficiency (Sharpe/Sortino).
+    Class 1: High Quality Win (Stable)
+    Class 0: Loss OR Low Quality Win (Volatile)
+
+    Logic: Efficiency = Realized_Return / Downside_Volatility
+    Threshold: > 0.5
+    """
+    if events_df.empty or price_series.empty:
+        return pd.Series(np.nan, index=events_df.index)
+
+    # Ensure alignment
+    price_series = price_series.sort_index()
+    # Check if we have exit times
+    if 'exit_time' not in events_df.columns:
+        # Fallback: estimate exit time from event_duration_bars if available
+        # This requires the price series to have bar frequency info, which is tricky.
+        # But 'market_data' usually has uniform frequency.
+        # We assume 'exit_time' is present or we skip path calculation.
+        # If 'event_duration_bars' is present, we can find t1 by indexing.
+
+        # Let's try to reconstruct exit_time if missing but durations exist
+        if 'event_duration_bars' in events_df.columns:
+            # Map index location
+            # Note: this is slow if not vectorized, but events are usually < 10k
+
+            # Map timestamps to integer locations
+            time_to_idx = {t: i for i, t in enumerate(price_series.index)}
+
+            t1_list = []
+            for t0, dur in zip(events_df.index, events_df['event_duration_bars']):
+                if pd.isna(dur) or t0 not in time_to_idx:
+                    t1_list.append(None)
+                    continue
+                start_i = time_to_idx[t0]
+                end_i = min(len(price_series)-1, start_i + int(dur))
+                t1_list.append(price_series.index[end_i])
+
+            # Create a temporary copy to use
+            events_df = events_df.copy()
+            events_df['exit_time'] = t1_list
+        else:
+            print("⚠️ generate_efficiency_labels: 'exit_time' and 'event_duration_bars' missing. Cannot calculate efficiency.")
+            return pd.Series(np.nan, index=events_df.index)
+
+    labels = pd.Series(index=events_df.index, dtype=float)
+
+    # Pre-calculate to speed up? Iteration is safer for variable windows.
+    # Optimize by accessing numpy arrays
+    times = price_series.index
+    prices = price_series.values
+
+    # Map times to indices for fast slicing
+    # Use searchsorted for speed
+    # Assuming sorted index
+
+    # Iterate
+    # Using the user-provided logic structure
+    for idx, row in events_df.iterrows():
+        t0 = idx # Entry time (index)
+        t1 = row['exit_time']
+
+        if pd.isna(t0) or pd.isna(t1):
+            labels[idx] = 0.0 # Treat as failure/timeout
+            continue
+
+        # Get slice
+        # Use simple label slicing on series (pandas handles it, might be slow but robust)
+        try:
+            trade_price = price_series[t0:t1]
+        except Exception:
+            labels[idx] = 0.0
+            continue
+
+        if len(trade_price) < 2:
+            labels[idx] = 0.0
+            continue
+
+        returns = trade_price.pct_change().dropna()
+        if len(returns) == 0:
+             labels[idx] = 0.0
+             continue
+
+        realized_ret = (trade_price.iloc[-1] / trade_price.iloc[0]) - 1.0
+
+        # 2. Calculate Downside Volatility (Sortino Logic)
+        neg_rets = returns[returns < 0]
+        if len(neg_rets) == 0:
+            downside_vol = 0.0001 # Proxy for perfect
+        else:
+            # Sortino denominator: sqrt(mean(neg_returns^2))
+            # Note: standard Sortino uses target return (0 here).
+            downside_vol = np.sqrt((neg_rets**2).mean()) * np.sqrt(len(returns))
+
+        # 3. Calculate Efficiency Ratio
+        efficiency = realized_ret / (downside_vol + 1e-6)
+
+        # 4. DISCRETIZE (The "Hard" Label)
+        if efficiency > 0.5:
+            labels[idx] = 1.0
+        else:
+            labels[idx] = 0.0
+
+    return labels
 
 
 def _fast_expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
@@ -322,7 +441,7 @@ def _run_layer3_hpo(
     X: pd.DataFrame,
     y: pd.Series,
     w: np.ndarray,
-    model_type: str,  # 'classifier' or 'regressor'
+    model_type: str,  # 'classifier', 'regressor', 'focal', 'soft_f1', 'auc_pr'
     n_trials: int = 40,
 ) -> Dict[str, Any]:
     """
@@ -384,25 +503,101 @@ def _run_layer3_hpo(
         }
 
         # Pruning callback
-        pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "binary_logloss" if model_type == 'classifier' else "xentropy")
+        # Use binary_logloss as generic pruning metric
+        pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "binary_logloss")
 
         try:
-            if model_type == 'classifier':
-                params['objective'] = 'binary'
-                params['metric'] = 'binary_logloss'
-                model = lgb.LGBMClassifier(**params)
-                model.fit(
-                    X_train, y_train,
-                    sample_weight=w_train,
-                    eval_set=[(X_val, y_val)],
-                    eval_sample_weight=[w_val],
-                    callbacks=[pruning_callback, lgb.early_stopping(stopping_rounds=30, verbose=False)]
-                )
-                preds = model.predict_proba(X_val)[:, 1]
+            if model_type in ['classifier', 'focal', 'soft_f1', 'auc_pr']:
+
+                # Setup Training
+                train_ds = lgb.Dataset(X_train, label=y_train, weight=w_train)
+                val_ds = lgb.Dataset(X_val, label=y_val, weight=w_val, reference=train_ds)
+
+                # Objectives
+                if model_type == 'classifier':
+                    params['objective'] = 'binary'
+                    params['metric'] = 'binary_logloss'
+                    # Standard LGBM API
+                    model = lgb.LGBMClassifier(**params)
+                    model.fit(
+                        X_train, y_train,
+                        sample_weight=w_train,
+                        eval_set=[(X_val, y_val)],
+                        eval_sample_weight=[w_val],
+                        callbacks=[pruning_callback, lgb.early_stopping(stopping_rounds=30, verbose=False)]
+                    )
+                    preds = model.predict_proba(X_val)[:, 1]
+
+                elif model_type == 'focal':
+                    # Use RobustFocalLoss
+                    # Need to use lgb.train for custom objective
+                    # HPO for Focal Params? Or Fixed?
+                    # Let's optimize Gamma if Focal
+                    f_gamma = 2.0 # Fixed as per user requirement (gamma=2.0)
+                    f_alpha = 0.25 # Default
+
+                    focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=f_gamma, alpha=f_alpha)
+                    params['objective'] = focal_obj
+                    params['metric'] = 'binary_logloss' # Monitor logloss
+
+                    booster = lgb.train(
+                        params,
+                        train_ds,
+                        valid_sets=[val_ds],
+                        callbacks=[
+                            lgb.early_stopping(30, verbose=False),
+                            pruning_callback
+                        ],
+                        verbose_eval=False
+                    )
+                    raw = booster.predict(X_val)
+                    preds = 1.0 / (1.0 + np.exp(-raw))
+
+                elif model_type == 'soft_f1' and PYTORCH_LOSSES_AVAILABLE:
+                    # SoftF1
+                    loss_mod = SoftF1Loss(beta=1.0)
+                    wrapper = PyTorchObjectiveWrapper(loss_mod)
+
+                    params['objective'] = wrapper
+                    params['metric'] = 'binary_logloss'
+
+                    booster = lgb.train(
+                        params,
+                        train_ds,
+                        valid_sets=[val_ds],
+                        callbacks=[
+                            lgb.early_stopping(30, verbose=False),
+                            pruning_callback
+                        ],
+                        verbose_eval=False
+                    )
+                    raw = booster.predict(X_val)
+                    preds = 1.0 / (1.0 + np.exp(-raw))
+
+                elif model_type == 'auc_pr' and PYTORCH_LOSSES_AVAILABLE:
+                    # AUC-PR
+                    loss_mod = SoftAUC_PR_Loss()
+                    wrapper = PyTorchObjectiveWrapper(loss_mod)
+
+                    params['objective'] = wrapper
+                    params['metric'] = 'binary_logloss'
+
+                    booster = lgb.train(
+                        params,
+                        train_ds,
+                        valid_sets=[val_ds],
+                        callbacks=[
+                            lgb.early_stopping(30, verbose=False),
+                            pruning_callback
+                        ],
+                        verbose_eval=False
+                    )
+                    raw = booster.predict(X_val)
+                    preds = 1.0 / (1.0 + np.exp(-raw))
+                else:
+                    return -999.0
+
                 # Score: AUC (Maximize)
-                # Note: ScoreL3 combines AUC, LogLoss, ECE.
-                # For HPO, maximizing AUC is a robust proxy, or minimize LogLoss.
-                # Let's maximize ScoreL3 approximation on validation set.
                 auc = roc_auc_score(y_val, preds)
                 ll = log_loss(y_val, preds)
                 # Approximate ScoreL3 (simplified)
@@ -460,12 +655,15 @@ def _run_layer3_hpo(
     best_p['n_jobs'] = 1
     best_p['verbosity'] = -1
 
-    if model_type == 'classifier':
-        best_p['objective'] = 'binary'
-        best_p['metric'] = 'binary_logloss'
-    else:
+    if model_type == 'regressor':
         best_p['objective'] = 'cross_entropy'
         best_p['metric'] = 'xentropy'
+    else:
+        best_p['objective'] = 'binary'
+        best_p['metric'] = 'binary_logloss'
+
+        # If custom objective, the final model training code will overwrite 'objective'
+        # with the custom class, but we keep 'metric' for logging.
 
     return best_p
 
@@ -594,6 +792,27 @@ def layer3_analyst_lgbm(
     print(f"   [FEATURE_CHECK] Momentum Agreement: {has_mom}, Disagreement: {has_dis}")
     print(f"   [FEATURE_CHECK] Base Models Included ({len(base_feats)}): {base_feats}")
 
+    # 1.5 Generate Efficiency (Sortino) Target
+    # ---------------------------------------------------------
+    print("<< Generating Efficiency (Sortino) Target...")
+    # Check if we have exit_time in df
+    if 'exit_time' not in df.columns:
+        # Try to recover from event_durations if we can (simplified)
+        # Or just rely on market_data logic inside
+        pass
+
+    if market_data is not None and 'close' in market_data.columns:
+        try:
+            eff_labels = generate_efficiency_labels(df, market_data['close'])
+            df['target_sortino'] = eff_labels
+            print(f"   Generated 'target_sortino'. Pos Rate: {eff_labels.mean():.3f}")
+        except Exception as e:
+            print(f"   ⚠️ Failed to generate 'target_sortino': {e}")
+            df['target_sortino'] = np.nan
+    else:
+        print("   ⚠️ market_data not provided, cannot generate 'target_sortino'.")
+        df['target_sortino'] = np.nan
+
     # Clean target
     try:
         neutral_value = cfg.get('layer3_neutral_target_value', 0.5) if isinstance(cfg, dict) else 0.5
@@ -624,6 +843,7 @@ def layer3_analyst_lgbm(
             pct = (count / initial_rows) * 100
             print(f"  {col}: {count} ({pct:.1f}%)")
     
+    # Drop rows where MAIN target is missing (we need ground truth for evaluation)
     df = df.dropna(subset=[target_col])
     final_rows = len(df)
     rows_dropped = initial_rows - final_rows
@@ -1365,103 +1585,199 @@ def layer3_analyst_lgbm(
         return df, None
 
     # ---------------------------------------------------------
-    # 4.5 CLASSIFIER vs REGRESSOR RACE & HPO
+    # 4.5 NEW: MODEL RACE (Target x Objective Trials)
     # ---------------------------------------------------------
-    print(f"\n>> Running Classifier vs Regressor Race & HPO using {best_scheme_name} weights...")
-
-    # 1. Determine Winning Model Type (Classifier vs Regressor)
-    # If target is soft, we compare:
-    #   A) LGBMClassifier (Objective='binary', Target=Binarized)
-    #   B) LGBMRegressor (Objective='cross_entropy', Target=Soft)
+    print(f"\n>> Running Extended Model Race (Targets x Objectives) using {best_scheme_name} weights...")
 
     # Get Best Weights
     w_best_raw = best_model_artifacts['w_vec']
     w_best = finalize_sample_weights(w_best_raw)
 
-    target_mode_final = _infer_target_mode(y_values)
-    is_continuous_target = bool(target_mode_final == 'soft')
-
-    winning_model_type = 'classifier' # Default
-
-    if is_continuous_target:
-        print("   Detected SOFT target. Comparing Classifier (Binary) vs Regressor (Soft)...")
-
-        # Subsample for comparison (for speed)
-        n_total = len(X)
-        n_sub = max(2000, int(n_total * 0.5))
-        if n_total > n_sub:
-             idx_sub = np.random.RandomState(42).choice(n_total, n_sub, replace=False)
-             idx_sub.sort()
-             X_sub = X.iloc[idx_sub]
-             y_sub = y.iloc[idx_sub]
-             w_sub = w_best[idx_sub]
-        else:
-             X_sub = X
-             y_sub = y
-             w_sub = w_best
-
-        # Split for validation
-        split_i = int(len(X_sub) * 0.8)
-        X_tr, X_val = X_sub.iloc[:split_i], X_sub.iloc[split_i:]
-        y_tr, y_val = y_sub.iloc[:split_i], y_sub.iloc[split_i:]
-        w_tr, w_val = w_sub[:split_i], w_sub[split_i:]
-
-        # Candidate A: Classifier (Binary)
-        # Binarize targets for training
-        y_tr_bin = (y_tr > 0.5).astype(int)
-        y_val_bin = (y_val > 0.5).astype(int)
-
-        params_clf = lgbm_params.copy()
-        params_clf['objective'] = 'binary'
-        params_clf['metric'] = 'binary_logloss'
-
-        model_clf = lgb.LGBMClassifier(**params_clf)
-        model_clf.fit(X_tr, y_tr_bin, sample_weight=w_tr, eval_set=[(X_val, y_val_bin)], eval_sample_weight=[w_val],
-                      callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
-        p_clf = model_clf.predict_proba(X_val)[:, 1]
-
-        # Candidate B: Regressor (Soft)
-        params_reg = lgbm_params.copy()
-        params_reg['objective'] = 'cross_entropy'
-        params_reg['metric'] = 'xentropy'
-
-        model_reg = lgb.LGBMRegressor(**params_reg)
-        model_reg.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_val, y_val)], eval_sample_weight=[w_val],
-                      callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
-        p_reg = model_reg.predict(X_val)
-        p_reg = np.clip(p_reg, 1e-6, 1.0 - 1e-6)
-
-        # Compare on Validation Set (ScoreL3 against Binary Truth)
-        # Note: We evaluate both against the BINARY truth for fair comparison of classification utility.
-        def _get_score(p_vec, y_true_bin):
-            try:
-                auc = roc_auc_score(y_true_bin, p_vec)
-                ll = log_loss(y_true_bin, p_vec)
-                return 100 * (auc - 0.5) + 50 * (0.693 - ll)
-            except:
-                return -999.0
-
-        score_clf = _get_score(p_clf, y_val_bin)
-        score_reg = _get_score(p_reg, y_val_bin)
-
-        print(f"   [Race] Classifier Score: {score_clf:.4f}")
-        print(f"   [Race] Regressor Score:  {score_reg:.4f}")
-
-        if score_reg > score_clf:
-            print("   => Winner: Regressor")
-            winning_model_type = 'regressor'
-        else:
-            print("   => Winner: Classifier")
-            winning_model_type = 'classifier'
-
+    # Subsample for Race (speed)
+    n_total = len(X)
+    n_sub = max(2000, int(n_total * 0.5))
+    if n_total > n_sub:
+         idx_sub = np.random.RandomState(42).choice(n_total, n_sub, replace=False)
+         idx_sub.sort()
+         X_sub = X.iloc[idx_sub]
+         y_sub = y.iloc[idx_sub]
+         # Use sortino if available
+         y_sortino_sub = df['target_sortino'].iloc[idx_sub] if 'target_sortino' in df.columns else None
+         w_sub = w_best[idx_sub]
     else:
-        print("   Detected BINARY target. Using Classifier.")
-        winning_model_type = 'classifier'
+         X_sub = X
+         y_sub = y
+         y_sortino_sub = df['target_sortino'] if 'target_sortino' in df.columns else None
+         w_sub = w_best
 
-    # 2. Run HPO on Winning Model
+    # Split for validation
+    split_i = int(len(X_sub) * 0.8)
+    X_tr, X_val = X_sub.iloc[:split_i], X_sub.iloc[split_i:]
+    y_tr, y_val = y_sub.iloc[:split_i], y_sub.iloc[split_i:]
+    w_tr, w_val = w_sub[:split_i], w_sub[split_i:]
+
+    # Validation Standard Truth (Binary)
+    y_val_std_bin = (y_val > 0.5).astype(int)
+
+    # Define Trials
+    trials = [
+        {'name': 'Standard_Binary',   'target': 'standard', 'obj': 'classifier'},
+        {'name': 'Standard_Focal',    'target': 'standard', 'obj': 'focal'},
+        {'name': 'Sortino_Binary',    'target': 'sortino',  'obj': 'classifier'},
+        {'name': 'Sortino_Focal',     'target': 'sortino',  'obj': 'focal'},
+    ]
+
+    if PYTORCH_LOSSES_AVAILABLE:
+        trials.append({'name': 'Standard_SoftF1', 'target': 'standard', 'obj': 'soft_f1'})
+        trials.append({'name': 'Standard_AUCPR',  'target': 'standard', 'obj': 'auc_pr'})
+
+    # Also keep Regressor if standard target is soft
+    if _infer_target_mode(y_values) == 'soft':
+        trials.append({'name': 'Standard_Regressor', 'target': 'standard', 'obj': 'regressor'})
+
+    race_results = []
+
+    for t in trials:
+        t_name = t['name']
+        t_target = t['target']
+        t_obj = t['obj']
+
+        # Prepare Target
+        if t_target == 'standard':
+            y_tr_curr = y_tr
+            y_val_curr = y_val
+        elif t_target == 'sortino':
+            if y_sortino_sub is None or y_sortino_sub.isna().all():
+                print(f"   Skipping {t_name}: Sortino target missing.")
+                continue
+            y_tr_curr = y_sortino_sub.iloc[:split_i].fillna(0.0)
+            y_val_curr = y_sortino_sub.iloc[split_i:].fillna(0.0)
+        else:
+            continue
+
+        # Prepare Binarized Target for Training (if classifier)
+        if t_obj in ['classifier', 'focal', 'soft_f1', 'auc_pr']:
+            y_tr_train = (y_tr_curr > 0.5).astype(int)
+            y_val_eval = (y_val_curr > 0.5).astype(int)
+        else: # Regressor
+            y_tr_train = y_tr_curr
+            y_val_eval = y_val_curr
+
+        try:
+            model = None
+            if t_obj == 'classifier':
+                model = lgb.LGBMClassifier(**lgbm_params)
+                model.fit(X_tr, y_tr_train, sample_weight=w_tr, eval_set=[(X_val, y_val_eval)],
+                          eval_sample_weight=[w_val], callbacks=[lgb.early_stopping(30, verbose=False)])
+                preds = model.predict_proba(X_val)[:, 1]
+
+            elif t_obj == 'regressor':
+                p_reg = lgbm_params.copy()
+                p_reg['objective'] = 'cross_entropy'
+                p_reg['metric'] = 'xentropy'
+                model = lgb.LGBMRegressor(**p_reg)
+                model.fit(X_tr, y_tr_train, sample_weight=w_tr, eval_set=[(X_val, y_val_eval)],
+                          eval_sample_weight=[w_val], callbacks=[lgb.early_stopping(30, verbose=False)])
+                preds = model.predict(X_val)
+                preds = np.clip(preds, 1e-6, 1.0 - 1e-6)
+
+            elif t_obj == 'focal':
+                # Custom Objective
+                f_gamma = 2.0
+                f_alpha = 0.25
+                focal_obj = RobustFocalLoss(train_labels=y_tr_train.values, gamma=f_gamma, alpha=f_alpha)
+
+                train_ds = lgb.Dataset(X_tr, label=y_tr_train, weight=w_tr)
+                val_ds = lgb.Dataset(X_val, label=y_val_eval, weight=w_val, reference=train_ds)
+
+                p_cust = lgbm_params.copy()
+                p_cust['metric'] = 'binary_logloss'
+                # Remove objective string if present
+                if 'objective' in p_cust: del p_cust['objective']
+
+                booster = lgb.train(p_cust, train_ds, valid_sets=[val_ds], fobj=focal_obj,
+                                    callbacks=[lgb.early_stopping(30, verbose=False)])
+                raw = booster.predict(X_val)
+                preds = 1.0 / (1.0 + np.exp(-raw))
+
+            elif t_obj == 'soft_f1' and PYTORCH_LOSSES_AVAILABLE:
+                loss_mod = SoftF1Loss(beta=1.0)
+                wrapper = PyTorchObjectiveWrapper(loss_mod)
+
+                train_ds = lgb.Dataset(X_tr, label=y_tr_train, weight=w_tr)
+                val_ds = lgb.Dataset(X_val, label=y_val_eval, weight=w_val, reference=train_ds)
+
+                p_cust = lgbm_params.copy()
+                p_cust['metric'] = 'binary_logloss'
+                if 'objective' in p_cust: del p_cust['objective']
+
+                booster = lgb.train(p_cust, train_ds, valid_sets=[val_ds], fobj=wrapper,
+                                    callbacks=[lgb.early_stopping(30, verbose=False)])
+                raw = booster.predict(X_val)
+                preds = 1.0 / (1.0 + np.exp(-raw))
+
+            elif t_obj == 'auc_pr' and PYTORCH_LOSSES_AVAILABLE:
+                loss_mod = SoftAUC_PR_Loss()
+                wrapper = PyTorchObjectiveWrapper(loss_mod)
+
+                train_ds = lgb.Dataset(X_tr, label=y_tr_train, weight=w_tr)
+                val_ds = lgb.Dataset(X_val, label=y_val_eval, weight=w_val, reference=train_ds)
+
+                p_cust = lgbm_params.copy()
+                p_cust['metric'] = 'binary_logloss'
+                if 'objective' in p_cust: del p_cust['objective']
+
+                booster = lgb.train(p_cust, train_ds, valid_sets=[val_ds], fobj=wrapper,
+                                    callbacks=[lgb.early_stopping(30, verbose=False)])
+                raw = booster.predict(X_val)
+                preds = 1.0 / (1.0 + np.exp(-raw))
+
+            # Evaluate against STANDARD BINARY TRUTH (Fair Comparison)
+            try:
+                score_l3 = 0.0
+                auc_val = roc_auc_score(y_val_std_bin, preds)
+                ll_val = log_loss(y_val_std_bin, preds)
+                score_l3 = 100 * (auc_val - 0.5) + 50 * (0.693 - ll_val)
+            except Exception:
+                score_l3 = -999.0
+
+            print(f"   Trial {t_name:<18} | Score: {score_l3:.4f}")
+            race_results.append({'name': t_name, 'score': score_l3, 'config': t})
+
+        except Exception as e:
+            print(f"   Trial {t_name} failed: {e}")
+
+    # Pick Winner
+    if race_results:
+        race_results.sort(key=lambda x: x['score'], reverse=True)
+        winner = race_results[0]
+        print(f"   => 🏆 Winner: {winner['name']} (Score: {winner['score']:.4f})")
+        winning_model_type = winner['config']['obj']
+        winning_target_source = winner['config']['target'] # 'standard' or 'sortino'
+    else:
+        print("   => ⚠️ All trials failed. Defaulting to Standard Classifier.")
+        winning_model_type = 'classifier'
+        winning_target_source = 'standard'
+
+    # ---------------------------------------------------------
+    # 2. Run HPO on Winning Model Config
+    # ---------------------------------------------------------
+    # Setup correct target for HPO
+    if winning_target_source == 'sortino':
+        # Use full Sortino target
+        y_hpo_full = df['target_sortino'].fillna(0.0)
+    else:
+        # Use standard target
+        y_hpo_full = y
+
+    # Binarize if needed
+    if winning_model_type in ['classifier', 'focal', 'soft_f1', 'auc_pr']:
+        y_hpo_in = (y_hpo_full > 0.5).astype(int)
+    else:
+        y_hpo_in = y_hpo_full
+
     best_hpo_params = _run_layer3_hpo(
-        X, y if winning_model_type == 'regressor' else (y > 0.5).astype(int),
-        w_best,
+        X, y_hpo_in, w_best,
         model_type=winning_model_type,
         n_trials=40
     )
@@ -1540,14 +1856,23 @@ def layer3_analyst_lgbm(
 
             if honest_n_train >= 50 and honest_n_test >= 50:
                 X_arr = X.to_numpy(copy=False)
-                y_arr = pd.to_numeric(df[target_col], errors='coerce').astype(float).to_numpy(copy=False)
+
+                # Use standard target for honest holdout evaluation to verify real-world utility
+                y_arr_std = pd.to_numeric(df[target_col], errors='coerce').astype(float).to_numpy(copy=False)
+
+                # Use winning target for training
+                if winning_target_source == 'sortino':
+                    y_train_src = df['target_sortino'].fillna(0.0).values
+                else:
+                    y_train_src = y_arr_std
+
                 w_arr = np.asarray(w_best, dtype=float).reshape(-1)
 
                 X_train = X_arr[:train_end]
-                y_train = y_arr[:train_end]
+                y_train = y_train_src[:train_end] # Train on Winner Target
                 w_train = w_arr[:train_end]
                 X_test = X_arr[holdout_start:]
-                y_test = y_arr[holdout_start:]
+                y_test = y_arr_std[holdout_start:] # Test on Standard Target
 
                 mask_tr = np.isfinite(y_train) & np.all(np.isfinite(X_train), axis=1) & np.isfinite(w_train)
                 mask_te = np.isfinite(y_test) & np.all(np.isfinite(X_test), axis=1)
@@ -1599,7 +1924,8 @@ def layer3_analyst_lgbm(
                         base_est.fit(X_fit, y_fit, sample_weight=w_fit) # Use raw y_fit (soft)
                         p_test_cal = base_est.predict(X_test)
                         p_cal_cal = base_est.predict(X_cal)
-                    else:
+
+                    elif winning_model_type == 'classifier':
                         # Use Classifier logic
                         base_est = lgb.LGBMClassifier(**best_hpo_params)
                         base_est.fit(X_fit, (y_fit >= 0.5).astype(int), sample_weight=w_fit)
@@ -1613,9 +1939,16 @@ def layer3_analyst_lgbm(
                         p_test_cal = p_test_raw
                         p_cal_cal = p_cal_raw
 
+                        # Calibration (Isotonic or Temp)
+                        # We use simple isotonic or temp scaling
+                        # Here mimicking legacy logic roughly
+                        # For advanced types (Focal, etc) standard calibration is usually applied AFTER raw score conversion
+                        # But for simplicity in Honest Holdout, we trust the model probability or re-calibrate on tail
+
                         try:
                             iso = IsotonicRegression(out_of_bounds='clip')
-                            iso.fit(p_cal_raw, y_cal.astype(float), sample_weight=w_cal)
+                            # Calibrate against BINARY targets in tail
+                            iso.fit(p_cal_raw, (y_cal >= 0.5).astype(float), sample_weight=w_cal)
                             p_test_cal = iso.predict(p_test_raw)
                             p_cal_cal = iso.predict(p_cal_raw)
                         except Exception:
@@ -1625,21 +1958,43 @@ def layer3_analyst_lgbm(
                         p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
                         p_cal_cal = _clip_probs(p_cal_cal, clip_low, clip_high)
 
-                        t_hat = 1.0
-                        if temp_scaling:
-                            try:
-                                t_hat = _fit_temperature(y_cal.astype(int), p_cal_cal, sample_weight=w_cal)
-                            except Exception:
-                                t_hat = 1.0
-                            p_test_cal = _apply_temperature(p_test_cal, t_hat)
-                            p_test_cal = _clip_probs(p_test_cal, clip_low, clip_high)
+                    elif winning_model_type in ['focal', 'soft_f1', 'auc_pr']:
+                        # Custom Objective Training
+                        # Re-instantiate custom objective
+                        custom_obj = None
+                        if winning_model_type == 'focal':
+                            custom_obj = RobustFocalLoss((y_fit >= 0.5).astype(int), gamma=2.0, alpha=0.25)
+                        elif winning_model_type == 'soft_f1':
+                            custom_obj = PyTorchObjectiveWrapper(SoftF1Loss())
+                        elif winning_model_type == 'auc_pr':
+                            custom_obj = PyTorchObjectiveWrapper(SoftAUC_PR_Loss())
 
-                    p_test = p_test_cal
+                        train_ds = lgb.Dataset(X_fit, label=(y_fit >= 0.5).astype(int), weight=w_fit)
+
+                        params_run = best_hpo_params.copy()
+                        if 'objective' in params_run: del params_run['objective']
+
+                        booster = lgb.train(params_run, train_ds, num_boost_round=params_run.get('n_estimators', 500), fobj=custom_obj)
+
+                        raw_test = booster.predict(X_test)
+                        raw_cal = booster.predict(X_cal)
+                        p_test_raw = 1.0 / (1.0 + np.exp(-raw_test))
+                        p_cal_raw = 1.0 / (1.0 + np.exp(-raw_cal))
+
+                        # Calibrate
+                        try:
+                            iso = IsotonicRegression(out_of_bounds='clip')
+                            iso.fit(p_cal_raw, (y_cal >= 0.5).astype(float), sample_weight=w_cal)
+                            p_test_cal = iso.predict(p_test_raw)
+                        except:
+                            p_test_cal = p_test_raw
+
+                    p_test = p_test_cal if 'p_test_cal' in locals() else p_test_raw
                     honest_temperature = float(t_hat) if winning_model_type == 'classifier' else float('nan')
                     honest_prob_clip_low = float(clip_low)
                     honest_prob_clip_high = float(clip_high)
 
-                    y_bin = y_test.astype(int)
+                    y_bin = (y_test >= 0.5).astype(int)
                     if int(np.unique(y_bin).size) >= 2:
                         honest_auc = float(roc_auc_score(y_bin, p_test))
                         try:
@@ -1655,17 +2010,21 @@ def layer3_analyst_lgbm(
                         honest_brier = float(brier_score_loss(y_bin, p_test))
                     except Exception:
                         honest_brier = float('nan')
-    except Exception:
+    except Exception as e:
+        print(f"Honest holdout failed: {e}")
         pass
 
     # Detect continuous again for final training (should match above)
     # Use Winning Model Type here
     try:
+        final_y_train = y_hpo_in # Already prepared for HPO
+
         if winning_model_type == 'regressor':
              # Use Regressor logic with best params
              final_model = lgb.LGBMRegressor(**best_hpo_params)
-             final_model.fit(X, y, sample_weight=w_best)
-        else:
+             final_model.fit(X, final_y_train, sample_weight=w_best)
+
+        elif winning_model_type == 'classifier':
             # Use Classifier logic with best params (and Calibration)
             final_base = lgb.LGBMClassifier(**best_hpo_params)
             final_tscv = TimeSeriesSplit(n_splits=calibration_cv_splits)
@@ -1674,7 +2033,77 @@ def layer3_analyst_lgbm(
                 method='isotonic',
                 cv=final_tscv
             )
-            final_model.fit(X, (y >= 0.5).astype(int), sample_weight=w_best)
+            final_model.fit(X, final_y_train, sample_weight=w_best)
+
+        elif winning_model_type in ['focal', 'soft_f1', 'auc_pr']:
+            # Custom Objective - Final Fit
+            # Note: CalibratedClassifierCV doesn't support custom objective easily without wrapper
+            # We train raw model then wrap in simple calibrator manually or just use raw if well-behaved?
+            # Better to use CalibratedClassifierCV if we can wrap the estimator as sklearn-compliant.
+            # But standard LGBMClassifier supports objective parameter.
+
+            # Re-create params
+            params_final = best_hpo_params.copy()
+            # Objective must be passed as callable to LGBMClassifier
+
+            custom_obj = None
+            if winning_model_type == 'focal':
+                # Need to partial alpha/gamma if not default?
+                # RobustFocalLoss init takes labels, but here we need a factory or instance per fit?
+                # Actually LGBMClassifier accepts objective function.
+                # But RobustFocalLoss needs y_true at init to set alpha.
+                # We can use a lambda or default.
+                # Let's use fixed params for final fit for simplicity or reuse logic.
+                # Or just pass the class instance if labels are available?
+                # Problem: CalibratedClassifierCV splits data, so labels change.
+                # We need an estimator that handles this.
+                # Simplified: Just train one final model on full data without CV calibration?
+                # Or use TimeSeriesSplit manually for calibration.
+
+                # Let's trust that HPO found good params and train final model with Isotonic Calibration on full set?
+                # No, we need OOF calibration for valid probabilities.
+                # Standard practice: CalibratedClassifierCV.
+
+                # For custom objectives, we need to pass the objective to the fit method or init.
+                # Since RobustFocalLoss needs labels at init, it's tricky with CV.
+                # Fallback: Train standard LGBMClassifier with 'binary' objective but tuned params?
+                # NO, that defeats the purpose.
+
+                # Solution: Train single model on full data, no calibration (raw probabilities).
+                # OR use a wrapper class that initializes loss on fit.
+                print("   Note: Training final custom-objective model without CV calibration (using raw sigmoid outputs).")
+
+                train_ds = lgb.Dataset(X, label=final_y_train, weight=w_best)
+
+                if winning_model_type == 'focal':
+                    fobj = RobustFocalLoss(final_y_train.values, gamma=2.0, alpha=0.25)
+                elif winning_model_type == 'soft_f1':
+                    fobj = PyTorchObjectiveWrapper(SoftF1Loss())
+                elif winning_model_type == 'auc_pr':
+                    fobj = PyTorchObjectiveWrapper(SoftAUC_PR_Loss())
+
+                if 'objective' in params_final: del params_final['objective']
+                final_model = lgb.train(params_final, train_ds, num_boost_round=params_final.get('n_estimators', 800), fobj=fobj)
+
+                # Monkey patch predict_proba for consistency downstream?
+                # Downstream expects an object with predict or predict_proba.
+                # lgb.Booster has predict().
+                # We can wrap it.
+                class BoosterWrapper:
+                    def __init__(self, booster):
+                        self.booster = booster
+                    def predict(self, X):
+                        raw = self.booster.predict(X)
+                        return 1.0 / (1.0 + np.exp(-raw))
+                    def predict_proba(self, X):
+                        p = self.predict(X)
+                        return np.vstack([1-p, p]).T
+                    @property
+                    def feature_importances_(self):
+                        return self.booster.feature_importance()
+
+                final_model = BoosterWrapper(final_model)
+
             
     except Exception as e:
         print(f"⚠️ Final model training failed: {e}")
@@ -1767,6 +2196,8 @@ def layer3_analyst_lgbm(
             f"- n_base_models: {int(len(base_model_cols or []))}\n",
             f"- winner_scheme: {best_scheme_name}\n",
             f"- winner_score: {float(best_score) if best_score is not None else float('nan')}\n",
+            f"- winning_target: {winning_target_source}\n",
+            f"- winning_objective: {winning_model_type}\n",
             "\n## Winner Metrics (OOF)\n",
         ]
         for k, v in (metrics or {}).items():
@@ -1957,6 +2388,10 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
         estimators = []
 
         # Extract estimators
+        # Handle BoosterWrapper (for custom objectives)
+        if hasattr(model, 'booster'):
+            model = model.booster
+
         if isinstance(model, CalibratedClassifierCV):
             if hasattr(model, 'calibrated_classifiers_'):
                 for cc in model.calibrated_classifiers_:
@@ -1964,7 +2399,7 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
                     if est:
                         estimators.append(est)
         else:
-            # Assume it's a direct LGBMRegressor or Classifier
+            # Assume it's a direct LGBMRegressor or Classifier or Booster
             estimators.append(model)
 
         if not estimators:
@@ -1989,9 +2424,11 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
 
                 shap_values_list.append(vals)
             except Exception as e:
-                print(f"   ⚠️ Estimator SHAP failed: {e}")
+                # print(f"   ⚠️ Estimator SHAP failed: {e}")
+                pass
 
         if not shap_values_list:
+            print("   ⚠️ No SHAP values computed.")
             return
 
         # Average SHAP values
@@ -2009,6 +2446,10 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
 
         # 2. Text Summary (Top features)
         # Calculate mean absolute SHAP value per feature
+        # Handle case where avg_shap_values might be (N, M, C) or (N, M)
+        if avg_shap_values.ndim == 3:
+             avg_shap_values = avg_shap_values[:, :, 1] # Take positive class if 3D
+
         feature_importance = pd.DataFrame(
             list(zip(X_sample.columns, np.abs(avg_shap_values).mean(0))),
             columns=['feature', 'importance']
@@ -2034,8 +2475,8 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
 
     except Exception as e:
         print(f"⚠️ SHAP Analysis failed: {e}")
-        import traceback
-        traceback.print_exc()
+        # import traceback
+        # traceback.print_exc()
 
 # ---------------------------------------------------------
 # Helper: Advanced Diagnostic Plot (Unchanged)

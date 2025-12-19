@@ -272,7 +272,7 @@ class Layer4RiskFilter:
 
     def __init__(
         self,
-        n_estimators: int = 100,
+        n_estimators: int = 300,
         max_depth: int = 5,
         min_samples_leaf: int = 20,
         class_weight: str = 'balanced',
@@ -524,7 +524,7 @@ class Layer4RiskFilter:
         config = data.get('config', {})
         
         obj = cls(
-            n_estimators=config.get('n_estimators', 100),
+            n_estimators=config.get('n_estimators', 300),
             max_depth=config.get('max_depth', 5),
             min_samples_leaf=config.get('min_samples_leaf', 20),
             class_weight=config.get('class_weight', 'balanced'),
@@ -739,7 +739,7 @@ def train_layer4_oof(
             l3_train = l3_probs.iloc[train_idx].loc[labeled_train]
              
             l4_model = Layer4RiskFilter(
-                n_estimators=int(cfg.get('layer4_n_estimators', 100)),
+                n_estimators=int(cfg.get('layer4_n_estimators', 300)),
                 max_depth=int(cfg.get('layer4_max_depth', 5)),
                 min_samples_leaf=int(cfg.get('layer4_min_samples_leaf', 20)),
                 l3_keep_fraction=keep_fraction,

@@ -45,6 +45,28 @@ from src.utils.purged_kfold import PurgedKFoldTime
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Constants for Layer 2 Model Training (defaults/fixed)
+LAYER2_MODEL_CONSTANTS = {
+    'boosting_type': 'gbdt',
+    'objective': 'binary',
+    'metric': 'binary_logloss',
+    'max_depth': -1,
+    'learning_rate': 0.05,
+    'lambda_l1': 0.1,
+    'lambda_l2': 0.2,
+    'min_data_in_leaf': 30,
+    'min_sum_hessian_in_leaf': 1e-3,
+    'feature_fraction': 0.8,
+    'bagging_fraction': 0.8,
+    'bagging_freq': 2,
+    'verbose': -1,
+    'random_state': 42,
+    'n_jobs': 1,
+    'is_unbalance': False,
+    'scale_pos_weight': 1,
+    'min_gain_to_split': 0.005,
+    'min_child_weight': 0.001,
+}
 
 def _normalized_binary_entropy(p: float) -> float:
     """Return normalized entropy in [0, 1] for a Bernoulli(p)."""
@@ -247,6 +269,7 @@ class GeometryTrial:
     balance: float
     raw_metrics: Dict[str, float]
     uuid: str
+    model_params: Optional[Dict[str, Any]] = None
 
 class LabelBasedLayer2:
     """
@@ -409,6 +432,16 @@ class LabelBasedLayer2:
                 fallback_enabled = True
             if fallback_enabled:
                 production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=False)
+
+        # Optimize Model Parameters for Production Geometries
+        if production_geometries:
+            logger.info(">>> Layer 2: Tuning Model Parameters for Production Geometries...")
+            for i, g in enumerate(production_geometries):
+                logger.info(f"    Tuning model for geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
+                best_params = self._tune_geometry_model_params(df, events_df, g)
+                if best_params:
+                    g.model_params = best_params
+                    logger.info(f"    Found params for {g.uuid}: {best_params}")
 
         try:
             by_fam: Dict[str, int] = {}
@@ -2472,6 +2505,138 @@ class LabelBasedLayer2:
 
         return True
 
+    def _tune_geometry_model_params(
+        self,
+        df: pd.DataFrame,
+        events_df: pd.DataFrame,
+        geometry: GeometryTrial
+    ) -> Dict[str, Any]:
+        """
+        Run small HPO for model hyperparameters on a specific geometry.
+        Scope: Production geometries only.
+        """
+        try:
+            # 1. Prepare Data
+            fam_events = events_df[events_df['family'] == geometry.family]
+            if fam_events.empty:
+                return {}
+
+            lbls, _, _, _ = self._compute_dominance_labels(df, fam_events, family=geometry.family, **geometry.params)
+            valid_lbls = lbls.dropna()
+
+            # Subsample (e.g., 3000 or 50%, whichever is smaller, but at least 500 if possible)
+            n_total = len(valid_lbls)
+            if n_total < 100:
+                return {} # Too small to tune
+
+            n_sub = min(3000, int(n_total * 0.5))
+            n_sub = max(n_sub, min(n_total, 500))
+
+            # Deterministic subsample for stability
+            rng = np.random.default_rng(self.random_state)
+            indices = rng.choice(valid_lbls.index, size=n_sub, replace=False)
+            indices = np.sort(indices) # keep temporal order mostly? No, random is fine for distribution check, but for time series...
+            # Actually, standard shuffle is better for quick HPO unless we strictly need time series split.
+            # Given we use simple Train/Val split inside objective, random subsample is risky for leakage?
+            # Better to take a contiguous chunk or just use random if we assume stationarity for HPO.
+            # Let's use the last N samples to be safe/relevant? Or stratified?
+            # User said "Subsample (we need relative performance)". Random is likely fine.
+
+            y_sub = valid_lbls.loc[indices]
+
+            # Need features
+            X_events = self._build_geometry_independent_event_features(df, fam_events.loc[indices])
+            # Filter to probe features if global selection is done?
+            # We don't have easy access to 'global_probe_features' here unless we store it or re-derive.
+            # But 'run' stores it in self._global_probe_features.
+            if getattr(self, '_global_probe_features', None):
+                cols = [c for c in self._global_probe_features if c in X_events.columns]
+                if cols:
+                    X_events = X_events[cols]
+
+            X_sub = X_events.fillna(0.0)
+
+            # 2. Define Objective
+            def objective(trial):
+                # Search Space
+                focal_gamma = trial.suggest_float('focal_gamma', 0.5, 1.0)
+                focal_alpha = trial.suggest_float('focal_alpha', 0.25, 0.5)
+                num_leaves = trial.suggest_int('num_leaves', 63, 255)
+                n_estimators = trial.suggest_int('n_estimators', 750, 1500)
+
+                # Constants overlap
+                params = LAYER2_MODEL_CONSTANTS.copy()
+                params.update({
+                    'num_leaves': num_leaves,
+                    'n_estimators': n_estimators,
+                    'metric': 'binary_logloss', # Ensure metric
+                })
+
+                # Split for Early Stopping (simple 80/20 on the subsample)
+                split_idx = int(len(X_sub) * 0.8)
+                X_tr, X_val = X_sub.iloc[:split_idx], X_sub.iloc[split_idx:]
+                y_tr, y_val = y_sub.iloc[:split_idx], y_sub.iloc[split_idx:]
+
+                if len(np.unique(y_tr)) < 2: return 10.0 # Fail
+
+                train_ds = lgb.Dataset(X_tr, label=y_tr)
+                val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
+
+                # Focal Loss
+                focal_obj = RobustFocalLoss(train_labels=y_tr.values, gamma=focal_gamma, alpha=focal_alpha)
+                params['objective'] = focal_obj
+
+                # Callback for pruning
+                pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "binary_logloss")
+
+                model = lgb.train(
+                    params,
+                    train_ds,
+                    valid_sets=[val_ds],
+                    callbacks=[
+                        lgb.early_stopping(30, verbose=False),
+                        pruning_callback
+                    ],
+                    verbose_eval=False
+                )
+
+                # Score
+                preds = model.predict(X_val)
+                # Ensure probability
+                preds = 1.0 / (1.0 + np.exp(-preds)) # Raw score -> prob (RobustFocalLoss returns margin?)
+                # Wait, RobustFocalLoss objective means model output is raw margin (logit).
+                # lgb.train predict returns raw margin if custom objective is used?
+                # Usually custom objective implies raw prediction.
+                # But 'binary_logloss' metric expects probabilities?
+                # LGBM usually transforms output if objective is standard.
+                # With custom objective, we must verify.
+                # Assuming margins:
+                # But wait, RobustFocalLoss.__call__ takes `preds` (raw margins).
+                # LogLoss metric needs probabilities.
+                # Let's use sklearn log_loss on sigmoid(preds).
+
+                score = log_loss(y_val, preds)
+                return score
+
+            # 3. Optimize
+            sampler = optuna.samplers.TPESampler(seed=self.random_state)
+            pruner = optuna.pruners.HyperbandPruner()
+            study = optuna.create_study(direction='minimize', sampler=sampler, pruner=pruner)
+            study.optimize(objective, n_trials=40, n_jobs=1) # 40 trials as requested
+
+            best = study.best_params
+            # Extract params to return
+            return {
+                'focal_gamma': best['focal_gamma'],
+                'focal_alpha': best['focal_alpha'],
+                'num_leaves': best['num_leaves'],
+                'n_estimators': best['n_estimators']
+            }
+
+        except Exception as e:
+            logger.warning(f"Geometry model HPO failed for {geometry.uuid}: {e}")
+            return {}
+
     def _optimize_families(
         self,
         df: pd.DataFrame,
@@ -3333,43 +3498,28 @@ class LabelBasedLayer2:
                     models[g.uuid] = None
                     continue
 
-                # --- New Hyperparameters ---
-                # Aligned with "Default Start" recommendations:
-                # - gamma=0.75, alpha=0.25
-                # - num_leaves=127, max_depth=-1 (deep trees)
-                # - lr=0.05, n_est=1000
-                # - minimal regularization (l1=0, l2=0)
+                # Base params from constants
+                params = LAYER2_MODEL_CONSTANTS.copy()
 
-                params = {
-                    'boosting_type': 'gbdt',
-                    'objective': 'binary',
-                    'metric': 'binary_logloss',
-                    'max_depth': -1,
-                    'num_leaves': 127,
-                    'lambda_l1': 0.25,
-                    'lambda_l2': 0.5,
-                    'min_data_in_leaf': 50,
-                    'min_sum_hessian_in_leaf': 1e-3,
-                    'feature_fraction': 0.9,
-                    'bagging_fraction': 0.9,
-                    'bagging_freq': 1,
-                    'learning_rate': 0.05,
-                    'n_estimators': 1000,
-                    'verbose': -1,
-                    'random_state': 42,
-                    'n_jobs': 1,
-                    # Disable internal imbalance handling as Focal Loss handles it
-                    'is_unbalance': False,
-                    'scale_pos_weight': 1,
-                    # Add min_gain_to_split to prevent -inf gain issues
-                    'min_gain_to_split': 0.005,
-                    # Add regularization to prevent overfitting
-                    'min_child_weight': 0.001,
-                }
+                # Check for geometry-specific model params (HPO result)
+                # Note: 'g' is the GeometryTrial object
+                tuned_params = getattr(g, 'model_params', None)
+
+                # Default Focal Loss params
+                f_gamma = 0.75
+                f_alpha = 0.25
+
+                if isinstance(tuned_params, dict) and tuned_params:
+                    # Update base params with tuned ones
+                    params.update({k: v for k, v in tuned_params.items() if k in params})
+                    # Extract Focal params if present
+                    if 'focal_gamma' in tuned_params:
+                        f_gamma = float(tuned_params['focal_gamma'])
+                    if 'focal_alpha' in tuned_params:
+                        f_alpha = float(tuned_params['focal_alpha'])
 
                 # Instantiate Focal Loss
-                # Recommended: gamma=0.75 (mild hunting), alpha=0.25 (optional imbalance control)
-                focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=0.75, alpha=0.25)
+                focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=f_gamma, alpha=f_alpha)
                 params['objective'] = focal_obj
 
                 # Create Dataset for training

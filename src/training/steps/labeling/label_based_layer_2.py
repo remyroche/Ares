@@ -3589,7 +3589,11 @@ class LabelBasedLayer2:
                 is_profitable = False
             elif profit_mode == 'intelligent':
                 # Additional risk filters for intelligent mode
-                if float(mean_ret) < -max_acceptable_loss:  # Don't allow large losses
+                # Fix sign logic: defaults are negative, so check strictly less than
+                limit = max_acceptable_loss
+                if limit > 0: limit = -limit # Ensure it is a floor (negative return)
+
+                if float(mean_ret) < limit:  # Don't allow large losses
                     is_profitable = False
                 # Calculate Sharpe proxy if return data available
                 try:

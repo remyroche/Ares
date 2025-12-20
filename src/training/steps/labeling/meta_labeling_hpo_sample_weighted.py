@@ -48,7 +48,15 @@ from src.training.steps.labeling.label_based_layer_4 import (
     compute_final_score_dynamic,
     compute_final_score_bayesian,
     compute_final_score_ridge,
-    train_layer4_oof,
+)
+from src.training.steps.labeling.oos_integration import (
+    should_run_oos,
+    create_oos_split,
+    generate_oos_predictions,
+    run_oos_layer5_evaluation,
+    compare_oos_vs_oof,
+    save_oos_results,
+    validate_oos_config,
 )
 from src.training.steps.labeling.label_based_layer_5 import Layer5PositionSizer
 from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
@@ -698,6 +706,27 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         if market_data is None or market_data.empty:
             tprint_error("Failed to load market data.")
             return {"success": False}
+        
+        # ---------------------------------------------------------------------
+        # OOS TEST: Check if we should run OOS evaluation
+        # ---------------------------------------------------------------------
+        oos_results = None
+        train_data = market_data
+        oos_data = None
+        
+        if should_run_oos(config, market_data):
+            tprint_info(">>> OOS Test Enabled - Creating temporal split...")
+            try:
+                oos_config = validate_oos_config(config)
+                train_data, oos_data, split_date = create_oos_split(
+                    market_data,
+                    oos_days=oos_config['oos_days'],
+                    min_train_days=oos_config['min_train_days']
+                )
+                tprint_success(f"OOS split created: train={len(train_data)} bars, test={len(oos_data)} bars")
+            except Exception as e:
+                tprint_warning(f"Failed to create OOS split: {e}")
+                oos_data = None
 
         # ---------------------------------------------------------------------
         # LAYER 0: Kalman/RTS + VWAP optimization
@@ -714,22 +743,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 outcomes_dir=outcomes_dir,
                 bundle_path=layer0_bundle_path,
                 run_optimization=run_opt,
+                train_data=train_data,  # Use training data only
             )
             layer0_params = dict(layer0_payload.get("best_params", {}) or {})
             layer0_artifacts["layer0_kalman_bundle"] = str(layer0_bundle_path)
             layer0_artifacts["layer0_params"] = dict(layer0_params)
 
-            if explicit_start and start_at == "layer0":
-                return {
-                    "success": True,
-                    "outcomes_dir": str(outcomes_dir),
-                    "metrics": {
-                        "layer0": dict(layer0_params),
-                    },
-                    "artifacts": {
-                        "layer0_kalman_bundle": str(layer0_bundle_path),
-                    },
-                }
         else:
             if layer0_bundle_path.exists():
                 try:
@@ -922,18 +941,6 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 layer1_bundle_path,
             )
 
-            if explicit_start and start_at == "layer1":
-                return {
-                    "success": True,
-                    "outcomes_dir": str(outcomes_dir),
-                    "metrics": {
-                        "layer1_n_events": int(len(t_events)),
-                    },
-                    "artifacts": {
-                        "layer1_weighting_bundle": str(layer1_bundle_path),
-                        **layer0_artifacts,
-                    },
-                }
 
         layer2_bundle_path = outcomes_dir / "layer2_oof_bundle.joblib"
         l2_labels = None
@@ -945,7 +952,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         events_df = None
         selected_trials = None
 
-        if start_at in ("layer3", "layer4"):
+        if start_at in ("layer3", "layer4") and not bool(config.get('force_hpo', False)):
             if not layer2_bundle_path.exists():
                 raise FileNotFoundError(
                     f"Missing Layer2 bundle at {layer2_bundle_path}. Run with --labeling-hpo-start-at layer2 first."
@@ -987,11 +994,15 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 transaction_cost=get_transaction_cost(config),
                 n_trials=int(config.get('layer2_n_trials', 30)),
                 n_splits=int(config.get('layer2_n_splits', 3)),
-                verbose=True
+                verbose=True,
+                force_hpo=bool(config.get('force_hpo', False))
             )
+            
+            # Run Layer 2 on training data only
+            layer2_results = layer2.run(train_data)
 
             # This now returns OOF labels AND Production Geometries
-            l2_output = layer2.execute(market_data, config)
+            l2_output = layer2_results
 
             # Unpack Layer 2 Artifacts (OOF for Training/Analytics)
             l2_score = l2_output.get('l2_score')
@@ -1095,18 +1106,6 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 layer2_bundle_path,
             )
 
-            if start_at == "layer2":
-                return {
-                    "success": True,
-                    "outcomes_dir": str(outcomes_dir),
-                    "metrics": {
-                        "layer2": _compute_layer2_metrics(l2_labels, l2_returns, l2_weights),
-                    },
-                    "artifacts": {
-                        "layer2_geometries": str(outcomes_dir / "layer2_selected_geometries.json"),
-                        "layer2_oof_bundle": str(layer2_bundle_path),
-                    },
-                }
             
         # ---------------------------------------------------------
         # Component Weights Preparation for Layer 3 Comparison
@@ -1364,7 +1363,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         except Exception:
             pass
 
-        if start_at == "layer4":
+        if start_at == "layer4" and not bool(config.get('force_hpo', False)):
             layer3_oof_path = outcomes_dir / "layer3_oof_preds.csv"
             if not layer3_oof_path.exists():
                 raise FileNotFoundError(
@@ -1516,19 +1515,6 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # Save Final Model
             joblib.dump(final_model, outcomes_dir / "layer3_final_model.joblib")
 
-            if start_at == "layer3":
-                return {
-                    "success": True,
-                    "outcomes_dir": str(outcomes_dir),
-                    "metrics": {
-                        "layer3": _compute_layer3_metrics(oof_export, target_col=target_col, prob_col="meta_prob"),
-                    },
-                    "artifacts": {
-                        "oof_preds": str(layer3_oof_path),
-                        "calibration_plot": str(outcomes_dir / "layer3_calibration_plot.png"),
-                        "final_model": str(outcomes_dir / "layer3_final_model.joblib"),
-                    },
-                }
 
         # ---------------------------------------------------------
         # LAYER 4: Risk Filter (ExtraTrees + Platt Calibration)
@@ -1784,7 +1770,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             traded_idx = None
 
         # Save Layer 5 Artifacts
-        sizer.save_artifacts(outcomes_dir)
+        sizer._save_artifacts_to_disk(outcomes_dir)
 
         # Helper to sanitize keys for JSON (e.g. Intervals)
         def sanitize_keys(d):
@@ -1875,6 +1861,66 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             layer4_risk_metrics=l4_risk_metrics,
             layer5_metrics=dict(l4_metrics_safe, **({"pmin_sweep_csv": sweep_path} if sweep_path else {})),
         )
+        
+        # ---------------------------------------------------------------------
+        # OOS TEST: Run OOS evaluation if enabled
+        # ---------------------------------------------------------------------
+        if oos_data is not None and oos_config.get('enabled', False):
+            tprint_info(">>> Running OOS Layer 5 Evaluation...")
+            try:
+                # Generate OOS predictions using trained models
+                trained_models = {
+                    'layer2': layer2,
+                    'layer3': final_model,
+                    'layer4': l4_model if 'l4_model' in locals() else None
+                }
+                
+                oos_predictions = generate_oos_predictions(
+                    oos_data=oos_data,
+                    trained_models=trained_models,
+                    config=config
+                )
+                
+                # Run Layer 5 on OOS predictions
+                oos_layer5_results = run_oos_layer5_evaluation(
+                    oos_predictions=oos_predictions,
+                    config=config
+                )
+                
+                # Compare with OOF results
+                oof_layer5_results = l4_metrics_safe
+                oos_comparison = compare_oos_vs_oof(
+                    oos_results=oos_layer5_results,
+                    oof_results=oof_layer5_results,
+                    config=config
+                )
+                
+                # Assemble OOS results
+                oos_results = {
+                    'enabled': True,
+                    'split_date': split_date,
+                    'train_bars': len(train_data),
+                    'oos_bars': len(oos_data),
+                    'layer5_metrics': oos_layer5_results,
+                    'comparison': oos_comparison,
+                    'reliability_score': oos_comparison.get('reliability_score', 0)
+                }
+                
+                # Save OOS results
+                save_oos_results(
+                    results=oos_results,
+                    config=config,
+                    symbol=config.get('symbol', 'UNKNOWN'),
+                    timeframe=config.get('timeframe', 'UNKNOWN')
+                )
+                
+                tprint_success(f"OOS Test Complete. Reliability Score: {oos_comparison.get('reliability_score', 0):.0f}/100")
+                
+            except Exception as e:
+                tprint_warning(f"OOS evaluation failed: {e}")
+                oos_results = {'enabled': True, 'error': str(e)}
+        else:
+            oos_results = {'enabled': False}
 
         snr_reports: Dict[str, Any] = {}
         run_snr = bool(config.get("run_snr_diagnostics_after_layer4", True))
@@ -1928,6 +1974,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "unified_report_csv": unified_paths["csv"],
             "unified_report_json": unified_paths["json"],
             "snr_diagnostics": snr_reports,
+            "oos_results": oos_results,
         }
 
         try:

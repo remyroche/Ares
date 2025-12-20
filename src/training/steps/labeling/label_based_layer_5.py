@@ -43,11 +43,11 @@ class Layer5PositionSizer:
         target_col: str = 'target',  # Realized binary target or similar
         return_col: str = 'realized_return', # Actual return of the trade
         vol_col: str = 'volatility_1d',
-        p_min: float = 0.5,
+        p_min: float = 0.1,  # Reduced from 0.5 to allow more trades
         p_max: float = 0.9,
         gamma: float = 1.2,
         transaction_cost: float = 0.000, # Returns assumed net unless specified
-        gate_mode: str = 'p_min',
+        gate_mode: str = 'quantile',
         gate_quantile: Optional[float] = None,
         gate_top_k: Optional[int] = None,
         gate_top_k_per_day: Optional[int] = None,
@@ -247,10 +247,35 @@ class Layer5PositionSizer:
 
             return gate, thr, 'top_k_per_day'
 
-        # Default: fixed p_min
-        thr = float(self.p_min)
+        # Default: find probability level where win-rate is 51%+
+        if 'realized_return' in self.df.columns:
+            returns = pd.to_numeric(self.df['realized_return'], errors='coerce').to_numpy()
+            p_valid = p[finite & np.isfinite(returns)]
+            ret_valid = returns[finite & np.isfinite(returns)]
+            
+            if p_valid.size > 50 and ret_valid.size > 50:
+                # Calculate win-rate across probability thresholds
+                thresholds = np.linspace(np.min(p_valid), np.max(p_valid), 50)
+                win_rates = []
+                
+                for thr in thresholds:
+                    mask = p_valid >= thr
+                    if np.sum(mask) > 10:  # Need sufficient trades
+                        wr = np.mean(ret_valid[mask] > 0)  # Win-rate = positive returns
+                        win_rates.append(wr)
+                    else:
+                        win_rates.append(0.0)
+                
+                # Find threshold where win-rate crosses 51%
+                win_rates = np.array(win_rates)
+                above_51 = thresholds[np.where(win_rates >= 0.51)[0]]
+                thr = float(above_51[0]) if len(above_51) > 0 else float(self.p_min)
+            else:
+                thr = float(self.p_min)
+        else:
+            thr = float(self.p_min)
         gate = finite & (p >= thr)
-        return gate, thr, 'p_min'
+        return gate, thr, 'p_min_winrate'
 
 
     def get_gate_index(self) -> pd.Index:

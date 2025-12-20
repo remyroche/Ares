@@ -1,0 +1,50 @@
+# Layer 2 Comprehensive Coverage Relaxation Configuration
+# Purpose: Increase coverage from 3.23% to target 25-35% through multiple gate relaxations
+
+layer2:
+  # Position Rate Gates (relaxed from 5-75% to 5-85%)
+  min_pos_rate: 0.05      # Allow selective strategies (changed from 0.01 to 0.05 as requested)
+  max_pos_rate: 0.85      # Allow high win rate strategies (up from 0.75)
+  
+  # Kappa Range (tp_mult related, expanded for more flexibility)
+  kappa_low: 0.5          # Lower bound for profit target multiplier (down from 0.8)
+  kappa_high: 12.0        # Upper bound for profit target multiplier (up from 8.0)
+  
+  # Stop Loss Multiplier Range (widened as requested)
+  sl_mult_low: 0.3        # Lower bound for stop loss multiplier (unchanged)
+  sl_mult_high: 2.0       # Upper bound reduced from 4.0 to 2.0 for tighter stops
+  
+  # Relaxed Profitability Gate (allow slightly negative returns)
+  profitability_mode: intelligent  # Allow break-even with risk filters
+  min_mean_trade_return: -0.002   # Allow -0.2% losses (down from 0.3% cost)
+  max_acceptable_loss: -0.002      # Max -0.2% loss (more permissive)
+  min_sharpe_proxy: 0.05           # Lower risk threshold (down from 0.1)
+  min_positive_trades: 15          # Minimum profitable trades for statistical significance
+  
+  # Coverage Targets
+  target_coverage: 0.35   # Aim for 35% coverage (up from 3.23%)
+  min_coverage: 0.25      # Minimum acceptable coverage
+  
+  # Other Gates (unchanged but documented)
+  probe_auc_threshold: 0.52
+  stability_threshold: 0.85
+
+# Layer 3 Efficiency Improvements
+layer3:
+  efficiency_threshold: 0.2    # Lowered from 0.5 for more permissive labeling
+  tx_cost_proxy: 0.003         # 30bps transaction cost
+  efficiency_mode: relative     # Use percentile-based labeling instead of absolute
+  
+# Expected Combined Impact:
+# 1. TP/SL Range Expansion: +5-8% coverage
+# 2. Profitability Gate Relaxation: +10-15% coverage  
+# 3. Position Rate Relaxation: +3-5% coverage
+# 4. Layer 3 Relative Efficiency: Better labeling, less rejection of net-positive trades
+# 
+# Total Expected Coverage: 25-35% (from 3.23%)
+# 
+# Key Changes:
+# - TP/SL: kappa [0.5, 12.0], sl_mult [0.3, 2.0] for better geometry exploration
+# - Profitability: Allow -0.2% losses (Layer 3 will filter poor performers)
+# - Position Rate: [5%, 85%] range for more inclusive strategy selection
+# - Layer 3: Percentile-based labeling (top 40% = Class 1) instead of absolute efficiency

@@ -1,200 +1,336 @@
 [
   {
-    "family": "Momentum",
+    "family": "Mean Reversion",
     "params": {
-      "kappa": 3.100427059120603,
-      "sl_mult": 1.8118910790805947,
-      "horizon": 15
+      "kappa": 3.1242177333881367,
+      "sl_mult": 1.9488467486753904,
+      "horizon": 11
     },
-    "final_score": 3.4661614085352848,
-    "learnability": 0.628294141139748,
-    "robust_magnitude": -3.1226346411173904,
-    "stability": 1.0,
-    "balance": 0.8183070731271059,
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
     "raw_metrics": {
-      "auc": 0.628294141139748,
-      "auc_std": 0.08882399278876095,
-      "pr_auc": 0.39721172346763756,
-      "pr_auc_baseline": 0.22458628841607564,
-      "ic": 0.14622365196466683,
-      "log_loss": 0.6888310148806556,
-      "auc_lgbm": 0.6790407929819309,
-      "auc_lgbm_light": 0.6790407929819309,
-      "auc_linear": 0.577547489297565,
-      "pr_auc_lgbm": 0.4436724390500857,
-      "pr_auc_linear": 0.35075100788518937,
-      "passed": true,
-      "pos_rate": 0.2186761229314421,
-      "flip_rate": 0.6414852752880922,
-      "entropy": 0.5252272605737709,
-      "ic_global": 0.14622365196466683
+      "passed": false,
+      "pos_rate": 0.30374830064090114,
+      "pos_count": 1564.0,
+      "mean_trade_ret": 0.0044050207884380735,
+      "mean_ret": -0.0028340746946902565,
+      "reason": "unprofitable"
     },
-    "uuid": "Momentum_5",
-    "model_params": null
+    "uuid": "Mean Reversion_3",
+    "model_params": {
+      "iterations": 574,
+      "learning_rate": 0.045496385153462035,
+      "depth": 6,
+      "class_weight_ratio": 2.019113787985153,
+      "model_type": "catboost",
+      "race_scores": {
+        "lgbm": 0.5280621046578494,
+        "xgb": 0.5,
+        "catboost": 0.5994824611845889
+      }
+    }
   },
   {
-    "family": "Momentum",
+    "family": "Mean Reversion",
     "params": {
-      "kappa": 3.8900438361009297,
-      "sl_mult": 2.134053291800903,
+      "kappa": 3.497327922401265,
+      "sl_mult": 0.609102444252071,
       "horizon": 20
     },
-    "final_score": 3.3613502202808725,
-    "learnability": 0.6180717200635382,
-    "robust_magnitude": -2.849769448455931,
-    "stability": 1.0,
-    "balance": 0.8066876787719786,
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
     "raw_metrics": {
-      "auc": 0.6180717200635382,
-      "auc_std": 0.08058407874427649,
-      "pr_auc": 0.3924127134629111,
-      "pr_auc_baseline": 0.2198581560283688,
-      "ic": 0.11179058013812153,
-      "log_loss": 0.6825416639061679,
-      "auc_lgbm": 0.672783748661917,
-      "auc_lgbm_light": 0.672783748661917,
-      "auc_linear": 0.5633596914651594,
-      "pr_auc_lgbm": 0.45808715912589537,
-      "pr_auc_linear": 0.3267382677999269,
-      "passed": true,
-      "pos_rate": 0.21040189125295508,
-      "flip_rate": 0.6413430075401907,
-      "entropy": 0.5144886599910099,
-      "ic_global": 0.11179058013812153
+      "passed": false,
+      "pos_rate": 0.15692367449990288,
+      "pos_count": 808.0,
+      "mean_trade_ret": 0.005659729359915812,
+      "mean_ret": -0.0028829967830396363,
+      "reason": "unprofitable"
     },
-    "uuid": "Momentum_29",
-    "model_params": null
+    "uuid": "Mean Reversion_4",
+    "model_params": {
+      "iterations": 589,
+      "learning_rate": 0.04200440758289489,
+      "depth": 8,
+      "class_weight_ratio": 2.0173722211278635,
+      "model_type": "catboost",
+      "race_scores": {
+        "lgbm": 0.47150997150997154,
+        "xgb": 0.5,
+        "catboost": 0.5401709401709403
+      }
+    }
+  },
+  {
+    "family": "Trend Continuation",
+    "params": {
+      "kappa": 3.1854305348131313,
+      "sl_mult": 1.5443897010793888,
+      "horizon": 97
+    },
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
+    "raw_metrics": {
+      "passed": false,
+      "pos_rate": 0.3170393825450228,
+      "pos_count": 1602.0,
+      "mean_trade_ret": 0.008327123327236846,
+      "mean_ret": -0.003400813282078145,
+      "reason": "unprofitable"
+    },
+    "uuid": "Trend Continuation_0",
+    "model_params": {
+      "focal_gamma": 2.236568201814655,
+      "focal_alpha": 0.9101734562406696,
+      "num_leaves": 318,
+      "n_estimators": 1820,
+      "model_type": "lgbm",
+      "race_scores": {
+        "lgbm": 0.5276690584909763,
+        "xgb": 0.5,
+        "catboost": 0.5201674277016743
+      }
+    }
+  },
+  {
+    "family": "Trend Continuation",
+    "params": {
+      "kappa": 5.2459918836018975,
+      "sl_mult": 0.609102444252071,
+      "horizon": 37
+    },
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
+    "raw_metrics": {
+      "passed": false,
+      "pos_rate": 0.10149195131527287,
+      "pos_count": 517.0,
+      "mean_trade_ret": 0.01457775162938136,
+      "mean_ret": -0.0031243100345208566,
+      "reason": "unprofitable"
+    },
+    "uuid": "Trend Continuation_4",
+    "model_params": {
+      "focal_gamma": 0.5541264051081627,
+      "focal_alpha": 0.9454910694486525,
+      "num_leaves": 129,
+      "n_estimators": 1720,
+      "model_type": "lgbm",
+      "race_scores": {
+        "lgbm": 0.5309608540925266,
+        "xgb": 0.5,
+        "catboost": 0.41451957295373665
+      }
+    }
   },
   {
     "family": "Trend Continuation",
     "params": {
       "kappa": 4.686326600082205,
-      "sl_mult": 2.9247746304049858,
+      "sl_mult": 1.9488467486753904,
       "horizon": 21
     },
-    "final_score": 3.7468168160800945,
-    "learnability": 0.5878192812687635,
-    "robust_magnitude": -3.5488101386991024,
-    "stability": 1.0,
-    "balance": 0.8655110049896916,
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
     "raw_metrics": {
-      "auc": 0.5878192812687635,
-      "auc_std": 0.020109603113990845,
-      "pr_auc": 0.4059875598403876,
-      "pr_auc_baseline": 0.26362484157160965,
-      "ic": 0.08639108544046818,
-      "log_loss": 0.7130674042582952,
-      "auc_lgbm": 0.5850849896100648,
-      "auc_lgbm_light": 0.5850849896100648,
-      "auc_linear": 0.5905535729274621,
-      "pr_auc_lgbm": 0.38741627471493095,
-      "pr_auc_linear": 0.4245588449658442,
-      "passed": true,
-      "pos_rate": 0.25602027883396705,
-      "flip_rate": 0.6941949759208643,
-      "entropy": 0.5688529569496309,
-      "ic_global": 0.08639108544046818
+      "passed": false,
+      "pos_rate": 0.2227228207639569,
+      "pos_count": 1137.0,
+      "mean_trade_ret": 0.012095306366126865,
+      "mean_ret": -0.003330247823663539,
+      "reason": "unprofitable"
     },
     "uuid": "Trend Continuation_3",
-    "model_params": null
-  },
-  {
-    "family": "Mean Reversion",
-    "params": {
-      "kappa": 3.701478515675736,
-      "sl_mult": 1.8792877520282965,
-      "horizon": 16
-    },
-    "final_score": 3.7104811363043386,
-    "learnability": 0.5562453606743503,
-    "robust_magnitude": -2.820203389709426,
-    "stability": 1.0,
-    "balance": 0.8843709825796253,
-    "raw_metrics": {
-      "auc": 0.5562453606743503,
-      "auc_std": 0.047180295508718946,
-      "pr_auc": 0.3469393782779149,
-      "pr_auc_baseline": 0.2767762460233298,
-      "ic": 0.037385549626547346,
-      "log_loss": 0.6834475409148628,
-      "auc_lgbm": 0.5652211894216541,
-      "auc_lgbm_light": 0.5652211894216541,
-      "auc_linear": 0.5472695319270464,
-      "pr_auc_lgbm": 0.3425245134001085,
-      "pr_auc_linear": 0.3513542431557212,
-      "passed": true,
-      "pos_rate": 0.2730646871686108,
-      "flip_rate": 0.635657409205671,
-      "entropy": 0.5862832773388126,
-      "ic_global": 0.037385549626547346
-    },
-    "uuid": "Mean Reversion_14",
-    "model_params": null
-  },
-  {
-    "family": "Mean Reversion",
-    "params": {
-      "kappa": 3.587892646256053,
-      "sl_mult": 1.7677855749622675,
-      "horizon": 13
-    },
-    "final_score": 3.635588221930308,
-    "learnability": 0.5588246064604723,
-    "robust_magnitude": -2.8006380788819936,
-    "stability": 1.0,
-    "balance": 0.8625212923822058,
-    "raw_metrics": {
-      "auc": 0.5588246064604723,
-      "auc_std": 0.033031510365423136,
-      "pr_auc": 0.3271338587035929,
-      "pr_auc_baseline": 0.2523860021208908,
-      "ic": 0.06589590965358837,
-      "log_loss": 0.6671036070996214,
-      "auc_lgbm": 0.559140280930036,
-      "auc_lgbm_light": 0.559140280930036,
-      "auc_linear": 0.5585089319909086,
-      "pr_auc_lgbm": 0.3170923388868769,
-      "pr_auc_linear": 0.3371753785203089,
-      "passed": true,
-      "pos_rate": 0.25344644750795337,
-      "flip_rate": 0.6353984592477504,
-      "entropy": 0.5660898757968797,
-      "ic_global": 0.06589590965358837
-    },
-    "uuid": "Mean Reversion_15",
-    "model_params": null
+    "model_params": {
+      "focal_gamma": 2.192210064842131,
+      "focal_alpha": 0.8558025251838288,
+      "num_leaves": 338,
+      "n_estimators": 1757,
+      "model_type": "lgbm",
+      "race_scores": {
+        "lgbm": 0.681993869119019,
+        "xgb": 0.5,
+        "catboost": 0.6170864987338398
+      }
+    }
   },
   {
     "family": "Trend Continuation",
     "params": {
-      "kappa": 3.814054972861252,
-      "sl_mult": 0.6161260317999944,
-      "horizon": 67
+      "kappa": 4.193963178886665,
+      "sl_mult": 0.5651906845715444,
+      "horizon": 32
     },
-    "final_score": 2.5895519960290962,
-    "learnability": 0.5317771964391993,
-    "robust_magnitude": -3.3391697902085267,
-    "stability": 1.0,
-    "balance": 0.6618526887251623,
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
     "raw_metrics": {
-      "auc": 0.5317771964391993,
-      "auc_std": 0.059094648248127386,
-      "pr_auc": 0.1613306116002115,
-      "pr_auc_baseline": 0.11989795918367346,
-      "ic": 0.02693682084646362,
-      "log_loss": 0.5751809244687921,
-      "auc_lgbm": 0.5172279337458657,
-      "auc_lgbm_light": 0.5172279337458657,
-      "auc_linear": 0.546326459132533,
-      "pr_auc_lgbm": 0.14478953347479792,
-      "pr_auc_linear": 0.17787168972562506,
-      "passed": true,
-      "pos_rate": 0.12699425654116145,
-      "flip_rate": 0.6951060783548093,
-      "entropy": 0.380632706661172,
-      "ic_global": 0.02693682084646362
+      "passed": false,
+      "pos_rate": 0.11773940345368916,
+      "pos_count": 600.0,
+      "mean_trade_ret": 0.011256358392256418,
+      "mean_ret": -0.0031310748778518756,
+      "reason": "unprofitable"
     },
-    "uuid": "Trend Continuation_9",
-    "model_params": null
+    "uuid": "Trend Continuation_1",
+    "model_params": {
+      "focal_gamma": 2.5811066020010545,
+      "focal_alpha": 0.8849356442713104,
+      "num_leaves": 197,
+      "n_estimators": 1183,
+      "model_type": "lgbm",
+      "race_scores": {
+        "lgbm": 0.5335157975607413,
+        "xgb": 0.5,
+        "catboost": 0.504849707096898
+      }
+    }
+  },
+  {
+    "family": "Momentum",
+    "params": {
+      "kappa": 4.2472407130841745,
+      "sl_mult": 1.5443897010793888,
+      "horizon": 39
+    },
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
+    "raw_metrics": {
+      "passed": false,
+      "pos_rate": 0.19632949210414,
+      "pos_count": 460.0,
+      "mean_trade_ret": 0.022089195489395502,
+      "mean_ret": -0.0031178216357136885,
+      "reason": "unprofitable"
+    },
+    "uuid": "Momentum_0",
+    "model_params": {
+      "iterations": 555,
+      "learning_rate": 0.05689987533865591,
+      "depth": 8,
+      "class_weight_ratio": 2.0062500095336384,
+      "model_type": "catboost",
+      "race_scores": {
+        "lgbm": 0.54225,
+        "xgb": 0.5,
+        "catboost": 0.616
+      }
+    }
+  },
+  {
+    "family": "Momentum",
+    "params": {
+      "kappa": 6.99465584480253,
+      "sl_mult": 0.609102444252071,
+      "horizon": 12
+    },
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
+    "raw_metrics": {
+      "passed": false,
+      "pos_rate": 0.014511310285958173,
+      "reason": "pos_rate_limit"
+    },
+    "uuid": "Momentum_4",
+    "model_params": {
+      "iterations": 382,
+      "learning_rate": 0.06711055768358082,
+      "depth": 4,
+      "class_weight_ratio": 3.0284688768272234,
+      "model_type": "catboost",
+      "race_scores": {
+        "lgbm": 0.35714285714285715,
+        "xgb": 0.5,
+        "catboost": 0.7
+      }
+    }
+  },
+  {
+    "family": "Momentum",
+    "params": {
+      "kappa": 6.248435466776273,
+      "sl_mult": 1.9488467486753904,
+      "horizon": 5
+    },
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
+    "raw_metrics": {
+      "passed": false,
+      "pos_rate": 0.0076824583866837385,
+      "reason": "pos_rate_limit"
+    },
+    "uuid": "Momentum_3",
+    "model_params": {
+      "iterations": 413,
+      "learning_rate": 0.04969300761208293,
+      "depth": 5,
+      "class_weight_ratio": 2.7412360542357637,
+      "model_type": "catboost",
+      "race_scores": {
+        "lgbm": 0.907142857142857,
+        "xgb": 0.5,
+        "catboost": 1.0
+      }
+    }
+  },
+  {
+    "family": "Momentum",
+    "params": {
+      "kappa": 3.100427059120603,
+      "sl_mult": 1.1920859337748042,
+      "horizon": 15
+    },
+    "final_score": -1.0,
+    "learnability": 0.0,
+    "robust_magnitude": 0.0,
+    "stability": 0.0,
+    "balance": 0.0,
+    "raw_metrics": {
+      "passed": false,
+      "pos_rate": 0.1702944942381562,
+      "pos_count": 399.0,
+      "mean_trade_ret": 0.015494561110423362,
+      "mean_ret": -0.00288256853352957,
+      "reason": "unprofitable"
+    },
+    "uuid": "Momentum_5",
+    "model_params": {
+      "iterations": 578,
+      "learning_rate": 0.04345633107043001,
+      "depth": 6,
+      "class_weight_ratio": 2.0359237512296398,
+      "model_type": "catboost",
+      "race_scores": {
+        "lgbm": 0.3795,
+        "xgb": 0.5,
+        "catboost": 0.6305
+      }
+    }
   }
 ]

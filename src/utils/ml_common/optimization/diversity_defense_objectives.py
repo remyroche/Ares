@@ -92,7 +92,10 @@ def get_focal_loss(alpha=0.25, gamma=2.0):
 
     def focal_loss(y_pred, dtrain):
         # 1. Retrieve true labels
-        y_true = dtrain.get_label()
+        if hasattr(dtrain, 'get_label'):
+            y_true = dtrain.get_label()
+        else:
+            y_true = dtrain
 
         # 2. Compute probabilities using robust sigmoid
         # y_pred comes as raw logits (margin scores) from LGBM

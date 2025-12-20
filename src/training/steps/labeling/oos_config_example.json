@@ -1,0 +1,22 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "direction": "long",
+  "model": "analyst",
+  "outcomes_dir": "outcomes",
+  "oos_test": {
+    "oos_days": 30,
+    "min_train_days": 90,
+    "gate_mode": "quantile",
+    "gate_quantile": 0.7,
+    "save_models": true,
+    "compare_with_oof": true,
+    "min_oos_trades": 20
+  },
+  "layer2_n_trials": 60,
+  "layer2_n_splits": 3,
+  "layer3_use_econ_target": true,
+  "run_snr_diagnostics_after_layer4": true,
+  "transaction_cost": 0.003
+}

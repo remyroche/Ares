@@ -95,15 +95,19 @@ def compute_rolling_vwap(
 
 
 def run_layer0_kalman_vwap(
-    *,
+    symbol: str,
+    timeframe: str,
     market_data: pd.DataFrame,
     config: Dict[str, Any],
     outcomes_dir: Path,
     bundle_path: Optional[Path] = None,
     run_optimization: bool = True,
+    train_data: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    close_series = pd.to_numeric(market_data.get("close"), errors="coerce")
-    volume_series = market_data.get("volume", None)
+    # Use training data for optimization if provided
+    opt_data = train_data if train_data is not None else market_data
+    close_series = pd.to_numeric(opt_data.get("close"), errors="coerce")
+    volume_series = opt_data.get("volume", None)
     if isinstance(volume_series, pd.Series):
         volume_series = pd.to_numeric(volume_series, errors="coerce")
 
@@ -236,6 +240,7 @@ def run_layer0_kalman_vwap(
         vwap_series = compute_rolling_vwap(close_series, volume_series, vwap_lb)
         market_data["vwap"] = vwap_series
 
+    # Apply Kalman filtering to full market_data (not just training data)
     try:
         kalman_price, kalman_vol = compute_kalman_smoothed_price_and_volatility(
             prices=market_data["close"],

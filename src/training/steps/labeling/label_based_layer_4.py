@@ -280,6 +280,7 @@ class Layer4RiskFilter:
         n_jobs: int = -1,
         l3_keep_fraction: float = 0.6,
         l3_quantile_threshold: Optional[float] = None,
+        model_type: str = 'race',  # 'extratrees', 'ridge', or 'race' (auto-select best)
     ):
         """
         Initialize Layer 4 Risk Filter.
@@ -300,6 +301,7 @@ class Layer4RiskFilter:
         self.class_weight = class_weight
         self.random_state = random_state
         self.n_jobs = n_jobs
+        self.model_type = model_type if model_type in ['extratrees', 'ridge', 'race'] else 'race'
         if l3_quantile_threshold is not None:
             l3_keep_fraction = l3_quantile_threshold
 
@@ -312,23 +314,41 @@ class Layer4RiskFilter:
         self.imputer = None
         self.feature_names: List[str] = []
         self.feature_importances_: Optional[np.ndarray] = None
+        self.winning_model_type_: Optional[str] = None  # Stores which model won the race
         
         self._is_fitted = False
         self._training_mask: Optional[np.ndarray] = None
         self._l3_threshold: Optional[float] = None
 
-    def _build_pipeline(self) -> ExtraTreesClassifier:
-        """Build the ExtraTrees model."""
-        return ExtraTreesClassifier(
-            n_estimators=self.n_estimators,
-            max_depth=self.max_depth,
-            min_samples_leaf=self.min_samples_leaf,
-            max_features='sqrt',
-            bootstrap=True,
-            class_weight=self.class_weight,
-            n_jobs=self.n_jobs,
-            random_state=self.random_state,
-        )
+    def _build_pipeline(self, model_type: Optional[str] = None) -> Any:
+        """Build the model based on model_type."""
+        mt = model_type or self.model_type
+        if mt == 'extratrees':
+            return ExtraTreesClassifier(
+                n_estimators=self.n_estimators,
+                max_depth=self.max_depth,
+                min_samples_leaf=self.min_samples_leaf,
+                max_features='sqrt',
+                bootstrap=True,
+                class_weight=self.class_weight,
+                n_jobs=self.n_jobs,
+                random_state=self.random_state,
+            )
+        elif mt == 'ridge':
+            from sklearn.linear_model import LogisticRegressionCV
+            return LogisticRegressionCV(
+                penalty='l2',
+                solver='saga',
+                Cs=np.logspace(-3, 1, 10),
+                cv=3,
+                max_iter=2000,
+                class_weight=self.class_weight,
+                scoring='roc_auc',
+                random_state=self.random_state,
+                n_jobs=min(4, self.n_jobs) if self.n_jobs > 0 else 1,
+            )
+        else:
+            raise ValueError(f"Unknown model_type: {mt}")
 
     def fit(
         self,
@@ -387,15 +407,62 @@ class Layer4RiskFilter:
         X_imputed = self.imputer.fit_transform(X_train)
         X_scaled = self.scaler.fit_transform(X_imputed)
 
-        # 4. Train ExtraTrees
-        self.model = self._build_pipeline()
+        # 4. Model Selection: Race ExtraTrees vs Ridge if model_type='race'
+        if self.model_type == 'race':
+            tprint_info("   Running ExtraTrees vs Ridge race...")
+            
+            # Split data for validation (80/20)
+            split_idx = int(len(X_scaled) * 0.8)
+            X_tr_race = X_scaled[:split_idx]
+            X_val_race = X_scaled[split_idx:]
+            y_tr_race = y_train[:split_idx]
+            y_val_race = y_train[split_idx:]
+            
+            if len(np.unique(y_tr_race)) < 2 or len(np.unique(y_val_race)) < 2:
+                tprint_warning("   Race failed: insufficient classes in split. Using ExtraTrees.")
+                selected_model_type = 'extratrees'
+            else:
+                # Train ExtraTreesClassifier
+                model_et = self._build_pipeline('extratrees')
+                model_et.fit(X_tr_race, y_tr_race)
+                preds_et = model_et.predict_proba(X_val_race)[:, 1]
+                score_et = roc_auc_score(y_val_race, preds_et)
+                
+                # Train Ridge LogisticRegressionCV
+                model_ridge = self._build_pipeline('ridge')
+                model_ridge.fit(X_tr_race, y_tr_race)
+                preds_ridge = model_ridge.predict_proba(X_val_race)[:, 1]
+                score_ridge = roc_auc_score(y_val_race, preds_ridge)
+                
+                # Select winner
+                if score_ridge > score_et:
+                    selected_model_type = 'ridge'
+                    tprint_success(f"   Ridge wins! AUC: {score_ridge:.4f} vs ExtraTrees: {score_et:.4f}")
+                else:
+                    selected_model_type = 'extratrees'
+                    tprint_success(f"   ExtraTrees wins! AUC: {score_et:.4f} vs Ridge: {score_ridge:.4f}")
+            
+            self.winning_model_type_ = selected_model_type
+        else:
+            selected_model_type = self.model_type
+            self.winning_model_type_ = selected_model_type
+        
+        # 5. Train final model on full data with winning model type
+        self.model = self._build_pipeline(selected_model_type)
         
         sw = None
         if sample_weight is not None:
             sw = sample_weight.loc[training_mask].values
         
         self.model.fit(X_scaled, y_train, sample_weight=sw)
-        self.feature_importances_ = self.model.feature_importances_
+        
+        # Extract feature importances (only for ExtraTrees)
+        if selected_model_type == 'extratrees':
+            self.feature_importances_ = self.model.feature_importances_
+        else:
+            # For Ridge, use absolute coefficients as "importance"
+            if hasattr(self.model, 'coef_'):
+                self.feature_importances_ = np.abs(self.model.coef_[0])
 
         # 5. Platt Scaling (Sigmoid Calibration)
         # Use cross-validated predictions for calibration

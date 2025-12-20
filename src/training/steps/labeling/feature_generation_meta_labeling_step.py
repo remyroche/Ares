@@ -652,7 +652,7 @@ def generate_primary_signals(
     target_trades_per_day: float = 20.0,
     enable_dynamic_tuning: bool = True,
     use_cusum_filter: bool = True,
-    cusum_threshold: float = 0.015,
+    cusum_threshold: float = 0.003,  # Aggressive base model: high recall (~25-35% coverage), meta-model provides precision
     bb_window: int = 20,
     bb_std: float = 2.0,
     atr_period: int = 14,
@@ -11375,8 +11375,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 econ_min_return_multiple=econ_min_mult_meta,
             )
 
-            quantile_low_q = float(config.get("quantile_low_q", 0.35))
-            quantile_high_q = float(config.get("quantile_high_q", 0.65))
+            quantile_low_q = float(config.get("quantile_low_q", 0.25))
+            quantile_high_q = float(config.get("quantile_high_q", 0.75))
             
             # Labeling method selection:
             # - "rolling": Rolling quantiles with fixed thresholds (default, no look-ahead bias)

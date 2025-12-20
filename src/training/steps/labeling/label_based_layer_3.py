@@ -1,3 +1,4 @@
+from typing import List, Tuple, Optional, Any, Dict
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
@@ -16,9 +17,63 @@ from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
 )
+
+def _clip_probs(probs: np.ndarray, clip_low: float, clip_high: float) -> np.ndarray:
+    """Clip probability values to specified range."""
+    return np.clip(probs, clip_low, clip_high)
+
+
+def _apply_temperature(probs: np.ndarray, temperature: float) -> np.ndarray:
+    """Apply temperature scaling to probabilities."""
+    if temperature <= 0:
+        return probs
+    probs_temp = np.log(probs + 1e-12) / temperature
+    return 1.0 / (1.0 + np.exp(-probs_temp))
+
+
+def _fit_temperature(y_true: np.ndarray, probs: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> float:
+    """Fit temperature scaling parameter using optimization."""
+    from scipy.optimize import minimize_scalar
+    
+    def nll(temp):
+        p_temp = _apply_temperature(probs, temp)
+        p_temp = np.clip(p_temp, 1e-12, 1 - 1e-12)
+        if sample_weight is not None:
+            return -np.mean(sample_weight * (y_true * np.log(p_temp) + (1 - y_true) * np.log(1 - p_temp)))
+        else:
+            return -np.mean(y_true * np.log(p_temp) + (1 - y_true) * np.log(1 - p_temp))
+    
+    result = minimize_scalar(nll, bounds=(0.1, 5.0), method='bounded')
+    return result.x if result.success else 1.0
+
+
+def _get_score(preds, y_true):
+    """Calculate classification score using AUC and log loss."""
+    try:
+        auc = roc_auc_score(y_true, preds)
+    except ValueError:
+        auc = 0.5  # Handle single class edge case
+    
+    try:
+        ll = log_loss(y_true, preds)
+    except ValueError:
+        ll = 0.693  # Default log loss for random predictions
+    
+    score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
+    return score
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
-from typing import List, Tuple, Optional, Any, Dict
+from sklearn.linear_model import Ridge
+from sklearn.ensemble import ExtraTreesRegressor
+# moved to top
+
+# Import probability calibration utilities
+from src.utils.ml_common.oof_probability_calibration import (
+    OOFProbabilityCalibrator,
+    OOFCalibrationConfig,
+    calibrate_oof_predictions,
+    get_recommended_calibration_method,
+)
 import shap
 import optuna
 from optuna.samplers import TPESampler
@@ -35,46 +90,48 @@ from src.training.steps.labeling.generate_weights_per_label import (
 from src.utils.purged_kfold import PurgedKFoldTime
 
 
-def generate_efficiency_labels(events_df, price_series, volatility_window=20):
+def generate_efficiency_labels(events_df, price_series, tx_cost=0.0, threshold=0.2):
     """
-    Generates binary classification labels based on Trade Efficiency (Sharpe/Sortino).
-    Class 1: High Quality Win (Stable)
-    Class 0: Loss OR Low Quality Win (Volatile)
+    Generates binary classification labels based on Relative Efficiency (percentile-based), net of costs.
+    Class 1: Top 40% of net returns (relative performance)
+    Class 0: Bottom 60% of net returns
     """
     labels = pd.Series(index=events_df.index, dtype=float)
-
+    
+    # Calculate net returns for all trades first
+    net_returns = []
+    valid_indices = []
+    
     for idx, row in events_df.iterrows():
         t0, t1 = row['entry_time'], row['exit_time']
         
-        # 1. Get realized PnL
-        # Assuming 'ret' column exists or calculating from price
+        # Get realized PnL
         trade_price = price_series[t0:t1]
         if len(trade_price) < 2:
-            labels[idx] = 0
             continue
             
-        returns = trade_price.pct_change().dropna()
         realized_ret = (trade_price.iloc[-1] / trade_price.iloc[0]) - 1
+        net_ret = realized_ret - tx_cost
         
-        # 2. Calculate Downside Volatility (Sortino Logic)
-        neg_rets = returns[returns < 0]
-        if len(neg_rets) == 0:
-            downside_vol = 0.0001  # Proxy for perfect
-        else:
-            downside_vol = np.sqrt((neg_rets**2).mean()) * np.sqrt(len(returns))
-            
-        # 3. Calculate Efficiency Ratio
-        efficiency = realized_ret / (downside_vol + 1e-6)
-        
-        # 4. DISCRETIZE (The "Hard" Label)
-        # Threshold: > 0.5 means for every unit of downside risk, we got 0.5 units of return.
-        # This is a robust threshold for "Good Trade".
-        if efficiency > 0.5:
+        net_returns.append(net_ret)
+        valid_indices.append(idx)
+    
+    # If no valid trades, return all zeros
+    if len(net_returns) == 0:
+        return labels.fillna(0)
+    
+    # Calculate percentile threshold (top 40% get label 1)
+    net_returns_array = np.array(net_returns)
+    threshold_ret = np.percentile(net_returns_array, 60)  # 60th percentile = top 40%
+    
+    # Assign labels based on relative performance
+    for i, idx in enumerate(valid_indices):
+        if net_returns[i] > threshold_ret:
             labels[idx] = 1
         else:
             labels[idx] = 0
             
-    return labels
+    return labels.fillna(0)
 
 
 class SoftF1Loss(nn.Module):
@@ -203,17 +260,132 @@ def _logit(p: np.ndarray) -> np.ndarray:
     return np.log(p / (1.0 - p))
 
 
-def _clip_probs(p: np.ndarray, low: float, high: float) -> np.ndarray:
-    arr = np.asarray(p, dtype=float)
-    lo = float(low)
-    hi = float(high)
-    if (not np.isfinite(lo)) or lo <= 0.0:
-        lo = 1e-6
-    if (not np.isfinite(hi)) or hi >= 1.0:
-        hi = 1.0 - 1e-6
-    if hi <= lo:
-        hi = min(1.0 - 1e-6, lo + 1e-3)
-    return np.clip(arr, lo, hi)
+def _apply_calibrated_logistic_regression(
+    X_train: np.ndarray, 
+    y_train: np.ndarray, 
+    X_test: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
+    regularization: str = 'l2',
+    C: float = 1.0
+) -> np.ndarray:
+    """
+    Apply calibrated logistic regression following de Prado principles.
+    
+    Uses regularized logistic regression with proper calibration to avoid
+    the aggressive clipping that causes degenerate predictions.
+    """
+    # Input validation and preprocessing
+    X_train = np.asarray(X_train, dtype=float)
+    y_train = np.asarray(y_train, dtype=float)
+    X_test = np.asarray(X_test, dtype=float)
+    
+    # Check for NaN/Inf values
+    if np.any(np.isnan(X_train)) or np.any(np.isinf(X_train)):
+        raise ValueError("NaN or Inf values found in X_train")
+    if np.any(np.isnan(X_test)) or np.any(np.isinf(X_test)):
+        raise ValueError("NaN or Inf values found in X_test")
+    
+    # Check for sufficient samples and class diversity
+    if len(X_train) < 10:
+        raise ValueError(f"Insufficient training samples: {len(X_train)}")
+    if len(np.unique(y_train)) < 2:
+        raise ValueError(f"Insufficient class diversity in y_train: {np.unique(y_train)}")
+    
+    # Handle sample weights
+    if sample_weight is not None:
+        sample_weight = np.asarray(sample_weight, dtype=float)
+        if np.any(np.isnan(sample_weight)) or np.any(sample_weight <= 0):
+            raise ValueError("Invalid sample weights (NaN or non-positive)")
+    
+    # Initialize calibrated logistic regression
+    if regularization == 'ridge':
+        # Use Ridge regression for stability
+        base_model = Ridge(alpha=1.0/C, random_state=42)
+        base_model.fit(X_train, y_train, sample_weight=sample_weight)
+        raw_preds = base_model.predict(X_test)
+        # Apply sigmoid to get probabilities
+        calibrated_probs = _sigmoid(raw_preds)
+    else:
+        # Use regularized logistic regression with enhanced parameters
+        solver = 'liblinear' if regularization == 'l1' else 'lbfgs'
+        base_model = LogisticRegression(
+            penalty=regularization,
+            C=C,
+            solver=solver,
+            max_iter=2000,  # Increased from 1000
+            random_state=42,
+            class_weight='balanced',  # Handle class imbalance
+            tol=1e-6,  # Stricter convergence
+            fit_intercept=True
+        )
+        
+        # Fit with sample weights if provided
+        try:
+            if sample_weight is not None:
+                base_model.fit(X_train, y_train, sample_weight=sample_weight)
+            else:
+                base_model.fit(X_train, y_train)
+        except Exception as e:
+            raise ValueError(f"Logistic regression fitting failed: {str(e)}")
+        
+        # Get calibrated probabilities
+        try:
+            calibrated_probs = base_model.predict_proba(X_test)[:, 1]
+        except Exception as e:
+            raise ValueError(f"Probability prediction failed: {str(e)}")
+    
+    # Apply gentle clipping only to prevent numerical issues (not aggressive clipping)
+    calibrated_probs = np.clip(calibrated_probs, 1e-4, 1 - 1e-4)
+    
+    # Final validation
+    if np.any(np.isnan(calibrated_probs)) or np.any(np.isinf(calibrated_probs)):
+        raise ValueError("NaN or Inf values in calibrated probabilities")
+    
+    return calibrated_probs
+
+
+def _apply_probability_calibration(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    method: str = 'isotonic',
+    sample_weight: Optional[np.ndarray] = None
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    """
+    Apply probability calibration using OOF probability calibration utilities.
+    
+    Args:
+        y_true: True binary labels
+        y_pred: Predicted probabilities
+        method: Calibration method ('isotonic', 'platt', 'temperature', 'beta')
+        sample_weight: Optional sample weights
+        
+    Returns:
+        Tuple of (calibrated_probabilities, calibration_metrics)
+    """
+    # Determine recommended method based on sample size
+    n_samples = len(y_true)
+    if method == 'auto':
+        method = get_recommended_calibration_method(n_samples)
+    
+    # Configure calibration
+    config = OOFCalibrationConfig(
+        method=method,
+        min_samples_for_calibration=min(100, n_samples // 2),
+        clip_to_range=True,
+        output_range=(1e-4, 1 - 1e-4)  # Gentle bounds instead of aggressive clipping
+    )
+    
+    # Fit calibrator
+    calibrator = OOFProbabilityCalibrator(config)
+    calibrated_probs = calibrator.fit_transform(
+        oof_predictions=y_pred,
+        y_true=y_true
+    )
+    
+    # Get calibration metrics
+    metrics = calibrator.get_calibration_metrics()
+    
+    return calibrated_probs.values, metrics
 
 
 def _fit_temperature(y_true: np.ndarray, p_cal: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> float:
@@ -718,17 +890,13 @@ def layer3_analyst_lgbm(
     print(f"   [FEATURE_CHECK] Momentum Agreement: {has_mom}, Disagreement: {has_dis}")
     print(f"   [FEATURE_CHECK] Base Models Included ({len(base_feats)}): {base_feats}")
 
-    # Clean target
-    try:
-        neutral_value = cfg.get('layer3_neutral_target_value', 0.5) if isinstance(cfg, dict) else 0.5
-        neutral_value = float(neutral_value)
-    except Exception:
-        neutral_value = 0.5
+    # Clean target - REMOVED aggressive neutral filtering causing 77% data loss
     try:
         y_num = pd.to_numeric(df[target_col], errors='coerce').astype(float)
         df[target_col] = y_num
-        if np.isfinite(neutral_value):
-            df.loc[np.isclose(df[target_col].astype(float), neutral_value, atol=1e-12), target_col] = np.nan
+        # REMOVED: neutral value filtering that was dropping 77% of data
+        # if np.isfinite(neutral_value):
+        #     df.loc[np.isclose(df[target_col].astype(float), neutral_value, atol=1e-12), target_col] = np.nan
     except Exception:
         pass
     # Add logging for target dropna analysis
@@ -739,6 +907,18 @@ def layer3_analyst_lgbm(
     print(f"\n=== TARGET DROPNA ANALYSIS ===")
     print(f"Initial rows: {initial_rows}")
     print(f"Target column '{target_col}' NaN count: {target_nan_count}")
+    print(f"Target NaN percentage: {(target_nan_count/initial_rows)*100:.2f}%")
+    
+    # Show target column statistics
+    if target_col in df.columns:
+        target_series = df[target_col]
+        print(f"Target column stats:")
+        print(f"  - Non-null count: {target_series.notna().sum()}")
+        print(f"  - Null count: {target_series.isna().sum()}")
+        print(f"  - Min value: {target_series.min()}")
+        print(f"  - Max value: {target_series.max()}")
+        print(f"  - Unique values: {target_series.nunique()}")
+        print(f"  - Value counts: {target_series.value_counts().head(10).to_dict()}")
     
     # Show top 10 columns with most NaNs
     top_nans = nan_counts.sort_values(ascending=False).head(10)
@@ -870,11 +1050,26 @@ def layer3_analyst_lgbm(
     except Exception:
         schemes["S9_ClassBalanced"] = w_l2
 
-    # Scheme 10: Layer 1 + Quality Weight (explicit soft labels)
-    schemes["S10_L1_Qual"] = (w_l1 * w_qual)
+    # Scheme 10: Layer 1 + Quality Weight with concentration control
+    # Apply MAD scaling to quality weights to prevent extreme concentration
+    w_qual_scaled = _coerce_weights(w_qual)
+    schemes["S10_L1_Qual"] = (w_l1 * w_qual_scaled)
 
-    # Scheme 11: Just Quality Weight
-    schemes["S11_Qual"] = w_qual
+    # Scheme 11: Quality Weight with concentration control
+    # Apply MAD scaling to prevent extreme weights
+    schemes["S11_Qual"] = w_qual_scaled
+
+    # Scheme 12: Stability-Weighted (Inversely proportional to 1d Volatility)
+    try:
+        if 'volatility_1d' in df.columns:
+            # Handle NaNs and 0s in volatility
+            v_ref = pd.to_numeric(df['volatility_1d'], errors='coerce').fillna(df['volatility_1d'].median()).values
+            v_inv = 1.0 / (v_ref + 1e-6)
+            v_inv /= (v_inv.mean() + 1e-9)
+            schemes["S12_StabilityWeighted"] = (w_l1 * w_l2 * v_inv)
+            print(f"   Implemented Scheme 12: Stability-Weighted (Vol-Inverse)")
+    except Exception as e:
+        print(f"   Failed to implement Scheme 12: {e}")
 
     # ---------------------------------------------------------
     # 3. Comparative Evaluation (2-Phase Scheme Pruning)
@@ -999,12 +1194,16 @@ def layer3_analyst_lgbm(
         if np.all(np.isin(u, [0.0, 1.0])):
             return 'binary'
 
-        # Only treat as soft if explicitly allowed and values are within [0,1].
+        # Auto-detect best target type based on score comparison
         try:
             allow_soft = bool(cfg.get('layer3_allow_soft_targets', True))
         except Exception:
             allow_soft = True
+            
         if allow_soft and float(np.nanmin(yv)) >= 0.0 - 1e-12 and float(np.nanmax(yv)) <= 1.0 + 1e-12:
+            # Test both target types and select based on score
+            # This would require running both and comparing, but for now default to soft
+            # TODO: Implement automatic score-based selection
             return 'soft'
         return 'binary'
 
@@ -1016,13 +1215,14 @@ def layer3_analyst_lgbm(
             is_continuous = bool(target_mode == 'soft')
 
             try:
-                clip_low = float(cfg.get('layer3_prob_clip_low', 0.0025)) if isinstance(cfg, dict) else 0.0025
+                # Use gentle bounds instead of aggressive clipping (de Prado principle)
+                clip_low = float(cfg.get('layer3_prob_clip_low', 1e-4)) if isinstance(cfg, dict) else 1e-4
             except Exception:
-                clip_low = 0.0025
+                clip_low = 1e-4
             try:
-                clip_high = float(cfg.get('layer3_prob_clip_high', 0.9975)) if isinstance(cfg, dict) else 0.9975
+                clip_high = float(cfg.get('layer3_prob_clip_high', 1 - 1e-4)) if isinstance(cfg, dict) else 1 - 1e-4
             except Exception:
-                clip_high = 0.9975
+                clip_high = 1 - 1e-4
 
             try:
                 walkforward_only = bool(cfg.get('layer3_walkforward_only', True)) if isinstance(cfg, dict) else True
@@ -1073,23 +1273,41 @@ def layer3_analyst_lgbm(
                 w_cal = w_train_full[fit_n:]
 
                 if is_continuous:
-                    # Use Regressor for soft labels
-                    # CRITICAL FIX: Overwrite objective='binary' which causes saturation/collapse on soft labels in Regressor mode.
-                    # Use 'regression' (L2) or 'cross_entropy' (LogLoss for soft labels).
-                    # We use 'cross_entropy' (xentropy) as it matches the probabilistic intent.
+                    # Use calibrated logistic regression for soft labels (de Prado principle)
                     reg_params = lgbm_params.copy()
-                    reg_params['objective'] = 'cross_entropy' # or 'regression' / 'mse'
-                    reg_params['metric'] = 'xentropy' # or 'mse'
+                    reg_params['objective'] = 'cross_entropy'
+                    reg_params['metric'] = 'xentropy'
 
-                    reg = lgb.LGBMRegressor(**reg_params)
-                    reg.fit(X_fit, y_fit, sample_weight=w_fit)
-                    probs = reg.predict(X_test)
-                    probs = _clip_probs(probs, clip_low, clip_high)
+                    # Try calibrated logistic regression first, fallback to LGBM if needed
+                    try:
+                        # Validate inputs before calibration
+                        if len(np.unique(y_fit)) < 2:
+                            raise ValueError(f"Insufficient class diversity in y_fit: {np.unique(y_fit)}")
+                        if np.any(np.isnan(X_fit)) or np.any(np.isinf(X_fit)):
+                            raise ValueError("NaN or Inf values found in X_fit")
+                        if len(X_fit) < 10:
+                            raise ValueError(f"Insufficient samples for calibration: {len(X_fit)}")
+                        
+                        probs = _apply_calibrated_logistic_regression(
+                            X_fit, y_fit, X_test, 
+                            sample_weight=w_fit,
+                            regularization='l2',
+                            C=1.0
+                        )
+                    except Exception as e:
+                        # Fallback to original LGBM approach with detailed error logging
+                        print(f"   Calibrated logistic regression failed: {str(e)}")
+                        print(f"   X_fit shape: {X_fit.shape if 'X_fit' in locals() else 'N/A'}, y_fit unique: {np.unique(y_fit) if 'y_fit' in locals() else 'N/A'}")
+                        print("   Using LGBM fallback")
+                        reg = lgb.LGBMRegressor(**reg_params)
+                        reg.fit(X_fit, y_fit, sample_weight=w_fit)
+                        probs = reg.predict(X_test)
+                        probs = np.clip(probs, clip_low, clip_high)
                 else:
-                    # Discrete labels: fit on earlier slice, calibrate on tail slice strictly before test.
+                    # Discrete labels: use calibrated approach with proper probability calibration
                     calib_method_to_use = str(calibration_method or calibration_method_default)
-                    if calib_method_to_use not in {'isotonic', 'sigmoid'}:
-                        calib_method_to_use = calibration_method_default
+                    if calib_method_to_use not in {'isotonic', 'sigmoid', 'platt', 'temperature', 'beta'}:
+                        calib_method_to_use = 'isotonic'
 
                     try:
                         y_fit = (np.asarray(y_fit, dtype=float) >= 0.5).astype(int)
@@ -1098,17 +1316,59 @@ def layer3_analyst_lgbm(
                         y_fit = np.asarray(y_fit)
                         y_cal_bin = np.asarray(y_cal)
 
-                    base_est = lgb.LGBMClassifier(**lgbm_params)
-                    base_est.fit(X_fit, y_fit, sample_weight=w_fit)
+                    # Use calibrated logistic regression as base estimator
+                    try:
+                        # Validate inputs before calibration
+                        if len(np.unique(y_fit)) < 2:
+                            raise ValueError(f"Insufficient class diversity in y_fit: {np.unique(y_fit)}")
+                        if np.any(np.isnan(X_fit)) or np.any(np.isinf(X_fit)):
+                            raise ValueError("NaN or Inf values found in X_fit")
+                        if len(X_fit) < 10:
+                            raise ValueError(f"Insufficient samples for calibration: {len(X_fit)}")
+                        
+                        # Get raw predictions from calibrated logistic regression
+                        p_test_raw = _apply_calibrated_logistic_regression(
+                            X_fit, y_fit, X_test,
+                            sample_weight=w_fit,
+                            regularization='l2',
+                            C=1.0
+                        )
+                        p_cal_raw = _apply_calibrated_logistic_regression(
+                            X_fit, y_fit, X_cal,
+                            sample_weight=w_fit,
+                            regularization='l2',
+                            C=1.0
+                        )
+                    except Exception as e:
+                        # Fallback to LGBM with detailed error logging
+                        print(f"   Calibrated logistic regression failed: {str(e)}")
+                        print(f"   X_fit shape: {X_fit.shape if 'X_fit' in locals() else 'N/A'}, y_fit unique: {np.unique(y_fit) if 'y_fit' in locals() else 'N/A'}")
+                        print("   Using LGBM fallback")
+                        base_est = lgb.LGBMClassifier(**lgbm_params)
+                        base_est.fit(X_fit, y_fit, sample_weight=w_fit)
 
-                    p_test_raw = base_est.predict_proba(X_test)[:, 1]
-                    p_cal_raw = base_est.predict_proba(X_cal)[:, 1]
+                        p_test_raw = base_est.predict_proba(X_test)[:, 1]
+                        p_cal_raw = base_est.predict_proba(X_cal)[:, 1]
 
-                    p_test_raw = _clip_probs(p_test_raw, clip_low, clip_high)
-                    p_cal_raw = _clip_probs(p_cal_raw, clip_low, clip_high)
+                        p_test_raw = np.clip(p_test_raw, clip_low, clip_high)
+                        p_cal_raw = np.clip(p_cal_raw, clip_low, clip_high)
 
-                    p_test_cal = p_test_raw
-                    p_cal_cal = p_cal_raw
+                    # Apply additional probability calibration (de Prado principle)
+                    try:
+                        p_test_cal, _ = _apply_probability_calibration(
+                            y_cal_bin, p_cal_raw, method=calib_method_to_use, sample_weight=w_cal
+                        )
+                        # Apply the same calibration transformation to test predictions
+                        # For simplicity, we use isotonic regression fitted on calibration data
+                        from sklearn.isotonic import IsotonicRegression
+                        iso_reg = IsotonicRegression(out_of_bounds='clip')
+                        iso_reg.fit(p_cal_raw, y_cal_bin, sample_weight=w_cal)
+                        p_test_cal = iso_reg.transform(p_test_raw)
+                        p_cal_cal = iso_reg.transform(p_cal_raw)
+                    except Exception:
+                        print("   Probability calibration failed, using raw predictions")
+                        p_test_cal = p_test_raw
+                        p_cal_cal = p_cal_raw
 
                     if calib_method_to_use == 'isotonic':
                         try:
@@ -1555,28 +1815,36 @@ def layer3_analyst_lgbm(
         p_reg = model_reg.predict(X_val)
         p_reg = np.clip(p_reg, 1e-6, 1.0 - 1e-6)
 
-        # Compare on Validation Set (ScoreL3 against Binary Truth)
-        # Note: We evaluate both against the BINARY truth for fair comparison of classification utility.
-        def _get_score(p_vec, y_true_bin):
-            try:
-                auc = roc_auc_score(y_true_bin, p_vec)
-                ll = log_loss(y_true_bin, p_vec)
-                return 100 * (auc - 0.5) + 50 * (0.693 - ll)
-            except:
-                return -999.0
-
+        # 2.5 Compute Scores for Race
         score_clf = _get_score(p_clf, y_val_bin)
         score_reg = _get_score(p_reg, y_val_bin)
 
+        # 3. Logistic Regression Race (Regularized)
+        print("   [Race] Training LogisticRegression (ElasticNet)...")
+        try:
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.preprocessing import StandardScaler
+            
+            # LR usually requires scaling
+            scaler = StandardScaler()
+            X_tr_scaled = scaler.fit_transform(X_tr.fillna(0))
+            X_val_scaled = scaler.transform(X_val.fillna(0))
+            
+            model_lr = LogisticRegression(penalty='elasticnet', solver='saga', l1_ratio=0.5, C=0.1, max_iter=1000)
+            model_lr.fit(X_tr_scaled, y_tr_bin, sample_weight=w_tr)
+            p_lr = model_lr.predict_proba(X_val_scaled)[:, 1]
+            score_lr = _get_score(p_lr, y_val_bin)
+        except Exception as e:
+            print(f"   Logistic Regression Race failed: {e}")
+            score_lr = -999.0
+
         print(f"   [Race] Classifier Score: {score_clf:.4f}")
         print(f"   [Race] Regressor Score:  {score_reg:.4f}")
+        print(f"   [Race] LogReg Score:     {score_lr:.4f}")
 
-        if score_reg > score_clf:
-            print("   => Winner: Regressor")
-            winning_model_type = 'regressor'
-        else:
-            print("   => Winner: Classifier")
-            winning_model_type = 'classifier'
+        scores = {'classifier': score_clf, 'regressor': score_reg, 'logreg': score_lr}
+        winning_model_type = max(scores, key=scores.get)
+        print(f"   => Winner: {winning_model_type.upper()}")
 
     else:
         print("   Detected BINARY target. Using Classifier.")
@@ -1595,8 +1863,10 @@ def layer3_analyst_lgbm(
         has_price_data = market_data is not None and 'close' in market_data.columns
         
         if has_entry_exit and has_price_data:
-            print("   Generating efficiency labels...")
-            efficiency_labels = generate_efficiency_labels(df, market_data['close'])
+            print("   Generating cost-aware efficiency labels...")
+            tx_cost_eff = float(config.get('layer3_tx_cost_proxy', 0.003)) # 30bps default
+            eff_thresh = float(config.get('layer3_efficiency_threshold', 0.2))
+            efficiency_labels = generate_efficiency_labels(df, market_data['close'], tx_cost=tx_cost_eff, threshold=eff_thresh)
             
             # Add efficiency labels to dataframe for analysis
             df['efficiency_label'] = efficiency_labels
@@ -1672,40 +1942,169 @@ def layer3_analyst_lgbm(
                 except Exception as e:
                     print(f"      Focal Loss trial failed: {e}")
                 
+                # Trial 3: CCI (Concordance Correlation Index) - Custom objective
+                print("   Trial 3: CCI (Concordance Correlation Index)...")
+                try:
+                    # Custom CCI objective for LightGBM
+                    def cci_objective(y_true, y_pred):
+                        """Custom CCI objective for LightGBM"""
+                        y_pred = 1.0 / (1.0 + np.exp(-y_pred))  # Sigmoid
+                        # Calculate concordance correlation
+                        y_true_mean = np.mean(y_true)
+                        y_pred_mean = np.mean(y_pred)
+                        
+                        cov_yy = np.cov(y_true, y_pred)[0, 1]
+                        var_y_true = np.var(y_true)
+                        var_y_pred = np.var(y_pred)
+                        
+                        cci = (2 * cov_yy) / (var_y_true + var_y_pred + (y_true_mean - y_pred_mean)**2 + 1e-9)
+                        
+                        # Convert to gradient/hessian format for LightGBM
+                        grad = -cci  # Negative for maximization
+                        hess = np.ones_like(grad)
+                        return grad, hess
+                    
+                    params_cci = {
+                        'objective': cci_objective,
+                        'metric': 'auc',
+                        'n_estimators': 800,
+                        'learning_rate': 0.02,
+                        'max_depth': 7,
+                        'num_leaves': 63,
+                        'feature_fraction': 0.8,
+                        'bagging_fraction': 0.8,
+                        'bagging_freq': 5,
+                        'lambda_l1': 0.1,
+                        'lambda_l2': 0.1,
+                        'min_data_in_leaf': 20,
+                        'verbosity': -1,
+                        'random_state': 42
+                    }
+                    
+                    model_cci = lgb.LGBMClassifier(**params_cci)
+                    model_cci.fit(X_tr_eff, y_tr_eff, sample_weight=w_tr_eff,
+                                  eval_set=[(X_val_eff, y_val_eff)], eval_sample_weight=[w_val_eff],
+                                  callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+                    p_cci = model_cci.predict_proba(X_val_eff)[:, 1]
+                    
+                    # Evaluate
+                    auc_cci = roc_auc_score(y_val_eff, p_cci)
+                    pr_auc_cci = average_precision_score(y_val_eff, p_cci)
+                    ll_cci = log_loss(y_val_eff, p_cci)
+                    score_cci = 100 * (auc_cci - 0.5) + 50 * (0.693 - ll_cci)
+                    
+                    efficiency_trial_results.append({
+                        'trial': 'CCI_Objective',
+                        'auc': auc_cci,
+                        'pr_auc': pr_auc_cci,
+                        'logloss': ll_cci,
+                        'score': score_cci
+                    })
+                    print(f"      AUC: {auc_cci:.4f}, PR-AUC: {pr_auc_cci:.4f}, Score: {score_cci:.4f}")
+                    
+                except Exception as e:
+                    print(f"      CCI trial failed: {e}")
+                
+                # Trial 4: Sharpe-based objective - Custom objective
+                print("   Trial 4: Sharpe-based objective...")
+                try:
+                    # Custom Sharpe objective for LightGBM
+                    def sharpe_objective(y_true, y_pred):
+                        """Custom Sharpe-based objective for LightGBM"""
+                        y_pred = 1.0 / (1.0 + np.exp(-y_pred))  # Sigmoid
+                        
+                        # Calculate returns proxy (prediction as return estimate)
+                        returns_proxy = y_pred - 0.5  # Center around 0
+                        
+                        # Calculate Sharpe-like metric
+                        mean_ret = np.mean(returns_proxy)
+                        std_ret = np.std(returns_proxy)
+                        sharpe_proxy = mean_ret / (std_ret + 1e-9)
+                        
+                        # Convert to gradient/hessian format for LightGBM
+                        grad = -sharpe_proxy  # Negative for maximization
+                        hess = np.ones_like(grad)
+                        return grad, hess
+                    
+                    params_sharpe = {
+                        'objective': sharpe_objective,
+                        'metric': 'auc',
+                        'n_estimators': 800,
+                        'learning_rate': 0.02,
+                        'max_depth': 7,
+                        'num_leaves': 63,
+                        'feature_fraction': 0.8,
+                        'bagging_fraction': 0.8,
+                        'bagging_freq': 5,
+                        'lambda_l1': 0.1,
+                        'lambda_l2': 0.1,
+                        'min_data_in_leaf': 20,
+                        'verbosity': -1,
+                        'random_state': 42
+                    }
+                    
+                    model_sharpe = lgb.LGBMClassifier(**params_sharpe)
+                    model_sharpe.fit(X_tr_eff, y_tr_eff, sample_weight=w_tr_eff,
+                                      eval_set=[(X_val_eff, y_val_eff)], eval_sample_weight=[w_val_eff],
+                                      callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)])
+                    p_sharpe = model_sharpe.predict_proba(X_val_eff)[:, 1]
+                    
+                    # Evaluate
+                    auc_sharpe = roc_auc_score(y_val_eff, p_sharpe)
+                    pr_auc_sharpe = average_precision_score(y_val_eff, p_sharpe)
+                    ll_sharpe = log_loss(y_val_eff, p_sharpe)
+                    score_sharpe = 100 * (auc_sharpe - 0.5) + 50 * (0.693 - ll_sharpe)
+                    
+                    efficiency_trial_results.append({
+                        'trial': 'Sharpe_Objective',
+                        'auc': auc_sharpe,
+                        'pr_auc': pr_auc_sharpe,
+                        'logloss': ll_sharpe,
+                        'score': score_sharpe
+                    })
+                    print(f"      AUC: {auc_sharpe:.4f}, PR-AUC: {pr_auc_sharpe:.4f}, Score: {score_sharpe:.4f}")
+                    
+                except Exception as e:
+                    print(f"      Sharpe trial failed: {e}")
+                
                 # Trial 2: Soft-F1 Loss (β=1.0) - Use PyTorch model
                 print("   Trial 2: Soft-F1 Loss (β=1.0)...")
-                try:
-                    # Simple neural network for Soft-F1
-                    class SimpleNN(nn.Module):
-                        def __init__(self, input_dim):
-                            super().__init__()
-                            self.net = nn.Sequential(
-                                nn.Linear(input_dim, 64),
-                                nn.ReLU(),
-                                nn.Dropout(0.2),
-                                nn.Linear(64, 32),
-                                nn.ReLU(),
-                                nn.Dropout(0.2),
-                                nn.Linear(32, 1),
-                                nn.Sigmoid()
-                            )
-                        
-                        def forward(self, x):
-                            return self.net(x).squeeze()
+                
+                # Define shared variables outside try block for Trial 3 access
+                batch_size = 256
+                n_epochs = 50
+                
+                # Simple neural network for Soft-F1 (also used by Trial 3)
+                class SimpleNN(nn.Module):
+                    def __init__(self, input_dim):
+                        super().__init__()
+                        self.net = nn.Sequential(
+                            nn.Linear(input_dim, 64),
+                            nn.ReLU(),
+                            nn.Dropout(0.2),
+                            nn.Linear(64, 32),
+                            nn.ReLU(),
+                            nn.Dropout(0.2),
+                            nn.Linear(32, 1),
+                            nn.Sigmoid()
+                        )
                     
-                    # Convert to PyTorch tensors
-                    X_tr_tensor = torch.FloatTensor(X_tr_eff.values)
-                    y_tr_tensor = torch.FloatTensor(y_tr_eff.values)
-                    X_val_tensor = torch.FloatTensor(X_val_eff.values)
-                    y_val_tensor = torch.FloatTensor(y_val_eff.values)
+                    def forward(self, x):
+                        return self.net(x).squeeze()
+                
+                # Convert to PyTorch tensors (shared between trials)
+                X_tr_tensor = torch.FloatTensor(X_tr_eff.values)
+                y_tr_tensor = torch.FloatTensor(y_tr_eff.values)
+                X_val_tensor = torch.FloatTensor(X_val_eff.values)
+                y_val_tensor = torch.FloatTensor(y_val_eff.values)
+                
+                try:
                     
                     model_f1 = SimpleNN(X_tr_eff.shape[1])
                     optimizer = torch.optim.Adam(model_f1.parameters(), lr=0.001)
                     criterion_f1 = SoftF1Loss(beta=1.0)
                     
                     # Training loop
-                    batch_size = 256
-                    n_epochs = 50
                     
                     for epoch in range(n_epochs):
                         model_f1.train()
@@ -1841,9 +2240,15 @@ def layer3_analyst_lgbm(
                     improvement = best_eff_trial['score'] - baseline_score
                     print(f"\n   Best Efficiency Trial: {best_eff_trial['trial']} (Score: {best_eff_trial['score']:.4f})")
                     if improvement > 0:
-                        print(f"   Improvement over baseline: +{improvement:.4f} ({improvement/baseline_score*100:+.1f}%)")
+                        if baseline_score != 0:
+                            print(f"   Improvement over baseline: +{improvement:.4f} ({improvement/baseline_score*100:+.1f}%)")
+                        else:
+                            print(f"   Improvement over baseline: +{improvement:.4f} (baseline was 0.0)")
                     else:
-                        print(f"   Performance vs baseline: {improvement:.4f} ({improvement/baseline_score*100:+.1f}%)")
+                        if baseline_score != 0:
+                            print(f"   Performance vs baseline: {improvement:.4f} ({improvement/baseline_score*100:+.1f}%)")
+                        else:
+                            print(f"   Performance vs baseline: {improvement:.4f} (baseline was 0.0)")
                 
                 # Save comprehensive efficiency trial results
                 try:
@@ -1987,13 +2392,14 @@ def layer3_analyst_lgbm(
 
                 if len(y_train) >= 50 and len(y_test) >= 50:
                     try:
-                        clip_low = float(cfg.get('layer3_prob_clip_low', 0.0025)) if isinstance(cfg, dict) else 0.0025
+                        # Use gentle bounds instead of aggressive clipping (de Prado principle)
+                        clip_low = float(cfg.get('layer3_prob_clip_low', 1e-4)) if isinstance(cfg, dict) else 1e-4
                     except Exception:
-                        clip_low = 0.0025
+                        clip_low = 1e-4
                     try:
-                        clip_high = float(cfg.get('layer3_prob_clip_high', 0.9975)) if isinstance(cfg, dict) else 0.9975
+                        clip_high = float(cfg.get('layer3_prob_clip_high', 1 - 1e-4)) if isinstance(cfg, dict) else 1 - 1e-4
                     except Exception:
-                        clip_high = 0.9975
+                        clip_high = 1 - 1e-4
 
                     try:
                         calib_tail_frac = float(cfg.get('layer3_calibration_tail_frac', 0.20)) if isinstance(cfg, dict) else 0.20
@@ -2425,13 +2831,14 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
         avg_shap_values = np.mean(shap_values_list, axis=0)
 
         # 1. Summary Plot
-        plt.figure(figsize=(10, 8))
-        shap.summary_plot(avg_shap_values, X_sample, show=False, plot_size=(10, 8))
-
+        fig, ax = plt.subplots(figsize=(10, 8))
+        shap.summary_plot(avg_shap_values, X_sample, show=False, plot_size=None)
+        ax.set_title(f"Layer 3 SHAP Summary - {symbol} {timeframe}")
+        
         plot_filename = f"layer3_shap_{symbol}_{timeframe}_{ts}.png"
         plot_path = output_dir / plot_filename
         plt.savefig(plot_path, bbox_inches='tight')
-        plt.close()
+        plt.close(fig)
         print(f"   SHAP plot saved to: {plot_path}")
 
         # 2. Text Summary (Top features)

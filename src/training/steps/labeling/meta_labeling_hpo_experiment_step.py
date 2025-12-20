@@ -6693,22 +6693,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         try:
             if len(candidate_pool) >= 10:
                 tprint_info("📊 Computing HPO Metric Correlations (Fidelity vs Downstream Proxy)...")
-                # Extract key metrics
+                # Extract key metrics - handle missing values properly
                 corr_data = []
                 for c in candidate_pool:
                     c_metrics = {
-                        'IC': float(c.get('ic', 0.0)),
-                        'Fidelity': float(c.get('fidelity_score', 0.0)),
-                        'AUC': float(c.get('mean_auc', 0.5)),
-                        'Calibration': float(c.get('calibration_score', 0.0)),
-                        'Edge': float(c.get('edge', 0.0)),
-                        'Profit': float(c.get('profitability', 0.0)),
-                        'Learnability': float(c.get('learnability', 0.0)),
-                        'Combined': float(c.get('combined', 0.0)),
+                        'IC': float(c.get('ic', np.nan)),
+                        'Fidelity': float(c.get('fidelity_score', np.nan)),
+                        'AUC': float(c.get('mean_auc', np.nan)),
+                        'Calibration': float(c.get('calibration_score', np.nan)),
+                        'Edge': float(c.get('edge', np.nan)),
+                        'Profit': float(c.get('profitability', np.nan)),
+                        'Learnability': float(c.get('learnability', np.nan)),
+                        'Combined': float(c.get('combined', np.nan)),
                     }
                     corr_data.append(c_metrics)
                 
                 df_corr = pd.DataFrame(corr_data)
+                # Drop columns with all NaN values before computing correlation
+                df_corr = df_corr.dropna(axis=1, how='all')
                 # Compute correlation matrix
                 corr_matrix = df_corr.corr()
                 

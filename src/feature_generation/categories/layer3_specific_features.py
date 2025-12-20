@@ -411,16 +411,18 @@ def generate_layer3_features(
             df_out[f"base_pred_{col}"] = pd.to_numeric(df_out[col], errors='coerce').fillna(0.5)
 
     # 1b. Ensemble Disagreement Features (ens_*)
+    # Enhanced disagreement features for meta model following de Prado principles
     disagree_feature_names = [
-        "prediction_dispersion",
-        "confidence_gap",
-        "uncertainty",
-        "prediction_range",
-        "avg_divergence",
-        "max_confidence",
-        "disagreement_rate",
-        "snr_internal",
-        "snr_consensus",
+        "prediction_dispersion",      # Variance of predictions across models
+        "confidence_gap",            # Margin between top predictions  
+        "uncertainty",               # Normalized entropy (uncertainty measure)
+        "prediction_range",         # Range of predictions (max - min)
+        "avg_divergence",           # Average pairwise model divergence
+        "max_confidence",           # Highest confidence among models
+        "disagreement_rate",        # Proportion of models disagreeing on direction
+        "snr_internal",             # Mean Probability / Mean Internal Variance
+        "snr_consensus",            # Ensemble Mean Probability / StdDev of Model Predictions
+        "ensemble_prob",           # Arithmetic mean of probabilities
     ]
     disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
     for col in disagree_cols:
@@ -444,19 +446,33 @@ def generate_layer3_features(
                     except Exception:
                         pass
 
+            # Enhanced disagreement calculation with proper error handling
             disagree = calculate_ensemble_disagreement_features(
                 model_predictions=pred_dict,
                 model_probabilities=prob_dict,
                 model_confidences=None,
                 model_variances=var_dict if var_dict else None,
-                feature_names=None,
+                feature_names=disagree_feature_names,  # Explicitly request all features
                 logger=None,
             )
 
+            # Apply disagreement features with proper validation
             for k, col in zip(disagree_feature_names, disagree_cols):
                 v = disagree.get(k)
                 if isinstance(v, pd.Series) and len(v) == len(df_out):
-                    df_out[col] = pd.to_numeric(v.values, errors="coerce")
+                    # Apply de Prado-inspired transformations
+                    if k == "disagreement_rate":
+                        # Transform disagreement rate to agreement strength (inverse)
+                        df_out[col] = 1.0 - pd.to_numeric(v.values, errors="coerce")
+                    elif k in ["snr_internal", "snr_consensus"]:
+                        # Apply log transform to SNR ratios for better scaling
+                        snr_vals = pd.to_numeric(v.values, errors="coerce")
+                        df_out[col] = np.log1p(np.clip(snr_vals, 0, 100))  # Clip extreme values
+                    elif k == "uncertainty":
+                        # Keep uncertainty as-is (already normalized)
+                        df_out[col] = pd.to_numeric(v.values, errors="coerce")
+                    else:
+                        df_out[col] = pd.to_numeric(v.values, errors="coerce")
                 else:
                     df_out[col] = 0.0
     except Exception:
@@ -542,7 +558,31 @@ def generate_layer3_features(
     except Exception:
         pass
 
-    # 8. Price Position in Range
+    # 9. Regime Interaction Terms (Synergy)
+    try:
+        if 'ensemble_prob' in df_out.columns:
+            ep = df_out['ensemble_prob']
+            # Interaction with Trend Regimes
+            if 'trend_regime_is_high' in df_out.columns:
+                df_out['inter_ep_trend_high'] = ep * df_out['trend_regime_is_high']
+            if 'trend_regime_is_low' in df_out.columns:
+                df_out['inter_ep_trend_low'] = ep * df_out['trend_regime_is_low']
+            
+            # Interaction with Volatility Regimes
+            if 'vol_regime_is_high' in df_out.columns:
+                df_out['inter_ep_vol_high'] = ep * df_out['vol_regime_is_high']
+            if 'vol_regime_is_low' in df_out.columns:
+                df_out['inter_ep_vol_low'] = ep * df_out['vol_regime_is_low']
+            
+            # Interaction with Volatility Buckets
+            if 'vol_bucket_high' in df_out.columns:
+                df_out['inter_ep_vol_bucket_high'] = ep * df_out['vol_bucket_high']
+            if 'vol_bucket_low' in df_out.columns:
+                df_out['inter_ep_vol_bucket_low'] = ep * df_out['vol_bucket_low']
+    except Exception:
+        pass
+
+    # 10. Price Position in Range
     try:
         if 'close' in df_out.columns:
             close = df_out['close']

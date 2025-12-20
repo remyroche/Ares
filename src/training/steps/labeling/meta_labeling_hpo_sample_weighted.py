@@ -706,57 +706,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         if market_data is None or market_data.empty:
             tprint_error("Failed to load market data.")
             return {"success": False}
-        
-        # ---------------------------------------------------------------------
-        # OOS TEST: Check if we should run OOS evaluation
-        # ---------------------------------------------------------------------
-        oos_results = None
-        train_data = market_data
-        oos_data = None
-        
-        if should_run_oos(config, market_data):
-            tprint_info(">>> OOS Test Enabled - Creating temporal split...")
-            try:
-                oos_config = validate_oos_config(config)
-                train_data, oos_data, split_date = create_oos_split(
-                    market_data,
-                    oos_days=oos_config['oos_days'],
-                    min_train_days=oos_config['min_train_days']
-                )
-                tprint_success(f"OOS split created: train={len(train_data)} bars, test={len(oos_data)} bars")
-            except Exception as e:
-                tprint_warning(f"Failed to create OOS split: {e}")
-                oos_data = None
 
         # ---------------------------------------------------------------------
-        # LAYER 0: Kalman/RTS + VWAP optimization
+        # PRE-PROCESSING: Volatility and Regime Generation
+        # (Must happen before splitting into train_data / oos_data)
         # ---------------------------------------------------------------------
-        layer0_bundle_path = outcomes_dir / "layer0_kalman_bundle.joblib"
-        layer0_params: Dict[str, Any] = {}
-        layer0_artifacts: Dict[str, Any] = {}
-
-        if (not explicit_start) or (start_at == "layer0"):
-            run_opt = bool((not layer0_bundle_path.exists()) or (start_at == "layer0"))
-            market_data, layer0_payload = run_layer0_kalman_vwap(
-                market_data=market_data,
-                config=config,
-                outcomes_dir=outcomes_dir,
-                bundle_path=layer0_bundle_path,
-                run_optimization=run_opt,
-                train_data=train_data,  # Use training data only
-            )
-            layer0_params = dict(layer0_payload.get("best_params", {}) or {})
-            layer0_artifacts["layer0_kalman_bundle"] = str(layer0_bundle_path)
-            layer0_artifacts["layer0_params"] = dict(layer0_params)
-
-        else:
-            if layer0_bundle_path.exists():
-                try:
-                    l0_bundle = joblib.load(layer0_bundle_path)
-                    layer0_params = dict(l0_bundle.get("best_params", {}) or {})
-                except Exception:
-                    layer0_params = {}
-
         if ("volatility_1d" not in market_data.columns) or bool(
             pd.to_numeric(market_data.get("volatility_1d"), errors="coerce").isna().all()
         ):
@@ -792,13 +746,27 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             .all()
         ):
             vol_1d_series = pd.to_numeric(market_data.get("volatility_1d"), errors="coerce")
+            # CAUSAL REGIME CALCULATION (Fixing Global Quantile Leakage)
+            # User requested "rolling growing window" -> Expanding Window
+            tf_minutes = _timeframe_to_minutes(config.get("timeframe", "15m"))
+            bars_per_day = int(max(2, round(1440 / max(1, int(tf_minutes)))))
+            
+            # Volatility Regime
             try:
-                vol_thr = float(vol_1d_series.quantile(float(config.get("vol_regime_high_q", 0.67))))
+                # Expanding window: Anchored at start, grows indefinitely (min_periods=1 day)
+                vol_thr = vol_1d_series.expanding(min_periods=bars_per_day).quantile(
+                    float(config.get("vol_regime_high_q", 0.67))
+                )
+                # Fill initial NaNs with the first valid threshold (backward fill)
+                # Only leaked for the first 'bars_per_day' samples (1 day), acceptable startup cost
+                vol_thr = vol_thr.bfill()
             except Exception:
                 vol_thr = float(vol_1d_series.median())
-            if (not np.isfinite(vol_thr)):
-                vol_thr = 0.0
-            market_data["vol_regime"] = np.where(vol_1d_series >= vol_thr, "High", "Low")
+
+            if isinstance(vol_thr, pd.Series):
+                market_data["vol_regime"] = np.where(vol_1d_series >= vol_thr, "High", "Low")
+            else:
+                market_data["vol_regime"] = np.where(vol_1d_series >= vol_thr, "High", "Low")
 
         trend_regime_existing = None
         if "trend_regime" in market_data.columns:
@@ -822,16 +790,76 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             trend_window = int(max(2, config.get("trend_regime_window", bars_per_day)))
             trend_mu = returns_1.rolling(trend_window).mean()
             trend_score = (trend_mu.abs() / (vol_1d_series.abs() + 1e-12)).replace([np.inf, -np.inf], np.nan)
+            
+            # Trend Regime (Causal - Expanding)
             try:
-                trend_thr = float(trend_score.quantile(float(config.get("trend_regime_high_q", 0.67))))
+                trend_thr = trend_score.expanding(min_periods=bars_per_day).quantile(
+                    float(config.get("trend_regime_high_q", 0.67))
+                )
+                trend_thr = trend_thr.bfill()
             except Exception:
                 trend_thr = float(np.nanmedian(trend_score.values))
-            if (not np.isfinite(trend_thr)):
-                trend_thr = 0.0
-            market_data["trend_regime"] = np.where(trend_score >= trend_thr, "High", "Low")
+
+            if isinstance(trend_thr, pd.Series):
+                market_data["trend_regime"] = np.where(trend_score >= trend_thr, "High", "Low")
+            else:
+                market_data["trend_regime"] = np.where(trend_score >= trend_thr, "High", "Low")
 
         market_data["vol_regime"] = market_data["vol_regime"].astype(str).fillna("Low")
         market_data["trend_regime"] = market_data["trend_regime"].astype(str).fillna("Low")
+        
+        # ---------------------------------------------------------------------
+        # OOS TEST: Check if we should run OOS evaluation
+        # ---------------------------------------------------------------------
+        oos_results = None
+        train_data = market_data
+        oos_data = None
+        
+        if should_run_oos(config, market_data):
+            tprint_info(">>> OOS Test Enabled - Creating temporal split...")
+            try:
+                oos_config = validate_oos_config(config)
+                train_data, oos_data, split_date = create_oos_split(
+                    market_data,
+                    oos_days=oos_config['oos_days'],
+                    min_train_days=oos_config['min_train_days']
+                )
+                tprint_success(f"OOS split created: train={len(train_data)} bars, test={len(oos_data)} bars")
+            except Exception as e:
+                tprint_warning(f"Failed to create OOS split: {e}")
+                oos_data = None
+
+        # ---------------------------------------------------------------------
+        # LAYER 0: Kalman/RTS + VWAP optimization
+        # ---------------------------------------------------------------------
+        layer0_bundle_path = outcomes_dir / "layer0_kalman_bundle.joblib"
+        layer0_params: Dict[str, Any] = {}
+        layer0_artifacts: Dict[str, Any] = {}
+
+        if (not explicit_start) or (start_at == "layer0"):
+            run_opt = bool((not layer0_bundle_path.exists()) or (start_at == "layer0"))
+            market_data, layer0_payload = run_layer0_kalman_vwap(
+                symbol=str(config.get("symbol", "")),
+                timeframe=str(config.get("timeframe", "")),
+                market_data=market_data,
+                config=config,
+                outcomes_dir=outcomes_dir,
+                bundle_path=layer0_bundle_path,
+                run_optimization=run_opt,
+                train_data=train_data,  # Use training data only
+            )
+            layer0_params = dict(layer0_payload.get("best_params", {}) or {})
+            layer0_artifacts["layer0_kalman_bundle"] = str(layer0_bundle_path)
+            layer0_artifacts["layer0_params"] = dict(layer0_params)
+
+        else:
+            if layer0_bundle_path.exists():
+                try:
+                    l0_bundle = joblib.load(layer0_bundle_path)
+                    layer0_params = dict(l0_bundle.get("best_params", {}) or {})
+                except Exception:
+                    layer0_params = {}
+
 
         layer1_bundle_path = outcomes_dir / "layer1_weighting_bundle.joblib"
         target_sample_weight = config.get("target_sample_weight")
@@ -1012,6 +1040,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l2_weights = l2_output['weights']
             l2_quality_weights = l2_output.get('quality_weights')
             individual_geos = l2_output['individual_geometries']
+            individual_variances = l2_output.get('individual_variances') # Unpack Variances
             events_df = l2_output['events_df']
             selected_trials = l2_output.get('selected_trials')  # Production Geometries
             if not isinstance(selected_trials, list):
@@ -1099,6 +1128,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     "l2_returns": l2_returns,
                     "l2_weights": l2_weights,
                     "individual_geos": individual_geos,
+                    "individual_variances": individual_variances, # Save Variances
                     "events_df": events_df,
                     "selected_trials": selected_trials,
                     "l2_quality_weights": l2_quality_weights,
@@ -1184,6 +1214,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         geo_cols = list(geo_preds_df.columns)
         
         l3_input_df = geo_preds_df.copy()
+
+        # Inject Individual Variances for Layer 3 Uncertainty Features
+        if individual_variances and isinstance(individual_variances, dict):
+            for uuid, variances in individual_variances.items():
+                var_col = f"{uuid}_var"
+                if isinstance(variances, pd.Series):
+                     l3_input_df[var_col] = variances.reindex(events_df.index)
 
         context_cols = ['volatility_1d', 'trend_regime', 'vol_regime']
         for c in context_cols:
@@ -1769,8 +1806,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         except Exception:
             traded_idx = None
 
-        # Save Layer 5 Artifacts
-        sizer._save_artifacts_to_disk(outcomes_dir)
+        # Save Layer 5 Artifacts (already called internally by run_backtest)
+        # sizer._save_artifacts_to_disk(l4_metrics)  # Removed: run_backtest() calls this internally
 
         # Helper to sanitize keys for JSON (e.g. Intervals)
         def sanitize_keys(d):

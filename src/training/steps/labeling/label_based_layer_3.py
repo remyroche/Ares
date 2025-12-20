@@ -321,10 +321,14 @@ def _apply_calibrated_logistic_regression(
         
         # Fit with sample weights if provided
         try:
+            # LogisticRegression expects binary class labels, but we might have soft labels (0-1)
+            # We strictly binarize for the base estimator fit, while keeping sample weights
+            y_train_bin = (y_train >= 0.5).astype(int)
+            
             if sample_weight is not None:
-                base_model.fit(X_train, y_train, sample_weight=sample_weight)
+                base_model.fit(X_train, y_train_bin, sample_weight=sample_weight)
             else:
-                base_model.fit(X_train, y_train)
+                base_model.fit(X_train, y_train_bin)
         except Exception as e:
             raise ValueError(f"Logistic regression fitting failed: {str(e)}")
         
@@ -2831,15 +2835,21 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
         avg_shap_values = np.mean(shap_values_list, axis=0)
 
         # 1. Summary Plot
-        fig, ax = plt.subplots(figsize=(10, 8))
-        shap.summary_plot(avg_shap_values, X_sample, show=False, plot_size=None)
-        ax.set_title(f"Layer 3 SHAP Summary - {symbol} {timeframe}")
-        
-        plot_filename = f"layer3_shap_{symbol}_{timeframe}_{ts}.png"
-        plot_path = output_dir / plot_filename
-        plt.savefig(plot_path, bbox_inches='tight')
-        plt.close(fig)
-        print(f"   SHAP plot saved to: {plot_path}")
+        try:
+            # Clear any existing figures to avoid "stealing space" errors
+            plt.close('all')
+            fig = plt.figure(figsize=(10, 8))
+            
+            shap.summary_plot(avg_shap_values, X_sample, show=False, plot_size=None)
+            plt.title(f"Layer 3 SHAP Summary - {symbol} {timeframe}")
+            
+            plot_filename = f"layer3_shap_{symbol}_{timeframe}_{ts}.png"
+            plot_path = output_dir / plot_filename
+            plt.savefig(plot_path, bbox_inches='tight')
+            plt.close(fig)
+            print(f"   SHAP plot saved to: {plot_path}")
+        except Exception as e:
+            print(f"   ⚠️ SHAP summary plot failed: {e}")
 
         # 2. Text Summary (Top features)
         # Calculate mean absolute SHAP value per feature
@@ -2857,7 +2867,9 @@ def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
         if md_path and md_path.exists():
             with open(md_path, 'a') as f:
                 f.write("\n\n## SHAP Feature Importance (Global)\n")
-                f.write(f"![SHAP Summary]({plot_filename})\n\n")
+                # Only embed plot if it was successfully saved
+                if 'plot_filename' in dir() and plot_filename:
+                    f.write(f"![SHAP Summary]({plot_filename})\n\n")
 
                 f.write("### Top 20 Features\n")
                 f.write("| Feature | Mean |SHAP| |\n")

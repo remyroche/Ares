@@ -661,13 +661,13 @@ def generate_primary_signals(
     range_window: int = 48,
     mtf_lookback: int = 4,
     # New arguments for CUSUM generator
-    k: float = 0.15,
+    k: float = 0.5,
     vol_window: int = 50,
     er_window: int = 50,
     er_min: float = 0.00,
     alpha: float = 0.1,
     beta: float = 0.5,
-    vol_power: float = 0.8,
+    vol_power: float = 1.0,
     **kwargs
 ) -> pd.DataFrame:
     """
@@ -992,8 +992,9 @@ def compute_realized_returns(
                 continue
 
             event_horizon = int(dynamic_horizons[i_evt])
-            if i_evt + event_horizon >= n:
-                continue
+            # Allow events near the end to resolve via timeout instead of skipping
+            # if i_evt + event_horizon >= n:
+            #     continue
 
             entry_price = float(close_prices[i_evt])
             profit_thr = float(profit_thresholds[i_evt])
@@ -1177,10 +1178,10 @@ def compute_realized_returns(
         # Get dynamic horizon for this event
         event_horizon = int(dynamic_horizons[i])
 
-        # Edge window handling: skip events too close to end of available data
-        if i + event_horizon >= n:
-            i += 1
-            continue
+        # Edge window handling: Resolved via timeout instead of skipping
+        # if i + event_horizon >= n:
+        #     i += 1
+        #     continue
 
         entry_price = close_prices[i]
         exit_price = None

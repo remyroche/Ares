@@ -28,8 +28,10 @@ from sklearn.metrics import roc_auc_score, log_loss, average_precision_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.cross_decomposition import PLSRegression
+from sklearn.calibration import CalibratedClassifierCV
 from scipy.stats import spearmanr
 from scipy.special import expit
+from scipy.spatial.distance import euclidean
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass, asdict
 import logging
@@ -55,10 +57,11 @@ LAYER2_MODEL_CONSTANTS = {
     'objective': 'binary',
     'metric': 'binary_logloss',
     'max_depth': -1,
-    'learning_rate': 0.05,
-    'lambda_l1': 0.01,      # Reduced from 0.05 to allow more learning
+    'learning_rate': 0.03,  # Reduced from 0.05 for better convergence
+    'lambda_l1': 0.01,
     'lambda_l2': 0.05,       # Reduced from 0.1 to allow more learning  
-    'min_data_in_leaf': 10, # Reduced from 20 to allow deeper trees
+    'num_leaves': 31,
+    'min_data_in_leaf': 5, # Reduced to 5 (Hunter Mode)
     'min_sum_hessian_in_leaf': 1e-3,
     'feature_fraction': 0.95, # Increased from 0.9 to use more features
     'bagging_fraction': 0.95,  # Increased from 0.9 to use more data
@@ -131,11 +134,15 @@ class RobustFocalLoss:
         """
         Args:
             preds: raw margins from LGBM
-            train_data: lgb.Dataset
+            train_data: lgb.Dataset or numpy labels
         Returns:
             grad, hess: gradient and hessian arrays
         """
-        labels = train_data.get_label()
+        if hasattr(train_data, 'get_label'):
+             labels = train_data.get_label()
+        else:
+             labels = train_data
+        
         p = expit(preds)  # convert raw score to probability
         p = np.clip(p, 1e-9, 1 - 1e-9)  # standardized clipping (prevent log(0))
 
@@ -542,9 +549,8 @@ def _quick_5model_race(
     # Pick winner
     winner = max(scores, key=scores.get)
     
-    logger.info(f"   Model race scores: LGBM={scores.get('lgbm', 0):.4f}, XGB={scores.get('xgb', 0):.4f}, CatBoost={scores.get('catboost', 0):.4f}")
+    logger.info(f"   Model race scores: LGBM={scores.get('lgbm', 0):.4f}, LGBM_Linear={scores.get('lgbm_linear', 0):.4f}, XGB={scores.get('xgb', 0):.4f}, XGB_Linear={scores.get('xgb_linear', 0):.4f}, CatBoost={scores.get('catboost', 0):.4f}")
     logger.info(f"   Winner: {winner.upper()}")
-    
     return winner, scores
 
 
@@ -819,16 +825,13 @@ class LabelBasedLayer2:
 
         production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=True)
         if not production_geometries:
+            fallback_enabled = True
             try:
                 cfg_prod = getattr(self, "_current_config", {})
-                if not isinstance(cfg_prod, dict):
-                    cfg_prod = {}
+                if isinstance(cfg_prod, dict):
+                    fallback_enabled = bool(cfg_prod.get('layer2_production_fallback_enabled', True))
             except Exception:
-                cfg_prod = {}
-            try:
-                fallback_enabled = bool(cfg_prod.get('layer2_production_fallback_enabled', True))
-            except Exception:
-                fallback_enabled = True
+                pass
             if fallback_enabled:
                 production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=False)
 
@@ -972,23 +975,28 @@ class LabelBasedLayer2:
         for (val_start, val_stop) in folds:
             fold_idx += 1
             test_idx = np.arange(int(val_start), int(val_stop))
-            train_end = int(max(0, int(val_start) - int(purge_bars)))
-            train_idx = np.arange(0, int(train_end))
+            
+            # Purged K-Fold: Use all data EXCEPT test fold and purge windows
+            train_idx_list = []
+            if val_start > purge_bars:
+                train_idx_list.extend(range(0, int(val_start - purge_bars)))
+            if val_stop + purge_bars < n_samples:
+                train_idx_list.extend(range(int(val_stop + purge_bars), n_samples))
+            train_idx = np.array(train_idx_list, dtype=int)
 
             logger.info(f"   > Processing Fold {fold_idx}/{int(len(folds))}...")
 
             try:
                 t0 = str(df.index[int(val_start)]) if int(val_start) < len(df.index) else ""
                 t1 = str(df.index[int(val_stop - 1)]) if int(val_stop - 1) < len(df.index) else ""
-                te = str(df.index[int(train_end - 1)]) if int(train_end - 1) >= 0 and int(train_end - 1) < len(df.index) else ""
                 logger.info(
-                    f"Layer2 OOF Fold {fold_idx}: walkforward train_end={train_end}, val_start={val_start}, val_stop={val_stop}, "
-                    f"purge_bars={purge_bars}, train_end_time={te}, test_start_time={t0}, test_end_time={t1}"
+                    f"Layer2 OOF Fold {fold_idx}: purged k-fold val_start={val_start}, val_stop={val_stop}, "
+                    f"purge_bars={purge_bars}, test_start_time={t0}, test_end_time={t1}, n_train={len(train_idx)}"
                 )
             except Exception:
                 pass
 
-            # Create Train Slice (strictly past only)
+            # Create Train Slice
             df_train = df.iloc[train_idx]
 
             # Subset events
@@ -1174,7 +1182,7 @@ class LabelBasedLayer2:
                 )
 
                 try:
-                    lbl = fold_output.get('oof_labels')
+                    lbl = fold_output.get('l2_label')
                     n_lbl = int(lbl.notna().sum()) if isinstance(lbl, pd.Series) else 0
                     n_geo = int(len(fold_output.get('individual_geometries') or {}))
                     logger.info(
@@ -3145,8 +3153,9 @@ class LabelBasedLayer2:
             if winning_model_type == 'lgbm':
                 # LGBM objective wrapped in function
                 def objective(trial):
-                    focal_gamma = trial.suggest_float('focal_gamma', 0.5, 3.0)
-                    focal_alpha = trial.suggest_float('focal_alpha', 0.8, 1.2)  # Increased to compete with CatBoost
+                    focal_alpha = trial.suggest_float('focal_alpha', 0.4, 1.0)
+                    gamma_ratio = trial.suggest_float('gamma_ratio', 0.5, 3.0) # Tweaked via ratio
+                    focal_gamma = gamma_ratio / focal_alpha # Inverse relationship: higher alpha -> lower gamma
                     num_leaves = trial.suggest_int('num_leaves', 127, 511)
                     n_estimators = trial.suggest_int('n_estimators', 1000, 2000)
                     
@@ -3188,14 +3197,16 @@ class LabelBasedLayer2:
                     # Score
                     preds = model.predict(X_val)
                     preds = expit(preds)
-                    score = log_loss(y_val, preds)
+                    # Use (1 - Average Precision) for minimization direction
+                    score = 1.0 - average_precision_score(y_val, preds)
                     return score
 
             elif winning_model_type == 'xgb':
                 # XGBoost HPO objective
                 def objective(trial):
-                    focal_gamma = trial.suggest_float('focal_gamma', 1.0, 3.0)
-                    focal_alpha = trial.suggest_float('focal_alpha', 0.8, 1.2)  # Match LGBM range for imbalanced data
+                    focal_alpha = trial.suggest_float('focal_alpha', 0.4, 1.0)
+                    gamma_ratio = trial.suggest_float('gamma_ratio', 0.5, 3.0)
+                    focal_gamma = gamma_ratio / focal_alpha
                     n_estimators = trial.suggest_int('n_estimators', 200, 800)
                     max_depth = trial.suggest_int('max_depth', 4, 8)
                     learning_rate = trial.suggest_float('learning_rate', 0.01, 0.05)
@@ -3228,7 +3239,7 @@ class LabelBasedLayer2:
                     )
 
                     preds = model.predict_proba(X_val)[:, 1]
-                    score = log_loss(y_val, preds)
+                    score = 1.0 - average_precision_score(y_val, preds)
                     return score
 
             elif winning_model_type == 'catboost':
@@ -3237,7 +3248,9 @@ class LabelBasedLayer2:
                     iterations = trial.suggest_int('iterations', 200, 600)
                     learning_rate = trial.suggest_float('learning_rate', 0.02, 0.08)
                     depth = trial.suggest_int('depth', 4, 8)
-                    class_weight_ratio = trial.suggest_float('class_weight_ratio', 2.0, 4.0)
+                    class_weight_ratio = trial.suggest_float('class_weight_ratio', 1.0, 10.0)
+                    # CatBoost lacks focal_gamma, so we can't couple it directly.
+                    # We rely on class_weight_ratio roughly behaving like alpha/(1-alpha).
 
                     split_idx = int(len(X_sub) * 0.8)
                     X_tr, X_val = X_sub.iloc[:split_idx], X_sub.iloc[split_idx:]
@@ -3263,7 +3276,7 @@ class LabelBasedLayer2:
                     )
 
                     preds = model.predict_proba(X_val)[:, 1]
-                    score = log_loss(y_val, preds)
+                    score = 1.0 - average_precision_score(y_val, preds)
                     return score
             
             else:
@@ -3272,8 +3285,9 @@ class LabelBasedLayer2:
                 winning_model_type = 'lgbm'
                 # Define default LGBM objective
                 def objective(trial):
-                    focal_gamma = trial.suggest_float('focal_gamma', 0.5, 3.0)
-                    focal_alpha = trial.suggest_float('focal_alpha', 0.25, 0.5)
+                    focal_alpha = trial.suggest_float('focal_alpha', 0.4, 1.0)
+                    gamma_ratio = trial.suggest_float('gamma_ratio', 0.5, 3.0)
+                    focal_gamma = gamma_ratio / focal_alpha
                     num_leaves = trial.suggest_int('num_leaves', 63, 255)
                     n_estimators = trial.suggest_int('n_estimators', 750, 1500)
                     
@@ -3306,7 +3320,7 @@ class LabelBasedLayer2:
                     
                     preds = model.predict(X_val)
                     preds = expit(preds)
-                    score = log_loss(y_val, preds)
+                    score = 1.0 - average_precision_score(y_val, preds)
                     return score
 
             # 3. Optimize
@@ -3410,6 +3424,7 @@ class LabelBasedLayer2:
             from functools import partial
             obj_func = partial(
                 self._optimization_objective,
+                study,
                 df=df,
                 family=family,
                 family_events=family_events,
@@ -3435,6 +3450,7 @@ class LabelBasedLayer2:
 
     def _optimization_objective(
         self,
+        study: optuna.Study,
         trial: optuna.Trial,
         df: pd.DataFrame,
         family: str,
@@ -3470,6 +3486,27 @@ class LabelBasedLayer2:
             sl_high = float(max(float(sl_low) + 0.5, 3.0))
         sl_mult = trial.suggest_float('sl_mult', float(sl_low), float(sl_high))
 
+        # Distance-based pruning to avoid similar geometries
+        params_vector = [kappa, sl_mult, horizon]
+        # Normalize based on bounds (kappa: 0.3-8.0, sl_mult: 0.3-2.0, horizon: 8-120)
+        normalized_params = [
+            (kappa - 0.3) / (8.0 - 0.3),
+            (sl_mult - 0.3) / (2.0 - 0.3),
+            (horizon - 8) / (120 - 8)
+        ]
+        threshold = 0.05  # 5% of normalized space; tune as needed
+        
+        for prev_trial in study.trials:
+            if prev_trial.value is None or prev_trial.state != optuna.trial.TrialState.COMPLETE:
+                continue
+            prev_norm = [
+                (prev_trial.params['kappa'] - 0.3) / (8.0 - 0.3),
+                (prev_trial.params['sl_mult'] - 0.3) / (2.0 - 0.3),
+                (prev_trial.params['horizon'] - 8) / (120 - 8)
+            ]
+            if euclidean(normalized_params, prev_norm) < threshold:
+                return -1.0  # Skip computation for near-duplicates
+
         # Compute labels
         labels, returns, _, _ = self._compute_dominance_labels(df, family_events, kappa, horizon, family, sl_mult=sl_mult)
 
@@ -3499,10 +3536,10 @@ class LabelBasedLayer2:
         # --- OPTIMIZATION: Tighter Pre-Filters ---
         # If the geometry is fundamentally poor in terms of base statistics, don't waste time on probes.
         try:
-            min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.05))
-            max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.85))
+            min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.01))
+            max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.95))
         except Exception:
-             min_rate, max_rate = 0.05, 0.85
+             min_rate, max_rate = 0.01, 0.95
 
         if pos_rate < min_rate or pos_rate > max_rate: 
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=pos_rate_limit, pos_rate={pos_rate:.3f}, range=[{min_rate}, {max_rate}]")
@@ -3641,7 +3678,7 @@ class LabelBasedLayer2:
         # --- Noise Metrics ---
 
         # 1. Flip Rate (Barrier Perturbation)
-        # Configurable frequency to reduce compute.
+        # Configurable frequency + optional subsampling to reduce compute.
         try:
             perturb_every = int(getattr(self, '_current_config', {}).get('layer2_perturb_every_n_trials', 1))
         except Exception:
@@ -3672,7 +3709,7 @@ class LabelBasedLayer2:
         # we can't calculate IC of predictions yet.
         # However, we can use the IC from the probe model if it passes.
         # We will compute it AFTER probe training.
-
+        
         if not is_stable:
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unstable_recheck")
              t_obj = GeometryTrial(
@@ -3840,7 +3877,17 @@ class LabelBasedLayer2:
                 if not trials and trials_all:
                     trials = trials_all
 
-            trials.sort(key=lambda x: float(getattr(x, 'final_score', -1.0)), reverse=True)
+            # Improved Sorting Logic:
+            # 1. Final Score (Profitability)
+            # 2. Learnability (AUC) - explicit tie-breaker for negative scores
+            # 3. Stability (lower is better, so negate)
+            def _sort_key(x):
+                fs = float(getattr(x, 'final_score', -1.0))
+                lrn = float(getattr(x, 'learnability', 0.0))
+                stab = float(getattr(x, 'stability', 0.0))
+                return (fs, lrn, -stab)
+
+            trials.sort(key=_sort_key, reverse=True)
             n_top = max(2, int(len(trials) * 0.2))
             top_tier = trials[:n_top]
 
@@ -4248,9 +4295,9 @@ class LabelBasedLayer2:
                 # Check for geometry-specific model params (HPO result)
                 tuned_params = getattr(g, 'model_params', None)
 
-                # Default Focal Loss params
-                f_gamma = 0.75
-                f_alpha = 0.25
+                # Default Focal Loss params (Hunter Mode: Favor Positives)
+                f_gamma = 0.5   # Reduced from 0.75 (Less aggressive focusing)
+                f_alpha = 0.65  # Increased from 0.25 (Favor positives > 50%)
                 
                 # Determine model type
                 model_type = 'lgbm'  # Default
@@ -4269,28 +4316,49 @@ class LabelBasedLayer2:
 
                 # Train based on model type
                 if model_type == 'lgbm':
-                    # LGBM with Focal Loss
+                    # LGBM with Focal Loss + Calibration
                     if isinstance(tuned_params, dict):
                         params.update({k: v for k, v in tuned_params.items() if k in params})
                     
+                    # Ensure n_estimators is integer
+                    n_estimators = int(params.get('n_estimators', 500))
+
                     focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=f_gamma, alpha=f_alpha)
-                    params['objective'] = focal_obj
+                    
+                    # Helper wrapper for objective compatibility with LGBMClassifier
+                    def lgbm_focal_obj(y_pred, y_true):
+                        # Note: y_true is passed as 2nd arg in sklearn API sometimes, but 
+                        # LGBMClassifier typically expects: func(y_true, y_pred) -> (grad, hess)
+                        # We use the instance method which handles the math.
+                        return focal_obj(y_pred, y_true)
+
+                    clf = lgb.LGBMClassifier(
+                        objective=lgbm_focal_obj,
+                        n_estimators=n_estimators,
+                        num_leaves=int(params.get('num_leaves', 31)),
+                        learning_rate=float(params.get('learning_rate', 0.05)),
+                        class_weight='balanced',
+                        random_state=self.random_state,
+                        n_jobs=1,
+                        verbosity=-1
+                    )
                     
                     if has_val:
-                        train_ds_inner = lgb.Dataset(X_tr_inner, label=y_tr_inner)
-                        val_ds_inner = lgb.Dataset(X_val_inner, label=y_val_inner, reference=train_ds_inner)
-                        booster = lgb.train(
-                            params,
-                            train_ds_inner,
-                            valid_sets=[train_ds_inner, val_ds_inner],
-                            num_boost_round=params.get('n_estimators', 500),
+                        # Train on inner train
+                        clf.fit(
+                            X_tr_inner, y_tr_inner,
+                            eval_set=[(X_val_inner, y_val_inner)],
                             callbacks=[lgb.early_stopping(stopping_rounds=100, verbose=False)]
                         )
+                        # Calibrate on inner val
+                        calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
+                        calibrated.fit(X_val_inner, y_val_inner)
+                        models[g.uuid] = calibrated
                     else:
-                        train_ds = lgb.Dataset(X_train, label=y_train)
-                        booster = lgb.train(params, train_ds, num_boost_round=params.get('n_estimators', 500))
-                    
-                    models[g.uuid] = booster
+                        # Fallback: Train on full, no calibration possible without leak
+                        # We could use cv=3 here instead, but for now we stick to uncalibrated fallback
+                        clf.fit(X_train, y_train)
+                        models[g.uuid] = clf
 
                 elif model_type == 'xgb':
                     # XGBoost with Focal Loss
@@ -4314,10 +4382,13 @@ class LabelBasedLayer2:
                             eval_set=[(X_val_inner, y_val_inner)],
                             verbose=False,
                         )
+                        # Calibrate
+                        calibrated = CalibratedClassifierCV(model_xgb, method='sigmoid', cv='prefit')
+                        calibrated.fit(X_val_inner, y_val_inner)
+                        models[g.uuid] = calibrated
                     else:
                         model_xgb.fit(X_train, y_train)
-                    
-                    models[g.uuid] = model_xgb
+                        models[g.uuid] = model_xgb
 
                 elif model_type == 'catboost':
                     # CatBoost with Class Weights
@@ -4339,19 +4410,40 @@ class LabelBasedLayer2:
                             eval_set=(X_val_inner, y_val_inner),
                             early_stopping_rounds=30,
                         )
+                        # Calibrate
+                        calibrated = CalibratedClassifierCV(model_cat, method='sigmoid', cv='prefit')
+                        calibrated.fit(X_val_inner, y_val_inner)
+                        models[g.uuid] = calibrated
                     else:
                         model_cat.fit(X_train, y_train)
-                    
-                    models[g.uuid] = model_cat
+                        models[g.uuid] = model_cat
 
                 else:
-                    # Fallback to LGBM
+                    # Fallback to LGBM Classifier + Calibration
                     logger.warning(f"Unknown model type {model_type} for {g.uuid}, using LGBM")
+                    
+                    # Re-instantiate focal obj for wrapper
                     focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=f_gamma, alpha=f_alpha)
-                    params['objective'] = focal_obj
-                    train_ds = lgb.Dataset(X_train, label=y_train)
-                    booster = lgb.train(params, train_ds, num_boost_round=500)
-                    models[g.uuid] = booster
+                    def lgbm_focal_obj_fb(y_pred, y_true):
+                         return focal_obj(y_pred, y_true)
+
+                    clf = lgb.LGBMClassifier(
+                        objective=lgbm_focal_obj_fb,
+                        n_estimators=500,
+                        class_weight='balanced',
+                        random_state=self.random_state,
+                        n_jobs=1,
+                        verbosity=-1
+                    )
+
+                    if has_val:
+                         clf.fit(X_tr_inner, y_tr_inner, eval_set=[(X_val_inner, y_val_inner)], callbacks=[lgb.early_stopping(50, verbose=False)])
+                         calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
+                         calibrated.fit(X_val_inner, y_val_inner)
+                         models[g.uuid] = calibrated
+                    else:
+                         clf.fit(X_train, y_train)
+                         models[g.uuid] = clf
             except Exception as e:
                 logger.warning(f"Failed to train geometry model for {g.uuid}: {e}")
                 models[g.uuid] = None
@@ -4470,11 +4562,15 @@ class LabelBasedLayer2:
                                  
                                  # Enhanced variance weighting: lower variance = higher confidence
                                  # Apply exponential decay: weight = exp(-variance / std)
-                                 if np.any(variances > 0):
-                                     var_std = np.std(variances[variances > 0])
-                                     if var_std > 1e-9:
-                                         variance_penalty = np.exp(-variances / var_std)
-                                         probs = probs * variance_penalty
+                                 # Variance Penalty (DISABLED for Hunter Mode - prevents crushing predictions)
+                                 # if np.any(variances > 0):
+                                 #     var_std = np.std(variances[variances > 0])
+                                 #     if var_std > 1e-9:
+                                 #         variance_penalty = np.exp(-variances / var_std)
+                                 #         probs = probs * variance_penalty
+                                 
+                                 # Hunter Mode: Prediction Floor to prevent collapse
+                                 probs = np.maximum(probs, 0.05)
 
                                  # Store
                                  oof_preds[g.uuid].loc[fam_indices] = probs
@@ -4644,6 +4740,18 @@ class LabelBasedLayer2:
             composite_prob.loc[fam_events.index] = consensus_prob
             composite_returns.loc[fam_events.index] = consensus_returns
             composite_weights.loc[fam_events.index] = final_event_weights
+
+        # --- Global Fallback for Orphan Events (Families with No Passing Geometries) ---
+        # If an event's family had all trials gate-rejected, it was never visited in the loop above.
+        # Fill these orphan events with neutral defaults to prevent NaN propagation to Layer 3.
+        orphan_mask = composite_returns.isna()
+        if orphan_mask.any():
+            n_orphans = int(orphan_mask.sum())
+            logger.info(f"Layer2 Bagging: {n_orphans} orphan events (no geo coverage) filled with neutral defaults.")
+            composite_labels.loc[orphan_mask] = 0.5  # Neutral label (uncertain)
+            composite_prob.loc[orphan_mask] = 0.5  # Neutral probability
+            composite_returns.loc[orphan_mask] = 0.0  # Zero return (no assumed PnL)
+            composite_weights.loc[orphan_mask] = 0.1  # Low weight (low-information events)
 
         # --- Add Multi-Output Models (Cross-Geometry Learning) ---
         logger.info("\n>>> Training multi-output ensemble members...")

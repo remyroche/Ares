@@ -57,82 +57,53 @@ class GateDiagnostics:
     avg_auc_lift: float
     reasons: List[str] = field(default_factory=list)
 
-# --- 2. Loss Function (RobustFocalLoss) ---
+# --- 2. Loss Function (TradingFocalLoss) ---
 
-class RobustFocalLoss:
-    """
-    Focal Loss implementation for LightGBM.
-    Focuses training on hard examples by down-weighting easy negatives.
-    """
-    def __init__(self, gamma=2.0, alpha=0.25):
-        self.gamma = gamma
+class TradingFocalLoss:
+    def __init__(
+        self,
+        gamma_pos=1.5,
+        gamma_neg=3.0,
+        alpha=None,
+        w_cap=3.0,
+        label_smoothing=0.02,
+        mix=0.5
+    ):
+        self.gamma_pos = gamma_pos
+        self.gamma_neg = gamma_neg
         self.alpha = alpha
+        self.w_cap = w_cap
+        self.label_smoothing = label_smoothing
+        self.mix = mix
 
     def __call__(self, preds, train_data):
-        """
-        Custom objective function for LightGBM.
-        """
-        labels = train_data.get_label()
-        # Sigmoid to get probability
-        preds = 1.0 / (1.0 + np.exp(-preds))
-        
-        # Focal Loss gradients and hessians
-        # gradient = -(alpha * (1-p)^gamma * (1-p-gamma*p*log(p))) if y=1
-        # Simplified for numerical stability:
-        # L = -alpha * (1-p)^gamma * log(p)   if y=1
-        # L = -(1-alpha) * p^gamma * log(1-p) if y=0
-        
-        # We need first order derivative (grad) and second order (hess) of Loss w.r.t raw margin (logits)
-        
-        p = preds
-        y = labels
-        
-        # Terms
-        term1 = (1 - p) ** self.gamma
-        term2 = p ** self.gamma
-        
-        # This is a complex derivation, for robustness in this task we use a simplified
-        # approximation or standard binary logloss if exact Focal Loss gradient is risky to derive from scratch.
-        # However, to honor the "RobustFocalLoss" request, we implement the standard Focal Loss gradient.
-        
-        # Gradient w.r.t. logit (z): dL/dz = dL/dp * dp/dz
-        # dp/dz = p(1-p)
-        
-        # dL/dp (y=1): -alpha * [ -gamma*(1-p)^(gamma-1)*log(p) + (1-p)^gamma/p ]
-        # dL/dp (y=0): -(1-alpha) * [ gamma*p^(gamma-1)*log(1-p) - p^gamma/(1-p) ]
-        
-        # Combining:
-        # grad = p - y (for log loss). For Focal Loss it is weighted.
-        
-        # Let's use a simpler implementation found in common libraries for robustness:
-        # grad = (p - y) + ... (Focal term)
-        
-        # For this specific task, if "RobustFocalLoss" is expected to be existing, 
-        # I will implement a standard LogLoss but formatted as a class to be used, 
-        # unless I am confident in the Focal derivation. 
-        # Let's proceed with a standard binary objective but named RobustFocalLoss to fit the interface,
-        # or actually try to implement the Focal weights.
-        
-        # Ensure y is numpy array
-        y = np.array(y)
-        
-        # Weights: w = alpha*(1-p)^gamma if y=1, (1-alpha)*p^gamma if y=0
-        weights = y * self.alpha * ((1 - p) ** self.gamma) + (1 - y) * (1 - self.alpha) * (p ** self.gamma)
-        
-        # Approximate Gradient: (p - y) * weights
-        # This is not exact but captures the spirit of Focal Loss (downweighting easy examples)
-        grad = (p - y) * weights
-        hess = (p * (1 - p)) * weights # Approximate hessian (Fisher Info)
-        
+        y = train_data.get_label()
+        y = y * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        p = 1.0 / (1.0 + np.exp(-preds))
+        p = np.clip(p, 1e-6, 1 - 1e-6)
+
+        alpha = self.alpha
+        if alpha is None:
+            pos_rate = np.mean(y)
+            alpha = min(0.5, 1 - pos_rate)
+
+        gamma = y * self.gamma_pos + (1 - y) * self.gamma_neg
+        focal = np.minimum((1 - p)**gamma, self.w_cap)
+
+        # Log loss
+        logloss_grad = p - y
+        logloss_hess = p * (1 - p)
+
+        # Focal-weighted
+        grad = focal * logloss_grad
+        hess = focal * logloss_hess
+
+        # Hybrid
+        grad = self.mix * grad + (1 - self.mix) * logloss_grad
+        hess = self.mix * hess + (1 - self.mix) * logloss_hess
+
         return grad, hess
-
-    def eval_metric(self, preds, train_data):
-        labels = train_data.get_label()
-        preds = 1.0 / (1.0 + np.exp(-preds))
-        # Binary Log Loss
-        loss = -np.mean(labels * np.log(preds + 1e-15) + (1 - labels) * np.log(1 - preds + 1e-15))
-        return 'focal_loss', loss, False
-
 
 # --- 3. Vectorization & Pre-computation ---
 
@@ -250,10 +221,14 @@ def run_diagnostics_gates(
     if fold_metrics:
         # Assuming fold_metrics is a dict of metrics per fold
         aucs = [m['auc_lift'] for m in fold_metrics.values()]
-        avg_auc = np.mean(aucs)
-        if avg_auc < min_auc_lift:
+
+        # Majority Rule Logic
+        pass_rate = np.mean([a >= min_auc_lift for a in aucs])
+        avg_auc = np.mean(aucs) # Keep calculating average for reporting
+
+        if pass_rate < 0.6:
             is_passing = False
-            reasons.append(f"Poor Fold Stability (AUC Lift {avg_auc:.3f} < {min_auc_lift})")
+            reasons.append(f"Fold Pass Rate {pass_rate:.0%} < 60% (Avg AUC Lift {avg_auc:.3f})")
     else:
         # If no metrics provided, we assume we are in 'discovery' mode
         pass
@@ -274,8 +249,10 @@ def train_model_for_geometry(
     features_df: pd.DataFrame
 ) -> Tuple[Any, np.ndarray]:
     """
-    Trains a simple LGBM model (max depth = 4) using RobustFocalLoss.
+    Trains a simple LGBM model (max depth = 4) using TradingFocalLoss.
     Target: 1 if event is in survivor_ids, 0 otherwise.
+
+    # Models trained here are not evaluated for performance. They are used solely for correlation pruning.
     """
     # Align features and target
     # features_df index should match event ids
@@ -291,10 +268,18 @@ def train_model_for_geometry(
     
     train_data = lgb.Dataset(X, label=y)
     
-    focal_loss = RobustFocalLoss()
+    focal_loss = TradingFocalLoss(
+        gamma_pos=1.5,
+        gamma_neg=3.0,
+        alpha=None, # Will be calculated data-driven in __call__
+        w_cap=3.0,
+        label_smoothing=0.02,
+        mix=0.5
+    )
 
     params = {
         'objective': focal_loss, 
+        'metric': 'binary_logloss',
         'max_depth': 4,
         'verbose': -1,
         'num_leaves': 15, # constrained by depth
@@ -304,14 +289,12 @@ def train_model_for_geometry(
     model = lgb.train(
         params,
         train_data,
-        num_boost_round=50,
-        feval=focal_loss.eval_metric
+        num_boost_round=50
     )
     
     # Predict
     preds = model.predict(X)
     # Apply sigmoid if custom objective returns raw scores (fobj usually needs raw)
-    # But lgb.train prediction depends on objective. 
     # With custom fobj, predictions are raw margins.
     preds_proba = 1.0 / (1.0 + np.exp(-preds))
     
@@ -413,7 +396,7 @@ def select_geometries(
         all_preds = np.array([c['preds'] for c in accepted_candidates])
         
         # We need correlation between rows.
-        # np.corrcoef does this.
+        # np.corrcoef does that.
         if len(accepted_candidates) > 1:
             corr_matrix = np.corrcoef(all_preds)
         else:
@@ -434,18 +417,13 @@ def select_geometries(
                     continue
                 
                 corr = corr_matrix[i, j]
-                if corr > 0.9:
+                # Improved: Use absolute correlation
+                if abs(corr) > 0.9:
                     # Drop j because i has higher survival rate (since we sorted)
                     is_dropped[j] = True
-                    # logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype}")
+                    logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype}")
 
     # Return formatted list
-    # The prompt asked "then we have the winning geometries, to be used by the main script"
-    # Function signature in original snippet returned List[Tuple[Geometry, Set[int]]]
-    # I will add the model/preds if useful, but sticking to original return signature + Model for utility might be good.
-    # I'll return (Geometry, Survivors) as per original, or maybe add model.
-    # "Create another file to be used by label_based_layer_2.py"
-    # I'll return the full objects including the model.
     
     result = []
     for item in final_selection:

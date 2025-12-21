@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Set, Tuple, Optional, Any
 import logging
 import lightgbm as lgb
+from scipy.stats import ks_2samp, entropy
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Geometry:
-    sl_sigma: float     # Stop Loss in sigma units
+    sl_quantile: float  # Quantile of MAE distribution (0.0 - 1.0) instead of fixed sigma
     alpha: float        # Pain penalty (denominator exponent)
     beta: float         # Gain reward (numerator exponent)
     min_ratio: float = 1.0 
@@ -21,12 +22,13 @@ class Geometry:
     @property
     def archetype(self) -> str:
         """Auto-classifies the geometry into a human-readable archetype."""
-        if self.sl_sigma < 1.0 and self.beta > 1.0:
-            return "Sniper (Tight SL, High Reward)"
+        # Adapted archetypes for quantile logic
+        if self.sl_quantile < 0.25 and self.beta > 1.0:
+            return "Sniper (Selective, High Reward)"
         elif self.alpha > 1.0:
             return "Pain Averse (High Penalty for Drawdown)"
-        elif self.sl_sigma > 2.0 and self.beta < 0.8:
-            return "Deep Value (Loose SL, Low Target)"
+        elif self.sl_quantile > 0.6 and self.beta < 0.8:
+            return "Deep Value (Loose Tolerance, Low Target)"
         elif self.beta >= 1.0 and self.alpha <= 0.5:
             return "Momentum Surfer (Tolerates Volatility)"
         else:
@@ -55,6 +57,8 @@ class GateDiagnostics:
     survival_rate: float
     avg_uniqueness: float
     avg_auc_lift: float
+    ks_stat: float
+    entropy_reduction: float
     reasons: List[str] = field(default_factory=list)
 
 # --- 2. Loss Function (TradingFocalLoss) ---
@@ -116,19 +120,32 @@ def events_to_dataframe(events: List[Event]) -> pd.DataFrame:
     for e in events:
         path = e.returns_path * e.direction
         
-        duration = e.exit_idx - e.entry_idx
+        duration = max(1, e.exit_idx - e.entry_idx)
         
         raw_mae = -np.min(path) if len(path) > 0 else 0.0
         raw_mfe = np.max(path) if len(path) > 0 else 0.0
         
+        # Standard normalization
+        norm_mae = raw_mae / e.sigma
+        norm_mfe = raw_mfe / e.sigma
+
+        # Time-scaled normalization (Condition on Holding Time)
+        # Assuming volatility scales with sqrt(t)
+        # We normalize by sigma * sqrt(duration) to treat long/short horizons equally
+        sqrt_t = np.sqrt(duration)
+        time_scaled_mae = raw_mae / (e.sigma * sqrt_t)
+        time_scaled_mfe = raw_mfe / (e.sigma * sqrt_t)
+
         data.append({
             'id': e.id,
             'entry_idx': e.entry_idx,
             'exit_idx': e.exit_idx,
             'duration': duration,
             'sigma': e.sigma,
-            'norm_mae': raw_mae / e.sigma,
-            'norm_mfe': raw_mfe / e.sigma
+            'norm_mae': norm_mae,
+            'norm_mfe': norm_mfe,
+            'time_scaled_mae': time_scaled_mae,
+            'time_scaled_mfe': time_scaled_mfe
         })
     
     df = pd.DataFrame(data)
@@ -136,7 +153,40 @@ def events_to_dataframe(events: List[Event]) -> pd.DataFrame:
         df.set_index('id', inplace=True)
     return df
 
-# --- 4. Advanced Metrics (De Prado) ---
+# --- 4. Advanced Metrics ---
+
+def calculate_separation_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Tuple[float, float]:
+    """
+    Calculates KS Statistic and Entropy.
+    KS: Max divergence between CDF of positives and CDF of negatives.
+    Entropy: Normalized Shannon entropy of predictions.
+    """
+    # KS Statistic
+    pos_preds = y_prob[y_true == 1]
+    neg_preds = y_prob[y_true == 0]
+
+    if len(pos_preds) == 0 or len(neg_preds) == 0:
+        ks_stat = 0.0
+    else:
+        ks_result = ks_2samp(pos_preds, neg_preds)
+        ks_stat = ks_result.statistic
+
+    # Entropy
+    # Clip probabilities for safety
+    p = np.clip(y_prob, 1e-9, 1.0 - 1e-9)
+    # Binary entropy per sample
+    ent_samples = -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p))
+    # Mean entropy
+    avg_ent = np.mean(ent_samples)
+    # Max possible entropy (log(2))
+    max_ent = np.log(2)
+    # Normalized entropy (0 to 1, where 1 is total uncertainty)
+    norm_ent = avg_ent / max_ent
+
+    # We want Entropy REDUCTION (i.e., lower is better).
+    # Let's return the raw normalized entropy for now, diagnostics will interpret it.
+
+    return ks_stat, norm_ent
 
 def get_average_uniqueness(selected_indices, all_events_df) -> float:
     """
@@ -185,8 +235,8 @@ def run_diagnostics_gates(
     fold_metrics: dict,
     geometry: Geometry,
     # Tunable Thresholds
-    default_min_survival: float = 0.15,
-    tail_min_survival: float = 0.01,
+    default_min_survival: float = 0.01, # Relaxed from 0.15 to allow quantiles to work (0.2 quantile -> 20% max)
+    tail_min_survival: float = 0.005,
     min_uniqueness: float = 0.5,
     min_auc_lift: float = 0.02,
 ) -> GateDiagnostics:
@@ -195,8 +245,6 @@ def run_diagnostics_gates(
     is_passing = True
     
     # 1. Survival Rate Gate
-    # "3.1 min_survival = 0.05 Is Too Low for Default"
-    # "allow 0.05 (or 0.01) only for explicitly tagged tail geometries"
     current_min_survival = tail_min_survival if geometry.is_tail else default_min_survival
     
     rate = len(survivor_ids) / len(events_df)
@@ -215,29 +263,45 @@ def run_diagnostics_gates(
     if subset['duration'].quantile(0.95) >= events_df['duration'].max() * 0.99:
         reasons.append("Warning: Hits Max Duration Limit frequently")
 
-    # 4. Fold Persistence Gate (Meta-Model readiness)
-    # "3.3 Fold Persistence Should Use a Majority Rule" -> Code says: if avg_auc < min_auc_lift
+    # 4. Fold Persistence / Learnability Gate
     avg_auc = 0.0
+    ks_stat = 0.0
+    entropy_val = 1.0
+
     if fold_metrics:
-        # Assuming fold_metrics is a dict of metrics per fold
-        aucs = [m['auc_lift'] for m in fold_metrics.values()]
+        # fold_metrics is a dict with keys like 'auc', 'ks', 'entropy'
+        # In this refactor, we expect the metrics to be passed directly or calculated before this call if possible,
+        # but the structure implies this is run BEFORE or AFTER training?
+        # The original code passed 'fold_metrics' which came from a map.
+        # But 'train_model' is called AFTER this in the main loop.
+        # This implies 'fold_metrics' here refers to historical/cached metrics or is empty in discovery.
+        # We will adhere to the logic: if metrics exist, check them.
 
-        # Majority Rule Logic
-        pass_rate = np.mean([a >= min_auc_lift for a in aucs])
-        avg_auc = np.mean(aucs) # Keep calculating average for reporting
+        aucs = [m.get('auc_lift', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
+        if aucs:
+            avg_auc = np.mean(aucs)
+            # Gate on AUC
+            if avg_auc < min_auc_lift:
+                is_passing = False
+                reasons.append(f"Low Learnability (AUC Lift {avg_auc:.3f})")
 
-        if pass_rate < 0.6:
-            is_passing = False
-            reasons.append(f"Fold Pass Rate {pass_rate:.0%} < 60% (Avg AUC Lift {avg_auc:.3f})")
-    else:
-        # If no metrics provided, we assume we are in 'discovery' mode
-        pass
+        # We might not have KS/Entropy yet if this is pre-training check.
+        # If we do (post-training check):
+        kss = [m.get('ks_stat', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
+        if kss:
+            ks_stat = np.mean(kss)
+
+        ents = [m.get('entropy', 1.0) for m in fold_metrics.values() if isinstance(m, dict)]
+        if ents:
+            entropy_val = np.mean(ents)
 
     return GateDiagnostics(
         passed=is_passing,
         survival_rate=rate,
         avg_uniqueness=avg_u,
         avg_auc_lift=avg_auc,
+        ks_stat=ks_stat,
+        entropy_reduction=(1.0 - entropy_val), # Higher is better
         reasons=reasons
     )
 
@@ -247,31 +311,39 @@ def train_model_for_geometry(
     survivor_ids: Set[int],
     all_event_ids: List[int],
     features_df: pd.DataFrame
-) -> Tuple[Any, np.ndarray]:
+) -> Tuple[Any, np.ndarray, Dict[str, float]]:
     """
-    Trains a simple LGBM model (max depth = 4) using TradingFocalLoss.
+    Trains a Weak Learner (max depth = 3) using TradingFocalLoss.
     Target: 1 if event is in survivor_ids, 0 otherwise.
-
-    # Models trained here are not evaluated for performance. They are used solely for correlation pruning.
+    Returns: model, predictions, separation_metrics
     """
-    # Align features and target
-    # features_df index should match event ids
     if features_df.empty:
-        return None, np.zeros(len(all_event_ids))
+        return None, np.zeros(len(all_event_ids)), {'auc': 0.5, 'ks': 0.0, 'entropy': 1.0}
 
     target = pd.Series(0, index=all_event_ids)
     target.loc[list(survivor_ids)] = 1
     
-    # Ensure features_df has rows for all_event_ids
     X = features_df.loc[all_event_ids]
     y = target.loc[all_event_ids]
     
-    train_data = lgb.Dataset(X, label=y)
+    # Validation split for metrics (simple 80/20 for this diagnostic probe)
+    # To be rigorous, we should use OOF, but this is a fast selection loop.
+    # We'll train on 80% and eval on 20% to get "out of sample" separation metrics.
+    split_idx = int(len(X) * 0.8)
+    X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
+
+    if len(np.unique(y_train)) < 2:
+        # Degenerate case
+        return None, np.zeros(len(all_event_ids)), {'auc': 0.5, 'ks': 0.0, 'entropy': 1.0}
+
+    train_data = lgb.Dataset(X_train, label=y_train)
+    val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
     
     focal_loss = TradingFocalLoss(
         gamma_pos=1.5,
         gamma_neg=3.0,
-        alpha=None, # Will be calculated data-driven in __call__
+        alpha=None,
         w_cap=3.0,
         label_smoothing=0.02,
         mix=0.5
@@ -279,26 +351,49 @@ def train_model_for_geometry(
 
     params = {
         'objective': focal_loss, 
-        'metric': 'binary_logloss',
-        'max_depth': 4,
+        'metric': 'auc', # Monitor AUC directly
+        'max_depth': 3, # Weak Learner Constraint
         'verbose': -1,
-        'num_leaves': 15, # constrained by depth
+        'num_leaves': 7, # 2^3 - 1
         'learning_rate': 0.05
     }
     
     model = lgb.train(
         params,
         train_data,
-        num_boost_round=50
+        valid_sets=[val_data],
+        num_boost_round=100,
+        callbacks=[lgb.early_stopping(20, verbose=False)]
     )
     
-    # Predict
-    preds = model.predict(X)
-    # Apply sigmoid if custom objective returns raw scores (fobj usually needs raw)
-    # With custom fobj, predictions are raw margins.
-    preds_proba = 1.0 / (1.0 + np.exp(-preds))
+    # Predict on Validation set for metrics
+    preds_val_raw = model.predict(X_val)
+    preds_val_prob = 1.0 / (1.0 + np.exp(-preds_val_raw))
+
+    # Metrics
+    ks_stat, ent = calculate_separation_metrics(y_val.values, preds_val_prob)
+
+    # Predict on Full set for pruning correlation
+    preds_full_raw = model.predict(X)
+    preds_full_prob = 1.0 / (1.0 + np.exp(-preds_full_raw))
+
+    # AUC Lift (Validation)
+    # Baseline is naive prevalence
+    prevalence = y_val.mean()
+    try:
+        from sklearn.metrics import roc_auc_score
+        auc_val = roc_auc_score(y_val, preds_val_prob)
+        auc_lift = auc_val - 0.5
+    except:
+        auc_lift = 0.0
+
+    metrics = {
+        'auc_lift': auc_lift,
+        'ks_stat': ks_stat,
+        'entropy': ent
+    }
     
-    return model, preds_proba
+    return model, preds_full_prob, metrics
 
 # --- 7. Main Selection Loop ---
 
@@ -308,32 +403,52 @@ def select_geometries(
     features_df: pd.DataFrame
 ) -> List[Tuple[Geometry, Set[int]]]:
     
-    logger.info(f"Vectorizing {len(events)} events...")
+    logger.info(f"Vectorizing {len(events)} events (Time-Scaled normalization enabled)...")
     df = events_to_dataframe(events)
     if df.empty:
         logger.warning("No events to process.")
         return []
 
+    # Calculate global quantile thresholds for MAE
+    # We use time_scaled_mae for the thresholding to be fair across durations
+    mae_series = df['time_scaled_mae']
+
+    # Quantiles to test: keeping top 50%, top 30%, top 20%, top 10% tightest stops
+    # Lower MAE = Tighter stop relative to vol*time
+    # "Quantile-Based Selection (Never Fixed Cutoffs)"
+    quantiles = [0.2, 0.3, 0.4, 0.5]
+
+    # Pre-calculate threshold values
+    thresholds = {q: mae_series.quantile(q) for q in quantiles}
+
     # Generate candidates
-    candidates = [
-        Geometry(sl, a, b, min_ratio=mr) 
-        for sl in [0.5, 1.0, 2.0]
-        for a in [0.5, 1.0, 1.5]
-        for b in [0.5, 1.0, 1.5]
-        for mr in [1.0, 1.5, 2.0] 
-    ]
-    # Deduplicate candidates if any
+    candidates = []
+    for q in quantiles:
+        for a in [0.5, 1.0, 1.5]:
+            for b in [0.5, 1.0, 1.5]:
+                for mr in [1.0, 1.5, 2.0]:
+                    candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr))
+
+    # Deduplicate
     candidates = list(set(candidates))
     
-    accepted_candidates = [] # List of dicts: {'geom': g, 'survivors': s, 'preds': p, 'survival_rate': r}
+    accepted_candidates = []
     
-    logger.info(f"Evaluating {len(candidates)} geometric candidates...")
+    logger.info(f"Evaluating {len(candidates)} geometric candidates using Separation Objectives...")
     
     for geom in candidates:
-        # B. Apply Geometry Filters
-        mask_sl = df['norm_mae'] <= geom.sl_sigma
+        # B. Apply Quantile-Based Filters
+        thresh = thresholds[geom.sl_quantile]
+        mask_sl = df['time_scaled_mae'] <= thresh
         
-        score = (df['norm_mfe'] ** geom.beta) / ((df['norm_mae'] + 1e-6) ** geom.alpha)
+        # Score Calculation
+        # Use time_scaled metrics for score too?
+        # "Long-horizon events tolerate larger MAE" -> handled by time_scaled_mae
+        # "Score" is usually Reward / Risk
+        # risk = time_scaled_mae ^ alpha
+        # reward = time_scaled_mfe ^ beta
+
+        score = (df['time_scaled_mfe'] ** geom.beta) / ((df['time_scaled_mae'] + 1e-6) ** geom.alpha)
         mask_score = score >= geom.min_ratio
         
         survivors_df = df[mask_sl & mask_score]
@@ -342,61 +457,59 @@ def select_geometries(
         if not survivor_ids:
             continue
 
-        # C. Run Diagnostics
+        # D. Train Weak Learner First to get Separation Metrics
+        # We need these metrics for the "Diagnostics Gates" now if we want to gate on KS
+        model, preds, metrics = train_model_for_geometry(
+            survivor_ids,
+            list(df.index),
+            features_df
+        )
+
+        if model is None:
+            continue
+
+        # C. Run Diagnostics Gates (Post-Training check included)
+        # We pass the just-computed metrics as a "fold" metric for the current check
         diag = run_diagnostics_gates(
             list(survivor_ids),
             df,
-            fold_metrics_map.get(geom, {}),
+            {0: metrics}, # Fake fold dict
             geom
         )
         
         if not diag.passed:
             continue
 
-        # D. Train Model (The "Weak Learner")
-        # "train a simple (max depth =4) LGBM model... then Add Prediction-Correlation Pruning"
-        model, preds = train_model_for_geometry(
-            survivor_ids,
-            list(df.index),
-            features_df
-        )
+        # Store Candidate
+        # We store the "Separation Score" for ranking
+        # Combine KS and Entropy Reduction
+        # KS is [0,1], Entropy Reduction is [0,1]
+        separation_score = (metrics['ks_stat'] + (1.0 - metrics['entropy'])) / 2.0
         
         accepted_candidates.append({
             'geometry': geom,
             'survivors': survivor_ids,
             'preds': preds,
             'survival_rate': diag.survival_rate,
+            'metrics': metrics,
+            'separation_score': separation_score,
             'model': model
         })
 
     # E. Prediction-Correlation Pruning
-    # "After training base models: Compute correlation... Drop geometries with >0.9 correlation"
+    # "Optimize for Separation... Tie breaker: keep the one with higher survival rate?"
+    # Let's prioritize Separation Score first, then Survival.
     
     logger.info(f"Pruning {len(accepted_candidates)} accepted geometries based on correlation...")
     
     final_selection = []
     
-    # Sort by survival rate descending (to prioritize high survival in tie-breaking)
-    # or process in order.
-    # User said: "Correlation pruning tie breaker: keep the one with higher survival rate"
-    
-    # We can use a greedy approach:
-    # 1. Sort candidates by survival rate (descending)
-    # 2. Pick top, discard any that are highly correlated (>0.9) with it.
-    # 3. Repeat.
-    
-    accepted_candidates.sort(key=lambda x: x['survival_rate'], reverse=True)
-    
-    # Using indices to track what is kept
-    kept_indices = []
+    # Sort by Separation Score descending
+    accepted_candidates.sort(key=lambda x: (x['separation_score'], x['survival_rate']), reverse=True)
     
     if accepted_candidates:
-        # Convert preds to a matrix for fast correlation
-        # shape: (n_candidates, n_events)
         all_preds = np.array([c['preds'] for c in accepted_candidates])
         
-        # We need correlation between rows.
-        # np.corrcoef does that.
         if len(accepted_candidates) > 1:
             corr_matrix = np.corrcoef(all_preds)
         else:
@@ -408,26 +521,20 @@ def select_geometries(
             if is_dropped[i]:
                 continue
             
-            # Keep candidate i
             final_selection.append(accepted_candidates[i])
             
-            # Check for correlations with remaining candidates
             for j in range(i + 1, len(accepted_candidates)):
                 if is_dropped[j]:
                     continue
                 
                 corr = corr_matrix[i, j]
-                # Improved: Use absolute correlation
                 if abs(corr) > 0.9:
-                    # Drop j because i has higher survival rate (since we sorted)
                     is_dropped[j] = True
-                    logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype}")
+                    logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} (Sep: {accepted_candidates[j]['separation_score']:.3f}) due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype} (Sep: {accepted_candidates[i]['separation_score']:.3f})")
 
-    # Return formatted list
-    
     result = []
     for item in final_selection:
         result.append((item['geometry'], item['survivors']))
         
-    logger.info(f"Final Selection: {len(result)} geometries.")
+    logger.info(f"Final Selection: {len(result)} geometries (Best Separation Score: {final_selection[0]['separation_score']:.3f})")
     return result

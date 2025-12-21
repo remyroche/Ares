@@ -92,78 +92,116 @@ def _normalized_binary_entropy(p: float) -> float:
 
 class RobustFocalLoss:
     """
-    Focal Loss for LightGBM with numeric stability, auto-alpha, and optional gradient clipping.
-    Suitable for rare-event classification.
+    Production-grade Focal Loss for LightGBM in Financial ML.
+
+    Enhancements over standard Focal Loss:
+    1. Asymmetric Gamma: Penalize False Positives (Traps) harder than Missed Opportunities.
+    2. Label Smoothing: Prevents the model from becoming over-confident on noisy labels.
+    3. Gradient Capping & Mixing: Stabilizes training against outliers.
+    4. Guardrails: w_cap prevents the loss from exploding on 'impossible' examples.
     """
 
-    def __init__(self, train_labels, gamma=1.5, alpha=None, grad_clip=100.0, verbose=True):
-        """
-        Args:
-            train_labels: np.array of 0/1 labels
-            gamma: focusing parameter (1-2 typical)
-            alpha: positive class weight; if None, auto-computed from prevalence
-            grad_clip: optional max absolute gradient value
-            verbose: print alpha/gamma info
-        """
-        self.gamma = gamma
+    def __init__(
+        self,
+        gamma_pos=1.0,
+        gamma_neg=2.5,
+        alpha=None,
+        grad_clip=5.0,
+        w_cap=3.0,
+        mix=0.25,
+        label_smoothing=0.02,
+        verbose=True
+    ):
+        self.gamma_pos = gamma_pos
+        self.gamma_neg = gamma_neg
         self.grad_clip = grad_clip
+        self.w_cap = w_cap
+        self.mix = mix
+        self.label_smoothing = label_smoothing
+        self.alpha = alpha
+        self.verbose = verbose
+        self._is_init = False
 
-        # --- ALPHA TUNING ---
-        if alpha is None:
-            n_pos = np.sum(train_labels == 1)
-            n_neg = np.sum(train_labels == 0)
-            if (n_pos + n_neg) > 0:
-                self.alpha = n_neg / (n_pos + n_neg)
+    def _init_alpha(self, labels):
+        """Auto-compute alpha based on prevalence if not provided."""
+        if self.alpha is None:
+            n_pos = np.sum(labels > 0.5)
+            n_total = len(labels)
+            if n_total > 0:
+                # Standard inverse frequency: High alpha for rare positives
+                self.alpha = 1.0 - (n_pos / n_total)
             else:
                 self.alpha = 0.5
-        else:
-            self.alpha = alpha
 
-        # Safety: enforce alpha in [0.01,0.99] to allow user-specified downweighting (e.g. 0.25)
-        self.alpha = min(max(self.alpha, 0.01), 0.99)
+        # Clamp alpha for safety
+        self.alpha = np.clip(self.alpha, 0.05, 0.95)
 
-        if verbose:
-            try:
-                pos_frac = np.mean(train_labels)
-            except Exception:
-                pos_frac = 0.0
-            if verbose:
-                logger.info(f"[Focal Loss] gamma={self.gamma}, alpha={self.alpha:.4f} (Pos fraction: {pos_frac:.2%})")
+        if self.verbose:
+            logger.info(f"[LGBM Focal] Gamma(+):{self.gamma_pos} Gamma(-):{self.gamma_neg} | Alpha:{self.alpha:.4f}")
+
+        self._is_init = True
 
     def __call__(self, preds, train_data):
-        """
-        Args:
-            preds: raw margins from LGBM
-            train_data: lgb.Dataset or numpy labels
-        Returns:
-            grad, hess: gradient and hessian arrays
-        """
         if hasattr(train_data, 'get_label'):
              labels = train_data.get_label()
         else:
              labels = train_data
-        
-        p = expit(preds)  # convert raw score to probability
-        p = np.clip(p, 1e-9, 1 - 1e-9)  # standardized clipping (prevent log(0))
 
-        # --- Common terms ---
-        term_pos = (1 - p) ** self.gamma
-        term_neg = p ** self.gamma
+        # Lazy init alpha on first call to handle data loading
+        if not self._is_init:
+            self._init_alpha(labels)
 
-        # --- Gradient ---
-        grad = (-self.alpha * term_pos * (1 - p - self.gamma * p * np.log(p)) * labels +
-                (1 - self.alpha) * term_neg * (p - self.gamma * (1 - p) * np.log(1 - p)) * (1 - labels))
+        # 1. Label Smoothing (Crucial for Finance)
+        # Softens hard 0/1 to e.g. 0.02/0.98. Reduces overfitting to noise.
+        y_smooth = labels * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
 
-        # --- Hessian ---
-        hess = (self.alpha * term_pos * (1 - p) * (1 + (self.gamma - 1) * p * np.log(p)) * labels +
-                (1 - self.alpha) * term_neg * p * (1 + (self.gamma - 1) * (1 - p) * np.log(1 - p)) * (1 - labels))
+        # 2. Robust Sigmoid
+        p = expit(preds)
+        p = np.clip(p, 1e-7, 1 - 1e-7)
 
-        # --- Gradient clipping ---
-        if self.grad_clip is not None:
+        # 3. Vectorized Asymmetric Gamma
+        # If label is positive, use gamma_pos (usually lower, e.g. 1.0)
+        # If label is negative, use gamma_neg (usually higher, e.g. 2.5) to filter traps
+        gamma_arr = np.where(labels > 0.5, self.gamma_pos, self.gamma_neg)
+
+        # 4. Focal Weights with Capping
+        # For pos: (1-p)^g | For neg: p^g
+        focal_weight = np.where(labels > 0.5, (1 - p), p) ** gamma_arr
+
+        # Guardrail: Cap the weight. If an example is "impossible" (p=0.0001, y=1),
+        # don't let the gradient explode (which would destroy the tree structure).
+        focal_weight = np.minimum(focal_weight, self.w_cap)
+
+        # 5. Gradient & Hessian Calculation
+        # We use the "Modulated Cross Entropy" approximation for stability.
+        # It has the same root properties but is numerically safer than the full derivative.
+
+        # Standard LogLoss Gradient: (p - y)
+        grad_bce = p - y_smooth
+
+        # Focal Gradient: alpha * weight * (p - y)
+        # We apply alpha asymmetry manually
+        alpha_factor = np.where(labels > 0.5, self.alpha, (1 - self.alpha))
+        grad_focal = alpha_factor * focal_weight * grad_bce
+
+        # Standard LogLoss Hessian: p * (1-p)
+        hess_bce = p * (1 - p)
+
+        # Focal Hessian: Scaled by weight.
+        # Note: We do NOT use the complex 2nd derivative term involving logs.
+        # In GBDT, a positive-definite diagonal approximation (like this) works better.
+        hess_focal = alpha_factor * focal_weight * hess_bce
+
+        # 6. Mixing (Stability Anchor)
+        # Blend pure Focal Loss with standard BCE to ensure convergence
+        grad = self.mix * grad_focal + (1 - self.mix) * grad_bce
+        hess = self.mix * hess_focal + (1 - self.mix) * hess_bce
+
+        # 7. Clipping & Safety
+        if self.grad_clip:
             grad = np.clip(grad, -self.grad_clip, self.grad_clip)
 
-        # --- Hessian stability ---
-        hess = np.maximum(hess, 1e-6)
+        hess = np.maximum(hess, 1e-6) # Prevent divide-by-zero
 
         return grad, hess
 
@@ -404,7 +442,7 @@ def _quick_5model_race(
     
     # --- Model 1: LGBM Standard (Non-linear) ---
     try:
-        focal_lgbm = RobustFocalLoss(train_labels=y_train.values, gamma=2.0, alpha=0.25, verbose=False)
+        focal_lgbm = RobustFocalLoss(gamma_pos=2.0, gamma_neg=5.0, alpha=0.25, verbose=False)
         
         params_lgbm = {
             'n_estimators': 500,
@@ -3178,7 +3216,7 @@ class LabelBasedLayer2:
                     val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
 
                     # Focal Loss
-                    focal_obj = RobustFocalLoss(train_labels=y_tr.values, gamma=focal_gamma, alpha=focal_alpha, verbose=False)
+                    focal_obj = RobustFocalLoss(gamma_pos=focal_gamma, gamma_neg=focal_gamma * 2.5, alpha=focal_alpha, verbose=False)
                     params['objective'] = focal_obj
 
                     # Callback for pruning
@@ -3308,7 +3346,7 @@ class LabelBasedLayer2:
                     train_ds = lgb.Dataset(X_tr, label=y_tr)
                     val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
                     
-                    focal_obj = RobustFocalLoss(train_labels=y_tr.values, gamma=focal_gamma, alpha=focal_alpha, verbose=False)
+                    focal_obj = RobustFocalLoss(gamma_pos=focal_gamma, gamma_neg=focal_gamma * 2.5, alpha=focal_alpha, verbose=False)
                     params['objective'] = focal_obj
                     
                     model = lgb.train(
@@ -4327,7 +4365,7 @@ class LabelBasedLayer2:
                     # Ensure n_estimators is integer
                     n_estimators = int(params.get('n_estimators', 500))
 
-                    focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=f_gamma, alpha=f_alpha)
+                    focal_obj = RobustFocalLoss(gamma_pos=f_gamma, gamma_neg=f_gamma * 2.5, alpha=f_alpha)
                     
                     # Helper wrapper for objective compatibility with LGBMClassifier
                     def lgbm_focal_obj(y_pred, y_true):
@@ -4427,7 +4465,7 @@ class LabelBasedLayer2:
                     logger.warning(f"Unknown model type {model_type} for {g.uuid}, using LGBM")
                     
                     # Re-instantiate focal obj for wrapper
-                    focal_obj = RobustFocalLoss(train_labels=y_train.values, gamma=f_gamma, alpha=f_alpha)
+                    focal_obj = RobustFocalLoss(gamma_pos=f_gamma, gamma_neg=f_gamma * 2.5, alpha=f_alpha)
                     def lgbm_focal_obj_fb(y_pred, y_true):
                          return focal_obj(y_pred, y_true)
 

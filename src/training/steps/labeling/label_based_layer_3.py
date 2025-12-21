@@ -809,6 +809,9 @@ def layer3_analyst_lgbm(
     # ---------------------------------------------------------
     # 1. Feature Engineering: Curated Feature Set
     # ---------------------------------------------------------
+    # Initialize unified results container
+    all_comparison_results = []
+
     print("<< Generating Layer 3 Features (centralized in generate_layer3_features)...")
 
     # Base models are probabilities; keep them centered around 0.5 when missing.
@@ -1659,6 +1662,19 @@ def layer3_analyst_lgbm(
         result = evaluate_scheme(name, schemes[name], list(range(len(fold_indices))), calibration_method=calibration_method_default)  # All folds
         results.append(result)
 
+        # Add to unified results
+        all_comparison_results.append({
+            'Category': 'Weighting Scheme',
+            'Name': name,
+            'Goal': 'Cross Entropy (Default)',
+            'Target': target_col,
+            'AUC': result['AUC'],
+            'PR_AUC': result['PR_AUC'],
+            'LogLoss': result['LogLoss'],
+            'Score': result['Score'],
+            'Details': f"Rating: {result['Rating']}, Top30_Win: {result['Top30_Win']}"
+        })
+
         if result["Score"] > best_score:
             best_score = result["Score"]
             best_scheme_name = name
@@ -1820,8 +1836,39 @@ def layer3_analyst_lgbm(
         p_reg = np.clip(p_reg, 1e-6, 1.0 - 1e-6)
 
         # 2.5 Compute Scores for Race
-        score_clf = _get_score(p_clf, y_val_bin)
-        score_reg = _get_score(p_reg, y_val_bin)
+        # Recalculate full metrics for reporting
+        auc_clf = roc_auc_score(y_val_bin, p_clf)
+        ll_clf = log_loss(y_val_bin, p_clf)
+        score_clf = 100 * (auc_clf - 0.5) + 50 * (0.693 - ll_clf)
+
+        auc_reg = roc_auc_score(y_val_bin, p_reg) # Using binarized target for AUC comparison
+        ll_reg = log_loss(y_val_bin, p_reg)
+        score_reg = 100 * (auc_reg - 0.5) + 50 * (0.693 - ll_reg)
+
+        # Add to unified results
+        all_comparison_results.append({
+            'Category': 'Model Architecture',
+            'Name': 'LGBM Classifier',
+            'Goal': 'Binary Classification',
+            'Target': 'Binary',
+            'AUC': auc_clf,
+            'PR_AUC': float('nan'), # Not calculated in original race block, keeping simplified
+            'LogLoss': ll_clf,
+            'Score': score_clf,
+            'Details': 'Model Race (Holdout)'
+        })
+
+        all_comparison_results.append({
+            'Category': 'Model Architecture',
+            'Name': 'LGBM Regressor',
+            'Goal': 'Regression (Soft)',
+            'Target': 'Soft',
+            'AUC': auc_reg,
+            'PR_AUC': float('nan'),
+            'LogLoss': ll_reg,
+            'Score': score_reg,
+            'Details': 'Model Race (Holdout)'
+        })
 
         # 3. Logistic Regression Race (Regularized)
         print("   [Race] Training LogisticRegression (ElasticNet)...")
@@ -1837,7 +1884,23 @@ def layer3_analyst_lgbm(
             model_lr = LogisticRegression(penalty='elasticnet', solver='saga', l1_ratio=0.5, C=0.1, max_iter=1000)
             model_lr.fit(X_tr_scaled, y_tr_bin, sample_weight=w_tr)
             p_lr = model_lr.predict_proba(X_val_scaled)[:, 1]
-            score_lr = _get_score(p_lr, y_val_bin)
+
+            auc_lr = roc_auc_score(y_val_bin, p_lr)
+            ll_lr = log_loss(y_val_bin, p_lr)
+            score_lr = 100 * (auc_lr - 0.5) + 50 * (0.693 - ll_lr)
+
+            all_comparison_results.append({
+                'Category': 'Model Architecture',
+                'Name': 'Logistic Regression',
+                'Goal': 'ElasticNet',
+                'Target': 'Binary',
+                'AUC': auc_lr,
+                'PR_AUC': float('nan'),
+                'LogLoss': ll_lr,
+                'Score': score_lr,
+                'Details': 'Model Race (Holdout)'
+            })
+
         except Exception as e:
             print(f"   Logistic Regression Race failed: {e}")
             score_lr = -999.0
@@ -2237,6 +2300,19 @@ def layer3_analyst_lgbm(
                     diff = result['score'] - baseline_score
                     diff_str = f"{diff:+.4f}" if np.isfinite(diff) else "N/A"
                     print(f"{result['trial']:<25} | {result['auc']:>6.4f} | {result['pr_auc']:>7.4f} | {result['logloss']:>8.4f} | {result['score']:>8.4f} | {diff_str:>11}")
+
+                    # Add to unified results
+                    all_comparison_results.append({
+                        'Category': 'Objective/Goal',
+                        'Name': result['trial'],
+                        'Goal': result['trial'],
+                        'Target': 'Efficiency Label',
+                        'AUC': result['auc'],
+                        'PR_AUC': result['pr_auc'],
+                        'LogLoss': result['logloss'],
+                        'Score': result['score'],
+                        'Details': f"vs Baseline: {diff_str}"
+                    })
                 
                 # Find best efficiency trial
                 if efficiency_trial_results:
@@ -2621,8 +2697,42 @@ def layer3_analyst_lgbm(
         lines.append(f"- honest_prob_clip_low: {float(honest_prob_clip_low) if np.isfinite(honest_prob_clip_low) else float('nan')}\n")
         lines.append(f"- honest_prob_clip_high: {float(honest_prob_clip_high) if np.isfinite(honest_prob_clip_high) else float('nan')}\n")
 
-        # Add Weighting Scheme Comparison Table
-        lines.append("\n## Weighting Scheme Comparison\n")
+        # Add Unified Comparison Table
+        lines.append("\n## Unified Comparison (Schemes, Models, Goals)\n")
+
+        try:
+            unified_df = pd.DataFrame(all_comparison_results)
+            if not unified_df.empty:
+                # Save to CSV
+                unified_csv = outcomes_dir / f"layer3_unified_comparison_{symbol}_{timeframe}_{ts}.csv"
+                unified_df.to_csv(unified_csv, index=False)
+
+                # Sort by Score descending
+                unified_df = unified_df.sort_values('Score', ascending=False)
+
+                # Markdown table header
+                uni_cols = ['Category', 'Name', 'Goal', 'Target', 'Score', 'AUC', 'LogLoss', 'Details']
+                header = "| " + " | ".join(uni_cols) + " |"
+                separator = "| " + " | ".join(["---"] * len(uni_cols)) + " |"
+                lines.append(header + "\n")
+                lines.append(separator + "\n")
+
+                for _, row in unified_df.iterrows():
+                    row_str = "|"
+                    for col in uni_cols:
+                        val = row.get(col, '')
+                        if isinstance(val, float):
+                             row_str += f" {val:.4f} |"
+                        else:
+                            row_str += f" {str(val)[:30]} |" # Truncate long details
+                    lines.append(row_str + "\n")
+
+                lines.append("\n")
+        except Exception as e:
+            lines.append(f"\nError generating unified table: {e}\n")
+
+        # Add Weighting Scheme Comparison Table (Legacy)
+        lines.append("\n## Weighting Scheme Comparison (Detailed)\n")
 
         # Markdown table header
         table_cols = ['Scheme', 'Score', 'AUC', 'PR_AUC', 'LogLoss', 'ECE', 'Top30_TPD', 'Top30_Win', 'Rating']

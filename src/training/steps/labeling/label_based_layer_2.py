@@ -517,7 +517,7 @@ def _quick_5model_race(
             subsample=0.8,
             colsample_bytree=0.8,
             objective=focal_xgb,
-            eval_metric='auc',
+            eval_metric=['auc', 'aucpr'], # De Prado: Monitor PR-AUC
             early_stopping_rounds=30,
             verbosity=0,
             random_state=random_state,
@@ -547,7 +547,7 @@ def _quick_5model_race(
             n_estimators=100,
             learning_rate=0.1,
             objective='binary:logistic', # Use standard objective for linear to be safe/stable
-            eval_metric='auc',
+            eval_metric=['auc', 'aucpr'],
             early_stopping_rounds=30,
             verbosity=0,
             random_state=random_state,
@@ -3345,7 +3345,7 @@ class LabelBasedLayer2:
                     params.update({
                         'num_leaves': num_leaves,
                         'n_estimators': n_estimators,
-                        'metric': 'binary_logloss',
+                        'metric': ['binary_logloss', 'average_precision'],
                     })
 
                     # Split for Early Stopping
@@ -3363,8 +3363,8 @@ class LabelBasedLayer2:
                     focal_obj = RobustFocalLoss(gamma_pos=focal_gamma, gamma_neg=focal_gamma * 2.5, alpha=focal_alpha, verbose=False)
                     params['objective'] = focal_obj
 
-                    # Callback for pruning
-                    pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "binary_logloss")
+                    # Callback for pruning - using PR-AUC (average_precision) for pruning
+                    pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "average_precision")
 
                     model = lgb.train(
                         params,
@@ -3407,7 +3407,7 @@ class LabelBasedLayer2:
                         learning_rate=learning_rate,
                         max_depth=max_depth,
                         objective=focal_obj,
-                        eval_metric='logloss',
+                        eval_metric=['logloss', 'aucpr'], # De Prado: Monitor PR-AUC
                         early_stopping_rounds=30,
                         verbosity=0,
                         random_state=self.random_state,
@@ -3477,7 +3477,7 @@ class LabelBasedLayer2:
                     params.update({
                         'num_leaves': num_leaves,
                         'n_estimators': n_estimators,
-                        'metric': 'binary_logloss',
+                        'metric': ['binary_logloss', 'average_precision'],
                     })
                     
                     split_idx = int(len(X_sub) * 0.8)
@@ -4551,7 +4551,7 @@ class LabelBasedLayer2:
                         learning_rate=tuned_params.get('learning_rate', 0.03) if tuned_params else 0.03,
                         max_depth=tuned_params.get('max_depth', 6) if tuned_params else 6,
                         objective=focal_obj,
-                        eval_metric='logloss',
+                        eval_metric=['logloss', 'aucpr'], # De Prado: Monitor PR-AUC
                         early_stopping_rounds=50 if has_val else None,
                         verbosity=0,
                         random_state=self.random_state,

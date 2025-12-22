@@ -57,6 +57,7 @@ class GateDiagnostics:
     survival_rate: float
     avg_uniqueness: float
     avg_auc_lift: float
+    avg_pr_lift: float
     ks_stat: float
     entropy_reduction: float
     reasons: List[str] = field(default_factory=list)
@@ -265,6 +266,7 @@ def run_diagnostics_gates(
 
     # 4. Fold Persistence / Learnability Gate
     avg_auc = 0.0
+    avg_pr_lift = 0.0
     ks_stat = 0.0
     entropy_val = 1.0
 
@@ -285,6 +287,10 @@ def run_diagnostics_gates(
                 is_passing = False
                 reasons.append(f"Low Learnability (AUC Lift {avg_auc:.3f})")
 
+        prs = [m.get('pr_lift', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
+        if prs:
+            avg_pr_lift = np.mean(prs)
+
         # We might not have KS/Entropy yet if this is pre-training check.
         # If we do (post-training check):
         kss = [m.get('ks_stat', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
@@ -300,6 +306,7 @@ def run_diagnostics_gates(
         survival_rate=rate,
         avg_uniqueness=avg_u,
         avg_auc_lift=avg_auc,
+        avg_pr_lift=avg_pr_lift,
         ks_stat=ks_stat,
         entropy_reduction=(1.0 - entropy_val), # Higher is better
         reasons=reasons
@@ -381,14 +388,19 @@ def train_model_for_geometry(
     # Baseline is naive prevalence
     prevalence = y_val.mean()
     try:
-        from sklearn.metrics import roc_auc_score
+        from sklearn.metrics import roc_auc_score, average_precision_score
         auc_val = roc_auc_score(y_val, preds_val_prob)
         auc_lift = auc_val - 0.5
+
+        pr_auc = average_precision_score(y_val, preds_val_prob)
+        pr_lift = pr_auc - prevalence
     except:
         auc_lift = 0.0
+        pr_lift = 0.0
 
     metrics = {
         'auc_lift': auc_lift,
+        'pr_lift': pr_lift,
         'ks_stat': ks_stat,
         'entropy': ent
     }

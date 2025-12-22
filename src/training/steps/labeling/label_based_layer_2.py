@@ -48,6 +48,13 @@ from src.training.steps.labeling.generate_weights_per_label import finalize_samp
 
 from src.utils.purged_kfold import PurgedKFoldTime
 
+# Import selection logic
+from src.training.steps.labeling.label_geometry_selection import (
+    select_geometries,
+    Event,
+    Geometry
+)
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -698,7 +705,7 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
 @dataclass
 class GeometryTrial:
     family: str
-    params: Dict[str, Any]  # Kappa, Horizon
+    params: Dict[str, Any]  # Kappa, Horizon, sl_sigma, alpha, beta, min_ratio
     final_score: float
     learnability: float
     robust_magnitude: float
@@ -853,6 +860,7 @@ class LabelBasedLayer2:
         # Part A: Full Optimization (Production Artifacts)
         # ---------------------------------------------------------------------
         logger.info(">>> Layer 2: Running Full Optimization (Production)...")
+        # Use selection logic instead of Optuna
         full_results = self._optimize_families(df, events_df)
 
         try:
@@ -1534,6 +1542,89 @@ class LabelBasedLayer2:
                     trials.append(g_obj)
         return trials
 
+    def _extract_events_for_selection(
+        self,
+        df: pd.DataFrame,
+        events_df: pd.DataFrame,
+        max_horizon: int = 120
+    ) -> List[Event]:
+        """
+        Convert DataFrame and events into the list of Event objects required by label_geometry_selection.
+        Extracts future return paths.
+        """
+        events_list = []
+
+        # Get integer locations
+        # We need a quick way to slice df
+        # Ensure df is sorted by index
+        df = df.sort_index()
+
+        # Map event timestamps to integer locations in df
+        # get_indexer returns -1 for missing
+        idx_locs = df.index.get_indexer(events_df.index)
+
+        # Pre-fetch numpy arrays for speed
+        close_arr = df['close'].to_numpy()
+        vol_arr = df['volatility_1d'].to_numpy()
+
+        # Directions
+        if 'event_consensus' in events_df.columns:
+            directions = np.sign(events_df['event_consensus'].fillna(0).to_numpy())
+        else:
+            # Fallback to config direction
+            try:
+                dir_raw = str(getattr(self, "_current_config", {}).get("direction", "long")).lower()
+            except Exception:
+                dir_raw = "long"
+            default_dir = 1.0
+            if dir_raw in {"short", "sell", "-1", "-1.0", "s"}:
+                default_dir = -1.0
+            directions = np.full(len(events_df), default_dir)
+
+        for i, (ts, row) in enumerate(events_df.iterrows()):
+            loc = idx_locs[i]
+            if loc == -1: continue
+
+            # Horizon
+            start_loc = loc
+            end_loc = min(len(df), loc + max_horizon)
+
+            # Extract path
+            price_path = close_arr[start_loc:end_loc]
+            if len(price_path) < 2: continue
+
+            # Cumulative returns relative to entry
+            entry_price = price_path[0]
+            if entry_price <= 0: continue
+
+            # path: (P_t - P_0) / P_0
+            # Note: label_geometry_selection logic expects 'returns_path' to be cumulative return from entry
+            returns_path = (price_path - entry_price) / entry_price
+
+            sigma = vol_arr[loc]
+            if np.isnan(sigma) or sigma <= 0: sigma = 0.01 # Fallback
+
+            # ID: use integer index for simplicity or hash timestamp
+            event_id = i
+
+            e = Event(
+                id=event_id,
+                entry_idx=0, # Relative indexing inside the path logic of selection?
+                             # No, selection uses duration = exit - entry.
+                             # If we pass selection a list of events where each event encapsulates its OWN path,
+                             # we can normalize indices.
+                             # events_to_dataframe iterates: duration = e.exit_idx - e.entry_idx
+                             # returns_path is used for MFE/MAE.
+                             # So we can set entry_idx=0, exit_idx=len(path)
+                exit_idx=len(returns_path),
+                direction=int(directions[i]) if directions[i] != 0 else 1,
+                returns_path=returns_path,
+                sigma=float(sigma)
+            )
+            events_list.append(e)
+
+        return events_list
+
     def _extract_tree_diagnostics(self, booster) -> Dict[str, float]:
         """
         Extract diagnostics from a trained LGBM booster.
@@ -1998,11 +2089,18 @@ class LabelBasedLayer2:
         self,
         df: pd.DataFrame,
         events_df: pd.DataFrame,
-        kappa: float,
-        horizon: int,
-        family: str,
+        # Accepted params:
+        kappa: float = None,
+        horizon: int = 120,
+        family: str = '',
+        sl_mult: float = None,
+        # New params
+        sl_sigma: float = None,
+        alpha: float = None,
+        beta: float = None,
+        min_ratio: float = None,
         events_shift: int = 0,
-        sl_mult: Optional[float] = None,
+        **kwargs
     ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
         """
         Compute TP/SL(+optional trailing) exit-model labels and related metrics.
@@ -2017,53 +2115,60 @@ class LabelBasedLayer2:
             events_shift: Shift event timestamps by N bars (for stability check)
             sl_mult: Optional stop loss multiplier
         """
-        try:
-            direction_mode = str(getattr(self, "_current_config", {}).get("layer2_direction_mode", "lagged"))
-        except Exception:
-            direction_mode = "lagged"
+        # Determine logic mode
+        is_new_logic = (alpha is not None) and (beta is not None)
 
-        sl_mult_eff = 1.0
-        if sl_mult is not None:
-            sl_mult_eff = float(sl_mult)
-        else:
-            try:
-                sl_mult_eff = float(getattr(self, '_current_config', {}).get('layer2_sl_mult', 1.0))
-            except Exception:
-                sl_mult_eff = 1.0
-        if (not np.isfinite(sl_mult_eff)) or float(sl_mult_eff) <= 0.0:
-            sl_mult_eff = 1.0
+        # 1. Horizon & Data Prep
+        if horizon is None: horizon = 120
+        horizon = int(horizon)
 
-        trail_mult = None
-        try:
-            cfg_trail = getattr(self, '_current_config', {}).get('layer2_trail_distance_atr_mult')
-            trail_mult = float(cfg_trail) if cfg_trail is not None else None
-        except Exception:
-            trail_mult = None
-        if trail_mult is not None and ((not np.isfinite(float(trail_mult))) or float(trail_mult) <= 0.0):
-            trail_mult = None
-
+        # Prepare caching key (extended)
         cache_key = (
             self._df_cache_key(df),
             self._events_cache_key(events_df.index),
             str(family),
-            float(round(float(kappa), 6)),  # Reduced precision from 8 to 6
-            float(round(float(sl_mult_eff), 6)),  # Reduced precision from 8 to 6
+            float(kappa) if kappa else None,
+            float(sl_mult) if sl_mult else None,
+            float(alpha) if alpha else None,
+            float(beta) if beta else None,
+            float(min_ratio) if min_ratio else None,
+            float(sl_sigma) if sl_sigma else None,
             int(horizon),
             int(events_shift),
-            float(self.transaction_cost),
-            str(direction_mode),
-            float(trail_mult) if trail_mult is not None else None,
-            int(max(0, int(getattr(self, '_current_config', {}).get('layer2_min_event_spacing', 1) if isinstance(getattr(self, '_current_config', {}), dict) else 1))),  # Reduced from 4 to 1
-            "tpsl_full"
+            "new_logic_v1"
         )
+
         cached = self._labels_cache.get(cache_key)
         if cached is not None and not self.force_hpo:
             self._cache_hits += 1
             return cached
         self._cache_misses += 1
 
+        # Resolve params
+        eff_sl_sigma = sl_sigma if sl_sigma is not None else (sl_mult if sl_mult is not None else 1.0)
+
+        vol_series = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float).reindex(events_df.index).fillna(0.0)
+
+        stop_threshold = None
+        profit_threshold = None
+
+        if is_new_logic:
+            stop_threshold = eff_sl_sigma * vol_series
+        else:
+            # Legacy logic with adjustment
+            vol_median = vol_series.median()
+            vol_adj_factor = 1.0 + 0.3 * ((vol_series - vol_median) / (vol_median + 1e-9))
+            vol_adj_factor = vol_adj_factor.clip(lower=0.7, upper=1.3)
+            stop_threshold = float(eff_sl_sigma) * vol_series * vol_adj_factor
+
+            # For Legacy, we also have profit_threshold
+            eff_kappa = kappa if kappa is not None else 2.0
+            min_profit = self.transaction_cost * 1.1
+            profit_threshold = np.maximum(float(eff_kappa) * vol_series * vol_adj_factor, min_profit)
+
         signals = self._get_or_build_signals(df, events_df, family)
 
+        # Handle Shift
         target_events_idx = events_df.index
         calc_signals = signals
         calc_events_idx = target_events_idx
@@ -2087,72 +2192,111 @@ class LabelBasedLayer2:
             calc_signals = temp_signals
             calc_events_idx = shifted_timestamps
 
-        vol_series = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float)
-        vol_series = vol_series.replace([np.inf, -np.inf], np.nan)
-        vol_series = vol_series.ffill().bfill()
-        vol_series = vol_series.clip(lower=1e-8)
-
-        # Volatility-aware profit threshold adjustment
-        vol_median = vol_series.median()
-        vol_adj_factor = 1.0 + 0.3 * ((vol_series - vol_median) / (vol_median + 1e-9))
-        vol_adj_factor = vol_adj_factor.clip(lower=0.7, upper=1.3)  # Reasonable bounds
+            # Re-align thresholds for shifted events if necessary (or assume thresholds valid at shift time?)
+            # Usually thresholds (vol based) should be taken at entry time.
+            # Here we are shifting entry time.
+            # vol_series should be reindexed to shifted timestamps.
+            if is_new_logic:
+                # Re-calculate thresholds for shifted times
+                vol_shifted = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float).reindex(calc_events_idx).fillna(0.0)
+                stop_threshold = eff_sl_sigma * vol_shifted
+            else:
+                # Legacy re-calc
+                vol_shifted = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float).reindex(calc_events_idx).fillna(0.0)
+                vol_median = vol_shifted.median()
+                vol_adj_factor = 1.0 + 0.3 * ((vol_shifted - vol_median) / (vol_median + 1e-9))
+                vol_adj_factor = vol_adj_factor.clip(lower=0.7, upper=1.3)
+                stop_threshold = float(eff_sl_sigma) * vol_shifted * vol_adj_factor
+                eff_kappa = kappa if kappa is not None else 2.0
+                min_profit = self.transaction_cost * 1.1
+                profit_threshold = np.maximum(float(eff_kappa) * vol_shifted * vol_adj_factor, min_profit)
         
-        # Enforce minimum profit threshold to cover transaction costs (Root Cause 3: Mis-specified Labels)
-        # If profit target < cost, a "win" is still a net loss.
-        # We require TP to be at least 1.1x cost to consider it a valid target.
-        min_profit = self.transaction_cost * 1.1
-        profit_thr = np.maximum(float(kappa) * vol_series * vol_adj_factor, min_profit)
+        if is_new_logic:
+            # 1. Run with STOP only
+            (
+                realized_returns, _, exit_reasons, _,
+                mfe_series, mae_series, _, _
+            ) = compute_realized_returns(
+                df=df,
+                signals=calc_signals,
+                profit_threshold=None, # Infinite profit
+                stop_threshold=stop_threshold, # Fixed SL
+                horizon=horizon,
+                transaction_cost=self.transaction_cost,
+                min_event_spacing=0
+            )
 
-        stop_thr = float(sl_mult_eff) * vol_series * vol_adj_factor
+            # 2. Check Profit Condition
+            # Condition: (norm_mfe ** beta) / (norm_mae ** alpha) >= min_ratio
+            # AND NOT Stop Hit (exit_reasons != 'stop')
 
-        atr_series = None
-        if trail_mult is not None:
-            try:
-                if ('high' in df.columns) and ('low' in df.columns) and ('close' in df.columns):
-                    atr_window = int(getattr(self, '_current_config', {}).get('layer2_atr_window', 14))
-                    atr_window = int(max(2, atr_window))
-                    high = pd.to_numeric(df['high'], errors='coerce').astype(float)
-                    low = pd.to_numeric(df['low'], errors='coerce').astype(float)
-                    close = pd.to_numeric(df['close'], errors='coerce').astype(float)
-                    prev_close = close.shift(1)
-                    tr1 = (high - low).abs()
-                    tr2 = (high - prev_close).abs()
-                    tr3 = (low - prev_close).abs()
-                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    atr_series = tr.rolling(atr_window).mean()
-            except Exception:
-                atr_series = None
+            # Normalize
+            # MFE/MAE from function are absolute.
+            # norm = abs / vol
+            # Handle alignment
+            mfe_aligned = mfe_series.reindex(calc_events_idx)
+            mae_aligned = mae_series.reindex(calc_events_idx)
+            exit_aligned = exit_reasons.reindex(calc_events_idx)
 
-        (
-            realized_returns,
-            _,
-            exit_reasons,
-            _,
-            mfe_series,
-            mae_series,
-            _, _
-        ) = compute_realized_returns(
-            df=df,
-            signals=calc_signals,
-            profit_threshold=profit_thr,
-            stop_threshold=stop_thr,
-            horizon=horizon,
-            transaction_cost=self.transaction_cost,
-            min_event_spacing=int(max(0, int(getattr(self, '_current_config', {}).get('layer2_min_event_spacing', 1)))),  # Reduced from 4 to 1
-            volatility_series=None,
-            atr_series=atr_series,
-            trail_distance_atr_mult=trail_mult,
-            use_multiclass_labels=False,
-            use_soft_labels=False,
-        )
+            # Use volatility at entry time
+            vol_at_entry = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float).reindex(calc_events_idx).fillna(0.0)
 
-        subset_returns = realized_returns.reindex(calc_events_idx)
-        subset_mfe = mfe_series.reindex(calc_events_idx)
-        subset_mae = mae_series.reindex(calc_events_idx)
-        subset_exit = exit_reasons.reindex(calc_events_idx)
+            norm_mfe = mfe_aligned / vol_at_entry
+            norm_mae = mae_aligned / vol_at_entry
 
-        binary_labels = subset_exit.astype(str).isin(['profit', 'trailing']).astype(float)
-        binary_labels = binary_labels.where(subset_returns.notna())
+            # Avoid div/0
+            norm_mae_safe = norm_mae.replace(0.0, 1e-6)
+
+            score = (norm_mfe ** float(beta)) / (norm_mae_safe ** float(alpha))
+
+            # Logic:
+            # If Stop Hit (exit_reasons == 'stop') -> Label 0
+            # Else If Score >= min_ratio -> Label 1
+            # Else -> Label 0
+
+            is_stop = exit_aligned == 'stop'
+            is_profit = (score >= float(min_ratio)) & (~is_stop)
+
+            binary_labels = is_profit.astype(float)
+
+            # Mask out NaNs
+            binary_labels[realized_returns.reindex(calc_events_idx).isna()] = np.nan
+
+            # Construct subset returns/mfe/mae
+            subset_returns = realized_returns.reindex(calc_events_idx)
+            # If profit condition met, return = MFE (best case capture assumption for dominance)
+            subset_returns[is_profit] = mfe_aligned[is_profit]
+
+            subset_mfe = mfe_series.reindex(calc_events_idx)
+            subset_mae = mae_series.reindex(calc_events_idx)
+
+        else:
+            # Legacy Logic
+            (
+                realized_returns, _, exit_reasons, _,
+                mfe_series, mae_series, _, _
+            ) = compute_realized_returns(
+                df=df,
+                signals=calc_signals,
+                profit_threshold=profit_threshold,
+                stop_threshold=stop_threshold,
+                horizon=horizon,
+                transaction_cost=self.transaction_cost,
+                min_event_spacing=0,
+                volatility_series=None,
+                atr_series=None,
+                trail_distance_atr_mult=None,
+                use_multiclass_labels=False,
+                use_soft_labels=False,
+            )
+
+            subset_returns = realized_returns.reindex(calc_events_idx)
+            subset_mfe = mfe_series.reindex(calc_events_idx)
+            subset_mae = mae_series.reindex(calc_events_idx)
+            subset_exit = exit_reasons.reindex(calc_events_idx)
+
+            binary_labels = subset_exit.astype(str).isin(['profit', 'trailing']).astype(float)
+            binary_labels = binary_labels.where(subset_returns.notna())
 
         if events_shift != 0:
             final_labels = pd.Series(np.nan, index=target_events_idx)
@@ -3384,7 +3528,7 @@ class LabelBasedLayer2:
         events_df: pd.DataFrame
     ) -> Dict[str, List[GeometryTrial]]:
         """
-        Run Optuna optimization for each barrier family.
+        Replaces Optuna optimization with label_geometry_selection logic.
         """
         results: Dict[str, List[GeometryTrial]] = {}
 
@@ -3394,95 +3538,91 @@ class LabelBasedLayer2:
         unique_families = events_df['family'].unique()
 
         # Build feature matrix once
+        # Note: select_geometries expects features aligned to event IDs
+        # We used i as ID in _extract_events_for_selection
         X_events_all = self._build_geometry_independent_event_features(df, events_df)
-        target_sample_weight_events = self._get_target_sample_weight_for_events(df, events_df)
 
-        # Initialize param bounds safely
-        self._current_param_bounds = getattr(self, '_current_param_bounds', {})
-        if not isinstance(self._current_param_bounds, dict):
-            self._current_param_bounds = {}
+        # Reset index to match the 0..N IDs assigned in _extract_events_for_selection?
+        # Actually, let's keep it simple.
+        # select_geometries takes 'features_df'.
+        # train_model_for_geometry does: X = features_df.loc[all_event_ids]
+        # So features_df index must match event.id.
+        # In _extract_events_for_selection, we assigned ID = i (0 to N-1).
+        # So we need to reset_index on X_events_all.
+        X_events_reset = X_events_all.reset_index(drop=True)
+        # Ensure index is 0..N-1 matching events_df row order
+
+        # We need to process per family?
+        # label_geometry_selection selects globally from the list of events passed.
+        # Layer 2 architecture processes per family.
+        # We should iterate families and call selection per family to maintain regime-conditional logic.
 
         for family in unique_families:
             logger.info(f"Optimizing family: {family}")
 
             family_mask = events_df['family'] == family
-            family_events = events_df[family_mask]
+            family_events_df = events_df[family_mask]
 
-            if len(family_events) < 50:
-                logger.warning(f"Not enough events for family {family} ({len(family_events)}). Skipping.")
+            if len(family_events_df) < 50:
+                logger.warning(f"Not enough events for family {family} ({len(family_events_df)}). Skipping.")
                 continue
 
-            # Feature Selection PER FAMILY
-            # This ensures the "Trend" specialist sees trend features, etc.
-            try:
-                X_fam = X_events_all.reindex(family_events.index)
-                probe_features = self._select_global_probe_features(X_fam)
-            except Exception:
-                probe_features = []
+            # Extract events for this family
+            # Note: IDs will be relative to this subset list if we re-run extraction
+            # Or we can extract all and filter.
+            # Let's extract for this family specifically to keep IDs clean 0..M-1
+            selection_events = self._extract_events_for_selection(df, family_events_df)
 
-            try:
-                logger.info(
-                    f"Layer2 Optimize family={family}: n_events={int(len(family_events))}, n_trials={int(self.n_trials)}, "
-                    f"probe_feats={int(len(probe_features))}"
+            # Align features
+            # Get integer indices of this family in the original events_df?
+            # No, we need features matching the selection_events IDs (0..M-1)
+            # So we grab features for family_events_df and reset index
+            X_fam = X_events_all.reindex(family_events_df.index).reset_index(drop=True)
+
+            # Run Selection
+            # fold_metrics_map is empty for now (first pass)
+            selected_raw = select_geometries(selection_events, {}, X_fam)
+
+            # Convert to GeometryTrial
+            trials = []
+            for i, (geom, survivors) in enumerate(selected_raw):
+                # Map Geometry to GeometryTrial
+                # Geometry has: sl_sigma, alpha, beta, min_ratio
+                # GeometryTrial needs: params (dict), final_score, etc.
+
+                # Calculate simple score based on survival rate or use what selection returned?
+                # selection returns list of (Geometry, survivors_set).
+                # We can calculate basic stats.
+                survival_rate = len(survivors) / len(selection_events)
+
+                params = {
+                    'sl_sigma': geom.sl_sigma,
+                    'alpha': geom.alpha,
+                    'beta': geom.beta,
+                    'min_ratio': geom.min_ratio,
+                    'horizon': 120 # Implicit max horizon used in extraction
+                }
+
+                # We need to map these to 'kappa', 'sl_mult', 'horizon' for compatibility?
+                # No, we updated _compute_dominance_labels to handle the new params.
+                # But we should probably set defaults for legacy code if needed.
+                # Actually, GeometryTrial is just a container.
+
+                t_obj = GeometryTrial(
+                    family=family,
+                    params=params,
+                    final_score=survival_rate * 100.0, # Placeholder score
+                    learnability=0.5, # Placeholder, will be refined in _select_best_geometries or similar?
+                                      # Actually selection process already did shallow model check.
+                    robust_magnitude=0.0,
+                    stability=1.0,
+                    balance=1.0,
+                    raw_metrics={'passed': True, 'survivors': len(survivors)},
+                    uuid=f"{family}_Sel{i}"
                 )
-            except Exception:
-                pass
+                trials.append(t_obj)
 
-            # Define family-specific parameter bounds (heuristics)
-            # Trend: Needs room to run (larger horizon), higher RR (kappa)
-            # Momentum: Fast moves (shorter horizon), moderate RR
-            # Mean Reversion: Quick snaps (short horizon), tighter RR
-            fam_bounds = {}
-            if family == 'Trend Continuation':
-                fam_bounds = {'k_low': 1.5, 'k_high': 6.0, 'h_low': 20, 'h_high': 100}
-            elif family == 'Momentum':
-                fam_bounds = {'k_low': 2.0, 'k_high': 8.0, 'h_low': 5, 'h_high': 40}
-            elif family == 'Mean Reversion':
-                fam_bounds = {'k_low': 1.0, 'k_high': 4.0, 'h_low': 10, 'h_high': 60}
-            else:
-                fam_bounds = {'k_low': 1.0, 'k_high': 6.0, 'h_low': 10, 'h_high': 100}
-
-            # Update current param bounds for this family
-            self._current_param_bounds[str(family)] = fam_bounds
-
-            # Use a single, continuous optimization stage with TPESampler
-            sampler = optuna.samplers.TPESampler(
-                seed=int(self.random_state),
-                n_startup_trials=10,
-                multivariate=True
-            )
-
-            study = optuna.create_study(
-                direction="maximize",
-                sampler=sampler,
-                pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0, interval_steps=1)
-            )
-
-            # Use partial to pass context to the extracted objective method
-            from functools import partial
-            obj_func = partial(
-                self._optimization_objective,
-                study,
-                df=df,
-                family=family,
-                family_events=family_events,
-                X_events=X_events_all,
-                probe_features=probe_features,
-                target_sample_weight_events=target_sample_weight_events
-            )
-
-            study.optimize(obj_func, n_trials=int(self.n_trials))
-
-            results[family] = self._extract_trials_from_study(study)
-
-            try:
-                n_ext = int(len(results.get(family) or []))
-                logger.info(
-                    f"Layer2 Optimize family={family}: extracted_trials={n_ext}, cache_hits={int(getattr(self, '_cache_hits', 0))}, "
-                    f"cache_misses={int(getattr(self, '_cache_misses', 0))}"
-                )
-            except Exception:
-                pass
+            results[family] = trials
 
         return results
 

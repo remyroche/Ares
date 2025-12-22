@@ -57,6 +57,7 @@ class GateDiagnostics:
     survival_rate: float
     avg_uniqueness: float
     avg_auc_lift: float
+    avg_pr_lift: float
     ks_stat: float
     entropy_reduction: float
     reasons: List[str] = field(default_factory=list)
@@ -239,6 +240,7 @@ def run_diagnostics_gates(
     tail_min_survival: float = 0.005,
     min_uniqueness: float = 0.5,
     min_auc_lift: float = 0.02,
+    min_pr_lift: float = 0.0, # Require at least some improvement over baseline precision
 ) -> GateDiagnostics:
     
     reasons = []
@@ -265,18 +267,12 @@ def run_diagnostics_gates(
 
     # 4. Fold Persistence / Learnability Gate
     avg_auc = 0.0
+    avg_pr_lift = 0.0
     ks_stat = 0.0
     entropy_val = 1.0
 
     if fold_metrics:
         # fold_metrics is a dict with keys like 'auc', 'ks', 'entropy'
-        # In this refactor, we expect the metrics to be passed directly or calculated before this call if possible,
-        # but the structure implies this is run BEFORE or AFTER training?
-        # The original code passed 'fold_metrics' which came from a map.
-        # But 'train_model' is called AFTER this in the main loop.
-        # This implies 'fold_metrics' here refers to historical/cached metrics or is empty in discovery.
-        # We will adhere to the logic: if metrics exist, check them.
-
         aucs = [m.get('auc_lift', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
         if aucs:
             avg_auc = np.mean(aucs)
@@ -284,6 +280,14 @@ def run_diagnostics_gates(
             if avg_auc < min_auc_lift:
                 is_passing = False
                 reasons.append(f"Low Learnability (AUC Lift {avg_auc:.3f})")
+
+        prs = [m.get('pr_lift', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
+        if prs:
+            avg_pr_lift = np.mean(prs)
+            # Gate on PR Lift - De Prado: Precision-Recall is critical for imbalanced datasets
+            if avg_pr_lift < min_pr_lift:
+                is_passing = False
+                reasons.append(f"Low Precision Lift ({avg_pr_lift:.3f})")
 
         # We might not have KS/Entropy yet if this is pre-training check.
         # If we do (post-training check):
@@ -300,6 +304,7 @@ def run_diagnostics_gates(
         survival_rate=rate,
         avg_uniqueness=avg_u,
         avg_auc_lift=avg_auc,
+        avg_pr_lift=avg_pr_lift,
         ks_stat=ks_stat,
         entropy_reduction=(1.0 - entropy_val), # Higher is better
         reasons=reasons
@@ -351,7 +356,7 @@ def train_model_for_geometry(
 
     params = {
         'objective': focal_loss, 
-        'metric': 'auc', # Monitor AUC directly
+        'metric': ['auc', 'average_precision'], # Monitor AUC and PR-AUC (De Prado)
         'max_depth': 3, # Weak Learner Constraint
         'verbose': -1,
         'num_leaves': 7, # 2^3 - 1
@@ -381,14 +386,20 @@ def train_model_for_geometry(
     # Baseline is naive prevalence
     prevalence = y_val.mean()
     try:
-        from sklearn.metrics import roc_auc_score
+        from sklearn.metrics import roc_auc_score, average_precision_score
         auc_val = roc_auc_score(y_val, preds_val_prob)
         auc_lift = auc_val - 0.5
+
+        # De Prado: PR-AUC is more informative for imbalanced classes
+        pr_val = average_precision_score(y_val, preds_val_prob)
+        pr_lift = pr_val - prevalence
     except:
         auc_lift = 0.0
+        pr_lift = 0.0
 
     metrics = {
         'auc_lift': auc_lift,
+        'pr_lift': pr_lift,
         'ks_stat': ks_stat,
         'entropy': ent
     }

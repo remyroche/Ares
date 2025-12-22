@@ -1644,17 +1644,21 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
                             labeled = y_full_raw.notna() & pd.to_numeric(l3_full, errors='coerce').notna()
                             if int(labeled.sum()) >= 100:
-                                X_fit = X_full.loc[labeled]
-                                y_fit = (pd.to_numeric(y_full_raw.loc[labeled], errors='coerce').astype(float) >= 0.5).astype(int)
-                                l3_fit = pd.to_numeric(l3_full.loc[labeled], errors='coerce')
-
                                 try:
                                     include_l3_prob_feature = bool(config.get('layer4_include_l3_prob_feature', True))
                                 except Exception:
                                     include_l3_prob_feature = True
+
+                                # Calculate meta-features on full series before slicing
                                 if include_l3_prob_feature:
-                                    X_fit = X_fit.copy()
-                                    X_fit['l3_prob'] = l3_fit
+                                    X_full = X_full.copy()
+                                    l3_full_numeric = pd.to_numeric(l3_full, errors='coerce')
+                                    X_full['l3_prob'] = l3_full_numeric
+                                    X_full['l3_lag'] = l3_full_numeric.ewm(span=5, adjust=False).mean()
+
+                                X_fit = X_full.loc[labeled]
+                                y_fit = (pd.to_numeric(y_full_raw.loc[labeled], errors='coerce').astype(float) >= 0.5).astype(int)
+                                l3_fit = pd.to_numeric(l3_full.loc[labeled], errors='coerce')
 
                                 l4_risk_filter = Layer4RiskFilter(
                                     n_estimators=int(config.get('layer4_n_estimators', 100)),

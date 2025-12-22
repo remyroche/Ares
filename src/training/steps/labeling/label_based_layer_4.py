@@ -38,7 +38,7 @@ from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success
 # ---------------------------------------------------------------------------
 
 LAYER4_REGIME_FEATURES = [
-    'rv_short', 'rv_short_over_med', 'rv_z_short',
+    'rv_z_short',
     'slope_short', 'adx_proxy', 'momentum_short', 'snr',
     'time_since_last_vol_spike', 'time_since_last_large_candle',
     'choppiness_index', 'variance_ratio', 'permutation_entropy',
@@ -728,6 +728,8 @@ def train_layer4_oof(
     if include_l3_prob_feature:
         X = X.copy()
         X['l3_prob'] = l3_probs
+        # Add l3_lag (EMA 5 of l3_prob) - assumes l3_probs are chronologically ordered (common_idx)
+        X['l3_lag'] = l3_probs.ewm(span=5, adjust=False).mean()
      
     l3_arr = l3_probs.to_numpy(dtype=float, copy=False)
     y_arr = y_true.to_numpy(dtype=float, copy=False)

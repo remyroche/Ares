@@ -127,8 +127,8 @@ def events_to_dataframe(events: List[Event]) -> pd.DataFrame:
             'exit_idx': e.exit_idx,
             'duration': duration,
             'sigma': e.sigma,
-            'norm_mae': raw_mae / e.sigma,
-            'norm_mfe': raw_mfe / e.sigma
+            'norm_mae': raw_mae / e.sigma if e.sigma > 0 else 0.0,
+            'norm_mfe': raw_mfe / e.sigma if e.sigma > 0 else 0.0
         })
     
     df = pd.DataFrame(data)
@@ -249,7 +249,7 @@ def train_model_for_geometry(
     features_df: pd.DataFrame
 ) -> Tuple[Any, np.ndarray]:
     """
-    Trains a simple LGBM model (max depth = 4) using TradingFocalLoss.
+    Trains a simple LGBM model (max depth = 3) using TradingFocalLoss.
     Target: 1 if event is in survivor_ids, 0 otherwise.
 
     # Models trained here are not evaluated for performance. They are used solely for correlation pruning.
@@ -280,9 +280,9 @@ def train_model_for_geometry(
     params = {
         'objective': focal_loss, 
         'metric': 'binary_logloss',
-        'max_depth': 4,
+        'max_depth': 3, # Changed from 4 to 3 as requested
         'verbose': -1,
-        'num_leaves': 15, # constrained by depth
+        'num_leaves': 7, # constrained by depth 3 (2^3 - 1)
         'learning_rate': 0.05
     }
     
@@ -354,7 +354,7 @@ def select_geometries(
             continue
 
         # D. Train Model (The "Weak Learner")
-        # "train a simple (max depth =4) LGBM model... then Add Prediction-Correlation Pruning"
+        # "train a simple (max depth = 3) LGBM model... then Add Prediction-Correlation Pruning"
         model, preds = train_model_for_geometry(
             survivor_ids,
             list(df.index),
@@ -421,7 +421,7 @@ def select_geometries(
                 if abs(corr) > 0.9:
                     # Drop j because i has higher survival rate (since we sorted)
                     is_dropped[j] = True
-                    logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype}")
+                    # logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype}")
 
     # Return formatted list
     

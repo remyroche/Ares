@@ -439,8 +439,8 @@ def select_geometries(
     candidates = []
     for q in quantiles:
         for a in [0.5, 1.0, 1.5]:
-            for b in [0.5, 1.0, 1.5]:
-                for mr in [1.0, 1.5, 2.0]:
+            for b in [0.5, 1.0, 1.5, 2.0]:
+                for mr in [1.0, 1.5, 2.0, 2.5, 3.0]:
                     candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr))
 
     # Deduplicate

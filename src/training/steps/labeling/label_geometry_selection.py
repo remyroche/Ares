@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Dict, Set, Tuple, Optional, Any
 import logging
 import lightgbm as lgb
@@ -18,6 +18,7 @@ class Geometry:
     alpha: float        # Pain penalty (denominator exponent)
     beta: float         # Gain reward (numerator exponent)
     min_ratio: float = 1.0 
+    sl_sigma: Optional[float] = None # Resolved Sigma threshold (populated after selection)
     
     @property
     def archetype(self) -> str:
@@ -414,18 +415,20 @@ def select_geometries(
     features_df: pd.DataFrame
 ) -> List[Tuple[Geometry, Set[int]]]:
     
-    logger.info(f"Vectorizing {len(events)} events (Time-Scaled normalization enabled)...")
+    logger.info(f"Vectorizing {len(events)} events (Standard normalization for Fixed Barrier compatibility)...")
     df = events_to_dataframe(events)
     if df.empty:
         logger.warning("No events to process.")
         return []
 
     # Calculate global quantile thresholds for MAE
-    # We use time_scaled_mae for the thresholding to be fair across durations
-    mae_series = df['time_scaled_mae']
+    # We switch to 'norm_mae' (raw_mae / sigma) instead of 'time_scaled_mae'
+    # because LabelBasedLayer2 executes Fixed Barriers (sl_mult * vol).
+    # 'norm_mae' aligns exactly with 'sl_mult'.
+    mae_series = df['norm_mae']
 
     # Quantiles to test: keeping top 50%, top 30%, top 20%, top 10% tightest stops
-    # Lower MAE = Tighter stop relative to vol*time
+    # Lower MAE = Tighter stop relative to vol
     # "Quantile-Based Selection (Never Fixed Cutoffs)"
     quantiles = [0.2, 0.3, 0.4, 0.5]
 
@@ -436,8 +439,8 @@ def select_geometries(
     candidates = []
     for q in quantiles:
         for a in [0.5, 1.0, 1.5]:
-            for b in [0.5, 1.0, 1.5]:
-                for mr in [1.0, 1.5, 2.0]:
+            for b in [0.5, 1.0, 1.5, 2.0]:
+                for mr in [1.0, 1.5, 2.0, 2.5, 3.0]:
                     candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr))
 
     # Deduplicate
@@ -448,18 +451,15 @@ def select_geometries(
     logger.info(f"Evaluating {len(candidates)} geometric candidates using Separation Objectives...")
     
     for geom in candidates:
-        # B. Apply Quantile-Based Filters
+        # B. Apply Quantile-Based Filters using norm_mae (Fixed Barrier Logic)
         thresh = thresholds[geom.sl_quantile]
-        mask_sl = df['time_scaled_mae'] <= thresh
+        mask_sl = df['norm_mae'] <= thresh
         
         # Score Calculation
-        # Use time_scaled metrics for score too?
-        # "Long-horizon events tolerate larger MAE" -> handled by time_scaled_mae
-        # "Score" is usually Reward / Risk
-        # risk = time_scaled_mae ^ alpha
-        # reward = time_scaled_mfe ^ beta
+        # Use norm_mfe / norm_mae to align with LabelBasedLayer2 logic
+        # score = (norm_mfe ** beta) / (norm_mae ** alpha)
 
-        score = (df['time_scaled_mfe'] ** geom.beta) / ((df['time_scaled_mae'] + 1e-6) ** geom.alpha)
+        score = (df['norm_mfe'] ** geom.beta) / ((df['norm_mae'] + 1e-6) ** geom.alpha)
         mask_score = score >= geom.min_ratio
         
         survivors_df = df[mask_sl & mask_score]
@@ -497,8 +497,11 @@ def select_geometries(
         # KS is [0,1], Entropy Reduction is [0,1]
         separation_score = (metrics['ks_stat'] + (1.0 - metrics['entropy'])) / 2.0
         
+        # Create resolved geometry with concrete sl_sigma
+        resolved_geom = replace(geom, sl_sigma=float(thresh))
+
         accepted_candidates.append({
-            'geometry': geom,
+            'geometry': resolved_geom,
             'survivors': survivor_ids,
             'preds': preds,
             'survival_rate': diag.survival_rate,
@@ -547,5 +550,6 @@ def select_geometries(
     for item in final_selection:
         result.append((item['geometry'], item['survivors']))
         
-    logger.info(f"Final Selection: {len(result)} geometries (Best Separation Score: {final_selection[0]['separation_score']:.3f})")
+    best_score_str = f"{final_selection[0]['separation_score']:.3f}" if final_selection else "N/A"
+    logger.info(f"Final Selection: {len(result)} geometries (Best Separation Score: {best_score_str})")
     return result

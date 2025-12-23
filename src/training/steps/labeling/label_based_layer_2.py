@@ -1748,8 +1748,37 @@ class LabelBasedLayer2:
             return pd.DataFrame()
 
         # Extract params
-        kappa = float(params.get('kappa', 2.0))
-        sl_mult = float(params.get('sl_mult', 1.0))
+        kappa = params.get('kappa')
+        sl_mult = params.get('sl_mult')
+
+        # New params support
+        sl_sigma = params.get('sl_sigma')
+        alpha = params.get('alpha')
+        beta = params.get('beta')
+        min_ratio = params.get('min_ratio')
+
+        # Resolve SL
+        if sl_sigma is not None:
+            eff_sl = float(sl_sigma)
+        elif sl_mult is not None:
+            eff_sl = float(sl_mult)
+        else:
+            eff_sl = 1.0
+
+        # Resolve Target (Kappa)
+        if kappa is not None:
+            eff_kappa = float(kappa)
+        elif alpha is not None and beta is not None and min_ratio is not None and sl_sigma is not None:
+            # Calculate effective kappa implied by the score condition at the stop distance
+            # score = (mfe_norm ^ beta) / (mae_norm ^ alpha) >= min_ratio
+            # Assuming mae_norm hits stop (sl_sigma)
+            # mfe_norm >= (min_ratio * sl_sigma^alpha) ^ (1/beta)
+            try:
+                eff_kappa = (float(min_ratio) * (float(sl_sigma) ** float(alpha))) ** (1.0 / float(beta))
+            except:
+                eff_kappa = 2.0
+        else:
+            eff_kappa = 2.0
 
         # Get subset of DF aligned with events
         # We need historical context for rolling features, but _precompute_geometry_base_features
@@ -1777,11 +1806,11 @@ class LabelBasedLayer2:
             min_profit = self.transaction_cost * 1.1
 
             # Target Size (Percentage)
-            target_size = np.maximum(kappa * vol, min_profit)
+            target_size = np.maximum(eff_kappa * vol, min_profit)
             target_size = target_size.replace(0.0, np.nan) # Avoid div/0
 
             # Stop Size (Percentage)
-            stop_size = sl_mult * vol
+            stop_size = eff_sl * vol
             stop_size = stop_size.replace(0.0, np.nan)
 
             # Features

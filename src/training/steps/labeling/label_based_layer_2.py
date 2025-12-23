@@ -3629,7 +3629,7 @@ class LabelBasedLayer2:
                     'alpha': geom.alpha,
                     'beta': geom.beta,
                     'min_ratio': geom.min_ratio,
-                    'horizon': 120 # Implicit max horizon used in extraction
+                    'horizon': geom.horizon
                 }
 
                 # We need to map these to 'kappa', 'sl_mult', 'horizon' for compatibility?

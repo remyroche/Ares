@@ -20,6 +20,8 @@ It also computes sizing diagnostics:
     - Bet Utilization Efficiency
     - Tail Loss Amplification
     - Net Sortino, Max Drawdown, Calmar-like Ratio
+    - Classification Metrics (AUC, PR-AUC)
+    - Optimal Threshold Analysis
 """
 
 import numpy as np
@@ -28,6 +30,13 @@ from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 from datetime import datetime
 import time
+
+try:
+    from sklearn.metrics import roc_auc_score, average_precision_score, brier_score_loss
+except ImportError:
+    roc_auc_score = None
+    average_precision_score = None
+    brier_score_loss = None
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success
 
@@ -56,6 +65,7 @@ class Layer5PositionSizer:
         gate_search_min_range: Optional[float] = None,
         gate_search_max_iter: Optional[int] = None,
         min_trades_reliable: int = 50,
+        allow_dynamic_p_max: bool = False, # Prevent overfitting to batch max in production/small batches
     ):
         """
         Initialize the Layer 5 Position Sizer.
@@ -70,6 +80,7 @@ class Layer5PositionSizer:
             p_max: Maximum probability for z-score scaling.
             gamma: Power coefficient for probability-to-size mapping.
             transaction_cost: Cost to subtract if returns are gross.
+            allow_dynamic_p_max: If True, scales sizing based on the batch's max probability (use for full history only).
         """
         self.df = oof_df.copy()
         self.p_col = p_col
@@ -80,6 +91,7 @@ class Layer5PositionSizer:
         self.p_max = p_max
         self.gamma = gamma
         self.transaction_cost = transaction_cost
+        self.allow_dynamic_p_max = allow_dynamic_p_max
 
         self.gate_mode = str(gate_mode or 'p_min')
         self.gate_quantile = gate_quantile
@@ -137,16 +149,26 @@ class Layer5PositionSizer:
         # Determine p_max_eff: fallback to empirical max if it's lower than configured p_max
         # to ensure we use the full sizing range [0, 1] even if the model is under-confident.
         p_valid = p[np.isfinite(p)]
-        if p_valid.size > 0:
-            p_max_emp = float(np.max(p_valid))
-            # If configured p_max is invalid or effectively same as p_min, take empirical
-            if (not np.isfinite(self.p_max)) or (self.p_max <= p_min_eff + 1e-9):
+        p_max_emp = float(np.max(p_valid)) if p_valid.size > 0 else 1.0
+
+        if self.allow_dynamic_p_max:
+            if p_valid.size > 0:
+                # If configured p_max is invalid or effectively same as p_min, take empirical
+                if (not np.isfinite(self.p_max)) or (self.p_max <= p_min_eff + 1e-9):
+                    p_max_eff = p_max_emp
+                else:
+                    # Use the tighter bound to allow reaching size=1.0
+                    p_max_eff = min(self.p_max, p_max_emp)
+            else:
+                p_max_eff = self.p_max
+        else:
+            # If dynamic p_max is disabled, verify configured p_max is valid.
+            # If invalid (e.g. inf), fallback to empirical to prevent zero-size/error.
+            if not np.isfinite(self.p_max):
+                tprint_warning(f"Configured p_max is infinite/invalid and allow_dynamic_p_max=False. Falling back to empirical max: {p_max_emp}")
                 p_max_eff = p_max_emp
             else:
-                # Use the tighter bound to allow reaching size=1.0
-                p_max_eff = min(self.p_max, p_max_emp)
-        else:
-            p_max_eff = self.p_max
+                p_max_eff = self.p_max
 
         # 1) Conviction scaler (monotonic above threshold)
         denom = float(p_max_eff) - float(p_min_eff)
@@ -171,6 +193,11 @@ class Layer5PositionSizer:
         gate = np.zeros(n, dtype=bool)
 
         mode = str(self.gate_mode or 'p_min').strip().lower()
+
+        if mode == 'p_min':
+            thr = float(self.p_min)
+            gate = finite & (p >= thr)
+            return gate, thr, 'p_min'
 
         if mode == 'quantile':
             q = self.gate_quantile if self.gate_quantile is not None else 0.99
@@ -261,7 +288,9 @@ class Layer5PositionSizer:
                 for thr in thresholds:
                     mask = p_valid >= thr
                     if np.sum(mask) > 10:  # Need sufficient trades
-                        wr = np.mean(ret_valid[mask] > 0)  # Win-rate = positive returns
+                        # FIX: Win-rate must account for transaction costs
+                        net_rets_subset = ret_valid[mask] - self.transaction_cost
+                        wr = np.mean(net_rets_subset > 0)
                         win_rates.append(wr)
                     else:
                         win_rates.append(0.0)
@@ -340,7 +369,8 @@ class Layer5PositionSizer:
 
         # --- Probability Statistics ---
         p_raw = pd.to_numeric(self.df[self.p_col], errors='coerce').to_numpy(dtype=float, copy=False)
-        p_valid = p_raw[np.isfinite(p_raw)]
+        finite_p = np.isfinite(p_raw)
+        p_valid = p_raw[finite_p]
 
         if p_valid.size > 0:
             metrics['Prob Mean'] = float(np.mean(p_valid))
@@ -369,6 +399,10 @@ class Layer5PositionSizer:
         metrics['Avg Trade PnL'] = float(avg_pnl)
         metrics['Trade Count'] = int(n_trades)
 
+        # Turnover: sum of absolute size changes (simplified approximation: sum of sizes * 2 for entry/exit)
+        # This is strictly "Exposure Turnover", assuming each trade is independent and fully exits.
+        metrics['Turnover Estimate'] = float(np.sum(sizes) * 2.0)
+
         metrics['Min Trades Reliable'] = self.min_trades_reliable
         metrics['Trades Reliable'] = n_trades >= self.min_trades_reliable
         if not metrics['Trades Reliable']:
@@ -385,13 +419,16 @@ class Layer5PositionSizer:
                 lambda x: float(np.prod(1.0 + x.to_numpy(dtype=float)) - 1.0)
             )
             daily_returns = daily_returns.replace([np.inf, -np.inf], np.nan).dropna()
-            daily_down = daily_returns[daily_returns < 0.0]
+            # Sortino: Downside deviation relative to 0
+            daily_down = np.minimum(0, daily_returns.values)
             downside_std = float(np.sqrt(np.mean(np.square(daily_down)))) if daily_down.size > 0 else 1e-6
             sortino = float(np.mean(daily_returns) / downside_std * np.sqrt(365.0)) if downside_std > 1e-9 else 0.0
         else:
-            # Fallback to trade-based
-            downside_returns = pnl_arr[pnl_arr < 0.0]
+            # Fallback to trade-based. Treat 0 returns (no trade) as part of the distribution.
+            # Downside deviation relative to 0
+            downside_returns = np.minimum(0, pnl_arr)
             downside_std = float(np.sqrt(np.mean(np.square(downside_returns)))) if downside_returns.size > 0 else 1e-6
+            # No annualization for trade-based fallback unless we know frequency
             sortino = float(np.mean(pnl_arr) / downside_std) if downside_std > 1e-9 else 0.0
 
         metrics['Net Sortino'] = float(sortino)
@@ -419,8 +456,13 @@ class Layer5PositionSizer:
         metrics['Bet Utilization Efficiency'] = float(pnl_pos_high / pnl_pos_total) if pnl_pos_total > 1e-9 else 0.0
 
         # Tail Loss Amplification: Max DD of sized vs flat strategy
-        flat_arr = np.nan_to_num(net_rets, nan=0.0)
+        # FIX: Baseline should be "Flat on Selected Trades", not "Flat on All Trades"
+        # If gate is active, we only want to compare sizing efficacy, not gate efficacy.
+        flat_size_mask = self._gate_mask if self._gate_mask is not None else np.ones_like(pnl, dtype=bool)
+        flat_arr = np.where(flat_size_mask, net_rets, 0.0)
+        flat_arr = np.nan_to_num(flat_arr, nan=0.0)
         flat_arr = np.clip(flat_arr, -0.999999, None)
+
         flat_eq = np.cumprod(1.0 + flat_arr)
         if flat_eq.size > 0:
             flat_peak = np.maximum.accumulate(flat_eq)
@@ -430,6 +472,118 @@ class Layer5PositionSizer:
             flat_max_dd = 0.0
 
         metrics['Tail Loss Amplification'] = float(max_dd / flat_max_dd) if flat_max_dd > 1e-9 else 1.0
+
+        # --- Classification Metrics (AUC, PR-AUC) ---
+        if roc_auc_score is not None:
+            # Determine target: Use `target_col` if available, else derive from net_returns
+            if self.target_col in self.df.columns and self.df[self.target_col].notna().any():
+                y_true = pd.to_numeric(self.df[self.target_col], errors='coerce').fillna(0).values
+                # Ensure binary
+                y_true = (y_true > 0.5).astype(int)
+            else:
+                y_true = (net_rets > 0).astype(int)
+
+            # Mask valid
+            valid_clf = finite_p & np.isfinite(net_rets)
+            if np.sum(valid_clf) > 10 and len(np.unique(y_true[valid_clf])) > 1:
+                try:
+                    metrics['Gate AUC'] = float(roc_auc_score(y_true[valid_clf], p_raw[valid_clf]))
+                    metrics['Gate PR-AUC'] = float(average_precision_score(y_true[valid_clf], p_raw[valid_clf]))
+                    metrics['Gate Brier Score'] = float(brier_score_loss(y_true[valid_clf], p_raw[valid_clf]))
+                except Exception:
+                    metrics['Gate AUC'] = 0.5
+            else:
+                metrics['Gate AUC'] = 0.5
+
+        # --- Optimal Threshold Search & Baseline Comparison ---
+        # Baseline (Pre-Gate): Just use p_min as threshold, no advanced gating
+        # Assuming Pre-Gate means "Configured p_min with no other logic"
+        base_mask = finite_p & (p_raw >= self.p_min)
+        base_count = np.sum(base_mask)
+        if base_count > 0:
+            base_rets = net_rets[base_mask]
+            metrics['Pre-Gate Trade Count'] = int(base_count)
+            metrics['Pre-Gate PnL'] = float(np.sum(base_rets))
+            metrics['Pre-Gate Avg PnL'] = float(np.mean(base_rets))
+
+            # Calculate Pre-Gate Max Drawdown
+            base_arr = np.nan_to_num(base_rets, nan=0.0)
+            base_arr = np.clip(base_arr, -0.999999, None)
+            base_eq = np.cumprod(1.0 + base_arr)
+            if base_eq.size > 0:
+                base_peak = np.maximum.accumulate(base_eq)
+                base_dd = 1.0 - (base_eq / (base_peak + 1e-12))
+                metrics['Pre-Gate Max Drawdown'] = float(np.max(base_dd))
+            else:
+                metrics['Pre-Gate Max Drawdown'] = 0.0
+
+            # Simple Sharpe approximation for Pre-Gate
+            if len(base_rets) > 1:
+                metrics['Pre-Gate Sharpe'] = float(np.mean(base_rets) / (np.std(base_rets) + 1e-9))
+            else:
+                metrics['Pre-Gate Sharpe'] = 0.0
+        else:
+            metrics['Pre-Gate Trade Count'] = 0
+            metrics['Pre-Gate PnL'] = 0.0
+            metrics['Pre-Gate Max Drawdown'] = 0.0
+
+        # Optimal Threshold Scan
+        # Scan percentiles to find best Sharpe/PnL
+        if np.sum(finite_p) > 20:
+            best_sharpe = -999.0
+            best_thr = self.p_min
+            best_pnl = -999.0
+            best_count = 0
+            best_max_dd = 0.0
+
+            # Scan 20 points between p_min and p_max(empirical)
+            p_scan_max = np.max(p_raw[finite_p])
+            thresholds = np.linspace(self.p_min, p_scan_max, 20)
+
+            for thr in thresholds:
+                mask = finite_p & (p_raw >= thr)
+                if np.sum(mask) < 5: continue
+
+                rets = net_rets[mask]
+                mean_r = np.mean(rets)
+                std_r = np.std(rets)
+                sharpe = mean_r / (std_r + 1e-9)
+                pnl_sum = np.sum(rets)
+
+                if sharpe > best_sharpe:
+                    best_sharpe = float(sharpe)
+                    best_thr = float(thr)
+                    best_pnl = float(pnl_sum)
+                    best_count = int(np.sum(mask))
+
+                    # Calculate Max DD for optimal threshold
+                    opt_arr = np.nan_to_num(rets, nan=0.0)
+                    opt_arr = np.clip(opt_arr, -0.999999, None)
+                    opt_eq = np.cumprod(1.0 + opt_arr)
+                    if opt_eq.size > 0:
+                        opt_peak = np.maximum.accumulate(opt_eq)
+                        opt_dd = 1.0 - (opt_eq / (opt_peak + 1e-12))
+                        best_max_dd = float(np.max(opt_dd))
+                    else:
+                        best_max_dd = 0.0
+
+            metrics['Optimal Threshold'] = best_thr
+            metrics['Optimal Sharpe'] = best_sharpe
+            metrics['Optimal PnL'] = best_pnl
+            metrics['Optimal Trade Count'] = best_count
+            metrics['Optimal Max Drawdown'] = best_max_dd
+
+            # Improvement Stats
+            current_sharpe = metrics.get('Net Sortino', 0.0) # Using Sortino as proxy or need to calc actual sharpe for 'Post-Gate'
+            # Let's calc actual Post-Gate Sharpe for fair comparison (using Trade-based)
+            traded_rets = net_rets[trade_mask] if np.sum(trade_mask) > 0 else []
+            if len(traded_rets) > 1:
+                post_gate_sharpe = float(np.mean(traded_rets) / (np.std(traded_rets) + 1e-9))
+            else:
+                post_gate_sharpe = 0.0
+
+            metrics['Post-Gate Sharpe'] = post_gate_sharpe
+            metrics['Sharpe Delta (Opt - Post)'] = best_sharpe - post_gate_sharpe
 
         # --- Trade Statistics ---
         if n_trades > 0:
@@ -464,7 +618,8 @@ class Layer5PositionSizer:
             'gate_mode': self._gate_mode_used,
             'gate_quantile': self.gate_quantile,
             'gate_top_k': self.gate_top_k,
-            'gate_top_k_per_day': self.gate_top_k_per_day
+            'gate_top_k_per_day': self.gate_top_k_per_day,
+            'allow_dynamic_p_max': self.allow_dynamic_p_max
         }
 
         return metrics

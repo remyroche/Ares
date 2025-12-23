@@ -17,7 +17,8 @@ class Geometry:
     sl_quantile: float  # Quantile of MAE distribution (0.0 - 1.0) instead of fixed sigma
     alpha: float        # Pain penalty (denominator exponent)
     beta: float         # Gain reward (numerator exponent)
-    min_ratio: float = 1.0 
+    min_ratio: float = 1.0
+    horizon: int = 120  # Horizon in bars
     sl_sigma: Optional[float] = None # Resolved Sigma threshold (populated after selection)
     
     @property
@@ -113,42 +114,69 @@ class TradingFocalLoss:
 
 # --- 3. Vectorization & Pre-computation ---
 
-def events_to_dataframe(events: List[Event]) -> pd.DataFrame:
+def events_to_dataframe(events: List[Event], horizons: Optional[List[int]] = None) -> pd.DataFrame:
     """
-    Converts events to DataFrame and pre-calculates path metrics.
+    Converts events to DataFrame and pre-calculates path metrics for multiple horizons.
     Vectorized for performance.
+
+    Args:
+        events: List of Event objects.
+        horizons: List of horizons to calculate metrics for (e.g. [24, 48, 120]).
+                  If None, defaults to [8, 12, 16, 20, 30, 40].
     """
+    if horizons is None:
+        horizons = [8, 12, 16, 20, 30, 40]
+
     data = []
     for e in events:
-        path = e.returns_path * e.direction
+        full_path = e.returns_path * e.direction
+        max_len = len(full_path)
         
-        duration = max(1, e.exit_idx - e.entry_idx)
-        
-        raw_mae = -np.min(path) if len(path) > 0 else 0.0
-        raw_mfe = np.max(path) if len(path) > 0 else 0.0
-        
-        # Standard normalization
-        norm_mae = raw_mae / e.sigma
-        norm_mfe = raw_mfe / e.sigma
-
-        # Time-scaled normalization (Condition on Holding Time)
-        # Assuming volatility scales with sqrt(t)
-        # We normalize by sigma * sqrt(duration) to treat long/short horizons equally
-        sqrt_t = np.sqrt(duration)
-        time_scaled_mae = raw_mae / (e.sigma * sqrt_t)
-        time_scaled_mfe = raw_mfe / (e.sigma * sqrt_t)
-
-        data.append({
+        row = {
             'id': e.id,
             'entry_idx': e.entry_idx,
-            'exit_idx': e.exit_idx,
-            'duration': duration,
+            'exit_idx': e.exit_idx, # Original exit index
             'sigma': e.sigma,
-            'norm_mae': norm_mae,
-            'norm_mfe': norm_mfe,
-            'time_scaled_mae': time_scaled_mae,
-            'time_scaled_mfe': time_scaled_mfe
-        })
+        }
+
+        for h in horizons:
+            # Slice path to horizon
+            # Note: returns_path is 0-based from entry
+            limit = min(max_len, h)
+            path = full_path[:limit]
+
+            # Duration is actual length (up to horizon)
+            duration = max(1, limit)
+
+            raw_mae = -np.min(path) if len(path) > 0 else 0.0
+            raw_mfe = np.max(path) if len(path) > 0 else 0.0
+
+            # Standard normalization
+            norm_mae = raw_mae / e.sigma
+            norm_mfe = raw_mfe / e.sigma
+
+            # Time-scaled normalization (Condition on Holding Time)
+            # Assuming volatility scales with sqrt(t)
+            sqrt_t = np.sqrt(duration)
+            time_scaled_mae = raw_mae / (e.sigma * sqrt_t)
+            time_scaled_mfe = raw_mfe / (e.sigma * sqrt_t)
+
+            row[f'norm_mae_{h}'] = norm_mae
+            row[f'norm_mfe_{h}'] = norm_mfe
+            row[f'time_scaled_mae_{h}'] = time_scaled_mae
+            row[f'time_scaled_mfe_{h}'] = time_scaled_mfe
+
+            # Legacy fields (map to max horizon or first horizon?)
+            # Mapping to max horizon (usually 120) for backward compatibility if code uses 'norm_mae'
+            # But safer to just add them if this is the longest horizon processed.
+            if h == max(horizons):
+                row['norm_mae'] = norm_mae
+                row['norm_mfe'] = norm_mfe
+                row['duration'] = duration
+                row['time_scaled_mae'] = time_scaled_mae
+                row['time_scaled_mfe'] = time_scaled_mfe
+
+        data.append(row)
     
     df = pd.DataFrame(data)
     if not df.empty:
@@ -415,33 +443,40 @@ def select_geometries(
     features_df: pd.DataFrame
 ) -> List[Tuple[Geometry, Set[int]]]:
     
-    logger.info(f"Vectorizing {len(events)} events (Standard normalization for Fixed Barrier compatibility)...")
-    df = events_to_dataframe(events)
+    # Define horizons to sweep
+    horizons = [8, 12, 16, 20, 30, 40]
+
+    logger.info(f"Vectorizing {len(events)} events for horizons {horizons}...")
+    df = events_to_dataframe(events, horizons=horizons)
     if df.empty:
         logger.warning("No events to process.")
         return []
 
-    # Calculate global quantile thresholds for MAE
-    # We switch to 'norm_mae' (raw_mae / sigma) instead of 'time_scaled_mae'
-    # because LabelBasedLayer2 executes Fixed Barriers (sl_mult * vol).
-    # 'norm_mae' aligns exactly with 'sl_mult'.
-    mae_series = df['norm_mae']
+    # Calculate quantile thresholds for MAE per horizon
+    # We create a map: horizon -> quantile -> threshold value
+    # We use 'norm_mae_{h}' for each horizon.
+    thresholds_map = {}
 
-    # Quantiles to test: keeping top 50%, top 30%, top 20%, top 10% tightest stops
-    # Lower MAE = Tighter stop relative to vol
-    # "Quantile-Based Selection (Never Fixed Cutoffs)"
-    quantiles = [0.2, 0.3, 0.4, 0.5]
+    # Expanded Quantiles: Support wider stops (up to 0.8) for Mean Reversion
+    quantiles = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
 
-    # Pre-calculate threshold values
-    thresholds = {q: mae_series.quantile(q) for q in quantiles}
+    for h in horizons:
+        col_name = f'norm_mae_{h}'
+        if col_name in df.columns:
+            series = df[col_name]
+            thresholds_map[h] = {q: series.quantile(q) for q in quantiles}
+        else:
+            logger.warning(f"Missing column {col_name}, skipping horizon {h}")
 
     # Generate candidates
     candidates = []
-    for q in quantiles:
-        for a in [0.5, 1.0, 1.5]:
-            for b in [0.5, 1.0, 1.5, 2.0]:
-                for mr in [1.0, 1.5, 2.0, 2.5, 3.0]:
-                    candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr))
+    for h in horizons:
+        if h not in thresholds_map: continue
+        for q in quantiles:
+            for a in [0.5, 1.0, 1.5]:
+                for b in [0.5, 1.0, 1.5, 2.0]:
+                    for mr in [1.0, 1.5, 2.0, 2.5, 3.0]:
+                        candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr, horizon=h))
 
     # Deduplicate
     candidates = list(set(candidates))
@@ -451,15 +486,16 @@ def select_geometries(
     logger.info(f"Evaluating {len(candidates)} geometric candidates using Separation Objectives...")
     
     for geom in candidates:
-        # B. Apply Quantile-Based Filters using norm_mae (Fixed Barrier Logic)
-        thresh = thresholds[geom.sl_quantile]
-        mask_sl = df['norm_mae'] <= thresh
+        h = geom.horizon
+        col_mae = f'norm_mae_{h}'
+        col_mfe = f'norm_mfe_{h}'
+
+        # B. Apply Quantile-Based Filters using horizon-specific norm_mae
+        thresh = thresholds_map[h][geom.sl_quantile]
+        mask_sl = df[col_mae] <= thresh
         
         # Score Calculation
-        # Use norm_mfe / norm_mae to align with LabelBasedLayer2 logic
-        # score = (norm_mfe ** beta) / (norm_mae ** alpha)
-
-        score = (df['norm_mfe'] ** geom.beta) / ((df['norm_mae'] + 1e-6) ** geom.alpha)
+        score = (df[col_mfe] ** geom.beta) / ((df[col_mae] + 1e-6) ** geom.alpha)
         mask_score = score >= geom.min_ratio
         
         survivors_df = df[mask_sl & mask_score]

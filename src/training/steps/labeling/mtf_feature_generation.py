@@ -208,6 +208,10 @@ def create_meta_features(
     df_local['sma_slow'] = df_local['close'].rolling(30).mean()
     df_local['momentum'] = df_local['close'].pct_change(10)
 
+    # New: Add Momentum 30 (Missing from original but required)
+    df_local['momentum_30'] = df_local['close'].pct_change(30)
+    features['momentum_30'] = df_local['momentum_30'].to_numpy()
+
     if use_kalman:
         # Kalman-filtered trend
         kalman_trend, kalman_uncertainty = kalman_smooth_trend(df['close'], Q=1e-5, R=0.01)
@@ -282,6 +286,12 @@ def create_meta_features(
         features['atr_14'] = atr_14_series.to_numpy()
 
     features['atr_ratio'] = features['atr_14'] / (close_arr + 1e-8)
+
+    # New: Rolling Sharpe (50) - Missing from original
+    roll_mean_50 = returns.rolling(50).mean()
+    roll_std_50 = returns.rolling(50).std()
+    rolling_sharpe_series = (roll_mean_50 / (roll_std_50 + 1e-9)).fillna(0)
+    features['rolling_sharpe'] = _align_to_features(rolling_sharpe_series, n_features) if use_kalman else rolling_sharpe_series.to_numpy()
 
     # ===== VOLUME CONTEXT =====
     if volume_available and 'volume' in df.columns:
@@ -554,7 +564,7 @@ def create_meta_features(
         features['signal_strength'] = signals[['rsi', 'ma', 'mom']].abs().sum(axis=1)
         features['signal_consensus'] = signals['consensus'].abs()
 
-    # ===== MTF LOOP (New Requirement) =====
+    # ===== MTF LOOP (Enhanced) =====
     # Generate key features on multiple timeframes
     for w in windows:
         if w == 20: continue # Already have many 20-period features
@@ -589,5 +599,40 @@ def create_meta_features(
         # Autocorr
         ac_w = returns.rolling(window=w, min_periods=max(5, w//4)).corr(returns.shift(1))
         features[f'autocorr_w{w}'] = _align_to_features(ac_w, n_features) if use_kalman else ac_w.to_numpy()
+
+        # SMA Slope (MTF)
+        # Use w for SMA window, and w//2 for slope lookback
+        sma_w = df['close'].rolling(w).mean()
+        slope_w = sma_w.pct_change(max(1, w//2))
+        features[f'sma_slope_w{w}'] = _align_to_features(slope_w, n_features) if use_kalman else slope_w.to_numpy()
+
+        # Price vs SMA (MTF)
+        price_vs_sma_w = (df['close'] - sma_w) / (sma_w + 1e-8)
+        features[f'price_vs_sma_w{w}'] = _align_to_features(price_vs_sma_w, n_features) if use_kalman else price_vs_sma_w.to_numpy()
+
+        # ATR Ratio (MTF)
+        high_low = df['high'] - df['low']
+        atr_w = high_low.rolling(w).mean()
+        atr_ratio_w = atr_w / (df['close'] + 1e-8)
+        features[f'atr_ratio_w{w}'] = _align_to_features(atr_ratio_w, n_features) if use_kalman else atr_ratio_w.to_numpy()
+
+        # Rolling Sharpe (MTF)
+        # We need a longer window for Sharpe usually, so let's stick to w if w >= 20, else use max(20, w*2)
+        # Or just use w for consistency, accepting it might be noisy for small w
+        sharpe_mean = returns.rolling(w).mean()
+        sharpe_std = returns.rolling(w).std()
+        sharpe_w = (sharpe_mean / (sharpe_std + 1e-9)).fillna(0)
+        features[f'rolling_sharpe_w{w}'] = _align_to_features(sharpe_w, n_features) if use_kalman else sharpe_w.to_numpy()
+
+        # Volume Metrics (MTF)
+        if volume_available and 'volume' in df.columns:
+            vol_sma_w = df['volume'].rolling(w).mean()
+            vol_ratio_w = df['volume'] / (vol_sma_w + 1e-8)
+            features[f'volume_ratio_w{w}'] = _align_to_features(vol_ratio_w, n_features) if use_kalman else vol_ratio_w.to_numpy()
+
+            # Volume Trend (Short SMA / Long SMA) - using w as Long, w/4 as Short
+            vol_short_sma = df['volume'].rolling(max(1, w//4)).mean()
+            vol_trend_w = vol_short_sma / (vol_sma_w + 1e-8)
+            features[f'volume_trend_w{w}'] = _align_to_features(vol_trend_w, n_features) if use_kalman else vol_trend_w.to_numpy()
 
     return features

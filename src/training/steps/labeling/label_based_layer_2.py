@@ -40,9 +40,11 @@ import copy
 # Import compute_realized_returns from the existing module
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     compute_realized_returns,
-    create_meta_features,
-    get_efficiency_ratio,
     generate_primary_signals,
+)
+from src.training.steps.labeling.mtf_feature_generation import (
+    create_meta_features,
+    get_efficiency_ratio
 )
 from src.training.steps.labeling.generate_weights_per_label import finalize_sample_weights
 

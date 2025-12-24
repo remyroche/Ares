@@ -118,6 +118,102 @@ def get_efficiency_ratio(close: pd.Series, window: int = 14) -> pd.Series:
     volatility = close.diff().abs().rolling(window).sum()
     return change / (volatility + 1e-9)
 
+def compute_stochastic(high: pd.Series, low: pd.Series, close: pd.Series, k_period: int = 14, d_period: int = 3) -> Tuple[pd.Series, pd.Series]:
+    """Compute Stochastic Oscillator (%K and %D)."""
+    lowest_low = low.rolling(window=k_period).min()
+    highest_high = high.rolling(window=k_period).max()
+    k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low + 1e-9))
+    d_percent = k_percent.rolling(window=d_period).mean()
+    return k_percent, d_percent
+
+def compute_cci(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 20) -> pd.Series:
+    """Compute Commodity Channel Index (CCI)."""
+    tp = (high + low + close) / 3
+    sma_tp = tp.rolling(window=period).mean()
+    # Mean deviation from the moving average
+    mean_dev = tp.rolling(window=period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
+    cci = (tp - sma_tp) / (0.015 * mean_dev + 1e-9)
+    return cci
+
+def compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute ADX, Plus DI, Minus DI."""
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    plus_dm = plus_dm.where(plus_dm > 0, 0.0)
+    minus_dm = minus_dm.where(minus_dm > 0, 0.0)
+
+    mask_plus = (plus_dm > minus_dm) & (plus_dm > 0)
+    mask_minus = (minus_dm > plus_dm) & (minus_dm > 0)
+
+    plus_dm_final = pd.Series(0.0, index=close.index)
+    minus_dm_final = pd.Series(0.0, index=close.index)
+
+    plus_dm_final[mask_plus] = plus_dm[mask_plus]
+    minus_dm_final[mask_minus] = minus_dm[mask_minus]
+
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr = tr.rolling(period).mean()
+
+    plus_di = 100 * (plus_dm_final.rolling(period).mean() / (atr + 1e-9))
+    minus_di = 100 * (minus_dm_final.rolling(period).mean() / (atr + 1e-9))
+
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)) * 100
+    adx = dx.rolling(period).mean()
+    return adx, plus_di, minus_di
+
+def compute_bollinger_bands(close: pd.Series, period: int = 20, num_std: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Compute Bollinger Bands (Upper, Middle, Lower, Width)."""
+    middle = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    upper = middle + (std * num_std)
+    lower = middle - (std * num_std)
+    width = (upper - lower) / (middle + 1e-9)
+    return upper, middle, lower, width
+
+def compute_choppiness_index(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """Compute Choppiness Index."""
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr_sum = tr.rolling(period).sum()
+    high_max = high.rolling(period).max()
+    low_min = low.rolling(period).min()
+
+    ci = 100 * np.log10(atr_sum / (high_max - low_min + 1e-9)) / np.log10(period)
+    return ci
+
+def compute_cmf(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, period: int = 20) -> pd.Series:
+    """Compute Chaikin Money Flow."""
+    mf_multiplier = ((close - low) - (high - close)) / (high - low + 1e-9)
+    mf_volume = mf_multiplier * volume
+    cmf = mf_volume.rolling(period).sum() / (volume.rolling(period).sum() + 1e-9)
+    return cmf
+
+def compute_force_index(close: pd.Series, volume: pd.Series, period: int = 13) -> pd.Series:
+    """Compute Force Index."""
+    fi = close.diff(1) * volume
+    return fi.ewm(span=period).mean()
+
+def compute_hurst_proxy(close: pd.Series, window: int = 100) -> pd.Series:
+    """Vectorized Hurst Exponent proxy using Rolling R/S analysis."""
+    roll = close.rolling(window)
+    r = roll.max() - roll.min()
+    s = roll.std()
+    rs = r / (s + 1e-9)
+    hurst = np.log(rs + 1e-9) / np.log(window)
+    return hurst
+
+def compute_parkinson_volatility(high: pd.Series, low: pd.Series, window: int = 20) -> pd.Series:
+    """Compute Parkinson Volatility."""
+    log_hl = np.log(high / (low + 1e-9)) ** 2
+    return np.sqrt((1.0 / (4.0 * np.log(2.0))) * log_hl.rolling(window).mean())
+
 def _align_to_features(arr: Any, n: int) -> np.ndarray:
     """Helper to align 1D array to feature index length."""
     values = np.asarray(arr)
@@ -371,6 +467,59 @@ def create_meta_features(
     returns_entropy_series = -returns_abs * np.log(returns_abs + 1e-8)
     features['returns_entropy'] = _align_to_features(returns_entropy_series, n_features) if use_kalman else returns_entropy_series.to_numpy()
 
+    # Hurst Proxy
+    features['hurst_100'] = _align_to_features(compute_hurst_proxy(df['close'], 100), n_features) if use_kalman else compute_hurst_proxy(df['close'], 100).to_numpy()
+
+    # ===== ADVANCED MOMENTUM =====
+    # Stochastic
+    stoch_k, stoch_d = compute_stochastic(df['high'], df['low'], df['close'])
+    features['stoch_k'] = _align_to_features(stoch_k, n_features) if use_kalman else stoch_k.to_numpy()
+    features['stoch_d'] = _align_to_features(stoch_d, n_features) if use_kalman else stoch_d.to_numpy()
+
+    # CCI
+    features['cci_14'] = _align_to_features(compute_cci(df['high'], df['low'], df['close'], 14), n_features) if use_kalman else compute_cci(df['high'], df['low'], df['close'], 14).to_numpy()
+    features['cci_40'] = _align_to_features(compute_cci(df['high'], df['low'], df['close'], 40), n_features) if use_kalman else compute_cci(df['high'], df['low'], df['close'], 40).to_numpy()
+
+    # ADX
+    adx, plus_di, minus_di = compute_adx(df['high'], df['low'], df['close'], 14)
+    features['adx_14'] = _align_to_features(adx, n_features) if use_kalman else adx.to_numpy()
+    features['plus_di_14'] = _align_to_features(plus_di, n_features) if use_kalman else plus_di.to_numpy()
+    features['minus_di_14'] = _align_to_features(minus_di, n_features) if use_kalman else minus_di.to_numpy()
+    features['adx_trend'] = features['plus_di_14'] - features['minus_di_14'] # Simple trend strength
+
+    # ===== ADVANCED VOLATILITY =====
+    # Bollinger Bands
+    bb_upper, bb_mid, bb_lower, bb_width = compute_bollinger_bands(df['close'], 20, 2.0)
+    features['bb_width'] = _align_to_features(bb_width, n_features) if use_kalman else bb_width.to_numpy()
+    features['price_vs_bb'] = _align_to_features((df['close'] - bb_lower) / (bb_upper - bb_lower + 1e-9), n_features) if use_kalman else ((df['close'] - bb_lower) / (bb_upper - bb_lower + 1e-9)).to_numpy()
+
+    # Choppiness
+    features['choppiness_14'] = _align_to_features(compute_choppiness_index(df['high'], df['low'], df['close'], 14), n_features) if use_kalman else compute_choppiness_index(df['high'], df['low'], df['close'], 14).to_numpy()
+
+    # Parkinson Volatility
+    features['parkinson_volatility_20'] = _align_to_features(compute_parkinson_volatility(df['high'], df['low'], 20), n_features) if use_kalman else compute_parkinson_volatility(df['high'], df['low'], 20).to_numpy()
+
+    # ===== ADVANCED VOLUME =====
+    if volume_available and 'volume' in df.columns:
+        features['cmf_20'] = _align_to_features(compute_cmf(df['high'], df['low'], df['close'], df['volume'], 20), n_features) if use_kalman else compute_cmf(df['high'], df['low'], df['close'], df['volume'], 20).to_numpy()
+        features['force_index_13'] = _align_to_features(compute_force_index(df['close'], df['volume'], 13), n_features) if use_kalman else compute_force_index(df['close'], df['volume'], 13).to_numpy()
+        # Normalized Force Index (by volume MA)
+        fi_norm = features['force_index_13'] / (df['volume'].rolling(20).mean() * df['close'] + 1e-9)
+        features['force_index_norm'] = fi_norm
+
+    # ===== INTERACTION FEATURES =====
+    # Volatility * Momentum
+    if 'volatility_20' in features.columns and 'momentum_20' in features.columns:
+        features['vol_x_mom'] = features['volatility_20'] * features['momentum_20']
+
+    # ADX * Trend
+    if 'adx_14' in features.columns and 'momentum_10' in features.columns:
+        features['adx_x_mom'] = (features['adx_14'] / 100.0) * features['momentum_10']
+
+    # BB Squeeze * Volume
+    if 'bb_width' in features.columns and 'volume_ratio' in features.columns:
+        features['squeeze_x_vol'] = (1.0 / (features['bb_width'] + 1e-9)) * features['volume_ratio']
+
     # ===== TIME-BASED FEATURES =====
     if isinstance(df.index, pd.DatetimeIndex):
         hour_arr = df.index.hour.to_numpy()
@@ -502,10 +651,27 @@ def create_meta_features(
     features['momentum_1h'] = _align_to_features(df['close'].pct_change(4), n_features) if use_kalman else df['close'].pct_change(4).to_numpy()
     features['volatility_1h_agg'] = _align_to_features(close_1h.pct_change().rolling(16).std(), n_features) if use_kalman else close_1h.pct_change().rolling(16).std().to_numpy()
 
+    # 1H RSI Proxy
+    rsi_1h = compute_rsi(close_1h, 14)
+    features['rsi_1h'] = _align_to_features(rsi_1h, n_features) if use_kalman else rsi_1h.to_numpy()
+
+    # 1H BB Proxy
+    _, _, _, bb_width_1h = compute_bollinger_bands(close_1h, 20, 2.0)
+    features['bb_width_1h'] = _align_to_features(bb_width_1h, n_features) if use_kalman else bb_width_1h.to_numpy()
+
     close_4h = df['close'].rolling(16).mean()
     features['returns_4h'] = _align_to_features(close_4h.pct_change(), n_features) if use_kalman else close_4h.pct_change().to_numpy()
     features['momentum_4h'] = _align_to_features(df['close'].pct_change(16), n_features) if use_kalman else df['close'].pct_change(16).to_numpy()
     features['volatility_4h_agg'] = _align_to_features(close_4h.pct_change().rolling(16).std(), n_features) if use_kalman else close_4h.pct_change().rolling(16).std().to_numpy()
+
+    # 4H RSI Proxy
+    rsi_4h = compute_rsi(close_4h, 14)
+    features['rsi_4h'] = _align_to_features(rsi_4h, n_features) if use_kalman else rsi_4h.to_numpy()
+
+    # Interaction: RSI Divergence (LTF vs HTF)
+    if 'rsi' in features.columns:
+        features['rsi_1h_div'] = features['rsi'] - features['rsi_1h']
+        features['rsi_4h_div'] = features['rsi'] - features['rsi_4h']
 
     # ===== ROLLING WINDOW FEATURES (FOR TREES) =====
     close_arr_full = _align_to_features(df['close'], n_features) if use_kalman else df['close'].to_numpy()

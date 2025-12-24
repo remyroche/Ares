@@ -1,40 +1,38 @@
-"""Layer 4 — Risk Filter: ExtraTrees-based trade veto model with Platt calibration.
+"""Layer 4 — Risk Filter & Sizing Optimizer.
 
-This module implements a risk-filter stage that sits between Layer 3 (meta-model)
-and Layer 5 (position sizing). It uses a well-regularized ExtraTreesClassifier
-(max_depth=5) trained on the top-quantile subset of Layer 3 OOF predictions to
-identify and discard risky trades.
+This module implements a risk-filter and sizing optimization stage that sits between Layer 3 (meta-model)
+and Layer 5 (position sizing). It selects and optimizes a model (ExtraTrees, Ridge, or LGBM)
+to maximize a portfolio utility function (PnL, Sortino, Drawdown) under a specific sizing assumption.
 
-Features used are the same as gate_model.py (regime features, efficiency ratio, etc.).
+Sizing Assumption:
+    Size = 0 if p < 0.5
+    Size = ((p - 0.5) / 0.5) ^ 2 if p >= 0.5
+    (Quadratic scaling above threshold)
 
-The model outputs calibrated probabilities via Platt scaling (sigmoid calibration).
+Objective:
+    Utility = 0.7 * Norm_PnL + 0.15 * Norm_Sortino + 0.15 * (1 - Norm_DD)
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List
-from pathlib import Path
-from datetime import datetime
-import json
-import time
 import itertools
 import math
 import joblib
-
-from sklearn.ensemble import ExtraTreesClassifier
+import optuna
+import lightgbm as lgb
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss
+from sklearn.metrics import roc_auc_score
 from scipy.stats import entropy
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success, tprint_error
 
-
 # ---------------------------------------------------------------------------
-# Gate Feature Set (same as gate_model.py)
+# Constants
 # ---------------------------------------------------------------------------
 
 LAYER4_REGIME_FEATURES = [
@@ -43,9 +41,12 @@ LAYER4_REGIME_FEATURES = [
     'time_since_last_vol_spike', 'time_since_last_large_candle',
     'choppiness_index', 'variance_ratio', 'permutation_entropy',
     'hour_sin', 'hour_cos', 'is_weekend',
-    'efficiency_ratio',  # Kaufman's Efficiency Ratio
+    'efficiency_ratio',
 ]
 
+# ---------------------------------------------------------------------------
+# Utility Functions
+# ---------------------------------------------------------------------------
 
 def _clip_keep_fraction(x: float) -> float:
     try:
@@ -56,7 +57,6 @@ def _clip_keep_fraction(x: float) -> float:
         return 0.6
     return float(np.clip(x, 0.01, 1.0))
 
-
 def _l3_threshold_from_keep_fraction(l3_values: np.ndarray, keep_fraction: float) -> float:
     keep_fraction = _clip_keep_fraction(keep_fraction)
     finite_mask = np.isfinite(l3_values)
@@ -64,56 +64,116 @@ def _l3_threshold_from_keep_fraction(l3_values: np.ndarray, keep_fraction: float
         return float('nan')
     return float(np.quantile(l3_values[finite_mask], 1.0 - keep_fraction))
 
+def sizing_function(probs: np.ndarray, threshold: float = 0.5, gamma: float = 2.0) -> np.ndarray:
+    """
+    Apply sizing logic:
+    Size = 0 if p < threshold
+    Size = ((p - threshold) / (1 - threshold)) ^ gamma if p >= threshold
+    """
+    p = np.clip(probs, 0.0, 1.0)
+    denom = 1.0 - threshold
+    if denom < 1e-6:
+        denom = 1e-6
 
-def _equity_curve_from_returns(returns: np.ndarray) -> np.ndarray:
-    r = np.asarray(returns, dtype=float)
-    if r.size == 0:
-        return np.asarray([1.0], dtype=float)
-    r = np.where(np.isfinite(r), r, 0.0)
-    return np.cumprod(1.0 + r)
+    # Scale: (p - thr) / (1 - thr)
+    scaled = (p - threshold) / denom
+    scaled = np.clip(scaled, 0.0, 1.0)
 
+    # Apply gamma
+    sizes = np.power(scaled, gamma)
 
-def _max_drawdown_from_equity(equity: np.ndarray) -> float:
-    e = np.asarray(equity, dtype=float)
-    if e.size == 0:
+    # Zero out below threshold (already handled by clip(0,1) but explicit check for safety)
+    sizes = np.where(p < threshold, 0.0, sizes)
+    return sizes
+
+def calculate_portfolio_utility(
+    returns: np.ndarray,
+    sizes: np.ndarray,
+    transaction_cost: float = 0.0000
+) -> float:
+    """
+    Calculate custom portfolio utility:
+    Utility = 0.7 * Norm_PnL + 0.15 * Norm_Sortino + 0.15 * (1 - Norm_DD)
+
+    Normalizations (Approximate for OOF scale):
+    - PnL: scaled by (1 / (N * 0.001)) -> roughly 1.0 if avg trade is 0.1%
+    - Sortino: scaled by 1/3.0 -> 1.0 if Sortino is 3.0
+    - DD: scaled by 1/0.2 -> 1.0 if DD is 20%
+    """
+    if len(returns) == 0:
         return 0.0
-    e = np.where(np.isfinite(e), e, np.nan)
-    if not np.any(np.isfinite(e)):
-        return 0.0
-    running_max = np.maximum.accumulate(np.where(np.isfinite(e), e, -np.inf))
-    dd = (e / (running_max + 1e-12)) - 1.0
-    dd = dd[np.isfinite(dd)]
-    if dd.size == 0:
-        return 0.0
-    return float(-np.min(dd))
 
+    # 1. Calculate PnL curve
+    # Net returns = (Ret - Cost) * Size?
+    # Or strictly: Trade Return = Size * Ret - Cost?
+    # Usually: PnL = Size * (Ret - Cost) if cost is per dollar.
+    # If cost is fixed bps per trade: PnL = Size * Ret - (Size > 0) * Cost?
+    # Let's assume proportional cost: PnL = Size * (Ret - Cost)
 
-def _bootstrap_mean_ci(x: np.ndarray, n_boot: int = 500, alpha: float = 0.05, seed: int = 42) -> Tuple[float, float]:
-    arr = np.asarray(x, dtype=float)
-    arr = arr[np.isfinite(arr)]
-    if arr.size == 0:
-        return (float('nan'), float('nan'))
-    if n_boot <= 1:
-        m = float(np.mean(arr))
-        return (m, m)
-    rng = np.random.default_rng(seed)
-    n = arr.size
-    means = np.empty(int(n_boot), dtype=float)
-    for i in range(int(n_boot)):
-        idx = rng.integers(0, n, size=n)
-        means[i] = float(np.mean(arr[idx]))
-    lo = float(np.quantile(means, alpha / 2.0))
-    hi = float(np.quantile(means, 1.0 - (alpha / 2.0)))
-    return (lo, hi)
+    net_rets = returns - transaction_cost
+    pnl_series = sizes * net_rets
 
+    total_pnl = np.sum(pnl_series)
+
+    # 2. Sortino
+    # Downside deviation of pnl_series
+    # We consider 0.0 (no trade) as neutral.
+    # Downside = min(0, pnl).
+    downside = np.minimum(0.0, pnl_series)
+    downside_sq = downside ** 2
+    mean_sq_down = np.mean(downside_sq)
+
+    if mean_sq_down < 1e-12:
+        sortino = 0.0
+    else:
+        # Annualization factor? Assuming 15m bars?
+        # For utility ranking, raw ratio is fine.
+        sortino = np.mean(pnl_series) / np.sqrt(mean_sq_down)
+        # Clip Sortino to sane range [0, 10]
+        sortino = np.clip(sortino, -2.0, 10.0)
+
+    # 3. Max Drawdown
+    equity = np.cumprod(1.0 + pnl_series)
+    running_max = np.maximum.accumulate(equity)
+    dd = 1.0 - (equity / (running_max + 1e-12))
+    max_dd = np.max(dd)
+
+    # 4. Normalize and Combine
+    # Heuristic normalization targets
+    norm_pnl = np.tanh(total_pnl * 2.0) # Map reasonable PnL to [-1, 1]
+    # Actually, total PnL depends on N.
+    # Let's use Average Trade PnL * 1000?
+    avg_pnl = np.mean(pnl_series)
+    # norm_pnl = np.tanh(avg_pnl * 5000) # 1bp * 5000 = 0.5. 2bp = 1.0.
+
+    # Let's stick to the "Bounded" logic from thought process
+    # Score = 0.7 * (PnL / Target) ...
+    # Let's use Total Return %
+    total_return = equity[-1] - 1.0
+    # Cap return at 50% for normalization
+    norm_return = np.clip(total_return / 0.5, -1.0, 1.0)
+
+    # Sortino target 3.0
+    norm_sortino = np.clip(sortino / 3.0, -1.0, 1.0)
+
+    # DD target 0.2 (20%)
+    norm_dd = np.clip(max_dd / 0.2, 0.0, 1.0)
+
+    # Utility
+    # We want to Maximize PnL, Maximize Sortino, Minimize DD
+    utility = 0.7 * norm_return + 0.15 * norm_sortino + 0.15 * (1.0 - norm_dd)
+
+    return float(utility)
+
+# ---------------------------------------------------------------------------
+# Feature Computation
+# ---------------------------------------------------------------------------
 
 def compute_layer4_regime_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
     """
     Compute self-contained OHLCV-based regime features for Layer 4.
-    Same logic as gate_model._compute_regime_features plus efficiency_ratio.
     """
     df = ohlcv.copy()
-
     try:
         from src.feature_generation.categories.layer3_specific_features import _compute_gate_regime_features
         features = _compute_gate_regime_features(df)
@@ -123,8 +183,9 @@ def compute_layer4_regime_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
         return features[LAYER4_REGIME_FEATURES]
     except Exception:
         pass
-    features = pd.DataFrame(index=df.index)
 
+    # Fallback implementation (Restored full logic)
+    features = pd.DataFrame(index=df.index)
     close = df['close']
     high = df['high']
     low = df['low']
@@ -257,17 +318,16 @@ def compute_layer4_regime_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
 
     return features[LAYER4_REGIME_FEATURES]
 
-
 # ---------------------------------------------------------------------------
-# Layer 4 Risk Filter Model
+# Layer 4 Risk Filter
 # ---------------------------------------------------------------------------
 
 class Layer4RiskFilter:
     """
-    Layer 4 Risk Filter: ExtraTrees-based trade veto model.
+    Layer 4 Risk Filter & Optimizer.
     
-    Trained on Layer 3 OOF predictions (top quantile subset) to identify
-    and discard risky trades. Uses Platt scaling (sigmoid) for calibration.
+    Selects best model (ET, Ridge, LGBM) and optimizes HPO for
+    custom portfolio utility (PnL, Sortino, DD) under quadratic sizing.
     """
 
     def __init__(
@@ -279,399 +339,264 @@ class Layer4RiskFilter:
         random_state: int = 42,
         n_jobs: int = -1,
         l3_keep_fraction: float = 0.6,
-        l3_quantile_threshold: Optional[float] = None,
-        model_type: str = 'race',  # 'extratrees', 'ridge', or 'race' (auto-select best)
+        n_trials: int = 20, # HPO trials
+        sizing_threshold: float = 0.5,
+        sizing_gamma: float = 2.0,
     ):
-        """
-        Initialize Layer 4 Risk Filter.
-
-        Args:
-            n_estimators: Number of trees in ExtraTrees.
-            max_depth: Maximum depth (regularization).
-            min_samples_leaf: Minimum samples per leaf (regularization).
-            class_weight: Class weighting strategy.
-            random_state: Random seed.
-            n_jobs: Parallel jobs.
-            l3_keep_fraction: Fraction of top L3 predictions to keep.
-            l3_quantile_threshold: Alias for l3_keep_fraction (backward compatibility).
-        """
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.class_weight = class_weight
         self.random_state = random_state
         self.n_jobs = n_jobs
-        self.model_type = model_type if model_type in ['extratrees', 'ridge', 'race'] else 'race'
-        if l3_quantile_threshold is not None:
-            l3_keep_fraction = l3_quantile_threshold
-
         self.l3_keep_fraction = _clip_keep_fraction(l3_keep_fraction)
-        self.l3_quantile_threshold = self.l3_keep_fraction
+        self.n_trials = n_trials
+        self.sizing_threshold = sizing_threshold
+        self.sizing_gamma = sizing_gamma
 
         self.model = None
-        self.calibrator = None  # Platt scaling (LogisticRegression)
         self.scaler = None
         self.imputer = None
         self.feature_names: List[str] = []
-        self.feature_importances_: Optional[np.ndarray] = None
-        self.winning_model_type_: Optional[str] = None  # Stores which model won the race
+        self.winning_model_type_: Optional[str] = None
+        self.best_params_: Optional[Dict[str, Any]] = None
         
         self._is_fitted = False
-        self._training_mask: Optional[np.ndarray] = None
         self._l3_threshold: Optional[float] = None
-
-    def _build_pipeline(self, model_type: Optional[str] = None) -> Any:
-        """Build the model based on model_type."""
-        mt = model_type or self.model_type
-        if mt == 'extratrees':
-            return ExtraTreesClassifier(
-                n_estimators=self.n_estimators,
-                max_depth=self.max_depth,
-                min_samples_leaf=self.min_samples_leaf,
-                max_features='sqrt',
-                bootstrap=True,
-                class_weight=self.class_weight,
-                n_jobs=self.n_jobs,
-                random_state=self.random_state,
-            )
-        elif mt == 'ridge':
-            from sklearn.linear_model import LogisticRegressionCV
-            return LogisticRegressionCV(
-                penalty='l2',
-                solver='saga',
-                Cs=np.logspace(-3, 1, 10),
-                cv=3,
-                max_iter=2000,
-                class_weight=self.class_weight,
-                scoring='roc_auc',
-                random_state=self.random_state,
-                n_jobs=min(4, self.n_jobs) if self.n_jobs > 0 else 1,
-            )
-        else:
-            raise ValueError(f"Unknown model_type: {mt}")
 
     def fit(
         self,
         X: pd.DataFrame,
         y_true: pd.Series,
         l3_probs: pd.Series,
+        returns: pd.Series,
         sample_weight: Optional[pd.Series] = None,
     ) -> 'Layer4RiskFilter':
         """
-        Train the risk filter on Layer 3 OOF predictions.
-
-        Args:
-            X: Feature DataFrame (regime features).
-            y_true: Actual trade outcomes (0=loss, 1=win).
-            l3_probs: Layer 3 OOF calibrated probabilities.
-            sample_weight: Optional sample weights.
-
-        Returns:
-            self
+        Train Layer 4 with Model Race and HPO.
         """
-        tprint_info(">>> Training Layer 4 Risk Filter (ExtraTrees + Platt)...")
+        tprint_info(">>> Training Layer 4 Risk Filter (Race + HPO)...")
 
-        # 1. Compute L3 threshold and create training mask
+        # 1. Filter Data (Top L3 Quantile)
         l3_arr = pd.to_numeric(l3_probs, errors='coerce').values
         finite_mask = np.isfinite(l3_arr)
-        
         if not np.any(finite_mask):
-            tprint_warning("No finite L3 probabilities. Cannot train Layer 4.")
+            tprint_warning("No finite L3 probs.")
             return self
 
         l3_threshold = _l3_threshold_from_keep_fraction(l3_arr, self.l3_keep_fraction)
         self._l3_threshold = l3_threshold
-        
-        # Training mask: only samples where L3 says "trade" (above threshold)
         training_mask = finite_mask & (l3_arr >= l3_threshold)
-        self._training_mask = training_mask
         
         n_train = int(np.sum(training_mask))
-        tprint_info(f"   L3 threshold (keep top {self.l3_keep_fraction*100:.0f}%): {l3_threshold:.4f}")
-        tprint_info(f"   Training samples: {n_train} / {len(l3_arr)}")
-
         if n_train < 100:
-            tprint_warning(f"Too few training samples ({n_train}). Skipping Layer 4 training.")
+            tprint_warning(f"Too few samples ({n_train}). Skipping L4.")
             return self
 
-        # 2. Prepare features
-        X_train = X.loc[training_mask].copy()
-        y_train = y_true.loc[training_mask].values.astype(int)
+        X_sub = X.loc[training_mask].copy()
+        y_sub = y_true.loc[training_mask].values.astype(int)
+        r_sub = returns.loc[training_mask].values.astype(float)
         
-        self.feature_names = X_train.columns.tolist()
+        # Handle sample weights
+        if sample_weight is not None:
+            w_sub = sample_weight.loc[training_mask].values
+        else:
+            w_sub = np.ones(len(y_sub))
 
-        # 3. Preprocessing
+        self.feature_names = X_sub.columns.tolist()
+
+        # 2. Preprocessing
         self.imputer = SimpleImputer(strategy='median')
         self.scaler = StandardScaler()
-        
-        X_imputed = self.imputer.fit_transform(X_train)
-        X_scaled = self.scaler.fit_transform(X_imputed)
+        X_imp = self.imputer.fit_transform(X_sub)
+        X_scaled = self.scaler.fit_transform(X_imp)
 
-        # 4. Model Selection: Race ExtraTrees vs Ridge if model_type='race'
-        if self.model_type == 'race':
-            tprint_info("   Running ExtraTrees vs Ridge race...")
-            
-            # Split data for validation (80/20)
-            split_idx = int(len(X_scaled) * 0.8)
-            X_tr_race = X_scaled[:split_idx]
-            X_val_race = X_scaled[split_idx:]
-            y_tr_race = y_train[:split_idx]
-            y_val_race = y_train[split_idx:]
-            
-            if len(np.unique(y_tr_race)) < 2 or len(np.unique(y_val_race)) < 2:
-                tprint_warning("   Race failed: insufficient classes in split. Using ExtraTrees.")
-                selected_model_type = 'extratrees'
-            else:
-                # Train ExtraTreesClassifier
-                model_et = self._build_pipeline('extratrees')
-                model_et.fit(X_tr_race, y_tr_race)
-                preds_et = model_et.predict_proba(X_val_race)[:, 1]
-                score_et = roc_auc_score(y_val_race, preds_et)
-                
-                # Train Ridge LogisticRegressionCV
-                model_ridge = self._build_pipeline('ridge')
-                model_ridge.fit(X_tr_race, y_tr_race)
-                preds_ridge = model_ridge.predict_proba(X_val_race)[:, 1]
-                score_ridge = roc_auc_score(y_val_race, preds_ridge)
-                
-                # Select winner
-                if score_ridge > score_et:
-                    selected_model_type = 'ridge'
-                    tprint_success(f"   Ridge wins! AUC: {score_ridge:.4f} vs ExtraTrees: {score_et:.4f}")
-                else:
-                    selected_model_type = 'extratrees'
-                    tprint_success(f"   ExtraTrees wins! AUC: {score_et:.4f} vs Ridge: {score_ridge:.4f}")
-            
-            self.winning_model_type_ = selected_model_type
-        else:
-            selected_model_type = self.model_type
-            self.winning_model_type_ = selected_model_type
-        
-        # 5. Train final model on full data with winning model type
-        self.model = self._build_pipeline(selected_model_type)
-        
-        sw = None
-        if sample_weight is not None:
-            sw = sample_weight.loc[training_mask].values
-        
-        self.model.fit(X_scaled, y_train, sample_weight=sw)
-        
-        # Extract feature importances (only for ExtraTrees)
-        if selected_model_type == 'extratrees':
-            self.feature_importances_ = self.model.feature_importances_
-        else:
-            # For Ridge, use absolute coefficients as "importance"
-            if hasattr(self.model, 'coef_'):
-                self.feature_importances_ = np.abs(self.model.coef_[0])
+        # 3. Model Race
+        tprint_info("   Running Model Race (ET vs Ridge vs LGBM)...")
+        winner, best_score = self._run_model_race(X_scaled, y_sub, r_sub, w_sub)
+        self.winning_model_type_ = winner
+        tprint_success(f"   Race Winner: {winner} (Utility: {best_score:.4f})")
 
-        # 5. Platt Scaling (Sigmoid Calibration)
-        # Use cross-validated predictions for calibration
-        tprint_info("   Fitting Platt scaling calibrator...")
-         
-        try:
-            if len(np.unique(y_train)) < 2:
-                raise ValueError('Need both classes for calibration')
+        # 4. HPO
+        tprint_info(f"   Running HPO for {winner} ({self.n_trials} trials)...")
+        best_params = self._run_hpo(winner, X_scaled, y_sub, r_sub, w_sub)
+        self.best_params_ = best_params
+        tprint_info(f"   Best Params: {best_params}")
 
-            n_splits = 5
-            if len(y_train) < 250:
-                n_splits = 3
-            if len(y_train) < 150:
-                n_splits = 2
-            cv = TimeSeriesSplit(n_splits=n_splits)
-            
-            # Manual OOF collection because cross_val_predict only works for partitions,
-            # and TimeSeriesSplit folds are not a partition (they overlap in training).
-            raw_probs_oof = np.full(len(y_train), np.nan)
-            
-            for fold_idx, (cv_train_idx, cv_val_idx) in enumerate(cv.split(X_scaled)):
-                # Clone/Fresh model for each fold to ensure absolute OOF
-                fold_model = self._build_pipeline()
-                fold_model.fit(X_scaled[cv_train_idx], y_train[cv_train_idx])
-                
-                # Predict on validation set
-                fold_probs = fold_model.predict_proba(X_scaled[cv_val_idx])[:, 1]
-                raw_probs_oof[cv_val_idx] = fold_probs
-            
-            # Only use non-nan entries for calibration (first fold training data won't have OOF preds)
-            valid_oof_mask = np.isfinite(raw_probs_oof)
-            if not np.any(valid_oof_mask):
-                 raise ValueError('No OOF predictions generated for calibration')
-                 
-            y_calib = y_train[valid_oof_mask]
-            X_calib = raw_probs_oof[valid_oof_mask].reshape(-1, 1)
-
-            # Fit logistic regression on raw probs -> calibrated probs
-            self.calibrator = LogisticRegression(C=1.0, solver='lbfgs', max_iter=1000)
-            self.calibrator.fit(X_calib, y_calib)
-             
-            tprint_success(f"   Platt scaling calibrator fitted on {len(y_calib)} OOF samples.")
-        except Exception as e:
-            tprint_warning(f"   Platt scaling failed: {e}. Using raw probabilities.")
-            self.calibrator = None
-
+        # 5. Final Fit
+        tprint_info("   Fitting Final Model...")
+        self.model = self._build_model(winner, best_params)
+        self.model.fit(X_scaled, y_sub, sample_weight=w_sub)
+        
         self._is_fitted = True
-
-        # Log feature importances
-        if self.feature_importances_ is not None:
-            top_k = min(10, len(self.feature_names))
-            order = np.argsort(self.feature_importances_)[::-1]
-            tprint_info("   Top feature importances:")
-            for i in order[:top_k]:
-                tprint_info(f"      {self.feature_names[i]}: {self.feature_importances_[i]:.4f}")
-
         return self
 
+    def _run_model_race(
+        self, X: np.ndarray, y: np.ndarray, r: np.ndarray, w: np.ndarray
+    ) -> Tuple[str, float]:
+        """Compare default models using TimeSeriesSplit and Custom Utility."""
+        candidates = ['extratrees', 'ridge', 'lgbm']
+        scores = {}
+        
+        # 3-fold TS split for evaluation
+        tscv = TimeSeriesSplit(n_splits=3)
+        
+        for cand in candidates:
+            fold_scores = []
+            for train_idx, val_idx in tscv.split(X):
+                X_tr, X_val = X[train_idx], X[val_idx]
+                y_tr, y_val = y[train_idx], y[val_idx]
+                r_val = r[val_idx]
+                w_tr = w[train_idx]
+                
+                model = self._build_model(cand, default=True)
+                try:
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    probs = model.predict_proba(X_val)[:, 1]
+
+                    sizes = sizing_function(probs, self.sizing_threshold, self.sizing_gamma)
+                    util = calculate_portfolio_utility(r_val, sizes)
+                    fold_scores.append(util)
+                except Exception as e:
+                    tprint_error(f"Race failed for {cand}: {e}")
+                    fold_scores.append(-1.0)
+            
+            avg_score = np.mean(fold_scores)
+            scores[cand] = avg_score
+            tprint_info(f"      {cand}: {avg_score:.4f}")
+
+        best_cand = max(scores, key=scores.get)
+        return best_cand, scores[best_cand]
+
+    def _run_hpo(
+        self, model_type: str, X: np.ndarray, y: np.ndarray, r: np.ndarray, w: np.ndarray
+    ) -> Dict[str, Any]:
+        """Run Optuna HPO."""
+
+        # Use a single validation split for HPO speed (last 20%)
+        split_idx = int(len(X) * 0.8)
+        X_tr, X_val = X[:split_idx], X[split_idx:]
+        y_tr, y_val = y[:split_idx], y[split_idx:]
+        r_val = r[split_idx:]
+        w_tr = w[:split_idx]
+
+        def objective(trial):
+            params = {}
+            if model_type == 'lgbm':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log=True),
+                    'num_leaves': trial.suggest_int('num_leaves', 20, 150),
+                    'max_depth': trial.suggest_int('max_depth', 3, 10),
+                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),
+                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True),
+                    'min_child_samples': trial.suggest_int('min_child_samples', 20, 100),
+                }
+            elif model_type == 'extratrees':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+                    'max_depth': trial.suggest_int('max_depth', 3, 15),
+                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 10, 100),
+                    'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                }
+            elif model_type == 'ridge':
+                params = {
+                    'C': trial.suggest_float('C', 0.01, 10.0, log=True),
+                    'l1_ratio': trial.suggest_float('l1_ratio', 0.0, 1.0), # ElasticNet
+                }
+
+            try:
+                model = self._build_model(model_type, params)
+                model.fit(X_tr, y_tr, sample_weight=w_tr)
+                probs = model.predict_proba(X_val)[:, 1]
+                sizes = sizing_function(probs, self.sizing_threshold, self.sizing_gamma)
+                score = calculate_portfolio_utility(r_val, sizes)
+                return score
+            except Exception:
+                return -10.0
+
+        study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=42))
+        study.optimize(objective, n_trials=self.n_trials)
+        return study.best_params
+
+    def _build_model(self, model_type: str, params: Optional[Dict[str, Any]] = None, default: bool = False) -> Any:
+        if params is None:
+            params = {}
+
+        if model_type == 'lgbm':
+            p = params.copy() if not default else {
+                'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 5
+            }
+            p['random_state'] = self.random_state
+            p['n_jobs'] = 1 # Avoid threading issues in parallel HPO if any
+            p['verbose'] = -1
+            p['class_weight'] = self.class_weight
+            return lgb.LGBMClassifier(**p)
+
+        elif model_type == 'extratrees':
+            p = params.copy() if not default else {
+                'n_estimators': 300, 'max_depth': 5, 'min_samples_leaf': 20
+            }
+            p['random_state'] = self.random_state
+            p['bootstrap'] = True
+            p['class_weight'] = self.class_weight
+            p['n_jobs'] = self.n_jobs
+            return ExtraTreesClassifier(**p)
+
+        elif model_type == 'ridge':
+            # Use LogisticRegression with ElasticNet
+            p = params.copy() if not default else {'C': 1.0, 'l1_ratio': 0.5}
+            return LogisticRegression(
+                penalty='elasticnet', solver='saga', max_iter=2000,
+                class_weight=self.class_weight, random_state=self.random_state,
+                n_jobs=1, **p
+            )
+        else:
+            raise ValueError(f"Unknown model: {model_type}")
+
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """
-        Predict calibrated probability of trade success.
-
-        Args:
-            X: Feature DataFrame.
-
-        Returns:
-            Calibrated probabilities (n_samples,).
-        """
         if not self._is_fitted or self.model is None:
             return np.full(len(X), 0.5)
 
-        # Preprocess
-        X_imputed = self.imputer.transform(X)
-        X_scaled = self.scaler.transform(X_imputed)
-
-        # Raw predictions
-        raw_probs = self.model.predict_proba(X_scaled)[:, 1]
-
-        # Apply Platt scaling if available
-        if self.calibrator is not None:
-            calibrated = self.calibrator.predict_proba(raw_probs.reshape(-1, 1))[:, 1]
-            return np.clip(calibrated, 0.0, 1.0)
-
-        return np.clip(raw_probs, 0.0, 1.0)
-
-    def predict(self, X: pd.DataFrame, threshold: float = 0.5) -> np.ndarray:
-        """
-        Predict binary decision: 1 (allow trade) or 0 (veto trade).
-
-        Args:
-            X: Feature DataFrame.
-            threshold: Probability threshold for allowing trade.
-
-        Returns:
-            Binary decisions (n_samples,).
-        """
-        probs = self.predict_proba(X)
-        return (probs >= threshold).astype(int)
+        X_imp = self.imputer.transform(X)
+        X_scaled = self.scaler.transform(X_imp)
+        return self.model.predict_proba(X_scaled)[:, 1]
 
     def save(self, filepath: str):
-        """Save model to disk."""
         joblib.dump({
             'model': self.model,
-            'calibrator': self.calibrator,
             'scaler': self.scaler,
             'imputer': self.imputer,
             'feature_names': self.feature_names,
-            'feature_importances': self.feature_importances_,
-            'l3_keep_fraction': self.l3_keep_fraction,
-            'l3_quantile_threshold': self.l3_keep_fraction,
-            'l3_threshold': self._l3_threshold,
+            'winning_model': self.winning_model_type_,
+            'best_params': self.best_params_,
             'config': {
-                'n_estimators': self.n_estimators,
-                'max_depth': self.max_depth,
-                'min_samples_leaf': self.min_samples_leaf,
-                'class_weight': self.class_weight,
-                'random_state': self.random_state,
+                'sizing_threshold': self.sizing_threshold,
+                'sizing_gamma': self.sizing_gamma
             }
         }, filepath)
         tprint_success(f"Layer 4 model saved to {filepath}")
 
     @classmethod
     def load(cls, filepath: str) -> 'Layer4RiskFilter':
-        """Load model from disk."""
         data = joblib.load(filepath)
-        config = data.get('config', {})
-        
+        cfg = data.get('config', {})
         obj = cls(
-            n_estimators=config.get('n_estimators', 300),
-            max_depth=config.get('max_depth', 5),
-            min_samples_leaf=config.get('min_samples_leaf', 20),
-            class_weight=config.get('class_weight', 'balanced'),
-            random_state=config.get('random_state', 42),
-            l3_keep_fraction=data.get('l3_keep_fraction', data.get('l3_quantile_threshold', 0.6)),
+            sizing_threshold=cfg.get('sizing_threshold', 0.5),
+            sizing_gamma=cfg.get('sizing_gamma', 2.0)
         )
         obj.model = data['model']
-        obj.calibrator = data.get('calibrator')
         obj.scaler = data['scaler']
         obj.imputer = data['imputer']
         obj.feature_names = data['feature_names']
-        obj.feature_importances_ = data.get('feature_importances')
-        obj._l3_threshold = data.get('l3_threshold')
+        obj.winning_model_type_ = data.get('winning_model')
+        obj.best_params_ = data.get('best_params')
         obj._is_fitted = True
-        
         return obj
 
-
 # ---------------------------------------------------------------------------
-# Final Score Formulas (for Layer 5 integration)
+# Training Orchestration
 # ---------------------------------------------------------------------------
-
-def compute_final_score_product(p_l3: np.ndarray, p_l4: np.ndarray) -> np.ndarray:
-    p_l3 = np.asarray(p_l3, dtype=float)
-    p_l4 = np.asarray(p_l4, dtype=float)
-    return np.clip(p_l3 * p_l4, 0.0, 1.0)
-
-
-def compute_final_score_min(p_l3: np.ndarray, p_l4: np.ndarray) -> np.ndarray:
-    p_l3 = np.asarray(p_l3, dtype=float)
-    p_l4 = np.asarray(p_l4, dtype=float)
-    return np.clip(np.minimum(p_l3, p_l4), 0.0, 1.0)
-
-
-def compute_final_score_logit_avg(p_l3: np.ndarray, p_l4: np.ndarray) -> np.ndarray:
-    p_l3 = np.asarray(p_l3, dtype=float)
-    p_l4 = np.asarray(p_l4, dtype=float)
-    eps = 1e-8
-    p_l3 = np.clip(p_l3, eps, 1.0 - eps)
-    p_l4 = np.clip(p_l4, eps, 1.0 - eps)
-    logit_l3 = np.log(p_l3 / (1.0 - p_l3))
-    logit_l4 = np.log(p_l4 / (1.0 - p_l4))
-    logit_avg = 0.5 * (logit_l3 + logit_l4)
-    out = 1.0 / (1.0 + np.exp(-logit_avg))
-    return np.clip(out, 0.0, 1.0)
-
-def compute_final_score_dynamic(p_l3: np.ndarray, p_l4: np.ndarray) -> np.ndarray:
-    """
-    Dynamic Confidence Scaler formula.
-    
-    P_final = P_L3 * (1 - Penalty)
-    where Penalty = (1 - P_L4) * (1 - P_L3)
-    """
-    return compute_final_score_product(p_l3, p_l4)
-
-
-def compute_final_score_bayesian(p_l3: np.ndarray, p_l4: np.ndarray, prior: float = 0.5) -> np.ndarray:
-    """
-    Bayesian Inference formula.
-    
-    Odds_final = Odds_L4 * Likelihood_Ratio(L3)
-    Then convert back to probability.
-    """
-    return compute_final_score_logit_avg(p_l3, p_l4)
-
-
-def compute_final_score_ridge(p_l3: np.ndarray, p_l4: np.ndarray, beta: float = 0.5) -> np.ndarray:
-    """
-    Ridge penalty formula.
-    
-    P_final = P_L3 - beta * (1 - P_L4)^2
-    """
-    p_l3 = np.asarray(p_l3, dtype=float)
-    p_l4 = np.asarray(p_l4, dtype=float)
-    try:
-        beta_f = float(beta)
-    except Exception:
-        beta_f = 0.5
-    penalty = beta_f * np.square(1.0 - p_l4)
-    return np.clip(p_l3 - penalty, 0.0, 1.0)
 
 def train_layer4_oof(
     oof_df: pd.DataFrame,
@@ -683,325 +608,64 @@ def train_layer4_oof(
     n_folds: int = 5,
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """
-    Train Layer 4 risk filter using OOF predictions and evaluate grid of thresholds/formulas.
-
-    Args:
-        oof_df: DataFrame with Layer 3 OOF predictions.
-        market_data: OHLCV data for regime feature computation.
-        l3_prob_col: Column name for L3 probabilities.
-        target_col: Column name for binary target.
-        return_col: Column name for realized returns.
-        l3_quantile_thresholds: List of quantile thresholds to evaluate.
-        n_folds: Number of CV folds for OOF.
-        config: Optional configuration dict.
-
-    Returns:
-        Tuple of (results_df, metrics_dict).
-    """
-    tprint_info(">>> Running Layer 4 OOF Training & Grid Evaluation...")
     
+    tprint_info(">>> Running Layer 4 OOF Training & Optimization...")
     cfg = config or {}
     
-    # 1. Compute regime features
-    tprint_info("   Computing regime features...")
+    # 1. Regime Features
     regime_features = compute_layer4_regime_features(market_data)
-    
-    # Align to oof_df index
     common_idx = oof_df.index.intersection(regime_features.index)
-    if len(common_idx) < 100:
-        tprint_error(f"Insufficient overlap between OOF and market data: {len(common_idx)}")
-        return pd.DataFrame(), {}
     
     X = regime_features.loc[common_idx]
     oof_aligned = oof_df.loc[common_idx]
     
+    # 2. Add L3 Probs as Feature
     l3_probs = pd.to_numeric(oof_aligned[l3_prob_col], errors='coerce')
     y_true = pd.to_numeric(oof_aligned[target_col], errors='coerce')
     returns = pd.to_numeric(oof_aligned[return_col], errors='coerce')
- 
-    try:
-        include_l3_prob_feature = bool(cfg.get('layer4_include_l3_prob_feature', True))
-    except Exception:
-        include_l3_prob_feature = True
+    
+    X = X.copy()
+    X['l3_prob'] = l3_probs
+    X['l3_lag'] = l3_probs.ewm(span=5, adjust=False).mean()
 
-    if include_l3_prob_feature:
-        X = X.copy()
-        X['l3_prob'] = l3_probs
-        # Add l3_lag (EMA 5 of l3_prob) - assumes l3_probs are chronologically ordered (common_idx)
-        X['l3_lag'] = l3_probs.ewm(span=5, adjust=False).mean()
-     
-    l3_arr = l3_probs.to_numpy(dtype=float, copy=False)
-    y_arr = y_true.to_numpy(dtype=float, copy=False)
-    r_arr = returns.to_numpy(dtype=float, copy=False)
-    
-    # 2. Generate OOF predictions for Layer 4
-    tprint_info("   Generating Layer 4 OOF predictions...")
-    
-    # Use purged time-series CV
+    # 3. OOF CV
     from src.utils.purged_kfold import PurgedKFoldTime
-    
-    try:
-        default_keep_fraction = float(cfg.get('layer4_quantile_threshold', 0.6))
-    except Exception:
-        default_keep_fraction = 0.6
-    
-    grid_keep_fractions: List[float] = []
-    for x in (l3_quantile_thresholds or []):
-        try:
-            xf = float(x)
-        except Exception:
-            continue
-        if np.isfinite(xf):
-            grid_keep_fractions.append(xf)
-    
-    if not grid_keep_fractions:
-        grid_keep_fractions = [default_keep_fraction]
-    
-    keep_fractions_to_compute: List[float] = []
-    for xf in [default_keep_fraction] + grid_keep_fractions:
-        try:
-            kf = float(xf)
-        except Exception:
-            continue
-        if not np.isfinite(kf):
-            continue
-        if not any(abs(kf - kk) < 1e-12 for kk in keep_fractions_to_compute):
-            keep_fractions_to_compute.append(kf)
-    
-    try:
-        purge_minutes = int(cfg.get('layer4_purge_minutes', 60))
-    except Exception:
-        purge_minutes = 60
-    try:
-        embargo_minutes = int(cfg.get('layer4_embargo_minutes', 30))
-    except Exception:
-        embargo_minutes = 30
-
-    cv = PurgedKFoldTime(
-        n_splits=n_folds,
-        purge=pd.Timedelta(minutes=purge_minutes),
-        embargo=pd.Timedelta(minutes=embargo_minutes),
-    )
+    cv = PurgedKFoldTime(n_splits=n_folds, purge=pd.Timedelta(minutes=60))
     splits = list(cv.split(X))
     
-    labeled_mask = np.isfinite(y_arr)
-
-    l4_oof_probs_by_keep: Dict[float, np.ndarray] = {}
-    for keep_fraction in keep_fractions_to_compute:
-        tprint_info(f"   L4 OOF for L3 keep_fraction={keep_fraction:.3f}...")
-        l4_oof_probs = np.full(len(common_idx), np.nan)
+    l4_oof_probs = np.full(len(common_idx), np.nan)
+    
+    for fold_idx, (train_idx, val_idx) in enumerate(splits):
+        tprint_info(f"   Fold {fold_idx + 1}/{n_folds}...")
         
-        for fold_idx, (train_idx, val_idx) in enumerate(splits):
-            tprint_info(f"   Fold {fold_idx + 1}/{n_folds}...")
-            
-            X_train = X.iloc[train_idx]
-            X_val = X.iloc[val_idx]
-
-            y_train_raw = y_true.iloc[train_idx]
-            labeled_train = pd.to_numeric(y_train_raw, errors='coerce').notna()
-            if int(labeled_train.sum()) < 50:
-                continue
- 
-            X_train = X_train.loc[labeled_train]
-            y_train = (pd.to_numeric(y_train_raw.loc[labeled_train], errors='coerce').astype(float) >= 0.5).astype(int)
-            l3_train = l3_probs.iloc[train_idx].loc[labeled_train]
-             
-            l4_model = Layer4RiskFilter(
-                n_estimators=int(cfg.get('layer4_n_estimators', 300)),
-                max_depth=int(cfg.get('layer4_max_depth', 5)),
-                min_samples_leaf=int(cfg.get('layer4_min_samples_leaf', 20)),
-                l3_keep_fraction=keep_fraction,
-            )
-            
-            l4_model.fit(X_train, y_train, l3_train)
-            
-            if l4_model._is_fitted:
-                l4_oof_probs[val_idx] = l4_model.predict_proba(X_val)
+        # Prepare Fold Data
+        X_train = X.iloc[train_idx]
+        y_train = y_true.iloc[train_idx]
+        l3_train = l3_probs.iloc[train_idx]
+        ret_train = returns.iloc[train_idx]
         
-        l4_oof_probs_by_keep[keep_fraction] = l4_oof_probs
-    
-    # 3. Grid evaluation
-    tprint_info("   Evaluating threshold/formula grid...")
-    
-    try:
-        decision_threshold = float(cfg.get('layer4_decision_threshold', 0.5))
-    except Exception:
-        decision_threshold = 0.5
-    try:
-        min_trades = int(cfg.get('layer4_min_trades', 50))
-    except Exception:
-        min_trades = 50
-    try:
-        n_boot = int(cfg.get('layer4_n_boot', 500))
-    except Exception:
-        n_boot = 500
-     
-    results = []
-    formulas = ['product', 'min', 'logit_avg']
-    
-    for q_thresh in l3_quantile_thresholds:
-        try:
-            keep_fraction = float(q_thresh)
-        except Exception:
+        X_val = X.iloc[val_idx]
+
+        # Valid mask
+        mask = np.isfinite(y_train) & np.isfinite(ret_train)
+        if mask.sum() < 50:
             continue
-        
-        l3_thresh = _l3_threshold_from_keep_fraction(l3_arr, keep_fraction)
-        l3_mask = np.isfinite(l3_arr) & (l3_arr >= l3_thresh)
-        
-        l4_oof_probs = l4_oof_probs_by_keep.get(keep_fraction)
-        if l4_oof_probs is None:
-            continue
-        
-        for formula in formulas:
-            # Compute final scores
-            if formula == 'product':
-                final_scores = compute_final_score_product(l3_arr, l4_oof_probs)
-            elif formula == 'min':
-                final_scores = compute_final_score_min(l3_arr, l4_oof_probs)
-            elif formula == 'logit_avg':
-                final_scores = compute_final_score_logit_avg(l3_arr, l4_oof_probs)
-            else:
-                final_scores = l3_arr
             
-            # Evaluate on L3-gated subset
-            eval_mask = l3_mask & np.isfinite(final_scores) & labeled_mask
-            
-            if eval_mask.sum() < 50:
-                continue
-            
-            y_eval = (y_arr[eval_mask] >= 0.5).astype(int)
-            p_eval = final_scores[eval_mask]
-            r_eval = r_arr[eval_mask]
-            
-            # Metrics
-            try:
-                auc = float(roc_auc_score(y_eval, p_eval))
-            except Exception:
-                auc = 0.5
-            
-            try:
-                brier = float(brier_score_loss(y_eval, p_eval))
-            except Exception:
-                brier = 0.25
-            
-            # Trading metrics (using final score as trade decision)
-            trade_mask = (p_eval >= decision_threshold) & np.isfinite(r_eval)
-            n_trades = int(trade_mask.sum())
+        l4_model = Layer4RiskFilter(
+            n_trials=15, # Reduced trials for OOF speed
+            l3_keep_fraction=float(cfg.get('layer4_quantile_threshold', 0.6))
+        )
 
-            if n_trades < min_trades:
-                continue
-             
-            if n_trades > 0:
-                traded_returns = r_eval[trade_mask]
-                total_pnl = float(np.sum(traded_returns))
-                avg_pnl = float(np.mean(traded_returns))
-                win_rate = float(np.sum(traded_returns > 0) / n_trades)
+        l4_model.fit(X_train[mask], y_train[mask], l3_train[mask], ret_train[mask])
+        l4_oof_probs[val_idx] = l4_model.predict_proba(X_val)
 
-                equity = _equity_curve_from_returns(traded_returns)
-                total_return = float(equity[-1] - 1.0)
-                max_drawdown = _max_drawdown_from_equity(equity)
-                calmar_like = float(total_return / (max_drawdown + 1e-12))
-
-                avg_pnl_ci_low, avg_pnl_ci_high = _bootstrap_mean_ci(traded_returns, n_boot=n_boot)
-
-                trades_per_day = float('nan')
-                try:
-                    if isinstance(oof_aligned.index, pd.DatetimeIndex):
-                        eval_index = oof_aligned.index[eval_mask]
-                        trade_index = eval_index[trade_mask]
-                        if len(trade_index) >= 2:
-                            days = (trade_index[-1] - trade_index[0]).total_seconds() / 86400.0
-                            if days > 0:
-                                trades_per_day = float(n_trades / days)
-                except Exception:
-                    trades_per_day = float('nan')
-                 
-                wins = traded_returns[traded_returns > 0]
-                losses = traded_returns[traded_returns < 0]
-                gross_profit = float(np.sum(wins)) if len(wins) > 0 else 0.0
-                gross_loss = float(-np.sum(losses)) if len(losses) > 0 else 0.0
-                profit_factor = gross_profit / (gross_loss + 1e-8)
-            else:
-                total_pnl = 0.0
-                avg_pnl = 0.0
-                win_rate = 0.0
-                profit_factor = 0.0
-
-                total_return = 0.0
-                max_drawdown = 0.0
-                calmar_like = 0.0
-                trades_per_day = float('nan')
-                avg_pnl_ci_low = float('nan')
-                avg_pnl_ci_high = float('nan')
- 
-            results.append({
-                'l3_keep_fraction': keep_fraction,
-                'l3_quantile': keep_fraction,
-                'l3_threshold': l3_thresh,
-                'formula': formula,
-                'n_samples': int(eval_mask.sum()),
-                'n_trades': n_trades,
-                'decision_threshold': decision_threshold,
-                'auc': auc,
-                'brier': brier,
-                'total_pnl': total_pnl,
-                'avg_pnl': avg_pnl,
-                'avg_pnl_ci_low': avg_pnl_ci_low,
-                'avg_pnl_ci_high': avg_pnl_ci_high,
-                'win_rate': win_rate,
-                'profit_factor': profit_factor,
-                'trades_per_day': trades_per_day,
-                'total_return': total_return,
-                'max_drawdown': max_drawdown,
-                'calmar_like': calmar_like,
-            })
-    
-    results_df = pd.DataFrame(results)
-    
-    # 4. Summary metrics
-    metrics = {
-        'n_samples': len(common_idx),
-        'purge_minutes': int(purge_minutes),
-        'embargo_minutes': int(embargo_minutes),
-        'decision_threshold': float(decision_threshold),
-        'min_trades': int(min_trades),
-        'n_boot': int(n_boot),
-        'l4_oof_coverage': float(np.sum(np.isfinite(l4_oof_probs_by_keep[default_keep_fraction])) / len(l4_oof_probs_by_keep[default_keep_fraction])),
-        'l4_oof_mean': float(np.nanmean(l4_oof_probs_by_keep[default_keep_fraction])),
-        'l4_oof_std': float(np.nanstd(l4_oof_probs_by_keep[default_keep_fraction])),
-        'grid_results': results,
-    }
-    
-    # Find best configuration
-    if not results_df.empty:
-        # Best by AUC
-        best_auc_idx = results_df['auc'].idxmax()
-        metrics['best_by_auc'] = results_df.loc[best_auc_idx].to_dict()
-        
-        # Best by profit factor (among configs with enough trades)
-        pf_df = results_df[results_df['n_trades'] >= min_trades]
-        if not pf_df.empty:
-            best_pf_idx = pf_df['profit_factor'].idxmax()
-            metrics['best_by_pf'] = pf_df.loc[best_pf_idx].to_dict()
-
-        try:
-            select_metric = str(cfg.get('layer4_select_metric', 'profit_factor'))
-        except Exception:
-            select_metric = 'profit_factor'
-
-        sel_df = pf_df if (select_metric in ['profit_factor', 'avg_pnl', 'total_return', 'calmar_like', 'trades_per_day', 'win_rate']) else results_df
-        if (select_metric in sel_df.columns) and (not sel_df.empty):
-            if select_metric in ['brier']:
-                best_idx = sel_df[select_metric].idxmin()
-            else:
-                best_idx = sel_df[select_metric].idxmax()
-            metrics['best'] = sel_df.loc[best_idx].to_dict()
-    
-    tprint_success(f"   Grid evaluation complete. {len(results)} configurations tested.")
-    
-    # Add L4 OOF predictions to output
+    # 4. Final Output
     oof_aligned = oof_aligned.copy()
-    oof_aligned['layer4_prob'] = l4_oof_probs_by_keep[default_keep_fraction]
+    oof_aligned['layer4_prob'] = l4_oof_probs
+    
+    metrics = {
+        'l4_oof_coverage': float(np.mean(np.isfinite(l4_oof_probs))),
+        'l4_oof_mean': float(np.nanmean(l4_oof_probs))
+    }
     
     return oof_aligned, metrics

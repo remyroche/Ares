@@ -216,24 +216,51 @@ class RobustFocalLoss:
 class XGBFocalLoss:
     """
     Focal Loss for XGBoost (custom objective function).
-    Matches RobustFocalLoss behavior for consistency across LGBM and XGB.
+    Fully matches RobustFocalLoss behavior (LGBM) including asymmetric gamma.
     """
-    
-    def __init__(self, gamma=2.0, alpha=0.25):
-        """
-        Args:
-            gamma: Focusing parameter (higher = more focus on hard examples)
-            alpha: Positive class weight
-        """
-        self.gamma = gamma
+
+    def __init__(
+        self,
+        gamma_pos=1.0,
+        gamma_neg=2.5,
+        alpha=None,
+        grad_clip=5.0,
+        w_cap=3.0,
+        mix=0.25,
+        label_smoothing=0.02,
+        verbose=True
+    ):
+        self.gamma_pos = gamma_pos
+        self.gamma_neg = gamma_neg
+        self.grad_clip = grad_clip
+        self.w_cap = w_cap
+        self.mix = mix
+        self.label_smoothing = label_smoothing
         self.alpha = alpha
-    
+        self.verbose = verbose
+        self._is_init = False
+
+    def _init_alpha(self, labels):
+        """Auto-compute alpha based on prevalence if not provided."""
+        if self.alpha is None:
+            n_pos = np.sum(labels > 0.5)
+            n_total = len(labels)
+            if n_total > 0:
+                # Standard inverse frequency
+                self.alpha = 1.0 - (n_pos / n_total)
+            else:
+                self.alpha = 0.5
+
+        # Clamp alpha for safety
+        self.alpha = np.clip(self.alpha, 0.05, 0.95)
+        self._is_init = True
+
     def __call__(self, preds, dtrain):
         """
         Args:
             preds: Raw predictions (logits) from XGBoost
             dtrain: xgb.DMatrix with labels
-        
+
         Returns:
             grad, hess: Gradient and hessian arrays
         """
@@ -241,39 +268,52 @@ class XGBFocalLoss:
             labels = dtrain.get_label()
         else:
             labels = dtrain
-        
-        # Convert logits to probabilities (standardized clipping)
+
+        # Lazy init alpha
+        if not self._is_init:
+            self._init_alpha(labels)
+
+        # 1. Label Smoothing
+        y_smooth = labels * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        # 2. Robust Sigmoid (preds are logits)
+        # Using 1/(1+exp(-x))
         p = 1.0 / (1.0 + np.exp(-preds))
-        p = np.clip(p, 1e-9, 1 - 1e-9)
-        
-        # Safe log operations
-        log_p = np.log(p + 1e-12)
-        log_1mp = np.log(1 - p + 1e-12)
-        
-        # Focal loss terms
-        term_pos = np.power(1 - p, self.gamma)
-        term_neg = np.power(p, self.gamma)
-        
-        # Gradient
-        # NOTE: We negate the derived gradient based on empirical testing (AUC 0.86 vs 0.13)
-        # This suggests either a derivation sign error or XGBoost expecting descent direction.
-        grad_raw = np.where(
-            labels == 1,
-            -self.alpha * term_pos * (1 - p - self.gamma * p * log_p),
-            (1 - self.alpha) * term_neg * (p - self.gamma * (1 - p) * log_1mp)
-        )
-        grad = -grad_raw
-        
-        # Hessian approximation (Binary Cross Entropy Hessian)
-        # This guarantees positive curvature and stability avoiding negative non-convex regions
-        hess = p * (1.0 - p)
-        
-        # CRITICAL: Gradient clipping (was missing!)
-        grad = np.clip(grad, -10.0, 10.0)
-        
-        # Hessian stability
+        p = np.clip(p, 1e-7, 1 - 1e-7)
+
+        # 3. Vectorized Asymmetric Gamma
+        gamma_arr = np.where(labels > 0.5, self.gamma_pos, self.gamma_neg)
+
+        # 4. Focal Weights with Capping
+        # For pos: (1-p)^g | For neg: p^g
+        focal_weight = np.where(labels > 0.5, (1 - p), p) ** gamma_arr
+        focal_weight = np.minimum(focal_weight, self.w_cap)
+
+        # 5. Gradient & Hessian Calculation
+
+        # Standard LogLoss Gradient: (p - y)
+        grad_bce = p - y_smooth
+
+        # Focal Gradient
+        alpha_factor = np.where(labels > 0.5, self.alpha, (1 - self.alpha))
+        grad_focal = alpha_factor * focal_weight * grad_bce
+
+        # Standard LogLoss Hessian: p * (1-p)
+        hess_bce = p * (1 - p)
+
+        # Focal Hessian
+        hess_focal = alpha_factor * focal_weight * hess_bce
+
+        # 6. Mixing
+        grad = self.mix * grad_focal + (1 - self.mix) * grad_bce
+        hess = self.mix * hess_focal + (1 - self.mix) * hess_bce
+
+        # 7. Clipping & Safety
+        if self.grad_clip:
+            grad = np.clip(grad, -self.grad_clip, self.grad_clip)
+
         hess = np.maximum(hess, 1e-6)
-        
+
         return grad, hess
 
 
@@ -507,7 +547,7 @@ def _quick_5model_race(
     
     # --- Model 3: XGBoost Standard ---
     try:
-        focal_xgb = XGBFocalLoss(gamma=2.0, alpha=0.25)
+        focal_xgb = XGBFocalLoss(gamma_pos=2.0, gamma_neg=5.0, alpha=0.25)
         
         model_xgb = xgb.XGBClassifier(
             n_estimators=400,
@@ -3364,9 +3404,9 @@ class LabelBasedLayer2:
             if winning_model_type == 'lgbm':
                 # LGBM objective wrapped in function
                 def objective(trial):
-                    focal_alpha = trial.suggest_float('focal_alpha', 0.4, 1.0)
-                    gamma_ratio = trial.suggest_float('gamma_ratio', 0.5, 3.0) # Tweaked via ratio
-                    focal_gamma = gamma_ratio / focal_alpha # Inverse relationship: higher alpha -> lower gamma
+                    focal_alpha = trial.suggest_float('focal_alpha', 0.1, 0.9)
+                    gamma_pos = trial.suggest_float('gamma_pos', 0.0, 5.0)
+                    gamma_neg = trial.suggest_float('gamma_neg', 0.0, 5.0)
                     num_leaves = trial.suggest_int('num_leaves', 127, 511)
                     n_estimators = trial.suggest_int('n_estimators', 1000, 2000)
                     
@@ -3389,7 +3429,7 @@ class LabelBasedLayer2:
                     val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
 
                     # Focal Loss
-                    focal_obj = RobustFocalLoss(gamma_pos=focal_gamma, gamma_neg=focal_gamma * 2.5, alpha=focal_alpha, verbose=False)
+                    focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=focal_alpha, verbose=False)
                     params['objective'] = focal_obj
 
                     # Callback for pruning - using PR-AUC (average_precision) for pruning
@@ -3415,9 +3455,9 @@ class LabelBasedLayer2:
             elif winning_model_type == 'xgb':
                 # XGBoost HPO objective
                 def objective(trial):
-                    focal_alpha = trial.suggest_float('focal_alpha', 0.4, 1.0)
-                    gamma_ratio = trial.suggest_float('gamma_ratio', 0.5, 3.0)
-                    focal_gamma = gamma_ratio / focal_alpha
+                    focal_alpha = trial.suggest_float('focal_alpha', 0.1, 0.9)
+                    gamma_pos = trial.suggest_float('gamma_pos', 0.0, 5.0)
+                    gamma_neg = trial.suggest_float('gamma_neg', 0.0, 5.0)
                     n_estimators = trial.suggest_int('n_estimators', 200, 800)
                     max_depth = trial.suggest_int('max_depth', 4, 8)
                     learning_rate = trial.suggest_float('learning_rate', 0.01, 0.05)
@@ -3429,7 +3469,7 @@ class LabelBasedLayer2:
                     if len(np.unique(y_tr)) < 2:
                         return 10.0
 
-                    focal_obj = XGBFocalLoss(gamma=focal_gamma, alpha=focal_alpha)
+                    focal_obj = XGBFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=focal_alpha)
 
                     model = xgb.XGBClassifier(
                         n_estimators=n_estimators,
@@ -4507,7 +4547,8 @@ class LabelBasedLayer2:
                 tuned_params = getattr(g, 'model_params', None)
 
                 # Default Focal Loss params (Hunter Mode: Favor Positives)
-                f_gamma = 0.5   # Reduced from 0.75 (Less aggressive focusing)
+                gamma_pos = 0.5
+                gamma_neg = 1.25 # Derived from 2.5 * 0.5 default logic
                 f_alpha = 0.65  # Increased from 0.25 (Favor positives > 50%)
                 
                 # Determine model type
@@ -4515,8 +4556,16 @@ class LabelBasedLayer2:
                 if isinstance(tuned_params, dict) and tuned_params:
                     model_type = tuned_params.get('model_type', 'lgbm')
                     # Extract Focal params if present
-                    if 'focal_gamma' in tuned_params:
-                        f_gamma = float(tuned_params['focal_gamma'])
+                    if 'gamma_pos' in tuned_params:
+                        gamma_pos = float(tuned_params['gamma_pos'])
+                    elif 'focal_gamma' in tuned_params: # Fallback/Legacy
+                         gamma_pos = float(tuned_params['focal_gamma'])
+
+                    if 'gamma_neg' in tuned_params:
+                        gamma_neg = float(tuned_params['gamma_neg'])
+                    elif 'focal_gamma' in tuned_params: # Fallback/Legacy
+                         gamma_neg = float(tuned_params['focal_gamma']) * 2.5
+
                     if 'focal_alpha' in tuned_params:
                         f_alpha = float(tuned_params['focal_alpha'])
 
@@ -4534,7 +4583,7 @@ class LabelBasedLayer2:
                     # Ensure n_estimators is integer
                     n_estimators = int(params.get('n_estimators', 500))
 
-                    focal_obj = RobustFocalLoss(gamma_pos=f_gamma, gamma_neg=f_gamma * 2.5, alpha=f_alpha)
+                    focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha)
                     
                     # Helper wrapper for objective compatibility with LGBMClassifier
                     def lgbm_focal_obj(y_pred, y_true):
@@ -4573,7 +4622,7 @@ class LabelBasedLayer2:
 
                 elif model_type == 'xgb':
                     # XGBoost with Focal Loss
-                    focal_obj = XGBFocalLoss(gamma=f_gamma, alpha=f_alpha)
+                    focal_obj = XGBFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha)
                     
                     model_xgb = xgb.XGBClassifier(
                         n_estimators=tuned_params.get('n_estimators', 500) if tuned_params else 500,

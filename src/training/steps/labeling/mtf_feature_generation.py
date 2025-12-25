@@ -652,12 +652,10 @@ def create_meta_features(
     features['volatility_1h_agg'] = _align_to_features(close_1h.pct_change().rolling(16).std(), n_features) if use_kalman else close_1h.pct_change().rolling(16).std().to_numpy()
 
     # 1H RSI Proxy
-    rsi_1h = compute_rsi(close_1h, 14)
-    features['rsi_1h'] = _align_to_features(rsi_1h, n_features) if use_kalman else rsi_1h.to_numpy()
+    # Removed specific 1H RSI to rely on MTF loop
 
     # 1H BB Proxy
-    _, _, _, bb_width_1h = compute_bollinger_bands(close_1h, 20, 2.0)
-    features['bb_width_1h'] = _align_to_features(bb_width_1h, n_features) if use_kalman else bb_width_1h.to_numpy()
+    # Removed specific 1H BB Width to rely on MTF loop
 
     close_4h = df['close'].rolling(16).mean()
     features['returns_4h'] = _align_to_features(close_4h.pct_change(), n_features) if use_kalman else close_4h.pct_change().to_numpy()
@@ -667,11 +665,6 @@ def create_meta_features(
     # 4H RSI Proxy
     rsi_4h = compute_rsi(close_4h, 14)
     features['rsi_4h'] = _align_to_features(rsi_4h, n_features) if use_kalman else rsi_4h.to_numpy()
-
-    # Interaction: RSI Divergence (LTF vs HTF)
-    if 'rsi' in features.columns:
-        features['rsi_1h_div'] = features['rsi'] - features['rsi_1h']
-        features['rsi_4h_div'] = features['rsi'] - features['rsi_4h']
 
     # ===== ROLLING WINDOW FEATURES (FOR TREES) =====
     close_arr_full = _align_to_features(df['close'], n_features) if use_kalman else df['close'].to_numpy()
@@ -800,5 +793,48 @@ def create_meta_features(
             vol_short_sma = df['volume'].rolling(max(1, w//4)).mean()
             vol_trend_w = vol_short_sma / (vol_sma_w + 1e-8)
             features[f'volume_trend_w{w}'] = _align_to_features(vol_trend_w, n_features) if use_kalman else vol_trend_w.to_numpy()
+
+            # CMF (MTF)
+            cmf_w = compute_cmf(df['high'], df['low'], df['close'], df['volume'], w)
+            features[f'cmf_w{w}'] = _align_to_features(cmf_w, n_features) if use_kalman else cmf_w.to_numpy()
+
+            # Force Index (MTF)
+            fi_w = compute_force_index(df['close'], df['volume'], w)
+            # Normalize Force Index
+            fi_norm_w = fi_w / (vol_sma_w * df['close'] + 1e-9)
+            features[f'force_index_w{w}'] = _align_to_features(fi_norm_w, n_features) if use_kalman else fi_norm_w.to_numpy()
+
+        # Stochastic (MTF)
+        stoch_k_w, stoch_d_w = compute_stochastic(df['high'], df['low'], df['close'], k_period=w, d_period=max(3, w // 5))
+        features[f'stoch_k_w{w}'] = _align_to_features(stoch_k_w, n_features) if use_kalman else stoch_k_w.to_numpy()
+        features[f'stoch_d_w{w}'] = _align_to_features(stoch_d_w, n_features) if use_kalman else stoch_d_w.to_numpy()
+
+        # CCI (MTF)
+        cci_w = compute_cci(df['high'], df['low'], df['close'], period=w)
+        features[f'cci_w{w}'] = _align_to_features(cci_w, n_features) if use_kalman else cci_w.to_numpy()
+
+        # ADX (MTF)
+        adx_w, plus_di_w, minus_di_w = compute_adx(df['high'], df['low'], df['close'], period=w)
+        features[f'adx_w{w}'] = _align_to_features(adx_w, n_features) if use_kalman else adx_w.to_numpy()
+        features[f'adx_trend_w{w}'] = _align_to_features(plus_di_w - minus_di_w, n_features) if use_kalman else (plus_di_w - minus_di_w).to_numpy()
+
+        # Bollinger Bands (MTF)
+        bb_up_w, bb_mid_w, bb_low_w, bb_width_w = compute_bollinger_bands(df['close'], period=w, num_std=2.0)
+        features[f'bb_width_w{w}'] = _align_to_features(bb_width_w, n_features) if use_kalman else bb_width_w.to_numpy()
+        price_vs_bb_w = (df['close'] - bb_low_w) / (bb_up_w - bb_low_w + 1e-9)
+        features[f'price_vs_bb_w{w}'] = _align_to_features(price_vs_bb_w, n_features) if use_kalman else price_vs_bb_w.to_numpy()
+
+        # Choppiness (MTF)
+        chop_w = compute_choppiness_index(df['high'], df['low'], df['close'], period=w)
+        features[f'choppiness_w{w}'] = _align_to_features(chop_w, n_features) if use_kalman else chop_w.to_numpy()
+
+        # Parkinson Volatility (MTF)
+        park_vol_w = compute_parkinson_volatility(df['high'], df['low'], window=w)
+        features[f'parkinson_volatility_w{w}'] = _align_to_features(park_vol_w, n_features) if use_kalman else park_vol_w.to_numpy()
+
+        # Hurst (MTF) - Only for larger windows to avoid noise
+        if w >= 50:
+            hurst_w = compute_hurst_proxy(df['close'], window=w)
+            features[f'hurst_w{w}'] = _align_to_features(hurst_w, n_features) if use_kalman else hurst_w.to_numpy()
 
     return features

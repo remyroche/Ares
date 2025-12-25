@@ -708,12 +708,6 @@ def create_meta_features(
     features['momentum_1h'] = _align_to_features(df['close'].pct_change(4), n_features) if use_kalman else df['close'].pct_change(4).to_numpy()
     features['volatility_1h_agg'] = _align_to_features(close_1h.pct_change().rolling(16).std(), n_features) if use_kalman else close_1h.pct_change().rolling(16).std().to_numpy()
 
-    # 1H RSI Proxy
-    # Removed specific 1H RSI to rely on MTF loop
-
-    # 1H BB Proxy
-    # Removed specific 1H BB Width to rely on MTF loop
-
     close_4h = df['close'].rolling(16).mean()
     features['returns_4h'] = _align_to_features(close_4h.pct_change(), n_features) if use_kalman else close_4h.pct_change().to_numpy()
     features['momentum_4h'] = _align_to_features(df['close'].pct_change(16), n_features) if use_kalman else df['close'].pct_change(16).to_numpy()
@@ -722,43 +716,6 @@ def create_meta_features(
     # 4H RSI Proxy
     rsi_4h = compute_rsi(close_4h, 14)
     features['rsi_4h'] = _align_to_features(rsi_4h, n_features) if use_kalman else rsi_4h.to_numpy()
-
-    # ===== ROLLING WINDOW FEATURES (FOR TREES) =====
-    close_arr_full = _align_to_features(df['close'], n_features) if use_kalman else df['close'].to_numpy()
-
-    # Extended windows to include 100 for drawdown_100 support
-    for window in [5, 10, 20, 50, 100]:
-        features[f'returns_mean_{window}'] = _align_to_features(returns.rolling(window).mean(), n_features) if use_kalman else returns.rolling(window).mean().to_numpy()
-        features[f'returns_std_{window}'] = _align_to_features(returns.rolling(window).std(), n_features) if use_kalman else returns.rolling(window).std().to_numpy()
-
-        # Use HIGH and LOW for max/min if available, else fall back to close
-        if 'high' in df.columns and 'low' in df.columns:
-            win_high = df['high'].rolling(window).max()
-            win_low = df['low'].rolling(window).min()
-        else:
-            win_high = df['close'].rolling(window).max()
-            win_low = df['close'].rolling(window).min()
-
-        # Close min/max based on Close
-        close_min = df['close'].rolling(window).min()
-        close_max = df['close'].rolling(window).max()
-        features[f'close_min_{window}'] = _align_to_features(close_min, n_features) if use_kalman else close_min.to_numpy()
-        features[f'close_max_{window}'] = _align_to_features(close_max, n_features) if use_kalman else close_max.to_numpy()
-
-        # For drawdown, we usually look at close vs rolling max close
-        rolling_max_close = df['close'].rolling(window).max()
-        drawdown_val = (df['close'] - rolling_max_close) / (rolling_max_close + 1e-8)
-        features[f'drawdown_{window}'] = _align_to_features(drawdown_val, n_features) if use_kalman else drawdown_val.to_numpy()
-
-        # Close range uses high/low extremes
-        close_range = (win_high - win_low) / (df['close'] + 1e-8)
-        features[f'close_range_{window}'] = _align_to_features(close_range, n_features) if use_kalman else close_range.to_numpy()
-
-        # Distance from recent high/low
-        dist_high = (df['close'] - win_high) / (win_high + 1e-8)
-        dist_low = (df['close'] - win_low) / (win_low + 1e-8)
-        features[f'dist_from_recent_high_{window}'] = _align_to_features(dist_high, n_features) if use_kalman else dist_high.to_numpy()
-        features[f'dist_from_recent_low_{window}'] = _align_to_features(dist_low, n_features) if use_kalman else dist_low.to_numpy()
 
     # Kaufman ER (Mandatory feature)
     features['kaufman_efficiency_ratio'] = _align_to_features(get_efficiency_ratio(df['close'], 30), n_features) if use_kalman else get_efficiency_ratio(df['close'], 30).to_numpy()
@@ -769,30 +726,6 @@ def create_meta_features(
         acf_vals.append(log_ret.rolling(20).corr(log_ret.shift(lag)))
     features['acf_mean_lags_1_2_5'] = _align_to_features(pd.concat(acf_vals, axis=1).mean(axis=1), n_features) if use_kalman else pd.concat(acf_vals, axis=1).mean(axis=1).to_numpy()
 
-    # More Interactions
-    if 'volatility_1d' in features.columns and 'momentum_20' in features.columns:
-        features['vol_momentum_interaction'] = features['volatility_1d'] * features['momentum_20']
-
-    if 'volatility_1d' in features.columns:
-        if 'momentum_10' in features.columns:
-            features['momentum_10_div_volatility_1d'] = features['momentum_10'] / (features['volatility_1d'] + 1e-8)
-        if 'momentum_5' in features.columns:
-            features['momentum_5_div_volatility_1d'] = features['momentum_5'] / (features['volatility_1d'] + 1e-8)
-
-    if 'rv_z_short' in features.columns:
-        for col in ['momentum_5', 'momentum_10', 'momentum_20']:
-            if col in features.columns:
-                features[f'{col}_x_rv_z'] = features[col] * features['rv_z_short']
-
-    if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
-        features['atr_momentum'] = features['atr_ratio'] * features['momentum_20']
-
-    if 'volatility_1d' in features.columns:
-        if 'dist_from_recent_high_50' in features.columns:
-            features['high_dist_x_vol'] = features['dist_from_recent_high_50'] * features['volatility_1d']
-        if 'dist_from_recent_low_50' in features.columns:
-            features['low_dist_x_vol'] = features['dist_from_recent_low_50'] * features['volatility_1d']
-
     if include_raw_signals:
         features['signal_strength'] = signals[['rsi', 'ma', 'mom']].abs().sum(axis=1)
         features['signal_consensus'] = signals['consensus'].abs()
@@ -800,7 +733,46 @@ def create_meta_features(
     # ===== MTF LOOP (Enhanced) =====
     # Generate key features on multiple timeframes
     for w in windows:
-        if w == 20: continue # Already have many 20-period features
+        # Removed hard check to skip 20 to ensure all features are generated for all windows
+        # if w == 20: continue
+
+        # ===== BASIC ROLLING FEATURES (Previously in separate loop) =====
+        features[f'returns_mean_{w}'] = _align_to_features(returns.rolling(w).mean(), n_features) if use_kalman else returns.rolling(w).mean().to_numpy()
+        features[f'returns_std_{w}'] = _align_to_features(returns.rolling(w).std(), n_features) if use_kalman else returns.rolling(w).std().to_numpy()
+
+        # Use HIGH and LOW for max/min if available, else fall back to close
+        if 'high' in df.columns and 'low' in df.columns:
+            win_high = df['high'].rolling(w).max()
+            win_low = df['low'].rolling(w).min()
+        else:
+            win_high = df['close'].rolling(w).max()
+            win_low = df['close'].rolling(w).min()
+
+        # Close min/max based on Close
+        close_min = df['close'].rolling(w).min()
+        close_max = df['close'].rolling(w).max()
+        features[f'close_min_{w}'] = _align_to_features(close_min, n_features) if use_kalman else close_min.to_numpy()
+        features[f'close_max_{w}'] = _align_to_features(close_max, n_features) if use_kalman else close_max.to_numpy()
+
+        # For drawdown, we usually look at close vs rolling max close
+        rolling_max_close = df['close'].rolling(w).max()
+        drawdown_val = (df['close'] - rolling_max_close) / (rolling_max_close + 1e-8)
+        features[f'drawdown_{w}'] = _align_to_features(drawdown_val, n_features) if use_kalman else drawdown_val.to_numpy()
+
+        # Close range uses high/low extremes
+        close_range = (win_high - win_low) / (df['close'] + 1e-8)
+        features[f'close_range_{w}'] = _align_to_features(close_range, n_features) if use_kalman else close_range.to_numpy()
+
+        # Distance from recent high/low
+        dist_high = (df['close'] - win_high) / (win_high + 1e-8)
+        dist_low = (df['close'] - win_low) / (win_low + 1e-8)
+        features[f'dist_from_recent_high_{w}'] = _align_to_features(dist_high, n_features) if use_kalman else dist_high.to_numpy()
+        features[f'dist_from_recent_low_{w}'] = _align_to_features(dist_low, n_features) if use_kalman else dist_low.to_numpy()
+
+        # Entropy (MTF)
+        returns_abs_w = returns.abs().rolling(w).mean()
+        returns_entropy_w = -returns_abs_w * np.log(returns_abs_w + 1e-8)
+        features[f'returns_entropy_w{w}'] = _align_to_features(returns_entropy_w, n_features) if use_kalman else returns_entropy_w.to_numpy()
 
         # Volatility
         vol_w = log_ret.rolling(w).std()
@@ -895,6 +867,10 @@ def create_meta_features(
             # Normalize Force Index
             fi_norm_w = fi_w / (vol_sma_w * df['close'] + 1e-9)
             features[f'force_index_w{w}'] = _align_to_features(fi_norm_w, n_features) if use_kalman else fi_norm_w.to_numpy()
+
+            # Volume-Price Correlation (MTF)
+            vol_price_corr_w = returns.rolling(w).corr(df['volume'].pct_change())
+            features[f'vol_price_corr_w{w}'] = _align_to_features(vol_price_corr_w, n_features) if use_kalman else vol_price_corr_w.to_numpy()
 
         # Stochastic (MTF)
         stoch_k_w, stoch_d_w = compute_stochastic(df['high'], df['low'], df['close'], k_period=w, d_period=max(3, w // 5))
@@ -1149,5 +1125,30 @@ def create_meta_features(
 
             # 15. LTF Return / HTF ATR
             features[f'ret_div_htf_atr_w{w}'] = _align_to_features(returns / (atr_htf + 1e-9), n_features) if use_kalman else (returns / (atr_htf + 1e-9)).to_numpy()
+
+    # ===== MORE INTERACTIONS (Moved after loop so dist_from_recent_high_50 is available if 50 in windows) =====
+    if 'volatility_1d' in features.columns and 'momentum_20' in features.columns:
+        features['vol_momentum_interaction'] = features['volatility_1d'] * features['momentum_20']
+
+    if 'volatility_1d' in features.columns:
+        if 'momentum_10' in features.columns:
+            features['momentum_10_div_volatility_1d'] = features['momentum_10'] / (features['volatility_1d'] + 1e-8)
+        if 'momentum_5' in features.columns:
+            features['momentum_5_div_volatility_1d'] = features['momentum_5'] / (features['volatility_1d'] + 1e-8)
+
+    if 'rv_z_short' in features.columns:
+        for col in ['momentum_5', 'momentum_10', 'momentum_20']:
+            if col in features.columns:
+                features[f'{col}_x_rv_z'] = features[col] * features['rv_z_short']
+
+    if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
+        features['atr_momentum'] = features['atr_ratio'] * features['momentum_20']
+
+    if 'volatility_1d' in features.columns:
+        # These will only exist if 50 was in 'windows'
+        if 'dist_from_recent_high_50' in features.columns:
+            features['high_dist_x_vol'] = features['dist_from_recent_high_50'] * features['volatility_1d']
+        if 'dist_from_recent_low_50' in features.columns:
+            features['low_dist_x_vol'] = features['dist_from_recent_low_50'] * features['volatility_1d']
 
     return features

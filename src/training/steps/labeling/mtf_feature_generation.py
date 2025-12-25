@@ -118,6 +118,147 @@ def get_efficiency_ratio(close: pd.Series, window: int = 14) -> pd.Series:
     volatility = close.diff().abs().rolling(window).sum()
     return change / (volatility + 1e-9)
 
+def compute_stochastic(high: pd.Series, low: pd.Series, close: pd.Series, k_period: int = 14, d_period: int = 3) -> Tuple[pd.Series, pd.Series]:
+    """Compute Stochastic Oscillator (%K and %D)."""
+    lowest_low = low.rolling(window=k_period).min()
+    highest_high = high.rolling(window=k_period).max()
+    k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low + 1e-9))
+    d_percent = k_percent.rolling(window=d_period).mean()
+    return k_percent, d_percent
+
+def compute_cci(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 20) -> pd.Series:
+    """Compute Commodity Channel Index (CCI)."""
+    tp = (high + low + close) / 3
+    sma_tp = tp.rolling(window=period).mean()
+    # Mean deviation from the moving average
+    mean_dev = tp.rolling(window=period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
+    cci = (tp - sma_tp) / (0.015 * mean_dev + 1e-9)
+    return cci
+
+def compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute ADX, Plus DI, Minus DI."""
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    plus_dm = plus_dm.where(plus_dm > 0, 0.0)
+    minus_dm = minus_dm.where(minus_dm > 0, 0.0)
+
+    mask_plus = (plus_dm > minus_dm) & (plus_dm > 0)
+    mask_minus = (minus_dm > plus_dm) & (minus_dm > 0)
+
+    plus_dm_final = pd.Series(0.0, index=close.index)
+    minus_dm_final = pd.Series(0.0, index=close.index)
+
+    plus_dm_final[mask_plus] = plus_dm[mask_plus]
+    minus_dm_final[mask_minus] = minus_dm[mask_minus]
+
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr = tr.rolling(period).mean()
+
+    plus_di = 100 * (plus_dm_final.rolling(period).mean() / (atr + 1e-9))
+    minus_di = 100 * (minus_dm_final.rolling(period).mean() / (atr + 1e-9))
+
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)) * 100
+    adx = dx.rolling(period).mean()
+    return adx, plus_di, minus_di
+
+def compute_bollinger_bands(close: pd.Series, period: int = 20, num_std: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Compute Bollinger Bands (Upper, Middle, Lower, Width)."""
+    middle = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    upper = middle + (std * num_std)
+    lower = middle - (std * num_std)
+    width = (upper - lower) / (middle + 1e-9)
+    return upper, middle, lower, width
+
+def compute_choppiness_index(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """Compute Choppiness Index."""
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr_sum = tr.rolling(period).sum()
+    high_max = high.rolling(period).max()
+    low_min = low.rolling(period).min()
+
+    ci = 100 * np.log10(atr_sum / (high_max - low_min + 1e-9)) / np.log10(period)
+    return ci
+
+def compute_cmf(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, period: int = 20) -> pd.Series:
+    """Compute Chaikin Money Flow."""
+    mf_multiplier = ((close - low) - (high - close)) / (high - low + 1e-9)
+    mf_volume = mf_multiplier * volume
+    cmf = mf_volume.rolling(period).sum() / (volume.rolling(period).sum() + 1e-9)
+    return cmf
+
+def compute_force_index(close: pd.Series, volume: pd.Series, period: int = 13) -> pd.Series:
+    """Compute Force Index."""
+    fi = close.diff(1) * volume
+    return fi.ewm(span=period).mean()
+
+def compute_hurst_proxy(close: pd.Series, window: int = 100) -> pd.Series:
+    """Vectorized Hurst Exponent proxy using Rolling R/S analysis."""
+    roll = close.rolling(window)
+    r = roll.max() - roll.min()
+    s = roll.std()
+    rs = r / (s + 1e-9)
+    hurst = np.log(rs + 1e-9) / np.log(window)
+    return hurst
+
+def compute_parkinson_volatility(high: pd.Series, low: pd.Series, window: int = 20) -> pd.Series:
+    """Compute Parkinson Volatility."""
+    log_hl = np.log(high / (low + 1e-9)) ** 2
+    return np.sqrt((1.0 / (4.0 * np.log(2.0))) * log_hl.rolling(window).mean())
+
+def compute_ema_slope(series: pd.Series, window: int = 20) -> pd.Series:
+    """Compute EMA slope (normalized)."""
+    ema = series.ewm(span=window, adjust=False).mean()
+    # Slope as pct change of EMA
+    slope = ema.pct_change()
+    return slope
+
+def compute_donchian_channel(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute Donchian Channel (Upper, Lower, Position)."""
+    upper = high.rolling(window).max()
+    lower = low.rolling(window).min()
+    width = upper - lower
+    # Position: 0 to 1
+    position = (close - lower) / (width + 1e-9)
+    return upper, lower, position
+
+def compute_garman_klass_volatility(open_p: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20) -> pd.Series:
+    """Compute Garman-Klass Volatility."""
+    log_hl = np.log(high / (low + 1e-9)) ** 2
+    log_co = np.log(close / (open_p + 1e-9)) ** 2
+    gk = 0.5 * log_hl - (2 * np.log(2) - 1) * log_co
+    return np.sqrt(gk.rolling(window).mean())
+
+def compute_volume_delta(close: pd.Series, open_p: pd.Series, volume: pd.Series) -> pd.Series:
+    """Compute Volume Delta Proxy."""
+    # 1 if Close > Open (Buy), -1 if Close < Open (Sell)
+    direction = np.sign(close - open_p)
+    # If flat, assume 0 or maintain previous? 0 is safer for proxy.
+    return direction * volume
+
+def compute_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+    """Compute On-Balance Volume (OBV)."""
+    direction = np.sign(close.diff())
+    direction.iloc[0] = 0
+    return (direction * volume).cumsum()
+
+def compute_rolling_zscore(series: pd.Series, window: int = 20) -> pd.Series:
+    """Compute Rolling Z-Score."""
+    roll = series.rolling(window)
+    return (series - roll.mean()) / (roll.std() + 1e-9)
+
+def compute_rolling_percentile(series: pd.Series, window: int = 20) -> pd.Series:
+    """Compute Rolling Percentile (Rank)."""
+    return series.rolling(window).rank(pct=True)
+
 def _align_to_features(arr: Any, n: int) -> np.ndarray:
     """Helper to align 1D array to feature index length."""
     values = np.asarray(arr)
@@ -371,6 +512,59 @@ def create_meta_features(
     returns_entropy_series = -returns_abs * np.log(returns_abs + 1e-8)
     features['returns_entropy'] = _align_to_features(returns_entropy_series, n_features) if use_kalman else returns_entropy_series.to_numpy()
 
+    # Hurst Proxy
+    features['hurst_100'] = _align_to_features(compute_hurst_proxy(df['close'], 100), n_features) if use_kalman else compute_hurst_proxy(df['close'], 100).to_numpy()
+
+    # ===== ADVANCED MOMENTUM =====
+    # Stochastic
+    stoch_k, stoch_d = compute_stochastic(df['high'], df['low'], df['close'])
+    features['stoch_k'] = _align_to_features(stoch_k, n_features) if use_kalman else stoch_k.to_numpy()
+    features['stoch_d'] = _align_to_features(stoch_d, n_features) if use_kalman else stoch_d.to_numpy()
+
+    # CCI
+    features['cci_14'] = _align_to_features(compute_cci(df['high'], df['low'], df['close'], 14), n_features) if use_kalman else compute_cci(df['high'], df['low'], df['close'], 14).to_numpy()
+    features['cci_40'] = _align_to_features(compute_cci(df['high'], df['low'], df['close'], 40), n_features) if use_kalman else compute_cci(df['high'], df['low'], df['close'], 40).to_numpy()
+
+    # ADX
+    adx, plus_di, minus_di = compute_adx(df['high'], df['low'], df['close'], 14)
+    features['adx_14'] = _align_to_features(adx, n_features) if use_kalman else adx.to_numpy()
+    features['plus_di_14'] = _align_to_features(plus_di, n_features) if use_kalman else plus_di.to_numpy()
+    features['minus_di_14'] = _align_to_features(minus_di, n_features) if use_kalman else minus_di.to_numpy()
+    features['adx_trend'] = features['plus_di_14'] - features['minus_di_14'] # Simple trend strength
+
+    # ===== ADVANCED VOLATILITY =====
+    # Bollinger Bands
+    bb_upper, bb_mid, bb_lower, bb_width = compute_bollinger_bands(df['close'], 20, 2.0)
+    features['bb_width'] = _align_to_features(bb_width, n_features) if use_kalman else bb_width.to_numpy()
+    features['price_vs_bb'] = _align_to_features((df['close'] - bb_lower) / (bb_upper - bb_lower + 1e-9), n_features) if use_kalman else ((df['close'] - bb_lower) / (bb_upper - bb_lower + 1e-9)).to_numpy()
+
+    # Choppiness
+    features['choppiness_14'] = _align_to_features(compute_choppiness_index(df['high'], df['low'], df['close'], 14), n_features) if use_kalman else compute_choppiness_index(df['high'], df['low'], df['close'], 14).to_numpy()
+
+    # Parkinson Volatility
+    features['parkinson_volatility_20'] = _align_to_features(compute_parkinson_volatility(df['high'], df['low'], 20), n_features) if use_kalman else compute_parkinson_volatility(df['high'], df['low'], 20).to_numpy()
+
+    # ===== ADVANCED VOLUME =====
+    if volume_available and 'volume' in df.columns:
+        features['cmf_20'] = _align_to_features(compute_cmf(df['high'], df['low'], df['close'], df['volume'], 20), n_features) if use_kalman else compute_cmf(df['high'], df['low'], df['close'], df['volume'], 20).to_numpy()
+        features['force_index_13'] = _align_to_features(compute_force_index(df['close'], df['volume'], 13), n_features) if use_kalman else compute_force_index(df['close'], df['volume'], 13).to_numpy()
+        # Normalized Force Index (by volume MA)
+        fi_norm = features['force_index_13'] / (df['volume'].rolling(20).mean() * df['close'] + 1e-9)
+        features['force_index_norm'] = fi_norm
+
+    # ===== INTERACTION FEATURES =====
+    # Volatility * Momentum
+    if 'volatility_20' in features.columns and 'momentum_20' in features.columns:
+        features['vol_x_mom'] = features['volatility_20'] * features['momentum_20']
+
+    # ADX * Trend
+    if 'adx_14' in features.columns and 'momentum_10' in features.columns:
+        features['adx_x_mom'] = (features['adx_14'] / 100.0) * features['momentum_10']
+
+    # BB Squeeze * Volume
+    if 'bb_width' in features.columns and 'volume_ratio' in features.columns:
+        features['squeeze_x_vol'] = (1.0 / (features['bb_width'] + 1e-9)) * features['volume_ratio']
+
     # ===== TIME-BASED FEATURES =====
     if isinstance(df.index, pd.DatetimeIndex):
         hour_arr = df.index.hour.to_numpy()
@@ -502,10 +696,20 @@ def create_meta_features(
     features['momentum_1h'] = _align_to_features(df['close'].pct_change(4), n_features) if use_kalman else df['close'].pct_change(4).to_numpy()
     features['volatility_1h_agg'] = _align_to_features(close_1h.pct_change().rolling(16).std(), n_features) if use_kalman else close_1h.pct_change().rolling(16).std().to_numpy()
 
+    # 1H RSI Proxy
+    # Removed specific 1H RSI to rely on MTF loop
+
+    # 1H BB Proxy
+    # Removed specific 1H BB Width to rely on MTF loop
+
     close_4h = df['close'].rolling(16).mean()
     features['returns_4h'] = _align_to_features(close_4h.pct_change(), n_features) if use_kalman else close_4h.pct_change().to_numpy()
     features['momentum_4h'] = _align_to_features(df['close'].pct_change(16), n_features) if use_kalman else df['close'].pct_change(16).to_numpy()
     features['volatility_4h_agg'] = _align_to_features(close_4h.pct_change().rolling(16).std(), n_features) if use_kalman else close_4h.pct_change().rolling(16).std().to_numpy()
+
+    # 4H RSI Proxy
+    rsi_4h = compute_rsi(close_4h, 14)
+    features['rsi_4h'] = _align_to_features(rsi_4h, n_features) if use_kalman else rsi_4h.to_numpy()
 
     # ===== ROLLING WINDOW FEATURES (FOR TREES) =====
     close_arr_full = _align_to_features(df['close'], n_features) if use_kalman else df['close'].to_numpy()
@@ -634,5 +838,269 @@ def create_meta_features(
             vol_short_sma = df['volume'].rolling(max(1, w//4)).mean()
             vol_trend_w = vol_short_sma / (vol_sma_w + 1e-8)
             features[f'volume_trend_w{w}'] = _align_to_features(vol_trend_w, n_features) if use_kalman else vol_trend_w.to_numpy()
+
+            # CMF (MTF)
+            cmf_w = compute_cmf(df['high'], df['low'], df['close'], df['volume'], w)
+            features[f'cmf_w{w}'] = _align_to_features(cmf_w, n_features) if use_kalman else cmf_w.to_numpy()
+
+            # Force Index (MTF)
+            fi_w = compute_force_index(df['close'], df['volume'], w)
+            # Normalize Force Index
+            fi_norm_w = fi_w / (vol_sma_w * df['close'] + 1e-9)
+            features[f'force_index_w{w}'] = _align_to_features(fi_norm_w, n_features) if use_kalman else fi_norm_w.to_numpy()
+
+        # Stochastic (MTF)
+        stoch_k_w, stoch_d_w = compute_stochastic(df['high'], df['low'], df['close'], k_period=w, d_period=max(3, w // 5))
+        features[f'stoch_k_w{w}'] = _align_to_features(stoch_k_w, n_features) if use_kalman else stoch_k_w.to_numpy()
+        features[f'stoch_d_w{w}'] = _align_to_features(stoch_d_w, n_features) if use_kalman else stoch_d_w.to_numpy()
+
+        # CCI (MTF)
+        cci_w = compute_cci(df['high'], df['low'], df['close'], period=w)
+        features[f'cci_w{w}'] = _align_to_features(cci_w, n_features) if use_kalman else cci_w.to_numpy()
+
+        # ADX (MTF)
+        adx_w, plus_di_w, minus_di_w = compute_adx(df['high'], df['low'], df['close'], period=w)
+        features[f'adx_w{w}'] = _align_to_features(adx_w, n_features) if use_kalman else adx_w.to_numpy()
+        features[f'adx_trend_w{w}'] = _align_to_features(plus_di_w - minus_di_w, n_features) if use_kalman else (plus_di_w - minus_di_w).to_numpy()
+
+        # Bollinger Bands (MTF)
+        bb_up_w, bb_mid_w, bb_low_w, bb_width_w = compute_bollinger_bands(df['close'], period=w, num_std=2.0)
+        features[f'bb_width_w{w}'] = _align_to_features(bb_width_w, n_features) if use_kalman else bb_width_w.to_numpy()
+        price_vs_bb_w = (df['close'] - bb_low_w) / (bb_up_w - bb_low_w + 1e-9)
+        features[f'price_vs_bb_w{w}'] = _align_to_features(price_vs_bb_w, n_features) if use_kalman else price_vs_bb_w.to_numpy()
+
+        # Choppiness (MTF)
+        chop_w = compute_choppiness_index(df['high'], df['low'], df['close'], period=w)
+        features[f'choppiness_w{w}'] = _align_to_features(chop_w, n_features) if use_kalman else chop_w.to_numpy()
+
+        # Parkinson Volatility (MTF)
+        park_vol_w = compute_parkinson_volatility(df['high'], df['low'], window=w)
+        features[f'parkinson_volatility_w{w}'] = _align_to_features(park_vol_w, n_features) if use_kalman else park_vol_w.to_numpy()
+
+        # Hurst (MTF) - Only for larger windows to avoid noise
+        if w >= 50:
+            hurst_w = compute_hurst_proxy(df['close'], window=w)
+            features[f'hurst_w{w}'] = _align_to_features(hurst_w, n_features) if use_kalman else hurst_w.to_numpy()
+
+        # ==============================================================================
+        # NEW CORE FEATURES (MOMENTUM, VOLUME, VOLATILITY) - Top 50 Core
+        # ==============================================================================
+
+        # Momentum
+        # EMA Slope
+        ema_slope_w = compute_ema_slope(df['close'], window=w)
+        features[f'ema_slope_w{w}'] = _align_to_features(ema_slope_w, n_features) if use_kalman else ema_slope_w.to_numpy()
+
+        # ROC
+        roc_w = df['close'].pct_change(w)
+        features[f'roc_w{w}'] = _align_to_features(roc_w, n_features) if use_kalman else roc_w.to_numpy()
+
+        # Price Acceleration (2nd derivative of price)
+        # Using difference of ROC as proxy for acceleration
+        accel_w = roc_w.diff()
+        features[f'price_accel_w{w}'] = _align_to_features(accel_w, n_features) if use_kalman else accel_w.to_numpy()
+
+        # Donchian Channel
+        donch_up, donch_low, donch_pos = compute_donchian_channel(df['high'], df['low'], df['close'], window=w)
+        features[f'donchian_breakout_dist_w{w}'] = _align_to_features((df['close'] - donch_up).abs(), n_features) if use_kalman else (df['close'] - donch_up).abs().to_numpy()
+        features[f'close_loc_range_w{w}'] = _align_to_features(donch_pos, n_features) if use_kalman else donch_pos.to_numpy()
+
+        # Momentum Percentile
+        mom_rank_w = compute_rolling_percentile(mom_w, window=w)
+        features[f'momentum_rank_w{w}'] = _align_to_features(mom_rank_w, n_features) if use_kalman else mom_rank_w.to_numpy()
+
+        # Z-Scored Returns
+        z_ret_w = compute_rolling_zscore(df['close'].pct_change(), window=w)
+        features[f'return_zscore_w{w}'] = _align_to_features(z_ret_w, n_features) if use_kalman else z_ret_w.to_numpy()
+
+        # Time since swing high/low (Simplified: Time since Donchian High/Low touch)
+        # Note: Implementing precise "time since" in vectorized way without specialized libs is hard.
+        # Approximation: Bars since price >= donch_up.shift(1)
+        # For now skipping complex time-since to avoid performance hit in Python loop.
+
+        # Momentum Decay Rate (ROC / Max ROC in window)
+        max_roc_w = roc_w.rolling(w).max()
+        features[f'momentum_decay_w{w}'] = _align_to_features(roc_w / (max_roc_w + 1e-9), n_features) if use_kalman else (roc_w / (max_roc_w + 1e-9)).to_numpy()
+
+        # Volume
+        if volume_available and 'volume' in df.columns:
+            # Volume Z-Score
+            vol_z_w = compute_rolling_zscore(df['volume'], window=w)
+            features[f'volume_zscore_w{w}'] = _align_to_features(vol_z_w, n_features) if use_kalman else vol_z_w.to_numpy()
+
+            # Volume Delta
+            vol_delta = compute_volume_delta(df['close'], df.get('open', df['close']), df['volume'])
+            # Rolling sum of volume delta
+            vol_delta_w = vol_delta.rolling(w).sum()
+            features[f'volume_delta_w{w}'] = _align_to_features(vol_delta_w, n_features) if use_kalman else vol_delta_w.to_numpy()
+
+            # Volume Acceleration
+            vol_accel_w = df['volume'].pct_change().rolling(w).mean()
+            features[f'volume_accel_w{w}'] = _align_to_features(vol_accel_w, n_features) if use_kalman else vol_accel_w.to_numpy()
+
+            # Relative Volume (already have volume_ratio_w)
+
+            # OBV (on window? OBV is usually cumulative. Maybe OBV ROC?)
+            obv = compute_obv(df['close'], df['volume'])
+            obv_roc_w = obv.pct_change(w)
+            features[f'obv_roc_w{w}'] = _align_to_features(obv_roc_w, n_features) if use_kalman else obv_roc_w.to_numpy()
+
+            # Volume per unit volatility
+            vol_per_vol_w = df['volume'] / (vol_w * df['close'] + 1e-9)
+            features[f'vol_per_vol_w{w}'] = _align_to_features(vol_per_vol_w, n_features) if use_kalman else vol_per_vol_w.to_numpy()
+
+        # Volatility
+        # Realized Volatility (already have volatility_w)
+        # Parkinson
+        # Garman-Klass
+        if 'open' in df.columns:
+            gk_vol_w = compute_garman_klass_volatility(df['open'], df['high'], df['low'], df['close'], window=w)
+            features[f'garman_klass_vol_w{w}'] = _align_to_features(gk_vol_w, n_features) if use_kalman else gk_vol_w.to_numpy()
+
+        # Volatility Z-Score
+        vol_zscore_w = compute_rolling_zscore(vol_w, window=w)
+        features[f'volatility_zscore_w{w}'] = _align_to_features(vol_zscore_w, n_features) if use_kalman else vol_zscore_w.to_numpy()
+
+        # Range / ATR
+        range_atr_w = (df['high'] - df['low']) / (atr_w + 1e-9)
+        features[f'range_div_atr_w{w}'] = _align_to_features(range_atr_w, n_features) if use_kalman else range_atr_w.to_numpy()
+
+        # Volatility of Volume
+        if volume_available:
+            vol_of_vol_w = df['volume'].rolling(w).std() / (df['volume'].rolling(w).mean() + 1e-9)
+            features[f'vol_of_vol_w{w}'] = _align_to_features(vol_of_vol_w, n_features) if use_kalman else vol_of_vol_w.to_numpy()
+
+        # Drawdown Depth (Current price vs Rolling Max)
+        dd_w = (df['close'] / df['close'].rolling(w).max()) - 1.0
+        features[f'drawdown_w{w}'] = _align_to_features(dd_w, n_features) if use_kalman else dd_w.to_numpy()
+
+        # Volatility Compression Ratio (Narrowest Range in W / Average Range)
+        # Proxy: Min TR / ATR
+        min_tr_w = (df['high'] - df['low']).rolling(w).min()
+        features[f'vol_compression_w{w}'] = _align_to_features(min_tr_w / (atr_w + 1e-9), n_features) if use_kalman else (min_tr_w / (atr_w + 1e-9)).to_numpy()
+
+        # ==============================================================================
+        # NEW INTERACTION FEATURES - Top 30
+        # ==============================================================================
+
+        if volume_available and 'volume' in df.columns:
+            # RSI x Volume Z-Score
+            if f'volume_zscore_w{w}' in features.columns:
+                features[f'rsi_x_vol_z_w{w}'] = rsi_w * vol_z_w
+
+            # Momentum x ATR
+            features[f'mom_x_atr_w{w}'] = mom_w * atr_w
+
+            # Trend strength (ADX) x Pullback (Dist from high)
+            # Pullback proxy: 1 - (close / rolling_max) = -drawdown
+            pullback = dd_w.abs()
+            features[f'adx_x_pullback_w{w}'] = adx_w * pullback
+
+            # Volume Delta x Candle Body Ratio
+            # Body Ratio: abs(Close-Open) / (High-Low)
+            body_size = (df['close'] - df.get('open', df['close'])).abs()
+            range_size = df['high'] - df['low']
+            body_ratio = body_size / (range_size + 1e-9)
+            features[f'vol_delta_x_body_w{w}'] = vol_delta_w * body_ratio
+
+            # VWAP Distance x Volatility
+            if 'close_minus_vwap' in features.columns:
+                # Note: vwap in features is generic, using w-specific volatility
+                features[f'vwap_dist_x_vol_w{w}'] = features['close_minus_vwap'] * vol_w
+
+            # ADX x BB Width
+            features[f'adx_x_bbw_w{w}'] = adx_w * bb_width_w
+
+            # EMA Slope x Volume Surge (Vol Ratio)
+            features[f'slope_x_vol_surge_w{w}'] = ema_slope_w * features.get(f'volume_ratio_w{w}', 1.0)
+
+            # ATR x Liquidity (Volume/Range)
+            liquidity_proxy = df['volume'] / (range_size + 1e-9)
+            features[f'atr_x_liq_w{w}'] = atr_w * liquidity_proxy
+
+            # Breakout Size (Return) x Prior Consolidation (Choppiness)
+            # Using Choppiness as consolidation proxy (High Chop = Consolidation)
+            features[f'ret_x_chop_w{w}'] = returns * chop_w
+
+            # Volatility Compression (Low BBW) x Momentum Burst (High Mom)
+            # (1/BBW) * Abs(Mom)
+            features[f'compress_x_burst_w{w}'] = (1.0 / (bb_width_w + 1e-9)) * mom_w.abs()
+
+            # Volume Spike x Resistance Proximity
+            # Resistance proximity: 1 / (Dist from High + epsilon)
+            # Or just use dist from high directly? "Proximity" usually implies closer = higher value.
+            # Using (1 - Dist%)
+            dist_prox = 1.0 - (df['close'] / (df['high'].rolling(w).max() + 1e-9))
+            # Invert so 0 dist = 1, large dist = 0?
+            # Simpler: Vol Ratio * (1 / (1 + Dist%))
+            res_prox = 1.0 / (1.0 + features.get(f'dist_from_recent_high_{w}', 0.0))
+            features[f'vol_spike_x_res_prox_w{w}'] = features.get(f'volume_ratio_w{w}', 1.0) * res_prox
+
+            # Trend Slope x Drawdown
+            features[f'slope_x_dd_w{w}'] = ema_slope_w * dd_w
+
+            # EMA Distance x ATR
+            # EMA Distance (Price vs EMA)
+            ema_dist_val = (df['close'] - df['close'].ewm(span=w).mean()).abs()
+            features[f'ema_dist_x_atr_w{w}'] = ema_dist_val * atr_w
+
+        # ==============================================================================
+        # CROSS-TIMEFRAME FEATURES (Dynamic HTF) - Top 20
+        # ==============================================================================
+        # Define HTF as 4x current window. We approximate this by calculating HTF metrics
+        # on the fly with window = w * 4.
+
+        w_htf = w * 4
+        # Limit max window to avoid excessive nan at start
+        if w_htf <= 600:
+            # 1. HTF EMA Slope vs LTF EMA Slope
+            ema_slope_htf = compute_ema_slope(df['close'], window=w_htf)
+            features[f'slope_div_w{w}_w{w_htf}'] = _align_to_features(ema_slope_w - ema_slope_htf, n_features) if use_kalman else (ema_slope_w - ema_slope_htf).to_numpy()
+
+            # 2. LTF Close / HTF VWAP (Proxy VWAP as SMA of Typical Price for HTF window)
+            tp = (df['high'] + df['low'] + df['close']) / 3
+            if volume_available:
+                # Rolling VWAP approximation
+                vwap_htf = (tp * df['volume']).rolling(w_htf).sum() / (df['volume'].rolling(w_htf).sum() + 1e-9)
+            else:
+                vwap_htf = tp.rolling(w_htf).mean()
+            features[f'close_div_vwap_w{w}_w{w_htf}'] = _align_to_features(df['close'] / (vwap_htf + 1e-9), n_features) if use_kalman else (df['close'] / (vwap_htf + 1e-9)).to_numpy()
+
+            # 3. LTF RSI - HTF RSI
+            rsi_htf = compute_rsi(df['close'], period=w_htf) # Note: RSI period scaling is approximation
+            # Ideally RSI period is fixed (14) but on resampled data.
+            # Here we increase period to simulate HTF smoothing.
+            features[f'rsi_div_w{w}_w{w_htf}'] = _align_to_features(rsi_w - rsi_htf, n_features) if use_kalman else (rsi_w - rsi_htf).to_numpy()
+
+            # 4. LTF ATR / HTF ATR
+            # Calculate HTF ATR (using larger window)
+            tr_htf = pd.concat([df['high'] - df['low'], (df['high'] - df['close'].shift(1)).abs(), (df['low'] - df['close'].shift(1)).abs()], axis=1).max(axis=1)
+            atr_htf = tr_htf.rolling(w_htf).mean()
+            features[f'atr_ratio_w{w}_w{w_htf}'] = _align_to_features(atr_w / (atr_htf + 1e-9), n_features) if use_kalman else (atr_w / (atr_htf + 1e-9)).to_numpy()
+
+            # 5. HTF Trend Direction * LTF Pullback
+            # HTF Trend: Sign of EMA Slope
+            htf_trend_dir = np.sign(ema_slope_htf)
+            features[f'htf_trend_x_pullback_w{w}'] = _align_to_features(htf_trend_dir * pullback, n_features) if use_kalman else (htf_trend_dir * pullback).to_numpy()
+
+            # 7. LTF Breakout above HTF High (Normalized by ATR)
+            htf_high = df['high'].rolling(w_htf).max()
+            features[f'breakout_vs_htf_w{w}'] = _align_to_features((df['close'] - htf_high) / (atr_w + 1e-9), n_features) if use_kalman else ((df['close'] - htf_high) / (atr_w + 1e-9)).to_numpy()
+
+            # 8. HTF BB Width * LTF Return
+            _, _, _, bb_width_htf = compute_bollinger_bands(df['close'], period=w_htf, num_std=2.0)
+            features[f'htf_bbw_x_ret_w{w}'] = _align_to_features(bb_width_htf * returns, n_features) if use_kalman else (bb_width_htf * returns).to_numpy()
+
+            # 9. HTF ADX * LTF Momentum
+            adx_htf, _, _ = compute_adx(df['high'], df['low'], df['close'], period=w_htf)
+            features[f'htf_adx_x_mom_w{w}'] = _align_to_features(adx_htf * mom_w, n_features) if use_kalman else (adx_htf * mom_w).to_numpy()
+
+            # 11. LTF Volume Spike relative to HTF Volume Mean
+            if volume_available:
+                vol_mean_htf = df['volume'].rolling(w_htf).mean()
+                features[f'vol_spike_vs_htf_w{w}'] = _align_to_features(df['volume'] / (vol_mean_htf + 1e-9), n_features) if use_kalman else (df['volume'] / (vol_mean_htf + 1e-9)).to_numpy()
+
+            # 15. LTF Return / HTF ATR
+            features[f'ret_div_htf_atr_w{w}'] = _align_to_features(returns / (atr_htf + 1e-9), n_features) if use_kalman else (returns / (atr_htf + 1e-9)).to_numpy()
 
     return features

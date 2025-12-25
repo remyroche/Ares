@@ -349,9 +349,9 @@ def create_meta_features(
     df_local['sma_slow'] = df_local['close'].rolling(30).mean()
     df_local['momentum'] = df_local['close'].pct_change(10)
 
-    # New: Add Momentum 30 (Missing from original but required)
+    # New: Add Momentum 30 (Mandatory feature)
     df_local['momentum_30'] = df_local['close'].pct_change(30)
-    features['momentum_30'] = df_local['momentum_30'].to_numpy()
+    features['momentum_30'] = _align_to_features(df_local['momentum_30'], n_features)
 
     if use_kalman:
         # Kalman-filtered trend
@@ -414,8 +414,20 @@ def create_meta_features(
     sma20 = df['close'].rolling(20).mean()
     price_vs_sma20_series = (df['close'] - sma20) / (sma20 + 1e-8)
 
-    high_low = df['high'] - df['low']
-    atr_14_series = high_low.rolling(14).mean()
+    # TRUE RANGE Calculation
+    if 'high' in df.columns and 'low' in df.columns:
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    else:
+        true_range = (df['close'] - df['close'].shift(1)).abs()
+
+    # ATR 14 (Mandatory feature)
+    atr_14_series = true_range.rolling(14).mean()
 
     if use_kalman:
         features['sma_slope'] = _align_to_features(sma_slope_series, n_features)
@@ -428,7 +440,7 @@ def create_meta_features(
 
     features['atr_ratio'] = features['atr_14'] / (close_arr + 1e-8)
 
-    # New: Rolling Sharpe (50) - Missing from original
+    # Rolling Sharpe (50) - Mandatory Feature
     roll_mean_50 = returns.rolling(50).mean()
     roll_std_50 = returns.rolling(50).std()
     rolling_sharpe_series = (roll_mean_50 / (roll_std_50 + 1e-9)).fillna(0)
@@ -714,25 +726,42 @@ def create_meta_features(
     # ===== ROLLING WINDOW FEATURES (FOR TREES) =====
     close_arr_full = _align_to_features(df['close'], n_features) if use_kalman else df['close'].to_numpy()
 
-    for window in [5, 10, 20, 50]:
+    # Extended windows to include 100 for drawdown_100 support
+    for window in [5, 10, 20, 50, 100]:
         features[f'returns_mean_{window}'] = _align_to_features(returns.rolling(window).mean(), n_features) if use_kalman else returns.rolling(window).mean().to_numpy()
         features[f'returns_std_{window}'] = _align_to_features(returns.rolling(window).std(), n_features) if use_kalman else returns.rolling(window).std().to_numpy()
 
+        # Use HIGH and LOW for max/min if available, else fall back to close
+        if 'high' in df.columns and 'low' in df.columns:
+            win_high = df['high'].rolling(window).max()
+            win_low = df['low'].rolling(window).min()
+        else:
+            win_high = df['close'].rolling(window).max()
+            win_low = df['close'].rolling(window).min()
+
+        # Close min/max based on Close
         close_min = df['close'].rolling(window).min()
         close_max = df['close'].rolling(window).max()
         features[f'close_min_{window}'] = _align_to_features(close_min, n_features) if use_kalman else close_min.to_numpy()
         features[f'close_max_{window}'] = _align_to_features(close_max, n_features) if use_kalman else close_max.to_numpy()
 
-        close_range = (close_max - close_min) / (df['close'] + 1e-8)
+        # For drawdown, we usually look at close vs rolling max close
+        rolling_max_close = df['close'].rolling(window).max()
+        drawdown_val = (df['close'] - rolling_max_close) / (rolling_max_close + 1e-8)
+        features[f'drawdown_{window}'] = _align_to_features(drawdown_val, n_features) if use_kalman else drawdown_val.to_numpy()
+
+        # Close range uses high/low extremes
+        close_range = (win_high - win_low) / (df['close'] + 1e-8)
         features[f'close_range_{window}'] = _align_to_features(close_range, n_features) if use_kalman else close_range.to_numpy()
 
-        dist_high = (df['close'] - close_max) / (df['close'] + 1e-8)
-        dist_low = (df['close'] - close_min) / (df['close'] + 1e-8)
+        # Distance from recent high/low
+        dist_high = (df['close'] - win_high) / (win_high + 1e-8)
+        dist_low = (df['close'] - win_low) / (win_low + 1e-8)
         features[f'dist_from_recent_high_{window}'] = _align_to_features(dist_high, n_features) if use_kalman else dist_high.to_numpy()
         features[f'dist_from_recent_low_{window}'] = _align_to_features(dist_low, n_features) if use_kalman else dist_low.to_numpy()
 
-    # Kaufman ER
-    features['kaufman_efficiency_ratio'] = _align_to_features(get_efficiency_ratio(df['close'], 14), n_features) if use_kalman else get_efficiency_ratio(df['close'], 14).to_numpy()
+    # Kaufman ER (Mandatory feature)
+    features['kaufman_efficiency_ratio'] = _align_to_features(get_efficiency_ratio(df['close'], 30), n_features) if use_kalman else get_efficiency_ratio(df['close'], 30).to_numpy()
 
     # ACF Mean
     acf_vals = []
@@ -777,14 +806,21 @@ def create_meta_features(
         vol_w = log_ret.rolling(w).std()
         features[f'volatility_w{w}'] = _align_to_features(vol_w, n_features) if use_kalman else vol_w.to_numpy()
 
-        # Momentum
+        # Returns Std (for compatibility with return_std_{horizon}b)
+        returns_std_w = returns.rolling(w).std()
+        features[f'returns_std_w{w}'] = _align_to_features(returns_std_w, n_features) if use_kalman else returns_std_w.to_numpy()
+
+        # Momentum / Simple Return
         mom_w = df['close'].pct_change(w)
         if use_kalman:
             kf = KalmanFilter1D(Q=1e-4, R=0.01)
             mom_w_filt, _ = kf.filter_series(mom_w)
             features[f'momentum_w{w}'] = _align_to_features(mom_w_filt, n_features)
+            # Alias for return_{horizon}b
+            features[f'return_w{w}'] = features[f'momentum_w{w}']
         else:
             features[f'momentum_w{w}'] = mom_w.to_numpy()
+            features[f'return_w{w}'] = mom_w.to_numpy()
 
         # RSI
         rsi_w = compute_rsi(df['close'], period=w)
@@ -815,8 +851,19 @@ def create_meta_features(
         features[f'price_vs_sma_w{w}'] = _align_to_features(price_vs_sma_w, n_features) if use_kalman else price_vs_sma_w.to_numpy()
 
         # ATR Ratio (MTF)
-        high_low = df['high'] - df['low']
-        atr_w = high_low.rolling(w).mean()
+        # Use True Range logic if high/low available
+        if 'high' in df.columns and 'low' in df.columns:
+            high_w = df['high']
+            low_w = df['low']
+            close_w = df['close']
+            tr1_w = high_w - low_w
+            tr2_w = (high_w - close_w.shift(1)).abs()
+            tr3_w = (low_w - close_w.shift(1)).abs()
+            tr_w = pd.concat([tr1_w, tr2_w, tr3_w], axis=1).max(axis=1)
+        else:
+            tr_w = (df['close'] - df['close'].shift(1)).abs()
+
+        atr_w = tr_w.rolling(w).mean()
         atr_ratio_w = atr_w / (df['close'] + 1e-8)
         features[f'atr_ratio_w{w}'] = _align_to_features(atr_ratio_w, n_features) if use_kalman else atr_ratio_w.to_numpy()
 

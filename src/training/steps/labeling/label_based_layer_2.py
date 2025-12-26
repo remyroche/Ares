@@ -819,27 +819,42 @@ class LabelBasedLayer2:
 
     def run(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Execute the Layer 2 pipeline with OOF generation.
-
-        This method performs:
-        1. Full Optimization (to get production geometries).
-        2. K-Fold OOF Optimization (to get unbiased analytics/artifacts).
-
-        Args:
-            df: Input DataFrame containing 'close', 'vwap', 'volatility_1d',
-                'trend_regime', 'vol_regime', etc.
-
-        Returns:
-            Dict containing:
-            - 'oof_labels': OOF Weighted Consensus Labels (Series)
-            - 'oof_returns': OOF Weighted Consensus Returns (Series)
-            - 'weights': OOF Weights (Series)
-            - 'individual_geometries': OOF predictions per geometry channel (Dict[str, Series])
-            - 'individual_variances': OOF variance per geometry channel (Dict[str, Series])
-            - 'events_df': Events DataFrame
-            - 'selected_trials': List[Dict] (Production geometries from full fit)
+        Execute the Layer 2 pipeline. Orquestrates independent steps.
         """
         logger.info("Starting Layer 2 Pipeline...")
+
+        # 1. Prepare
+        df, events_df, X_events, global_probe_features = self.prepare_data_and_events(df)
+        if events_df.empty:
+            logger.warning("No events generated in Layer 2. Skipping.")
+            return {}
+
+        # 2. Train (Production)
+        production_geometries, production_selected_features = self.optimize_production_geometries(
+            df, events_df, global_probe_features=global_probe_features
+        )
+
+        # 3. Validate (OOF)
+        oof_results = self.run_oof_analytics(
+            df, events_df, production_geometries,
+            global_probe_features=global_probe_features,
+            production_selected_features=production_selected_features
+        )
+
+        # 4. Report
+        self.generate_reports(df, events_df, production_geometries, oof_results)
+
+        # Combine
+        return {
+            **oof_results,
+            "events_df": events_df,
+            "selected_trials": [asdict(t) for t in production_geometries],
+            "production_selected_features": list(getattr(self, '_production_selected_features', []) or []),
+        }
+
+    def prepare_data_and_events(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, List[str]]:
+        """Step 1: Stateless data preparation and event generation."""
+        logger.info(">>> Layer 2: Step 1 - Prepare Data and Events...")
 
         self._labels_cache = {}
         self._signals_cache = {}
@@ -849,61 +864,38 @@ class LabelBasedLayer2:
         self._current_param_bounds = {}
         self._primary_signals = None
 
-        # Step 0: Preparation
         df = self._validate_inputs(df)
         df = self._precompute_geometry_base_features(df)
         events_df = self._generate_events(df)
+
         if not events_df.empty:
             events_df['family'] = self._assign_barrier_families(events_df)
+            try:
+                X_probe_events = self._build_geometry_independent_event_features(df, events_df)
+                self._global_probe_features = self._select_global_probe_features(X_probe_events)
+            except Exception:
+                self._global_probe_features = []
+                X_probe_events = pd.DataFrame(index=events_df.index)
+        else:
+            X_probe_events = pd.DataFrame()
+
+        return df, events_df, X_probe_events, self._global_probe_features
+
+    def optimize_production_geometries(
+        self,
+        df: pd.DataFrame,
+        events_df: pd.DataFrame,
+        global_probe_features: Optional[List[str]] = None
+    ) -> Tuple[List[GeometryTrial], List[str]]:
+        """Step 2: Full Optimization (Production Artifacts)."""
+        logger.info(">>> Layer 2: Step 2 - Optimize Production Geometries...")
+
+        if global_probe_features:
+            self._global_probe_features = list(global_probe_features)
 
         if events_df.empty:
-            logger.warning("No events generated in Layer 2. Skipping.")
-            return {}
+            return [], []
 
-        try:
-            X_probe_events = self._build_geometry_independent_event_features(df, events_df)
-            self._global_probe_features = self._select_global_probe_features(X_probe_events)
-        except Exception:
-            self._global_probe_features = []
-
-        # Persist selected features
-        try:
-            cfg = getattr(self, "_current_config", {})
-            if not isinstance(cfg, dict):
-                cfg = {}
-        except Exception:
-            cfg = {}
-
-        try:
-            ts = str(cfg.get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
-        except Exception:
-            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-
-        try:
-            symbol = str(cfg.get("symbol", ""))
-        except Exception:
-            symbol = ""
-        try:
-            timeframe = str(cfg.get("timeframe", ""))
-        except Exception:
-            timeframe = ""
-
-        try:
-            outcomes_dir = Path("outcomes")
-            outcomes_dir.mkdir(parents=True, exist_ok=True)
-            if self._global_probe_features:
-                pd.Series(self._global_probe_features, name='feature').to_csv(
-                    outcomes_dir / f"layer2_selected_features_{symbol}_{timeframe}_{ts}.csv",
-                    index=False
-                )
-        except Exception as e:
-            logger.warning(f"Failed to persist layer2 selected features: {e}")
-
-        # ---------------------------------------------------------------------
-        # Part A: Full Optimization (Production Artifacts)
-        # ---------------------------------------------------------------------
-        logger.info(">>> Layer 2: Running Full Optimization (Production)...")
-        # Use selection logic instead of Optuna
         full_results = self._optimize_families(df, events_df)
 
         try:
@@ -934,75 +926,69 @@ class LabelBasedLayer2:
                     g.model_params = best_params
                     logger.info(f"    Found params for {g.uuid}: {best_params}")
 
-        try:
-            by_fam: Dict[str, int] = {}
-            for g in list(production_geometries or []):
-                try:
-                    by_fam[str(getattr(g, 'family', ''))] = by_fam.get(str(getattr(g, 'family', '')), 0) + 1
-                except Exception:
-                    continue
-            logger.info(
-                f"Layer2 Production Geometries: n={int(len(production_geometries or []))}, by_family={by_fam}"
-            )
-        except Exception:
-            pass
-
-        # FAST-FAIL: If no production geometries passed, the pipeline cannot continue
+        # FAST-FAIL
         if not production_geometries:
             logger.error(
                 "Layer2 CRITICAL: Zero production geometries passed all gates! "
-                "Pipeline cannot continue. Consider relaxing gates via config: "
-                "layer2_probe_auc_threshold, layer2_stability_threshold, "
-                "layer2_min_pos_rate, layer2_max_pos_rate."
+                "Pipeline cannot continue. Consider relaxing gates via config."
             )
             raise ValueError(
-                "Layer2 failed: No production geometries passed validation gates. "
-                "Check logs for [GATE_REJECT] messages. Gates: "
-                "pos_rate 1-85%, mean_ret > transaction_cost, stability >=85%, probe AUC >=0.52"
+                "Layer2 failed: No production geometries passed validation gates."
             )
 
-        # Store for reference
         self.selected_geometries = production_geometries
 
+        # Production Feature Selection (Optional)
+        self._run_production_feature_selection(df, events_df, production_geometries)
+
+        return production_geometries, list(getattr(self, '_production_selected_features', []) or [])
+
+    def _run_production_feature_selection(self, df, events_df, production_geometries):
         try:
             self._production_selected_features = []
-        except Exception:
-            pass
-
-        try:
             cfg_prod_fs = getattr(self, "_current_config", {})
-            if not isinstance(cfg_prod_fs, dict):
-                cfg_prod_fs = {}
-        except Exception:
-            cfg_prod_fs = {}
-
-        try:
+            if not isinstance(cfg_prod_fs, dict): cfg_prod_fs = {}
             enable_prod_fs = bool(cfg_prod_fs.get('layer2_production_supervised_feature_selection_enabled', True))
-        except Exception:
-            enable_prod_fs = True
 
-        if enable_prod_fs:
-            try:
+            if enable_prod_fs:
                 X_events_full = self._build_geometry_independent_event_features(df, events_df)
                 y_fs_prod = self._aggregate_geometry_labels_for_feature_selection(df, events_df, production_geometries)
                 w_l1_prod = self._get_target_sample_weight_for_events(df, events_df)
                 prod_feats = self._select_supervised_features_for_events(X_events_full, y_fs_prod, w_l1_prod)
                 if prod_feats:
                     self._production_selected_features = list(prod_feats)
+                    # Persist logic moved to generate_reports if needed, or done here
                     try:
+                        outcomes_dir = Path("outcomes")
+                        outcomes_dir.mkdir(parents=True, exist_ok=True)
+                        ts = getattr(self, "_current_config", {}).get("run_timestamp") or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                        symbol = getattr(self, "_current_config", {}).get("symbol", "")
+                        timeframe = getattr(self, "_current_config", {}).get("timeframe", "")
                         pd.Series(self._production_selected_features, name='feature').to_csv(
                             outcomes_dir / f"layer2_selected_features_supervised_{symbol}_{timeframe}_{ts}.csv",
                             index=False,
                         )
                     except Exception:
                         pass
-            except Exception:
-                pass
+        except Exception:
+            pass
 
-        # ---------------------------------------------------------------------
-        # Part B: OOF Optimization (Analytics Artifacts)
-        # ---------------------------------------------------------------------
-        logger.info(">>> Layer 2: Running OOF Optimization (Analytics)...")
+    def run_oof_analytics(
+        self,
+        df: pd.DataFrame,
+        events_df: pd.DataFrame,
+        production_geometries: Optional[List[GeometryTrial]] = None,
+        global_probe_features: Optional[List[str]] = None,
+        production_selected_features: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Step 3: OOF Optimization (Analytics Artifacts)."""
+        logger.info(">>> Layer 2: Step 3 - Running OOF Optimization (Analytics)...")
+
+        if global_probe_features:
+            self._global_probe_features = list(global_probe_features)
+
+        if production_selected_features:
+            self._production_selected_features = list(production_selected_features)
 
         # Initialize storage for OOF results
         indices = events_df.index
@@ -1013,7 +999,7 @@ class LabelBasedLayer2:
         oof_weights = pd.Series(np.nan, index=indices)
 
         # Storage for Tree Diagnostics
-        all_tree_stats = []
+        self._all_tree_stats = [] # Store on instance for report usage
 
         # Derive families dynamically to avoid hardcoding
         families = ['Trend Continuation', 'Momentum', 'Mean Reversion']
@@ -1211,7 +1197,7 @@ class LabelBasedLayer2:
                     if model is not None:
                         try:
                             stats = self._extract_tree_diagnostics(model)
-                            all_tree_stats.append(stats)
+                            self._all_tree_stats.append(stats)
                         except Exception:
                             pass
 
@@ -1298,11 +1284,187 @@ class LabelBasedLayer2:
                     if uuid in oof_geo_vars:
                         oof_geo_vars[uuid].loc[target_idx] = series.reindex(target_idx)
 
-        # ---------------------------------------------------------------------
-        # Final Packaging
-        # ---------------------------------------------------------------------
         final_geo_preds = {k: v for k, v in oof_geo_preds.items() if v.notna().any()}
         final_geo_vars = {k: v for k, v in oof_geo_vars.items() if v.notna().any()}
+
+        # We need composite weights for Layer 3, and quality weights
+        # Recalculate global quality weights on the final OOF composite return
+        try:
+            c_ret = oof_returns.fillna(0.0)
+            c_vol = df['volatility_1d'].reindex(oof_returns.index).ffill().fillna(0.0)
+            safe_v = np.where(c_vol > 1e-9, c_vol, 1e-9)
+            z = c_ret / safe_v
+            sig = 1.0 / (1.0 + np.exp(-1.0 * z))
+            quality_weights = pd.Series(0.5 + 1.5 * sig, index=oof_returns.index)
+        except Exception:
+            quality_weights = pd.Series(1.0, index=oof_returns.index)
+
+        return {
+            "oof_labels": oof_scores,
+            "oof_returns": oof_returns,
+            "weights": oof_weights,
+            "l2_score": oof_scores,
+            "l2_label": oof_labels,
+            "l2_confidence": oof_confidence,
+            "individual_geometries": final_geo_preds,
+            "individual_variances": final_geo_vars,
+            "quality_weights": quality_weights,
+            "tree_stats": self._all_tree_stats  # Return tree stats for bundle persistence
+        }
+
+    def _calculate_ranking_metrics(self, y_true: pd.Series, y_score: pd.Series) -> Dict[str, float]:
+        """
+        Calculate Lift, Precision, and Recall at various top-k thresholds.
+        """
+        metrics = {}
+        try:
+            y_true_arr = pd.to_numeric(y_true, errors='coerce').fillna(0.0).values
+            y_score_arr = pd.to_numeric(y_score, errors='coerce').fillna(0.0).values
+
+            mask = np.isfinite(y_true_arr) & np.isfinite(y_score_arr)
+            y_true_clean = y_true_arr[mask]
+            y_score_clean = y_score_arr[mask]
+
+            n_total = len(y_true_clean)
+            if n_total < 10:
+                return {}
+
+            n_pos = np.sum(y_true_clean)
+            global_pos_rate = n_pos / n_total if n_total > 0 else 0.0
+
+            # Sort descending by score
+            sorted_indices = np.argsort(y_score_clean)[::-1]
+            y_true_sorted = y_true_clean[sorted_indices]
+
+            # K-levels (deciles + top 5%)
+            k_levels = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
+
+            for k in k_levels:
+                cutoff_idx = int(n_total * k)
+                if cutoff_idx < 1: continue
+
+                # Top K predictions
+                top_k_true = y_true_sorted[:cutoff_idx]
+
+                # Metrics
+                tp = np.sum(top_k_true)
+                prec_at_k = tp / cutoff_idx
+                recall_at_k = tp / n_pos if n_pos > 0 else 0.0
+                lift_at_k = prec_at_k / global_pos_rate if global_pos_rate > 0 else 0.0
+
+                metrics[f"Lift@{int(k*100)}"] = float(lift_at_k)
+                metrics[f"Precision@{int(k*100)}"] = float(prec_at_k)
+                metrics[f"Recall@{int(k*100)}"] = float(recall_at_k)
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate ranking metrics: {e}")
+
+        return metrics
+
+    def _calculate_portfolio_metrics(self, returns: pd.Series) -> Dict[str, float]:
+        """
+        Calculate financial metrics: Cumulative Gain, Max Drawdown.
+        Assumes returns are per-event or period returns.
+        """
+        metrics = {}
+        try:
+            # Drop NaNs
+            r = pd.to_numeric(returns, errors='coerce').dropna()
+            if r.empty:
+                return {}
+
+            # Equity Curve (Simple sum for log returns or cumprod for simple)
+            # Assuming simple returns here
+            equity = (1 + r).cumprod()
+
+            # Total Return / Cumulative Gain
+            total_ret = equity.iloc[-1] - 1.0 if not equity.empty else 0.0
+            metrics["Cumulative_Gain"] = float(total_ret)
+
+            # Max Drawdown
+            running_max = equity.cummax()
+            drawdown = (equity - running_max) / running_max
+            max_dd = drawdown.min()
+            metrics["Max_Drawdown"] = float(max_dd)
+
+            # Win Rate & Expectancy
+            wins = r > 0
+            win_rate = wins.mean()
+            avg_win = r[wins].mean() if wins.any() else 0.0
+            avg_loss = r[~wins].mean() if (~wins).any() else 0.0
+
+            metrics["Win_Rate"] = float(win_rate)
+            metrics["Avg_Win"] = float(avg_win)
+            metrics["Avg_Loss"] = float(avg_loss)
+
+            if abs(avg_loss) > 1e-9:
+                metrics["Profit_Factor"] = float((avg_win * wins.sum()) / (abs(avg_loss) * (~wins).sum()))
+            else:
+                metrics["Profit_Factor"] = float('nan')
+
+            # Sharpe Ratio (Annualized proxy, assuming ~daily periods or scaling manually)
+            # Standard simple Sharpe = mean / std
+            r_std = r.std()
+            if r_std > 1e-9:
+                metrics["Sharpe_Ratio"] = float(r.mean() / r_std)
+            else:
+                metrics["Sharpe_Ratio"] = 0.0
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate portfolio metrics: {e}")
+
+        return metrics
+
+    def generate_reports(self, df, events_df, production_geometries, oof_results):
+        """Step 4: Generate Reports."""
+        logger.info(">>> Layer 2: Step 4 - Generate Reports...")
+
+        oof_scores = oof_results['l2_score']
+        oof_labels = oof_results['l2_label']
+        oof_returns = oof_results.get('oof_returns') # May not be present in minimal dict
+        if oof_returns is None and 'l2_returns' in oof_results:
+             oof_returns = oof_results['l2_returns']
+
+        oof_weights = oof_results['weights']
+        final_geo_preds = oof_results['individual_geometries']
+
+        # --- Extended Metrics Calculation ---
+        ranking_metrics = {}
+        portfolio_metrics = {}
+        global_metrics = {}
+
+        # 1. Global (Threshold-Independent)
+        try:
+            valid_mask = oof_labels.notna() & oof_scores.notna()
+            if valid_mask.sum() > 10:
+                y_true = oof_labels[valid_mask]
+                y_score = oof_scores[valid_mask]
+
+                # Check if binary
+                if len(np.unique(y_true)) > 1:
+                    global_metrics["ROC_AUC"] = float(roc_auc_score(y_true, y_score))
+                    global_metrics["PR_AUC"] = float(average_precision_score(y_true, y_score)) # Average Precision
+        except Exception as e:
+            logger.warning(f"Global metrics failed: {e}")
+
+        # 2. Ranking (Threshold-Dependent)
+        if oof_scores is not None and oof_labels is not None:
+            ranking_metrics = self._calculate_ranking_metrics(oof_labels, oof_scores)
+
+        # 3. Financial (Risk-Adjusted)
+        # Calculate returns of the strategy (e.g. taking trades where score > 0.5)
+        if oof_returns is not None and oof_scores is not None:
+            # Filter for traded events (e.g. score > 0.5)
+            # This is a basic proxy for "Business-Centric" outcome of the ensemble
+            traded_mask = oof_scores > 0.5
+            traded_returns = oof_returns[traded_mask]
+            portfolio_metrics = self._calculate_portfolio_metrics(traded_returns)
+
+            # Add Expected Profit (Mean Return of Traded)
+            portfolio_metrics["Expected_Profit_Per_Trade"] = float(traded_returns.mean()) if not traded_returns.empty else 0.0
+
+        # ... logic for reports ...
+        # (Copied from original run method)
 
         try:
             cfg = getattr(self, "_current_config", {})
@@ -1340,10 +1502,9 @@ class LabelBasedLayer2:
         except Exception:
             n_events = 0
 
-        try:
-            extracted_trials_counts = {str(k): int(len(v)) for k, v in (full_results or {}).items()}
-        except Exception:
-            extracted_trials_counts = {}
+        # Note: full_results not available here unless passed.
+        # We can reconstruct counts from production_geometries or skip
+        extracted_trials_counts = {}
 
         try:
             prod_by_family: Dict[str, int] = {}
@@ -1383,6 +1544,11 @@ class LabelBasedLayer2:
             entropy_std = entropy_vals.std()
 
             # 3. Tree Stats
+            # Recovered from oof_results if passed (substep mode) or self._all_tree_stats (monolithic mode)
+            all_tree_stats = oof_results.get('tree_stats')
+            if not all_tree_stats:
+                all_tree_stats = getattr(self, '_all_tree_stats', [])
+
             avg_feats_used = 0.0
             avg_depth = 0.0
             if all_tree_stats:
@@ -1433,7 +1599,26 @@ class LabelBasedLayer2:
                 "- **Diagnosis**:\n",
                 "  - Few features, shallow: Over-regularised\n",
                 "  - Many features, deep: Expressive (desired)\n",
+                "\n### 4. Ranking Quality (Lift & Precision)\n",
             ]
+
+            # Append Ranking Metrics
+            if ranking_metrics:
+                lines.append("| Metric | Value |\n|---|---|\n")
+                for k in sorted(ranking_metrics.keys()):
+                    lines.append(f"| {k} | {ranking_metrics[k]:.4f} |\n")
+
+            lines.append("\n### 5. Financial / Business Metrics (Score > 0.5)\n")
+            if portfolio_metrics:
+                lines.append("| Metric | Value |\n|---|---|\n")
+                for k in sorted(portfolio_metrics.keys()):
+                    lines.append(f"| {k} | {portfolio_metrics[k]:.6f} |\n")
+
+            if global_metrics:
+                lines.append("\n### 6. Global Model Quality\n")
+                for k, v in global_metrics.items():
+                    lines.append(f"- **{k}**: {v:.4f}\n")
+
             md_path.write_text("".join(lines))
         except Exception:
             pass
@@ -1452,6 +1637,11 @@ class LabelBasedLayer2:
                 "oof_nonzero_weight_events": int(oof_weight_nonzero),
                 "oof_geometry_channels": int(n_geo_channels),
             }
+            # Merge new metrics into summary row
+            summary_row.update(ranking_metrics)
+            summary_row.update(portfolio_metrics)
+            summary_row.update(global_metrics)
+
             for fam, cnt in extracted_trials_counts.items():
                 summary_row[f"extracted_trials_{fam}"] = int(cnt)
             for fam, cnt in prod_by_family.items():
@@ -1557,22 +1747,6 @@ class LabelBasedLayer2:
                 )
         except Exception:
             pass
-
-        logger.info("Layer 2 Pipeline Complete.")
-
-        return {
-            "oof_labels": oof_scores,
-            "oof_returns": oof_returns,
-            "weights": oof_weights,
-            "l2_score": oof_scores,
-            "l2_label": oof_labels,
-            "l2_confidence": oof_confidence,
-            "individual_geometries": final_geo_preds,
-            "individual_variances": final_geo_vars,
-            "events_df": events_df,
-            "selected_trials": [asdict(t) for t in production_geometries],
-            "production_selected_features": list(getattr(self, '_production_selected_features', []) or []),
-        }
 
     def _extract_trials_from_study(self, study: optuna.Study) -> List[GeometryTrial]:
         """Extract GeometryTrial objects from study user attrs."""

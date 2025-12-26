@@ -935,6 +935,11 @@ class LabelBasedLayer2:
             if fallback_enabled:
                 production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=False)
 
+        # Enforce Max 10 Geometries
+        if production_geometries and len(production_geometries) > 10:
+            logger.info(f"Capping production geometries to 10 (from {len(production_geometries)})")
+            production_geometries = production_geometries[:10]
+
         # Optimize Model Parameters and Features for Production Geometries
         if production_geometries:
             logger.info(">>> Layer 2: Tuning Model Parameters & Selecting Features for Production Geometries...")
@@ -1165,6 +1170,10 @@ class LabelBasedLayer2:
             fold_geometries = self._select_best_geometries(df_train, events_train, fold_results, require_passed=False)
             if not fold_geometries:
                 continue
+
+            # Enforce Max 10 Geometries (Fold)
+            if len(fold_geometries) > 10:
+                fold_geometries = fold_geometries[:10]
 
             try:
                 by_fam_fold: Dict[str, int] = {}
@@ -3038,7 +3047,8 @@ class LabelBasedLayer2:
 
         for hurdle, w in zip(hurdles, weights):
             excess = mu - hurdle
-            ratio = excess / (downside_risk + 1e-6)
+            # Softened penalty: Add 0.1 floor to risk to prevent explosion and dampen impact
+            ratio = excess / (downside_risk + 0.1)
             scores.append(ratio * w)
 
         # Sum weighted ratios
@@ -3121,7 +3131,13 @@ class LabelBasedLayer2:
 
         # 1. Compute Distance Matrix using Absolute Rolling Correlation on subsamples
         try:
-            avg_abs_corr = self._calculate_absolute_rolling_correlation(X, n_subsamples=5)
+            # Subsample for correlation speedup (Use recent history to preserve time structure)
+            if len(X) > 2000:
+                X_corr = X.iloc[-2000:]
+            else:
+                X_corr = X
+
+            avg_abs_corr = self._calculate_absolute_rolling_correlation(X_corr, n_subsamples=5)
             dist_matrix = 1.0 - avg_abs_corr.values
             dist_matrix = np.clip(dist_matrix, 0.0, 1.0)
             np.fill_diagonal(dist_matrix, 0.0)
@@ -3244,7 +3260,8 @@ class LabelBasedLayer2:
                 ranked_feats = stability_scores.sort_values(ascending=False)
 
                 n_current = len(ranked_feats)
-                target_n = max(min_features, int(n_current * 0.80))
+                # Drop 33% per round (Factor 0.67) to speed up RFE
+                target_n = max(min_features, int(n_current * 0.67))
 
                 if target_n >= n_current:
                     break
@@ -3375,7 +3392,7 @@ class LabelBasedLayer2:
             target_n = 70
 
         # 1. HAFSR Pre-Ranking for Clustering
-        n_splits = 3
+        n_splits = 2 # Reduced from 3 for speed
         tscv = TimeSeriesSplit(n_splits=n_splits)
 
         # We need a base model for scoring

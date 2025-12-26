@@ -459,7 +459,7 @@ def create_meta_features(
     # Pre-calc common series
     returns = df['close'].pct_change()
     log_ret = np.log(df['close']).diff()
-    features['log_ret'] = log_ret
+    features['log_ret'] = _align_to_features(_norm(log_ret, 'log_ret'), n_features)
 
     high = df['high']
     low = df['low']
@@ -766,7 +766,7 @@ def create_meta_features(
 
         # Drawdown Depth (Current price vs Rolling Max)
         dd_w = (df['close'] / df['close'].rolling(w).max()) - 1.0
-        features[f'drawdown_w{w}'] = _align_to_features(_norm(dd_w, f'drawdown_w{w}'), n_features) if use_kalman else _norm(dd_w, f'drawdown_w{w}')
+        features[f'drawdown_w{w}'] = _align_to_features(_norm(dd_w, f'drawdown_w{w}'), n_features)
 
         # Max Adverse Excursion (MAE) Proxy -> Alias to Drawdown
         features[f'max_adverse_excursion_w{w}'] = features[f'drawdown_w{w}']

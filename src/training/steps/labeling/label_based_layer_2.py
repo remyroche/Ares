@@ -36,7 +36,7 @@ from scipy.spatial.distance import euclidean, squareform
 from scipy.cluster.hierarchy import linkage, fcluster
 from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional, Any, Union
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import logging
 import copy
 
@@ -775,6 +775,7 @@ class GeometryTrial:
     raw_metrics: Dict[str, float]
     uuid: str
     model_params: Optional[Dict[str, Any]] = None
+    selected_features: Optional[List[str]] = field(default=None)
 
 class LabelBasedLayer2:
     """
@@ -934,15 +935,56 @@ class LabelBasedLayer2:
             if fallback_enabled:
                 production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=False)
 
-        # Optimize Model Parameters for Production Geometries
+        # Optimize Model Parameters and Features for Production Geometries
         if production_geometries:
-            logger.info(">>> Layer 2: Tuning Model Parameters for Production Geometries...")
+            logger.info(">>> Layer 2: Tuning Model Parameters & Selecting Features for Production Geometries...")
+
+            # Build feature matrix once for selection
+            X_events_full = self._build_geometry_independent_event_features(df, events_df)
+            w_l1_prod = self._get_target_sample_weight_for_events(df, events_df)
+            vol_prod = df['volatility_1d'].reindex(events_df.index).fillna(0.0)
+
             for i, g in enumerate(production_geometries):
-                logger.info(f"    Tuning model for geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
+                logger.info(f"    Processing geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
+
+                # 1. Parameter Tuning
                 best_params = self._tune_geometry_model_params(df, events_df, g)
                 if best_params:
                     g.model_params = best_params
                     logger.info(f"    Found params for {g.uuid}: {best_params}")
+
+                # 2. Per-Geometry Feature Selection
+                try:
+                    cfg_prod_fs = getattr(self, "_current_config", {})
+                    if not isinstance(cfg_prod_fs, dict): cfg_prod_fs = {}
+                    enable_prod_fs = bool(cfg_prod_fs.get('layer2_production_supervised_feature_selection_enabled', True))
+
+                    if enable_prod_fs:
+                        logger.info(f"    Selecting features for {g.uuid}...")
+                        fam = str(getattr(g, 'family', ''))
+                        fam_events = events_df[events_df['family'] == fam]
+
+                        if not fam_events.empty:
+                            lbls, _, _, _, _ = self._compute_dominance_labels(df, fam_events, family=fam, **g.params)
+                            lbls = pd.to_numeric(lbls, errors='coerce').astype(float).reindex(events_df.index) # Align to global index
+
+                            # Filter to valid events for this geometry
+                            valid_idx = lbls.dropna().index
+                            if len(valid_idx) > 50:
+                                y_target = lbls.loc[valid_idx]
+                                X_target = X_events_full.reindex(valid_idx).fillna(0.0)
+                                w_target = w_l1_prod.reindex(valid_idx) if w_l1_prod is not None else None
+                                vol_target = vol_prod.reindex(valid_idx)
+
+                                sel_feats = self._select_supervised_features_for_events(
+                                    X_target, y_target, w_target, volatility_series=vol_target
+                                )
+
+                                if sel_feats:
+                                    g.selected_features = list(sel_feats)
+                                    logger.info(f"    Selected {len(sel_feats)} features for {g.uuid}")
+                except Exception as e:
+                    logger.warning(f"    Feature selection failed for {g.uuid}: {e}")
 
         # FAST-FAIL
         if not production_geometries:
@@ -1176,14 +1218,31 @@ class LabelBasedLayer2:
             except Exception:
                 use_supervised_fs = True
 
+            # Per-Geometry Selection (Fold-Local)
             if use_supervised_fs and X_train_events_full is not None and not getattr(X_train_events_full, 'empty', True):
                 try:
-                    y_fs = self._aggregate_geometry_labels_for_feature_selection(df_train, events_train, standardized_geos)
                     w_l1 = self._get_target_sample_weight_for_events(df_train, events_train)
                     vol_train = df_train['volatility_1d'].reindex(events_train.index).fillna(0.0)
-                    fs_feats = self._select_supervised_features_for_events(X_train_events_full, y_fs, w_l1, volatility_series=vol_train)
-                    if fs_feats:
-                        fold_probe_features = fs_feats
+
+                    for g in standardized_geos:
+                         try:
+                             fam = str(getattr(g, 'family', ''))
+                             fam_events = events_train[events_train['family'] == fam]
+                             if fam_events.empty: continue
+
+                             lbls, _, _, _, _ = self._compute_dominance_labels(df_train, fam_events, family=fam, **g.params)
+                             lbls = pd.to_numeric(lbls, errors='coerce').astype(float).reindex(events_train.index)
+                             valid_idx = lbls.dropna().index
+                             if len(valid_idx) > 50:
+                                 y_t = lbls.loc[valid_idx]
+                                 X_t = X_train_events_full.reindex(valid_idx).fillna(0.0)
+                                 w_t = w_l1.reindex(valid_idx) if w_l1 is not None else None
+                                 v_t = vol_train.reindex(valid_idx)
+                                 sel = self._select_supervised_features_for_events(X_t, y_t, w_t, volatility_series=v_t)
+                                 if sel:
+                                     g.selected_features = list(sel)
+                         except Exception:
+                             pass
                 except Exception:
                     pass
 
@@ -1206,7 +1265,8 @@ class LabelBasedLayer2:
                         df=df_train,
                         X_events=X_train_events,
                         events_df=events_train,
-                        geometries=standardized_geos
+                        geometries=standardized_geos,
+                        X_events_full=X_train_events_full
                     )
                 except Exception:
                     trained_models = None
@@ -5191,7 +5251,8 @@ class LabelBasedLayer2:
         df: pd.DataFrame,
         X_events: pd.DataFrame,
         events_df: pd.DataFrame,
-        geometries: List[GeometryTrial]
+        geometries: List[GeometryTrial],
+        X_events_full: Optional[pd.DataFrame] = None
     ) -> Dict[str, Any]:
         """
         Train simple LGBM models for each geometry on the provided training set
@@ -5204,7 +5265,18 @@ class LabelBasedLayer2:
             try:
                 lbls, _, _, _, _ = self._compute_dominance_labels(df, events_df, family=g.family, **g.params)
                 valid_lbls = lbls.dropna()
-                common_idx = valid_lbls.index.intersection(X_events.index)
+
+                # Determine feature set: Use per-geometry selection if available, else fallback to X_events
+                if getattr(g, 'selected_features', None) and X_events_full is not None:
+                     cols = [c for c in g.selected_features if c in X_events_full.columns]
+                     if cols:
+                         X_base = X_events_full.loc[valid_lbls.index.intersection(X_events_full.index), cols]
+                     else:
+                         X_base = X_events.loc[valid_lbls.index.intersection(X_events.index)]
+                else:
+                     X_base = X_events.loc[valid_lbls.index.intersection(X_events.index)]
+
+                common_idx = X_base.index
                 
                 if len(common_idx) < 20: 
                      models[g.uuid] = None
@@ -5213,7 +5285,7 @@ class LabelBasedLayer2:
                 # Generate specific geometry features
                 geo_features = self._compute_specific_geometry_features(df, common_idx, g.params)
 
-                X_train = X_events.loc[common_idx]
+                X_train = X_base
 
                 # Append geometry features
                 if not geo_features.empty:

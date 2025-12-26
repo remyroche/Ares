@@ -25,7 +25,8 @@ from datetime import datetime
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.calibration import CalibratedClassifierCV
@@ -33,6 +34,7 @@ from scipy.stats import spearmanr, rankdata
 from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
 from scipy.cluster.hierarchy import linkage, fcluster
+from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass, asdict
 import logging
@@ -986,7 +988,8 @@ class LabelBasedLayer2:
                 X_events_full = self._build_geometry_independent_event_features(df, events_df)
                 y_fs_prod = self._aggregate_geometry_labels_for_feature_selection(df, events_df, production_geometries)
                 w_l1_prod = self._get_target_sample_weight_for_events(df, events_df)
-                prod_feats = self._select_supervised_features_for_events(X_events_full, y_fs_prod, w_l1_prod)
+                vol_prod = df['volatility_1d'].reindex(events_df.index).fillna(0.0)
+                prod_feats = self._select_supervised_features_for_events(X_events_full, y_fs_prod, w_l1_prod, volatility_series=vol_prod)
                 if prod_feats:
                     self._production_selected_features = list(prod_feats)
                     try:
@@ -1175,7 +1178,8 @@ class LabelBasedLayer2:
                 try:
                     y_fs = self._aggregate_geometry_labels_for_feature_selection(df_train, events_train, standardized_geos)
                     w_l1 = self._get_target_sample_weight_for_events(df_train, events_train)
-                    fs_feats = self._select_supervised_features_for_events(X_train_events_full, y_fs, w_l1)
+                    vol_train = df_train['volatility_1d'].reindex(events_train.index).fillna(0.0)
+                    fs_feats = self._select_supervised_features_for_events(X_train_events_full, y_fs, w_l1, volatility_series=vol_train)
                     if fs_feats:
                         fold_probe_features = fs_feats
                 except Exception:
@@ -2569,45 +2573,263 @@ class LabelBasedLayer2:
         except Exception:
             return None
 
-    def _calculate_cv_stability_robust(self, fold_importance_list: List[np.ndarray]) -> np.ndarray:
+    def _robust_normalize(self, series: pd.Series) -> pd.Series:
         """
-        Calculates Stability using 'Fold-Normalized Gain'.
-        Prevents 'Regime Bias' (e.g., Bull markets having higher raw Gain)
-        from punishing consistent features.
+        Helper: Log-Robust Normalization.
+        Handles Power Law distributions (Gain) by log-transforming before
+        Robust Scaling (Median/IQR).
         """
-        if not fold_importance_list:
-            return np.array([])
+        # 1. Log-Transform to compress order of magnitude
+        s_log = np.log1p(series)
 
-        n_features = len(fold_importance_list[0])
-        normalized_folds = []
+        # 2. Robust Scaling
+        q1 = s_log.quantile(0.25)
+        q3 = s_log.quantile(0.75)
+        iqr = q3 - q1
+        median = s_log.median()
 
-        # 1. Normalize each fold individually
-        for gain_arr in fold_importance_list:
-            total_gain = np.sum(gain_arr)
+        # Handle zero variance
+        if iqr == 0:
+            iqr = 1.0
 
-            # Avoid division by zero
-            if total_gain <= 1e-9:
-                norm_series = np.zeros_like(gain_arr)
-            else:
-                # Convert to "Percentage of Total Importance"
-                norm_series = gain_arr / total_gain
+        scaled = (s_log - median) / iqr
 
-            normalized_folds.append(norm_series)
+        # 3. Clip negatives (we only care about positive signal magnitude)
+        return scaled.clip(lower=0)
 
-        # 2. Stack (Columns = Folds)
-        # Shape: (n_features, n_folds)
-        folds_matrix = np.vstack(normalized_folds).T
+    def _calculate_uniformity(self, df_trees: pd.DataFrame, feature_names: List[str], model_type='lgb') -> pd.Series:
+        """
+        Calculates 1 - Gini of Gain across trees.
+        (Higher Score = More Uniform/Consistent Contribution)
+        """
+        # Standardize column names
+        if model_type == 'lgb':
+            tree_col, feat_col, gain_col = 'tree_index', 'split_feature', 'split_gain'
+        else: # xgb
+            tree_col, feat_col, gain_col = 'Tree', 'Feature', 'Gain'
 
-        # 3. Calculate Stability on the PERCENTAGES, not raw values
-        mean_share = np.mean(folds_matrix, axis=1)
-        std_share = np.std(folds_matrix, axis=1)
+        if df_trees.empty:
+             return pd.Series(0.0, index=feature_names)
 
-        # 4. Stability Score (Mean / Std)
-        #    Add epsilon to Std to avoid exploding score for constant features
-        epsilon = 1e-6
-        stability_score = mean_share / (std_share + epsilon)
+        # Pivot: Rows=Trees, Cols=Features
+        # Handle duplicate entries if multiple splits on same feature in same tree
+        gain_matrix = df_trees.groupby([tree_col, feat_col])[gain_col].sum().unstack(fill_value=0)
 
-        return stability_score
+        # Vectorized Gini Calculation
+        def vector_gini(array):
+            array = np.sort(array)
+            total = array.sum()
+            if total == 0: return 1.0 # Unused feature = Max Gini (Bad)
+            n = array.shape[0]
+            index = np.arange(1, n + 1)
+            return ((2 * index - n - 1) * array).sum() / (n * total)
+
+        gini_scores = gain_matrix.apply(lambda x: vector_gini(x.values), axis=0)
+
+        # Invert so 1.0 is Best (Uniform)
+        uniformity = 1.0 - gini_scores
+        return uniformity.reindex(feature_names).fillna(0)
+
+    def _calculate_quad_core_score(self, model, feature_names: List[str], decay_rate=0.5) -> pd.Series:
+        """
+        The Master Scoring Function.
+        Auto-detects XGBoost vs LightGBM for optimized Structural Gain calculation.
+        """
+        # --- DETECT MODEL TYPE & SETUP ---
+        is_lgb = hasattr(model, 'booster_')
+
+        try:
+            if is_lgb:
+                booster = model.booster_
+                df = booster.trees_to_dataframe()
+                # Filter leaves (LGBM leaves have split_feature as null or special)
+                df = df[df['split_feature'].notna()]
+
+                # Standardize Columns
+                feat_col = 'split_feature'
+                gain_col = 'split_gain'
+
+                # 1 & 2: Basic Metrics
+                groupby = df.groupby(feat_col)[gain_col]
+                total_gain = groupby.sum()
+                split_count = groupby.count()
+                avg_gain = total_gain / split_count
+
+                # 3: Structural Gain (FAST PATH via node_depth)
+                if 'node_depth' in df.columns:
+                    df['struct_weight'] = decay_rate ** df['node_depth']
+                    df['weighted_gain'] = df[gain_col] * df['struct_weight']
+                    struct_gain = df.groupby(feat_col)['weighted_gain'].sum()
+                else:
+                    struct_gain = total_gain # Fallback
+
+                # 4: Uniformity
+                uniformity = self._calculate_uniformity(df, feature_names, model_type='lgb')
+
+            else: # XGBoost
+                booster = model.get_booster()
+
+                # 1 & 2: Basic Metrics (Native API is faster than DF for these)
+                # get_score returns dict
+                total_gain = pd.Series(booster.get_score(importance_type='total_gain'))
+                avg_gain = pd.Series(booster.get_score(importance_type='gain'))
+
+                # 3: Structural Gain (Vectorized BFS Path)
+                df = booster.trees_to_dataframe()
+
+                # Initialize Depth
+                df['Depth'] = -1
+                root_mask = (df['Node'] == 0)
+                df.loc[root_mask, 'Depth'] = 0
+
+                # Vectorized BFS
+                if 'ID' in df.columns: # XGBoost >= 1.0
+                    current_ids = df.loc[root_mask, 'ID']
+                    current_depth = 0
+                    max_depth = 20
+
+                    while not current_ids.empty and current_depth < max_depth:
+                        parents = df[df['ID'].isin(current_ids)]
+                        non_leaf = parents[parents['Feature'] != 'Leaf']
+                        if non_leaf.empty: break
+
+                        # Get children
+                        children_ids = pd.concat([non_leaf['Yes'], non_leaf['No']]).unique()
+                        if len(children_ids) == 0: break
+
+                        # Update children depth
+                        df.loc[df['ID'].isin(children_ids), 'Depth'] = current_depth + 1
+                        current_ids = pd.Series(children_ids)
+                        current_depth += 1
+
+                # Calc Weighted Gain
+                df = df[df['Depth'] >= 0]
+                df['StructGain'] = df['Gain'] * (decay_rate ** df['Depth'])
+                struct_gain = df.groupby('Feature')['StructGain'].sum()
+
+                # 4: Uniformity
+                uniformity = self._calculate_uniformity(df, feature_names, model_type='xgb')
+
+            # --- NORMALIZE & COMBINE ---
+            # Reindex all to feature_names to handle missing/unused features
+            total_gain = total_gain.reindex(feature_names).fillna(0)
+            avg_gain = avg_gain.reindex(feature_names).fillna(0)
+            struct_gain = struct_gain.reindex(feature_names).fillna(0)
+            uniformity = uniformity.reindex(feature_names).fillna(0)
+
+            # Robust Normalization
+            n_total = self._robust_normalize(total_gain)
+            n_avg = self._robust_normalize(avg_gain)
+            n_struct = self._robust_normalize(struct_gain)
+            n_uni = self._robust_normalize(uniformity)
+
+            # Scale to [0, 1] for Weighted Sum
+            # We combine them into a DF first
+            scores_df = pd.DataFrame({'T': n_total, 'A': n_avg, 'S': n_struct, 'U': n_uni})
+
+            # MinMax Scale columns
+            scaler = MinMaxScaler()
+            scaled = pd.DataFrame(scaler.fit_transform(scores_df),
+                                index=scores_df.index, columns=scores_df.columns)
+
+            # Final Formula
+            final_score = (0.40 * scaled['T'] +
+                        0.25 * scaled['A'] +
+                        0.20 * scaled['S'] +
+                        0.15 * scaled['U'])
+
+            return final_score
+        except Exception as e:
+            logger.warning(f"Quad-Core Score failed: {e}")
+            return pd.Series(0.0, index=feature_names)
+
+    def _calculate_robust_hafsr(self, fold_scores_df: pd.DataFrame, shadow_thresholds=None) -> pd.Series:
+        """
+        Aggregates fold scores into a single stability metric.
+        Uses Downside MAD and Multi-Thresholding against Shadow Feature.
+        """
+        if fold_scores_df.empty:
+            return pd.Series()
+
+        # 1. Central Tendency (Median)
+        mu = fold_scores_df.median(axis=1)
+
+        # 2. Robust Downside (MAD of Negatives)
+        def robust_downside_mad(row):
+            center = row.median()
+            diffs = row - center
+            # Only penalize downside deviations
+            downside = diffs[diffs < 0]
+            if len(downside) == 0: return 1e-6
+            return np.median(np.abs(downside))
+
+        downside_risk = fold_scores_df.apply(robust_downside_mad, axis=1)
+
+        # 3. Multi-Threshold Scoring (Integral)
+        # Compare vs Shadow Feature Distribution
+        if shadow_thresholds is not None and len(shadow_thresholds) > 0:
+            hurdles = np.percentile(shadow_thresholds, [50, 75, 90, 95])
+        else:
+            hurdles = [0.0]
+
+        scores = []
+        # Weight higher hurdles slightly less (or more, depending on conservatism)
+        # Using [0.2, 0.3, 0.3, 0.2] as per snippet
+        if len(hurdles) == 4:
+            weights = [0.2, 0.3, 0.3, 0.2]
+        else:
+            weights = [1.0 / len(hurdles)] * len(hurdles)
+
+        for hurdle, w in zip(hurdles, weights):
+            excess = mu - hurdle
+            ratio = excess / (downside_risk + 1e-6)
+            scores.append(ratio * w)
+
+        # Sum weighted ratios
+        return pd.Series(np.sum(scores, axis=0), index=fold_scores_df.index)
+
+    def _calculate_absolute_rolling_correlation(self, X: pd.DataFrame, n_subsamples: int = 5) -> pd.DataFrame:
+        """
+        Approximates 'Absolute Rolling Correlation' by averaging absolute correlation
+        matrices across N contiguous subsamples.
+        """
+        if X.empty:
+            return pd.DataFrame()
+
+        n_rows = len(X)
+        if n_rows < 50:
+             return X.corr().abs()
+
+        chunk_size = n_rows // n_subsamples
+        if chunk_size < 10:
+             return X.corr().abs()
+
+        corr_sum = pd.DataFrame(0.0, index=X.columns, columns=X.columns)
+        count = 0
+
+        for i in range(n_subsamples):
+            start = i * chunk_size
+            end = start + chunk_size if i < n_subsamples - 1 else n_rows
+
+            chunk = X.iloc[start:end]
+            # Skip if constant columns in chunk
+            if chunk.std().min() < 1e-9:
+                 continue
+
+            # Standard Pearson correlation on the chunk
+            # The prompt asks for "Absolute Rolling Correlation".
+            # Averaging abs(corr) of chunks is a robust proxy.
+            try:
+                corr = chunk.corr().abs().fillna(0.0)
+                corr_sum += corr
+                count += 1
+            except Exception:
+                pass
+
+        if count == 0:
+            return X.corr().abs().fillna(0.0)
+
+        return corr_sum / count
 
     def _cluster_and_deduplicate(
         self,
@@ -2616,43 +2838,34 @@ class LabelBasedLayer2:
         top_n: int = 150
     ) -> List[str]:
         """
-        Cluster features using Spearman correlation and select representatives.
-
-        Algorithm:
-        1. Pre-rank X column-wise (Spearman proxy).
-        2. Compute Pearson correlation on ranks.
-        3. Hierarchical Clustering (Spearman > 0.85 -> Distance < 0.15).
-        4. Select winner(s) per cluster based on feature_scores.
+        Cluster features using Average Absolute Rolling Correlation and select representatives.
         """
         if X.empty:
             return []
 
-        # 1. Pre-rank (Spearman proxy)
-        # Use rankdata on each column
-        X_ranked = X.apply(lambda col: rankdata(col, method='average'), axis=0)
+        # 1. Compute Distance Matrix using Absolute Rolling Correlation on subsamples
+        try:
+            avg_abs_corr = self._calculate_absolute_rolling_correlation(X, n_subsamples=5)
+            dist_matrix = 1.0 - avg_abs_corr.values
+            dist_matrix = np.clip(dist_matrix, 0.0, 1.0)
+            np.fill_diagonal(dist_matrix, 0.0)
+            condensed_dist = squareform(dist_matrix, checks=False)
 
-        # 2. Pearson on ranks (highly optimized)
-        corr_matrix = X_ranked.corr(method='pearson').fillna(0.0)
+            # 2. Hierarchical Clustering
+            Z = linkage(condensed_dist, method='average')
+            cluster_labels = fcluster(Z, t=0.15, criterion='distance')
+        except Exception:
+            # Fallback to simple correlation
+            try:
+                dist_matrix = 1.0 - X.corr().abs().fillna(0.0).values
+                condensed_dist = squareform(np.clip(dist_matrix, 0.0, 1.0), checks=False)
+                Z = linkage(condensed_dist, method='average')
+                cluster_labels = fcluster(Z, t=0.15, criterion='distance')
+            except Exception:
+                # Total fallback
+                return list(X.columns)[:top_n]
 
-        # 3. Hierarchical Clustering
-        # Distance = 1 - Correlation (Spearman is monotonic, assume positive correlation grouping)
-        # We clip to [0, 2] range for distance
-        dist_matrix = 1.0 - corr_matrix.values
-        dist_matrix = np.clip(dist_matrix, 0.0, 2.0)
-
-        # Condensed distance matrix for linkage
-        condensed_dist = squareform(dist_matrix, checks=False)
-
-        # Linkage: Average or Ward? Standard for correlation is usually Average or Complete.
-        # User specified "Spearman > 0.85" which implies a cutoff.
-        Z = linkage(condensed_dist, method='average')
-
-        # Cut tree at distance 0.15 (Cor > 0.85)
-        # criterion='distance'
-        cluster_labels = fcluster(Z, t=0.15, criterion='distance')
-
-        # 4. Select Representatives
-        # Group features by cluster label
+        # 3. Select Representatives based on feature_scores (HAFSR)
         clusters: Dict[int, List[str]] = {}
         features = list(X.columns)
         for i, label in enumerate(cluster_labels):
@@ -2665,27 +2878,17 @@ class LabelBasedLayer2:
                 selected_features.append(cluster_feats[0])
             else:
                 # Multiple features: sort by score descending
-                # Get scores, default to -inf if missing
                 feats_with_scores = [
                     (f, feature_scores.get(f, -float('inf')))
                     for f in cluster_feats
                 ]
-                # Sort desc by score
                 feats_with_scores.sort(key=lambda x: x[1], reverse=True)
 
-                # "The top 150 features (2 winners per cluster ...)"
-                # "The features with highest composite score wins ... (discard others)"
-                # Strategy: Keep top 2 to support diversity if possible, but 1 is strictly "Captain".
-                # Given explicit "discard the other ones" (plural) after "features" (plural?),
-                # but then "2 winners per cluster" in selection summary...
-                # I will keep top 2 if available, as that preserves more signal for MDA.
-
-                # Keep top 2
-                winners = [f for f, s in feats_with_scores[:2]]
+                # Keep top 1 as representative
+                winners = [feats_with_scores[0][0]]
                 selected_features.extend(winners)
 
-        # 5. Global Top N
-        # If we have more than top_n, sort by score and cut
+        # 4. Global Top N
         if len(selected_features) > top_n:
             final_scores = [
                 (f, feature_scores.get(f, -float('inf')))
@@ -2696,147 +2899,93 @@ class LabelBasedLayer2:
 
         return selected_features
 
-    def _rank_features_by_ensemble_importance(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        sample_weight: Optional[np.ndarray] = None,
-        n_splits: int = 5,
-    ) -> Tuple[List[str], np.ndarray]:
+    def _run_titan_rfe(self, base_model, X: pd.DataFrame, y: pd.Series, cv_splits, volatility_series: pd.Series, sample_weight: Optional[np.ndarray] = None, min_features=70) -> List[str]:
         """
-        Rank features using an ensemble of 3 metrics:
-        1. Split Gain Ratio (Gain / Split Freq)
-        2. Regularized Gain Importance (L1/L2 regularized)
-        3. Feature Sharpe Ratio (Fold-Normalized Gain Stability)
+        The Master RFE Loop.
+        1. Injects Shadow Noise.
+        2. Applies Inverse Volatility Weighting.
+        3. Computes Parallel Quad-Core Scores.
+        4. Ranks via HAFSR.
+        5. Geometrically drops bottom 20%.
+        """
+        current_features = list(X.columns)
 
-        Metrics are Gauss-Ranked, clipped, and averaged.
-        """
-        X_num = X.fillna(0.0)
-        y_num = y.astype(int)
-        w_arr = None
+        # Inject Shadow Feature (Gaussian Noise) to serve as the "Zero Baseline"
+        X_working = X.copy()
+        X_working['SHADOW_NOISE'] = np.random.normal(0, 1, size=len(X))
+        current_features.append('SHADOW_NOISE')
+
+        # Prepare sample weights
+        try:
+            vol_vals = volatility_series.reindex(X.index).fillna(0.0).values
+            inv_vol = 1.0 / (vol_vals + 1e-5)
+            # Clip
+            q99 = np.quantile(inv_vol, 0.99)
+            inv_vol = np.clip(inv_vol, 0.0, q99)
+        except Exception:
+            inv_vol = np.ones(len(X))
+
+        final_weights = inv_vol
         if sample_weight is not None:
+             if len(sample_weight) == len(X):
+                 final_weights = sample_weight * inv_vol
+
+        while len(current_features) > min_features:
+            logger.info(f"--- Titan RFE Round: {len(current_features)} features remaining ---")
+
+            def process_fold(tr_idx, val_idx, feats):
+                X_tr = X_working.iloc[tr_idx][feats]
+                y_tr = y.iloc[tr_idx]
+                w_tr = final_weights[tr_idx]
+
+                m = clone(base_model)
+                m.fit(X_tr, y_tr, sample_weight=w_tr)
+
+                # Score (Quad-Core)
+                scores = self._calculate_quad_core_score(m, feats)
+                return scores
+
+            # Execute parallel
             try:
-                w_arr = np.asarray(sample_weight, dtype=float).reshape(-1)
-            except Exception:
-                w_arr = None
-
-        tscv = TimeSeriesSplit(n_splits=n_splits)
-
-        n_features = X_num.shape[1]
-        sum_split_gain_ratio = np.zeros(n_features, dtype=float)
-        sum_reg_gain = np.zeros(n_features, dtype=float)
-
-        # Store gains per fold for Feature Sharpe
-        fold_gains_list = []
-
-        n_used = 0
-
-        # Pre-allocate random generator for efficient permutation
-        rng = np.random.default_rng(self.random_state)
-
-        for tr_idx, te_idx in tscv.split(X_num):
-            X_tr = X_num.iloc[tr_idx]
-            y_tr = y_num.iloc[tr_idx]
-            X_te = X_num.iloc[te_idx]
-            y_te = y_num.iloc[te_idx]
-
-            if y_tr.nunique() < 2 or y_te.nunique() < 2:
-                continue
-
-            # Regularized Model
-            model = lgb.LGBMClassifier(
-                n_estimators=100,
-                max_depth=5,
-                num_leaves=31,
-                learning_rate=0.05,
-                reg_alpha=0.5,     # Stronger L1 for feature selection
-                reg_lambda=0.5,    # Stronger L2
-                min_child_samples=20,
-                random_state=self.random_state,
-                n_jobs=1,
-                verbose=-1,
-                importance_type='gain' # Default for extraction, but we access both
-            )
-
-            fit_kwargs: Dict[str, Any] = {}
-            if w_arr is not None and len(w_arr) == len(X_num):
-                fit_kwargs['sample_weight'] = w_arr[tr_idx]
-
-            try:
-                model.fit(
-                    X_tr, y_tr,
-                    eval_set=[(X_te, y_te)],
-                    callbacks=[lgb.early_stopping(15, verbose=False)],
-                    **fit_kwargs
+                # Use threads as LightGBM is GIL releasing, or simple sequential if n_jobs=1
+                fold_results = Parallel(n_jobs=getattr(self, 'n_jobs', -1), prefer="threads")(
+                    delayed(process_fold)(tr, val, current_features) for tr, val in cv_splits
                 )
 
-                booster = model.booster_
+                # Combine: Rows=Features, Cols=Folds
+                fold_df = pd.concat(fold_results, axis=1)
 
-                # 1. Regularized Gain
-                gain = booster.feature_importance(importance_type='gain').astype(float)
+                # --- STABILITY & SELECTION BLOCK ---
+                if 'SHADOW_NOISE' in fold_df.index:
+                    shadow_dist = fold_df.loc['SHADOW_NOISE'].values
+                    candidates_df = fold_df.drop('SHADOW_NOISE')
+                else:
+                    shadow_dist = [0.0]
+                    candidates_df = fold_df
 
-                # 2. Split Gain Ratio
-                splits = booster.feature_importance(importance_type='split').astype(float)
-                # Avoid div/0, bias slightly to favor splits
-                split_gain_ratio = gain / (splits + 1e-4)
+                stability_scores = self._calculate_robust_hafsr(candidates_df, shadow_thresholds=shadow_dist)
 
-                sum_reg_gain += gain
-                sum_split_gain_ratio += split_gain_ratio
-                fold_gains_list.append(gain)
+                ranked_feats = stability_scores.sort_values(ascending=False)
 
-                n_used += 1
+                n_current = len(ranked_feats)
+                target_n = max(min_features, int(n_current * 0.80))
+
+                keep_feats = ranked_feats.index[:target_n].tolist()
+
+                keep_feats.append('SHADOW_NOISE')
+                current_features = keep_feats
+
+                if not ranked_feats.empty:
+                    top_feat = ranked_feats.index[0]
+                    top_score = ranked_feats.iloc[0]
+                    logger.info(f"   Top: {top_feat} (HAFSR: {top_score:.4f}) | Shadow Max: {np.max(shadow_dist):.4f}")
 
             except Exception as e:
-                continue
+                logger.warning(f"Titan RFE failed in loop: {e}. Stopping RFE.")
+                break
 
-        if n_used <= 0:
-            ranked = list(X_num.columns)
-            return ranked, np.ones(len(ranked), dtype=float)
-
-        # Average
-        avg_reg_gain = sum_reg_gain / n_used
-        avg_split_gain_ratio = sum_split_gain_ratio / n_used
-
-        # 3. Feature Sharpe (Stability)
-        stability_score = self._calculate_cv_stability_robust(fold_gains_list)
-        # Ensure equal length if stability calculation returns weird shape (should correspond to n_features)
-        if len(stability_score) != n_features:
-            stability_score = np.zeros(n_features)
-
-        def _gauss_rank_normalize(v):
-            """Rank-Based Z-Score (Gauss Rank) after log-transformation."""
-            # 1. Log transformation (log1p)
-            v_log = np.log1p(np.maximum(v, 0.0))
-
-            # 2. Rank (average for ties)
-            ranks = rankdata(v_log, method='average')
-
-            # 3. Map to (0, 1) - avoiding 0 and 1 boundaries
-            n = len(ranks)
-            if n <= 1: return np.zeros_like(v)
-            epsilon = 1e-6
-            ranks_norm = (ranks - 0.5) / n
-            ranks_norm = np.clip(ranks_norm, epsilon, 1.0 - epsilon)
-
-            # 4. Inverse Normal CDF
-            z = ndtri(ranks_norm)
-
-            # 5. Clip
-            return np.clip(z, -3.0, 3.0)
-
-        # Normalize using Gauss Rank
-        z_reg = _gauss_rank_normalize(avg_reg_gain)
-        z_sgr = _gauss_rank_normalize(avg_split_gain_ratio)
-        z_stb = _gauss_rank_normalize(stability_score)
-
-        # Final Ensemble Score
-        final_score = (z_reg + z_sgr + z_stb) / 3.0
-
-        # Rank
-        order = np.argsort(final_score)[::-1]
-        ranked_features = [str(X_num.columns[i]) for i in order]
-
-        return ranked_features, final_score
+        final_features = [f for f in current_features if f != 'SHADOW_NOISE']
+        return final_features
 
     def _aggregate_geometry_labels_for_feature_selection(
         self,
@@ -2901,6 +3050,7 @@ class LabelBasedLayer2:
         X_events_full: pd.DataFrame,
         y_target: pd.Series,
         layer1_weight_events: Optional[pd.Series],
+        volatility_series: Optional[pd.Series] = None
     ) -> List[str]:
         if X_events_full is None or getattr(X_events_full, 'empty', True) or y_target is None:
             return []
@@ -2929,37 +3079,96 @@ class LabelBasedLayer2:
             except Exception:
                 w_arr = None
 
+        # Volatility for Inverse Vol Weighting
+        vol_s = None
+        if volatility_series is not None:
+             vol_s = volatility_series.reindex(X_clean.index).fillna(0.0)
+        else:
+             vol_s = pd.Series(1.0, index=X_clean.index)
+
         cfg = getattr(self, '_current_config', {})
         if not isinstance(cfg, dict):
             cfg = {}
 
         try:
-            target_n = int(cfg.get('layer2_supervised_feature_count', cfg.get('layer2_probe_feature_count', 150)))
+            target_n = int(cfg.get('layer2_supervised_feature_count', 70))
         except Exception:
-            target_n = 150
+            target_n = 70
 
+        # 1. HAFSR Pre-Ranking for Clustering
+        n_splits = 3
+        tscv = TimeSeriesSplit(n_splits=n_splits)
+
+        # We need a base model for scoring
+        base_model = lgb.LGBMClassifier(
+            n_estimators=100,
+            learning_rate=0.05,
+            num_leaves=31,
+            reg_alpha=0.2, # L1
+            reg_lambda=0.05, # L2
+            colsample_bytree=0.85,
+            random_state=self.random_state,
+            n_jobs=1,
+            verbose=-1
+        )
+
+        # Calculate initial HAFSR scores to pick cluster winners
+        # Reuse process_fold logic from Titan but just one pass
+        def process_fold_initial(tr_idx, val_idx, feats):
+            X_tr = X_clean.iloc[tr_idx]
+            y_tr = y_clean.iloc[tr_idx]
+
+            # Inv Vol Weights
+            vol_tr = vol_s.iloc[tr_idx]
+            inv_vol = 1.0 / (vol_tr + 1e-5)
+            inv_vol = np.clip(inv_vol, 0.0, np.quantile(inv_vol, 0.99))
+
+            w_tr = inv_vol
+            if w_arr is not None:
+                w_tr = w_arr[tr_idx] * inv_vol
+
+            m = clone(base_model)
+            m.fit(X_tr, y_tr, sample_weight=w_tr)
+            return self._calculate_quad_core_score(m, feats)
+
+        current_features = list(X_clean.columns)
         try:
-            n_splits = int(cfg.get('layer2_supervised_mdi_splits', getattr(self, 'n_splits', 3)))
-        except Exception:
-            n_splits = int(getattr(self, 'n_splits', 3))
-        n_splits = int(max(2, min(n_splits, max(2, int(n_valid // 50)))))
+            fold_results = Parallel(n_jobs=getattr(self, 'n_jobs', -1), prefer="threads")(
+                delayed(process_fold_initial)(tr, val, current_features) for tr, val in tscv.split(X_clean)
+            )
+            fold_df = pd.concat(fold_results, axis=1)
+            hafsr_scores = self._calculate_robust_hafsr(fold_df, shadow_thresholds=None)
+        except Exception as e:
+            logger.warning(f"Initial HAFSR calculation failed: {e}")
+            hafsr_scores = pd.Series(0.0, index=current_features)
 
-        ranked_names, score_array = self._rank_features_by_ensemble_importance(
+        # 2. Cluster and Deduplicate (Using Avg Abs Rolling Corr + HAFSR)
+        # We select ~ 2*target_n to pass to Titan RFE, or just reduce redundancy?
+        # "final selection: use the code below ... until Top 70"
+        # The prompt says "2/ within each cluster: choose the feature... 3/ final selection: Titan"
+        # So Clustering is a filter.
+        # Let's keep 150 features from Clustering, then Titan reduces to 70.
+
+        intermediate_n = max(target_n, 150)
+
+        selected_from_clusters = self._cluster_and_deduplicate(
             X_clean,
-            y_clean.astype(int),
-            sample_weight=w_arr,
-            n_splits=n_splits,
+            hafsr_scores,
+            top_n=int(intermediate_n)
         )
 
-        # Map scores to feature names for clustering
-        feature_scores = pd.Series(score_array, index=X_clean.columns)
-
-        selected = self._cluster_and_deduplicate(
-            X_clean,
-            feature_scores,
-            top_n=int(target_n)
+        # 3. Run Titan RFE
+        final_features = self._run_titan_rfe(
+             base_model,
+             X_clean[selected_from_clusters],
+             y_clean,
+             tscv.split(X_clean),
+             vol_s,
+             sample_weight=w_arr,
+             min_features=target_n
         )
-        return [c for c in selected if c in X_events_full.columns]
+
+        return [c for c in final_features if c in X_events_full.columns]
 
     def _subsample_rows_for_proxy(self, df: pd.DataFrame, max_rows: int, seed: int = 42) -> pd.DataFrame:
         if max_rows <= 0:

@@ -2568,13 +2568,21 @@ class LabelBasedLayer2:
         except Exception:
             return None
 
-    def _rank_features_by_mean_mdi(
+    def _rank_features_by_ensemble_importance(
         self,
         X: pd.DataFrame,
         y: pd.Series,
         sample_weight: Optional[np.ndarray] = None,
         n_splits: int = 5,
     ) -> Tuple[List[str], np.ndarray]:
+        """
+        Rank features using an ensemble of 3 metrics:
+        1. Split Gain Ratio (Gain / Split Freq)
+        2. Regularized Gain Importance (L1/L2 regularized)
+        3. Out-of-Bag (Validation) Gain Estimation (Permutation)
+
+        Metrics are Z-scored, clipped, and averaged.
+        """
         X_num = X.fillna(0.0)
         y_num = y.astype(int)
         w_arr = None
@@ -2585,8 +2593,15 @@ class LabelBasedLayer2:
                 w_arr = None
 
         tscv = TimeSeriesSplit(n_splits=n_splits)
-        importances_sum = np.zeros(X_num.shape[1], dtype=float)
+
+        n_features = X_num.shape[1]
+        sum_split_gain_ratio = np.zeros(n_features, dtype=float)
+        sum_reg_gain = np.zeros(n_features, dtype=float)
+        sum_oob_gain = np.zeros(n_features, dtype=float)
         n_used = 0
+
+        # Pre-allocate random generator for efficient permutation
+        rng = np.random.default_rng(self.random_state)
 
         for tr_idx, te_idx in tscv.split(X_num):
             X_tr = X_num.iloc[tr_idx]
@@ -2597,14 +2612,19 @@ class LabelBasedLayer2:
             if y_tr.nunique() < 2 or y_te.nunique() < 2:
                 continue
 
+            # Regularized Model
             model = lgb.LGBMClassifier(
                 n_estimators=100,
-                max_depth=6,
+                max_depth=5,
                 num_leaves=31,
-                learning_rate=0.1,
+                learning_rate=0.05,
+                reg_alpha=0.5,     # Stronger L1 for feature selection
+                reg_lambda=0.5,    # Stronger L2
+                min_child_samples=20,
                 random_state=self.random_state,
                 n_jobs=1,
                 verbose=-1,
+                importance_type='gain' # Default for extraction, but we access both
             )
 
             fit_kwargs: Dict[str, Any] = {}
@@ -2615,25 +2635,102 @@ class LabelBasedLayer2:
                 model.fit(
                     X_tr, y_tr,
                     eval_set=[(X_te, y_te)],
-                    callbacks=[lgb.early_stopping(10, verbose=False)],
+                    callbacks=[lgb.early_stopping(15, verbose=False)],
                     **fit_kwargs
                 )
-                imp = np.asarray(model.feature_importances_, dtype=float)
-                if imp.shape[0] == importances_sum.shape[0]:
-                    importances_sum += imp
-                    n_used += 1
+
+                booster = model.booster_
+
+                # 1. Regularized Gain
+                gain = booster.feature_importance(importance_type='gain').astype(float)
+
+                # 2. Split Gain Ratio
+                splits = booster.feature_importance(importance_type='split').astype(float)
+                # Avoid div/0, bias slightly to favor splits
+                split_gain_ratio = gain / (splits + 1e-4)
+
+                # 3. Cheap OOB Permutation Gain
+                # Subsample validation set for speed
+                max_oob_rows = 1000
+                if len(X_te) > max_oob_rows:
+                    # Deterministic subsample
+                    sub_idx = rng.choice(len(X_te), size=max_oob_rows, replace=False)
+                    X_te_sub = X_te.iloc[sub_idx].copy()
+                    y_te_sub = y_te.iloc[sub_idx]
+                else:
+                    X_te_sub = X_te.copy()
+                    y_te_sub = y_te
+
+                # Baseline Score
+                base_preds = model.predict_proba(X_te_sub)[:, 1]
+                try:
+                    base_score = roc_auc_score(y_te_sub, base_preds)
+                except Exception:
+                    base_score = 0.5
+
+                oob_imp = np.zeros(n_features, dtype=float)
+
+                # Only permute features with non-zero gain (optimization)
+                active_feats = np.where(gain > 0)[0]
+
+                if len(active_feats) > 0:
+                    for f_idx in active_feats:
+                        # Save column
+                        orig_col = X_te_sub.iloc[:, f_idx].values.copy()
+
+                        # Shuffle
+                        X_te_sub.iloc[:, f_idx] = rng.permutation(orig_col)
+
+                        # Predict
+                        perm_preds = model.predict_proba(X_te_sub)[:, 1]
+                        try:
+                            perm_score = roc_auc_score(y_te_sub, perm_preds)
+                        except Exception:
+                            perm_score = 0.5
+
+                        # Importance = Drop in AUC
+                        # Clip negative importance (if permutation improved score randomly) to 0
+                        imp_val = max(0.0, base_score - perm_score)
+                        oob_imp[f_idx] = imp_val
+
+                        # Restore column
+                        X_te_sub.iloc[:, f_idx] = orig_col
+
+                sum_reg_gain += gain
+                sum_split_gain_ratio += split_gain_ratio
+                sum_oob_gain += oob_imp
+                n_used += 1
+
             except Exception as e:
-                # logger.debug(f"Feature ranking fit failed: {e}")
                 continue
 
         if n_used <= 0:
             ranked = list(X_num.columns)
             return ranked, np.ones(len(ranked), dtype=float)
 
-        mean_imp = importances_sum / float(max(1, n_used))
-        order = np.argsort(mean_imp)[::-1]
+        # Average
+        avg_reg_gain = sum_reg_gain / n_used
+        avg_split_gain_ratio = sum_split_gain_ratio / n_used
+        avg_oob_gain = sum_oob_gain / n_used
+
+        def _zscore_clip(v):
+            if np.std(v) < 1e-9: return np.zeros_like(v)
+            z = (v - np.mean(v)) / np.std(v)
+            return np.clip(z, -3.0, 3.0)
+
+        # Normalize
+        z_reg = _zscore_clip(avg_reg_gain)
+        z_sgr = _zscore_clip(avg_split_gain_ratio)
+        z_oob = _zscore_clip(avg_oob_gain)
+
+        # Final Ensemble Score
+        final_score = (z_reg + z_sgr + z_oob) / 3.0
+
+        # Rank
+        order = np.argsort(final_score)[::-1]
         ranked_features = [str(X_num.columns[i]) for i in order]
-        return ranked_features, mean_imp
+
+        return ranked_features, final_score
 
     def _aggregate_geometry_labels_for_feature_selection(
         self,
@@ -2751,7 +2848,7 @@ class LabelBasedLayer2:
             n_splits = int(getattr(self, 'n_splits', 3))
         n_splits = int(max(2, min(n_splits, max(2, int(n_valid // 50)))))
 
-        ranked, _ = self._rank_features_by_mean_mdi(
+        ranked, _ = self._rank_features_by_ensemble_importance(
             X_clean,
             y_clean.astype(int),
             sample_weight=w_arr,

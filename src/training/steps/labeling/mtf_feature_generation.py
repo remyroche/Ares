@@ -467,19 +467,16 @@ def create_meta_features(
     open_p = df.get('open', close) # Fallback if open missing
     volume = df['volume'] if volume_available and 'volume' in df.columns else pd.Series(1, index=df.index)
 
-    # ===== 1. CANDLE GEOMETRY & MICRO-SENTIMENT =====
+    # ===== 1. CANDLE GEOMETRY & MICRO-SENTIMENT (BASE) =====
+    # Base timeframe calculation
     candle_range = high - low
     upper_shadow = high - pd.concat([open_p, close], axis=1).max(axis=1)
     lower_shadow = pd.concat([open_p, close], axis=1).min(axis=1) - low
     real_body = (close - open_p).abs()
 
-    # Body to Range
     features['body_to_range'] = _align_to_features(_norm(real_body / (candle_range + 1e-9), 'body_to_range'), n_features)
-
-    # Shadow Asymmetry: (Upper - Lower) / Range. Positive = Bearish rejection, Negative = Bullish rejection
     features['shadow_asymmetry'] = _align_to_features(_norm((upper_shadow - lower_shadow) / (candle_range + 1e-9), 'shadow_asymmetry'), n_features)
 
-    # Close Location Value (CLV): ((C - L) - (H - C)) / (H - L) -> range [-1, 1]
     clv = ((close - low) - (high - close)) / (candle_range + 1e-9)
     features['close_location_value'] = _align_to_features(_norm(clv, 'close_location_value'), n_features)
 
@@ -542,6 +539,30 @@ def create_meta_features(
 
     # ===== MTF LOOP =====
     for w in windows:
+        # --- 1. CANDLE GEOMETRY (MTF Virtual Candle) ---
+        # Construct virtual candle for window w
+        # High = Rolling Max, Low = Rolling Min, Close = Close, Open = Open shifted
+        # Open of the virtual candle is the Open of the bar w-1 periods ago
+        win_high = high.rolling(w).max()
+        win_low = low.rolling(w).min()
+        win_open = open_p.shift(w - 1)
+        win_close = close
+
+        win_range = win_high - win_low
+        win_body = (win_close - win_open).abs()
+
+        # Shadows
+        # Upper: High - Max(Open, Close)
+        win_upper = win_high - pd.concat([win_open, win_close], axis=1).max(axis=1)
+        # Lower: Min(Open, Close) - Low
+        win_lower = pd.concat([win_open, win_close], axis=1).min(axis=1) - win_low
+
+        features[f'body_to_range_w{w}'] = _align_to_features(_norm(win_body / (win_range + 1e-9), f'body_to_range_w{w}'), n_features)
+        features[f'shadow_asymmetry_w{w}'] = _align_to_features(_norm((win_upper - win_lower) / (win_range + 1e-9), f'shadow_asymmetry_w{w}'), n_features)
+
+        win_clv = ((win_close - win_low) - (win_high - win_close)) / (win_range + 1e-9)
+        features[f'close_location_value_w{w}'] = _align_to_features(_norm(win_clv, f'close_location_value_w{w}'), n_features)
+
         # --- 2. ADVANCED VOLATILITY ---
         # Yang-Zhang
         yz_vol = compute_yang_zhang_volatility(open_p, high, low, close, window=w)

@@ -980,7 +980,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         events_df = None
         selected_trials = None
 
-        if start_at in ("layer3", "layer4") and not bool(config.get('force_hpo', False)):
+        # Check for Layer 2 substep flag
+        layer2_substep = config.get("layer2_substep")
+        if layer2_substep:
+            start_at = "layer2" # Force context if running substep
+
+        if start_at in ("layer3", "layer4") and not bool(config.get('force_hpo', False)) and not layer2_substep:
             if not layer2_bundle_path.exists():
                 raise FileNotFoundError(
                     f"Missing Layer2 bundle at {layer2_bundle_path}. Run with --labeling-hpo-start-at layer2 first."
@@ -992,6 +997,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l2_returns = l2_bundle["l2_returns"]
             l2_weights = l2_bundle["l2_weights"]
             individual_geos = l2_bundle["individual_geos"]
+            individual_variances = l2_bundle.get("individual_variances")
             events_df = l2_bundle["events_df"]
             selected_trials = l2_bundle.get("selected_trials")
             l2_quality_weights = l2_bundle.get("l2_quality_weights")
@@ -1025,12 +1031,75 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 verbose=True,
                 force_hpo=bool(config.get('force_hpo', False))
             )
-            
-            # Run Layer 2 on training data only
-            layer2_results = layer2.run(train_data)
 
-            # This now returns OOF labels AND Production Geometries
-            l2_output = layer2_results
+            # Granular Execution Paths
+            if layer2_substep == "prepare":
+                tprint_info(">>> Layer 2 Substep: PREPARE")
+                df_prep, events_df, X_events = layer2.prepare_data_and_events(train_data)
+                joblib.dump(
+                    {"df": df_prep, "events_df": events_df, "X_events": X_events},
+                    outcomes_dir / "layer2_prep_bundle.joblib"
+                )
+                tprint_success("Layer 2 Prep Bundle Saved.")
+                return {"success": True}
+
+            elif layer2_substep == "optimize":
+                tprint_info(">>> Layer 2 Substep: OPTIMIZE")
+                try:
+                    prep = joblib.load(outcomes_dir / "layer2_prep_bundle.joblib")
+                except Exception:
+                    raise FileNotFoundError("Missing layer2_prep_bundle.joblib. Run --layer2-substep prepare first.")
+
+                production_geometries = layer2.optimize_production_geometries(prep["df"], prep["events_df"])
+                joblib.dump(production_geometries, outcomes_dir / "layer2_optim_bundle.joblib")
+                tprint_success("Layer 2 Optim Bundle Saved.")
+                return {"success": True}
+
+            elif layer2_substep == "oof":
+                tprint_info(">>> Layer 2 Substep: OOF")
+                try:
+                    prep = joblib.load(outcomes_dir / "layer2_prep_bundle.joblib")
+                    production_geometries = joblib.load(outcomes_dir / "layer2_optim_bundle.joblib")
+                except Exception:
+                    raise FileNotFoundError("Missing prep/optim bundles. Run prepare and optimize first.")
+
+                # Run OOF
+                oof_results = layer2.run_oof_analytics(prep["df"], prep["events_df"], production_geometries)
+
+                # Merge into full output format
+                l2_output = {
+                    **oof_results,
+                    "events_df": prep["events_df"],
+                    "selected_trials": [asdict(t) for t in production_geometries],
+                    "production_selected_features": list(getattr(layer2, '_production_selected_features', []) or []),
+                }
+                # Fall through to standard saving logic (below)
+
+            elif layer2_substep == "report":
+                tprint_info(">>> Layer 2 Substep: REPORT")
+                # Need everything loaded
+                try:
+                    prep = joblib.load(outcomes_dir / "layer2_prep_bundle.joblib")
+                    production_geometries = joblib.load(outcomes_dir / "layer2_optim_bundle.joblib")
+                    l2_output = joblib.load(layer2_bundle_path) # Need OOF results
+                except Exception:
+                    raise FileNotFoundError("Missing artifacts for report generation.")
+
+                # Reconstruct oof_results dict from flat output for generate_reports signature
+                oof_res_reconstructed = {
+                    'l2_score': l2_output.get('l2_score'),
+                    'l2_label': l2_output.get('l2_label'),
+                    'weights': l2_output.get('l2_weights'),
+                    'individual_geometries': l2_output.get('individual_geos'),
+                    'oof_returns': l2_output.get('l2_returns'),
+                }
+                layer2.generate_reports(prep["df"], prep["events_df"], production_geometries, oof_res_reconstructed)
+                tprint_success("Layer 2 Reports Regenerated.")
+                return {"success": True}
+
+            else:
+                # Standard Monolithic Run
+                l2_output = layer2.run(train_data)
 
             # Unpack Layer 2 Artifacts (OOF for Training/Analytics)
             l2_score = l2_output.get('l2_score')
@@ -1135,6 +1204,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 },
                 layer2_bundle_path,
             )
+
+            if layer2_substep == "oof":
+                tprint_success("Layer 2 OOF Bundle Saved.")
+                return {"success": True}
 
             
         # ---------------------------------------------------------

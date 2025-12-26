@@ -446,6 +446,14 @@ Examples:
             're-run HPO. Choices: layer0/layer1/layer2/feature_selection/layer3 (aliases: stage0, kalman, weighting, trading, model, fs, 0-3).'
         )
     )
+
+    parser.add_argument(
+        '--layer2-substep',
+        type=str,
+        default=None,
+        choices=['prepare', 'optimize', 'oof', 'report'],
+        help='Execute a specific independent substep of Layer 2 (Meta-Labeling). Requires valid artifacts from previous substeps.'
+    )
     
     parser.add_argument(
         '--meta-permutation-test',
@@ -939,6 +947,10 @@ async def main():
     # Optional: start multi-stage labeling HPO at a specific stage
     if getattr(args, 'labeling_hpo_start_at', None) is not None:
         config['labeling_hpo_start_at'] = args.labeling_hpo_start_at
+
+    # Optional: execute specific Layer 2 substep
+    if getattr(args, 'layer2_substep', None) is not None:
+        config['layer2_substep'] = args.layer2_substep
 
     # Hard-cap feature selection at ~200 features for full and blank modes
     if args.execution_mode in ("full", "blank"):

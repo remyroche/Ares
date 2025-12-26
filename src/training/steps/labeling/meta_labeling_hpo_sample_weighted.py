@@ -1035,9 +1035,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # Granular Execution Paths
             if layer2_substep == "prepare":
                 tprint_info(">>> Layer 2 Substep: PREPARE")
-                df_prep, events_df, X_events = layer2.prepare_data_and_events(train_data)
+                df_prep, events_df, X_events, global_probe_features = layer2.prepare_data_and_events(train_data)
                 joblib.dump(
-                    {"df": df_prep, "events_df": events_df, "X_events": X_events},
+                    {
+                        "df": df_prep,
+                        "events_df": events_df,
+                        "X_events": X_events,
+                        "global_probe_features": global_probe_features
+                    },
                     outcomes_dir / "layer2_prep_bundle.joblib"
                 )
                 tprint_success("Layer 2 Prep Bundle Saved.")
@@ -1050,8 +1055,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 except Exception:
                     raise FileNotFoundError("Missing layer2_prep_bundle.joblib. Run --layer2-substep prepare first.")
 
-                production_geometries = layer2.optimize_production_geometries(prep["df"], prep["events_df"])
-                joblib.dump(production_geometries, outcomes_dir / "layer2_optim_bundle.joblib")
+                production_geometries, production_selected_features = layer2.optimize_production_geometries(
+                    prep["df"], prep["events_df"], global_probe_features=prep.get("global_probe_features")
+                )
+
+                joblib.dump(
+                    {
+                        "production_geometries": production_geometries,
+                        "production_selected_features": production_selected_features
+                    },
+                    outcomes_dir / "layer2_optim_bundle.joblib"
+                )
                 tprint_success("Layer 2 Optim Bundle Saved.")
                 return {"success": True}
 
@@ -1059,19 +1073,30 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 tprint_info(">>> Layer 2 Substep: OOF")
                 try:
                     prep = joblib.load(outcomes_dir / "layer2_prep_bundle.joblib")
-                    production_geometries = joblib.load(outcomes_dir / "layer2_optim_bundle.joblib")
+                    optim = joblib.load(outcomes_dir / "layer2_optim_bundle.joblib")
+                    # Handle legacy optim bundle if it was just list
+                    if isinstance(optim, list):
+                         production_geometries = optim
+                         production_selected_features = []
+                    else:
+                         production_geometries = optim.get("production_geometries")
+                         production_selected_features = optim.get("production_selected_features")
                 except Exception:
                     raise FileNotFoundError("Missing prep/optim bundles. Run prepare and optimize first.")
 
                 # Run OOF
-                oof_results = layer2.run_oof_analytics(prep["df"], prep["events_df"], production_geometries)
+                oof_results = layer2.run_oof_analytics(
+                    prep["df"], prep["events_df"], production_geometries,
+                    global_probe_features=prep.get("global_probe_features"),
+                    production_selected_features=production_selected_features
+                )
 
                 # Merge into full output format
                 l2_output = {
                     **oof_results,
                     "events_df": prep["events_df"],
                     "selected_trials": [asdict(t) for t in production_geometries],
-                    "production_selected_features": list(getattr(layer2, '_production_selected_features', []) or []),
+                    "production_selected_features": production_selected_features or [],
                 }
                 # Fall through to standard saving logic (below)
 
@@ -1080,18 +1105,24 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 # Need everything loaded
                 try:
                     prep = joblib.load(outcomes_dir / "layer2_prep_bundle.joblib")
-                    production_geometries = joblib.load(outcomes_dir / "layer2_optim_bundle.joblib")
+                    optim = joblib.load(outcomes_dir / "layer2_optim_bundle.joblib")
                     l2_output = joblib.load(layer2_bundle_path) # Need OOF results
+
+                    if isinstance(optim, list):
+                        production_geometries = optim
+                    else:
+                        production_geometries = optim.get("production_geometries")
                 except Exception:
                     raise FileNotFoundError("Missing artifacts for report generation.")
 
                 # Reconstruct oof_results dict from flat output for generate_reports signature
                 oof_res_reconstructed = {
                     'l2_score': l2_output.get('l2_score'),
-                    'l2_label': l2_output.get('l2_label'),
+                    'l2_label': l2_output.get('l2_labels'), # Fixed key from l2_label to l2_labels
                     'weights': l2_output.get('l2_weights'),
                     'individual_geometries': l2_output.get('individual_geos'),
                     'oof_returns': l2_output.get('l2_returns'),
+                    'tree_stats': l2_output.get('tree_stats'), # Pass tree stats
                 }
                 layer2.generate_reports(prep["df"], prep["events_df"], production_geometries, oof_res_reconstructed)
                 tprint_success("Layer 2 Reports Regenerated.")
@@ -1198,6 +1229,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     "l2_weights": l2_weights,
                     "individual_geos": individual_geos,
                     "individual_variances": individual_variances, # Save Variances
+                    "tree_stats": l2_output.get('tree_stats'), # Save Tree Stats for reporting
                     "events_df": events_df,
                     "selected_trials": selected_trials,
                     "l2_quality_weights": l2_quality_weights,

@@ -85,6 +85,22 @@ LAYER2_MODEL_CONSTANTS = {
     'min_child_weight': 0.0001, # Reduced from 0.0005 to allow more growth
 }
 
+def _gini_coefficient(w: np.ndarray) -> float:
+    """Calculate Gini coefficient of a distribution."""
+    w = np.asarray(w, dtype=float)
+    w = w[np.isfinite(w)]
+    if w.size == 0:
+        return 0.0
+    w = np.clip(w, a_min=0.0, a_max=None)
+    total = float(w.sum())
+    if total <= 1e-12:
+        return 0.0
+    w_sorted = np.sort(w)
+    n = w_sorted.size
+    idx = np.arange(1, n + 1, dtype=float)
+    g = (2.0 * float(np.sum(idx * w_sorted)) / (n * total)) - ((n + 1.0) / n)
+    return float(max(0.0, min(1.0, g)))
+
 def _normalized_binary_entropy(p: float) -> float:
     """Return normalized entropy in [0, 1] for a Bernoulli(p)."""
     try:
@@ -2173,7 +2189,7 @@ class LabelBasedLayer2:
         min_ratio: float = None,
         events_shift: int = 0,
         **kwargs
-    ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
         """
         Compute TP/SL(+optional trailing) exit-model labels and related metrics.
         Label = 1 if the trade exits via profit barrier (or trailing), else 0.
@@ -2186,6 +2202,9 @@ class LabelBasedLayer2:
             family: Geometry family (defines direction)
             events_shift: Shift event timestamps by N bars (for stability check)
             sl_mult: Optional stop loss multiplier
+
+        Returns:
+            Tuple: (labels, returns, mfe, mae, exit_reasons)
         """
         # Determine logic mode
         is_new_logic = (alpha is not None) and (beta is not None)
@@ -2253,7 +2272,7 @@ class LabelBasedLayer2:
 
             if not np.any(valid_locs):
                  empty_s = pd.Series(np.nan, index=target_events_idx)
-                 return empty_s, empty_s, empty_s, empty_s
+                 return empty_s, empty_s, empty_s, empty_s, empty_s
 
             shifted_timestamps = df.index[shifted_locs[valid_locs]]
             orig_signals = signals.loc[target_events_idx[valid_locs]]
@@ -2375,18 +2394,21 @@ class LabelBasedLayer2:
             final_returns = pd.Series(np.nan, index=target_events_idx)
             final_mfe = pd.Series(np.nan, index=target_events_idx)
             final_mae = pd.Series(np.nan, index=target_events_idx)
+            final_exit = pd.Series(np.nan, index=target_events_idx, dtype=object)
 
             final_labels.iloc[valid_locs] = binary_labels.values
             final_returns.iloc[valid_locs] = subset_returns.values
             final_mfe.iloc[valid_locs] = subset_mfe.values
             final_mae.iloc[valid_locs] = subset_mae.values
+            final_exit.iloc[valid_locs] = subset_exit.values
         else:
             final_labels = binary_labels
             final_returns = subset_returns
             final_mfe = subset_mfe
             final_mae = subset_mae
+            final_exit = subset_exit
 
-        result = (final_labels, final_returns, final_mfe, final_mae)
+        result = (final_labels, final_returns, final_mfe, final_mae, final_exit)
         self._labels_cache[cache_key] = result
         return result
 
@@ -2402,7 +2424,7 @@ class LabelBasedLayer2:
             else:
                 kappa = 2.0
 
-        lbl, ret, _, _ = self._compute_dominance_labels(df, events_df, kappa, int(horizon), family, sl_mult=sl_mult)
+        lbl, ret, _, _, _ = self._compute_dominance_labels(df, events_df, kappa, int(horizon), family, sl_mult=sl_mult)
         return lbl, ret
 
     def _build_geometry_independent_event_features(
@@ -3476,17 +3498,17 @@ class LabelBasedLayer2:
         If labels flip frequently, discard.
         """
         # 1. Base Labels
-        base_labels, _, _, _ = self._compute_dominance_labels(df, events_df, family=family, **trial_params)
+        base_labels, _, _, _, _ = self._compute_dominance_labels(df, events_df, family=family, **trial_params)
 
         # 2. Shifted Labels (+1 bar)
         # Using events_shift=1
-        shift1_labels, _, _, _ = self._compute_dominance_labels(
+        shift1_labels, _, _, _, _ = self._compute_dominance_labels(
             df, events_df, family=family, events_shift=1, **trial_params
         )
 
         # 3. Shifted Labels (-1 bar)
         # Using events_shift=-1
-        shift_neg1_labels, _, _, _ = self._compute_dominance_labels(
+        shift_neg1_labels, _, _, _, _ = self._compute_dominance_labels(
              df, events_df, family=family, events_shift=-1, **trial_params
         )
 
@@ -3538,7 +3560,7 @@ class LabelBasedLayer2:
             if fam_events.empty:
                 return {}
 
-            lbls, _, _, _ = self._compute_dominance_labels(df, fam_events, family=geometry.family, **geometry.params)
+            lbls, _, _, _, _ = self._compute_dominance_labels(df, fam_events, family=geometry.family, **geometry.params)
             valid_lbls = lbls.dropna()
 
             # Subsample for HPO (30% or 2000, whichever is smaller, but at least 400)
@@ -3957,7 +3979,7 @@ class LabelBasedLayer2:
                 return -1.0  # Skip computation for near-duplicates
 
         # Compute labels
-        labels, returns, _, _ = self._compute_dominance_labels(df, family_events, kappa, horizon, family, sl_mult=sl_mult)
+        labels, returns, _, _, exit_reasons = self._compute_dominance_labels(df, family_events, kappa, horizon, family, sl_mult=sl_mult)
 
         # Metrics
         mean_ret = returns.mean()
@@ -3980,7 +4002,63 @@ class LabelBasedLayer2:
 
         pos_rate = labels.mean()
 
-        pos_rate = labels.mean()
+        # --- NEW GATES: Time Limit, Frequency, Gini, Sharpe ---
+        # 1. Time Limit Hit Rate < 50%
+        # exit_reasons contains strings like 'timeout', 'profit', 'stop', 'trailing'
+        n_timeout = (exit_reasons == 'timeout').sum()
+        time_limit_hit_rate = float(n_timeout) / float(count) if count > 0 else 1.0
+
+        if time_limit_hit_rate >= 0.5:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=time_limit_hit_rate, rate={time_limit_hit_rate:.3f}")
+             return -1.0
+
+        # 2. Frequency >= 0.75 events/day
+        if len(returns) > 1 and returns.index[-1] > returns.index[0]:
+            duration_days = (returns.index[-1] - returns.index[0]).total_seconds() / 86400.0
+            events_per_day = float(len(returns)) / max(1.0, duration_days)
+        else:
+            events_per_day = 0.0
+
+        if events_per_day < 0.75:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=low_frequency, rate={events_per_day:.3f}/day")
+             return -1.0
+
+        # 3. Gini of Signals > 0.8 (Burstiness)
+        # Using event timestamps differences
+        try:
+            # Convert index diffs to float seconds
+            ts_diffs = pd.Series(returns.index).diff().dropna().dt.total_seconds().values
+            gini_signals = _gini_coefficient(ts_diffs)
+        except Exception:
+            gini_signals = 0.0
+
+        # Requirement: Gini > 0.8. Reject if <= 0.8
+        # Wait, usually high Gini means bursty/clustered.
+        # Requirement text: "Gini of signals > 0.8".
+        if gini_signals <= 0.8:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=low_gini_signals, gini={gini_signals:.3f}")
+             return -1.0
+
+        # 4. Sharpe of Labels < 0.5 (Base Strategy Quality - should be weak)
+        ret_std = returns.std()
+        sharpe_base = (returns.mean() / ret_std) if ret_std > 1e-9 else 0.0
+
+        if sharpe_base >= 0.5:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=high_base_sharpe, sharpe={sharpe_base:.3f}")
+             return -1.0
+
+        # 5. Perfect Information Sharpe > 2.0 (Potential)
+        # Sharpe of returns where label == 1
+        pos_rets = returns[labels == 1]
+        if len(pos_rets) > 1:
+             pos_std = pos_rets.std()
+             perfect_sharpe = (pos_rets.mean() / pos_std) if pos_std > 1e-9 else 0.0
+        else:
+             perfect_sharpe = 0.0
+
+        if perfect_sharpe <= 2.0:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=low_perfect_sharpe, sharpe={perfect_sharpe:.3f}")
+             return -1.0
 
         # --- OPTIMIZATION: Tighter Pre-Filters ---
         # If the geometry is fundamentally poor in terms of base statistics, don't waste time on probes.
@@ -4141,9 +4219,9 @@ class LabelBasedLayer2:
             perturb_every = 1
 
         if (trial.number % int(perturb_every)) == 0:
-            perturb_labels_k, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa * 1.05, horizon, family, sl_mult=sl_mult)
-            perturb_labels_sl, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, horizon, family, sl_mult=sl_mult * 1.05)
-            perturb_labels_h, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, int(horizon * 1.05), family, sl_mult=sl_mult)
+            perturb_labels_k, _, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa * 1.05, horizon, family, sl_mult=sl_mult)
+            perturb_labels_sl, _, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, horizon, family, sl_mult=sl_mult * 1.05)
+            perturb_labels_h, _, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, int(horizon * 1.05), family, sl_mult=sl_mult)
 
             base_lbl = labels.reindex(fam_events_for_checks.index)
             agree_k = (base_lbl == perturb_labels_k).mean()
@@ -4431,7 +4509,7 @@ class LabelBasedLayer2:
                     if X_probe_full is not None and not getattr(X_probe_full, 'empty', True):
                         for cand in stage1:
                             try:
-                                lbls, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam, **cand.params)
+                                lbls, _, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam, **cand.params)
                             except Exception:
                                 continue
 
@@ -4509,7 +4587,7 @@ class LabelBasedLayer2:
                     return ret_cache[key]
                 try:
                     fam_events_local = events_df[events_df['family'] == fam]
-                    _lbl, _ret, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam, **t_obj.params)
+                    _lbl, _ret, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam, **t_obj.params)
                     s = pd.to_numeric(_ret, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
                 except Exception:
                     s = pd.Series(0.0, index=events_df[events_df['family'] == fam].index)
@@ -4634,7 +4712,7 @@ class LabelBasedLayer2:
                     fam_events_local = events_df
 
                 try:
-                    _lbl, _ret, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
+                    _lbl, _ret, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
                     s_evt = pd.to_numeric(_ret, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
                 except Exception:
                     s_evt = pd.Series(0.0, index=fam_events_local.index)
@@ -4718,7 +4796,7 @@ class LabelBasedLayer2:
         models = {}
         for g in geometries:
             try:
-                lbls, _, _, _ = self._compute_dominance_labels(df, events_df, family=g.family, **g.params)
+                lbls, _, _, _, _ = self._compute_dominance_labels(df, events_df, family=g.family, **g.params)
                 valid_lbls = lbls.dropna()
                 common_idx = valid_lbls.index.intersection(X_events.index)
                 
@@ -4988,7 +5066,7 @@ class LabelBasedLayer2:
 
             for i, g in enumerate(fam_geos):
                 # Compute labels/returns for this geometry
-                lbls, rets, mfe, mae = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
+                lbls, rets, mfe, mae, _ = self._compute_dominance_labels(df, fam_events, family=family, **g.params)
 
                 # Generate specific geometry features for all events in this family block
                 geo_features = self._compute_specific_geometry_features(df, fam_events.index, g.params)

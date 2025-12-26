@@ -2791,12 +2791,12 @@ class LabelBasedLayer2:
     def _calculate_absolute_rolling_correlation(self, X: pd.DataFrame, n_subsamples: int = 5) -> pd.DataFrame:
         """
         Approximates 'Absolute Rolling Correlation' by averaging absolute correlation
-        matrices across N contiguous subsamples.
+        matrices across N contiguous subsamples. Vectorized implementation.
         """
         if X.empty:
             return pd.DataFrame()
 
-        n_rows = len(X)
+        n_rows, n_cols = X.shape
         if n_rows < 50:
              return X.corr().abs()
 
@@ -2804,32 +2804,52 @@ class LabelBasedLayer2:
         if chunk_size < 10:
              return X.corr().abs()
 
-        corr_sum = pd.DataFrame(0.0, index=X.columns, columns=X.columns)
-        count = 0
+        # 1. Prepare 3D Tensor: (n_subsamples, chunk_size, n_features)
+        # Truncate to fit perfectly
+        n_truncated = chunk_size * n_subsamples
+        if n_truncated < n_rows:
+            X_mat = X.iloc[:n_truncated].to_numpy()
+        else:
+            X_mat = X.to_numpy()
 
-        for i in range(n_subsamples):
-            start = i * chunk_size
-            end = start + chunk_size if i < n_subsamples - 1 else n_rows
+        # Reshape: (S, T, F)
+        try:
+            X_3d = X_mat.reshape(n_subsamples, chunk_size, n_cols)
 
-            chunk = X.iloc[start:end]
-            # Skip if constant columns in chunk
-            if chunk.std().min() < 1e-9:
-                 continue
+            # 2. Vectorized Correlation Calculation
+            # Center: (S, T, F)
+            means = X_3d.mean(axis=1, keepdims=True)
+            X_centered = X_3d - means
 
-            # Standard Pearson correlation on the chunk
-            # The prompt asks for "Absolute Rolling Correlation".
-            # Averaging abs(corr) of chunks is a robust proxy.
-            try:
-                corr = chunk.corr().abs().fillna(0.0)
-                corr_sum += corr
-                count += 1
-            except Exception:
-                pass
+            # Covariance: (S, F, F)
+            cov = np.matmul(X_centered.transpose(0, 2, 1), X_centered) / (chunk_size - 1)
 
-        if count == 0:
-            return X.corr().abs().fillna(0.0)
+            # Std Devs: (S, F)
+            stds = X_3d.std(axis=1, ddof=1)
 
-        return corr_sum / count
+            # Outer product of stds: (S, F, F)
+            stds_outer = stds[:, :, None] * stds[:, None, :]
+
+            # Avoid division by zero
+            stds_outer[stds_outer == 0] = 1e-9
+
+            # Correlation: (S, F, F)
+            corrs = cov / stds_outer
+
+            # Clip to valid range
+            corrs = np.clip(corrs, -1.0, 1.0)
+
+            # 3. Absolute and Average
+            avg_abs_corr_mat = np.mean(np.abs(corrs), axis=0)
+
+            # Fill NaNs
+            avg_abs_corr_mat = np.nan_to_num(avg_abs_corr_mat, nan=0.0)
+
+            return pd.DataFrame(avg_abs_corr_mat, index=X.columns, columns=X.columns)
+
+        except Exception as e:
+            logger.warning(f"Vectorized rolling correlation failed: {e}. Falling back to Pandas.")
+            return X.corr().abs()
 
     def _cluster_and_deduplicate(
         self,
@@ -2969,6 +2989,9 @@ class LabelBasedLayer2:
 
                 n_current = len(ranked_feats)
                 target_n = max(min_features, int(n_current * 0.80))
+
+                if target_n >= n_current:
+                    break
 
                 keep_feats = ranked_feats.index[:target_n].tolist()
 

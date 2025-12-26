@@ -29,8 +29,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.calibration import CalibratedClassifierCV
-from scipy.stats import spearmanr
-from scipy.special import expit
+from scipy.stats import spearmanr, rankdata
+from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass, asdict
@@ -2713,15 +2713,31 @@ class LabelBasedLayer2:
         avg_split_gain_ratio = sum_split_gain_ratio / n_used
         avg_oob_gain = sum_oob_gain / n_used
 
-        def _zscore_clip(v):
-            if np.std(v) < 1e-9: return np.zeros_like(v)
-            z = (v - np.mean(v)) / np.std(v)
+        def _gauss_rank_normalize(v):
+            """Rank-Based Z-Score (Gauss Rank) after log-transformation."""
+            # 1. Log transformation (log1p)
+            v_log = np.log1p(np.maximum(v, 0.0))
+
+            # 2. Rank (average for ties)
+            ranks = rankdata(v_log, method='average')
+
+            # 3. Map to (0, 1) - avoiding 0 and 1 boundaries
+            n = len(ranks)
+            if n <= 1: return np.zeros_like(v)
+            epsilon = 1e-6
+            ranks_norm = (ranks - 0.5) / n
+            ranks_norm = np.clip(ranks_norm, epsilon, 1.0 - epsilon)
+
+            # 4. Inverse Normal CDF
+            z = ndtri(ranks_norm)
+
+            # 5. Clip
             return np.clip(z, -3.0, 3.0)
 
-        # Normalize
-        z_reg = _zscore_clip(avg_reg_gain)
-        z_sgr = _zscore_clip(avg_split_gain_ratio)
-        z_oob = _zscore_clip(avg_oob_gain)
+        # Normalize using Gauss Rank
+        z_reg = _gauss_rank_normalize(avg_reg_gain)
+        z_sgr = _gauss_rank_normalize(avg_split_gain_ratio)
+        z_oob = _gauss_rank_normalize(avg_oob_gain)
 
         # Final Ensemble Score
         final_score = (z_reg + z_sgr + z_oob) / 3.0

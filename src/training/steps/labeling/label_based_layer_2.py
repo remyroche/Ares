@@ -29,9 +29,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.calibration import CalibratedClassifierCV
-from scipy.stats import spearmanr
-from scipy.special import expit
-from scipy.spatial.distance import euclidean
+from scipy.stats import spearmanr, rankdata
+from scipy.special import expit, ndtri
+from scipy.spatial.distance import euclidean, squareform
+from scipy.cluster.hierarchy import linkage, fcluster
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass, asdict
 import logging
@@ -2568,13 +2569,148 @@ class LabelBasedLayer2:
         except Exception:
             return None
 
-    def _rank_features_by_mean_mdi(
+    def _calculate_cv_stability_robust(self, fold_importance_list: List[np.ndarray]) -> np.ndarray:
+        """
+        Calculates Stability using 'Fold-Normalized Gain'.
+        Prevents 'Regime Bias' (e.g., Bull markets having higher raw Gain)
+        from punishing consistent features.
+        """
+        if not fold_importance_list:
+            return np.array([])
+
+        n_features = len(fold_importance_list[0])
+        normalized_folds = []
+
+        # 1. Normalize each fold individually
+        for gain_arr in fold_importance_list:
+            total_gain = np.sum(gain_arr)
+
+            # Avoid division by zero
+            if total_gain <= 1e-9:
+                norm_series = np.zeros_like(gain_arr)
+            else:
+                # Convert to "Percentage of Total Importance"
+                norm_series = gain_arr / total_gain
+
+            normalized_folds.append(norm_series)
+
+        # 2. Stack (Columns = Folds)
+        # Shape: (n_features, n_folds)
+        folds_matrix = np.vstack(normalized_folds).T
+
+        # 3. Calculate Stability on the PERCENTAGES, not raw values
+        mean_share = np.mean(folds_matrix, axis=1)
+        std_share = np.std(folds_matrix, axis=1)
+
+        # 4. Stability Score (Mean / Std)
+        #    Add epsilon to Std to avoid exploding score for constant features
+        epsilon = 1e-6
+        stability_score = mean_share / (std_share + epsilon)
+
+        return stability_score
+
+    def _cluster_and_deduplicate(
+        self,
+        X: pd.DataFrame,
+        feature_scores: pd.Series,
+        top_n: int = 150
+    ) -> List[str]:
+        """
+        Cluster features using Spearman correlation and select representatives.
+
+        Algorithm:
+        1. Pre-rank X column-wise (Spearman proxy).
+        2. Compute Pearson correlation on ranks.
+        3. Hierarchical Clustering (Spearman > 0.85 -> Distance < 0.15).
+        4. Select winner(s) per cluster based on feature_scores.
+        """
+        if X.empty:
+            return []
+
+        # 1. Pre-rank (Spearman proxy)
+        # Use rankdata on each column
+        X_ranked = X.apply(lambda col: rankdata(col, method='average'), axis=0)
+
+        # 2. Pearson on ranks (highly optimized)
+        corr_matrix = X_ranked.corr(method='pearson').fillna(0.0)
+
+        # 3. Hierarchical Clustering
+        # Distance = 1 - Correlation (Spearman is monotonic, assume positive correlation grouping)
+        # We clip to [0, 2] range for distance
+        dist_matrix = 1.0 - corr_matrix.values
+        dist_matrix = np.clip(dist_matrix, 0.0, 2.0)
+
+        # Condensed distance matrix for linkage
+        condensed_dist = squareform(dist_matrix, checks=False)
+
+        # Linkage: Average or Ward? Standard for correlation is usually Average or Complete.
+        # User specified "Spearman > 0.85" which implies a cutoff.
+        Z = linkage(condensed_dist, method='average')
+
+        # Cut tree at distance 0.15 (Cor > 0.85)
+        # criterion='distance'
+        cluster_labels = fcluster(Z, t=0.15, criterion='distance')
+
+        # 4. Select Representatives
+        # Group features by cluster label
+        clusters: Dict[int, List[str]] = {}
+        features = list(X.columns)
+        for i, label in enumerate(cluster_labels):
+            clusters.setdefault(label, []).append(features[i])
+
+        selected_features = []
+
+        for label, cluster_feats in clusters.items():
+            if len(cluster_feats) == 1:
+                selected_features.append(cluster_feats[0])
+            else:
+                # Multiple features: sort by score descending
+                # Get scores, default to -inf if missing
+                feats_with_scores = [
+                    (f, feature_scores.get(f, -float('inf')))
+                    for f in cluster_feats
+                ]
+                # Sort desc by score
+                feats_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+                # "The top 150 features (2 winners per cluster ...)"
+                # "The features with highest composite score wins ... (discard others)"
+                # Strategy: Keep top 2 to support diversity if possible, but 1 is strictly "Captain".
+                # Given explicit "discard the other ones" (plural) after "features" (plural?),
+                # but then "2 winners per cluster" in selection summary...
+                # I will keep top 2 if available, as that preserves more signal for MDA.
+
+                # Keep top 2
+                winners = [f for f, s in feats_with_scores[:2]]
+                selected_features.extend(winners)
+
+        # 5. Global Top N
+        # If we have more than top_n, sort by score and cut
+        if len(selected_features) > top_n:
+            final_scores = [
+                (f, feature_scores.get(f, -float('inf')))
+                for f in selected_features
+            ]
+            final_scores.sort(key=lambda x: x[1], reverse=True)
+            selected_features = [f for f, s in final_scores[:top_n]]
+
+        return selected_features
+
+    def _rank_features_by_ensemble_importance(
         self,
         X: pd.DataFrame,
         y: pd.Series,
         sample_weight: Optional[np.ndarray] = None,
         n_splits: int = 5,
     ) -> Tuple[List[str], np.ndarray]:
+        """
+        Rank features using an ensemble of 3 metrics:
+        1. Split Gain Ratio (Gain / Split Freq)
+        2. Regularized Gain Importance (L1/L2 regularized)
+        3. Feature Sharpe Ratio (Fold-Normalized Gain Stability)
+
+        Metrics are Gauss-Ranked, clipped, and averaged.
+        """
         X_num = X.fillna(0.0)
         y_num = y.astype(int)
         w_arr = None
@@ -2585,8 +2721,18 @@ class LabelBasedLayer2:
                 w_arr = None
 
         tscv = TimeSeriesSplit(n_splits=n_splits)
-        importances_sum = np.zeros(X_num.shape[1], dtype=float)
+
+        n_features = X_num.shape[1]
+        sum_split_gain_ratio = np.zeros(n_features, dtype=float)
+        sum_reg_gain = np.zeros(n_features, dtype=float)
+
+        # Store gains per fold for Feature Sharpe
+        fold_gains_list = []
+
         n_used = 0
+
+        # Pre-allocate random generator for efficient permutation
+        rng = np.random.default_rng(self.random_state)
 
         for tr_idx, te_idx in tscv.split(X_num):
             X_tr = X_num.iloc[tr_idx]
@@ -2597,14 +2743,19 @@ class LabelBasedLayer2:
             if y_tr.nunique() < 2 or y_te.nunique() < 2:
                 continue
 
+            # Regularized Model
             model = lgb.LGBMClassifier(
                 n_estimators=100,
-                max_depth=6,
+                max_depth=5,
                 num_leaves=31,
-                learning_rate=0.1,
+                learning_rate=0.05,
+                reg_alpha=0.5,     # Stronger L1 for feature selection
+                reg_lambda=0.5,    # Stronger L2
+                min_child_samples=20,
                 random_state=self.random_state,
                 n_jobs=1,
                 verbose=-1,
+                importance_type='gain' # Default for extraction, but we access both
             )
 
             fit_kwargs: Dict[str, Any] = {}
@@ -2615,25 +2766,77 @@ class LabelBasedLayer2:
                 model.fit(
                     X_tr, y_tr,
                     eval_set=[(X_te, y_te)],
-                    callbacks=[lgb.early_stopping(10, verbose=False)],
+                    callbacks=[lgb.early_stopping(15, verbose=False)],
                     **fit_kwargs
                 )
-                imp = np.asarray(model.feature_importances_, dtype=float)
-                if imp.shape[0] == importances_sum.shape[0]:
-                    importances_sum += imp
-                    n_used += 1
+
+                booster = model.booster_
+
+                # 1. Regularized Gain
+                gain = booster.feature_importance(importance_type='gain').astype(float)
+
+                # 2. Split Gain Ratio
+                splits = booster.feature_importance(importance_type='split').astype(float)
+                # Avoid div/0, bias slightly to favor splits
+                split_gain_ratio = gain / (splits + 1e-4)
+
+                sum_reg_gain += gain
+                sum_split_gain_ratio += split_gain_ratio
+                fold_gains_list.append(gain)
+
+                n_used += 1
+
             except Exception as e:
-                # logger.debug(f"Feature ranking fit failed: {e}")
                 continue
 
         if n_used <= 0:
             ranked = list(X_num.columns)
             return ranked, np.ones(len(ranked), dtype=float)
 
-        mean_imp = importances_sum / float(max(1, n_used))
-        order = np.argsort(mean_imp)[::-1]
+        # Average
+        avg_reg_gain = sum_reg_gain / n_used
+        avg_split_gain_ratio = sum_split_gain_ratio / n_used
+
+        # 3. Feature Sharpe (Stability)
+        stability_score = self._calculate_cv_stability_robust(fold_gains_list)
+        # Ensure equal length if stability calculation returns weird shape (should correspond to n_features)
+        if len(stability_score) != n_features:
+            stability_score = np.zeros(n_features)
+
+        def _gauss_rank_normalize(v):
+            """Rank-Based Z-Score (Gauss Rank) after log-transformation."""
+            # 1. Log transformation (log1p)
+            v_log = np.log1p(np.maximum(v, 0.0))
+
+            # 2. Rank (average for ties)
+            ranks = rankdata(v_log, method='average')
+
+            # 3. Map to (0, 1) - avoiding 0 and 1 boundaries
+            n = len(ranks)
+            if n <= 1: return np.zeros_like(v)
+            epsilon = 1e-6
+            ranks_norm = (ranks - 0.5) / n
+            ranks_norm = np.clip(ranks_norm, epsilon, 1.0 - epsilon)
+
+            # 4. Inverse Normal CDF
+            z = ndtri(ranks_norm)
+
+            # 5. Clip
+            return np.clip(z, -3.0, 3.0)
+
+        # Normalize using Gauss Rank
+        z_reg = _gauss_rank_normalize(avg_reg_gain)
+        z_sgr = _gauss_rank_normalize(avg_split_gain_ratio)
+        z_stb = _gauss_rank_normalize(stability_score)
+
+        # Final Ensemble Score
+        final_score = (z_reg + z_sgr + z_stb) / 3.0
+
+        # Rank
+        order = np.argsort(final_score)[::-1]
         ranked_features = [str(X_num.columns[i]) for i in order]
-        return ranked_features, mean_imp
+
+        return ranked_features, final_score
 
     def _aggregate_geometry_labels_for_feature_selection(
         self,
@@ -2731,19 +2934,9 @@ class LabelBasedLayer2:
             cfg = {}
 
         try:
-            target_n = int(cfg.get('layer2_supervised_feature_count', cfg.get('layer2_probe_feature_count', 70)))
+            target_n = int(cfg.get('layer2_supervised_feature_count', cfg.get('layer2_probe_feature_count', 150)))
         except Exception:
-            target_n = 70
-
-        try:
-            corr_threshold = float(cfg.get('layer2_supervised_corr_threshold', cfg.get('layer2_probe_corr_threshold', 0.95)))
-        except Exception:
-            corr_threshold = 0.95
-
-        try:
-            max_rows = int(cfg.get('layer2_supervised_corr_rows', cfg.get('layer2_probe_corr_rows', 2000)))
-        except Exception:
-            max_rows = 2000
+            target_n = 150
 
         try:
             n_splits = int(cfg.get('layer2_supervised_mdi_splits', getattr(self, 'n_splits', 3)))
@@ -2751,19 +2944,20 @@ class LabelBasedLayer2:
             n_splits = int(getattr(self, 'n_splits', 3))
         n_splits = int(max(2, min(n_splits, max(2, int(n_valid // 50)))))
 
-        ranked, _ = self._rank_features_by_mean_mdi(
+        ranked_names, score_array = self._rank_features_by_ensemble_importance(
             X_clean,
             y_clean.astype(int),
             sample_weight=w_arr,
             n_splits=n_splits,
         )
 
-        selected = self._cheap_corr_prune(
+        # Map scores to feature names for clustering
+        feature_scores = pd.Series(score_array, index=X_clean.columns)
+
+        selected = self._cluster_and_deduplicate(
             X_clean,
-            ranked_features=[str(c) for c in ranked],
-            target_n=int(target_n),
-            corr_threshold=float(corr_threshold),
-            max_rows=int(max_rows),
+            feature_scores,
+            top_n=int(target_n)
         )
         return [c for c in selected if c in X_events_full.columns]
 

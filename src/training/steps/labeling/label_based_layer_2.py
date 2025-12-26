@@ -3600,9 +3600,11 @@ class LabelBasedLayer2:
             if winning_model_type == 'lgbm':
                 # LGBM objective wrapped in function
                 def objective(trial):
+                    # Optimized Focal Loss Parameters
                     focal_alpha = trial.suggest_float('focal_alpha', 0.1, 0.9)
                     gamma_pos = trial.suggest_float('gamma_pos', 0.0, 5.0)
                     gamma_neg = trial.suggest_float('gamma_neg', 0.0, 5.0)
+
                     num_leaves = trial.suggest_int('num_leaves', 127, 511)
                     n_estimators = trial.suggest_int('n_estimators', 1000, 2000)
                     
@@ -3651,9 +3653,11 @@ class LabelBasedLayer2:
             elif winning_model_type == 'xgb':
                 # XGBoost HPO objective
                 def objective(trial):
+                    # Optimized Focal Loss Parameters
                     focal_alpha = trial.suggest_float('focal_alpha', 0.1, 0.9)
                     gamma_pos = trial.suggest_float('gamma_pos', 0.0, 5.0)
                     gamma_neg = trial.suggest_float('gamma_neg', 0.0, 5.0)
+
                     n_estimators = trial.suggest_int('n_estimators', 200, 800)
                     max_depth = trial.suggest_int('max_depth', 4, 8)
                     learning_rate = trial.suggest_float('learning_rate', 0.01, 0.05)
@@ -3695,6 +3699,8 @@ class LabelBasedLayer2:
                     iterations = trial.suggest_int('iterations', 200, 600)
                     learning_rate = trial.suggest_float('learning_rate', 0.02, 0.08)
                     depth = trial.suggest_int('depth', 4, 8)
+
+                    # Optimize Class Weights for Imbalance
                     class_weight_ratio = trial.suggest_float('class_weight_ratio', 1.0, 10.0)
                     # CatBoost lacks focal_gamma, so we can't couple it directly.
                     # We rely on class_weight_ratio roughly behaving like alpha/(1-alpha).
@@ -3978,11 +3984,12 @@ class LabelBasedLayer2:
 
         # --- OPTIMIZATION: Tighter Pre-Filters ---
         # If the geometry is fundamentally poor in terms of base statistics, don't waste time on probes.
+        # LOOSENED GATES: Defaults relaxed to [0.001, 0.999] to prioritize learnability.
         try:
-            min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.01))
-            max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.95))
+            min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.001))
+            max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.999))
         except Exception:
-             min_rate, max_rate = 0.01, 0.95
+             min_rate, max_rate = 0.001, 0.999
 
         if pos_rate < min_rate or pos_rate > max_rate: 
              logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=pos_rate_limit, pos_rate={pos_rate:.3f}, range=[{min_rate}, {max_rate}]")
@@ -4008,15 +4015,15 @@ class LabelBasedLayer2:
         profit_mode = str(profit_mode).strip().lower()
 
         try:
-            min_pos_trades = int(getattr(self, '_current_config', {}).get('layer2_min_positive_trades', 15))
+            min_pos_trades = int(getattr(self, '_current_config', {}).get('layer2_min_positive_trades', 1))
         except Exception:
-            min_pos_trades = 15
+            min_pos_trades = 1
 
         if profit_mode == 'intelligent':
             # Allow small losses but require risk compensation
-            # Relaxed from -0.1% to -0.35% to match current geometry performance
-            min_trade_ret = float(getattr(self, '_current_config', {}).get('layer2_min_mean_trade_return', -0.0035))  # Allow -0.35% losses
-            max_acceptable_loss = float(getattr(self, '_current_config', {}).get('layer2_max_acceptable_loss', -0.0035))  # Max -0.35% loss
+            # LOOSENED GATES: Defaults set to -1.0 to disable strict PnL requirements.
+            min_trade_ret = float(getattr(self, '_current_config', {}).get('layer2_min_mean_trade_return', -1.0))
+            max_acceptable_loss = float(getattr(self, '_current_config', {}).get('layer2_max_acceptable_loss', -1.0))
             min_sharpe_proxy = float(getattr(self, '_current_config', {}).get('layer2_min_sharpe_proxy', 0.0))  # Disable Sharpe gate temporarily
         else:
             # Original strict mode

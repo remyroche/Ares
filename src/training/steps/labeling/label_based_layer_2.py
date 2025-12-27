@@ -3363,44 +3363,51 @@ class LabelBasedLayer2:
                 # Calculate SFI if active
                 if use_sfi:
                     sfi_scores = []
-                    # SFI Model: LGBM with RobustFocalLoss (Depth-2)
-                    # Use lighter estimators for SFI loop speed
-                    sfi_model = lgb.LGBMClassifier(
-                        objective=lgbm_focal_obj,
-                        n_estimators=10,
-                        max_depth=2,
-                        learning_rate=0.1,
-                        verbose=-1,
-                        n_jobs=1
-                    )
+                    # SFI Model: Standard Log Loss with optimized params
+                    sfi_params = {
+                        'objective': 'binary',        # Standard Log Loss optimization
+                        'n_estimators': 100,          # Single Feature requires more depth/trees than Depth-2
+                        'max_depth': 6,               # Hard cap for regularization
+                        'learning_rate': 0.05,
+                        'subsample': 0.8,             # Row subsampling
+                        'colsample_bytree': 0.8,      # Feature fraction
+                        'colsample_bynode': 0.8,      # Node fraction
+                        'reg_alpha': 0.2,             # L1 Regularization
+                        'reg_lambda': 0.05,           # L2 Regularization
+                        'n_jobs': 1,                  # Parallelism handled by joblib wrapper
+                        'verbose': -1,
+                        'random_state': 42
+                    }
+                    sfi_model = lgb.LGBMClassifier(**sfi_params)
 
                     for feat in features:
                         try:
                             # Reshape X for sklearn (n_samples, 1)
-                            # LightGBM needs dataframe to keep feature name or numpy
                             feat_val = X_fold[[feat]]
 
                             sfi_model.fit(feat_val, y_fold, sample_weight=weights)
 
                             # Predict proba for class 1
-                            # Since using custom objective, raw output is margin.
-                            raw_preds = sfi_model.predict(feat_val, raw_score=True)
-                            probs = expit(raw_preds)
+                            probs = sfi_model.predict_proba(feat_val)[:, 1]
 
-                            # Calc AUC
-                            score = roc_auc_score(y_fold, probs)
-                            sfi_scores.append(max(0.5, score))
+                            # Negative Log Loss (Maximizable)
+                            # Higher is Better (e.g. -0.3 > -0.7)
+                            loss = log_loss(y_fold, probs, labels=[0, 1], eps=1e-15)
+                            sfi_scores.append(-loss)
                         except:
-                            sfi_scores.append(0.5)
+                            sfi_scores.append(-10.0)
 
-                    sfi_series = pd.Series(sfi_scores, index=features).fillna(0.5)
+                    sfi_series = pd.Series(sfi_scores, index=features).fillna(-10.0)
 
-                    # Normalize SFI to [0, 1] (AUC 0.5->0, 1.0->1)
-                    sfi_norm = (sfi_series - 0.5) * 2.0
-                    sfi_norm = sfi_norm.clip(0.0, 1.0)
+                    # Normalize SFI to [0, 1] via MinMax
+                    v_min, v_max = sfi_series.min(), sfi_series.max()
+                    if v_max > v_min:
+                        sfi_norm = (sfi_series - v_min) / (v_max - v_min)
+                    else:
+                        sfi_norm = pd.Series(0.5, index=features)
 
                     # Combine: Tree Score (0.7 contribution from weights) + 0.3 * SFI
-                    final_combined = tree_score + 0.3 * sfi_norm
+                    final_combined = tree_score * 0.7 + sfi_norm * 0.3
                 else:
                     # Phase 1: Only Tree Score (weights sum to 1.0)
                     final_combined = tree_score

@@ -3369,7 +3369,7 @@ class LabelBasedLayer2:
                     sfi_scores = []
                     # SFI Model: Standard Log Loss with optimized params
                     sfi_params = {
-                        'objective': 'binary',
+                        'objective': lgbm_focal_obj,
                         'n_estimators': 100,
                         'max_depth': 2,               # <--- CHANGED: Prevent curve-fitting noise
                         'num_leaves': 4,              # <--- CHANGED: Match depth (2^2)
@@ -3394,7 +3394,10 @@ class LabelBasedLayer2:
                             # Predict on Validation Fold (OOS)
                             # This ensures HAFSR calculates stability of OOS performance (Sharpe of Truth)
                             feat_val = X_val_fold[[feat]]
-                            probs = sfi_model.predict_proba(feat_val)[:, 1]
+
+                            # Use raw scores + expit because we use custom objective
+                            raw_preds = sfi_model.predict(feat_val, raw_score=True)
+                            probs = expit(raw_preds)
 
                             # Negative Log Loss (Maximizable, OOS)
                             loss = log_loss(y_val_fold, probs, labels=[0, 1], eps=1e-15)

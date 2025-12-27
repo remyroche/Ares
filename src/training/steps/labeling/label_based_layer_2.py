@@ -3365,16 +3365,17 @@ class LabelBasedLayer2:
                     sfi_scores = []
                     # SFI Model: Standard Log Loss with optimized params
                     sfi_params = {
-                        'objective': 'binary',        # Standard Log Loss optimization
-                        'n_estimators': 100,          # Single Feature requires more depth/trees than Depth-2
-                        'max_depth': 6,               # Hard cap for regularization
+                        'objective': 'binary',
+                        'n_estimators': 100,
+                        'max_depth': 2,               # <--- CHANGED: Prevent curve-fitting noise
+                        'num_leaves': 4,              # <--- CHANGED: Match depth (2^2)
                         'learning_rate': 0.05,
-                        'subsample': 0.8,             # Row subsampling
-                        'colsample_bytree': 0.8,      # Feature fraction
-                        'colsample_bynode': 0.8,      # Node fraction
-                        'reg_alpha': 0.2,             # L1 Regularization
-                        'reg_lambda': 0.05,           # L2 Regularization
-                        'n_jobs': 1,                  # Parallelism handled by joblib wrapper
+                        'subsample': 0.8,
+                        'colsample_bytree': 1.0,      # Must be 1.0 (we only have 1 feature!)
+                        'colsample_bynode': 1.0,
+                        'reg_alpha': 0.5,             # Higher L1 to force clean splits
+                        'reg_lambda': 0.5,
+                        'n_jobs': 1,
                         'verbose': -1,
                         'random_state': 42
                     }

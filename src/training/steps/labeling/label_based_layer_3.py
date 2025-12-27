@@ -93,8 +93,10 @@ from src.utils.purged_kfold import PurgedKFoldTime
 def generate_efficiency_labels(events_df, price_series, tx_cost=0.0, threshold=0.2):
     """
     Generates binary classification labels based on Relative Efficiency (percentile-based), net of costs.
-    Class 1: Top 40% of net returns (relative performance)
-    Class 0: Bottom 60% of net returns
+    Class 1: Top 40% of net returns (relative performance) compared to HISTORY (Expanding Window).
+    Class 0: Bottom 60% of net returns compared to HISTORY.
+
+    Uses expanding window to prevent data leakage (De Prado).
     """
     labels = pd.Series(index=events_df.index, dtype=float)
     
@@ -102,34 +104,54 @@ def generate_efficiency_labels(events_df, price_series, tx_cost=0.0, threshold=0
     net_returns = []
     valid_indices = []
     
-    for idx, row in events_df.iterrows():
-        t0, t1 = row['entry_time'], row['exit_time']
-        
-        # Get realized PnL
-        trade_price = price_series[t0:t1]
-        if len(trade_price) < 2:
-            continue
+    # Ensure chronological order for expanding window
+    sorted_events = events_df.sort_index()
+
+    for idx, row in sorted_events.iterrows():
+        try:
+            t0, t1 = row['entry_time'], row['exit_time']
             
-        realized_ret = (trade_price.iloc[-1] / trade_price.iloc[0]) - 1
-        net_ret = realized_ret - tx_cost
-        
-        net_returns.append(net_ret)
-        valid_indices.append(idx)
+            # Get realized PnL
+            # Handle potential missing data in price_series
+            if t0 not in price_series.index or t1 not in price_series.index:
+                # Try approximate slicing
+                trade_price = price_series[t0:t1]
+            else:
+                trade_price = price_series[t0:t1]
+
+            if len(trade_price) < 2:
+                continue
+
+            realized_ret = (trade_price.iloc[-1] / trade_price.iloc[0]) - 1
+            net_ret = realized_ret - tx_cost
+
+            net_returns.append(net_ret)
+            valid_indices.append(idx)
+        except Exception:
+            continue
     
     # If no valid trades, return all zeros
     if len(net_returns) == 0:
         return labels.fillna(0)
     
-    # Calculate percentile threshold (top 40% get label 1)
-    net_returns_array = np.array(net_returns)
-    threshold_ret = np.percentile(net_returns_array, 60)  # 60th percentile = top 40%
+    # Calculate expanding threshold
+    # We use valid_indices which preserves the sorted order
+    net_returns_series = pd.Series(net_returns, index=valid_indices)
     
-    # Assign labels based on relative performance
-    for i, idx in enumerate(valid_indices):
-        if net_returns[i] > threshold_ret:
-            labels[idx] = 1
-        else:
-            labels[idx] = 0
+    # Expanding 60th percentile (Top 40%)
+    # Shift by 1 to ensure we only use PAST data for the threshold (Strict no-lookahead)
+    # Min periods 20 to avoid noise at start
+    threshold_series = net_returns_series.expanding(min_periods=20).quantile(0.60).shift(1)
+
+    # Fallback for initial period: Absolute Hurdle (Net Return > 0)
+    # If we don't have enough history, efficient means profitable.
+    threshold_series = threshold_series.fillna(0.0)
+
+    # Assign labels
+    efficiency_mask = net_returns_series > threshold_series
+
+    # Map back to labels Series
+    labels.loc[valid_indices] = efficiency_mask.astype(float)
             
     return labels.fillna(0)
 

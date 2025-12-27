@@ -2127,12 +2127,23 @@ class LabelBasedLayer2:
             # Enforce min profit logic from _compute_dominance_labels
             min_profit = self.transaction_cost * 1.1
 
+            # ECONOMIC CONSTRAINTS
+            min_sl_dist = 0.004
+            max_tp_dist = 0.03
+
             # Target Size (Percentage)
-            target_size = np.maximum(eff_kappa * vol, min_profit)
+            raw_target = eff_kappa * vol
+            target_size = np.maximum(raw_target, min_profit)
+            # Apply Max TP ceiling
+            target_size = np.minimum(target_size, max_tp_dist)
+
             target_size = target_size.replace(0.0, np.nan) # Avoid div/0
 
             # Stop Size (Percentage)
-            stop_size = eff_sl * vol
+            raw_stop = eff_sl * vol
+            # Apply Min SL floor
+            stop_size = np.maximum(raw_stop, min_sl_dist)
+
             stop_size = stop_size.replace(0.0, np.nan)
 
             # Features
@@ -2506,19 +2517,35 @@ class LabelBasedLayer2:
         stop_threshold = None
         profit_threshold = None
 
+        # ECONOMIC CONSTRAINTS
+        # Min SL: 0.4% floor (Hard economic constraint for noise filtering)
+        min_sl_dist = 0.004
+        # Max TP: 3% ceiling (Hard economic constraint for realistic targets)
+        max_tp_dist = 0.03
+
         if is_new_logic:
-            stop_threshold = eff_sl_sigma * vol_series
+            # New logic (Dominance Score)
+            # stop_threshold = vol * multiplier, but clamped
+            raw_stop = eff_sl_sigma * vol_series
+            stop_threshold = np.maximum(raw_stop, min_sl_dist)
         else:
-            # Legacy logic with adjustment
+            # Legacy logic with adjustment (Triple Barrier)
             vol_median = vol_series.median()
             vol_adj_factor = 1.0 + 0.3 * ((vol_series - vol_median) / (vol_median + 1e-9))
             vol_adj_factor = vol_adj_factor.clip(lower=0.7, upper=1.3)
-            stop_threshold = float(eff_sl_sigma) * vol_series * vol_adj_factor
+
+            raw_stop = float(eff_sl_sigma) * vol_series * vol_adj_factor
+            # Apply Min SL Floor
+            stop_threshold = np.maximum(raw_stop, min_sl_dist)
 
             # For Legacy, we also have profit_threshold
             eff_kappa = kappa if kappa is not None else 2.0
             min_profit = self.transaction_cost * 1.1
-            profit_threshold = np.maximum(float(eff_kappa) * vol_series * vol_adj_factor, min_profit)
+
+            raw_target = float(eff_kappa) * vol_series * vol_adj_factor
+            # Apply Min Profit Floor (existing) and Max TP Ceiling (new)
+            profit_threshold = np.maximum(raw_target, min_profit)
+            profit_threshold = np.minimum(profit_threshold, max_tp_dist)
 
         signals = self._get_or_build_signals(df, events_df, family)
 
@@ -2567,6 +2594,9 @@ class LabelBasedLayer2:
         
         if is_new_logic:
             # 1. Run with STOP only
+            # Note: For new logic (Dominance), profit_threshold is effectively None (infinite)
+            # But the 'score' calculation uses normalized MFE/MAE.
+            # We still need to respect stop_threshold (clamped above).
             (
                 realized_returns, _, exit_reasons, _,
                 mfe_series, mae_series, _, _
@@ -2595,7 +2625,12 @@ class LabelBasedLayer2:
             # Use volatility at entry time
             vol_at_entry = pd.to_numeric(df.get('volatility_1d'), errors='coerce').astype(float).reindex(calc_events_idx).fillna(0.0)
 
-            norm_mfe = mfe_aligned / vol_at_entry
+            # Apply Max TP constraint logic for scoring
+            # If max_tp_dist is enforced, mfe should be capped at max_tp_dist for scoring?
+            # Let's cap the effective MFE used for score calculation.
+            mfe_capped = np.minimum(mfe_aligned, max_tp_dist)
+
+            norm_mfe = mfe_capped / vol_at_entry
             norm_mae = mae_aligned / vol_at_entry
 
             # Avoid div/0
@@ -3314,7 +3349,47 @@ class LabelBasedLayer2:
                 )
 
                 model.fit(X_fold[features], y_fold, sample_weight=weights)
-                return self._calculate_dynamic_score(model, features, w)
+
+                # Get Tree-based Score (MDI-based)
+                tree_score = self._calculate_dynamic_score(model, features, w)
+
+                # Calculate Spearman IC (Proxy for SFI)
+                # We calculate correlation of features with target on the FOLD data (or validation?)
+                # De Prado suggests SFI on the whole set, but here we can do it on the fold to match context.
+                # To be robust, let's use the subsampled X_fold used for training.
+                ic_scores = []
+                for feat in features:
+                    try:
+                        # Spearman correlation (rank-based)
+                        val, _ = spearmanr(X_fold[feat], y_fold)
+                        ic_scores.append(abs(val) if np.isfinite(val) else 0.0)
+                    except:
+                        ic_scores.append(0.0)
+
+                ic_series = pd.Series(ic_scores, index=features).fillna(0.0)
+
+                # Normalize IC to [0, 1] relative to max in this batch (or absolute?)
+                # Robust normalization is better
+                ic_norm = self._robust_normalize(ic_series)
+
+                # Combine: 80% Tree Score + 20% IC Score
+                # Ensure tree_score is also on similar scale?
+                # _calculate_dynamic_score returns a score derived from MinMaxScaler (0-1).
+                # _robust_normalize returns robust z-score logic? No, let's check.
+                # _robust_normalize returns (x - med) / IQR. This is not 0-1 bounded.
+                # Let's use MinMaxScaler on IC to match _calculate_dynamic_score's final step.
+
+                scaler = MinMaxScaler()
+                ic_scaled = pd.Series(
+                    scaler.fit_transform(ic_series.values.reshape(-1, 1)).flatten(),
+                    index=ic_series.index
+                )
+
+                # Recalculate tree score scale if needed?
+                # _calculate_dynamic_score already returns 0-1 weighted sum.
+
+                final_combined = 0.8 * tree_score + 0.2 * ic_scaled
+                return final_combined
 
             # Execute
             if n_cv_active == 0:
@@ -5177,9 +5252,10 @@ class LabelBasedLayer2:
 
             # Outcome-space diversification: avoid selecting highly correlated return series
             try:
-                corr_thr = float(getattr(self, '_current_config', {}).get('layer2_outcome_corr_threshold', 0.95))
+                # Lowered default correlation threshold to 0.80 to ensure diversity
+                corr_thr = float(getattr(self, '_current_config', {}).get('layer2_outcome_corr_threshold', 0.80))
             except Exception:
-                corr_thr = 0.95
+                corr_thr = 0.80
 
             ret_cache: Dict[str, pd.Series] = {}
             def _get_ret_series(t_obj: GeometryTrial) -> pd.Series:
@@ -5253,131 +5329,101 @@ class LabelBasedLayer2:
 
             selected.extend(fam_selected)
 
-        # -----------------------------------------------------------------
-        # Final global (cross-family) diversification pass
-        # -----------------------------------------------------------------
-        try:
-            cfg_global = getattr(self, '_current_config', {})
-            if not isinstance(cfg_global, dict):
-                cfg_global = {}
-        except Exception:
-            cfg_global = {}
+            # CLUSTER-BASED SELECTION (Global Diversification)
+            # Replaces greedy filtering with Hierarchical Clustering to ensure structural diversity.
 
-        try:
-            global_div_enabled = bool(cfg_global.get('layer2_global_diversification_enabled', True))
-        except Exception:
-            global_div_enabled = True
-
-        if global_div_enabled and int(len(selected)) > 1:
-            try:
-                global_corr_thr = float(cfg_global.get('layer2_global_outcome_corr_threshold', cfg_global.get('layer2_outcome_corr_threshold', 0.95)))
-            except Exception:
-                global_corr_thr = 0.95
-
-            try:
-                max_keep = int(cfg_global.get('layer2_global_max_geometries', 0))
-            except Exception:
-                max_keep = 0
-
-            try:
-                all_events_idx = pd.Index(events_df.index)
-            except Exception:
-                all_events_idx = events_df.index
-
+            # Helper to get return series for a trial
             ret_cache_global: Dict[str, pd.Series] = {}
-
-            def _series_corr(a: pd.Series, b: pd.Series) -> float:
-                try:
-                    a_v = pd.to_numeric(a, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-                    b_v = pd.to_numeric(b, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-                    if a_v.std() < 1e-12 and b_v.std() < 1e-12:
-                        return 1.0 if bool(np.allclose(a_v.values, b_v.values)) else 0.0
-                    c = float(a_v.corr(b_v))
-                    return float(c) if np.isfinite(c) else 0.0
-                except Exception:
-                    return 0.0
+            all_events_idx = events_df.index
 
             def _get_ret_series_global(t_obj: GeometryTrial) -> pd.Series:
                 key = str(getattr(t_obj, 'uuid', ''))
                 if key in ret_cache_global:
                     return ret_cache_global[key]
-
                 try:
                     fam_local = str(getattr(t_obj, 'family', ''))
-                except Exception:
-                    fam_local = ''
-
-                try:
                     fam_events_local = events_df[events_df['family'] == fam_local]
-                except Exception:
-                    fam_events_local = events_df
+                    if fam_events_local.empty:
+                        return pd.Series(0.0, index=all_events_idx)
 
-                try:
                     _lbl, _ret, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
                     s_evt = pd.to_numeric(_ret, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-                except Exception:
-                    s_evt = pd.Series(0.0, index=fam_events_local.index)
 
-                try:
+                    # Align to global index
                     s_glob = pd.Series(0.0, index=all_events_idx, dtype=float)
-                    s_glob.loc[s_evt.index.intersection(all_events_idx)] = s_evt.reindex(all_events_idx).fillna(0.0).loc[s_evt.index.intersection(all_events_idx)].values
+                    common = s_evt.index.intersection(all_events_idx)
+                    s_glob.loc[common] = s_evt.loc[common]
                 except Exception:
-                    try:
-                        s_glob = s_evt.reindex(all_events_idx).fillna(0.0)
-                    except Exception:
-                        s_glob = pd.Series(0.0, index=all_events_idx, dtype=float)
+                    s_glob = pd.Series(0.0, index=all_events_idx)
 
                 ret_cache_global[key] = s_glob
                 return s_glob
 
-            def _quality_key(t_obj: GeometryTrial) -> Tuple[float, float, float, float]:
-                rm = getattr(t_obj, 'raw_metrics', None)
-                rm = rm if isinstance(rm, dict) else {}
-                try:
-                    auc_full = float(rm.get('auc_full')) if rm.get('auc_full') is not None and np.isfinite(float(rm.get('auc_full'))) else float('-inf')
-                except Exception:
-                    auc_full = float('-inf')
-                try:
-                    auc_light = float(rm.get('auc_lgbm_light')) if rm.get('auc_lgbm_light') is not None and np.isfinite(float(rm.get('auc_lgbm_light'))) else float('-inf')
-                except Exception:
-                    auc_light = float('-inf')
-                try:
-                    auc_lin = float(rm.get('auc_linear')) if rm.get('auc_linear') is not None and np.isfinite(float(rm.get('auc_linear'))) else float('-inf')
-                except Exception:
-                    auc_lin = float('-inf')
-                try:
-                    score = float(getattr(t_obj, 'final_score', -1.0))
-                except Exception:
-                    score = -1.0
-                return (auc_full, auc_light, auc_lin, score)
-
-            ordered = sorted(list(selected), key=_quality_key, reverse=True)
-
-            kept: List[GeometryTrial] = []
-            for cand in ordered:
-                if max_keep > 0 and len(kept) >= max_keep:
-                    break
-
-                cand_ret = _get_ret_series_global(cand)
-                ok = True
-                for k in kept:
-                    k_ret = _get_ret_series_global(k)
-                    c = _series_corr(cand_ret, k_ret)
-                    if np.isfinite(c) and abs(float(c)) >= float(global_corr_thr):
-                        ok = False
-                        break
-                if ok:
-                    kept.append(cand)
+            # -----------------------------------------------------------------
+            # Final global (cross-family) diversification pass
+            # -----------------------------------------------------------------
+            # Re-apply clustering globally to ensure total diversity
+            try:
+                cfg_global = getattr(self, '_current_config', {})
+                if not isinstance(cfg_global, dict):
+                    cfg_global = {}
+            except Exception:
+                cfg_global = {}
 
             try:
-                if len(kept) < len(selected):
-                    logger.info(
-                        f"Layer2 Global Diversification: kept={int(len(kept))}/{int(len(selected))}, corr_thr={float(global_corr_thr):.3f}"
-                    )
+                global_div_enabled = bool(cfg_global.get('layer2_global_diversification_enabled', True))
             except Exception:
-                pass
+                global_div_enabled = True
 
-            selected = kept
+            if global_div_enabled and len(selected) > 1:
+                try:
+                    # Global Max
+                    max_keep = int(cfg_global.get('layer2_global_max_geometries', 10))
+                except Exception:
+                    max_keep = 10
+
+                if len(selected) <= max_keep:
+                    kept = selected
+                else:
+                    # Global Clustering
+                    all_candidates = list(selected)
+                    n_glob = len(all_candidates)
+
+                    # Re-use cache
+                    def _get_ret_global_cached(t_obj):
+                        return _get_ret_series_global(t_obj)
+
+                    series_list = [_get_ret_global_cached(c) for c in all_candidates]
+                    corr_mat = np.zeros((n_glob, n_glob))
+
+                    for i in range(n_glob):
+                        for j in range(i, n_glob):
+                            if i == j: c = 1.0
+                            else: c = series_list[i].corr(series_list[j])
+                            corr_mat[i, j] = c
+                            corr_mat[j, i] = c
+
+                    corr_mat = np.nan_to_num(corr_mat, nan=0.0)
+                    dist_mat = 1.0 - np.abs(corr_mat)
+                    np.fill_diagonal(dist_mat, 0.0)
+
+                    try:
+                        Z = linkage(squareform(dist_mat, checks=False), method='average')
+                        labels = fcluster(Z, t=max_keep, criterion='maxclust')
+
+                        kept = []
+                        for clust_id in np.unique(labels):
+                            indices = np.where(labels == clust_id)[0]
+                            cluster_cands = [all_candidates[i] for i in indices]
+                            best = max(cluster_cands, key=lambda x: float(getattr(x, 'final_score', -1.0)))
+                            kept.append(best)
+
+                        logger.info(f"Global Clustering reduced {len(selected)} -> {len(kept)} geometries.")
+                    except Exception as e:
+                        logger.warning(f"Global clustering failed: {e}. Using score sort.")
+                        kept = sorted(selected, key=lambda x: float(getattr(x, 'final_score', -1.0)), reverse=True)[:max_keep]
+
+                selected = kept
 
         return selected
 

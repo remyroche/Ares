@@ -767,6 +767,18 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
         logger.warning(f"Failed to calculate tree variance: {e}")
         return np.zeros(X.shape[0])
 
+class TitanLGBMFocalObjective:
+    """
+    Wrapper for RobustFocalLoss to be used with sklearn API of LightGBM.
+    Ensures picklability for Parallel execution and consistent behavior with trading models.
+    """
+    def __init__(self, gamma_pos=0.5, gamma_neg=1.25, alpha=0.65):
+        self.loss = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=alpha, verbose=False)
+
+    def __call__(self, y_true, y_pred):
+        # Matching _train_geometry_models logic exactly (argument mapping)
+        return self.loss(y_true, y_pred)
+
 @dataclass
 class GeometryTrial:
     family: str
@@ -3264,6 +3276,13 @@ class LabelBasedLayer2:
             logger.info(f"RFE: {n_feats} feats | CV: {n_cv_active} | Est: {n_est} | ShadowRank: {prev_shadow_rank_pct:.2%}")
 
             # --- C. TRAINING ---
+            # Define Focal Loss locally for pickling safety in Parallel
+            gamma_pos, gamma_neg, f_alpha = 0.5, 1.25, 0.65
+            focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha, verbose=False)
+
+            def lgbm_focal_obj(y_pred, y_true):
+                return focal_obj(y_pred, y_true)
+
             def run_fold_process(train_idx, val_idx, features):
                 X_fold = X_work.iloc[train_idx]
                 y_fold = y.iloc[train_idx]
@@ -3278,8 +3297,9 @@ class LabelBasedLayer2:
                 weights = 1.0 / (vol + 1e-5)
                 weights = weights.clip(upper=weights.quantile(0.99))
 
-                # 3. Model Fit (LGBM Optimized)
+                # 3. Model Fit (LGBM Optimized with RobustFocalLoss)
                 model = lgb.LGBMClassifier(
+                    objective=lgbm_focal_obj,
                     n_estimators=n_est,
                     max_depth=6,
                     learning_rate=0.05,
@@ -3482,8 +3502,16 @@ class LabelBasedLayer2:
         n_splits = 2 # Reduced from 3 for speed
         tscv = TimeSeriesSplit(n_splits=n_splits)
 
+        # Robust Focal Loss for consistency with trading models
+        gamma_pos, gamma_neg, f_alpha = 0.5, 1.25, 0.65
+        focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha, verbose=False)
+
+        def lgbm_focal_obj(y_pred, y_true):
+            return focal_obj(y_pred, y_true)
+
         # We need a base model for scoring
         base_model = lgb.LGBMClassifier(
+            objective=lgbm_focal_obj,
             n_estimators=100,
             learning_rate=0.05,
             num_leaves=31,

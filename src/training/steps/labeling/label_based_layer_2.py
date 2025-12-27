@@ -3294,22 +3294,26 @@ class LabelBasedLayer2:
                 n_cv_active = 0
 
             # --- B. DYNAMIC WEIGHTS & CONFIG ---
-            w = {'total': 0.40, 'avg': 0.25, 'struct': 0.20, 'uni': 0.15}
 
-            # Early Stage (Speed Mode)
-            if n_cv_active == 0:
-                w['uni'] = 0.0
-                w['total'] += 0.10
-                w['avg'] += 0.05
+            # Determine if we are in Phase 2 (Fine-tuning with SFI)
+            # Use SFI only when feature count drops to <= 250
+            use_sfi = (n_feats <= 250)
 
-            # Late Stage (Precision Mode)
-            if n_feats < 2 * min_features:
-                w = {'total': 0.55, 'avg': 0.0, 'struct': 0.25, 'uni': 0.20}
+            if use_sfi:
+                # Phase 2 Weights (Rebalanced: 70% Tree / 30% SFI)
+                # Tree Component (0.70 total): Total 0.30, Avg 0.15, Struct 0.15, Uni 0.10
+                w = {'total': 0.30, 'avg': 0.15, 'struct': 0.15, 'uni': 0.10}
+            elif n_cv_active == 0:
+                # Phase 1 Early Stage (Speed Mode)
+                w = {'total': 0.50, 'avg': 0.30, 'struct': 0.20, 'uni': 0.00}
+            else:
+                # Phase 1 Standard
+                w = {'total': 0.40, 'avg': 0.25, 'struct': 0.20, 'uni': 0.15}
 
             # Estimators (Scale with feature count)
             n_est = max(50, int(2 * n_feats))
 
-            logger.info(f"RFE: {n_feats} feats | CV: {n_cv_active} | Est: {n_est} | ShadowRank: {prev_shadow_rank_pct:.2%}")
+            logger.info(f"RFE: {n_feats} feats | CV: {n_cv_active} | Est: {n_est} | SFI: {use_sfi} | ShadowRank: {prev_shadow_rank_pct:.2%}")
 
             # --- C. TRAINING ---
             # Define Focal Loss locally for pickling safety in Parallel
@@ -3352,47 +3356,55 @@ class LabelBasedLayer2:
                 model.fit(X_fold[features], y_fold, sample_weight=weights)
 
                 # Get Tree-based Score (MDI-based)
+                # calculate_dynamic_score normalizes inputs to [0,1].
+                # If we pass weights summing to 0.70, output is in [0, 0.70].
                 tree_score = self._calculate_dynamic_score(model, features, w)
 
-                # Calculate Cheap SFI (Depth-2 Tree AUC)
-                # This captures non-monotonic (U-shaped) relationships that Spearman misses (De Prado),
-                # while maintaining O(N) efficiency vs O(N^2) full SFI.
-                sfi_scores = []
+                # Calculate SFI if active
+                if use_sfi:
+                    sfi_scores = []
+                    # SFI Model: LGBM with RobustFocalLoss (Depth-2)
+                    # Use lighter estimators for SFI loop speed
+                    sfi_model = lgb.LGBMClassifier(
+                        objective=lgbm_focal_obj,
+                        n_estimators=10,
+                        max_depth=2,
+                        learning_rate=0.1,
+                        verbose=-1,
+                        n_jobs=1
+                    )
 
-                for feat in features:
-                    try:
-                        # Reshape X for sklearn (n_samples, 1)
-                        feat_val = X_fold[[feat]].values # Preserves 2D shape
+                    for feat in features:
+                        try:
+                            # Reshape X for sklearn (n_samples, 1)
+                            # LightGBM needs dataframe to keep feature name or numpy
+                            feat_val = X_fold[[feat]]
 
-                        dt = DecisionTreeClassifier(max_depth=2, random_state=42, class_weight='balanced')
-                        # Use weights if available (inherited from outer scope)
-                        # w_tr is locally defined but available in closure?
-                        # weights is defined in run_fold_process.
-                        if weights is not None:
-                             dt.fit(feat_val, y_fold, sample_weight=weights)
-                        else:
-                             dt.fit(feat_val, y_fold)
+                            sfi_model.fit(feat_val, y_fold, sample_weight=weights)
 
-                        # Predict proba for class 1
-                        probs = dt.predict_proba(feat_val)[:, 1]
+                            # Predict proba for class 1
+                            # Since using custom objective, raw output is margin.
+                            raw_preds = sfi_model.predict(feat_val, raw_score=True)
+                            probs = expit(raw_preds)
 
-                        # Calc AUC
-                        score = roc_auc_score(y_fold, probs)
-                        # AUC < 0.5 implies inverted signal, but tree learns direction automatically.
-                        # So AUC on training data will generally be >= 0.5.
-                        sfi_scores.append(max(0.5, score))
-                    except:
-                        sfi_scores.append(0.5)
+                            # Calc AUC
+                            score = roc_auc_score(y_fold, probs)
+                            sfi_scores.append(max(0.5, score))
+                        except:
+                            sfi_scores.append(0.5)
 
-                sfi_series = pd.Series(sfi_scores, index=features).fillna(0.5)
+                    sfi_series = pd.Series(sfi_scores, index=features).fillna(0.5)
 
-                # Normalize SFI to [0, 1]
-                # AUC is [0.5, 1.0]. Map to [0, 1].
-                sfi_norm = (sfi_series - 0.5) * 2.0
-                sfi_norm = sfi_norm.clip(0.0, 1.0)
+                    # Normalize SFI to [0, 1] (AUC 0.5->0, 1.0->1)
+                    sfi_norm = (sfi_series - 0.5) * 2.0
+                    sfi_norm = sfi_norm.clip(0.0, 1.0)
 
-                # Combine: 80% Tree Score + 20% SFI Score (Cheap SFI)
-                final_combined = 0.8 * tree_score + 0.2 * sfi_norm
+                    # Combine: Tree Score (0.7 contribution from weights) + 0.3 * SFI
+                    final_combined = tree_score + 0.3 * sfi_norm
+                else:
+                    # Phase 1: Only Tree Score (weights sum to 1.0)
+                    final_combined = tree_score
+
                 return final_combined
 
             # Execute

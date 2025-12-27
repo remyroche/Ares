@@ -30,6 +30,7 @@ from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.tree import DecisionTreeClassifier
 from scipy.stats import spearmanr, rankdata
 from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
@@ -3353,42 +3354,45 @@ class LabelBasedLayer2:
                 # Get Tree-based Score (MDI-based)
                 tree_score = self._calculate_dynamic_score(model, features, w)
 
-                # Calculate Spearman IC (Proxy for SFI)
-                # We calculate correlation of features with target on the FOLD data (or validation?)
-                # De Prado suggests SFI on the whole set, but here we can do it on the fold to match context.
-                # To be robust, let's use the subsampled X_fold used for training.
-                ic_scores = []
+                # Calculate Cheap SFI (Depth-2 Tree AUC)
+                # This captures non-monotonic (U-shaped) relationships that Spearman misses (De Prado),
+                # while maintaining O(N) efficiency vs O(N^2) full SFI.
+                sfi_scores = []
+
                 for feat in features:
                     try:
-                        # Spearman correlation (rank-based)
-                        val, _ = spearmanr(X_fold[feat], y_fold)
-                        ic_scores.append(abs(val) if np.isfinite(val) else 0.0)
+                        # Reshape X for sklearn (n_samples, 1)
+                        feat_val = X_fold[[feat]].values # Preserves 2D shape
+
+                        dt = DecisionTreeClassifier(max_depth=2, random_state=42, class_weight='balanced')
+                        # Use weights if available (inherited from outer scope)
+                        # w_tr is locally defined but available in closure?
+                        # weights is defined in run_fold_process.
+                        if weights is not None:
+                             dt.fit(feat_val, y_fold, sample_weight=weights)
+                        else:
+                             dt.fit(feat_val, y_fold)
+
+                        # Predict proba for class 1
+                        probs = dt.predict_proba(feat_val)[:, 1]
+
+                        # Calc AUC
+                        score = roc_auc_score(y_fold, probs)
+                        # AUC < 0.5 implies inverted signal, but tree learns direction automatically.
+                        # So AUC on training data will generally be >= 0.5.
+                        sfi_scores.append(max(0.5, score))
                     except:
-                        ic_scores.append(0.0)
+                        sfi_scores.append(0.5)
 
-                ic_series = pd.Series(ic_scores, index=features).fillna(0.0)
+                sfi_series = pd.Series(sfi_scores, index=features).fillna(0.5)
 
-                # Normalize IC to [0, 1] relative to max in this batch (or absolute?)
-                # Robust normalization is better
-                ic_norm = self._robust_normalize(ic_series)
+                # Normalize SFI to [0, 1]
+                # AUC is [0.5, 1.0]. Map to [0, 1].
+                sfi_norm = (sfi_series - 0.5) * 2.0
+                sfi_norm = sfi_norm.clip(0.0, 1.0)
 
-                # Combine: 80% Tree Score + 20% IC Score
-                # Ensure tree_score is also on similar scale?
-                # _calculate_dynamic_score returns a score derived from MinMaxScaler (0-1).
-                # _robust_normalize returns robust z-score logic? No, let's check.
-                # _robust_normalize returns (x - med) / IQR. This is not 0-1 bounded.
-                # Let's use MinMaxScaler on IC to match _calculate_dynamic_score's final step.
-
-                scaler = MinMaxScaler()
-                ic_scaled = pd.Series(
-                    scaler.fit_transform(ic_series.values.reshape(-1, 1)).flatten(),
-                    index=ic_series.index
-                )
-
-                # Recalculate tree score scale if needed?
-                # _calculate_dynamic_score already returns 0-1 weighted sum.
-
-                final_combined = 0.8 * tree_score + 0.2 * ic_scaled
+                # Combine: 80% Tree Score + 20% SFI Score (Cheap SFI)
+                final_combined = 0.8 * tree_score + 0.2 * sfi_norm
                 return final_combined
 
             # Execute

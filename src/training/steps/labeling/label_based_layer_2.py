@@ -2853,6 +2853,130 @@ class LabelBasedLayer2:
         scaled = (s_log - s_log.median()) / iqr
         return scaled.clip(lower=0)
 
+    def _compute_root_dispersion(self, df: pd.DataFrame, feature_names: List[str], decay: float = 0.7) -> pd.Series:
+        """
+        Cheap proxy for uniformity: cross-tree root dispersion.
+        """
+        if df.empty:
+            return pd.Series(0.0, index=feature_names)
+
+        # Only need tree_index, split_feature, node_depth
+        splits = df[['tree_index', 'split_feature', 'node_depth']]
+
+        # Keep only earliest appearance per tree
+        min_depth = (
+            splits
+            .groupby(['tree_index', 'split_feature'])['node_depth']
+            .min()
+            .reset_index()
+        )
+
+        # Depth-weighted presence
+        min_depth['w'] = np.exp(-decay * min_depth['node_depth'])
+
+        # Aggregate per feature
+        rds = min_depth.groupby('split_feature')['w'].mean()
+
+        return rds.reindex(feature_names).fillna(0.0)
+
+    def _select_optimal_k(
+        self,
+        rfe_history_df: pd.DataFrame,
+        effective_n_samples: int,
+        tree_depth: int = 6,
+        signal_threshold: float = 0.95,
+        shadow_percentile: float = 75,
+        marginal_eps: float = 0.005
+    ) -> List[str]:
+        """
+        Trident stopping rule for optimal K selection.
+        """
+        # --- 1. Separate & Sort (CRITICAL FIX) ---
+        # Ensure shadow doesn't pollute the sorting
+        shadow_rows = rfe_history_df[rfe_history_df['feature'] == 'SHADOW_NOISE']
+
+        if shadow_rows.empty:
+            # Fallback if shadow missing
+            shadow_cutoff = 0.0
+        else:
+            # Get Shadow Threshold (Robust against single or multiple shadow entries)
+            shadow_scores = shadow_rows['hafsr_score'].values
+            shadow_cutoff = np.percentile(shadow_scores, shadow_percentile)
+
+        # Filter Real Features and FORCE SORT descending
+        clean_df = rfe_history_df[rfe_history_df['feature'] != 'SHADOW_NOISE'].copy()
+        clean_df = clean_df.sort_values('hafsr_score', ascending=False)
+
+        # --- 2. Prepare Scores ---
+        # Clip negative scores to 0 (anti-signal shouldn't reduce cumulative sum)
+        scores = clean_df['hafsr_score'].clip(lower=0).values
+        total_signal = scores.sum()
+
+        if total_signal == 0:
+            logger.warning("Warning: No positive signal detected across all features.")
+            return []
+
+        # Calculate Cumulative and Marginal Signal
+        cumulative_signal = np.cumsum(scores) / total_signal
+        # Normalized marginal contribution of each feature
+        marginal_signal = scores / total_signal
+
+        # --- 3. Capacity Constraint (De Prado) ---
+        # Formula: N / (Depth * 8) is a conservative estimate for degrees of freedom
+        # We ensure a minimum floor of 5 features to prevent over-pruning on small datasets
+        calculated_cap = int(effective_n_samples / (tree_depth * 8))
+        max_k_capacity = max(5, calculated_cap)
+
+        # --- 4. Trident Evaluation ---
+        optimal_k = len(clean_df)
+        reason = "Exhausted (Kept All)"
+
+        for k in range(1, len(clean_df) + 1):
+            idx = k - 1 # 0-based index
+
+            current_score = scores[idx]
+            current_cumulative = cumulative_signal[idx]
+            current_marginal = marginal_signal[idx]
+
+            # STOP CONDITION 1: Capacity Limit
+            if k > max_k_capacity:
+                optimal_k = k - 1
+                reason = f"Capacity Limit (Max {max_k_capacity})"
+                break
+
+            # STOP CONDITION 2: Noise Dominance (Shadow Gap)
+            # If current feature is weaker than the shadow baseline
+            if current_score <= shadow_cutoff:
+                optimal_k = k - 1
+                reason = "Hit Noise Floor (Shadow Dominance)"
+                break
+
+            # STOP CONDITION 3: Signal Saturation (The Elbow)
+            # We stop if we have enough signal (95%)
+            # OR if the new feature adds virtually nothing (< 0.5%)
+            # Note: We check k > 5 to ensure we don't stop too early on the "Head"
+            if k > 5:
+                if current_cumulative >= signal_threshold:
+                    optimal_k = k
+                    reason = f"Signal Saturation (>{signal_threshold:.0%})"
+                    break
+
+                if current_marginal < marginal_eps:
+                    optimal_k = k - 1
+                    reason = f"Marginal Decay (<{marginal_eps:.1%})"
+                    break
+
+        # Final Safety: Ensure we select at least 1 feature if signal exists
+        if optimal_k < 1 and total_signal > 0:
+            optimal_k = 1
+            reason = "Forced Minimum (1)"
+
+        logger.info(f"Selected K={optimal_k} | Reason: {reason}")
+        if optimal_k > 0:
+            logger.info(f" Cumulative Signal: {cumulative_signal[optimal_k-1]:.4f}")
+
+        return clean_df.iloc[:optimal_k]['feature'].tolist()
+
     def _calculate_dynamic_score(self, model, feature_names: List[str], weights: Dict[str, float]) -> pd.Series:
         """
         Calculates feature importance using 4 weighted components:
@@ -2891,21 +3015,9 @@ class LabelBasedLayer2:
             else:
                 struct_gain = pd.Series(0, index=feature_names)
 
-            # 4. Uniformity (Consistency) - 1 minus Gini
+            # 4. Uniformity (Consistency) - Root Dispersion Proxy
             if weights.get('uni', 0) > 0:
-                # Pivot: Rows=Trees, Cols=Features
-                mat = df.groupby(['tree_index', 'split_feature'])['split_gain'].sum().unstack(fill_value=0)
-
-                def vec_gini(arr):
-                    arr = np.sort(arr)
-                    if arr.sum() == 0: return 1.0
-                    n = arr.shape[0]
-                    idx = np.arange(1, n+1)
-                    return ((2*idx - n - 1) * arr).sum() / (n * arr.sum())
-
-                # Apply Gini and Invert (1.0 = Perfect Uniformity)
-                uni_series = 1.0 - mat.apply(lambda x: vec_gini(x.values), axis=0)
-                uniformity = uni_series.reindex(feature_names).fillna(0)
+                uniformity = self._compute_root_dispersion(df, feature_names, decay=0.7)
             else:
                 uniformity = pd.Series(0, index=feature_names)
 
@@ -3232,13 +3344,31 @@ class LabelBasedLayer2:
 
             # Geometric Drop
             ranked = stability.sort_values(ascending=False)
-            n_keep = max(min_features, int(len(ranked) * 0.80))
+            # RFE: remove 50% features per round
+            n_keep = max(min_features, int(len(ranked) * 0.50))
 
             keep_feats = ranked.index[:n_keep].tolist()
             keep_feats.append('SHADOW_NOISE')
             current_features = keep_feats
 
-        return [f for f in current_features if f != 'SHADOW_NOISE']
+        # --- E. TRIDENT OPTIMAL K SELECTION ---
+        # At this point, we have ~min_features left (e.g. 70).
+        # We need to pick the "optimal" subset from these survivors.
+
+        # Reconstruct history dataframe from the final stability scores
+        if 'stability' in locals():
+            rfe_history = stability.reset_index()
+            rfe_history.columns = ['feature', 'hafsr_score']
+
+            # Run Trident
+            selected_features = self._select_optimal_k(
+                rfe_history,
+                effective_n_samples=len(y),
+                tree_depth=6
+            )
+            return selected_features
+        else:
+            return [f for f in current_features if f != 'SHADOW_NOISE']
 
     def _aggregate_geometry_labels_for_feature_selection(
         self,

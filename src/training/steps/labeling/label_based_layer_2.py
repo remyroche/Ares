@@ -3327,6 +3327,10 @@ class LabelBasedLayer2:
                 X_fold = X_work.iloc[train_idx]
                 y_fold = y.iloc[train_idx]
 
+                # Capture Validation Data for OOS SFI (De Prado's Truth Serum)
+                X_val_fold = X_work.iloc[val_idx]
+                y_val_fold = y.iloc[val_idx]
+
                 # 1. Subsampling (Speed optimization for large sets)
                 if n_feats > 3 * min_features:
                     X_fold = X_fold.sample(frac=0.5, random_state=42)
@@ -3383,17 +3387,17 @@ class LabelBasedLayer2:
 
                     for feat in features:
                         try:
-                            # Reshape X for sklearn (n_samples, 1)
-                            feat_val = X_fold[[feat]]
+                            # Train on Training Fold
+                            feat_train = X_fold[[feat]]
+                            sfi_model.fit(feat_train, y_fold, sample_weight=weights)
 
-                            sfi_model.fit(feat_val, y_fold, sample_weight=weights)
-
-                            # Predict proba for class 1
+                            # Predict on Validation Fold (OOS)
+                            # This ensures HAFSR calculates stability of OOS performance (Sharpe of Truth)
+                            feat_val = X_val_fold[[feat]]
                             probs = sfi_model.predict_proba(feat_val)[:, 1]
 
-                            # Negative Log Loss (Maximizable)
-                            # Higher is Better (e.g. -0.3 > -0.7)
-                            loss = log_loss(y_fold, probs, labels=[0, 1], eps=1e-15)
+                            # Negative Log Loss (Maximizable, OOS)
+                            loss = log_loss(y_val_fold, probs, labels=[0, 1], eps=1e-15)
                             sfi_scores.append(-loss)
                         except:
                             sfi_scores.append(-10.0)

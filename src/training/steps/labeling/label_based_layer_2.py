@@ -36,9 +36,10 @@ from scipy.spatial.distance import euclidean, squareform
 from scipy.cluster.hierarchy import linkage, fcluster
 from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional, Any, Union
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import logging
 import copy
+import warnings
 
 # Import compute_realized_returns from the existing module
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
@@ -763,6 +764,19 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
         logger.warning(f"Failed to calculate tree variance: {e}")
         return np.zeros(X.shape[0])
 
+class TitanLGBMFocalObjective:
+    """
+    Wrapper for RobustFocalLoss to be used with sklearn API of LightGBM.
+    Ensures picklability for Parallel execution and consistent behavior with trading models.
+    """
+    def __init__(self, gamma_pos=0.5, gamma_neg=1.25, alpha=0.65):
+        self.loss = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=alpha, verbose=False)
+
+    def __call__(self, y_true, y_pred):
+        # Sklearn API passes (y_true, y_pred)
+        # RobustFocalLoss expects (preds, labels) which corresponds to (y_pred, y_true)
+        return self.loss(y_pred, y_true)
+
 @dataclass
 class GeometryTrial:
     family: str
@@ -775,6 +789,7 @@ class GeometryTrial:
     raw_metrics: Dict[str, float]
     uuid: str
     model_params: Optional[Dict[str, Any]] = None
+    selected_features: Optional[List[str]] = field(default=None)
 
 class LabelBasedLayer2:
     """
@@ -934,15 +949,61 @@ class LabelBasedLayer2:
             if fallback_enabled:
                 production_geometries = self._select_best_geometries(df, events_df, full_results, require_passed=False)
 
-        # Optimize Model Parameters for Production Geometries
+        # Enforce Max 10 Geometries
+        if production_geometries and len(production_geometries) > 10:
+            logger.info(f"Capping production geometries to 10 (from {len(production_geometries)})")
+            production_geometries = production_geometries[:10]
+
+        # Optimize Model Parameters and Features for Production Geometries
         if production_geometries:
-            logger.info(">>> Layer 2: Tuning Model Parameters for Production Geometries...")
+            logger.info(">>> Layer 2: Tuning Model Parameters & Selecting Features for Production Geometries...")
+
+            # Build feature matrix once for selection
+            X_events_full = self._build_geometry_independent_event_features(df, events_df)
+            w_l1_prod = self._get_target_sample_weight_for_events(df, events_df)
+            vol_prod = df['volatility_1d'].reindex(events_df.index).fillna(0.0)
+
             for i, g in enumerate(production_geometries):
-                logger.info(f"    Tuning model for geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
+                logger.info(f"    Processing geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
+
+                # 1. Parameter Tuning
                 best_params = self._tune_geometry_model_params(df, events_df, g)
                 if best_params:
                     g.model_params = best_params
                     logger.info(f"    Found params for {g.uuid}: {best_params}")
+
+                # 2. Per-Geometry Feature Selection
+                try:
+                    cfg_prod_fs = getattr(self, "_current_config", {})
+                    if not isinstance(cfg_prod_fs, dict): cfg_prod_fs = {}
+                    enable_prod_fs = bool(cfg_prod_fs.get('layer2_production_supervised_feature_selection_enabled', True))
+
+                    if enable_prod_fs:
+                        logger.info(f"    Selecting features for {g.uuid}...")
+                        fam = str(getattr(g, 'family', ''))
+                        fam_events = events_df[events_df['family'] == fam]
+
+                        if not fam_events.empty:
+                            lbls, _, _, _, _ = self._compute_dominance_labels(df, fam_events, family=fam, **g.params)
+                            lbls = pd.to_numeric(lbls, errors='coerce').astype(float).reindex(events_df.index) # Align to global index
+
+                            # Filter to valid events for this geometry
+                            valid_idx = lbls.dropna().index
+                            if len(valid_idx) > 50:
+                                y_target = lbls.loc[valid_idx]
+                                X_target = X_events_full.reindex(valid_idx).fillna(0.0)
+                                w_target = w_l1_prod.reindex(valid_idx) if w_l1_prod is not None else None
+                                vol_target = vol_prod.reindex(valid_idx)
+
+                                sel_feats = self._select_supervised_features_for_events(
+                                    X_target, y_target, w_target, volatility_series=vol_target
+                                )
+
+                                if sel_feats:
+                                    g.selected_features = list(sel_feats)
+                                    logger.info(f"    Selected {len(sel_feats)} features for {g.uuid}")
+                except Exception as e:
+                    logger.warning(f"    Feature selection failed for {g.uuid}: {e}")
 
         # FAST-FAIL
         if not production_geometries:
@@ -1124,6 +1185,10 @@ class LabelBasedLayer2:
             if not fold_geometries:
                 continue
 
+            # Enforce Max 10 Geometries (Fold)
+            if len(fold_geometries) > 10:
+                fold_geometries = fold_geometries[:10]
+
             try:
                 by_fam_fold: Dict[str, int] = {}
                 for g in list(fold_geometries or []):
@@ -1176,14 +1241,31 @@ class LabelBasedLayer2:
             except Exception:
                 use_supervised_fs = True
 
+            # Per-Geometry Selection (Fold-Local)
             if use_supervised_fs and X_train_events_full is not None and not getattr(X_train_events_full, 'empty', True):
                 try:
-                    y_fs = self._aggregate_geometry_labels_for_feature_selection(df_train, events_train, standardized_geos)
                     w_l1 = self._get_target_sample_weight_for_events(df_train, events_train)
                     vol_train = df_train['volatility_1d'].reindex(events_train.index).fillna(0.0)
-                    fs_feats = self._select_supervised_features_for_events(X_train_events_full, y_fs, w_l1, volatility_series=vol_train)
-                    if fs_feats:
-                        fold_probe_features = fs_feats
+
+                    for g in standardized_geos:
+                         try:
+                             fam = str(getattr(g, 'family', ''))
+                             fam_events = events_train[events_train['family'] == fam]
+                             if fam_events.empty: continue
+
+                             lbls, _, _, _, _ = self._compute_dominance_labels(df_train, fam_events, family=fam, **g.params)
+                             lbls = pd.to_numeric(lbls, errors='coerce').astype(float).reindex(events_train.index)
+                             valid_idx = lbls.dropna().index
+                             if len(valid_idx) > 50:
+                                 y_t = lbls.loc[valid_idx]
+                                 X_t = X_train_events_full.reindex(valid_idx).fillna(0.0)
+                                 w_t = w_l1.reindex(valid_idx) if w_l1 is not None else None
+                                 v_t = vol_train.reindex(valid_idx)
+                                 sel = self._select_supervised_features_for_events(X_t, y_t, w_t, volatility_series=v_t)
+                                 if sel:
+                                     g.selected_features = list(sel)
+                         except Exception:
+                             pass
                 except Exception:
                     pass
 
@@ -1206,7 +1288,8 @@ class LabelBasedLayer2:
                         df=df_train,
                         X_events=X_train_events,
                         events_df=events_train,
-                        geometries=standardized_geos
+                        geometries=standardized_geos,
+                        X_events_full=X_train_events_full
                     )
                 except Exception:
                     trained_models = None
@@ -2771,218 +2854,242 @@ class LabelBasedLayer2:
 
     def _robust_normalize(self, series: pd.Series) -> pd.Series:
         """
-        Helper: Log-Robust Normalization.
-        Handles Power Law distributions (Gain) by log-transforming before
-        Robust Scaling (Median/IQR).
+        Log-Robust Normalization: Log1p -> (x - Median) / IQR.
         """
-        # 1. Log-Transform to compress order of magnitude
         s_log = np.log1p(series)
-
-        # 2. Robust Scaling
-        q1 = s_log.quantile(0.25)
-        q3 = s_log.quantile(0.75)
+        q1, q3 = s_log.quantile(0.25), s_log.quantile(0.75)
         iqr = q3 - q1
-        median = s_log.median()
-
-        # Handle zero variance
-        if iqr == 0:
-            iqr = 1.0
-
-        scaled = (s_log - median) / iqr
-
-        # 3. Clip negatives (we only care about positive signal magnitude)
+        if iqr == 0: iqr = 1.0
+        scaled = (s_log - s_log.median()) / iqr
         return scaled.clip(lower=0)
 
-    def _calculate_uniformity(self, df_trees: pd.DataFrame, feature_names: List[str], model_type='lgb') -> pd.Series:
+    def _compute_root_dispersion(self, df: pd.DataFrame, feature_names: List[str], decay: float = 0.7) -> pd.Series:
         """
-        Calculates 1 - Gini of Gain across trees.
-        (Higher Score = More Uniform/Consistent Contribution)
+        Cheap proxy for uniformity: cross-tree root dispersion.
         """
-        # Standardize column names
-        if model_type == 'lgb':
-            tree_col, feat_col, gain_col = 'tree_index', 'split_feature', 'split_gain'
-        else: # xgb
-            tree_col, feat_col, gain_col = 'Tree', 'Feature', 'Gain'
+        if df.empty:
+            return pd.Series(0.0, index=feature_names)
 
-        if df_trees.empty:
-             return pd.Series(0.0, index=feature_names)
+        # Only need tree_index, split_feature, node_depth
+        splits = df[['tree_index', 'split_feature', 'node_depth']]
 
-        # Pivot: Rows=Trees, Cols=Features
-        # Handle duplicate entries if multiple splits on same feature in same tree
-        gain_matrix = df_trees.groupby([tree_col, feat_col])[gain_col].sum().unstack(fill_value=0)
+        # Keep only earliest appearance per tree
+        min_depth = (
+            splits
+            .groupby(['tree_index', 'split_feature'])['node_depth']
+            .min()
+            .reset_index()
+        )
 
-        # Vectorized Gini Calculation
-        def vector_gini(array):
-            array = np.sort(array)
-            total = array.sum()
-            if total == 0: return 1.0 # Unused feature = Max Gini (Bad)
-            n = array.shape[0]
-            index = np.arange(1, n + 1)
-            return ((2 * index - n - 1) * array).sum() / (n * total)
+        # Depth-weighted presence
+        min_depth['w'] = np.exp(-decay * min_depth['node_depth'])
 
-        gini_scores = gain_matrix.apply(lambda x: vector_gini(x.values), axis=0)
+        # Aggregate per feature
+        rds = min_depth.groupby('split_feature')['w'].mean()
 
-        # Invert so 1.0 is Best (Uniform)
-        uniformity = 1.0 - gini_scores
-        return uniformity.reindex(feature_names).fillna(0)
+        return rds.reindex(feature_names).fillna(0.0)
 
-    def _calculate_quad_core_score(self, model, feature_names: List[str], decay_rate=0.5) -> pd.Series:
+    def _select_optimal_k(
+        self,
+        rfe_history_df: pd.DataFrame,
+        effective_n_samples: int,
+        tree_depth: int = 6,
+        signal_threshold: float = 0.95,
+        shadow_percentile: float = 75,
+        marginal_eps: float = 0.005
+    ) -> List[str]:
         """
-        The Master Scoring Function.
-        Auto-detects XGBoost vs LightGBM for optimized Structural Gain calculation.
+        Trident stopping rule for optimal K selection.
         """
-        # --- DETECT MODEL TYPE & SETUP ---
-        is_lgb = hasattr(model, 'booster_')
+        # --- 1. Separate & Sort (CRITICAL FIX) ---
+        # Ensure shadow doesn't pollute the sorting
+        shadow_rows = rfe_history_df[rfe_history_df['feature'] == 'SHADOW_NOISE']
 
+        if shadow_rows.empty:
+            # Fallback if shadow missing
+            shadow_cutoff = 0.0
+        else:
+            # Get Shadow Threshold (Robust against single or multiple shadow entries)
+            shadow_scores = shadow_rows['hafsr_score'].values
+            shadow_cutoff = np.percentile(shadow_scores, shadow_percentile)
+
+        # Filter Real Features and FORCE SORT descending
+        clean_df = rfe_history_df[rfe_history_df['feature'] != 'SHADOW_NOISE'].copy()
+        clean_df = clean_df.sort_values('hafsr_score', ascending=False)
+
+        # --- 2. Prepare Scores ---
+        # Clip negative scores to 0 (anti-signal shouldn't reduce cumulative sum)
+        scores = clean_df['hafsr_score'].clip(lower=0).values
+        total_signal = scores.sum()
+
+        if total_signal == 0:
+            logger.warning("Warning: No positive signal detected across all features.")
+            return []
+
+        # Calculate Cumulative and Marginal Signal
+        cumulative_signal = np.cumsum(scores) / total_signal
+        # Normalized marginal contribution of each feature
+        marginal_signal = scores / total_signal
+
+        # --- 3. Capacity Constraint (De Prado) ---
+        # Formula: N / (Depth * 8) is a conservative estimate for degrees of freedom
+        # We ensure a minimum floor of 5 features to prevent over-pruning on small datasets
+        calculated_cap = int(effective_n_samples / (tree_depth * 8))
+        max_k_capacity = max(5, calculated_cap)
+
+        # --- 4. Trident Evaluation ---
+        optimal_k = len(clean_df)
+        reason = "Exhausted (Kept All)"
+
+        for k in range(1, len(clean_df) + 1):
+            idx = k - 1 # 0-based index
+
+            current_score = scores[idx]
+            current_cumulative = cumulative_signal[idx]
+            current_marginal = marginal_signal[idx]
+
+            # STOP CONDITION 1: Capacity Limit
+            if k > max_k_capacity:
+                optimal_k = k - 1
+                reason = f"Capacity Limit (Max {max_k_capacity})"
+                break
+
+            # STOP CONDITION 2: Noise Dominance (Shadow Gap)
+            # If current feature is weaker than the shadow baseline
+            if current_score <= shadow_cutoff:
+                optimal_k = k - 1
+                reason = "Hit Noise Floor (Shadow Dominance)"
+                break
+
+            # STOP CONDITION 3: Signal Saturation (The Elbow)
+            # We stop if we have enough signal (95%)
+            # OR if the new feature adds virtually nothing (< 0.5%)
+            # Note: We check k > 5 to ensure we don't stop too early on the "Head"
+            if k > 5:
+                if current_cumulative >= signal_threshold:
+                    optimal_k = k
+                    reason = f"Signal Saturation (>{signal_threshold:.0%})"
+                    break
+
+                if current_marginal < marginal_eps:
+                    optimal_k = k - 1
+                    reason = f"Marginal Decay (<{marginal_eps:.1%})"
+                    break
+
+        # Final Safety: Ensure we select at least 1 feature if signal exists
+        if optimal_k < 1 and total_signal > 0:
+            optimal_k = 1
+            reason = "Forced Minimum (1)"
+
+        logger.info(f"Selected K={optimal_k} | Reason: {reason}")
+        if optimal_k > 0:
+            logger.info(f" Cumulative Signal: {cumulative_signal[optimal_k-1]:.4f}")
+
+        return clean_df.iloc[:optimal_k]['feature'].tolist()
+
+    def _calculate_dynamic_score(self, model, feature_names: List[str], weights: Dict[str, float]) -> pd.Series:
+        """
+        Calculates feature importance using 4 weighted components:
+        1. Total Gain (Volume)
+        2. Avg Gain (Efficiency)
+        3. Structural Gain (Primacy - Depth Weighted)
+        4. Uniformity (Consistency - Gini)
+        """
         try:
-            if is_lgb:
-                booster = model.booster_
-                df = booster.trees_to_dataframe()
-                # Filter leaves (LGBM leaves have split_feature as null or special)
-                df = df[df['split_feature'].notna()]
+            # 1. Extract Tree Data (LGBM)
+            # Handle both direct LGBMClassifier and wrapped objects if any
+            booster = model.booster_ if hasattr(model, 'booster_') else model
+            df = booster.trees_to_dataframe()
+            # Filter leaves (LGBM leaves have no split feature)
+            df = df[df['split_feature'].notna()]
 
-                # Standardize Columns
-                feat_col = 'split_feature'
-                gain_col = 'split_gain'
+            # 2. Basic Metrics (Volume)
+            groupby = df.groupby('split_feature')['split_gain']
+            total_gain = groupby.sum().reindex(feature_names).fillna(0)
 
-                # 1 & 2: Basic Metrics
-                groupby = df.groupby(feat_col)[gain_col]
-                total_gain = groupby.sum()
-                split_count = groupby.count()
-                avg_gain = total_gain / split_count
+            # AvgGain (Efficiency) - Only calc if needed
+            if weights.get('avg', 0) > 0:
+                split_count = groupby.count().reindex(feature_names).fillna(0)
+                avg_gain = total_gain / (split_count + 1e-9)
+            else:
+                avg_gain = pd.Series(0, index=feature_names)
 
-                # 3: Structural Gain (FAST PATH via node_depth)
-                if 'node_depth' in df.columns:
-                    df['struct_weight'] = decay_rate ** df['node_depth']
-                    df['weighted_gain'] = df[gain_col] * df['struct_weight']
-                    struct_gain = df.groupby(feat_col)['weighted_gain'].sum()
-                else:
-                    struct_gain = total_gain # Fallback
+            # 3. Structural Gain (Primacy) - Depth Weighted
+            # Filter strictly for depth <= 6 (Hard Cap)
+            df_struct = df[df['node_depth'] <= 6].copy()
 
-                # 4: Uniformity
-                uniformity = self._calculate_uniformity(df, feature_names, model_type='lgb')
+            if weights.get('struct', 0) > 0 and not df_struct.empty:
+                # Decay rate 0.5 ^ Depth
+                df_struct['w_gain'] = df_struct['split_gain'] * (0.5 ** df_struct['node_depth'])
+                struct_gain = df_struct.groupby('split_feature')['w_gain'].sum().reindex(feature_names).fillna(0)
+            else:
+                struct_gain = pd.Series(0, index=feature_names)
 
-            else: # XGBoost
-                booster = model.get_booster()
+            # 4. Uniformity (Consistency) - Root Dispersion Proxy
+            if weights.get('uni', 0) > 0:
+                uniformity = self._compute_root_dispersion(df, feature_names, decay=0.7)
+            else:
+                uniformity = pd.Series(0, index=feature_names)
 
-                # 1 & 2: Basic Metrics (Native API is faster than DF for these)
-                # get_score returns dict
-                total_gain = pd.Series(booster.get_score(importance_type='total_gain'))
-                avg_gain = pd.Series(booster.get_score(importance_type='gain'))
-
-                # 3: Structural Gain (Vectorized BFS Path)
-                df = booster.trees_to_dataframe()
-
-                # Initialize Depth
-                df['Depth'] = -1
-                root_mask = (df['Node'] == 0)
-                df.loc[root_mask, 'Depth'] = 0
-
-                # Vectorized BFS
-                if 'ID' in df.columns: # XGBoost >= 1.0
-                    current_ids = df.loc[root_mask, 'ID']
-                    current_depth = 0
-                    max_depth = 20
-
-                    while not current_ids.empty and current_depth < max_depth:
-                        parents = df[df['ID'].isin(current_ids)]
-                        non_leaf = parents[parents['Feature'] != 'Leaf']
-                        if non_leaf.empty: break
-
-                        # Get children
-                        children_ids = pd.concat([non_leaf['Yes'], non_leaf['No']]).unique()
-                        if len(children_ids) == 0: break
-
-                        # Update children depth
-                        df.loc[df['ID'].isin(children_ids), 'Depth'] = current_depth + 1
-                        current_ids = pd.Series(children_ids)
-                        current_depth += 1
-
-                # Calc Weighted Gain
-                df = df[df['Depth'] >= 0]
-                df['StructGain'] = df['Gain'] * (decay_rate ** df['Depth'])
-                struct_gain = df.groupby('Feature')['StructGain'].sum()
-
-                # 4: Uniformity
-                uniformity = self._calculate_uniformity(df, feature_names, model_type='xgb')
-
-            # --- NORMALIZE & COMBINE ---
-            # Reindex all to feature_names to handle missing/unused features
-            total_gain = total_gain.reindex(feature_names).fillna(0)
-            avg_gain = avg_gain.reindex(feature_names).fillna(0)
-            struct_gain = struct_gain.reindex(feature_names).fillna(0)
-            uniformity = uniformity.reindex(feature_names).fillna(0)
-
-            # Robust Normalization
+            # 5. Normalize & Combine
             n_total = self._robust_normalize(total_gain)
             n_avg = self._robust_normalize(avg_gain)
             n_struct = self._robust_normalize(struct_gain)
             n_uni = self._robust_normalize(uniformity)
 
-            # Scale to [0, 1] for Weighted Sum
-            # We combine them into a DF first
+            # Scale to [0,1] range for weighted sum
             scores_df = pd.DataFrame({'T': n_total, 'A': n_avg, 'S': n_struct, 'U': n_uni})
-
-            # MinMax Scale columns
             scaler = MinMaxScaler()
             scaled = pd.DataFrame(scaler.fit_transform(scores_df),
                                 index=scores_df.index, columns=scores_df.columns)
 
-            # Final Formula
-            final_score = (0.40 * scaled['T'] +
-                        0.25 * scaled['A'] +
-                        0.20 * scaled['S'] +
-                        0.15 * scaled['U'])
+            final_score = (weights['total'] * scaled['T'] +
+                        weights['avg'] * scaled['A'] +
+                        weights['struct'] * scaled['S'] +
+                        weights['uni'] * scaled['U'])
 
             return final_score
         except Exception as e:
-            logger.warning(f"Quad-Core Score failed: {e}")
+            logger.warning(f"Dynamic Score failed: {e}")
             return pd.Series(0.0, index=feature_names)
 
-    def _calculate_robust_hafsr(self, fold_scores_df: pd.DataFrame, shadow_thresholds=None) -> pd.Series:
+    def _calculate_hafsr_dynamic(self, fold_scores_df: pd.DataFrame, shadow_vals: Optional[np.ndarray], n_cv: int) -> pd.Series:
         """
-        Aggregates fold scores into a single stability metric.
-        Uses Downside MAD and Multi-Thresholding against Shadow Feature.
+        Calculates stability.
+        If CV=0: Returns (RawScore - MedianShadow).
+        If CV>0: Returns HAFSR (ExcessReturn / DownsideRisk).
         """
         if fold_scores_df.empty:
             return pd.Series()
 
-        # 1. Central Tendency (Median)
+        shadow_median = np.median(shadow_vals) if shadow_vals is not None else 0.0
+
+        if n_cv == 0:
+            # Single Fold Mode: Simple Hurdle
+            return fold_scores_df.iloc[:, 0] - shadow_median
+
+        # Multi-Fold Mode: Full HAFSR
         mu = fold_scores_df.median(axis=1)
 
-        # 2. Robust Downside (MAD of Negatives)
-        def robust_downside_mad(row):
-            center = row.median()
-            diffs = row - center
-            # Only penalize downside deviations
-            downside = diffs[diffs < 0]
-            if len(downside) == 0: return 1e-6
-            return np.median(np.abs(downside))
+        # Robust Downside MAD
+        def robust_mad(row):
+            med = row.median()
+            neg = row[row < med] - med
+            if len(neg) == 0: return 1e-6
+            return np.median(np.abs(neg))
 
-        downside_risk = fold_scores_df.apply(robust_downside_mad, axis=1)
+        downside = fold_scores_df.apply(robust_mad, axis=1)
 
-        # 3. Multi-Threshold Scoring (Integral)
-        # Compare vs Shadow Feature Distribution
-        if shadow_thresholds is not None and len(shadow_thresholds) > 0:
-            hurdles = np.percentile(shadow_thresholds, [50, 75, 90, 95])
-        else:
-            hurdles = [0.0]
+        # Hurdles based on Shadow Distribution
+        hurdles = np.percentile(shadow_vals, [50, 75, 90]) if shadow_vals is not None else [0]
+        weights = [0.3, 0.4, 0.3]
 
-        scores = []
-        # Weight higher hurdles slightly less (or more, depending on conservatism)
-        # Using [0.2, 0.3, 0.3, 0.2] as per snippet
-        if len(hurdles) == 4:
-            weights = [0.2, 0.3, 0.3, 0.2]
-        else:
-            weights = [1.0 / len(hurdles)] * len(hurdles)
+        final = []
+        for h, w in zip(hurdles, weights):
+            ratio = (mu - h) / (downside + 1e-6)
+            final.append(ratio * w)
 
-        for hurdle, w in zip(hurdles, weights):
-            excess = mu - hurdle
-            ratio = excess / (downside_risk + 1e-6)
-            scores.append(ratio * w)
-
-        # Sum weighted ratios
-        return pd.Series(np.sum(scores, axis=0), index=fold_scores_df.index)
+        return pd.Series(np.sum(final, axis=0), index=fold_scores_df.index)
 
     def _calculate_absolute_rolling_correlation(self, X: pd.DataFrame, n_subsamples: int = 5) -> pd.DataFrame:
         """
@@ -3061,7 +3168,13 @@ class LabelBasedLayer2:
 
         # 1. Compute Distance Matrix using Absolute Rolling Correlation on subsamples
         try:
-            avg_abs_corr = self._calculate_absolute_rolling_correlation(X, n_subsamples=5)
+            # Subsample for correlation speedup (Use recent history to preserve time structure)
+            if len(X) > 2000:
+                X_corr = X.iloc[-2000:]
+            else:
+                X_corr = X
+
+            avg_abs_corr = self._calculate_absolute_rolling_correlation(X_corr, n_subsamples=5)
             dist_matrix = 1.0 - avg_abs_corr.values
             dist_matrix = np.clip(dist_matrix, 0.0, 1.0)
             np.fill_diagonal(dist_matrix, 0.0)
@@ -3115,96 +3228,165 @@ class LabelBasedLayer2:
 
         return selected_features
 
-    def _run_titan_rfe(self, base_model, X: pd.DataFrame, y: pd.Series, cv_splits, volatility_series: pd.Series, sample_weight: Optional[np.ndarray] = None, min_features=70) -> List[str]:
-        """
-        The Master RFE Loop.
-        1. Injects Shadow Noise.
-        2. Applies Inverse Volatility Weighting.
-        3. Computes Parallel Quad-Core Scores.
-        4. Ranks via HAFSR.
-        5. Geometrically drops bottom 20%.
-        """
+    def _run_titan_rfe(self, X: pd.DataFrame, y: pd.Series, cv_splits, volatility_series: pd.Series, min_features=70) -> List[str]:
+
         current_features = list(X.columns)
 
-        # Inject Shadow Feature (Gaussian Noise) to serve as the "Zero Baseline"
-        X_working = X.copy()
-        X_working['SHADOW_NOISE'] = np.random.normal(0, 1, size=len(X))
+        # Inject Shadow Feature (Gaussian Noise)
+        X_work = X.copy()
+        X_work['SHADOW_NOISE'] = np.random.normal(0, 1, size=len(X))
         current_features.append('SHADOW_NOISE')
 
-        # Prepare sample weights
-        try:
-            vol_vals = volatility_series.reindex(X.index).fillna(0.0).values
-            inv_vol = 1.0 / (vol_vals + 1e-5)
-            # Clip
-            q99 = np.quantile(inv_vol, 0.99)
-            inv_vol = np.clip(inv_vol, 0.0, q99)
-        except Exception:
-            inv_vol = np.ones(len(X))
-
-        final_weights = inv_vol
-        if sample_weight is not None:
-             if len(sample_weight) == len(X):
-                 final_weights = sample_weight * inv_vol
+        # State Tracking
+        # 1.0 = Shadow is worse than 100% of features (Ideal state)
+        # We maintain 1.0 until CV is active to avoid noisy switching.
+        prev_shadow_rank_pct = 1.0
 
         while len(current_features) > min_features:
-            logger.info(f"--- Titan RFE Round: {len(current_features)} features remaining ---")
 
-            def process_fold(tr_idx, val_idx, feats):
-                X_tr = X_working.iloc[tr_idx][feats]
-                y_tr = y.iloc[tr_idx]
-                w_tr = final_weights[tr_idx]
+            n_feats = len(current_features)
 
-                m = clone(base_model)
-                m.fit(X_tr, y_tr, sample_weight=w_tr)
+            # --- A. DYNAMIC CV SWITCHING ---
+            # Switch to 3-Fold CV if:
+            # 1. Shadow feature is beating > 40% of real features (Rank < 0.60)
+            # 2. We are in the final fine-tuning stage (approaching min_features)
+            if (prev_shadow_rank_pct < 0.60) or (n_feats <= 2 * min_features):
+                n_cv_active = 3
+            else:
+                n_cv_active = 0
 
-                # Score (Quad-Core)
-                scores = self._calculate_quad_core_score(m, feats)
-                return scores
+            # --- B. DYNAMIC WEIGHTS & CONFIG ---
+            w = {'total': 0.40, 'avg': 0.25, 'struct': 0.20, 'uni': 0.15}
 
-            # Execute parallel
-            try:
-                # Use threads as LightGBM is GIL releasing, or simple sequential if n_jobs=1
-                fold_results = Parallel(n_jobs=getattr(self, 'n_jobs', -1), prefer="threads")(
-                    delayed(process_fold)(tr, val, current_features) for tr, val in cv_splits
+            # Early Stage (Speed Mode)
+            if n_cv_active == 0:
+                w['uni'] = 0.0
+                w['total'] += 0.10
+                w['avg'] += 0.05
+
+            # Late Stage (Precision Mode)
+            if n_feats < 2 * min_features:
+                w = {'total': 0.55, 'avg': 0.0, 'struct': 0.25, 'uni': 0.20}
+
+            # Estimators (Scale with feature count)
+            n_est = max(50, int(2 * n_feats))
+
+            logger.info(f"RFE: {n_feats} feats | CV: {n_cv_active} | Est: {n_est} | ShadowRank: {prev_shadow_rank_pct:.2%}")
+
+            # --- C. TRAINING ---
+            # Define Focal Loss using picklable wrapper class for Parallel safety
+            focal_obj_rfe = TitanLGBMFocalObjective(gamma_pos=0.5, gamma_neg=1.25, alpha=0.65)
+
+            def run_fold_process(train_idx, val_idx, features):
+                X_fold = X_work.iloc[train_idx]
+                y_fold = y.iloc[train_idx]
+
+                # 1. Subsampling (Speed optimization for large sets)
+                if n_feats > 3 * min_features:
+                    X_fold = X_fold.sample(frac=0.5, random_state=42)
+                    y_fold = y_fold.loc[X_fold.index]
+
+                # 2. Inverse Volatility Weighting
+                vol = volatility_series.loc[X_fold.index]
+                weights = 1.0 / (vol + 1e-5)
+                weights = weights.clip(upper=weights.quantile(0.99))
+
+                # 3. Model Fit (LGBM Optimized with RobustFocalLoss)
+                model = lgb.LGBMClassifier(
+                    objective=focal_obj_rfe,
+                    n_estimators=n_est,
+                    max_depth=6,
+                    learning_rate=0.05,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    colsample_bynode=0.8,
+                    reg_alpha=0.2,
+                    reg_lambda=0.05,
+                    n_jobs=1,
+                    verbose=-1,
+                    random_state=42
                 )
 
-                # Combine: Rows=Features, Cols=Folds
-                fold_df = pd.concat(fold_results, axis=1)
+                model.fit(X_fold[features], y_fold, sample_weight=weights)
+                return self._calculate_dynamic_score(model, features, w)
 
-                # --- STABILITY & SELECTION BLOCK ---
-                if 'SHADOW_NOISE' in fold_df.index:
-                    shadow_dist = fold_df.loc['SHADOW_NOISE'].values
-                    candidates_df = fold_df.drop('SHADOW_NOISE')
+            # Execute
+            if n_cv_active == 0:
+                # Single Split (Fast)
+                if len(cv_splits) > 0:
+                    tr, val = cv_splits[0]
+                    fold_res = [run_fold_process(tr, val, current_features)]
                 else:
-                    shadow_dist = [0.0]
-                    candidates_df = fold_df
-
-                stability_scores = self._calculate_robust_hafsr(candidates_df, shadow_thresholds=shadow_dist)
-
-                ranked_feats = stability_scores.sort_values(ascending=False)
-
-                n_current = len(ranked_feats)
-                target_n = max(min_features, int(n_current * 0.80))
-
-                if target_n >= n_current:
+                    logger.warning("No CV splits available for RFE")
                     break
+            else:
+                # Parallel 3-Fold
+                fold_res = Parallel(n_jobs=getattr(self, 'n_jobs', -1))(
+                    delayed(run_fold_process)(tr, val, current_features)
+                    for tr, val in cv_splits[:3]
+                )
 
-                keep_feats = ranked_feats.index[:target_n].tolist()
+            fold_df = pd.concat(fold_res, axis=1)
 
-                keep_feats.append('SHADOW_NOISE')
-                current_features = keep_feats
+            # --- D. STABILITY & SELECTION (CORRECTED) ---
 
-                if not ranked_feats.empty:
-                    top_feat = ranked_feats.index[0]
-                    top_score = ranked_feats.iloc[0]
-                    logger.info(f"   Top: {top_feat} (HAFSR: {top_score:.4f}) | Shadow Max: {np.max(shadow_dist):.4f}")
+            # Extract Shadow
+            if 'SHADOW_NOISE' in fold_df.index:
+                # Explicit asarray to handle potential scalar return
+                shadow_vals = np.asarray(fold_df.loc['SHADOW_NOISE'].values)
+                candidates = fold_df.drop('SHADOW_NOISE')
+            else:
+                shadow_vals = np.array([0.0])
+                candidates = fold_df
 
-            except Exception as e:
-                logger.warning(f"Titan RFE failed in loop: {e}. Stopping RFE.")
+            # Calc Stability (HAFSR or Raw Score)
+            stability = self._calculate_hafsr_dynamic(
+                candidates,
+                shadow_vals,
+                n_cv_active
+            )
+
+            # UPDATE SHADOW RANK (Only when CV is active)
+            if n_cv_active > 0:
+                shadow_score = np.median(shadow_vals)
+
+                # Percent of real features that are WORSE than shadow
+                # Note: We compare directly against shadow_score per user specs
+                worse_than_shadow = (stability < shadow_score).sum()
+                prev_shadow_rank_pct = worse_than_shadow / len(stability)
+            # Else: keep previous shadow rank (do NOT update in noisy CV=0 mode)
+
+            # Geometric Drop
+            ranked = stability.sort_values(ascending=False)
+            # RFE: remove 50% features per round
+            n_keep = max(min_features, int(len(ranked) * 0.50))
+
+            # Prevent infinite loop at floor
+            if n_keep >= n_feats - 1: # -1 for SHADOW_NOISE
                 break
 
-        final_features = [f for f in current_features if f != 'SHADOW_NOISE']
-        return final_features
+            keep_feats = ranked.index[:n_keep].tolist()
+            keep_feats.append('SHADOW_NOISE')
+            current_features = keep_feats
+
+        # --- E. TRIDENT OPTIMAL K SELECTION ---
+        # At this point, we have ~min_features left (e.g. 70).
+        # We need to pick the "optimal" subset from these survivors.
+
+        # Reconstruct history dataframe from the final stability scores
+        if 'stability' in locals():
+            rfe_history = stability.reset_index()
+            rfe_history.columns = ['feature', 'hafsr_score']
+
+            # Run Trident
+            selected_features = self._select_optimal_k(
+                rfe_history,
+                effective_n_samples=len(y),
+                tree_depth=6
+            )
+            return selected_features
+        else:
+            return [f for f in current_features if f != 'SHADOW_NOISE']
 
     def _aggregate_geometry_labels_for_feature_selection(
         self,
@@ -3315,11 +3497,15 @@ class LabelBasedLayer2:
             target_n = 70
 
         # 1. HAFSR Pre-Ranking for Clustering
-        n_splits = 3
+        n_splits = 2 # Reduced from 3 for speed
         tscv = TimeSeriesSplit(n_splits=n_splits)
+
+        # Robust Focal Loss for consistency with trading models
+        focal_obj_fs = TitanLGBMFocalObjective(gamma_pos=0.5, gamma_neg=1.25, alpha=0.65)
 
         # We need a base model for scoring
         base_model = lgb.LGBMClassifier(
+            objective=focal_obj_fs,
             n_estimators=100,
             learning_rate=0.05,
             num_leaves=31,
@@ -3348,7 +3534,9 @@ class LabelBasedLayer2:
 
             m = clone(base_model)
             m.fit(X_tr, y_tr, sample_weight=w_tr)
-            return self._calculate_quad_core_score(m, feats)
+            # Default weights for initial ranking (Balanced)
+            w_score = {'total': 0.40, 'avg': 0.25, 'struct': 0.20, 'uni': 0.15}
+            return self._calculate_dynamic_score(m, feats, w_score)
 
         current_features = list(X_clean.columns)
         try:
@@ -3356,7 +3544,7 @@ class LabelBasedLayer2:
                 delayed(process_fold_initial)(tr, val, current_features) for tr, val in tscv.split(X_clean)
             )
             fold_df = pd.concat(fold_results, axis=1)
-            hafsr_scores = self._calculate_robust_hafsr(fold_df, shadow_thresholds=None)
+            hafsr_scores = self._calculate_hafsr_dynamic(fold_df, shadow_vals=None, n_cv=n_splits)
         except Exception as e:
             logger.warning(f"Initial HAFSR calculation failed: {e}")
             hafsr_scores = pd.Series(0.0, index=current_features)
@@ -3377,13 +3565,14 @@ class LabelBasedLayer2:
         )
 
         # 3. Run Titan RFE
+        # Convert generator to list for reuse in dynamic CV
+        cv_splits = list(tscv.split(X_clean))
+
         final_features = self._run_titan_rfe(
-             base_model,
              X_clean[selected_from_clusters],
              y_clean,
-             tscv.split(X_clean),
+             cv_splits,
              vol_s,
-             sample_weight=w_arr,
              min_features=target_n
         )
 
@@ -5191,7 +5380,8 @@ class LabelBasedLayer2:
         df: pd.DataFrame,
         X_events: pd.DataFrame,
         events_df: pd.DataFrame,
-        geometries: List[GeometryTrial]
+        geometries: List[GeometryTrial],
+        X_events_full: Optional[pd.DataFrame] = None
     ) -> Dict[str, Any]:
         """
         Train simple LGBM models for each geometry on the provided training set
@@ -5204,7 +5394,18 @@ class LabelBasedLayer2:
             try:
                 lbls, _, _, _, _ = self._compute_dominance_labels(df, events_df, family=g.family, **g.params)
                 valid_lbls = lbls.dropna()
-                common_idx = valid_lbls.index.intersection(X_events.index)
+
+                # Determine feature set: Use per-geometry selection if available, else fallback to X_events
+                if getattr(g, 'selected_features', None) and X_events_full is not None:
+                     cols = [c for c in g.selected_features if c in X_events_full.columns]
+                     if cols:
+                         X_base = X_events_full.loc[valid_lbls.index.intersection(X_events_full.index), cols]
+                     else:
+                         X_base = X_events.loc[valid_lbls.index.intersection(X_events.index)]
+                else:
+                     X_base = X_events.loc[valid_lbls.index.intersection(X_events.index)]
+
+                common_idx = X_base.index
                 
                 if len(common_idx) < 20: 
                      models[g.uuid] = None
@@ -5213,7 +5414,7 @@ class LabelBasedLayer2:
                 # Generate specific geometry features
                 geo_features = self._compute_specific_geometry_features(df, common_idx, g.params)
 
-                X_train = X_events.loc[common_idx]
+                X_train = X_base
 
                 # Append geometry features
                 if not geo_features.empty:
@@ -5270,17 +5471,11 @@ class LabelBasedLayer2:
                     # Ensure n_estimators is integer
                     n_estimators = int(params.get('n_estimators', 500))
 
-                    focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha)
-                    
                     # Helper wrapper for objective compatibility with LGBMClassifier
-                    def lgbm_focal_obj(y_pred, y_true):
-                        # Note: y_true is passed as 2nd arg in sklearn API sometimes, but 
-                        # LGBMClassifier typically expects: func(y_true, y_pred) -> (grad, hess)
-                        # We use the instance method which handles the math.
-                        return focal_obj(y_pred, y_true)
+                    focal_obj_wrapper = TitanLGBMFocalObjective(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha)
 
                     clf = lgb.LGBMClassifier(
-                        objective=lgbm_focal_obj,
+                        objective=focal_obj_wrapper,
                         n_estimators=n_estimators,
                         num_leaves=int(params.get('num_leaves', 31)),
                         learning_rate=float(params.get('learning_rate', 0.05)),

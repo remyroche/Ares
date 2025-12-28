@@ -86,6 +86,9 @@ from src.feature_generation.categories.layer3_specific_features import generate_
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
 )
+from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_selection_pipeline
+from src.training.steps.labeling.regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
+from src.training.steps.labeling.short_nn_sequence_template import generate_nn_sequence_embeddings
 
 from src.utils.purged_kfold import PurgedKFoldTime
 
@@ -859,6 +862,79 @@ def layer3_analyst_lgbm(
     # Centralized feature list (only keep columns that exist)
     candidate_features = []
     candidate_features.extend(safe_base_cols)
+
+    # --- NEW: Regime Leaf & NN Sequence Features ---
+    if market_data is not None and not market_data.empty:
+        # 1. Regime Leaf Features
+        try:
+            print("<< Generating Regime Leaf Features...")
+            rl_config = {
+                "enabled_targets": [
+                    "regime_trendiness",
+                    "regime_volatility",
+                    "regime_trend_efficiency",
+                    "regime_memory",
+                    "regime_liquidity",
+                    "regime_volume_force_direction",
+                    "regime_breakout",
+                    "regime_future_range",
+                    "regime_downside_ae",
+                    "regime_upside_ae",
+                    "regime_tail_min_bar",
+                    "regime_jump_max_abs_bar",
+                    "regime_vol_of_vol"
+                ],
+                "inputs": {
+                    "input_source": "ohlcv_only",
+                    "ohlcv_feature_config": {}
+                },
+                "onehot": {"enabled": False},
+                "interaction_feature": {"enabled": True, "include_base": True},
+                "reporting": {"enabled": False},
+                "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}
+            }
+
+            rl_df = extract_regime_leaf_onehot_features(
+                X=pd.DataFrame(index=df.index),
+                market_data=market_data,
+                config=rl_config,
+                random_state=42,
+                verbose=False
+            )
+
+            if rl_df is not None and not rl_df.empty:
+                # Align and merge
+                rl_df = rl_df.reindex(df.index).fillna(0.0)
+                new_rl_cols = [c for c in rl_df.columns if c not in df.columns]
+                if new_rl_cols:
+                    df = pd.concat([df, rl_df[new_rl_cols]], axis=1)
+                    candidate_features.extend(new_rl_cols)
+                    print(f"   Added {len(new_rl_cols)} regime leaf features")
+        except Exception as e:
+            print(f"⚠️ Regime leaf extraction failed: {e}")
+
+        # 2. NN Sequence Embeddings
+        try:
+            print("<< Generating NN Sequence Embeddings...")
+            nn_df = generate_nn_sequence_embeddings(
+                market_data=market_data,
+                encoder_type="stacked",
+                seq_len=24,
+                embed_dim=8,
+                use_conv=True,
+                use_lstm=True,
+                use_attention=False
+            )
+
+            if nn_df is not None and not nn_df.empty:
+                nn_df = nn_df.reindex(df.index).fillna(0.0)
+                new_nn_cols = [c for c in nn_df.columns if c not in df.columns]
+                if new_nn_cols:
+                    df = pd.concat([df, nn_df[new_nn_cols]], axis=1)
+                    candidate_features.extend(new_nn_cols)
+                    print(f"   Added {len(new_nn_cols)} NN embedding features")
+        except Exception as e:
+            print(f"⚠️ NN embedding generation failed: {e}")
     candidate_features.extend(
         [
             # Ensemble/core
@@ -909,6 +985,35 @@ def layer3_analyst_lgbm(
     other_cols = [c for c in meta_features if c not in set(safe_base_cols)]
     if other_cols:
         df[other_cols] = df[other_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # --- NEW: Advanced Feature Selection ---
+    # Only run if we have a lot of features (e.g. > 100) and it's enabled
+    do_advanced_fs = len(meta_features) > 100
+    if do_advanced_fs:
+        try:
+            print(f"<< Running Advanced LGBM Feature Selection (Input: {len(meta_features)} features)...")
+
+            X_fs = df[meta_features].fillna(0.0)
+            y_fs = df[target_col].fillna(0.0)
+            y_fs_bin = (y_fs > 0.5).astype(int)
+
+            fs_results, _ = lgbm_feature_selection_pipeline(
+                X=X_fs,
+                y=y_fs_bin,
+                target_feature_sets=[min(len(meta_features), 80), min(len(meta_features), 50)],
+                correlation_threshold=0.98,
+                log_dir=outcomes_dir if 'outcomes_dir' in locals() else None
+            )
+
+            if fs_results:
+                best_k = max(fs_results.keys())
+                selected_feats = fs_results[best_k]
+                final_selected = list(set(selected_feats) | set(safe_base_cols))
+                meta_features = [f for f in meta_features if f in final_selected]
+                print(f"   Selected {len(meta_features)} features via LGBM pipeline")
+
+        except Exception as e:
+            print(f"⚠️ Advanced feature selection failed: {e}")
 
     print(f"   Final Feature Set ({len(meta_features)}): {meta_features}")
     

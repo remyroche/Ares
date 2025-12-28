@@ -873,13 +873,22 @@ def layer3_analyst_lgbm(
                     "regime_trendiness",
                     "regime_volatility",
                     "regime_trend_efficiency",
-                    "regime_memory"
+                    "regime_memory",
+                    "regime_liquidity",
+                    "regime_volume_force_direction",
+                    "regime_breakout",
+                    "regime_future_range",
+                    "regime_downside_ae",
+                    "regime_upside_ae",
+                    "regime_tail_min_bar",
+                    "regime_jump_max_abs_bar",
+                    "regime_vol_of_vol"
                 ],
                 "inputs": {
                     "input_source": "ohlcv_only",
                     "ohlcv_feature_config": {}
                 },
-                "onehot": {"enabled": True},
+                "onehot": {"enabled": False},
                 "interaction_feature": {"enabled": True, "include_base": True},
                 "reporting": {"enabled": False},
                 "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}

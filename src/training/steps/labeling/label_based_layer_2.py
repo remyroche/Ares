@@ -2805,45 +2805,6 @@ class LabelBasedLayer2:
         except Exception:
             pass
 
-        enable_regime_leaf = True
-        try:
-            enable_regime_leaf = bool(getattr(self, '_current_config', {}).get('enable_regime_leaf_features', True))
-        except Exception:
-            enable_regime_leaf = True
-
-        if enable_regime_leaf:
-            try:
-                from src.training.steps.labeling.regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
-
-                extractor_cfg = {
-                    "enabled_targets": [
-                        "regime_trendiness",
-                        "regime_volatility",
-                        "regime_trend_efficiency",
-                        "regime_memory",
-                    ],
-                    "inputs": {
-                        "input_source": "provided_x",
-                        "alignment": {"enabled": True, "method": "ffill"},
-                    },
-                    "onehot": {"enabled": True},
-                    "interaction_feature": {"enabled": True, "include_base": True},
-                    "reporting": {"enabled": False},
-                }
-
-                rl_df = extract_regime_leaf_onehot_features(
-                    X=meta_features,
-                    market_data=df,
-                    config=extractor_cfg,
-                    random_state=int(getattr(self, '_current_config', {}).get('random_state', 42)),
-                    verbose=False,
-                )
-                if rl_df is not None and not getattr(rl_df, 'empty', True):
-                    rl_df = rl_df.reindex(meta_features.index).fillna(0.0)
-                    meta_features = pd.concat([meta_features, rl_df], axis=1)
-            except Exception as e:
-                logger.debug(f"Regime leaf extraction failed: {e}")
-
         X_events = meta_features.reindex(events_df.index)
         try:
             X_events = X_events.replace([np.inf, -np.inf], np.nan)

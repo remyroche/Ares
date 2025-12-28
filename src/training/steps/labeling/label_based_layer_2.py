@@ -3407,15 +3407,18 @@ class LabelBasedLayer2:
 
                     sfi_series = pd.Series(sfi_scores, index=features).fillna(-10.0)
 
-                    # Normalize SFI to [0, 1] via MinMax
-                    v_min, v_max = sfi_series.min(), sfi_series.max()
-                    if v_max > v_min:
-                        sfi_norm = (sfi_series - v_min) / (v_max - v_min)
-                    else:
-                        sfi_norm = pd.Series(0.5, index=features)
+                    # Align normalization with MDI components (Robust -> MinMax)
+                    # Convert NegLogLoss to Likelihood (0-1) for log1p compatibility in _robust_normalize
+                    sfi_gain = np.exp(sfi_series)
+                    sfi_robust = self._robust_normalize(sfi_gain)
+
+                    # MinMax Scale to [0, 1]
+                    scaler_sfi = MinMaxScaler()
+                    sfi_norm_vals = scaler_sfi.fit_transform(sfi_robust.values.reshape(-1, 1)).flatten()
+                    sfi_norm = pd.Series(sfi_norm_vals, index=features)
 
                     # Combine: Tree Score (0.7 contribution from weights) + 0.3 * SFI
-                    final_combined = tree_score * 0.7 + sfi_norm * 0.3
+                    final_combined = tree_score + 0.3 * sfi_norm
                 else:
                     # Phase 1: Only Tree Score (weights sum to 1.0)
                     final_combined = tree_score

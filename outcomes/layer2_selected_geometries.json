@@ -1,0 +1,24 @@
+[
+  {
+    "family": "Unified",
+    "params": {
+      "sl_sigma": 4.847891198496276,
+      "alpha": 1.5,
+      "beta": 1.0,
+      "min_ratio": 1.5,
+      "horizon": 24
+    },
+    "final_score": 7.750928157363382,
+    "learnability": 0.5,
+    "robust_magnitude": 0.0,
+    "stability": 1.0,
+    "balance": 1.0,
+    "raw_metrics": {
+      "passed": true,
+      "survivors": 1190
+    },
+    "uuid": "Geo_Sel4",
+    "model_params": null,
+    "selected_features": null
+  }
+]

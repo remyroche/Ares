@@ -45,9 +45,7 @@ from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm,
 from src.training.steps.labeling.label_based_layer_4 import (
     Layer4RiskFilter,
     compute_layer4_regime_features,
-    compute_final_score_dynamic,
-    compute_final_score_bayesian,
-    compute_final_score_ridge,
+    train_layer4_oof,
 )
 from src.training.steps.labeling.oos_integration import (
     should_run_oos,
@@ -1723,16 +1721,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if isinstance(l4_oof_df, pd.DataFrame) and (not l4_oof_df.empty) and ('layer4_prob' in l4_oof_df.columns):
                     l4_input = l4_oof_df.copy()
                     l4_probs = pd.to_numeric(l4_input['layer4_prob'], errors='coerce').to_numpy(dtype=float, copy=False)
-                    l3_probs_arr = pd.to_numeric(l4_input['meta_prob'], errors='coerce').to_numpy(dtype=float, copy=False)
-
-                    if layer4_final_score_formula == 'dynamic':
-                        final_scores = compute_final_score_dynamic(l3_probs_arr, l4_probs)
-                    elif layer4_final_score_formula == 'bayesian':
-                        final_scores = compute_final_score_bayesian(l3_probs_arr, l4_probs)
-                    elif layer4_final_score_formula == 'ridge':
-                        final_scores = compute_final_score_ridge(l3_probs_arr, l4_probs)
-                    else:
-                        final_scores = l3_probs_arr
+                    # Use L4 gate score directly as final score (gate is authoritative)
+                    final_scores = l4_probs
 
                     l4_input['final_score'] = final_scores
                     l4_final_probs = pd.Series(final_scores, index=l4_input.index)

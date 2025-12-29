@@ -796,7 +796,10 @@ def compute_realized_returns(
         consensus_signals = signals['consensus'].values
 
     # Convert thresholds to arrays for adaptive support
-    if isinstance(profit_threshold, (int, float)):
+    # Handle None as infinite (no take profit / no stop)
+    if profit_threshold is None:
+        profit_thresholds = np.full(len(df), np.inf)
+    elif isinstance(profit_threshold, (int, float)):
         profit_thresholds = np.full(len(df), profit_threshold)
     elif isinstance(profit_threshold, np.ndarray):
         profit_thresholds = np.asarray(profit_threshold, dtype=float)

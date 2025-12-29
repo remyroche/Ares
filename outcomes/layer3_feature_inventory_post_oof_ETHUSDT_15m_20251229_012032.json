@@ -1,0 +1,12 @@
+{
+  "stage": "post_oof",
+  "timestamp": "20251229_012032",
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "n_rows": 15353,
+  "n_features": 48,
+  "target_col": "l2_consensus_target",
+  "meta_prob_col": "meta_prob",
+  "tail_frac": 0.2,
+  "split_idx": 12282
+}

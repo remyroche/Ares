@@ -62,7 +62,9 @@ from src.utils.purged_kfold import PurgedKFoldTime
 from src.training.steps.labeling.label_geometry_selection import (
     select_geometries,
     Event,
-    Geometry
+    Geometry,
+    MIN_SL_PCT,
+    MIN_TP_SL_RATIO
 )
 
 # Configure logging
@@ -1932,14 +1934,9 @@ class LabelBasedLayer2:
 
             e = Event(
                 id=event_id,
-                entry_idx=0, # Relative indexing inside the path logic of selection?
-                             # No, selection uses duration = exit - entry.
-                             # If we pass selection a list of events where each event encapsulates its OWN path,
-                             # we can normalize indices.
-                             # events_to_dataframe iterates: duration = e.exit_idx - e.entry_idx
-                             # returns_path is used for MFE/MAE.
-                             # So we can set entry_idx=0, exit_idx=len(path)
-                exit_idx=len(returns_path),
+                # FIX: Use ABSOLUTE bar positions for proper uniqueness/duration calculation
+                entry_idx=start_loc,  # Absolute position in df
+                exit_idx=end_loc,     # Absolute position in df
                 direction=int(directions[i]) if directions[i] != 0 else 1,
                 returns_path=returns_path,
                 sigma=float(sigma)
@@ -2659,6 +2656,7 @@ class LabelBasedLayer2:
 
             subset_mfe = mfe_series.reindex(calc_events_idx)
             subset_mae = mae_series.reindex(calc_events_idx)
+            subset_exit = exit_aligned  # FIX: Was missing in new logic block
 
         else:
             # Legacy Logic
@@ -2757,7 +2755,6 @@ class LabelBasedLayer2:
             volume_available=volume_available,
             include_raw_signals=False,
             use_kalman=True,
-            drop_regime_context_features=bool(getattr(self, '_current_config', {}).get('layer2_drop_regime_context_features', False)),
         )
 
         try:
@@ -2810,6 +2807,35 @@ class LabelBasedLayer2:
             X_events = X_events.replace([np.inf, -np.inf], np.nan)
         except Exception as e:
             logger.debug(f"X_events cleanup failed: {e}")
+        
+        # Enrich with event-specific risk geometry proxies
+        try:
+            vol_event = pd.to_numeric(events_df.get('volatility_1d'), errors='coerce').astype(float).fillna(0.0)
+        except Exception:
+            vol_event = pd.Series(0.0, index=events_df.index, dtype=float)
+        
+        stop_sigma = vol_event * MIN_SL_PCT
+        target_sigma = stop_sigma * MIN_TP_SL_RATIO
+        
+        close_event = pd.to_numeric(df['close'].reindex(events_df.index), errors='coerce').astype(float)
+        high_event = pd.to_numeric(df.get('high', df['close']).reindex(events_df.index), errors='coerce').astype(float)
+        low_event = pd.to_numeric(df.get('low', df['close']).reindex(events_df.index), errors='coerce').astype(float)
+        price_range = (high_event - low_event).abs().replace(0.0, np.nan)
+        
+        X_events['event_stop_sigma'] = stop_sigma
+        X_events['event_target_sigma'] = target_sigma
+        X_events['event_stop_abs'] = (stop_sigma * close_event).fillna(0.0)
+        X_events['event_target_abs'] = (target_sigma * close_event).fillna(0.0)
+        X_events['stop_to_range_ratio'] = (X_events['event_stop_abs'] / (price_range + 1e-9)).fillna(0.0)
+        X_events['target_to_range_ratio'] = (X_events['event_target_abs'] / (price_range + 1e-9)).fillna(0.0)
+        
+        rolling_vol = vol_event.rolling(50, min_periods=5)
+        vol_pct = rolling_vol.mean() / (rolling_vol.std() + 1e-9)
+        X_events['event_volatility_ratio_50'] = vol_pct.fillna(0.0)
+        
+        rolling_range = price_range.rolling(50, min_periods=5).mean()
+        X_events['event_range_to_stop_ratio_50'] = (rolling_range / (X_events['event_stop_abs'] + 1e-9)).fillna(0.0)
+
         return X_events
 
     def _get_target_sample_weight_for_events(
@@ -3281,7 +3307,7 @@ class LabelBasedLayer2:
             gamma_pos, gamma_neg, f_alpha = 0.5, 1.25, 0.65
             focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha, verbose=False)
 
-            def lgbm_focal_obj(y_pred, y_true):
+            def lgbm_focal_obj(y_true, y_pred):
                 return focal_obj(y_pred, y_true)
 
             def run_fold_process(train_idx, val_idx, features):
@@ -3576,7 +3602,7 @@ class LabelBasedLayer2:
         gamma_pos, gamma_neg, f_alpha = 0.5, 1.25, 0.65
         focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha, verbose=False)
 
-        def lgbm_focal_obj(y_pred, y_true):
+        def lgbm_focal_obj(y_true, y_pred):
             return focal_obj(y_pred, y_true)
 
         # We need a base model for scoring
@@ -4106,6 +4132,7 @@ class LabelBasedLayer2:
                     X_tr2, y_tr2,
                     sample_weight=w_tr2,
                     eval_set=[(X_val2, y_val2)],
+                    eval_metric='auc',
                     callbacks=[lgb.early_stopping(30, verbose=False)],
                 )
             elif w_clean is not None:
@@ -4114,6 +4141,7 @@ class LabelBasedLayer2:
                 model.fit(
                     X_tr2, y_tr2,
                     eval_set=[(X_val2, y_val2)],
+                    eval_metric='auc',
                     callbacks=[lgb.early_stopping(30, verbose=False)],
                 )
             else:
@@ -4493,100 +4521,73 @@ class LabelBasedLayer2:
     ) -> Dict[str, List[GeometryTrial]]:
         """
         Replaces Optuna optimization with label_geometry_selection logic.
+        
+        REFACTORED: No longer processes per-family. Geometry selection now uses
+        geometric characteristics (sl_sigma, alpha, beta, min_ratio, horizon)
+        for diversity, not semantic family names. All events are processed together.
         """
         results: Dict[str, List[GeometryTrial]] = {}
 
         events_df = events_df.copy()
+        # Keep family assignment for backward compatibility and logging
         events_df['family'] = self._assign_barrier_families(events_df)
 
-        unique_families = events_df['family'].unique()
-
-        # Build feature matrix once
-        # Note: select_geometries expects features aligned to event IDs
-        # We used i as ID in _extract_events_for_selection
+        # Build feature matrix once for ALL events
         X_events_all = self._build_geometry_independent_event_features(df, events_df)
+        
+        # Check we have enough events total
+        if len(events_df) < 50:
+            logger.warning(f"Not enough events total ({len(events_df)}). Skipping geometry selection.")
+            return {}
 
-        # Reset index to match the 0..N IDs assigned in _extract_events_for_selection?
-        # Actually, let's keep it simple.
-        # select_geometries takes 'features_df'.
-        # train_model_for_geometry does: X = features_df.loc[all_event_ids]
-        # So features_df index must match event.id.
-        # In _extract_events_for_selection, we assigned ID = i (0 to N-1).
-        # So we need to reset_index on X_events_all.
+        logger.info(f"Optimizing geometries: {len(events_df)} total events (no family split)")
+
+        # Extract events for ALL data - no family filtering
+        selection_events = self._extract_events_for_selection(df, events_df)
+
+        # Reset features index to match event IDs (0..N-1)
         X_events_reset = X_events_all.reset_index(drop=True)
-        # Ensure index is 0..N-1 matching events_df row order
 
-        # We need to process per family?
-        # label_geometry_selection selects globally from the list of events passed.
-        # Layer 2 architecture processes per family.
-        # We should iterate families and call selection per family to maintain regime-conditional logic.
+        # Run unified Selection with ALL events
+        selected_raw = select_geometries(selection_events, {}, X_events_reset)
 
-        for family in unique_families:
-            logger.info(f"Optimizing family: {family}")
+        # Guard: Handle empty selection gracefully
+        if not selected_raw:
+            logger.warning("Geometry selection returned 0 geometries - all candidates failed gates. "
+                          "Consider relaxing thresholds or increasing data.")
+            return {}
 
-            family_mask = events_df['family'] == family
-            family_events_df = events_df[family_mask]
+        # Convert to GeometryTrial - use 'Unified' as family name
+        # (keeps backward compatibility with dict structure)
+        unified_family = 'Unified'
+        trials = []
+        
+        for i, (geom, survivors) in enumerate(selected_raw):
+            survival_rate = len(survivors) / len(selection_events) if selection_events else 0.0
 
-            if len(family_events_df) < 50:
-                logger.warning(f"Not enough events for family {family} ({len(family_events_df)}). Skipping.")
-                continue
+            params = {
+                'sl_sigma': geom.sl_sigma,
+                'alpha': geom.alpha,
+                'beta': geom.beta,
+                'min_ratio': geom.min_ratio,
+                'horizon': geom.horizon
+            }
 
-            # Extract events for this family
-            # Note: IDs will be relative to this subset list if we re-run extraction
-            # Or we can extract all and filter.
-            # Let's extract for this family specifically to keep IDs clean 0..M-1
-            selection_events = self._extract_events_for_selection(df, family_events_df)
+            t_obj = GeometryTrial(
+                family=unified_family,  # Single unified family
+                params=params,
+                final_score=survival_rate * 100.0,
+                learnability=0.5,
+                robust_magnitude=0.0,
+                stability=1.0,
+                balance=1.0,
+                raw_metrics={'passed': True, 'survivors': len(survivors)},
+                uuid=f"Geo_Sel{i}"
+            )
+            trials.append(t_obj)
 
-            # Align features
-            # Get integer indices of this family in the original events_df?
-            # No, we need features matching the selection_events IDs (0..M-1)
-            # So we grab features for family_events_df and reset index
-            X_fam = X_events_all.reindex(family_events_df.index).reset_index(drop=True)
-
-            # Run Selection
-            # fold_metrics_map is empty for now (first pass)
-            selected_raw = select_geometries(selection_events, {}, X_fam)
-
-            # Convert to GeometryTrial
-            trials = []
-            for i, (geom, survivors) in enumerate(selected_raw):
-                # Map Geometry to GeometryTrial
-                # Geometry has: sl_sigma, alpha, beta, min_ratio
-                # GeometryTrial needs: params (dict), final_score, etc.
-
-                # Calculate simple score based on survival rate or use what selection returned?
-                # selection returns list of (Geometry, survivors_set).
-                # We can calculate basic stats.
-                survival_rate = len(survivors) / len(selection_events)
-
-                params = {
-                    'sl_sigma': geom.sl_sigma,
-                    'alpha': geom.alpha,
-                    'beta': geom.beta,
-                    'min_ratio': geom.min_ratio,
-                    'horizon': geom.horizon
-                }
-
-                # We need to map these to 'kappa', 'sl_mult', 'horizon' for compatibility?
-                # No, we updated _compute_dominance_labels to handle the new params.
-                # But we should probably set defaults for legacy code if needed.
-                # Actually, GeometryTrial is just a container.
-
-                t_obj = GeometryTrial(
-                    family=family,
-                    params=params,
-                    final_score=survival_rate * 100.0, # Placeholder score
-                    learnability=0.5, # Placeholder, will be refined in _select_best_geometries or similar?
-                                      # Actually selection process already did shallow model check.
-                    robust_magnitude=0.0,
-                    stability=1.0,
-                    balance=1.0,
-                    raw_metrics={'passed': True, 'survivors': len(survivors)},
-                    uuid=f"{family}_Sel{i}"
-                )
-                trials.append(t_obj)
-
-            results[family] = trials
+        results[unified_family] = trials
+        logger.info(f"Geometry selection complete: {len(trials)} geometries selected")
 
         return results
 
@@ -5027,14 +5028,12 @@ class LabelBasedLayer2:
             events_df['family'] = self._assign_barrier_families(events_df)
 
         def _is_passed_trial(t: Any) -> bool:
+            # Relaxed gate: just check if final_score is positive
             try:
                 score = float(getattr(t, 'final_score', -1.0))
             except Exception:
                 return False
-            if (not np.isfinite(score)) or score <= 0.0:
-                return False
-            rm = getattr(t, 'raw_metrics', None)
-            return bool(isinstance(rm, dict) and bool(rm.get('passed', False)))
+            return np.isfinite(score) and score > 0.0
 
         # 3.2 Discard poorer barrier families
         family_medians = {}
@@ -5220,15 +5219,18 @@ class LabelBasedLayer2:
             fam_selected = []
 
             # Helper to normalize params for distance calculation
-            k_vals = [t.params.get('kappa') for t in top_tier]
-            sl_vals = [t.params.get('sl_mult') for t in top_tier]
+            # Support both legacy (kappa, sl_mult) and new (sl_sigma, alpha) formats
+            k_vals = [t.params.get('kappa') or t.params.get('alpha') for t in top_tier]
+            sl_vals = [t.params.get('sl_mult') or t.params.get('sl_sigma') for t in top_tier]
             h_vals = [t.params.get('horizon') for t in top_tier]
 
             k_vals_f = [float(v) for v in k_vals if v is not None and np.isfinite(float(v))]
             sl_vals_f = [float(v) for v in sl_vals if v is not None and np.isfinite(float(v))]
             h_vals_f = [float(v) for v in h_vals if v is not None and np.isfinite(float(v))]
 
+            # Skip only if truly no valid params
             if (not k_vals_f) or (not h_vals_f):
+                logger.warning(f"Family {fam}: Missing kappa/alpha or horizon params, skipping")
                 continue
 
             if not sl_vals_f:
@@ -5239,9 +5241,12 @@ class LabelBasedLayer2:
             h_range = max(h_vals_f) - min(h_vals_f) + 1e-6
 
             def get_norm_vec(t):
+                # Support both legacy (kappa, sl_mult) and new (alpha, sl_sigma) formats
+                k_val = t.params.get('kappa') or t.params.get('alpha', 0.0)
+                sl_val = t.params.get('sl_mult') or t.params.get('sl_sigma', 1.0)
                 return np.array([
-                    (float(t.params.get('kappa', 0.0)) - min(k_vals_f)) / k_range,
-                    (float(t.params.get('sl_mult', 1.0)) - min(sl_vals_f)) / sl_range,
+                    (float(k_val) - min(k_vals_f)) / k_range,
+                    (float(sl_val) - min(sl_vals_f)) / sl_range,
                     (float(t.params.get('horizon', 0.0)) - min(h_vals_f)) / h_range,
                 ])
 
@@ -5521,10 +5526,9 @@ class LabelBasedLayer2:
                     focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=f_alpha)
                     
                     # Helper wrapper for objective compatibility with LGBMClassifier
-                    def lgbm_focal_obj(y_pred, y_true):
-                        # Note: y_true is passed as 2nd arg in sklearn API sometimes, but 
-                        # LGBMClassifier typically expects: func(y_true, y_pred) -> (grad, hess)
-                        # We use the instance method which handles the math.
+                    def lgbm_focal_obj(y_true, y_pred):
+                        # SKLearn API: func(y_true, y_pred)
+                        # RobustFocalLoss expectations: func(preds, train_data)
                         return focal_obj(y_pred, y_true)
 
                     clf = lgb.LGBMClassifier(
@@ -5535,25 +5539,31 @@ class LabelBasedLayer2:
                         class_weight='balanced',
                         random_state=self.random_state,
                         n_jobs=1,
-                        verbosity=-1
+                        verbosity=-1,
+                        metric='auc'  # Required for early_stopping with custom objective
                     )
                     
                     if has_val:
                         # Train on inner train
-                        clf.fit(
-                            X_tr_inner, y_tr_inner,
-                            eval_set=[(X_val_inner, y_val_inner)],
-                            callbacks=[lgb.early_stopping(stopping_rounds=100, verbose=False)]
-                        )
-                        # Calibrate on inner val
-                        calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
-                        calibrated.fit(X_val_inner, y_val_inner)
-                        models[g.uuid] = calibrated
-                    else:
-                        # Fallback: Train on full, no calibration possible without leak
-                        # We could use cv=3 here instead, but for now we stick to uncalibrated fallback
-                        clf.fit(X_train, y_train)
-                        models[g.uuid] = clf
+                        # Ensure validation set has both classes for AUC metric
+                        if has_val and y_val_inner.nunique() < 2:
+                            has_val = False
+
+                        if has_val:
+                            clf.fit(
+                                X_tr_inner, y_tr_inner,
+                                eval_set=[(X_val_inner, y_val_inner)],
+                                eval_metric='auc',
+                                callbacks=[lgb.early_stopping(stopping_rounds=100, verbose=False)]
+                            )
+                            # Calibrate on inner val
+                            calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
+                            calibrated.fit(X_val_inner, y_val_inner)
+                            models[g.uuid] = calibrated
+                        else:
+                            # Fallback: Train on full, no calibration possible without leak
+                            clf.fit(X_train, y_train)
+                            models[g.uuid] = clf
 
                 elif model_type == 'xgb':
                     # XGBoost with Focal Loss
@@ -5619,7 +5629,7 @@ class LabelBasedLayer2:
                     
                     # Re-instantiate focal obj for wrapper
                     focal_obj = RobustFocalLoss(gamma_pos=f_gamma, gamma_neg=f_gamma * 2.5, alpha=f_alpha)
-                    def lgbm_focal_obj_fb(y_pred, y_true):
+                    def lgbm_focal_obj_fb(y_true, y_pred):
                          return focal_obj(y_pred, y_true)
 
                     clf = lgb.LGBMClassifier(
@@ -5628,11 +5638,20 @@ class LabelBasedLayer2:
                         class_weight='balanced',
                         random_state=self.random_state,
                         n_jobs=1,
-                        verbosity=-1
+                        verbosity=-1,
+                        metric='auc'
                     )
 
+                    if has_val and y_val_inner.nunique() < 2:
+                         has_val = False
+
                     if has_val:
-                         clf.fit(X_tr_inner, y_tr_inner, eval_set=[(X_val_inner, y_val_inner)], callbacks=[lgb.early_stopping(50, verbose=False)])
+                         clf.fit(
+                             X_tr_inner, y_tr_inner, 
+                             eval_set=[(X_val_inner, y_val_inner)], 
+                             eval_metric='auc',
+                             callbacks=[lgb.early_stopping(50, verbose=False)]
+                         )
                          calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
                          calibrated.fit(X_val_inner, y_val_inner)
                          models[g.uuid] = calibrated

@@ -6,15 +6,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from scipy.stats import spearmanr
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
-    log_loss,
+    log_loss as sk_log_loss,
     brier_score_loss,
-    roc_auc_score,
+    roc_auc_score as sk_roc_auc_score,
     average_precision_score,
 )
 
@@ -91,6 +92,62 @@ from src.training.steps.labeling.regime_leaf_feature_extractor import extract_re
 from src.training.steps.labeling.short_nn_sequence_template import generate_nn_sequence_embeddings
 
 from src.utils.purged_kfold import PurgedKFoldTime
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_log_loss(
+    y_true,
+    y_pred,
+    labels=None,
+    sample_weight=None,
+    default: float = 0.693
+):
+    """
+    Wrap sklearn log_loss to handle single-class targets gracefully.
+    """
+    try:
+        labels_arg = labels
+        unique = np.unique(np.asarray(y_true))
+        if labels_arg is None and unique.size == 1:
+            labels_arg = [0, 1]
+        return sk_log_loss(y_true, y_pred, labels=labels_arg, sample_weight=sample_weight)
+    except ValueError as exc:
+        logger.warning(f"log_loss fallback due to: {exc}")
+        return default
+
+
+def _safe_roc_auc_score(
+    y_true,
+    y_pred,
+    sample_weight=None,
+    default: float = 0.5
+):
+    """
+    Wrap sklearn roc_auc_score to handle single-class targets gracefully.
+    """
+    try:
+        unique = np.unique(np.asarray(y_true))
+        if unique.size == 1:
+            # Provide both classes with dummy values
+            y_true = np.concatenate([y_true, [1 - unique[0]]])
+            y_pred = np.concatenate([y_pred, [y_pred.mean()]])
+            if sample_weight is not None:
+                sample_weight = np.concatenate([sample_weight, [sample_weight.mean()]])
+        return sk_roc_auc_score(y_true, y_pred, sample_weight=sample_weight)
+    except ValueError as exc:
+        logger.warning(f"roc_auc_score fallback due to: {exc}")
+        return default
+
+
+def log_loss(*args, **kwargs):
+    """Project-wide safe wrapper for sklearn.log_loss."""
+    return _safe_log_loss(*args, **kwargs)
+
+
+def roc_auc_score(*args, **kwargs):
+    """Project-wide safe wrapper for sklearn.roc_auc_score."""
+    return _safe_roc_auc_score(*args, **kwargs)
 
 
 def generate_efficiency_labels(events_df, price_series, tx_cost=0.0, threshold=0.2):

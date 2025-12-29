@@ -1,0 +1,28 @@
+{
+  "enabled": true,
+  "split_date": "2025-11-10 14:45:00",
+  "train_bars": 31680,
+  "oos_bars": 2881,
+  "layer5_metrics": {
+    "Total PnL": 0.39630344969032605,
+    "Avg Trade PnL": 0.00023189382695225114,
+    "Trade Count": 1709,
+    "Turnover Estimate": 418.7625349802334,
+    "Net Sortino": 1.5412791964983887,
+    "Maximum Drawdown": 0.06111284511164894,
+    "Total Return": 0.4717591639557339,
+    "AUC": 0.5093611649192299,
+    "Runtime": {
+      "n_rows": 2881,
+      "total_ms": 1.4130839990684763
+    }
+  },
+  "comparison": {
+    "pnl_degradation_pct": 0.0,
+    "win_rate_degradation": 0,
+    "sortino_degradation": 1.5412791964983887,
+    "trades_ratio": 0.0,
+    "reliability_score": 80
+  },
+  "reliability_score": 80
+}

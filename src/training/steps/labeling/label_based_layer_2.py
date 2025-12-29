@@ -4562,7 +4562,7 @@ class LabelBasedLayer2:
         unified_family = 'Unified'
         trials = []
         
-        for i, (geom, survivors) in enumerate(selected_raw):
+        for i, (geom, survivors, metrics) in enumerate(selected_raw):
             survival_rate = len(survivors) / len(selection_events) if selection_events else 0.0
 
             params = {
@@ -4573,15 +4573,20 @@ class LabelBasedLayer2:
                 'horizon': geom.horizon
             }
 
+            # Capture exposed metrics
+            raw_metrics = {'passed': True, 'survivors': len(survivors)}
+            if metrics:
+                raw_metrics.update(metrics)
+
             t_obj = GeometryTrial(
                 family=unified_family,  # Single unified family
                 params=params,
                 final_score=survival_rate * 100.0,
-                learnability=0.5,
+                learnability=raw_metrics.get('auc_lift', 0.5), # Use AUC Lift as learnability proxy
                 robust_magnitude=0.0,
                 stability=1.0,
                 balance=1.0,
-                raw_metrics={'passed': True, 'survivors': len(survivors)},
+                raw_metrics=raw_metrics,
                 uuid=f"Geo_Sel{i}"
             )
             trials.append(t_obj)

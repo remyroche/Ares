@@ -753,7 +753,7 @@ def select_geometries(
     events: List[Event],
     fold_metrics_map: Dict,
     features_df: pd.DataFrame
-) -> List[Tuple[Geometry, Set[int]]]:
+) -> List[Tuple[Geometry, Set[int], Dict[str, Any]]]:
     
     # Define horizons to sweep (constrained to max 6h = 24 bars)
     horizons = [8, 12, 16, 20, 24]
@@ -968,7 +968,11 @@ def select_geometries(
 
     result = []
     for item in final_selection[:MAX_FINAL_GEOMETRIES]:  # Limit to target count
-        result.append((item['geometry'], item['survivors']))
+        # Combine metrics into a single dict for return
+        out_metrics = item['metrics'].copy()
+        out_metrics['separation_score'] = item['separation_score']
+        out_metrics['survival_rate'] = item['survival_rate']
+        result.append((item['geometry'], item['survivors'], out_metrics))
         
     best_score_str = f"{final_selection[0]['separation_score']:.3f}" if final_selection else "N/A"
     logger.info(f"Final Selection: {len(result)} geometries (Best Separation Score: {best_score_str}, Max: {MAX_FINAL_GEOMETRIES})")

@@ -158,6 +158,160 @@ from .mtf_feature_generation import (
 logger = logging.getLogger(__name__)
 
 
+def generate_dual_cusum_signals(
+    close: pd.Series,
+    volume: Optional[pd.Series] = None,
+    k: float = 0.12,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    er_min: float = 0.2,
+    window_vol: int = 20,
+    window_er: int = 10,
+    Q: float = 1e-5,
+    R: float = 0.01
+) -> pd.DataFrame:
+    """
+    Generate dual CUSUM signals for trend-following and mean-reversion using optimized Kalman filter.
+
+    Parameters
+    ----------
+    close : pd.Series
+        Close prices.
+    volume : pd.Series
+        Optional volume series for liquidity adjustment.
+    k : float
+        Base sensitivity for threshold.
+    alpha : float
+        Regime suppression factor.
+    beta : float
+        Liquidity adjustment factor.
+    er_min : float
+        Minimum Efficiency Ratio to allow signals.
+    window_vol : int
+        Rolling window for volatility calculation.
+    window_er : int
+        Rolling window for Efficiency Ratio calculation.
+    Q, R : float
+        Kalman filter parameters.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: ['trend_signal', 'reversal_signal', 'h_t', 'er']
+    """
+    # 1. Compute log returns
+    log_ret = np.log(close / close.shift(1)).fillna(0.0)
+
+    # 2. Apply 1D Kalman filter (Reuse existing optimized class)
+    kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]))
+    log_ret_smooth_raw, _ = kf.filter_series(log_ret)
+
+    # Ensure it's a series with correct index for rolling operations
+    if not isinstance(log_ret_smooth_raw, pd.Series):
+        log_ret_smooth_series = pd.Series(log_ret_smooth_raw, index=close.index).fillna(0.0)
+    else:
+        log_ret_smooth_series = log_ret_smooth_raw.fillna(0.0)
+
+    # 3. Rolling volatility & ER (Vectorized)
+    # Using smoothed returns for volatility estimation
+    sigma = log_ret_smooth_series.rolling(window_vol, min_periods=1).std()
+
+    # Efficiency Ratio calculation
+    # change = abs(price_t - price_{t-n}) / sum(abs(price_i - price_{i-1}))
+    # Using smoothed returns as proxy for price changes
+    # Smoothed price path reconstruction not strictly needed if we use returns
+    # But ER on returns series: abs(sum(r)) / sum(abs(r))
+
+    # Reconstruct smoothed log-price path for correct ER calculation
+    # log_price_smooth = log_ret_smooth_series.cumsum()
+    # change = log_price_smooth.diff(window_er).abs()
+
+    # Alternative ER on returns directly:
+    # Directional Change = abs(Rolling Sum of Returns)
+    # Volatility = Rolling Sum of Abs Returns
+    change = log_ret_smooth_series.rolling(window_er).sum().abs()
+    volatility = log_ret_smooth_series.abs().rolling(window_er, min_periods=1).sum()
+    ER = (change / (volatility + 1e-12)).fillna(0.0)
+
+    # 4. Liquidity & Thresholds
+    liquidity_mod = pd.Series(1.0, index=close.index)
+    if volume is not None:
+        # Avoid lookahead: ensure volume smoothing doesn't use future data
+        vol_ma = volume.rolling(window_vol, min_periods=1).mean()
+        rel_volume = volume / (vol_ma + 1e-9)
+        # Higher volume -> Lower mod -> Lower threshold -> More signals
+        # Lower volume -> Higher mod -> Higher threshold -> Fewer signals
+        liquidity_mod = 1.0 + beta * (1.0 - rel_volume)
+        liquidity_mod = liquidity_mod.clip(0.5, 2.0) # Safety clip
+
+    regime_mod = 1.0 + alpha * (1.0 - ER)
+    h_t = (k * sigma * regime_mod * liquidity_mod).fillna(0.0)
+
+    # 5. Residuals for Reversal Logic
+    # Residual = Current Smoothed Return - Expected Return (Rolling Mean)
+    expected_return = log_ret_smooth_series.rolling(window_vol, min_periods=1).mean()
+    residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
+
+    # 6. CUSUM Loop (Optimized Numpy)
+    n = len(close)
+
+    # Convert to numpy for speed
+    r_arr = log_ret_smooth_series.to_numpy()
+    res_arr = residual_ret.to_numpy()
+    h_arr = h_t.to_numpy()
+    er_arr = ER.to_numpy()
+
+    trend_signal = np.zeros(n)
+    reversal_signal = np.zeros(n)
+
+    S_trend_pos, S_trend_neg = 0.0, 0.0
+    S_rev_pos, S_rev_neg = 0.0, 0.0
+
+    for t in range(n):
+        if er_arr[t] < er_min:
+            S_trend_pos, S_trend_neg = 0.0, 0.0
+            S_rev_pos, S_rev_neg = 0.0, 0.0
+            continue
+
+        cur_h = h_arr[t]
+        if np.isnan(cur_h) or cur_h <= 0:
+             cur_h = 1e-4 # Safe fallback
+
+        # Trend CUSUM (on smoothed returns)
+        # Capture persistent drift
+        S_trend_pos = max(0.0, S_trend_pos + r_arr[t])
+        S_trend_neg = min(0.0, S_trend_neg + r_arr[t])
+
+        if S_trend_pos > cur_h:
+            trend_signal[t] = 1
+            S_trend_pos = 0.0 # Reset on trigger
+        elif S_trend_neg < -cur_h:
+            trend_signal[t] = -1
+            S_trend_neg = 0.0
+
+        # Reversal CUSUM (Mean Reversion on Residuals)
+        # Capture over-extension relative to local mean
+        S_rev_pos = max(0.0, S_rev_pos + res_arr[t])
+        S_rev_neg = min(0.0, S_rev_neg + res_arr[t])
+
+        if S_rev_pos > cur_h:
+            reversal_signal[t] = 1 # Overextended UP -> Expect Reversal
+            S_rev_pos = 0.0
+        elif S_rev_neg < -cur_h:
+            reversal_signal[t] = -1 # Overextended DOWN -> Expect Reversal
+            S_rev_neg = 0.0
+
+    # Pack results
+    signals = pd.DataFrame({
+        'trend_signal': trend_signal,
+        'reversal_signal': reversal_signal,
+        'h_t': h_t,
+        'er': ER
+    }, index=close.index)
+
+    return signals
+
+
 def _load_latest_labeling_hpo_params(
     symbol: str,
     timeframe: str,
@@ -555,130 +709,84 @@ def generate_primary_signals(
     volume_spike_threshold: float = 1.5,
     range_window: int = 48,
     mtf_lookback: int = 4,
-    # New arguments for CUSUM generator
-    k: float = 0.5,
-    vol_window: int = 50,
-    er_window: int = 50,
-    er_min: float = 0.00,
-    alpha: float = 0.1,
-    beta: float = 0.5,
-    vol_power: float = 1.0,
+    # New arguments for Dual CUSUM generator
+    k: float = 0.12,
+    vol_window: int = 20,
+    er_window: int = 10,
+    er_min: float = 0.2,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    w_trend: float = 1.0,
+    w_reversal: float = 1.0,
     **kwargs
 ) -> pd.DataFrame:
     """
-    Generate primary trading signals using Kalman-smoothed, volume and volatility aware CUSUM.
-    Replaces all previous signal generators (MACD, RSI, etc).
+    Generate primary trading signals using Dual CUSUM logic (Trend + Reversal).
+    Replaces previous signal generators with trend-following and mean-reversion composite.
     """
-    signals = pd.DataFrame(index=df.index)
-    signals['consensus'] = 0
-
-    # Data extraction
+    # Extract data
     close = df['close']
-    volume = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
+    volume = df['volume'] if 'volume' in df.columns else None
 
-    # 1. Convert to Log-Returns (Scale Invariant)
-    log_ret = np.log(close / close.shift(1)).fillna(0)
+    # Generate Dual CUSUM Signals
+    # Note: vol_window matches window_vol, er_window matches window_er
+    dual_signals = generate_dual_cusum_signals(
+        close=close,
+        volume=volume,
+        k=k,
+        alpha=alpha,
+        beta=beta,
+        er_min=er_min,
+        window_vol=vol_window,
+        window_er=er_window,
+        # Default Q/R unless passed in kwargs, but for now we stick to safe defaults
+        Q=1e-5,
+        R=0.01
+    )
 
-    # Kalman Smoothing of Log Returns
-    # Using existing KalmanFilter1D class
-    try:
-        kf = KalmanFilter1D(Q=1e-5, R=0.01, initial_value=0.0)
-        # Note: filter_series returns (filtered, variance)
-        log_ret_smooth, _ = kf.filter_series(log_ret)
-        # Ensure it's a series
-        log_ret_smooth = pd.Series(log_ret_smooth, index=log_ret.index).fillna(0)
-    except Exception as e:
-        tprint(f"Kalman smoothing failed, using raw log returns: {e}", "WARNING")
-        log_ret_smooth = log_ret
+    # Compute Composite Signal
+    # Composite = w_trend * Trend - w_reversal * Reversal
+    # Reversal Signal = 1 means "Overextended High", so we subtract it (Sell pressure)
+    # Reversal Signal = -1 means "Overextended Low", so we subtract (-1) = Add (Buy pressure)
+    composite_raw = (
+        w_trend * dual_signals['trend_signal'] -
+        w_reversal * dual_signals['reversal_signal']
+    )
 
-    # 2. Volatility (of Returns)
-    # Standard deviation of smoothed log-returns
-    vol_ret = log_ret_smooth.rolling(window=vol_window).std()
+    # Normalize to [-1, 1] if needed, but for binary classification we just need sign/threshold
+    # We will pass the raw composite as 'consensus' for downstream thresholding
+    # If composite > 0 -> Long, < 0 -> Short
 
-    # 3. Efficiency Ratio (Regime)
-    er = get_efficiency_ratio(close, window=er_window)
+    signals = pd.DataFrame(index=df.index)
+    signals['consensus'] = composite_raw
+    signals['trend_signal'] = dual_signals['trend_signal']
+    signals['reversal_signal'] = dual_signals['reversal_signal']
+    signals['h_t'] = dual_signals['h_t']
+    signals['er'] = dual_signals['er']
 
-    # 4. Liquidity Factor
-    avg_vol = volume.rolling(vol_window).mean()
-    vol_ratio = avg_vol / volume.replace(0, 1)
-    vol_ratio_smooth = vol_ratio.rolling(5).mean()
-    liq_mod = np.clip(vol_ratio_smooth ** beta, 0.5, 2.0)
-
-    # --- CALCULATE THRESHOLD (h_t) ---
-
-    # A. Base Volatility Component
-    h_base = k * (vol_ret ** vol_power)
-
-    # B. Regime Component (Soft Suppression)
-    noise_factor = 1 - er
-    regime_mod = 1 + (alpha * noise_factor)
-
-    # C. Final Dynamic Threshold
-    h_dynamic = h_base * regime_mod * liq_mod
-
-    # --- HARD GATING ---
-    is_valid_regime = er > er_min
-
-    # --- RUN CUSUM ---
-    # We need to reconstruct the loop to capture signals
-
-    # Align data
-    # Reset index to iterate, but keep original index for result mapping
-    # Actually iterate over arrays is faster and easier for CUSUM state
-
-    r_arr = log_ret_smooth.to_numpy()
-    h_arr = h_dynamic.to_numpy()
-    valid_arr = is_valid_regime.to_numpy()
-
-    s_pos, s_neg = 0.0, 0.0
-
-    consensus_values = np.zeros(len(df))
-
-    for i in range(1, len(df)):
-        r_t = r_arr[i]
-        h_t = h_arr[i]
-        valid = valid_arr[i]
-
-        if np.isnan(r_t) or np.isnan(h_t):
-            continue
-
-        if not valid:
-            s_pos, s_neg = 0.0, 0.0
-            continue
-
-        s_pos = max(0.0, s_pos + r_t)
-        s_neg = min(0.0, s_neg + r_t)
-
-        if s_pos > h_t:
-            s_pos = 0.0
-            s_neg = 0.0
-            consensus_values[i] = 1 # Long signal
-
-        elif s_neg < -h_t:
-            s_pos = 0.0
-            s_neg = 0.0
-            consensus_values[i] = -1 # Short signal
-
-    signals['consensus'] = consensus_values
-
-    # Store some diagnostics in signals df if needed by build_meta_features_for_model
-    # We are stripping a lot, so we should check what's absolutely needed.
-    # The existing build_meta_features_for_model handles missing columns gracefully mostly.
-    # But let's add `vol_short` and `vol_long` if they are expected for vol_expansion features
-    signals['vol_short'] = vol_ret
-    # vol_long was 96 in original.
-    signals['vol_long'] = log_ret_smooth.rolling(96).std()
+    # Diagnostics
+    # We add vol_short and vol_long for backward compat with build_meta_features
+    # We can approximate vol_short from the CUSUM volatility (h_t / k approx)
+    # or just recalc
+    log_ret = np.log(close / close.shift(1)).fillna(0.0)
+    signals['vol_short'] = log_ret.rolling(vol_window).std()
+    signals['vol_long'] = log_ret.rolling(96).std()
 
     # Store signal funnel stats
-    final_count = int(np.sum(consensus_values != 0))
+    n_trend = int((dual_signals['trend_signal'] != 0).sum())
+    n_rev = int((dual_signals['reversal_signal'] != 0).sum())
+    n_final = int((composite_raw != 0).sum())
+
     funnel = {
         'total_bars': len(df),
-        'final_signals': final_count,
-        'generator': 'CUSUM_Kalman_VolAware'
+        'trend_signals': n_trend,
+        'reversal_signals': n_rev,
+        'final_signals': n_final,
+        'generator': 'Dual_CUSUM_Trend_Reversal'
     }
     signals.attrs['signal_funnel'] = funnel
 
-    tprint(f"📊 CUSUM Signal Generator: {final_count} signals generated", "INFO")
+    tprint(f"📊 Dual CUSUM Generator: {n_final} composite signals (Trend: {n_trend}, Rev: {n_rev})", "INFO")
 
     return signals
 

@@ -97,37 +97,6 @@ LAYER2_MODEL_CONSTANTS = {
     'min_child_weight': 0.0001, # Reduced from 0.0005 to allow more growth
 }
 
-def _gini_coefficient(w: np.ndarray) -> float:
-    """Calculate Gini coefficient of a distribution."""
-    w = np.asarray(w, dtype=float)
-    w = w[np.isfinite(w)]
-    if w.size == 0:
-        return 0.0
-    w = np.clip(w, a_min=0.0, a_max=None)
-    total = float(w.sum())
-    if total <= 1e-12:
-        return 0.0
-    w_sorted = np.sort(w)
-    n = w_sorted.size
-    idx = np.arange(1, n + 1, dtype=float)
-    g = (2.0 * float(np.sum(idx * w_sorted)) / (n * total)) - ((n + 1.0) / n)
-    return float(max(0.0, min(1.0, g)))
-
-def _normalized_binary_entropy(p: float) -> float:
-    """Return normalized entropy in [0, 1] for a Bernoulli(p)."""
-    try:
-        p = float(p)
-    except Exception:
-        return 0.0
-    if not np.isfinite(p):
-        return 0.0
-    p = float(np.clip(p, 1e-12, 1.0 - 1e-12))
-    h = -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p))
-    h_max = float(np.log(2.0))
-    if h_max <= 0:
-        return 0.0
-    return float(np.clip(h / h_max, 0.0, 1.0))
-
 class RobustFocalLoss:
     """
     Production-grade Focal Loss for LightGBM in Financial ML.
@@ -689,8 +658,40 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
         return np.zeros(X.shape[0])
 
     try:
+        # Unwrap CalibratedClassifierCV if necessary
+        if hasattr(booster, 'calibrated_classifiers_'):
+            if len(booster.calibrated_classifiers_) > 0:
+                # Use the first base estimator for structure analysis
+                booster = booster.calibrated_classifiers_[0].base_estimator
+
+        # Unwrap LGBMClassifier / XGBClassifier wrapper to get booster if needed
+        raw_booster = None
+        if hasattr(booster, 'booster_'):
+            raw_booster = booster.booster_
+        elif hasattr(booster, 'get_booster'):
+            raw_booster = booster.get_booster()
+        else:
+            raw_booster = booster
+
         # 1. Get leaf indices: (n_samples, n_trees)
-        leaf_indices_raw = booster.predict(X, pred_leaf=True)
+        leaf_indices_raw = None
+
+        # Try raw booster first (LightGBM)
+        if hasattr(raw_booster, 'predict'):
+            try:
+                leaf_indices_raw = raw_booster.predict(X, pred_leaf=True)
+            except Exception:
+                pass
+
+        # Fallback to wrapper if raw failed
+        if leaf_indices_raw is None:
+            try:
+                leaf_indices_raw = booster.predict(X, pred_leaf=True)
+            except Exception:
+                pass
+
+        if leaf_indices_raw is None:
+            return np.zeros(X.shape[0])
         
         # Ensure 2D (n_samples, n_trees)
         if leaf_indices_raw.ndim == 1:
@@ -703,8 +704,16 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
 
         # 2. Parse model to get leaf values
         # We need a lookup table: tree_index -> leaf_index -> leaf_value
-        model_dump = booster.dump_model()
-        trees = model_dump['tree_info']
+        model_dump = None
+        if hasattr(raw_booster, 'dump_model'):
+            model_dump = raw_booster.dump_model()
+        elif hasattr(booster, 'dump_model'):
+            model_dump = booster.dump_model()
+
+        if model_dump is None:
+             return np.zeros(X.shape[0])
+
+        trees = model_dump.get('tree_info', [])
 
         # Build lookup table: values[tree_idx][leaf_idx] = value
         # Note: leaf indices in predict() output are local to the tree
@@ -778,18 +787,6 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
     except Exception as e:
         logger.warning(f"Failed to calculate tree variance: {e}")
         return np.zeros(X.shape[0])
-
-class TitanLGBMFocalObjective:
-    """
-    Wrapper for RobustFocalLoss to be used with sklearn API of LightGBM.
-    Ensures picklability for Parallel execution and consistent behavior with trading models.
-    """
-    def __init__(self, gamma_pos=0.5, gamma_neg=1.25, alpha=0.65):
-        self.loss = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=alpha, verbose=False)
-
-    def __call__(self, y_true, y_pred):
-        # Matching _train_geometry_models logic exactly (argument mapping)
-        return self.loss(y_true, y_pred)
 
 @dataclass
 class GeometryTrial:
@@ -1114,16 +1111,9 @@ class LabelBasedLayer2:
         # Storage for Tree Diagnostics
         self._all_tree_stats = [] # Store on instance for report usage
 
-        # Derive families dynamically to avoid hardcoding
-        families = ['Trend Continuation', 'Momentum', 'Mean Reversion']
-        max_rank = 4
+        # Initialize storage for individual geometries
         oof_geo_preds = {}
         oof_geo_vars = {} # Store variances
-        for fam in families:
-            for r in range(max_rank):
-                key = f"{fam}_Rank{r}"
-                oof_geo_preds[key] = pd.Series(np.nan, index=indices)
-                oof_geo_vars[key] = pd.Series(np.nan, index=indices)
 
         try:
             cfg_oof = getattr(self, "_current_config", {})
@@ -1675,16 +1665,6 @@ class LabelBasedLayer2:
         extracted_trials_counts = {}
 
         try:
-            prod_by_family: Dict[str, int] = {}
-            for g in list(production_geometries or []):
-                try:
-                    prod_by_family[str(getattr(g, "family", ""))] = prod_by_family.get(str(getattr(g, "family", "")), 0) + 1
-                except Exception:
-                    continue
-        except Exception:
-            prod_by_family = {}
-
-        try:
             oof_labeled = int(pd.to_numeric(oof_labels, errors="coerce").notna().sum())
         except Exception:
             oof_labeled = 0
@@ -1742,7 +1722,6 @@ class LabelBasedLayer2:
                 f"- cache_hits: {int(getattr(self, '_cache_hits', 0))}\n",
                 f"- cache_misses: {int(getattr(self, '_cache_misses', 0))}\n",
                 f"- extracted_trials_per_family: {extracted_trials_counts}\n",
-                f"- production_geometries_by_family: {prod_by_family}\n",
                 f"- production_geometries_n: {int(len(production_geometries or []))}\n",
                 f"- oof_labeled_events: {oof_labeled}\n",
                 f"- oof_nonzero_weight_events: {oof_weight_nonzero}\n",
@@ -1846,8 +1825,6 @@ class LabelBasedLayer2:
 
             for fam, cnt in extracted_trials_counts.items():
                 summary_row[f"extracted_trials_{fam}"] = int(cnt)
-            for fam, cnt in prod_by_family.items():
-                summary_row[f"production_geos_{fam}"] = int(cnt)
             csv_path = outcomes_dir / f"layer2_summary_{symbol}_{timeframe}_{ts}.csv"
             pd.DataFrame([summary_row]).to_csv(csv_path, index=False)
         except Exception:
@@ -1949,17 +1926,6 @@ class LabelBasedLayer2:
                 )
         except Exception:
             pass
-
-    def _extract_trials_from_study(self, study: optuna.Study) -> List[GeometryTrial]:
-        """Extract GeometryTrial objects from study user attrs."""
-        trials = []
-        for t in study.trials:
-            if t.state == optuna.trial.TrialState.COMPLETE:
-                # We saved the object in user_attrs
-                g_obj = t.user_attrs.get("geometry_object")
-                if g_obj:
-                    trials.append(g_obj)
-        return trials
 
     def _extract_events_for_selection(
         self,
@@ -2515,46 +2481,12 @@ class LabelBasedLayer2:
         self._signals_cache[key] = signals
         return signals
 
-    def _get_barrier_family(self, trend_regime: str, vol_regime: str) -> str:
-        """
-        Map regimes to barrier families.
-
-        High Trend -> Trend Continuation
-        Low Trend / High Vol -> Momentum
-        Low Trend / Low Vol -> Mean Reversion
-        """
-        # Normalize inputs (handle int/float/string)
-        t_reg = str(trend_regime).lower()
-        v_reg = str(vol_regime).lower()
-
-        is_high_trend = 'high' in t_reg or t_reg == '1' or t_reg == '1.0'
-        is_high_vol = 'high' in v_reg or v_reg == '1' or v_reg == '1.0'
-
-        if is_high_trend:
-            return 'Trend Continuation'
-        elif is_high_vol:
-            # Low Trend + High Vol
-            return 'Momentum'
-        else:
-            # Low Trend + Low Vol
-            return 'Mean Reversion'
-
     def _assign_barrier_families(self, events_df: pd.DataFrame) -> pd.Series:
-        trend = events_df['trend_regime']
-        vol = events_df['vol_regime']
-
-        t_reg = trend.astype(str).str.lower()
-        v_reg = vol.astype(str).str.lower()
-
-        is_high_trend = t_reg.str.contains('high', na=False) | t_reg.isin(['1', '1.0'])
-        is_high_vol = v_reg.str.contains('high', na=False) | v_reg.isin(['1', '1.0'])
-
-        families = np.where(
-            is_high_trend.to_numpy(),
-            'Trend Continuation',
-            np.where(is_high_vol.to_numpy(), 'Momentum', 'Mean Reversion'),
-        )
-        return pd.Series(families, index=events_df.index, dtype=object)
+        """
+        Assign barrier families.
+        Refactored: Returns 'Unified' for all events (no family distinction).
+        """
+        return pd.Series('Unified', index=events_df.index, dtype=object)
 
     def _compute_dominance_labels(
         self,
@@ -2824,21 +2756,6 @@ class LabelBasedLayer2:
         result = (final_labels, final_returns, final_mfe, final_mae, final_exit)
         self._labels_cache[cache_key] = result
         return result
-
-    # Legacy wrapper for compatibility if needed, but we switch internal calls to _compute_dominance_labels
-    def _compute_labels(self, df, events_df, tp_mult=None, sl_mult=None, horizon=None, family=None, **kwargs):
-        # Adapt old signature to new logic if called with old params
-        # Use simple mapping if kappa not provided
-        kappa = kwargs.get('kappa')
-        if kappa is None:
-            # Heuristic: if TP=2, SL=1, Kappa=2
-            if tp_mult and sl_mult:
-                kappa = tp_mult / max(sl_mult, 1e-3)
-            else:
-                kappa = 2.0
-
-        lbl, ret, _, _, _ = self._compute_dominance_labels(df, events_df, kappa, int(horizon), family, sl_mult=sl_mult)
-        return lbl, ret
 
     def _build_geometry_independent_event_features(
         self,
@@ -6018,9 +5935,13 @@ class LabelBasedLayer2:
                                      X_subset = pd.concat([X_subset, geo_subset], axis=1)
 
                                  # 1. Prediction (Raw Margins -> Sigmoid)
-                                 raw_margins = booster.predict(X_subset)
-                                 # Sigmoid is mandatory for Focal Loss output!
-                                 probs = 1.0 / (1.0 + np.exp(-raw_margins))
+                                 if hasattr(booster, "predict_proba"):
+                                     probs = booster.predict_proba(X_subset)[:, 1]
+                                 else:
+                                     # Assume raw booster returning margins
+                                     raw_margins = booster.predict(X_subset)
+                                     # Sigmoid is mandatory for Focal Loss output!
+                                     probs = 1.0 / (1.0 + np.exp(-raw_margins))
 
                                  # 2. Variance (Tree Variance)
                                  variances = _calculate_tree_variance(booster, X_subset)
@@ -6252,9 +6173,6 @@ class LabelBasedLayer2:
 #        extratrees_preds = None
         pls_preds = None
 
-        # --- Global Family Normalization (Max 60% of total mass) ---
-        # "weights[event.family == fam] = np.minimum(weights[event.family == fam], family_cap)"
-
         # Fill NaNs in weights with 0
         composite_weights = composite_weights.fillna(0.0)
         composite_weights = composite_weights.clip(lower=0.0)
@@ -6326,19 +6244,7 @@ class LabelBasedLayer2:
                 pass
 
         total_weight_global = composite_weights.sum()
-
-        if total_weight_global > 0:
-            for family in geo_by_fam.keys():
-                fam_mask = events_df['family'] == family
-                fam_total_weight = composite_weights[fam_mask].sum()
-
-                # Cap at 60% of GLOBAL total
-                family_cap = 0.6 * total_weight_global
-
-                if fam_total_weight > family_cap:
-                    scale_factor = family_cap / fam_total_weight
-                    logger.info(f"Scaling down family {family} by {scale_factor:.4f} (Total: {fam_total_weight:.2f} > Cap: {family_cap:.2f})")
-                    composite_weights.loc[fam_mask] *= scale_factor
+        # Family capping logic removed.
 
         # Normalize final weights to mean=1.0 for stability
         mean_weight = composite_weights.mean()

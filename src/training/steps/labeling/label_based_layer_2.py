@@ -42,6 +42,9 @@ import logging
 import copy
 import warnings
 
+# Import tprint for enhanced logging
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+
 # Suppress LightGBM verbose warnings for clean output
 warnings.filterwarnings("ignore")
 
@@ -846,6 +849,7 @@ class LabelBasedLayer2:
         self._global_probe_features: List[str] = []
         self._current_param_bounds: Dict[str, Dict[str, Any]] = {}
         self._primary_signals: Optional[pd.DataFrame] = None
+        self._rfe_stats = []  # Store RFE statistics for reporting
 
         # Suppress Optuna logging if not verbose
         if not self.verbose:
@@ -859,12 +863,12 @@ class LabelBasedLayer2:
         """
         Execute the Layer 2 pipeline. Orquestrates independent steps.
         """
-        logger.info("Starting Layer 2 Pipeline...")
+        tprint_info("Starting Layer 2 Pipeline...")
 
         # 1. Prepare
         df, events_df, X_events, global_probe_features = self.prepare_data_and_events(df)
         if events_df.empty:
-            logger.warning("No events generated in Layer 2. Skipping.")
+            tprint_warning("No events generated in Layer 2. Skipping.")
             return {}
 
         # 2. Train (Production)
@@ -892,7 +896,7 @@ class LabelBasedLayer2:
 
     def prepare_data_and_events(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, List[str]]:
         """Step 1: Stateless data preparation and event generation."""
-        logger.info(">>> Layer 2: Step 1 - Prepare Data and Events...")
+        tprint_info(">>> Layer 2: Step 1 - Prepare Data and Events...")
 
         self._labels_cache = {}
         self._signals_cache = {}
@@ -901,6 +905,7 @@ class LabelBasedLayer2:
         self._global_probe_features = []
         self._current_param_bounds = {}
         self._primary_signals = None
+        self._rfe_stats = []
 
         df = self._validate_inputs(df)
         df = self._precompute_geometry_base_features(df)
@@ -926,7 +931,7 @@ class LabelBasedLayer2:
         global_probe_features: Optional[List[str]] = None
     ) -> Tuple[List[GeometryTrial], List[str]]:
         """Step 2: Full Optimization (Production Artifacts)."""
-        logger.info(">>> Layer 2: Step 2 - Optimize Production Geometries...")
+        tprint_info(">>> Layer 2: Step 2 - Optimize Production Geometries...")
 
         if global_probe_features:
             self._global_probe_features = list(global_probe_features)
@@ -938,7 +943,7 @@ class LabelBasedLayer2:
 
         try:
             full_counts = {str(k): int(len(v)) for k, v in (full_results or {}).items()}
-            logger.info(f"Layer2 Full Optimization: extracted_trials_per_family={full_counts}")
+            tprint_info(f"Layer2 Full Optimization: extracted_trials_per_family={full_counts}")
         except Exception:
             pass
 
@@ -956,12 +961,12 @@ class LabelBasedLayer2:
 
         # Enforce Max 10 Geometries
         if production_geometries and len(production_geometries) > 10:
-            logger.info(f"Capping production geometries to 10 (from {len(production_geometries)})")
+            tprint_info(f"Capping production geometries to 10 (from {len(production_geometries)})")
             production_geometries = production_geometries[:10]
 
         # Optimize Model Parameters and Features for Production Geometries
         if production_geometries:
-            logger.info(">>> Layer 2: Tuning Model Parameters & Selecting Features for Production Geometries...")
+            tprint_info(">>> Layer 2: Tuning Model Parameters & Selecting Features for Production Geometries...")
 
             # Build feature matrix once for selection
             X_events_full = self._build_geometry_independent_event_features(df, events_df)
@@ -969,13 +974,13 @@ class LabelBasedLayer2:
             vol_prod = df['volatility_1d'].reindex(events_df.index).fillna(0.0)
 
             for i, g in enumerate(production_geometries):
-                logger.info(f"    Processing geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
+                tprint_info(f"    Processing geometry {g.uuid} ({i+1}/{len(production_geometries)})...")
 
                 # 1. Parameter Tuning
                 best_params = self._tune_geometry_model_params(df, events_df, g)
                 if best_params:
                     g.model_params = best_params
-                    logger.info(f"    Found params for {g.uuid}: {best_params}")
+                    tprint_info(f"    Found params for {g.uuid}: {best_params}")
 
                 # 2. Per-Geometry Feature Selection
                 try:
@@ -984,7 +989,7 @@ class LabelBasedLayer2:
                     enable_prod_fs = bool(cfg_prod_fs.get('layer2_production_supervised_feature_selection_enabled', True))
 
                     if enable_prod_fs:
-                        logger.info(f"    Selecting features for {g.uuid}...")
+                        tprint_info(f"    Selecting features for {g.uuid}...")
                         fam = str(getattr(g, 'family', ''))
                         fam_events = events_df[events_df['family'] == fam]
 
@@ -1000,19 +1005,36 @@ class LabelBasedLayer2:
                                 w_target = w_l1_prod.reindex(valid_idx) if w_l1_prod is not None else None
                                 vol_target = vol_prod.reindex(valid_idx)
 
+                                # Capture RFE stats
+                                initial_feat_count = X_target.shape[1]
+                                tprint_info(f"    Starting Titan RFE with {initial_feat_count} features...")
+
                                 sel_feats = self._select_supervised_features_for_events(
                                     X_target, y_target, w_target, volatility_series=vol_target
                                 )
 
+                                final_feat_count = len(sel_feats) if sel_feats else 0
+                                tprint_info(f"    Titan RFE for {g.uuid}: {initial_feat_count} -> {final_feat_count} features")
+
+                                self._rfe_stats.append({
+                                    'timestamp': datetime.utcnow().isoformat(),
+                                    'uuid': g.uuid,
+                                    'family': g.family,
+                                    'initial_features': initial_feat_count,
+                                    'final_features': final_feat_count,
+                                    'retention_pct': (final_feat_count / initial_feat_count * 100) if initial_feat_count else 0,
+                                    'selected_features_list': str(sel_feats)
+                                })
+
                                 if sel_feats:
                                     g.selected_features = list(sel_feats)
-                                    logger.info(f"    Selected {len(sel_feats)} features for {g.uuid}")
+                                    tprint_success(f"    Selected {len(sel_feats)} features for {g.uuid}")
                 except Exception as e:
-                    logger.warning(f"    Feature selection failed for {g.uuid}: {e}")
+                    tprint_warning(f"    Feature selection failed for {g.uuid}: {e}")
 
         # FAST-FAIL
         if not production_geometries:
-            logger.error(
+            tprint_error(
                 "Layer2 CRITICAL: Zero production geometries passed all gates! "
                 "Pipeline cannot continue. Consider relaxing gates via config."
             )
@@ -1067,7 +1089,7 @@ class LabelBasedLayer2:
         production_selected_features: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Step 3: OOF Optimization (Analytics Artifacts)."""
-        logger.info(">>> Layer 2: Step 3 - Running OOF Optimization (Analytics)...")
+        tprint_info(">>> Layer 2: Step 3 - Running OOF Optimization (Analytics)...")
 
         if global_probe_features:
             self._global_probe_features = list(global_probe_features)
@@ -1144,12 +1166,12 @@ class LabelBasedLayer2:
                 train_idx_list.extend(range(int(val_stop + purge_bars), n_samples))
             train_idx = np.array(train_idx_list, dtype=int)
 
-            logger.info(f"   > Processing Fold {fold_idx}/{int(len(folds))}...")
+            tprint_info(f"   > Processing Fold {fold_idx}/{int(len(folds))}...")
 
             try:
                 t0 = str(df.index[int(val_start)]) if int(val_start) < len(df.index) else ""
                 t1 = str(df.index[int(val_stop - 1)]) if int(val_stop - 1) < len(df.index) else ""
-                logger.info(
+                tprint_info(
                     f"Layer2 OOF Fold {fold_idx}: purged k-fold val_start={val_start}, val_stop={val_stop}, "
                     f"purge_bars={purge_bars}, test_start_time={t0}, test_end_time={t1}, n_train={len(train_idx)}"
                 )
@@ -1525,7 +1547,7 @@ class LabelBasedLayer2:
 
     def generate_reports(self, df, events_df, production_geometries, oof_results):
         """Step 4: Generate Reports."""
-        logger.info(">>> Layer 2: Step 4 - Generate Reports...")
+        tprint_info(">>> Layer 2: Step 4 - Generate Reports...")
 
         oof_scores = oof_results['l2_score']
         oof_labels = oof_results['l2_label']
@@ -1727,8 +1749,34 @@ class LabelBasedLayer2:
                 for k, v in global_metrics.items():
                     lines.append(f"- **{k}**: {v:.4f}\n")
 
+            if production_geometries:
+                lines.append("\n### 7. Winning Geometries Details\n")
+                lines.append("| UUID | Family | Model Type | Race Score | Selected Features |\n|---|---|---|---|---|\n")
+                for g in production_geometries:
+                    m_type = "N/A"
+                    race_score = "N/A"
+                    if isinstance(g.model_params, dict):
+                        m_type = g.model_params.get('model_type', 'lgbm')
+                        # Extract score of winner from race_scores
+                        r_scores = g.model_params.get('race_scores', {})
+                        if r_scores and m_type in r_scores:
+                             race_score = f"{r_scores[m_type]:.4f}"
+
+                    n_feats = len(g.selected_features) if g.selected_features else 0
+                    lines.append(f"| {g.uuid} | {g.family} | {m_type} | {race_score} | {n_feats} |\n")
+
             md_path.write_text("".join(lines))
-        except Exception:
+            tprint_success(f"Generated Layer 2 Report: {md_path}")
+
+            # Save RFE Stats CSV
+            if self._rfe_stats:
+                rfe_df = pd.DataFrame(self._rfe_stats)
+                rfe_csv_path = outcomes_dir / f"titan_rfe_stats_{ts}.csv"
+                rfe_df.to_csv(rfe_csv_path, index=False)
+                tprint_success(f"Saved Titan RFE summary to {rfe_csv_path}")
+
+        except Exception as e:
+            tprint_error(f"Report generation failed: {e}")
             pass
 
         try:
@@ -4295,7 +4343,7 @@ class LabelBasedLayer2:
             X_sub = X_events.fillna(0.0)
 
             # PHASE 1: Quick Model Race (5 min)
-            logger.info(f"Running quick model race for {geometry.family} geometry...")
+            tprint_info(f"Running quick model race for {geometry.uuid} ({geometry.family})...")
             
             split_idx = int(len(X_sub) * 0.8)
             X_train_race = X_sub.iloc[:split_idx]
@@ -4304,7 +4352,7 @@ class LabelBasedLayer2:
             y_val_race = y_sub.iloc[split_idx:]
             
             if len(np.unique(y_train_race)) < 2 or len(np.unique(y_val_race)) < 2:
-                logger.warning("Insufficient classes in race split. Using LGBM.")
+                tprint_warning("Insufficient classes in race split. Using LGBM.")
                 winning_model_type = 'lgbm'
                 race_scores = {}
             else:
@@ -4314,8 +4362,12 @@ class LabelBasedLayer2:
                     self.random_state
                 )
 
+            tprint_info(f"Model Race for {geometry.uuid} ({geometry.family}): Winner={winning_model_type.upper()}")
+            for m, s in race_scores.items():
+                 tprint_info(f"  - {m}: {s:.4f}")
+
             # PHASE 2: Full HPO on Winner (20 min)
-            logger.info(f"Running HPO for {winning_model_type.upper()} on {geometry.family} geometry...")
+            tprint_info(f"Running HPO for {winning_model_type.upper()} on {geometry.family} geometry...")
             
             
             if winning_model_type == 'lgbm':
@@ -4537,10 +4589,10 @@ class LabelBasedLayer2:
         
         # Check we have enough events total
         if len(events_df) < 50:
-            logger.warning(f"Not enough events total ({len(events_df)}). Skipping geometry selection.")
+            tprint_warning(f"Not enough events total ({len(events_df)}). Skipping geometry selection.")
             return {}
 
-        logger.info(f"Optimizing geometries: {len(events_df)} total events (no family split)")
+        tprint_info(f"Optimizing geometries: {len(events_df)} total events (no family split)")
 
         # Extract events for ALL data - no family filtering
         selection_events = self._extract_events_for_selection(df, events_df)
@@ -4553,7 +4605,7 @@ class LabelBasedLayer2:
 
         # Guard: Handle empty selection gracefully
         if not selected_raw:
-            logger.warning("Geometry selection returned 0 geometries - all candidates failed gates. "
+            tprint_warning("Geometry selection returned 0 geometries - all candidates failed gates. "
                           "Consider relaxing thresholds or increasing data.")
             return {}
 
@@ -4587,7 +4639,7 @@ class LabelBasedLayer2:
             trials.append(t_obj)
 
         results[unified_family] = trials
-        logger.info(f"Geometry selection complete: {len(trials)} geometries selected")
+        tprint_info(f"Geometry selection complete: {len(trials)} geometries selected")
 
         return results
 

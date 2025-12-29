@@ -689,8 +689,40 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
         return np.zeros(X.shape[0])
 
     try:
+        # Unwrap CalibratedClassifierCV if necessary
+        if hasattr(booster, 'calibrated_classifiers_'):
+            if len(booster.calibrated_classifiers_) > 0:
+                # Use the first base estimator for structure analysis
+                booster = booster.calibrated_classifiers_[0].base_estimator
+
+        # Unwrap LGBMClassifier / XGBClassifier wrapper to get booster if needed
+        raw_booster = None
+        if hasattr(booster, 'booster_'):
+            raw_booster = booster.booster_
+        elif hasattr(booster, 'get_booster'):
+            raw_booster = booster.get_booster()
+        else:
+            raw_booster = booster
+
         # 1. Get leaf indices: (n_samples, n_trees)
-        leaf_indices_raw = booster.predict(X, pred_leaf=True)
+        leaf_indices_raw = None
+
+        # Try raw booster first (LightGBM)
+        if hasattr(raw_booster, 'predict'):
+            try:
+                leaf_indices_raw = raw_booster.predict(X, pred_leaf=True)
+            except Exception:
+                pass
+
+        # Fallback to wrapper if raw failed
+        if leaf_indices_raw is None:
+            try:
+                leaf_indices_raw = booster.predict(X, pred_leaf=True)
+            except Exception:
+                pass
+
+        if leaf_indices_raw is None:
+            return np.zeros(X.shape[0])
         
         # Ensure 2D (n_samples, n_trees)
         if leaf_indices_raw.ndim == 1:
@@ -703,8 +735,16 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
 
         # 2. Parse model to get leaf values
         # We need a lookup table: tree_index -> leaf_index -> leaf_value
-        model_dump = booster.dump_model()
-        trees = model_dump['tree_info']
+        model_dump = None
+        if hasattr(raw_booster, 'dump_model'):
+            model_dump = raw_booster.dump_model()
+        elif hasattr(booster, 'dump_model'):
+            model_dump = booster.dump_model()
+
+        if model_dump is None:
+             return np.zeros(X.shape[0])
+
+        trees = model_dump.get('tree_info', [])
 
         # Build lookup table: values[tree_idx][leaf_idx] = value
         # Note: leaf indices in predict() output are local to the tree
@@ -5923,9 +5963,13 @@ class LabelBasedLayer2:
                                      X_subset = pd.concat([X_subset, geo_subset], axis=1)
 
                                  # 1. Prediction (Raw Margins -> Sigmoid)
-                                 raw_margins = booster.predict(X_subset)
-                                 # Sigmoid is mandatory for Focal Loss output!
-                                 probs = 1.0 / (1.0 + np.exp(-raw_margins))
+                                 if hasattr(booster, "predict_proba"):
+                                     probs = booster.predict_proba(X_subset)[:, 1]
+                                 else:
+                                     # Assume raw booster returning margins
+                                     raw_margins = booster.predict(X_subset)
+                                     # Sigmoid is mandatory for Focal Loss output!
+                                     probs = 1.0 / (1.0 + np.exp(-raw_margins))
 
                                  # 2. Variance (Tree Variance)
                                  variances = _calculate_tree_variance(booster, X_subset)

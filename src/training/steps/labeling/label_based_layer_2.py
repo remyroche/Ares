@@ -22,7 +22,6 @@ import xgboost as xgb
 import catboost
 from pathlib import Path
 from datetime import datetime
-from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -3741,7 +3740,7 @@ class LabelBasedLayer2:
     ) -> Dict[str, float]:
         """
         Step 4: Cheap ML learnability probes.
-        Train Shallow LGBM and Linear Model.
+        Train Shallow LGBM.
         """
         valid = y.notna()
         X_clean = X.loc[valid].fillna(0.0)
@@ -3794,23 +3793,12 @@ class LabelBasedLayer2:
             n_jobs=1
         )
 
-        linear = LinearRegression(n_jobs=1)
-
-        scaler = StandardScaler()
-
         metrics = {
-            'lgbm_auc': [], 'lgbm_ic': [], 'lgbm_ll': [], 'lgbm_pr': [],
-            'lin_auc': [], 'lin_ic': [], 'lin_ll': [], 'lin_pr': []
+            'lgbm_auc': [], 'lgbm_ic': [], 'lgbm_ll': [], 'lgbm_pr': []
         }
 
         fold_idx = 0
         try:
-            # --- OPTIMIZATION CONFIG ---
-            try:
-                linear_only_auc = float(getattr(self, '_current_config', {}).get('layer2_probe_linear_only_auc', 0.65))
-            except Exception:
-                linear_only_auc = 0.65
-            
             for train_index, test_index in tscv.split(X_clean):
                 X_train, X_test = X_clean.iloc[train_index], X_clean.iloc[test_index]
                 y_train, y_test = y_clean.iloc[train_index], y_clean.iloc[test_index]
@@ -3818,120 +3806,72 @@ class LabelBasedLayer2:
                 if y_train.nunique() < 2 or y_test.nunique() < 2:
                     continue
 
-                # --- OPTIMIZATION: Linear First ---
-                X_train_scaled = scaler.fit_transform(X_train)
-                X_test_scaled = scaler.transform(X_test)
-
-                if w_clean is not None:
-                    linear.fit(X_train_scaled, y_train, sample_weight=w_clean[train_index])
-                else:
-                    linear.fit(X_train_scaled, y_train)
-                
-                raw_scores = linear.predict(X_test_scaled)
-                raw_scores = np.asarray(raw_scores, dtype=float)
-                raw_scores = np.clip(raw_scores, -20.0, 20.0)
-                p_linear = expit(raw_scores)
-                p_linear = np.clip(np.asarray(p_linear, dtype=float), 1e-6, 1.0 - 1e-6)
-
                 sw_te = w_clean[test_index] if w_clean is not None else None
-                try:
-                    auc_lin = roc_auc_score(y_test, p_linear, sample_weight=sw_te) if sw_te is not None else roc_auc_score(y_test, p_linear)
-                    metrics['lin_auc'].append(float(auc_lin))
-                except Exception:
-                    auc_lin = 0.5
+
+                n_train = int(len(X_train))
+                val_n = int(max(10, min(int(np.floor(0.2 * n_train)), n_train - 1)))
+                use_es = bool(val_n >= 10 and n_train - val_n >= 10)
+
+                if use_es:
+                    X_tr2 = X_train.iloc[:-val_n]
+                    y_tr2 = y_train.iloc[:-val_n]
+                    X_val2 = X_train.iloc[-val_n:]
+                    y_val2 = y_train.iloc[-val_n:]
+                    if y_tr2.nunique() < 2 or y_val2.nunique() < 2:
+                        use_es = False
+
+                if w_clean is not None and use_es:
+                    w_tr2 = w_clean[train_index][:-val_n]
+                    lgbm.fit(
+                        X_tr2, y_tr2,
+                        sample_weight=w_tr2,
+                        eval_set=[(X_val2, y_val2)],
+                        callbacks=[lgb.early_stopping(10, verbose=False)]
+                    )
+                elif w_clean is not None:
+                    lgbm.fit(
+                        X_train, y_train,
+                        sample_weight=w_clean[train_index],
+                    )
+                elif use_es:
+                    lgbm.fit(
+                        X_tr2, y_tr2,
+                        eval_set=[(X_val2, y_val2)],
+                        callbacks=[lgb.early_stopping(10, verbose=False)]
+                    )
+                else:
+                    lgbm.fit(
+                        X_train, y_train,
+                    )
+                p_lgbm = lgbm.predict_proba(X_test)[:, 1]
+                p_lgbm = np.clip(np.asarray(p_lgbm, dtype=float), 1e-6, 1.0 - 1e-6)
 
                 try:
-                    ll_lin = log_loss(y_test, p_linear, sample_weight=sw_te) if sw_te is not None else log_loss(y_test, p_linear)
-                    metrics['lin_ll'].append(float(ll_lin))
-                except Exception:
-                    pass
-
-                try:
-                    ic_lin, _ = spearmanr(y_test, p_linear)
-                    metrics['lin_ic'].append(float(ic_lin) if np.isfinite(ic_lin) else 0.0)
-                except Exception:
-                    pass
-
-                try:
-                    pr_lin = average_precision_score(y_test, p_linear, sample_weight=sw_te) if sw_te is not None else average_precision_score(y_test, p_linear)
-                    metrics['lin_pr'].append(float(pr_lin))
-                except Exception:
-                    pass
-
-                # Skip LGBM if Linear is already very good OR if it's very bad in first fold
-                skip_lgbm = (auc_lin >= linear_only_auc) or (fold_idx == 0 and auc_lin < 0.48)
-
-                if not skip_lgbm:
-                    n_train = int(len(X_train))
-                    val_n = int(max(10, min(int(np.floor(0.2 * n_train)), n_train - 1)))
-                    use_es = bool(val_n >= 10 and n_train - val_n >= 10)
-
-                    if use_es:
-                        X_tr2 = X_train.iloc[:-val_n]
-                        y_tr2 = y_train.iloc[:-val_n]
-                        X_val2 = X_train.iloc[-val_n:]
-                        y_val2 = y_train.iloc[-val_n:]
-                        if y_tr2.nunique() < 2 or y_val2.nunique() < 2:
-                            use_es = False
-
-                    if w_clean is not None and use_es:
-                        w_tr2 = w_clean[train_index][:-val_n]
-                        lgbm.fit(
-                            X_tr2, y_tr2,
-                            sample_weight=w_tr2,
-                            eval_set=[(X_val2, y_val2)],
-                            callbacks=[lgb.early_stopping(10, verbose=False)]
-                        )
-                    elif w_clean is not None:
-                        lgbm.fit(
-                            X_train, y_train,
-                            sample_weight=w_clean[train_index],
-                        )
-                    elif use_es:
-                        lgbm.fit(
-                            X_tr2, y_tr2,
-                            eval_set=[(X_val2, y_val2)],
-                            callbacks=[lgb.early_stopping(10, verbose=False)]
-                        )
-                    else:
-                        lgbm.fit(
-                            X_train, y_train,
-                        )
-                    p_lgbm = lgbm.predict_proba(X_test)[:, 1]
-                    p_lgbm = np.clip(np.asarray(p_lgbm, dtype=float), 1e-6, 1.0 - 1e-6)
+                    auc_val = roc_auc_score(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else roc_auc_score(y_test, p_lgbm)
+                    metrics['lgbm_auc'].append(auc_val)
+                    metrics['lgbm_ll'].append(log_loss(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else log_loss(y_test, p_lgbm))
+                    ic, _ = spearmanr(y_test, p_lgbm)
+                    metrics['lgbm_ic'].append(ic if not np.isnan(ic) else 0.0)
 
                     try:
-                        auc_val = roc_auc_score(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else roc_auc_score(y_test, p_lgbm)
-                        metrics['lgbm_auc'].append(auc_val)
-                        metrics['lgbm_ll'].append(log_loss(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else log_loss(y_test, p_lgbm))
-                        ic, _ = spearmanr(y_test, p_lgbm)
-                        metrics['lgbm_ic'].append(ic if not np.isnan(ic) else 0.0)
-
-                        try:
-                            pr_val = average_precision_score(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else average_precision_score(y_test, p_lgbm)
-                            metrics['lgbm_pr'].append(float(pr_val))
-                        except Exception:
-                            pass
-                        
-                        if trial is not None:
-                            trial.report(auc_val, step=fold_idx)
-                            if trial.should_prune():
-                                raise optuna.TrialPruned()
-                    except optuna.TrialPruned:
-                        raise
+                        pr_val = average_precision_score(y_test, p_lgbm, sample_weight=sw_te) if sw_te is not None else average_precision_score(y_test, p_lgbm)
+                        metrics['lgbm_pr'].append(float(pr_val))
                     except Exception:
                         pass
-                else:
-                    # Sync metrics or report Linear AUC to Optuna if skipping LGBM
+
                     if trial is not None:
-                        trial.report(auc_lin, step=fold_idx)
+                        trial.report(auc_val, step=fold_idx)
                         if trial.should_prune():
                             raise optuna.TrialPruned()
+                except optuna.TrialPruned:
+                    raise
+                except Exception:
+                    pass
 
                 # --- OPTIMIZATION: Tiered Folding (Early Exit) ---
                 # If after 2 folds the performance is clearly not promising, stop.
                 if fold_idx == 1:
-                    current_avg = np.mean(metrics['lgbm_auc'] if metrics['lgbm_auc'] else metrics['lin_auc'])
+                    current_avg = np.mean(metrics['lgbm_auc'])
                     if current_avg < 0.515:
                         break
 
@@ -3943,30 +3883,18 @@ class LabelBasedLayer2:
             logger.warning(f"Probe failure: {e}")
             return {'auc': 0.5, 'log_loss': 1.0, 'ic': 0.0, 'passed': False}
 
-        if not metrics['lgbm_auc'] and not metrics['lin_auc']:
+        if not metrics['lgbm_auc']:
             return {'auc': 0.5, 'log_loss': 1.0, 'ic': 0.0, 'passed': False}
 
         auc_lgbm = np.asarray(metrics['lgbm_auc'], dtype=float)
-        auc_lin = np.asarray(metrics['lin_auc'], dtype=float)
         pr_lgbm = np.asarray(metrics.get('lgbm_pr') or [], dtype=float)
-        pr_lin = np.asarray(metrics.get('lin_pr') or [], dtype=float)
 
         avg_auc_lgbm = float(np.mean(auc_lgbm)) if auc_lgbm.size else float('nan')
-        avg_auc_linear = float(np.mean(auc_lin)) if auc_lin.size else float('nan')
-
         avg_ic_lgbm = float(np.mean(np.asarray(metrics.get('lgbm_ic') or [], dtype=float))) if metrics.get('lgbm_ic') else float('nan')
-        avg_ic_linear = float(np.mean(np.asarray(metrics.get('lin_ic') or [], dtype=float))) if metrics.get('lin_ic') else float('nan')
-
         avg_ll_lgbm = float(np.mean(np.asarray(metrics.get('lgbm_ll') or [], dtype=float))) if metrics.get('lgbm_ll') else float('nan')
-        avg_ll_linear = float(np.mean(np.asarray(metrics.get('lin_ll') or [], dtype=float))) if metrics.get('lin_ll') else float('nan')
 
-        auc_pool = []
-        if np.isfinite(avg_auc_lgbm):
-            auc_pool.append(float(avg_auc_lgbm))
-        if np.isfinite(avg_auc_linear):
-            auc_pool.append(float(avg_auc_linear))
-        final_auc = float(np.median(auc_pool)) if auc_pool else 0.5
-        auc_std = float(np.std(np.concatenate([auc_lgbm, auc_lin])) if (auc_lgbm.size + auc_lin.size) > 0 else float('nan'))
+        final_auc = float(avg_auc_lgbm) if np.isfinite(avg_auc_lgbm) else 0.5
+        auc_std = float(np.std(auc_lgbm)) if auc_lgbm.size > 0 else float('nan')
 
         # PR-AUC baseline is the positive class rate.
         try:
@@ -3976,13 +3904,8 @@ class LabelBasedLayer2:
         pr_baseline = float(pos_rate) if np.isfinite(pos_rate) else float('nan')
         pr_best = float('nan')
         try:
-            pr_pool = []
             if pr_lgbm.size:
-                pr_pool.append(float(np.mean(pr_lgbm)))
-            if pr_lin.size:
-                pr_pool.append(float(np.mean(pr_lin)))
-            if pr_pool:
-                pr_best = float(np.median(pr_pool))
+                pr_best = float(np.mean(pr_lgbm))
         except Exception:
             pr_best = float('nan')
 
@@ -4000,29 +3923,16 @@ class LabelBasedLayer2:
         passed_pr = bool((not np.isfinite(pr_thr)) or (np.isfinite(pr_best) and (pr_best >= pr_thr)))
         passed = bool(passed_auc and passed_pr)
 
-        ic_pool = []
-        if np.isfinite(avg_ic_lgbm):
-            ic_pool.append(float(avg_ic_lgbm))
-        if np.isfinite(avg_ic_linear):
-            ic_pool.append(float(avg_ic_linear))
-        ll_pool = []
-        if np.isfinite(avg_ll_lgbm):
-            ll_pool.append(float(avg_ll_lgbm))
-        if np.isfinite(avg_ll_linear):
-            ll_pool.append(float(avg_ll_linear))
-
         return {
             'auc': final_auc,
             'auc_std': auc_std,
             'pr_auc': pr_best,
             'pr_auc_baseline': pr_baseline,
-            'ic': float(np.mean(ic_pool)) if ic_pool else 0.0,
-            'log_loss': float(np.mean(ll_pool)) if ll_pool else 1.0,
+            'ic': avg_ic_lgbm,
+            'log_loss': avg_ll_lgbm,
             'auc_lgbm': float(avg_auc_lgbm) if np.isfinite(avg_auc_lgbm) else float('nan'),
             'auc_lgbm_light': float(avg_auc_lgbm) if np.isfinite(avg_auc_lgbm) else float('nan'),
-            'auc_linear': float(avg_auc_linear) if np.isfinite(avg_auc_linear) else float('nan'),
             'pr_auc_lgbm': float(np.mean(pr_lgbm)) if pr_lgbm.size else float('nan'),
-            'pr_auc_linear': float(np.mean(pr_lin)) if pr_lin.size else float('nan'),
             'passed': passed,
         }
 
@@ -5140,15 +5050,13 @@ class LabelBasedLayer2:
                     except Exception:
                         return 0.0
 
-                stage0 = sorted(top_tier, key=lambda t: _safe_rm_auc(t, 'auc_linear'), reverse=True)[:k0]
-
                 def _safe_light_auc(t_obj: GeometryTrial) -> float:
                     v = _safe_rm_auc(t_obj, 'auc_lgbm_light')
                     if v > 0.0:
                         return v
                     return _safe_rm_auc(t_obj, 'auc_lgbm')
 
-                stage1 = sorted(stage0, key=lambda t: _safe_light_auc(t), reverse=True)[:k1]
+                stage1 = sorted(top_tier, key=lambda t: _safe_light_auc(t), reverse=True)[:k1]
 
                 if do_full:
                     try:

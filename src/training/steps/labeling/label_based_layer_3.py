@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from scipy.stats import spearmanr, kurtosis, f_oneway, rankdata
-from scipy.special import logit
+from scipy.special import logit, expit
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
@@ -18,7 +18,7 @@ from sklearn.metrics import (
     brier_score_loss,
     roc_auc_score as sk_roc_auc_score,
     average_precision_score,
-    mean_squared_error, # Added
+    mean_squared_error,
 )
 from joblib import Parallel, delayed
 from numba import njit, prange
@@ -26,7 +26,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import Ridge # Added
+from sklearn.linear_model import Ridge
 from sklearn.ensemble import ExtraTreesRegressor
 
 # Import probability calibration utilities
@@ -77,10 +77,6 @@ def compute_cusum_signals_multi_window(
     # Log returns
     r = np.log(close / close.shift(1)).fillna(0.0)
 
-    # Pre-compute Volatility and ER for dynamic thresholds
-    # We use a base window for vol normalization, e.g., 20 or the window itself?
-    # The prompt implies window-specific calculations: "sigma_t,w"
-
     for w in windows:
         # 1. Volatility (sigma_t,w)
         sigma = r.rolling(window=w).std().fillna(0.0)
@@ -102,15 +98,6 @@ def compute_cusum_signals_multi_window(
         # h = k * sigma * (1 + alpha * (1 - ER)) * LiqMod
         h = k * sigma * (1.0 + alpha * (1.0 - er)) * liq_mod
 
-        # 5. Trend CUSUM
-        # S_t+ = max(0, S_{t-1} + r_t)
-        # S_t- = min(0, S_{t-1} + r_t)
-        # We normalize by h for the signal
-
-        # Vectorized CUSUM is hard in pandas, use numba or loop.
-        # For simplicity and speed in python, we can use a helper or simple loop.
-        # Given the requirements, a loop is safest for correctness.
-
         r_vals = r.values
         h_vals = h.values
         n = len(r_vals)
@@ -127,11 +114,9 @@ def compute_cusum_signals_multi_window(
         s_rev_neg = np.zeros(n)
 
         # Fast Loop
-        # JIT this for performance
         _compute_cusum_loop(n, r_vals, r_tilde, s_trend_pos, s_trend_neg, s_rev_pos, s_rev_neg)
 
         # 7. Normalize Signals: Signal = (S+ - |S-|) / h
-        # Avoid div by zero
         denom = h_vals + EPS
 
         trend_sig = (s_trend_pos - np.abs(s_trend_neg)) / denom
@@ -175,19 +160,14 @@ def apply_smart_activation(
 
     elif mode == 'cubic_regime':
         # "Sniper": Penalize uncertainty + Cut size in crisis
-        # Logic: If Vol > 95th percentile, multiplier = 0.5, else 1.0
         p95 = np.percentile(vol, 95)
         regime_mult = np.where(vol > p95, 0.5, 1.0)
-
-        # Apply Cubic
         transformed = (np.sign(sig) * np.abs(sig)**3) * regime_mult
 
     elif mode == 'tanh_dynamic':
-        # Normalize vol to median to keep tanh input range reasonable
         norm_vol = vol / (np.median(vol) + EPS)
         transformed = np.tanh(sig / norm_vol)
 
-    # --- SAFETY SCALING ---
     return np.clip(transformed, -5.0, 5.0)
 
 def generate_geometries_adaptive(
@@ -198,18 +178,6 @@ def generate_geometries_adaptive(
     trend_ratios: list = [0.0, 0.5, 1.0],
     activations: list = ['linear', 'cubic_regime', 'tanh_dynamic']
 ) -> dict:
-
-    # We expect base_signals to contain multi-window signals.
-    # We aggregate them first or treat them as separate bases?
-    # The prompt implies: "composite = w_trend * trend - w_rev * reversal"
-    # It says "All should be in short, medium & long timeframes".
-    # Let's average the windows to get a "Master" Trend/Reversal signal for the geometry generation,
-    # OR generate geometries for EACH window.
-    # Generating for each window * combinations explodes count.
-    # Let's average the windows for the base Trend/Reversal vectors to keep it manageable,
-    # or better, use the "Medium" (24) as the anchor, or average all.
-    # Let's average available windows.
-
     trend_cols = [c for c in base_signals.columns if 'trend_signal' in c]
     rev_cols = [c for c in base_signals.columns if 'reversal_signal' in c]
 
@@ -252,11 +220,6 @@ def generate_geometries_adaptive(
 
 @njit(parallel=True)
 def is_pareto_efficient_numba(costs):
-    """
-    Find the Pareto-efficient points (maximize all columns).
-    costs: (N, M) array of fitness values.
-    Returns: Boolean array of size N (True if efficient).
-    """
     n = costs.shape[0]
     is_efficient = np.ones(n, dtype=np.bool_)
     for i in prange(n):
@@ -279,44 +242,29 @@ def is_pareto_efficient_numba(costs):
     return is_efficient
 
 def compute_risk_metrics(mfe: np.ndarray, mae: np.ndarray, sigma: np.ndarray):
-    """
-    Compute RAD and Tail Risk efficiently using NumPy.
-    """
-    # 1. RAD: (MFE / MAE) / Volatility
     rad_vec = (mfe / (mae + EPS)) / (sigma + EPS)
     rad_med = np.median(rad_vec)
-
-    # MAD (Median Absolute Deviation) for stability
     rad_mad = np.median(np.abs(rad_vec - rad_med))
     stability = 1.0 / (1.0 + rad_mad)
-
     rad_score = rad_med * stability
-
-    # 2. Tail Risk Proxy
     tail_risk = np.percentile(mae, 95) / (np.median(sigma) + EPS)
-
     return rad_score, tail_risk
 
 def worker_evaluate_geometry(
     gid: str,
-    df: Dict[str, np.ndarray], # Using dict to avoid serialization overhead of DataFrame
+    df: Dict[str, np.ndarray],
     labels: np.ndarray,
     min_variance: float = 1e-8,
     min_f_score: float = 0.5
 ):
-    """
-    Evaluates a single meta-geometry.
-    """
     sig = df['composite_signal']
     sigma_vals = df['sigma_eff']
     mfe = df['mfe']
     mae = df['mae']
 
-    # PHASE 1: Fast Screening
     if np.var(sig) < min_variance:
         return None
 
-    # Filter invalid/nan labels
     valid_mask = np.isfinite(labels)
     if valid_mask.sum() < 20:
         return None
@@ -335,26 +283,18 @@ def worker_evaluate_geometry(
     if np.isnan(f_stat) or f_stat < min_f_score:
         return None
 
-    # PHASE 2: Risk Metrics
     rad, tail = compute_risk_metrics(mfe, mae, sigma_vals)
 
-    # PHASE 3: The Probe (Time-Series CV)
     X = np.column_stack((sig_valid, sigma_vals[valid_mask]))
     y = lbl_valid
 
     tscv = TimeSeriesSplit(n_splits=5, gap=50)
-
     preds_list = []
     targets_list = []
 
     model = HistGradientBoostingClassifier(
-        max_iter=50,
-        max_depth=3,
-        learning_rate=0.1,
-        min_samples_leaf=30,
-        l2_regularization=1.0,
-        early_stopping=False,
-        random_state=42
+        max_iter=50, max_depth=3, learning_rate=0.1, min_samples_leaf=30,
+        l2_regularization=1.0, early_stopping=False, random_state=42
     )
 
     try:
@@ -392,9 +332,6 @@ def select_best_geometries_production(
     print(f"1. Parallel Evaluation of {len(meta_geometries)} geometries...")
     labels_arr = labels.values
 
-    # Prepare dict inputs for worker
-    # Ensure all arrays are aligned
-
     results = Parallel(n_jobs=n_jobs)(
         delayed(worker_evaluate_geometry)(k, v, labels_arr)
         for k, v in meta_geometries.items()
@@ -406,16 +343,14 @@ def select_best_geometries_production(
 
     df = pd.DataFrame(results)
 
-    # 2. Hard Filter
     df = df[df['auc'] > min_auc].copy().reset_index(drop=True)
     if df.empty:
         print("No candidates passed min_auc.")
         return pd.DataFrame()
 
-    # 3. Transformations & Normalization
     auc_log = df['auc'].clip(0.5001, 0.9999).apply(logit)
     rad_vals = df['rad'].values
-    safe_vals = -1 * df['tail_risk'].values # Flip sign
+    safe_vals = -1 * df['tail_risk'].values
 
     def robust_scale(x):
         return (x - np.median(x)) / (np.median(np.abs(x - np.median(x))) + EPS)
@@ -424,7 +359,6 @@ def select_best_geometries_production(
     df['z_rad'] = robust_scale(rad_vals)
     df['z_safe'] = robust_scale(safe_vals)
 
-    # 4. Numba Pareto Filter
     fitness_matrix = df[['z_auc', 'z_rad', 'z_safe']].values.astype(np.float64)
     pareto_mask = is_pareto_efficient_numba(fitness_matrix)
 
@@ -433,7 +367,6 @@ def select_best_geometries_production(
 
     candidates = pareto_candidates if len(pareto_candidates) >= top_k else df
 
-    # 5. Composite Ranking
     candidates['score'] = (
         0.4 * candidates['z_auc'] +
         0.4 * candidates['z_rad'] +
@@ -441,7 +374,6 @@ def select_best_geometries_production(
     )
     candidates = candidates.sort_values('score', ascending=False)
 
-    # 6. Diversity Pruning
     print("3. Diversity Check (Matrix Method)...")
     check_limit = min(len(candidates), 200)
     top_candidates = candidates.iloc[:check_limit]
@@ -481,7 +413,7 @@ def select_best_geometries_production(
     return selected_df
 
 # -----------------------------------------------------------
-# Core Helpers from original file
+# Core Helpers & Objectives
 # -----------------------------------------------------------
 
 def _clip_probs(probs: np.ndarray, clip_low: float, clip_high: float) -> np.ndarray:
@@ -547,138 +479,36 @@ def log_loss(*args, **kwargs):
 def roc_auc_score(*args, **kwargs):
     return _safe_roc_auc_score(*args, **kwargs)
 
-
-# ---------------------------------------------------------
-# Custom Objectives
-# ---------------------------------------------------------
-
 def _focal_loss_objective(y_true, y_pred):
-    """
-    Focal Loss for LightGBM (Binary Classification).
-    y_pred is raw margin (before sigmoid).
-    """
-    # For some reason LightGBM may pass y_true as a Dataset object?
-    # Usually in custom objective (y_true, y_pred), where y_true is the dataset.
-    # Wait, lightgbm custom objective signature: (preds, train_data) -> (grad, hess)
-    # But if we use sklearn API (LGBMClassifier), it passes (y_true, y_pred) if we define objective appropriately?
-    # Actually, sklearn API objective should be callable(y_true, y_pred).
-    # Let's handle both cases just in case.
-    
-    # If y_true is not array-like, try get_label()
     if hasattr(y_true, 'get_label'):
         y_true = y_true.get_label()
-
     gamma = 2.0
-    # alpha = 0.25 # Balance factor - unused in simplified grad/hess?
-    # The snippet didn't use alpha in the final grad calculation except implicitly?
-    # The user provided:
-    # grad = -y_true * (1 - p)**gamma * ... + (1 - y_true) * p**gamma * ...
-    # This formula incorporates the down-weighting.
-    
-    # Sigmoid to get probability
     p = expit(y_pred)
-    
-    # Gradient calculation
-    # Using robust form from user snippet
-    # term1 = (1 - p) ** gamma * np.log(p + 1e-15)
-    # term2 = p ** gamma * np.log(1 - p + 1e-15)
-    
     grad = -y_true * (1 - p)**gamma * (1 - p - gamma * p * np.log(p + 1e-15)) + \
            (1 - y_true) * p**gamma * (p + gamma * (1 - p) * np.log(1 - p + 1e-15))
-
-    # Hessian approximation (Simplified for stability as per "Pro Tip")
-    # p * (1 - p) is Hessian of LogLoss
     hess = p * (1 - p)
-    # Enhance hessian with focal weight approximation if desired, but user said:
-    # "Or just p * (1-p) ... scaled by the focal weight"
-    # User snippet: hess = np.abs(grad) * (1 - p) * p + gamma * np.abs(grad)
-    # Or simplified. Let's use the robust p*(1-p) which is standard stable proxy.
-    # Actually, let's strictly follow the snippet's robust suggestion if possible,
-    # or the stable p*(1-p) if that fails.
-    # User: "hess = p * (1 - p)" -> This is safe.
-    
     return grad, hess
 
 def _asymmetric_mse_objective(y_true, y_pred):
-    """
-    Asymmetric MSE: Penalize Over-Prediction (Pred > True) more heavily.
-    """
     if hasattr(y_true, 'get_label'):
         y_true = y_true.get_label()
-
-    residual = (y_true - y_pred) # true - pred
-    # MSE Grad is -2 * (y - p).
+    residual = (y_true - y_pred)
     grad = -2 * residual
     hess = 2 * np.ones_like(residual)
-    
-    # Define penalty multiplier
-    penalty = 1.5  # 50% extra penalty for being WRONG on the UPSIDE
-    
-    # If Residual < 0, it means y_true - y_pred < 0 => y_pred > y_true (Over-prediction)
-    # We want to increase gradient here to force model down.
-    
-    # Mask for over-prediction
+    penalty = 1.5
     over_pred = residual < 0
-    
     grad[over_pred] *= penalty
     hess[over_pred] *= penalty
-    
     return grad, hess
 
-# ---------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------
-
-def _clip_probs(probs: np.ndarray, clip_low: float, clip_high: float) -> np.ndarray:
-    """Clip probability values to specified range."""
-    return np.clip(probs, clip_low, clip_high)
-
-
-def _apply_temperature(probs: np.ndarray, temperature: float) -> np.ndarray:
-    """Apply temperature scaling to probabilities."""
-    if temperature <= 0:
-        return probs
-    probs_temp = np.log(probs + 1e-12) / temperature
-    return 1.0 / (1.0 + np.exp(-probs_temp))
-
-
-def _fit_temperature(y_true: np.ndarray, probs: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> float:
-    """Fit temperature scaling parameter using optimization."""
-    from scipy.optimize import minimize_scalar
-
-    def nll(temp):
-        p_temp = _apply_temperature(probs, temp)
-        p_temp = np.clip(p_temp, 1e-12, 1 - 1e-12)
-        if sample_weight is not None:
-            return -np.mean(sample_weight * (y_true * np.log(p_temp) + (1 - y_true) * np.log(1 - p_temp)))
-        else:
-            return -np.mean(y_true * np.log(p_temp) + (1 - y_true) * np.log(1 - p_temp))
-
-    result = minimize_scalar(nll, bounds=(0.1, 5.0), method='bounded')
-    return result.x if result.success else 1.0
-
 def _calculate_alpha_target(returns: np.ndarray, volatility: np.ndarray) -> np.ndarray:
-    """
-    Calculate Volatility-Standardized Forward Return (Alpha Target).
-    y = Clip(Returns / Volatility, -4.0, 4.0)
-    """
-    # Avoid division by zero
     vol_safe = np.where(volatility < 1e-6, 1e-6, volatility)
     alpha = returns / vol_safe
-    # Clip outliers
     return np.clip(alpha, -4.0, 4.0)
 
 def _calculate_ic_score(y_true: np.ndarray, y_pred: np.ndarray, folds_ic: List[float] = None) -> float:
-    """
-    Calculate ScoreIC = 100 * SpearmanIC + 50 * IC_IR
-
-    IC_IR = Mean(IC) / Std(IC) across folds.
-    """
-    # Global IC
     ic, _ = spearmanr(y_true, y_pred)
     if np.isnan(ic): ic = 0.0
-
-    # IR component
     if folds_ic and len(folds_ic) > 1:
         mean_ic = np.mean(folds_ic)
         std_ic = np.std(folds_ic)
@@ -688,7 +518,6 @@ def _calculate_ic_score(y_true: np.ndarray, y_pred: np.ndarray, folds_ic: List[f
             ir = mean_ic / std_ic
     else:
         ir = 0.0
-
     return 100 * ic + 50 * ir
 
 # ---------------------------------------------------------
@@ -867,6 +696,9 @@ def _dump_layer3_feature_inventory(
     except Exception:
         return
 
+# ---------------------------------------------------------
+# HPO
+# ---------------------------------------------------------
 
 def _run_layer3_hpo(
     X: pd.DataFrame,
@@ -876,9 +708,6 @@ def _run_layer3_hpo(
     objective_func: str = None, # 'binary_logloss', 'focal', 'mse', 'huber', 'asymmetric_mse'
     n_trials: int = 40,
 ) -> Dict[str, Any]:
-    """
-    Run HPO using Optuna for Layer 3 (supporting both Alpha and Prob models).
-    """
     print(f"\n>> Running HPO for {model_type} (Obj: {objective_func}) ({n_trials} trials)...")
 
     # Subsample for speed
@@ -896,14 +725,12 @@ def _run_layer3_hpo(
         y_hpo = y
         w_hpo = w
 
-    # Split into Train/Val
     split_idx = int(len(X_hpo) * 0.8)
     X_train, X_val = X_hpo.iloc[:split_idx], X_hpo.iloc[split_idx:]
     y_train, y_val = y_hpo.iloc[:split_idx], y_hpo.iloc[split_idx:]
     w_train, w_val = w_hpo[:split_idx], w_hpo[split_idx:]
 
     def objective(trial):
-        # Hyperparameters for LGBM
         params = {
             'num_leaves': trial.suggest_int('num_leaves', 16, 256),
             'max_depth': trial.suggest_int('max_depth', 4, 8),
@@ -912,7 +739,7 @@ def _run_layer3_hpo(
             'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 20, 50),
             'min_sum_hessian_in_leaf': trial.suggest_float('min_sum_hessian_in_leaf', 1e-3, 1e-2),
             'lambda_l1': trial.suggest_float('lambda_l1', 0.3, 0.7),
-            'lambda_l2': 0.0, # Will set constraint later or let it float? Snippet uses 2x L1 constraint.
+            'lambda_l2': 0.0,
             'bagging_freq': 1,
             'feature_fraction': 0.8,
             'bagging_fraction': 0.8,
@@ -922,16 +749,14 @@ def _run_layer3_hpo(
         params['lambda_l2'] = 2.0 * params['lambda_l1']
 
         try:
-            # Alpha Models (Regression)
             if model_type == 'alpha_lgbm':
-                # Objective handling
                 if objective_func == 'asymmetric_mse':
                     params['objective'] = _asymmetric_mse_objective
-                    params['metric'] = 'rmse' # Proxy metric for early stopping?
+                    params['metric'] = 'rmse'
                 elif objective_func == 'huber':
                     params['objective'] = 'huber'
                     params['metric'] = 'mae'
-                    params['alpha'] = 0.9 # Huber alpha
+                    params['alpha'] = 0.9
                 else:
                     params['objective'] = 'regression'
                     params['metric'] = 'rmse'
@@ -945,7 +770,6 @@ def _run_layer3_hpo(
                     callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)]
                 )
                 preds = model.predict(X_val)
-                # Score: IC (Maximize)
                 ic = spearmanr(y_val, preds)[0]
                 return ic if np.isfinite(ic) else -1.0
 
@@ -957,19 +781,15 @@ def _run_layer3_hpo(
                 ic = spearmanr(y_val, preds)[0]
                 return ic if np.isfinite(ic) else -1.0
 
-            # Prob Models (Classification)
             elif model_type == 'classifier':
                 if objective_func == 'focal':
                     params['objective'] = _focal_loss_objective
-                    params['metric'] = 'binary_logloss' # Monitoring metric
+                    params['metric'] = 'binary_logloss'
                 else:
                     params['objective'] = 'binary'
                     params['metric'] = 'binary_logloss'
 
                 model = lgb.LGBMClassifier(**params)
-
-                # Check for binary targets
-                # If custom obj, we might need y_train as 0/1 integers
                 y_tr_bin = (y_train >= 0.5).astype(int)
                 y_val_bin = (y_val >= 0.5).astype(int)
 
@@ -980,42 +800,23 @@ def _run_layer3_hpo(
                     eval_sample_weight=[w_val],
                     callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)]
                 )
-
-                # Predict
-                # For custom obj, predict_proba might return raw scores if class is not updated?
-                # LGBMClassifier usually handles sigmoid automatically for built-in,
-                # but for custom obj it might return margin?
-                # Scikit-learn API with custom objective typically needs careful handling.
-                # However, model.predict_proba() usually works if obj returns grad/hess.
-                # Let's assume standard behavior or raw margin -> sigmoid.
-
                 preds = model.predict_proba(X_val)[:, 1]
-
-                # Score: ScoreL3 (Maximize)
                 auc = roc_auc_score(y_val_bin, preds)
                 ll = log_loss(y_val_bin, preds)
-                # Approximate ScoreL3
                 score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
                 return score
 
         except Exception as e:
-            # print(f"Trial failed: {e}")
             return -999.0
 
-    study = optuna.create_study(
-        direction='maximize',
-        sampler=TPESampler(seed=42),
-        pruner=HyperbandPruner()
-    )
+    study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=42), pruner=HyperbandPruner())
     study.optimize(objective, n_trials=n_trials)
 
     print(f"   Best HPO Score: {study.best_value:.4f}")
-    print(f"   Best Params: {study.best_params}")
 
     if model_type == 'alpha_ridge':
         return study.best_params
 
-    # Reconstruct params for LGBM
     best_p = study.best_params.copy()
     best_p['lambda_l2'] = 2.0 * best_p['lambda_l1']
     best_p['bagging_freq'] = 1
@@ -1024,7 +825,6 @@ def _run_layer3_hpo(
     best_p['n_jobs'] = 1
     best_p['verbosity'] = -1
 
-    # Re-attach objective function to best params
     if model_type == 'alpha_lgbm':
         if objective_func == 'asymmetric_mse':
             best_p['objective'] = _asymmetric_mse_objective
@@ -1045,201 +845,156 @@ def _run_layer3_hpo(
             best_p['metric'] = 'binary_logloss'
 
     return best_p
-def generate_efficiency_labels(events_df, price_series, tx_cost=0.0, threshold=0.2):
-    labels = pd.Series(index=events_df.index, dtype=float)
-    net_returns = []
-    valid_indices = []
-    sorted_events = events_df.sort_index()
-    for idx, row in sorted_events.iterrows():
-        try:
-            t0, t1 = row['entry_time'], row['exit_time']
-            if t0 not in price_series.index or t1 not in price_series.index:
-                trade_price = price_series[t0:t1]
-            else:
-                trade_price = price_series[t0:t1]
-            if len(trade_price) < 2:
-                continue
-            realized_ret = (trade_price.iloc[-1] / trade_price.iloc[0]) - 1
-            net_ret = realized_ret - tx_cost
-            net_returns.append(net_ret)
-            valid_indices.append(idx)
-        except Exception:
-            continue
-    if len(net_returns) == 0:
-        return labels.fillna(0)
-    net_returns_series = pd.Series(net_returns, index=valid_indices)
-    threshold_series = net_returns_series.expanding(min_periods=20).quantile(0.60).shift(1)
-    threshold_series = threshold_series.fillna(0.0)
-    efficiency_mask = net_returns_series > threshold_series
-    labels.loc[valid_indices] = efficiency_mask.astype(float)
-    return labels.fillna(0)
-
-# Fast ECE
-def _fast_expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
-    y_true_arr = np.asarray(y_true, dtype=float).reshape(-1)
-    y_prob_arr = np.asarray(y_prob, dtype=float).reshape(-1)
-    mask = np.isfinite(y_true_arr) & np.isfinite(y_prob_arr)
-    if not np.any(mask): return 0.0
-    y_true_arr = y_true_arr[mask]
-    y_prob_arr = y_prob_arr[mask]
-    n = int(y_prob_arr.size)
-    if n <= 0: return 0.0
-    y_prob_arr = np.clip(y_prob_arr, 0.0, 1.0)
-    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
-    bin_idx = np.digitize(y_prob_arr, bin_edges, right=True) - 1
-    bin_idx = np.clip(bin_idx, 0, n_bins - 1)
-    counts = np.bincount(bin_idx, minlength=n_bins).astype(float)
-    sum_prob = np.bincount(bin_idx, weights=y_prob_arr, minlength=n_bins).astype(float)
-    sum_true = np.bincount(bin_idx, weights=y_true_arr, minlength=n_bins).astype(float)
-    nonzero = counts > 0
-    if not np.any(nonzero): return 0.0
-    mean_prob = np.zeros(n_bins, dtype=float)
-    mean_true = np.zeros(n_bins, dtype=float)
-    mean_prob[nonzero] = sum_prob[nonzero] / counts[nonzero]
-    mean_true[nonzero] = sum_true[nonzero] / counts[nonzero]
-    return float(np.sum((counts[nonzero] / n) * np.abs(mean_prob[nonzero] - mean_true[nonzero])))
-
-def _sigmoid(x: np.ndarray) -> np.ndarray:
-    x = np.asarray(x, dtype=float)
-    x = np.clip(x, -60.0, 60.0)
-    return 1.0 / (1.0 + np.exp(-x))
-
-def _logit(p: np.ndarray) -> np.ndarray:
-    p = np.asarray(p, dtype=float)
-    p = np.clip(p, 1e-12, 1.0 - 1e-12)
-    return np.log(p / (1.0 - p))
-
-def _dump_layer3_feature_inventory(*args, **kwargs):
-    # Simplified placeholder or keep original logic
-    # To save space, I will not re-implement the full logging here as it is very long.
-    # Assumed kept or simplified.
-    pass
 
 # -----------------------------------------------------------
 # Training Pipeline Components
 # -----------------------------------------------------------
 
-def _run_layer3_hpo(X, y, w, model_type, n_trials=20):
-    # Minimal HPO impl
-    def objective(trial):
-        params = {
-            'num_leaves': trial.suggest_int('num_leaves', 16, 128),
-            'max_depth': trial.suggest_int('max_depth', 4, 8),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1),
-            'n_estimators': trial.suggest_int('n_estimators', 200, 600),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0.1, 5.0),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0.1, 5.0),
-            'min_child_samples': trial.suggest_int('min_child_samples', 20, 100),
-            'verbosity': -1,
-            'n_jobs': 1
-        }
-
-        split = int(len(X) * 0.8)
-        X_tr, X_val = X[:split], X[split:]
-        y_tr, y_val = y[:split], y[split:]
-        w_tr, w_val = w[:split], w[split:]
-
-        if model_type == 'classifier':
-            clf = lgb.LGBMClassifier(**params)
-            clf.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_val, y_val)], eval_sample_weight=[w_val],
-                   callbacks=[lgb.early_stopping(30, verbose=False)])
-            p = clf.predict_proba(X_val)[:, 1]
-            return roc_auc_score(y_val, p)
-        else:
-            reg = lgb.LGBMRegressor(**params)
-            reg.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_val, y_val)], eval_sample_weight=[w_val],
-                   callbacks=[lgb.early_stopping(30, verbose=False)])
-            p = reg.predict(X_val)
-            # Proxy score
-            return -sk_log_loss((y_val>0.5).astype(int), np.clip(p, 1e-4, 1-1e-4))
-
-    study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=42))
-    study.optimize(objective, n_trials=n_trials)
-    return study.best_params
-
-def _train_meta_learner_for_geometry(
+def _train_dual_head_for_geometry(
     gid: str,
-    df: pd.DataFrame,
-    meta_features: List[str],
-    target_col: str,
-    schemes: Dict[str, np.ndarray],
-    y_values: np.ndarray,
+    X: pd.DataFrame,
+    y_alpha: np.ndarray,
+    y_prob: np.ndarray,
+    w_alpha: np.ndarray,
+    w_prob: np.ndarray,
     outcomes_dir: Path,
     cfg: Dict[str, Any]
-) -> Tuple[np.ndarray, Any, float]:
+) -> Tuple[np.ndarray, np.ndarray, Any, Any]:
     """
-    Runs the Scheme Comparison -> Race -> HPO -> Fit pipeline for a SINGLE geometry.
-    Returns (oof_probs, final_model, best_score).
+    Trains Dual-Head (Alpha + Prob) model for a single geometry.
+    Returns (meta_alpha_oof, meta_prob_oof, alpha_model, prob_model)
     """
-    print(f"\n[{gid}] Training Meta-Learner...")
+    print(f"\n[{gid}] Training Dual-Head Meta-Learner...")
     
-    X = df[meta_features]
-    y = df[target_col]
-    
-    # 1. Scheme Screening (Simplified)
-    # Evaluate schemes on a subset or full folds
-    best_scheme = None
-    best_scheme_score = -float('inf')
-    best_w = None
-    
-    # We use a simple LGBM probe for scheme selection
-    lgb_params = {'n_estimators': 100, 'max_depth': 4, 'verbose': -1, 'n_jobs': 1}
-    
-    # PurgedCV for scheme eval
-    cv = PurgedKFoldTime(n_splits=3, purge=50) # Faster 3-fold
+    # Common Cross-Validation
+    n_splits = 5
+    cv = PurgedKFoldTime(n_splits=n_splits, purge=100, embargo=50)
+    splits = list(cv.split(X))
 
-    for s_name, w_vec in schemes.items():
-        scores = []
-        for train_idx, val_idx in cv.split(X):
-            if len(np.unique(y.iloc[train_idx])) < 2: continue
-            m = lgb.LGBMClassifier(**lgb_params)
-            m.fit(X.iloc[train_idx], (y.iloc[train_idx]>0.5).astype(int), sample_weight=w_vec[train_idx])
-            p = m.predict_proba(X.iloc[val_idx])[:, 1]
-            scores.append(_get_score(p, (y.iloc[val_idx]>0.5).astype(int)))
-        
-        avg_score = np.mean(scores) if scores else -999
-        if avg_score > best_scheme_score:
-            best_scheme_score = avg_score
-            best_scheme = s_name
-            best_w = w_vec
+    # --- HEAD A: ALPHA GENERATION ---
+    print(f"   [{gid}] Head A: Alpha Generation")
+    alpha_candidates = [
+        {'name': 'Ridge_MSE', 'type': 'alpha_ridge', 'obj': 'mse'},
+        {'name': 'LGBM_Huber', 'type': 'alpha_lgbm', 'obj': 'huber'},
+        {'name': 'LGBM_AsymMSE', 'type': 'alpha_lgbm', 'obj': 'asymmetric_mse'}
+    ]
+    alpha_scores = {}
+
+    for cand in alpha_candidates:
+        fold_ics = []
+        for train_idx, val_idx in splits:
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y_alpha[train_idx], y_alpha[val_idx]
+            w_tr = w_alpha[train_idx]
             
-    print(f"[{gid}] Best Scheme: {best_scheme} (Score: {best_scheme_score:.2f})")
-    
-    if best_w is None:
-        best_w = np.ones(len(y))
+            try:
+                if cand['type'] == 'alpha_ridge':
+                    model = Ridge(alpha=1.0)
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    preds = model.predict(X_val)
+                else:
+                    params = {'n_estimators': 100, 'max_depth': 4, 'learning_rate': 0.05, 'verbose': -1, 'n_jobs': 1}
+                    if cand['obj'] == 'huber':
+                        params['objective'] = 'huber'; params['alpha'] = 0.9
+                    elif cand['obj'] == 'asymmetric_mse':
+                        params['objective'] = _asymmetric_mse_objective
+                    model = lgb.LGBMRegressor(**params)
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    preds = model.predict(X_val)
+                
+                ic, _ = spearmanr(y_val, preds)
+                if np.isfinite(ic): fold_ics.append(ic)
+            except Exception: pass
 
-    # 2. HPO
-    best_params = _run_layer3_hpo(X, (y>0.5).astype(int), best_w, 'classifier', n_trials=15)
-    
-    # 3. OOF Generation with Best Params
-    cv_full = PurgedKFoldTime(n_splits=5, purge=50)
-    oof_probs = np.full(len(df), np.nan)
-    
-    # We use a CalibratedClassifierCV wrapper around LGBM for OOF and Final
-    # But CalibratedClassifierCV doesn't support sample_weight in fit nicely with internal split?
-    # Actually it does in newer sklearn.
-    # Alternatively, use LGBM directly and calibrate manually.
-    
-    for train_idx, val_idx in cv_full.split(X):
-        m = lgb.LGBMClassifier(**best_params)
-        m.fit(X.iloc[train_idx], (y.iloc[train_idx]>0.5).astype(int), sample_weight=best_w[train_idx])
-        p = m.predict_proba(X.iloc[val_idx])[:, 1]
+        if fold_ics:
+            mean_ic = np.mean(fold_ics)
+            std_ic = np.std(fold_ics) + 1e-6
+            score_ic = 100 * mean_ic + 50 * (mean_ic / std_ic)
+        else:
+            score_ic = -999.0
+        alpha_scores[cand['name']] = score_ic
 
-        # Calibration (Isotonic)
-        iso = IsotonicRegression(out_of_bounds='clip')
-        # Fit on a subset of val? No, typically fit on val, predict on val is cheating.
-        # Proper way: Inner CV or just use raw probs for OOF.
-        # Standard: Use raw probs for OOF, then calibrate the OOF ensemble later?
-        # Or calibrate using train? No.
-        # Let's use raw probs for OOF to avoid leakage.
-        oof_probs[val_idx] = p
+    best_alpha_name = max(alpha_scores, key=alpha_scores.get)
+    best_alpha_cand = next(c for c in alpha_candidates if c['name'] == best_alpha_name)
+    print(f"     Winner: {best_alpha_name}")
 
-    # 4. Final Fit
-    final_base = lgb.LGBMClassifier(**best_params)
-    final_model = CalibratedClassifierCV(final_base, method='isotonic', cv=3)
-    final_model.fit(X, (y>0.5).astype(int), sample_weight=best_w)
-    
-    return oof_probs, final_model, best_scheme_score
+    best_alpha_params = _run_layer3_hpo(
+        X, pd.Series(y_alpha), w_alpha,
+        model_type=best_alpha_cand['type'], objective_func=best_alpha_cand['obj'], n_trials=10
+    )
+
+    meta_alpha_oof = np.full(len(X), np.nan)
+    for train_idx, val_idx in splits:
+        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_tr = y_alpha[train_idx]
+        w_tr = w_alpha[train_idx]
+        if best_alpha_cand['type'] == 'alpha_ridge':
+            model = Ridge(**best_alpha_params)
+        else:
+            model = lgb.LGBMRegressor(**best_alpha_params)
+        model.fit(X_tr, y_tr, sample_weight=w_tr)
+        meta_alpha_oof[val_idx] = model.predict(X_val)
+
+    if best_alpha_cand['type'] == 'alpha_ridge':
+        final_alpha_model = Ridge(**best_alpha_params)
+    else:
+        final_alpha_model = lgb.LGBMRegressor(**best_alpha_params)
+    final_alpha_model.fit(X, y_alpha, sample_weight=w_alpha)
+
+
+    # --- HEAD B: PROBABILITY CALIBRATION ---
+    print(f"   [{gid}] Head B: Probability Calibration")
+    prob_candidates = [
+        {'name': 'LGBM_LogLoss', 'type': 'classifier', 'obj': 'binary_logloss'},
+        {'name': 'LGBM_Focal', 'type': 'classifier', 'obj': 'focal'}
+    ]
+    prob_scores = {}
+
+    for cand in prob_candidates:
+        fold_scores = []
+        for train_idx, val_idx in splits:
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y_prob[train_idx], y_prob[val_idx]
+            w_tr = w_prob[train_idx]
+            try:
+                params = {'n_estimators': 100, 'max_depth': 4, 'learning_rate': 0.05, 'verbose': -1, 'n_jobs': 1}
+                if cand['obj'] == 'focal': params['objective'] = _focal_loss_objective
+                else: params['objective'] = 'binary'
+                model = lgb.LGBMClassifier(**params)
+                model.fit(X_tr, y_tr, sample_weight=w_tr)
+                preds = model.predict_proba(X_val)[:, 1]
+                auc = roc_auc_score(y_val, preds)
+                ll = log_loss(y_val, preds)
+                score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
+                fold_scores.append(score)
+            except Exception: pass
+        prob_scores[cand['name']] = np.mean(fold_scores) if fold_scores else -999.0
+
+    best_prob_name = max(prob_scores, key=prob_scores.get)
+    best_prob_cand = next(c for c in prob_candidates if c['name'] == best_prob_name)
+    print(f"     Winner: {best_prob_name}")
+
+    best_prob_params = _run_layer3_hpo(
+        X, pd.Series(y_prob), w_prob,
+        model_type='classifier', objective_func=best_prob_cand['obj'], n_trials=10
+    )
+
+    meta_prob_oof = np.full(len(X), np.nan)
+    for train_idx, val_idx in splits:
+        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_tr, w_tr = y_prob[train_idx], w_prob[train_idx]
+        base_est = lgb.LGBMClassifier(**best_prob_params)
+        cal_model = CalibratedClassifierCV(base_est, method='isotonic', cv=3)
+        cal_model.fit(X_tr, y_tr, sample_weight=w_tr)
+        meta_prob_oof[val_idx] = cal_model.predict_proba(X_val)[:, 1]
+
+    final_prob_model = CalibratedClassifierCV(
+        estimator=lgb.LGBMClassifier(**best_prob_params),
+        method='isotonic', cv=3
+    )
+    final_prob_model.fit(X, y_prob, sample_weight=w_prob)
+
+    return meta_alpha_oof, meta_prob_oof, final_alpha_model, final_prob_model
 
 # -----------------------------------------------------------
 # Main Entry Point
@@ -1259,50 +1014,30 @@ def layer3_analyst_lgbm(
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Revised Layer 3: Dual-Head Architecture (Alpha Generation + Probability Calibration).
+    Revised Layer 3: Multi-Geometry Dual-Head Architecture.
 
-    1. Alpha Generator (Head A): Predicts Vol-Standardized Returns (Alpha).
-       - Race: Ridge vs LGBM(Huber) vs LGBM(AsymmetricMSE)
-       - Metric: ScoreIC (Spearman + Stability)
-       - Output: 'meta_alpha'
-
-    2. Probability Calibrator (Head B): Predicts Probability of Profit (0/1).
-       - Race: LGBM(LogLoss) vs LGBM(FocalLoss)
-       - Metric: ScoreL3 (AUC, LogLoss, ECE)
-       - Output: 'meta_prob'
-    """
-    print(f"\n{'='*60}")
-    print("LAYER 3: DUAL-HEAD META-MODEL (ALPHA + PROBABILITY)")
-    Layer 3 Orchestrator:
-    1. Computes CUSUM signals.
-    2. Generates and Selects Geometries.
-    3. Trains a Meta-Learner for each selected geometry.
+    1. Selects best geometries.
+    2. Generates Regime Leaf & NN features ONCE (post-selection).
+    3. For EACH geometry:
+       - Trains Dual-Head Meta-Learner (Alpha + Prob).
     4. Aggregates results.
     """
     print(f"\n{'='*60}")
-    print("LAYER 3: MULTI-GEOMETRY ANALYST META-MODELS")
+    print("LAYER 3: MULTI-GEOMETRY DUAL-HEAD META-MODELS")
     print(f"{'='*60}")
 
     df = oof_df.copy()
     cfg = config if isinstance(config, dict) else {}
 
     # ---------------------------------------------------------
-    # 1. Feature Engineering (Shared)
+    # 1. Feature Engineering (Shared/Global)
     # ---------------------------------------------------------
-    # ... (Keep existing feature engineering logic) ...
-    # Initialize unified results container
-    all_comparison_results = []
-
-    print("<< Generating Layer 3 Features...")
-
-    # 1. Base Feature Generation (Global)
-    # ... (Keep existing logic to generate global features)
+    print("<< Generating Global Layer 3 Features...")
     if base_model_cols:
         safe_base_cols = [c for c in base_model_cols if c in df.columns]
         df[safe_base_cols] = df[safe_base_cols].fillna(0.5)
 
-    if market_data is not None and isinstance(market_data, pd.DataFrame) and not market_data.empty:
-    if market_data is not None:
+    if market_data is not None and not market_data.empty:
         for c in ['volume', 'high', 'low', 'close']:
             if c in market_data.columns:
                 df[c] = market_data[c].reindex(df.index)
@@ -1314,587 +1049,191 @@ def layer3_analyst_lgbm(
 
     # Check for Base Model Spread
     if 'ens_prediction_dispersion' not in df.columns and 'base_pred_std' in df.columns:
-        df['ens_prediction_dispersion'] = df['base_pred_std'] # Alias if needed
+        df['ens_prediction_dispersion'] = df['base_pred_std']
 
-    candidate_features = []
-    candidate_features.extend(safe_base_cols)
-
-    # --- NEW: Regime Leaf & NN Sequence Features ---
-    if market_data is not None and not market_data.empty:
-        # 1. Regime Leaf Features
-        try:
-            print("<< Generating Regime Leaf Features...")
-            rl_config = {
-                "enabled_targets": [
-                    "regime_trendiness",
-                    "regime_volatility",
-                    "regime_trend_efficiency",
-                    "regime_memory",
-                    "regime_liquidity",
-                    "regime_volume_force_direction",
-                    "regime_breakout",
-                    "regime_future_range",
-                    "regime_downside_ae",
-                    "regime_upside_ae",
-                    "regime_tail_min_bar",
-                    "regime_jump_max_abs_bar",
-                    "regime_vol_of_vol"
-                ],
-                "inputs": {
-                    "input_source": "ohlcv_only",
-                    "ohlcv_feature_config": {}
-                },
-                "onehot": {"enabled": False},
-                "interaction_feature": {"enabled": True, "include_base": True},
-                "reporting": {"enabled": False},
-                "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}
-            }
-
-            rl_df = extract_regime_leaf_onehot_features(
-                X=pd.DataFrame(index=df.index),
-                market_data=market_data,
-                config=rl_config,
-                random_state=42,
-                verbose=False
-            )
-
-            if rl_df is not None and not rl_df.empty:
-                # Align and merge
-                rl_df = rl_df.reindex(df.index).fillna(0.0)
-                new_rl_cols = [c for c in rl_df.columns if c not in df.columns]
-                if new_rl_cols:
-                    df = pd.concat([df, rl_df[new_rl_cols]], axis=1)
-                    candidate_features.extend(new_rl_cols)
-                    print(f"   Added {len(new_rl_cols)} regime leaf features")
-        except Exception as e:
-            print(f"⚠️ Regime leaf extraction failed: {e}")
-
-        # 2. NN Sequence Embeddings
-        try:
-            print("<< Generating NN Sequence Embeddings...")
-            nn_df = generate_nn_sequence_embeddings(
-                market_data=market_data,
-                encoder_type="stacked",
-                seq_len=24,
-                embed_dim=8,
-                use_conv=True,
-                use_lstm=True,
-                use_attention=False
-            )
-
-            if nn_df is not None and not nn_df.empty:
-                nn_df = nn_df.reindex(df.index).fillna(0.0)
-                new_nn_cols = [c for c in nn_df.columns if c not in df.columns]
-                if new_nn_cols:
-                    df = pd.concat([df, nn_df[new_nn_cols]], axis=1)
-                    candidate_features.extend(new_nn_cols)
-                    print(f"   Added {len(new_nn_cols)} NN embedding features")
-        except Exception as e:
-            print(f"⚠️ NN embedding generation failed: {e}")
-
-    candidate_features.extend(
-        [
-            'ensemble_prob', 'max_base_prob', 'min_base_prob', 'base_prob_range',
-            'logit_prob', 'logit_momentum_5', 'logit_momentum_1',
-            'vol_at_signal', 'volatility_risk_ratio', 'candle_shape', 'candle_shape_4',
-            'base_pred_mean', 'base_pred_std', 'base_pred_range',
-            'momentum_agreement', 'momentum_agreement_abs', 'momentum_weighted_agreement', 'trend_consistency_12',
-            'ens_prediction_dispersion', 'ens_confidence_gap', 'ens_uncertainty', 'ens_prediction_range',
-            'ens_avg_divergence', 'ens_max_confidence', 'ens_disagreement_rate', 'ens_snr_internal', 'ens_snr_consensus',
-            'slope_short', 'adx_proxy', 'momentum_short', 'snr',
-            'time_since_last_vol_spike', 'time_since_last_large_candle',
-            'choppiness_index', 'variance_ratio', 'permutation_entropy',
-            'hour', 'day_of_week', 'hour_sin', 'hour_cos', 'is_weekend',
-            'efficiency_ratio',
-            'geo_rolling_mae', 'geo_mae_volatility', 'geo_efficiency_ratio',
-            'geo_median_time_to_stop', 'geo_median_time_to_target', 'geo_time_asymmetry',
-            'geo_prob_target_shrunk', 'geo_prob_stop_shrunk', 'geo_expected_payoff',
-            'price_position_in_range',
-        ]
-    )
-    for c in ['volatility_1d']:
-        if c in df.columns:
-            candidate_features.append(c)
-
-    meta_features = [c for c in list(dict.fromkeys(candidate_features)) if c in df.columns]
-
-    # Clean features
-    other_cols = [c for c in meta_features if c not in set(safe_base_cols)]
-    if other_cols:
-        df[other_cols] = df[other_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-    # ---------------------------------------------------------
-    # 2. Data Alignment
-    # ---------------------------------------------------------
-    
-    # Must use original index alignment
-    # Net Returns needed for Alpha Target
-    if net_returns is None:
-        raise ValueError("net_returns is required for Alpha generation.")
-    
-    ret_series = net_returns.reindex(df.index)
-    
-    # Volatility needed for Alpha Target and Weighting
-    vol_series = df['volatility_1d'].replace(0, np.nan).fillna(method='ffill').fillna(0.001)
-    
-    # Targets
-    # A. Alpha Target: Vol-Standardized Return
-    y_alpha = _calculate_alpha_target(ret_series.values, vol_series.values)
-    
-    # B. Prob Target: Binary (0/1)
-    # Ensure strict binary for classifier
-    if target_col in df.columns:
-        y_prob = (pd.to_numeric(df[target_col], errors='coerce').fillna(0.5) >= 0.5).astype(int).values
-    else:
-        # Fallback if target_col missing (shouldn't happen in OOF)
-        y_prob = (ret_series > 0).astype(int).values
-
-    # Weights
-    # A. Alpha Weights: Variance Inverse (1 / vol^2)
-    # Clip vol to avoid explosion
-    vol_safe = np.clip(vol_series.values, 1e-4, None)
-    w_alpha = 1.0 / (vol_safe ** 2)
-    w_alpha = finalize_sample_weights(w_alpha) # MAD scale / Center at 1.0
-
-    # B. Prob Weights: Standard Layer 2 Composite (passed in)
-    # Using L2 weights as base, maybe combined with L1?
-    # layer2_weight is already passed aligned.
-    w_prob = layer2_weight.reindex(df.index).fillna(1.0).values
-    w_prob = finalize_sample_weights(w_prob)
-
-    # Clean Feature Matrix
-    X = df[meta_features]
-
-    # Common Cross-Validation (Purged)
-    n_splits = 5
-    # Use config for purge?
-    cv = PurgedKFoldTime(n_splits=n_splits, purge=100, embargo=50)
-    splits = list(cv.split(df))
-
-    # ---------------------------------------------------------
-    # HEAD A: ALPHA GENERATION
-    # ---------------------------------------------------------
-    print("\n>> HEAD A: ALPHA GENERATION (Race & Train)")
-
-    alpha_candidates = [
-        {'name': 'Ridge_MSE', 'type': 'alpha_ridge', 'obj': 'mse'},
-        {'name': 'LGBM_Huber', 'type': 'alpha_lgbm', 'obj': 'huber'},
-        {'name': 'LGBM_AsymMSE', 'type': 'alpha_lgbm', 'obj': 'asymmetric_mse'}
-    ]
-
-    alpha_scores = {}
-
-    for cand in alpha_candidates:
-        print(f"   Racing {cand['name']}...")
-        fold_ics = []
-
-        for train_idx, val_idx in splits:
-            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
-            y_tr, y_val = y_alpha[train_idx], y_alpha[val_idx]
-            w_tr = w_alpha[train_idx]
-            
-            # Quick train with default params
-            try:
-                if cand['type'] == 'alpha_ridge':
-                    model = Ridge(alpha=1.0)
-                    model.fit(X_tr, y_tr, sample_weight=w_tr)
-                    preds = model.predict(X_val)
-                else:
-                    # LGBM
-                    params = {'n_estimators': 200, 'max_depth': 5, 'learning_rate': 0.05, 'verbose': -1, 'n_jobs': 1}
-                    if cand['obj'] == 'huber':
-                        params['objective'] = 'huber'
-                        params['alpha'] = 0.9
-                    elif cand['obj'] == 'asymmetric_mse':
-                        params['objective'] = _asymmetric_mse_objective
-
-                    model = lgb.LGBMRegressor(**params)
-                    model.fit(X_tr, y_tr, sample_weight=w_tr)
-                    preds = model.predict(X_val)
-                
-                # Evaluate IC
-                ic, _ = spearmanr(y_val, preds)
-                if np.isfinite(ic):
-                    fold_ics.append(ic)
-            except Exception as e:
-                print(f"     Failed: {e}")
-
-        # Compute ScoreIC
-        if fold_ics:
-            score_ic = _calculate_ic_score(None, None, fold_ics) # Only needs folds for IR calc if global not available?
-            # Actually _calculate_ic_score takes vectors.
-            # Let's use average IC for race simplicity or implement IR logic here.
-            # Score = 100*MeanIC + 50*(Mean/Std)
-            mean_ic = np.mean(fold_ics)
-            std_ic = np.std(fold_ics) + 1e-6
-            score_ic = 100 * mean_ic + 50 * (mean_ic / std_ic)
-        else:
-            score_ic = -999.0
-            
-        alpha_scores[cand['name']] = score_ic
-        print(f"     ScoreIC: {score_ic:.4f} (Mean IC: {np.mean(fold_ics):.4f})")
-
-    best_alpha_name = max(alpha_scores, key=alpha_scores.get)
-    best_alpha_cand = next(c for c in alpha_candidates if c['name'] == best_alpha_name)
-    print(f"   🏆 Alpha Winner: {best_alpha_name}")
-
-    # HPO for Alpha Winner
-    best_alpha_params = _run_layer3_hpo(
-        X, pd.Series(y_alpha), w_alpha,
-        model_type=best_alpha_cand['type'],
-        objective_func=best_alpha_cand['obj'],
-        n_trials=25
-    )
-
-    # Final Alpha Model & OOF
-    print("   Generating Meta-Alpha OOF...")
-    meta_alpha_oof = np.full(len(df), np.nan)
-
-    # We retrain fold-by-fold for OOF
-    for train_idx, val_idx in splits:
-        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
-        y_tr = y_alpha[train_idx]
-        w_tr = w_alpha[train_idx]
-
-        if best_alpha_cand['type'] == 'alpha_ridge':
-            model = Ridge(**best_alpha_params)
-            model.fit(X_tr, y_tr, sample_weight=w_tr)
-            preds = model.predict(X_val)
-        else:
-            # Re-attach objective if lost in translation (params usually simple dict)
-            # best_alpha_params already includes 'objective' from _run_layer3_hpo if it was LGBM
-            model = lgb.LGBMRegressor(**best_alpha_params)
-            model.fit(X_tr, y_tr, sample_weight=w_tr)
-            preds = model.predict(X_val)
-            
-        meta_alpha_oof[val_idx] = preds
-
-    # Fit Final Alpha Model (Full Data)
-    print("   Fitting Final Alpha Model (Full)...")
-    if best_alpha_cand['type'] == 'alpha_ridge':
-        final_alpha_model = Ridge(**best_alpha_params)
-        final_alpha_model.fit(X, y_alpha, sample_weight=w_alpha)
-    else:
-        final_alpha_model = lgb.LGBMRegressor(**best_alpha_params)
-        final_alpha_model.fit(X, y_alpha, sample_weight=w_alpha)
-
-    # ---------------------------------------------------------
-    # HEAD B: PROBABILITY CALIBRATION
-    # ---------------------------------------------------------
-    print("\n>> HEAD B: PROBABILITY CALIBRATION (Race & Train)")
-    
-    prob_candidates = [
-        {'name': 'LGBM_LogLoss', 'type': 'classifier', 'obj': 'binary_logloss'},
-        {'name': 'LGBM_Focal', 'type': 'classifier', 'obj': 'focal'}
-    ]
-    
-    prob_scores = {}
-
-    for cand in prob_candidates:
-        print(f"   Racing {cand['name']}...")
-        fold_scores = []
-        
-        for train_idx, val_idx in splits:
-            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
-            y_tr, y_val = y_prob[train_idx], y_prob[val_idx]
-            w_tr = w_prob[train_idx]
-            
-            try:
-                params = {'n_estimators': 200, 'max_depth': 5, 'learning_rate': 0.05, 'verbose': -1, 'n_jobs': 1}
-                if cand['obj'] == 'focal':
-                    params['objective'] = _focal_loss_objective
-                else:
-                    params['objective'] = 'binary'
-                    
-                model = lgb.LGBMClassifier(**params)
-                model.fit(X_tr, y_tr, sample_weight=w_tr)
-                preds = model.predict_proba(X_val)[:, 1]
-                
-                # ScoreL3
-                auc = roc_auc_score(y_val, preds)
-                ll = log_loss(y_val, preds)
-                score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
-                fold_scores.append(score)
-            except Exception as e:
-                print(f"     Failed: {e}")
-                
-        prob_scores[cand['name']] = np.mean(fold_scores) if fold_scores else -999.0
-        print(f"     ScoreL3: {prob_scores[cand['name']]:.4f}")
-
-    best_prob_name = max(prob_scores, key=prob_scores.get)
-    best_prob_cand = next(c for c in prob_candidates if c['name'] == best_prob_name)
-    print(f"   🏆 Prob Winner: {best_prob_name}")
-
-    # HPO for Prob Winner
-    best_prob_params = _run_layer3_hpo(
-        X, pd.Series(y_prob), w_prob,
-        model_type='classifier',
-        objective_func=best_prob_cand['obj'],
-        n_trials=25
-    )
-
-    # Final Prob Model & OOF
-    print("   Generating Meta-Prob OOF...")
-    meta_prob_oof = np.full(len(df), np.nan)
-
-    # Need to handle Calibration wrapper for Prob model
-    # We define a helper to get calibrated preds
-
-    final_base_prob = lgb.LGBMClassifier(**best_prob_params)
-
-    # Calibrated CV for OOF
-    # We can use CalibratedClassifierCV with 'prefit' if we split manually, or cv=int
-    # Since we want OOF aligned with our split, we iterate manually.
-
-    for train_idx, val_idx in splits:
-        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
-        y_tr = y_prob[train_idx]
-        w_tr = w_prob[train_idx]
-
-        # Train base
-        base_est = lgb.LGBMClassifier(**best_prob_params)
-        base_est.fit(X_tr, y_tr, sample_weight=w_tr)
-
-        # Calibrate (Isotonic on validation?)
-        # Standard approach: Train on (k-1), Calibrate on subset of (k-1) or Calibrate on Val?
-        # If we calibrate on Val, we leak label info if we use those preds for downstream.
-        # Correct OOF Calibration:
-        # 1. Inner Split of Train -> Calib/Train-Base.
-        # 2. Train Base, Calibrate Isotonic.
-        # 3. Predict Val.
-
-        # Simple implementation: Use CalibratedClassifierCV with internal CV=3 on Training data
-        cal_model = CalibratedClassifierCV(base_est, method='isotonic', cv=3)
-        cal_model.fit(X_tr, y_tr, sample_weight=w_tr)
-
-        preds = cal_model.predict_proba(X_val)[:, 1]
-        meta_prob_oof[val_idx] = preds
-
-    # Fit Final Prob Model (Full Data)
-    print("   Fitting Final Prob Model (Full)...")
-    final_prob_model = CalibratedClassifierCV(
-        estimator=lgb.LGBMClassifier(**best_prob_params),
-        method='isotonic',
-        cv=3 # Internal CV for calibration on full fit
-    )
-    final_prob_model.fit(X, y_prob, sample_weight=w_prob)
-
-    # ---------------------------------------------------------
-    # Output Assembly
-    # ---------------------------------------------------------
-
-    df['meta_alpha'] = meta_alpha_oof
-    df['meta_prob'] = meta_prob_oof
-
-    models_dict = {
-        'alpha_model': final_alpha_model,
-        'prob_model': final_prob_model,
-        'best_alpha_type': best_alpha_name,
-        'best_prob_type': best_prob_name
-    }
-
-    # Generate unified report
-    try:
-        plot_diagnostics(
-            y_true=y_prob,
-            y_prob=meta_prob_oof,
-            output_path=str(outcomes_dir / f"layer3_prob_calibration_{ts}.png")
-        )
-
-        # Alpha Scatter Plot
-        mask = np.isfinite(meta_alpha_oof) & np.isfinite(y_alpha)
-        if mask.sum() > 100:
-            plt.figure(figsize=(10, 6))
-            sns.regplot(x=meta_alpha_oof[mask], y=y_alpha[mask], scatter_kws={'alpha':0.1}, line_kws={'color':'red'})
-            plt.title(f"Meta-Alpha vs Target (IC={spearmanr(meta_alpha_oof[mask], y_alpha[mask])[0]:.4f})")
-            plt.xlabel("Predicted Alpha")
-            plt.ylabel("Realized Vol-Adj Return")
-            plt.savefig(str(outcomes_dir / f"layer3_alpha_scatter_{ts}.png"))
-            plt.close()
-
-    except Exception:
-        pass
-
-    return df, models_dict
-
-def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
-    # (Existing implementation kept but likely needs update to handle dict of models if called directly)
-    # The calling function manages this.
-    pass
-
-# Helper: Advanced Diagnostic Plot (Unchanged)
-def plot_diagnostics(y_true, y_prob, output_path=None):
-    # (Existing implementation)
-    try:
-        y_prob_numeric = pd.to_numeric(y_prob, errors='coerce')
-        y_true_numeric = pd.to_numeric(y_true, errors='coerce')
-        mask = ~y_prob_numeric.isna() & ~y_true_numeric.isna()
-        y_true = y_true_numeric[mask]
-        y_prob = y_prob_numeric[mask]
-
-        if len(y_true) == 0:
-            return
-
-        fig, ax = plt.subplots(1, 2, figsize=(14, 6))
-
-        prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
-        ax[0].plot(prob_pred, prob_true, marker='o', linewidth=2, label='Meta-Model')
-        ax[0].plot([0, 1], [0, 1], linestyle='--', color='gray', alpha=0.5, label='Perfect')
-        ax[0].set_xlabel('Predicted Probability')
-        ax[0].set_ylabel('Actual Win Rate')
-        ax[0].set_title('Calibration (Reliability)')
-        ax[0].legend()
-        ax[0].grid(True, alpha=0.3)
-
-        sns.histplot(y_prob, bins=20, kde=True, ax=ax[1], color='purple', alpha=0.6)
-        ax[1].set_xlim(0, 1)
-        ax[1].set_xlabel('Predicted Probability')
-        ax[1].set_title('Resolution (Confidence Distribution)')
-        ax[1].grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        if output_path:
-            plt.savefig(output_path)
-        plt.close(fig)
-    except Exception as e:
-        print(f"Failed to generate plots: {e}")
-    # Identify Global Features (exclude temp geometry ones)
+    # Identify Global Features
     global_features = [c for c in df.columns if c not in ['target', target_col] and 'meta_prob' not in c]
     
-    # 2. Compute CUSUM Signals
+    # ---------------------------------------------------------
+    # 2. Geometry Selection
+    # ---------------------------------------------------------
     if market_data is not None:
         print("<< Computing CUSUM Signals (Trend/Reversal)...")
         cusum_df = compute_cusum_signals_multi_window(market_data, windows=[12, 24, 48])
-        # Align with df
         cusum_df = cusum_df.reindex(df.index).fillna(0.0)
     else:
         print("⚠️ No market_data, skipping CUSUM generation.")
         cusum_df = pd.DataFrame(index=df.index)
 
-    # 3. Generate Geometries
-    # Need Volatility, MFE, MAE for selection
-    # If MFE/MAE not in df, we must approximate or skip selection (use all default)
     if 'mfe' in df.columns and 'mae' in df.columns:
-        mfe_s = df['mfe']
-        mae_s = df['mae']
+        mfe_s, mae_s = df['mfe'], df['mae']
     else:
-        # Fallback if MFE/MAE missing (e.g. inference mode?)
-        # For inference, we use saved geometries?
-        # But this function is usually for training.
-        # Let's assume training context has MFE/MAE.
         mfe_s = pd.Series(0, index=df.index)
-        mae_s = pd.Series(1, index=df.index) # Avoid div/0
+        mae_s = pd.Series(1, index=df.index)
 
     vol_s = df['volatility_1d'] if 'volatility_1d' in df.columns else pd.Series(0.01, index=df.index)
     
     print("<< Generating Meta-Geometries...")
     geometries_dict = generate_geometries_adaptive(
-        base_signals=cusum_df,
-        volatility=vol_s,
-        mfe=mfe_s,
-        mae=mae_s
+        base_signals=cusum_df, volatility=vol_s, mfe=mfe_s, mae=mae_s
     )
     
-    # 4. Select Best Geometries
     print("<< Selecting Best Geometries...")
     y_target = df[target_col].fillna(0)
     
     selected_geoms_df = select_best_geometries_production(
-        geometries_dict,
-        y_target,
-        top_k=5,
-        n_jobs=1 # Use 1 job inside the function if we parallelize outer? Or keep parallel here.
+        geometries_dict, y_target, top_k=5, n_jobs=1
     )
     
     if selected_geoms_df.empty:
-        print("⚠️ No geometries selected! Using fallback (average signal).")
-        # Create a dummy geometry
+        print("⚠️ No geometries selected! Using fallback.")
         selected_ids = ['default']
-        # Add average signal to dict
         if not geometries_dict:
-             # Very basic fallback
              geometries_dict['default'] = {
-                 'composite_signal': np.zeros(len(df)),
-                 'sigma_eff': vol_s.values,
+                 'composite_signal': np.zeros(len(df)), 'sigma_eff': vol_s.values,
                  'z_auc': 0, 'z_stab': 0, 'z_rad': 0, 'z_safe': 0
              }
         else:
-             # Just pick the first one
-             first_key = list(geometries_dict.keys())[0]
-             selected_ids = [first_key]
-             geometries_dict[first_key].update({'z_auc': 0, 'z_stab': 0, 'z_rad': 0, 'z_safe': 0})
+             selected_ids = [list(geometries_dict.keys())[0]]
     else:
         selected_ids = selected_geoms_df['id'].values.tolist()
         print(f"   Selected {len(selected_ids)}: {selected_ids}")
 
-    # 5. Prepare Weighting Schemes (Once)
-    # ... (Same logic as original file to prepare schemes dictionary)
-    w_l1 = finalize_sample_weights(layer1_weight) if layer1_weight is not None else np.ones(len(df))
-    w_l2 = finalize_sample_weights(layer2_weight) if layer2_weight is not None else np.ones(len(df))
-    schemes = {
-        'S1_L1': w_l1,
-        'S2_L1_L2': w_l1 * w_l2,
-        'S3_L2': w_l2
-    }
-    # Add others if needed...
+    # ---------------------------------------------------------
+    # 3. Generate Expensive Features (Once, Post-Selection)
+    # ---------------------------------------------------------
+    # We generate these ONLY if we have valid geometries selected.
+    # We use a fixed horizon of 48 to match the max geometry window.
 
-    # 6. Train Meta-Learner per Geometry
+    advanced_features_df = pd.DataFrame(index=df.index)
+
+    if market_data is not None:
+        # Regime Leaf Features
+        try:
+            print("<< Generating Regime Leaf Features (Horizon=48)...")
+            rl_config = {
+                "targets": {"macro_trend_horizons": [48]}, # Explicitly set horizon
+                "enabled_targets": [
+                    "regime_trendiness", "regime_volatility", "regime_trend_efficiency",
+                    "regime_memory", "regime_liquidity", "regime_volume_force_direction",
+                    "regime_breakout", "regime_future_range"
+                ],
+                "inputs": {"input_source": "ohlcv_only", "ohlcv_feature_config": {}},
+                "onehot": {"enabled": False},
+                "interaction_feature": {"enabled": True, "include_base": True},
+                "reporting": {"enabled": False},
+                "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}
+            }
+            rl_df = extract_regime_leaf_onehot_features(
+                X=pd.DataFrame(index=df.index), market_data=market_data,
+                config=rl_config, random_state=42, verbose=False
+            )
+            if rl_df is not None and not rl_df.empty:
+                rl_df = rl_df.reindex(df.index).fillna(0.0)
+                advanced_features_df = pd.concat([advanced_features_df, rl_df], axis=1)
+        except Exception as e:
+            print(f"⚠️ Regime leaf generation failed: {e}")
+
+        # NN Sequence Embeddings
+        try:
+            print("<< Generating NN Embeddings...")
+            nn_df = generate_nn_sequence_embeddings(
+                market_data=market_data, encoder_type="stacked", seq_len=24, embed_dim=8,
+                use_conv=True, use_lstm=True, use_attention=False
+            )
+            if nn_df is not None and not nn_df.empty:
+                nn_df = nn_df.reindex(df.index).fillna(0.0)
+                advanced_features_df = pd.concat([advanced_features_df, nn_df], axis=1)
+        except Exception as e:
+            print(f"⚠️ NN embeddings failed: {e}")
+
+    # ---------------------------------------------------------
+    # 4. Loop: Train Per Geometry
+    # ---------------------------------------------------------
     final_models = {}
     
+    # Prepare Shared Targets & Weights
+    if net_returns is None: raise ValueError("net_returns required")
+    ret_series = net_returns.reindex(df.index)
+    vol_series = df['volatility_1d'].replace(0, np.nan).fillna(method='ffill').fillna(0.001)
+
+    y_alpha = _calculate_alpha_target(ret_series.values, vol_series.values)
+    y_prob = (pd.to_numeric(df[target_col], errors='coerce').fillna(0.5) >= 0.5).astype(int).values
+
+    vol_safe = np.clip(vol_series.values, 1e-4, None)
+    w_alpha = finalize_sample_weights(1.0 / (vol_safe ** 2))
+    w_prob = finalize_sample_weights(layer2_weight.reindex(df.index).fillna(1.0).values)
+
     for gid in selected_ids:
-        # Prepare specific DataFrame for this geometry
-        # Add the composite signal and sigma_eff
+        print(f"\n>> Processing Geometry: {gid}")
         g_data = geometries_dict[gid]
-        sig = g_data['composite_signal']
-        sigma = g_data['sigma_eff']
         
-        # Create augmented features
-        # We assume signal vector aligns with df (since it came from cusum_df reindexed to df)
+        # 1. Construct Feature Matrix
+        geo_df = df[global_features].copy()
 
-        # Construct local DF
-        # We modify df in place? No, concurrency issues if we parallelize.
-        # Just pass global_features + new cols.
+        # Add Geometry-Specific Signals
+        geo_df[f'{gid}_sig'] = g_data['composite_signal']
+        geo_df[f'{gid}_sigma'] = g_data['sigma_eff']
+        geo_df[f'{gid}_sig_x_vol'] = g_data['composite_signal'] * g_data['sigma_eff']
 
-        # We need to add columns to df temporarily or create X matrix.
-        # Let's create a feature set list.
+        # Attach Pre-Calculated Advanced Features
+        if not advanced_features_df.empty:
+            geo_df = pd.concat([geo_df, advanced_features_df], axis=1)
 
-        df[f'{gid}_sig'] = sig
-        df[f'{gid}_sigma'] = sigma
+        # Clean
+        geo_df = geo_df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-        # Add some derived features for this geometry
-        df[f'{gid}_sig_x_vol'] = sig * sigma
-
-        current_meta_features = global_features + [f'{gid}_sig', f'{gid}_sigma', f'{gid}_sig_x_vol']
-
-        # Train
-        oof_p, model, score = _train_meta_learner_for_geometry(
-            gid, df, current_meta_features, target_col, schemes, y_target.values,
-            Path('outcomes'), cfg
+        # 2. Train Dual-Head Model
+        alpha_oof, prob_oof, alpha_model, prob_model = _train_dual_head_for_geometry(
+            gid, geo_df, y_alpha, y_prob, w_alpha, w_prob, Path('outcomes'), cfg
         )
 
-        df[f'meta_prob_{gid}'] = oof_p
-        final_models[gid] = model
+        # Store
+        df[f'meta_prob_{gid}'] = prob_oof
+        df[f'meta_alpha_{gid}'] = alpha_oof
 
-        # Save geometry metadata for inference reconstruction
-        # We also need z-scores for Layer 4 scaling
-        row = selected_geoms_df[selected_geoms_df['id'] == gid]
-        z_scores = {}
-        if not row.empty:
-            z_scores = {
-                'z_auc': float(row['z_auc'].values[0]),
-                'z_stab': float(row.get('z_stab', pd.Series([0])).values[0]),
-                'z_rad': float(row['z_rad'].values[0]),
-                'z_safe': float(row['z_safe'].values[0])
-            }
-
-        final_models[f'{gid}_meta'] = {
-            'alpha': g_data.get('alpha'),
-            'activation': g_data.get('activation'),
-            'z_scores': z_scores
+        final_models[gid] = {
+            'alpha_model': alpha_model,
+            'prob_model': prob_model,
+            'features': list(geo_df.columns) # Important for inference
         }
 
-    # 7. Summary Reporting (Aggregated)
-    # ...
+    # 5. Aggregate (Simple Average for now)
+    prob_cols = [c for c in df.columns if c.startswith('meta_prob_') and c != 'meta_prob']
+    alpha_cols = [c for c in df.columns if c.startswith('meta_alpha_') and c != 'meta_alpha']
 
-    # Return df with all meta_prob_* columns, and the dict of models
+    if prob_cols:
+        df['meta_prob'] = df[prob_cols].mean(axis=1)
+    if alpha_cols:
+        df['meta_alpha'] = df[alpha_cols].mean(axis=1)
+
+    # Helper: Diagnostic Plot (Unchanged logic)
+    def plot_diagnostics(y_true, y_prob, output_path=None):
+        try:
+            y_prob_numeric = pd.to_numeric(y_prob, errors='coerce')
+            mask = ~y_prob_numeric.isna()
+            y_true = y_true[mask]
+            y_prob = y_prob_numeric[mask]
+            if len(y_true) == 0: return
+
+            fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+            prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
+            ax[0].plot(prob_pred, prob_true, marker='o', label='Meta-Model')
+            ax[0].plot([0, 1], [0, 1], '--', color='gray')
+            sns.histplot(y_prob, bins=20, ax=ax[1])
+            if output_path: plt.savefig(output_path)
+            plt.close(fig)
+        except Exception: pass
+
+    try:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        plot_diagnostics(
+            y_prob, df['meta_prob'],
+            output_path=f"outcomes/layer3_prob_calibration_{ts}.png"
+        )
+    except Exception: pass
+
     return df, final_models
+
+def _run_shap_analysis(model, X, output_dir, symbol, timeframe, ts, md_path):
+    pass

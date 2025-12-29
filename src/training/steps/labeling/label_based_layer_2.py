@@ -4783,6 +4783,10 @@ class LabelBasedLayer2:
         ]
         threshold = 0.05
         
+        # Weights for distance: Kappa (1.5) > SL (1.0) > Horizon (0.5)
+        # Normalized to sum to 3.0 (dimension count) to keep threshold scale similar
+        dist_weights = np.array([1.5, 1.0, 0.5])
+
         for prev_trial in study.trials:
             if prev_trial.value is None or prev_trial.state != optuna.trial.TrialState.COMPLETE:
                 continue
@@ -4796,7 +4800,7 @@ class LabelBasedLayer2:
                 (p_sl - sl_min) / (sl_max - sl_min + 1e-9),
                 (p_h - h_min) / (h_max - h_min + 1e-9)
             ]
-            if euclidean(normalized_params, prev_norm) < threshold:
+            if euclidean(normalized_params, prev_norm, w=dist_weights) < threshold:
                 return -1.0
 
         # Compute labels
@@ -5440,13 +5444,15 @@ class LabelBasedLayer2:
 
             # Pick others maximizing normalized distance
             candidate_pool = [t for t in top_tier if t not in fam_selected]
+            dist_weights = np.array([1.5, 1.0, 0.5]) # Kappa > SL > Horizon
 
             while len(fam_selected) < 4 and candidate_pool:
                 best_cand = None
                 max_dist = -1.0
 
                 for cand in candidate_pool:
-                    dists = [np.linalg.norm(get_norm_vec(cand) - get_norm_vec(s)) for s in fam_selected]
+                    # Use Weighted Euclidean Distance
+                    dists = [euclidean(get_norm_vec(cand), get_norm_vec(s), w=dist_weights) for s in fam_selected]
                     min_d = min(dists)
 
                     if min_d > max_dist:
@@ -5482,31 +5488,74 @@ class LabelBasedLayer2:
             # Replaces greedy filtering with Hierarchical Clustering to ensure structural diversity.
 
             # Helper to get return series for a trial
-            ret_cache_global: Dict[str, pd.Series] = {}
+            # Cache stores dict: {'ret': pd.Series, 'dd': pd.Series, 'ratio': float}
+            cache_global: Dict[str, Dict[str, Any]] = {}
             all_events_idx = events_df.index
 
-            def _get_ret_series_global(t_obj: GeometryTrial) -> pd.Series:
+            def _get_metrics_global(t_obj: GeometryTrial) -> Dict[str, Any]:
                 key = str(getattr(t_obj, 'uuid', ''))
-                if key in ret_cache_global:
-                    return ret_cache_global[key]
+                if key in cache_global:
+                    return cache_global[key]
+
                 try:
                     fam_local = str(getattr(t_obj, 'family', ''))
                     fam_events_local = events_df[events_df['family'] == fam_local]
+
                     if fam_events_local.empty:
-                        return pd.Series(0.0, index=all_events_idx)
+                        # Fallback empty
+                        zeros = pd.Series(0.0, index=all_events_idx)
+                        res = {'ret': zeros, 'dd': zeros, 'ratio': 0.0}
+                        cache_global[key] = res
+                        return res
 
-                    _lbl, _ret, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
+                    # Compute Labels & Metrics
+                    _lbl, _ret, _mfe, _mae, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
+
+                    # 1. Returns Series (Aligned)
                     s_evt = pd.to_numeric(_ret, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-                    # Align to global index
                     s_glob = pd.Series(0.0, index=all_events_idx, dtype=float)
                     common = s_evt.index.intersection(all_events_idx)
                     s_glob.loc[common] = s_evt.loc[common]
-                except Exception:
-                    s_glob = pd.Series(0.0, index=all_events_idx)
 
-                ret_cache_global[key] = s_glob
-                return s_glob
+                    # 2. Drawdown Series
+                    # Construct Equity Curve -> Drawdowns
+                    equity = s_glob.cumsum()
+                    running_max = equity.cummax()
+                    drawdown = equity - running_max
+                    # Fill NaN at start if any
+                    drawdown = drawdown.fillna(0.0)
+
+                    # 3. MFE/MAE Ratio (Behavioral)
+                    # We compute mean MFE / mean MAE
+                    # Use aligned local series for stats to avoid zeros bias
+                    mfe_local = pd.to_numeric(_mfe, errors='coerce').fillna(0.0)
+                    mae_local = pd.to_numeric(_mae, errors='coerce').fillna(0.0)
+
+                    # Only consider trades that happened
+                    valid_mask = s_evt.abs() > 1e-9
+                    if valid_mask.sum() > 0:
+                        avg_mfe = mfe_local[valid_mask].mean()
+                        avg_mae = mae_local[valid_mask].mean()
+                        if avg_mae > 1e-9:
+                            ratio = avg_mfe / avg_mae
+                        else:
+                            ratio = 10.0 # High cap if no MAE
+                    else:
+                        ratio = 1.0
+
+                    res = {
+                        'ret': s_glob,
+                        'dd': drawdown,
+                        'ratio': float(min(ratio, 20.0)) # Cap at 20
+                    }
+
+                except Exception as e:
+                    logger.warning(f"Error computing global metrics for {key}: {e}")
+                    zeros = pd.Series(0.0, index=all_events_idx)
+                    res = {'ret': zeros, 'dd': zeros, 'ratio': 0.0}
+
+                cache_global[key] = res
+                return res
 
             # -----------------------------------------------------------------
             # Final global (cross-family) diversification pass
@@ -5538,22 +5587,67 @@ class LabelBasedLayer2:
                     all_candidates = list(selected)
                     n_glob = len(all_candidates)
 
-                    # Re-use cache
-                    def _get_ret_global_cached(t_obj):
-                        return _get_ret_series_global(t_obj)
+                    # Gather metrics
+                    metrics_list = [_get_metrics_global(c) for c in all_candidates]
 
-                    series_list = [_get_ret_global_cached(c) for c in all_candidates]
-                    corr_mat = np.zeros((n_glob, n_glob))
+                    # Distance Matrix Components
+                    # 1. Return Correlation (Primary)
+                    corr_mat_ret = np.zeros((n_glob, n_glob))
+                    # 2. Drawdown Correlation (Risk)
+                    corr_mat_dd = np.zeros((n_glob, n_glob))
+                    # 3. Behavioral Diff (MFE/MAE Ratio)
+                    dist_mat_beh = np.zeros((n_glob, n_glob))
+
+                    # Extract ratio array for vectorized diff
+                    ratios = np.array([m['ratio'] for m in metrics_list])
+                    # Normalize ratios for distance calculation?
+                    # Simple absolute difference is okay if scale is reasonable. Ratios are ~1.0-5.0 usually.
 
                     for i in range(n_glob):
-                        for j in range(i, n_glob):
-                            if i == j: c = 1.0
-                            else: c = series_list[i].corr(series_list[j])
-                            corr_mat[i, j] = c
-                            corr_mat[j, i] = c
+                        ret_i = metrics_list[i]['ret']
+                        dd_i = metrics_list[i]['dd']
 
-                    corr_mat = np.nan_to_num(corr_mat, nan=0.0)
-                    dist_mat = 1.0 - np.abs(corr_mat)
+                        for j in range(i, n_glob):
+                            if i == j:
+                                c_ret = 1.0
+                                c_dd = 1.0
+                                d_beh = 0.0
+                            else:
+                                ret_j = metrics_list[j]['ret']
+                                dd_j = metrics_list[j]['dd']
+
+                                c_ret = ret_i.corr(ret_j)
+                                c_dd = dd_i.corr(dd_j)
+                                d_beh = abs(ratios[i] - ratios[j])
+
+                            corr_mat_ret[i, j] = c_ret
+                            corr_mat_ret[j, i] = c_ret
+
+                            corr_mat_dd[i, j] = c_dd
+                            corr_mat_dd[j, i] = c_dd
+
+                            dist_mat_beh[i, j] = d_beh
+                            dist_mat_beh[j, i] = d_beh
+
+                    # Clean NaNs
+                    corr_mat_ret = np.nan_to_num(corr_mat_ret, nan=0.0)
+                    corr_mat_dd = np.nan_to_num(corr_mat_dd, nan=0.0)
+
+                    # Distances
+                    d_ret = 1.0 - np.abs(corr_mat_ret)
+                    d_dd = 1.0 - np.abs(corr_mat_dd)
+
+                    # Normalize behavioral distance to [0, 1] roughly
+                    max_beh = np.max(dist_mat_beh)
+                    if max_beh > 1e-9:
+                        d_beh_norm = dist_mat_beh / max_beh
+                    else:
+                        d_beh_norm = dist_mat_beh
+
+                    # Composite Distance
+                    # D = 0.6 * Return + 0.3 * Drawdown + 0.1 * Behavior
+                    dist_mat = (0.6 * d_ret) + (0.3 * d_dd) + (0.1 * d_beh_norm)
+
                     np.fill_diagonal(dist_mat, 0.0)
 
                     try:
@@ -5564,10 +5658,11 @@ class LabelBasedLayer2:
                         for clust_id in np.unique(labels):
                             indices = np.where(labels == clust_id)[0]
                             cluster_cands = [all_candidates[i] for i in indices]
+                            # Pick best by final score within cluster
                             best = max(cluster_cands, key=lambda x: float(getattr(x, 'final_score', -1.0)))
                             kept.append(best)
 
-                        logger.info(f"Global Clustering reduced {len(selected)} -> {len(kept)} geometries.")
+                        logger.info(f"Global Clustering reduced {len(selected)} -> {len(kept)} geometries using Composite Distance (Ret+DD+Beh).")
                     except Exception as e:
                         logger.warning(f"Global clustering failed: {e}. Using score sort.")
                         kept = sorted(selected, key=lambda x: float(getattr(x, 'final_score', -1.0)), reverse=True)[:max_keep]

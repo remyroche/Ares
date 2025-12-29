@@ -1,0 +1,12 @@
+Dec 28, 2025 23:52:41 (+00:00:00) - numexpr.utils - INFO - NumExpr defaulting to 8 threads.
+Dec 28, 2025 23:52:42 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Dec 28, 2025 23:52:42 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Dec 28, 2025 23:52:42 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Dec 28, 2025 23:52:43 (+00:00:01) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Dec 28, 2025 23:52:43 (+00:00:01) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Dec 28, 2025 23:52:43 (+00:00:01) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:52:43 (+00:00:01) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Dec 28, 2025 23:52:43 (+00:00:01) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:52:43 (+00:00:01) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Dec 28, 2025 23:52:43 (+00:00:01) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Dec 28, 2025 23:52:43 (+00:00:01) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded

@@ -1,0 +1,534 @@
+Dec 28, 2025 23:19:26 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Dec 28, 2025 23:19:26 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Dec 28, 2025 23:19:26 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Dec 28, 2025 23:19:28 (+00:00:01) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Dec 28, 2025 23:19:28 (+00:00:01) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.002s
+Dec 28, 2025 23:19:28 (+00:00:01) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:19:28 (+00:00:01) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Dec 28, 2025 23:19:28 (+00:00:01) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:19:28 (+00:00:01) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Dec 28, 2025 23:19:28 (+00:00:01) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Dec 28, 2025 23:19:29 (+00:00:02) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Dec 28, 2025 23:19:37 (+00:00:10) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Dec 28, 2025 23:19:37 (+00:00:10) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Dec 28, 2025 23:19:38 (+00:00:11) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Dec 28, 2025 23:19:38 (+00:00:11) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Dec 28, 2025 23:19:38 (+00:00:11) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Dec 28, 2025 23:19:38 (+00:00:11) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Dec 28, 2025 23:19:38 (+00:00:11) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Dec 28, 2025 23:19:38 (+00:00:11) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Dec 28, 2025 23:19:38 (+00:00:11) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Dec 28, 2025 23:19:38 (+00:00:11) - System.EvaluationUtils - INFO - EvaluationUtils delegating core metric computation to unified_evaluator
+Dec 28, 2025 23:19:38 (+00:00:12) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ConfidenceMetrics
+Dec 28, 2025 23:19:38 (+00:00:12) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelExplanations
+Dec 28, 2025 23:19:46 (+00:00:19) - MLCommon.ModelExplanations - INFO - LIME library available - LIME explanations enabled
+Dec 28, 2025 23:19:46 (+00:00:19) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelRegistry
+Dec 28, 2025 23:19:46 (+00:00:19) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelExplainability
+Dec 28, 2025 23:19:47 (+00:00:20) - System.tprint - INFO - ✅ Custom logger available for MLCommon.CV
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.ml_common.validation.enhanced_validation - INFO - ✅ Enhanced Validation initialized
+Dec 28, 2025 23:19:47 (+00:00:20) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Dec 28, 2025 23:19:47 (+00:00:20) - System.tprint - INFO - ✅ Custom logger available for MLCommon.HPOUtils
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Dec 28, 2025 23:19:47 (+00:00:20) - src.utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Dec 28, 2025 23:19:47 (+00:00:20) - System.ComplementaryLookbackOptimizer - INFO - ✅ Detected VectorBT v0.28.1
+Dec 28, 2025 23:19:47 (+00:00:20) - src.feature_generation.utils.feature_generation_optimization - INFO - ✅ VectorBT available for feature optimization
+Dec 28, 2025 23:19:47 (+00:00:21) - root - INFO - ✅ VectorBT compatibility layer loaded successfully
+Dec 28, 2025 23:19:49 (+00:00:22) - root - INFO - ✅ Enhanced VectorBT volatility generators loaded successfully
+Dec 28, 2025 23:19:49 (+00:00:22) - src.feature_generation.core.feature_registry.FeatureRegistry - INFO - FeatureRegistry initialized
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - 🔧 Initializing AutoOptimizationConfig...
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - 📝 Setting up conservative optimization settings...
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - ✅ Conservative settings configured
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - 📝 Setting up balanced optimization settings...
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - ✅ Balanced settings configured
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - 📝 Setting up aggressive optimization settings...
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - ✅ Aggressive settings configured
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - 🎯 AutoOptimizationConfig initialized with balanced strategy
+Dec 28, 2025 23:19:49 (+00:00:22) - System.tprint - INFO - ✅ Auto-optimization enabled for FeatureBank (default)
+Dec 28, 2025 23:19:49 (+00:00:22) - src.feature_generation.utils.memory_pool_optimizer.MemoryPoolOptimizer - INFO - Memory pool optimizer initialized
+Dec 28, 2025 23:19:49 (+00:00:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - 🔧 Unified Hardware Manager initialized
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - 🔍 Hardware performance monitoring started
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 memory monitoring started
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ✅ Unified Hardware Manager fully initialized
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - 🎯 Optimizing for feature_engineering workload (balanced)
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.hardware_singleton - INFO - 🔍 Detecting hardware capabilities (one-time detection)...
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.hardware_singleton - INFO - ✅ Hardware detection complete: {'cpu_cores': 8, 'gpu_available': True, 'gpu_type': 'mps', 'memory_gb': 16.0, 'mps_available': True, 'gpu_memory_gb': None}
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🚀 Initializing Unified Vectorization Manager...
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Initializing optimization components...
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Initializing optimization components...
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Loading VectorBTRollingOptimizer...
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - ✅ VectorBTRollingOptimizer loaded
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Loading vectorized backtesting...
+Dec 28, 2025 23:19:50 (+00:00:23) - System.VectorizedBacktestingEngine - INFO - ✅ Vectorized Backtesting Engine initialized successfully
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - ✅ Vectorized backtesting loaded
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Loading VectorBT backtesting engine...
+Dec 28, 2025 23:19:50 (+00:00:23) - System.VectorBTBacktestingEngine - INFO - ✅ VectorBT Backtesting Engine initialized successfully
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - ✅ VectorBT backtesting engine loaded
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Loading VectorBT financial metrics...
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_financial_metrics - INFO - ✅ VectorBT Financial Metrics initialized
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Risk-free rate: 2.00%
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Annualization factor: 252
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Regime analysis: True
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - ✅ VectorBT financial metrics loaded
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Loading VectorBT portfolio optimization...
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ✅ VectorBT Memory Manager initialized
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Total system memory: 16.00GB
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Available memory: 4.22GB
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Max allocated memory: 8.00GB
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ✅ VectorBT Performance Monitor initialized
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - 📊 Monitoring enabled: timing=True, memory=True, gpu=True
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ✅ VectorBT Portfolio Optimizer initialized
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Method: mean_variance
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Rebalancing: monthly
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Risk aversion: 1.0
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Memory manager: 4.22GB available
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - ✅ VectorBT portfolio optimization loaded
+Dec 28, 2025 23:19:50 (+00:00:23) - System.tprint - INFO - 🔄 Loading matrix cross-validation...
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.m1_memory_optimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 28, 2025 23:19:50 (+00:00:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.core.vectorbt_batch_processor - INFO - VectorBTBatchProcessor initialized: VectorBT=True, GPU=False, Parallel=True
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.unified_vectorization_manager - INFO - UnifiedVectorizationManager initialized: VectorBT=True, GPU=False, Memory=True
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.matrix_operations.unified_operations.UnifiedMatrixOperations - INFO - 📊 GPU: False, Memory Opt: False, Parallel: False
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.matrix_cross_validation - INFO - 🚀 VectorBT configured for cross-validation optimization
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.matrix_cross_validation - INFO - ✅ Matrix-based cross-validator initialized
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.matrix_cross_validation - INFO - 📊 Configuration - Splits: 5, GPU: True, VectorBT: True
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Matrix cross-validation loaded
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔄 Loading feature importance analyzer...
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - 🔗 Integrating memory skimming with all ML utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported HPO utilities (direct import)
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with HPO utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported Unified CV utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with Unified CV utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with lookahead protection utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ Skipping model evaluation memory integration (deprecated)
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported feature selection utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with feature selection utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported data quality utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with data quality utilities
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integration completed: 6/6 successful
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ThreadGuard
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ threadpoolctl available for thread management
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for MLCommon.BaseSafeguards
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Scikit-learn available for thresholding functionality
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.BaseFramework
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.DataValidation
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Vectorization utilities available for feature selection
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.SelectionMethods
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.QualityMetrics
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.CausalAnalysis
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.MainFramework
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Feature importance analyzer loaded
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔄 Loading technical indicators...
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generators - INFO - ✅ TA-Lib available for enhanced technical indicators
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generators - INFO - Using fallback implementations for feature selection tools
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ✅ Hardware optimization initialized
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ✅ Matrix operations available for vectorization
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Technical indicators loaded
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ℹ️ HMM operations deprecated - using alternative methods
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Component initialization completed
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔄 Setting up performance tracking...
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ Unified Vectorization Manager initialized
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.ml_common.unified_vectorization_manager - INFO - ✅ Unified Vectorization Manager initialized
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 🚀 Initializing FeatureGenerationOptimizer...
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 Configuration loaded: cross_validation
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ✅ FeatureGenerationOptimizer initialized in 0.001s
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 Min lookback: 5, Max lookback: 252
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 CV folds: 3, Parallel processing: True
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO - 🍎 Detected Apple Silicon - applying M1-specific limits
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO - 🔧 Initialized MacM1ParallelOptimizer:
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO -    Max workers: 4
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO -    Chunk size: 1000
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO -    Pool type: Process
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO -    Memory limit per worker: 4096 MB
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.parallel_processing_optimizer - INFO -    M1 Mac detected: True
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ✅ Legacy optimization system available
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ✅ LookbackOptimizer initialized
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ Regular lookback optimization enabled (Analyst mode)
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - ✅ FeatureBank set as global instance
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔧 Auto-registering feature generators...
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔧 Starting auto-registration of feature generators...
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🚀 Initializing 16 feature categories...
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.core.vectorbt_feature_generator - WARNING - ⚠️ GPU acceleration not available in this VectorBT version
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.core.feature_generator.CustomAutoOptimizedFeatureGenerator - INFO - ✅ VectorBT advanced caching enabled: 1000MB, TTL: 3600s
+Dec 28, 2025 23:19:51 (+00:00:24) - System.tprint - INFO - 🔍 Getting settings for balanced optimization level...
+Dec 28, 2025 23:19:51 (+00:00:24) - src.feature_generation.utils.vectorbt_optimization_integration - INFO - VectorBTOptimizationManager initialized: GPU=False, Memory=True, Parallel=True
+Dec 28, 2025 23:19:51 (+00:00:24) - CustomAutoOptimizedFeatureGenerator - INFO - VectorBT optimization components initialized
+Dec 28, 2025 23:19:51 (+00:00:24) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (96.1) exceeds threshold (85.0)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.utils.consolidated_rolling_optimizer - INFO - GPU memory test successful
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.categories.candlestick_pattern - INFO - ✅ VectorBTRollingOptimizer initialized for candlestick patterns
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.categories.candlestick_pattern - INFO - ✅ UnifiedVectorizationManager initialized for candlestick patterns
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ℹ️ VectorBT not available, using core microstructure generators only (numpy-optimized)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Matrix operations initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Hardware manager initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Vectorized core initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Vectorization Optimizer initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ℹ️ VectorBT not available, using core microstructure generators only (numpy-optimized)
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Auto-registration completed. Registered 527 generators
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ Auto-registered 527 generators from 16 categories
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: returns
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 57 generators for category: returns
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: momentum
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 32 generators for category: momentum
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: volume
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 60 generators for category: volume
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: volatility
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 54 generators for category: volatility
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: normalization
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: normalization
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: trend
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 60 generators for category: trend
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: oscillator
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 11 generators for category: oscillator
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: support_resistance
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 50 generators for category: support_resistance
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: custom_support_resistance
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: custom_support_resistance
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: candlestick_pattern
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 16 generators for category: candlestick_pattern
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: cross_timeframe
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 22 generators for category: cross_timeframe
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: microstructure
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 15 generators for category: microstructure
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: entropy
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 35 generators for category: entropy
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: autoencoder
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: autoencoder
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: representation_learning
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: representation_learning
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: order_flow
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: order_flow
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: regime
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: regime
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: legacy
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: legacy
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: time
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: time
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: custom
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 0 generators for category: custom
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: acceleration
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 46 generators for category: acceleration
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: interaction
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 8 generators for category: interaction
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: advanced_statistical
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 6 generators for category: advanced_statistical
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - 🔍 Looking up generators for category: spectral_wavelet
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Found 6 generators for category: spectral_wavelet
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.core.generator_factory - INFO - Populated generator factory with 478 generators
+Dec 28, 2025 23:19:52 (+00:00:25) - System.tprint - INFO - ✅ Generator factory populated with registered generators
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ FeatureBank initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation.core.feature_bank.FeatureBank - INFO - 📊 Matrix ops: True, GPU: True, Lookback opt: True
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation - INFO - ✅ Unified Feature Generation System initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation - INFO - 📦 Version: 2.0.0
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation - INFO - 🔧 Features: Category-based organization, advanced utilities, optimization
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation - INFO - 🚀 Advanced utilities available (optimization, analysis, etc.)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.feature_generation - INFO - ⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - ✅ VectorBT optimization available
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - 🚀 Initializing Enhanced HyperparameterOptimization...
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils.HPOUtils - INFO - ✅ VectorBT Rolling Optimizer initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils.HPOUtils - INFO - ✅ Unified Vectorization Manager initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Parallel processing: True
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Max workers: 4
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Monitoring enabled: True
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - 🚀 Configuration - Non-linear optimization: True
+Dec 28, 2025 23:19:52 (+00:00:25) - MLCommon.HPOUtils - INFO - ✅ Enhanced HyperparameterOptimization initialized successfully
+Dec 28, 2025 23:19:52 (+00:00:25) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:19:52 (+00:00:25) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO - 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Critical leakage threshold: 5.0% (was 25%)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Warning leakage threshold: 2.0% (was 10%)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Small dataset multiplier: 1.0 (was 1.5)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • These strict thresholds are ESSENTIAL for financial data integrity
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Even 1-2% leakage can invalidate backtesting results
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • High model scores (>96%) often indicate undetected temporal leakage
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.overfitting_monitoring - INFO - ✅ Overfitting Monitoring initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ✅ HPO with Overfitting Prevention initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.model_complexity_analysis - INFO - ✅ Model Complexity Analyzer initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - EnhancedReportingSystem.EnhancedReportingSystem - INFO - 📊 Enhanced Reporting System initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.reporting.validation_reporting_integration - INFO - ✅ Validation Reporting Integrator initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO - 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Critical leakage threshold: 5.0% (was 25%)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Warning leakage threshold: 2.0% (was 10%)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Small dataset multiplier: 1.0 (was 1.5)
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • These strict thresholds are ESSENTIAL for financial data integrity
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Even 1-2% leakage can invalidate backtesting results
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • High model scores (>96%) often indicate undetected temporal leakage
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.overfitting_monitoring - INFO - ✅ Overfitting Monitoring initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.enhanced_validation - INFO - ✅ Enhanced Validation initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ✅ HPO with Overfitting Prevention initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.validation.model_complexity_analysis - INFO - ✅ Model Complexity Analyzer initialized
+Dec 28, 2025 23:19:52 (+00:00:25) - src.utils.ml_common.training.universal_validation_integration - INFO - ✅ Universal Validation Integrator initialized with new utilities
+Dec 28, 2025 23:19:53 (+00:00:26) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelTraining
+Dec 28, 2025 23:19:53 (+00:00:26) - System.tprint - INFO - ✅ ML Common utilities loaded successfully
+Dec 28, 2025 23:19:53 (+00:00:26) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Dec 28, 2025 23:19:53 (+00:00:26) - ares.registry - INFO - Registered step: feature_generation_data_validation_step
+Dec 28, 2025 23:19:53 (+00:00:26) - System.tprint - INFO - ✅ Feature generation data validation step registered SUCCESS
+Dec 28, 2025 23:19:53 (+00:00:26) - System.tprint - INFO - 🔧 Loading labeling components...
+Dec 28, 2025 23:19:53 (+00:00:26) - ares.registry - INFO - Registered step: meta_labeling_hpo_sample_weighted
+Dec 28, 2025 23:19:53 (+00:00:26) - ares.registry - INFO - Registered step: meta_labeling_hpo_experiment
+Dec 28, 2025 23:19:53 (+00:00:26) - ares.registry - INFO - Registered step: sr_labeling_xgb
+Dec 28, 2025 23:19:53 (+00:00:26) - ares.registry - INFO - Registered step: sr_labeling_xgb_weighted
+Dec 28, 2025 23:19:53 (+00:00:26) - ares.registry - INFO - Registered step: meta_gated_backtest
+Dec 28, 2025 23:19:53 (+00:00:26) - System.tprint - INFO - ✅ Meta-gated backtest step registered SUCCESS
+Dec 28, 2025 23:20:20 (+00:00:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 35 objects collected
+Dec 28, 2025 23:20:36 (+00:01:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:20:53 (+00:01:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:21:04 (+00:01:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 668 objects collected
+Dec 28, 2025 23:21:15 (+00:01:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 93 objects collected
+Dec 28, 2025 23:21:20 (+00:01:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:21:42 (+00:02:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:21:47 (+00:02:21) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 437 objects collected
+Dec 28, 2025 23:21:52 (+00:02:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 28, 2025 23:21:53 (+00:02:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 327 objects collected
+Dec 28, 2025 23:22:04 (+00:02:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:22:09 (+00:02:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 534 objects collected
+Dec 28, 2025 23:22:15 (+00:02:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 263 objects collected
+Dec 28, 2025 23:22:26 (+00:02:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 491 objects collected
+Dec 28, 2025 23:22:31 (+00:03:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 387 objects collected
+Dec 28, 2025 23:22:42 (+00:03:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 291 objects collected
+Dec 28, 2025 23:22:48 (+00:03:21) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 696 objects collected
+Dec 28, 2025 23:22:54 (+00:03:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:23:10 (+00:03:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 416 objects collected
+Dec 28, 2025 23:23:16 (+00:03:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 90 objects collected
+Dec 28, 2025 23:23:21 (+00:03:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:23:37 (+00:04:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 56 objects collected
+Dec 28, 2025 23:23:43 (+00:04:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 191 objects collected
+Dec 28, 2025 23:24:04 (+00:04:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 28, 2025 23:24:31 (+00:05:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 668 objects collected
+Dec 28, 2025 23:24:41 (+00:05:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 475 objects collected
+Dec 28, 2025 23:24:47 (+00:05:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 339 objects collected
+Dec 28, 2025 23:24:58 (+00:05:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:25:03 (+00:05:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 674 objects collected
+Dec 28, 2025 23:25:09 (+00:05:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 217 objects collected
+Dec 28, 2025 23:25:24 (+00:05:57) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 101 objects collected
+Dec 28, 2025 23:25:39 (+00:06:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 82 objects collected
+Dec 28, 2025 23:26:20 (+00:06:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 207 objects collected
+Dec 28, 2025 23:27:00 (+00:07:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 160 objects collected
+Dec 28, 2025 23:27:16 (+00:07:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 58 objects collected
+Dec 28, 2025 23:27:42 (+00:08:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 79 objects collected
+Dec 28, 2025 23:27:58 (+00:08:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 78 objects collected
+Dec 28, 2025 23:28:09 (+00:08:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 414 objects collected
+Dec 28, 2025 23:28:14 (+00:08:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.75
+Dec 28, 2025 23:28:32 (+00:09:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 35 objects collected
+Dec 28, 2025 23:29:38 (+00:10:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 692 objects collected
+Dec 28, 2025 23:30:04 (+00:10:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 164 objects collected
+Dec 28, 2025 23:30:19 (+00:10:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 28, 2025 23:30:49 (+00:11:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:31:01 (+00:11:34) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 685 objects collected
+Dec 28, 2025 23:31:07 (+00:11:40) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 407 objects collected
+Dec 28, 2025 23:31:25 (+00:11:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 716 objects collected
+Dec 28, 2025 23:31:30 (+00:12:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 187 objects collected
+Dec 28, 2025 23:31:41 (+00:12:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:31:53 (+00:12:27) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (98.0) exceeds threshold (85.0)
+Dec 28, 2025 23:32:04 (+00:12:38) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 348 objects collected
+Dec 28, 2025 23:32:10 (+00:12:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 329 objects collected
+Dec 28, 2025 23:32:16 (+00:12:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 394 objects collected
+Dec 28, 2025 23:32:21 (+00:12:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 676 objects collected
+Dec 28, 2025 23:32:32 (+00:13:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:32:37 (+00:13:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 28, 2025 23:33:08 (+00:13:41) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 315 objects collected
+Dec 28, 2025 23:33:13 (+00:13:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 704 objects collected
+Dec 28, 2025 23:33:23 (+00:13:57) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 558 objects collected
+Dec 28, 2025 23:33:28 (+00:14:01) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (99.0) exceeds threshold (85.0)
+Dec 28, 2025 23:33:29 (+00:14:02) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 389 objects collected
+Dec 28, 2025 23:35:15 (+00:15:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 813 objects collected
+Dec 28, 2025 23:35:36 (+00:16:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 652 objects collected
+Dec 28, 2025 23:35:41 (+00:16:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 205 objects collected
+Dec 28, 2025 23:35:52 (+00:16:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 191 objects collected
+Dec 28, 2025 23:35:58 (+00:16:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 63 objects collected
+Dec 28, 2025 23:36:04 (+00:16:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 635 objects collected
+Dec 28, 2025 23:36:05 (+00:16:38) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (96.1) exceeds threshold (85.0)
+Dec 28, 2025 23:36:10 (+00:16:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 431 objects collected
+Dec 28, 2025 23:36:31 (+00:17:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 544 objects collected
+Dec 28, 2025 23:36:37 (+00:17:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 391 objects collected
+Dec 28, 2025 23:36:38 (+00:17:11) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (92.3) exceeds threshold (85.0)
+Dec 28, 2025 23:37:13 (+00:17:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 253 objects collected
+Dec 28, 2025 23:39:39 (+00:20:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 532 objects collected
+Dec 28, 2025 23:39:46 (+00:20:19) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (99.9) exceeds threshold (85.0)
+Dec 28, 2025 23:39:52 (+00:20:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:40:14 (+00:20:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 206 objects collected
+Dec 28, 2025 23:40:18 (+00:20:51) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 28, 2025 23:40:19 (+00:20:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 178 objects collected
+Dec 28, 2025 23:40:25 (+00:20:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 582 objects collected
+Dec 28, 2025 23:40:34 (+00:21:07) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 215 objects collected
+Dec 28, 2025 23:40:53 (+00:21:26) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 28, 2025 23:41:26 (+00:21:59) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 28, 2025 23:41:40 (+00:22:13) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 28, 2025 23:41:58 (+00:22:31) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (99.8) exceeds threshold (85.0)
+Dec 28, 2025 23:42:33 (+00:23:06) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (99.8) exceeds threshold (85.0)
+Dec 28, 2025 23:42:59 (+00:23:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 596 objects collected
+Dec 28, 2025 23:43:05 (+00:23:38) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 28, 2025 23:43:13 (+00:23:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 20 objects collected
+Dec 28, 2025 23:43:36 (+00:24:09) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 28, 2025 23:43:55 (+00:24:28) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 310 objects collected
+Dec 28, 2025 23:44:03 (+00:24:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 458 objects collected
+Dec 28, 2025 23:44:11 (+00:24:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 546 objects collected
+Dec 28, 2025 23:44:11 (+00:24:44) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 28, 2025 23:44:22 (+00:24:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 78 objects collected
+Dec 28, 2025 23:47:50 (+00:28:23) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (90.0) exceeds threshold (85.0)
+Dec 28, 2025 23:49:53 (+00:30:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 137 objects collected
+Dec 28, 2025 23:50:13 (+00:30:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 28, 2025 23:50:27 (+00:31:01) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (99.6) exceeds threshold (85.0)
+Dec 28, 2025 23:50:47 (+00:31:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 704 objects collected
+Dec 28, 2025 23:50:59 (+00:31:33) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (99.6) exceeds threshold (85.0)
+Dec 28, 2025 23:51:50 (+00:32:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 167 objects collected
+Dec 28, 2025 23:52:01 (+00:32:34) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 43 objects collected
+Dec 28, 2025 23:52:06 (+00:32:39) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 71 objects collected
+Dec 28, 2025 23:52:12 (+00:32:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 602 objects collected
+Dec 28, 2025 23:52:18 (+00:32:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 308 objects collected
+Dec 28, 2025 23:55:42 (+00:36:15) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (95.9) exceeds threshold (85.0)
+Dec 28, 2025 23:57:29 (+00:38:02) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 304 objects collected
+Dec 28, 2025 23:57:47 (+00:38:20) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (97.9) exceeds threshold (85.0)
+Dec 28, 2025 23:59:25 (+00:39:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 924 objects collected
+Dec 28, 2025 23:59:54 (+00:40:27) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (98.4) exceeds threshold (85.0)
+Dec 29, 2025 00:00:25 (+00:40:58) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:00:27 (+00:41:00) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 58 objects collected
+Dec 29, 2025 00:00:33 (+00:41:06) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 223 objects collected
+Dec 29, 2025 00:00:51 (+00:41:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 36 objects collected
+Dec 29, 2025 00:00:57 (+00:41:30) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 123 objects collected
+Dec 29, 2025 00:00:57 (+00:41:31) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:01:10 (+00:41:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 29, 2025 00:01:28 (+00:42:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 482 objects collected
+Dec 29, 2025 00:01:29 (+00:42:02) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:01:36 (+00:42:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 419 objects collected
+Dec 29, 2025 00:02:01 (+00:42:34) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:02:34 (+00:43:07) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:03:14 (+00:43:47) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:03:54 (+00:44:27) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:04:14 (+00:44:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 19 objects collected
+Dec 29, 2025 00:04:20 (+00:44:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 341 objects collected
+Dec 29, 2025 00:04:27 (+00:45:00) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 619 objects collected
+Dec 29, 2025 00:04:28 (+00:45:01) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:04:38 (+00:45:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 29, 2025 00:05:00 (+00:45:33) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:05:31 (+00:46:05) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:05:41 (+00:46:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 576 objects collected
+Dec 29, 2025 00:05:46 (+00:46:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 347 objects collected
+Dec 29, 2025 00:06:03 (+00:46:36) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:06:03 (+00:46:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 394 objects collected
+Dec 29, 2025 00:06:09 (+00:46:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 676 objects collected
+Dec 29, 2025 00:06:34 (+00:47:08) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:07:04 (+00:47:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.82
+Dec 29, 2025 00:07:06 (+00:47:40) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:07:38 (+00:48:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 393 objects collected
+Dec 29, 2025 00:07:38 (+00:48:11) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:07:49 (+00:48:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 35 objects collected
+Dec 29, 2025 00:08:09 (+00:48:43) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:08:15 (+00:48:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 55 objects collected
+Dec 29, 2025 00:08:41 (+00:49:14) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:08:56 (+00:49:29) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 188 objects collected
+Dec 29, 2025 00:09:12 (+00:49:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 29, 2025 00:09:13 (+00:49:46) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:09:44 (+00:50:17) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:10:08 (+00:50:41) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 109 objects collected
+Dec 29, 2025 00:10:15 (+00:50:48) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:10:29 (+00:51:02) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 770 objects collected
+Dec 29, 2025 00:10:45 (+00:51:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 676 objects collected
+Dec 29, 2025 00:10:47 (+00:51:20) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:11:22 (+00:51:55) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:11:26 (+00:51:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 29, 2025 00:11:53 (+00:52:26) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:11:56 (+00:52:29) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 422 objects collected
+Dec 29, 2025 00:12:02 (+00:52:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 567 objects collected
+Dec 29, 2025 00:12:25 (+00:52:58) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:12:34 (+00:53:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 654 objects collected
+Dec 29, 2025 00:12:50 (+00:53:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 29, 2025 00:12:57 (+00:53:30) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:13:29 (+00:54:02) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:14:00 (+00:54:33) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:14:18 (+00:54:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 43 objects collected
+Dec 29, 2025 00:14:31 (+00:55:05) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:14:41 (+00:55:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 592 objects collected
+Dec 29, 2025 00:14:46 (+00:55:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 355 objects collected
+Dec 29, 2025 00:14:57 (+00:55:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 251 objects collected
+Dec 29, 2025 00:15:06 (+00:55:39) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 48 objects collected
+Dec 29, 2025 00:15:06 (+00:55:39) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:15:18 (+00:55:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 247 objects collected
+Dec 29, 2025 00:15:24 (+00:55:57) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 32 objects collected
+Dec 29, 2025 00:15:40 (+00:56:14) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:16:09 (+00:56:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 160 objects collected
+Dec 29, 2025 00:16:12 (+00:56:45) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:16:15 (+00:56:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 649 objects collected
+Dec 29, 2025 00:16:22 (+00:56:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 183 objects collected
+Dec 29, 2025 00:16:36 (+00:57:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 270 objects collected
+Dec 29, 2025 00:16:41 (+00:57:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.83
+Dec 29, 2025 00:16:42 (+00:57:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 130 objects collected
+Dec 29, 2025 00:16:44 (+00:57:17) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:16:51 (+00:57:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 670 objects collected
+Dec 29, 2025 00:17:15 (+00:57:48) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:17:48 (+00:58:21) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:18:14 (+00:58:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 210 objects collected
+Dec 29, 2025 00:18:19 (+00:58:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 483 objects collected
+Dec 29, 2025 00:18:20 (+00:58:53) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:18:25 (+00:58:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 279 objects collected
+Dec 29, 2025 00:18:53 (+00:59:26) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:19:24 (+00:59:57) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:19:38 (+01:00:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.83
+Dec 29, 2025 00:20:01 (+01:00:34) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:20:35 (+01:01:08) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:21:09 (+01:01:42) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:21:22 (+01:01:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 302 objects collected
+Dec 29, 2025 00:21:28 (+01:02:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 114 objects collected
+Dec 29, 2025 00:21:33 (+01:02:06) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 611 objects collected
+Dec 29, 2025 00:21:42 (+01:02:15) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:22:15 (+01:02:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 240 objects collected
+Dec 29, 2025 00:22:19 (+01:02:52) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:22:24 (+01:02:57) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 476 objects collected
+Dec 29, 2025 00:22:29 (+01:03:03) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 438 objects collected
+Dec 29, 2025 00:22:35 (+01:03:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 123 objects collected
+Dec 29, 2025 00:22:51 (+01:03:24) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:23:03 (+01:03:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 29, 2025 00:23:04 (+01:03:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 704 objects collected
+Dec 29, 2025 00:23:09 (+01:03:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 668 objects collected
+Dec 29, 2025 00:23:15 (+01:03:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 389 objects collected
+Dec 29, 2025 00:23:21 (+01:03:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 437 objects collected
+Dec 29, 2025 00:23:23 (+01:03:56) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:23:52 (+01:04:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54 objects collected
+Dec 29, 2025 00:23:54 (+01:04:27) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:24:26 (+01:04:59) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:24:43 (+01:05:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 47 objects collected
+Dec 29, 2025 00:24:51 (+01:05:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 245 objects collected
+Dec 29, 2025 00:25:00 (+01:05:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 191 objects collected
+Dec 29, 2025 00:25:02 (+01:05:35) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:25:14 (+01:05:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 145 objects collected
+Dec 29, 2025 00:25:49 (+01:06:22) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:26:25 (+01:06:58) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:26:30 (+01:07:03) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.82
+Dec 29, 2025 00:26:51 (+01:07:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 487 objects collected
+Dec 29, 2025 00:26:57 (+01:07:30) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 614 objects collected
+Dec 29, 2025 00:26:57 (+01:07:31) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:27:03 (+01:07:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 677 objects collected
+Dec 29, 2025 00:27:11 (+01:07:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 527 objects collected
+Dec 29, 2025 00:27:29 (+01:08:02) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:28:01 (+01:08:34) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:28:36 (+01:09:09) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:29:13 (+01:09:46) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:29:55 (+01:10:28) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:30:26 (+01:10:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.83
+Dec 29, 2025 00:31:07 (+01:11:40) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:31:48 (+01:12:21) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:31:52 (+01:12:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 42 objects collected
+Dec 29, 2025 00:32:10 (+01:12:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 697 objects collected
+Dec 29, 2025 00:32:18 (+01:12:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 104 objects collected
+Dec 29, 2025 00:32:22 (+01:12:56) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:32:33 (+01:13:06) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 483 objects collected
+Dec 29, 2025 00:32:41 (+01:13:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 244 objects collected
+Dec 29, 2025 00:33:03 (+01:13:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 411 objects collected
+Dec 29, 2025 00:33:05 (+01:13:38) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:33:10 (+01:13:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 112 objects collected
+Dec 29, 2025 00:33:17 (+01:13:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 423 objects collected

@@ -1,0 +1,978 @@
+Dec 20, 2025 14:19:33 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Dec 20, 2025 14:19:33 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Dec 20, 2025 14:19:33 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 20, 2025 14:19:33 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 20, 2025 14:19:33 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Dec 20, 2025 14:19:33 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Dec 20, 2025 14:19:33 (+00:00:00) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Dec 20, 2025 14:19:33 (+00:00:00) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Dec 20, 2025 14:19:33 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 20, 2025 14:19:33 (+00:00:00) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Dec 20, 2025 14:19:33 (+00:00:00) - utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Dec 20, 2025 14:19:33 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - RegimeEnsembleTrainingConfigManager initialisé
+Dec 20, 2025 14:19:33 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Répertoire config: /Users/remyroche/Documents/Ares/src/config/regime_ensemble_training
+Dec 20, 2025 14:19:33 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Config personnalisée: None
+Dec 20, 2025 14:19:33 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Fallback hardcodé: True
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Dec 20, 2025 14:19:33 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - 🔧 Initializing Execution Mode Lookback Configuration
+Dec 20, 2025 14:19:33 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ✅ Execution Mode Lookback Configuration initialized
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: rolling_hmm_regime_discovery
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: sr_parameter_optimization
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: regime_clustering
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: sr_clustering
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: sr_detection
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: sticky_finite_hmm_regime_discovery
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: xgb_meso_regime
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: xgb_mr_trend_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: hmm_ml_alpha_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: xgb_macro_regime
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_risk_regime_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_smc_regime_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_path_regime_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_mean_reversion_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_breakout_bounce_regime_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_map_regime_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_liquidity_regime_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: ml_volume_force_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: feature_generation_meta_labeling_step
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: sr_labeling_xgb
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.registry - INFO - Registered step: meta_labeling_hpo_experiment
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Starting Simplified Ares Launcher...
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - 🧹 Starting cleanup of duplicate files...
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Cleaning directory: logs (keeping 100 youngest files per group)
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'unified.log': 102 files, keeping 100, deleting 2
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Cleaning directory: artifacts (keeping 3 youngest files per group)
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Cleaning directory: outcomes (keeping 3 youngest files per group)
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'layer2_report__.md': 4 files, keeping 3, deleting 1
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'layer2_production_geometries__.csv': 4 files, keeping 3, deleting 1
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'layer2_selected_features_supervised__.csv': 4 files, keeping 3, deleting 1
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'layer2_summary__.csv': 4 files, keeping 3, deleting 1
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'layer3_drop_reasons.csv': 4 files, keeping 3, deleting 1
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO -   Group 'layer2_geometry_metrics__.csv': 4 files, keeping 3, deleting 1
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - ✅ Cleanup complete: 8 files deleted, 0 files skipped
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Detected positional command: meta_labeling_hpo_sample_weighted
+Dec 20, 2025 14:19:33 (+00:00:00) - src.utils.ml_common.optimization.execution_mode_adapter - INFO - 🔧 Execution mode set to: BLANK
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - 🔧 Execution mode set to: BLANK
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Running single step: meta_labeling_hpo_sample_weighted
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.launcher - INFO - Starting execution of step: meta_labeling_hpo_sample_weighted
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - INFO - Starting execution of meta_labeling_hpo_sample_weighted
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - INFO - Execution mode resolved for meta_labeling_hpo_sample_weighted: requested_cli=blank → persona=analyst
+Dec 20, 2025 14:19:33 (+00:00:00) - System.VersionManager - INFO - ✅ Loaded version config from config/version_config.json
+Dec 20, 2025 14:19:33 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:33 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=klines_downloading_processing, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-20 13:19:33.928569, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:33 (+00:00:00) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 20, 2025 14:19:33 (+00:00:00) - src.utils.kline_parquet - INFO - load_klines executed in 1.31ms
+Dec 20, 2025 14:19:33 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'klines_data' not found via router, trying traditional manager
+Dec 20, 2025 14:19:33 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - WARNING - Artifact not found: klines_data
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=data_collection, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-20 13:19:34.148948, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'market_data' not found via router, trying traditional manager
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - WARNING - Artifact not found: market_data
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=data_reading, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-20 13:19:34.212636, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - src.utils.kline_parquet - INFO - load_klines executed in 0.87ms
+Dec 20, 2025 14:19:34 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'ohlcv_data' not found via router, trying traditional manager
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - WARNING - Artifact not found: ohlcv_data
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-20 14:19:33.925728, information=None, direction=long, model=Analyst
+Dec 20, 2025 14:19:34 (+00:00:00) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 20, 2025 14:19:34 (+00:00:00) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (104, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2877, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2047, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2363, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2784, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (924, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 20, 2025 14:19:34 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 20, 2025 14:19:35 (+00:00:01) - src.utils.kline_parquet - INFO - load_klines executed in 665.25ms
+Dec 20, 2025 14:19:36 (+00:00:02) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 3950 objects collected
+Dec 20, 2025 14:19:38 (+00:00:05) - src.training.steps.labeling.label_based_layer_2 - INFO - Starting Layer 2 Pipeline...
+Dec 20, 2025 14:19:38 (+00:00:05) - src.training.steps.labeling.label_based_layer_2 - INFO - Generated 15353 events from 31680 bars using CUSUM filter.
+Dec 20, 2025 14:19:41 (+00:00:07) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 76605 objects collected
+Dec 20, 2025 14:20:02 (+00:00:28) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:20:07 (+00:00:34) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:20:13 (+00:00:39) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:20:18 (+00:00:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 30 objects collected
+Dec 20, 2025 14:20:23 (+00:00:49) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Running Full Optimization (Production)...
+Dec 20, 2025 14:20:23 (+00:00:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 72 objects collected
+Dec 20, 2025 14:20:45 (+00:01:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 30 objects collected
+Dec 20, 2025 14:20:50 (+00:01:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:20:55 (+00:01:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:21:01 (+00:01:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:21:05 (+00:01:31) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Momentum
+Dec 20, 2025 14:21:06 (+00:01:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 10 objects collected
+Dec 20, 2025 14:21:08 (+00:01:35) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: n_events=2643, n_trials=30, probe_feats=70
+Dec 20, 2025 14:21:09 (+00:01:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Momentum, reason=unprofitable, mean_ret=-0.00225
+Dec 20, 2025 14:21:09 (+00:01:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Momentum, reason=unprofitable, mean_ret=-0.00284
+Dec 20, 2025 14:21:09 (+00:01:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Momentum, reason=unprofitable, mean_ret=-0.00197
+Dec 20, 2025 14:21:09 (+00:01:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Momentum, reason=pos_rate_limit, pos_rate=0.008, range=[0.01, 0.95]
+Dec 20, 2025 14:21:10 (+00:01:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Momentum, reason=unprofitable, mean_ret=-0.00277
+Dec 20, 2025 14:21:10 (+00:01:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Momentum, reason=unprofitable, mean_ret=-0.00255
+Dec 20, 2025 14:21:10 (+00:01:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Momentum, reason=unprofitable, mean_ret=-0.00243
+Dec 20, 2025 14:21:11 (+00:01:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Momentum, reason=unprofitable, mean_ret=-0.00269
+Dec 20, 2025 14:21:11 (+00:01:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Momentum, reason=unprofitable, mean_ret=-0.00282
+Dec 20, 2025 14:21:11 (+00:01:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Momentum, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:21:12 (+00:01:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Momentum, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:21:12 (+00:01:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Momentum, reason=unprofitable, mean_ret=-0.00204
+Dec 20, 2025 14:21:12 (+00:01:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Momentum, reason=unprofitable, mean_ret=-0.00215
+Dec 20, 2025 14:21:13 (+00:01:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Momentum, reason=unprofitable, mean_ret=-0.00223
+Dec 20, 2025 14:21:13 (+00:01:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Momentum, reason=unprofitable, mean_ret=-0.00283
+Dec 20, 2025 14:21:13 (+00:01:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Momentum, reason=unprofitable, mean_ret=-0.00233
+Dec 20, 2025 14:21:14 (+00:01:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Momentum, reason=unprofitable, mean_ret=-0.00267
+Dec 20, 2025 14:21:14 (+00:01:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Momentum, reason=pos_rate_limit, pos_rate=0.008, range=[0.01, 0.95]
+Dec 20, 2025 14:21:14 (+00:01:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Momentum, reason=unprofitable, mean_ret=-0.00240
+Dec 20, 2025 14:21:15 (+00:01:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Momentum, reason=unprofitable, mean_ret=-0.00265
+Dec 20, 2025 14:21:15 (+00:01:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Momentum, reason=unprofitable, mean_ret=-0.00212
+Dec 20, 2025 14:21:15 (+00:01:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Momentum, reason=unprofitable, mean_ret=-0.00202
+Dec 20, 2025 14:21:15 (+00:01:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Momentum, reason=unprofitable, mean_ret=-0.00176
+Dec 20, 2025 14:21:16 (+00:01:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Momentum, reason=unprofitable, mean_ret=-0.00258
+Dec 20, 2025 14:21:16 (+00:01:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Momentum, reason=unprofitable, mean_ret=-0.00238
+Dec 20, 2025 14:21:16 (+00:01:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Momentum, reason=unprofitable, mean_ret=-0.00200
+Dec 20, 2025 14:21:17 (+00:01:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Momentum, reason=unprofitable, mean_ret=-0.00322
+Dec 20, 2025 14:21:17 (+00:01:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Momentum, reason=unprofitable, mean_ret=-0.00280
+Dec 20, 2025 14:21:17 (+00:01:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Momentum, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:21:17 (+00:01:44) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: extracted_trials=29, cache_hits=0, cache_misses=29
+Dec 20, 2025 14:21:17 (+00:01:44) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Mean Reversion
+Dec 20, 2025 14:21:21 (+00:01:47) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: n_events=7139, n_trials=30, probe_feats=70
+Dec 20, 2025 14:21:21 (+00:01:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00288
+Dec 20, 2025 14:21:22 (+00:01:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:21:23 (+00:01:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:21:24 (+00:01:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00294
+Dec 20, 2025 14:21:24 (+00:01:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:21:25 (+00:01:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:21:26 (+00:01:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:21:26 (+00:01:53) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:21:27 (+00:01:54) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:21:27 (+00:01:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 20, 2025 14:21:28 (+00:01:54) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:21:29 (+00:01:55) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:21:29 (+00:01:56) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00293
+Dec 20, 2025 14:21:30 (+00:01:57) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:21:31 (+00:01:57) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00282
+Dec 20, 2025 14:21:31 (+00:01:58) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:21:32 (+00:01:59) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:21:33 (+00:02:00) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00279
+Dec 20, 2025 14:21:34 (+00:02:00) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00280
+Dec 20, 2025 14:21:35 (+00:02:01) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:21:35 (+00:02:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:21:36 (+00:02:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00288
+Dec 20, 2025 14:21:37 (+00:02:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:21:37 (+00:02:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:21:38 (+00:02:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:21:39 (+00:02:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:21:40 (+00:02:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00293
+Dec 20, 2025 14:21:40 (+00:02:07) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:21:41 (+00:02:07) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:21:42 (+00:02:08) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:21:42 (+00:02:08) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: extracted_trials=29, cache_hits=0, cache_misses=58
+Dec 20, 2025 14:21:42 (+00:02:08) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Trend Continuation
+Dec 20, 2025 14:21:45 (+00:02:11) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: n_events=5571, n_trials=30, probe_feats=70
+Dec 20, 2025 14:21:45 (+00:02:12) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00330
+Dec 20, 2025 14:21:46 (+00:02:12) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00314
+Dec 20, 2025 14:21:47 (+00:02:13) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00316
+Dec 20, 2025 14:21:47 (+00:02:13) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00333
+Dec 20, 2025 14:21:48 (+00:02:14) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00311
+Dec 20, 2025 14:21:48 (+00:02:15) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00326
+Dec 20, 2025 14:21:49 (+00:02:15) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00324
+Dec 20, 2025 14:21:49 (+00:02:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00328
+Dec 20, 2025 14:21:50 (+00:02:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00320
+Dec 20, 2025 14:21:51 (+00:02:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00306
+Dec 20, 2025 14:21:51 (+00:02:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00339
+Dec 20, 2025 14:21:52 (+00:02:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00342
+Dec 20, 2025 14:21:52 (+00:02:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00327
+Dec 20, 2025 14:21:53 (+00:02:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=13, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00315
+Dec 20, 2025 14:21:53 (+00:02:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00312
+Dec 20, 2025 14:21:54 (+00:02:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00304
+Dec 20, 2025 14:21:55 (+00:02:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00347
+Dec 20, 2025 14:21:55 (+00:02:22) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00312
+Dec 20, 2025 14:21:56 (+00:02:22) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00326
+Dec 20, 2025 14:21:56 (+00:02:23) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00320
+Dec 20, 2025 14:21:57 (+00:02:23) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00314
+Dec 20, 2025 14:21:58 (+00:02:24) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00321
+Dec 20, 2025 14:21:58 (+00:02:25) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00316
+Dec 20, 2025 14:21:59 (+00:02:25) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00345
+Dec 20, 2025 14:21:59 (+00:02:26) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00316
+Dec 20, 2025 14:22:00 (+00:02:26) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00322
+Dec 20, 2025 14:22:01 (+00:02:27) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00317
+Dec 20, 2025 14:22:01 (+00:02:27) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00313
+Dec 20, 2025 14:22:02 (+00:02:28) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00334
+Dec 20, 2025 14:22:02 (+00:02:29) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00309
+Dec 20, 2025 14:22:02 (+00:02:29) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: extracted_trials=30, cache_hits=0, cache_misses=88
+Dec 20, 2025 14:22:02 (+00:02:29) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Full Optimization: extracted_trials_per_family={'Momentum': 29, 'Mean Reversion': 29, 'Trend Continuation': 30}
+Dec 20, 2025 14:22:51 (+00:03:17) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Tuning Model Parameters for Production Geometries...
+Dec 20, 2025 14:22:51 (+00:03:17) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Momentum_0 (1/10)...
+Dec 20, 2025 14:23:19 (+00:03:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:23:24 (+00:03:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:23:30 (+00:03:56) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:23:35 (+00:04:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 14:23:35 (+00:04:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:23:36 (+00:04:02) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Momentum geometry...
+Dec 20, 2025 14:23:37 (+00:04:04) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.6588, LGBM_Linear=0.6046, XGB=0.6443, XGB_Linear=0.5731, CatBoost=0.7152
+Dec 20, 2025 14:23:37 (+00:04:04) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: CATBOOST
+Dec 20, 2025 14:23:37 (+00:04:04) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for CATBOOST on Momentum geometry...
+Dec 20, 2025 14:24:00 (+00:04:26) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Momentum_0: {'iterations': 539, 'learning_rate': 0.055970110295415175, 'depth': 4, 'class_weight_ratio': 4.040071691554065, 'model_type': 'catboost', 'race_scores': {'lgbm': 0.6588059701492538, 'lgbm_linear': 0.6046268656716418, 'xgb': 0.6443283582089552, 'xgb_linear': 0.5731343283582089, 'catboost': 0.7152238805970149}}
+Dec 20, 2025 14:24:00 (+00:04:26) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Momentum_4 (2/10)...
+Dec 20, 2025 14:24:28 (+00:04:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:24:33 (+00:05:00) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Cleaned up artifacts directory
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Removed older duplicate file: outcomes/layer0_summary_ETHUSDT_15m_20251220_115430.csv
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Cleaned up 1 older files for base name: layer0_summary_ETHUSDT_15m
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Removed older duplicate file: outcomes/layer2_selected_features___20251220_105511.csv
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Cleaned up 1 older files for base name: layer2_selected_features__
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Removed older duplicate file: outcomes/layer0_report_ETHUSDT_15m_20251220_115430.md
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Cleaned up 1 older files for base name: layer0_report_ETHUSDT_15m
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Cleaned up outcomes directory
+Dec 20, 2025 14:24:33 (+00:05:00) - System.ArtifactManager - INFO - Cleaned up logs directory
+Dec 20, 2025 14:24:39 (+00:05:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:24:44 (+00:05:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:24:44 (+00:05:11) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Momentum geometry...
+Dec 20, 2025 14:24:44 (+00:05:11) - src.training.steps.labeling.label_based_layer_2 - WARNING - Insufficient classes in race split. Using LGBM.
+Dec 20, 2025 14:24:44 (+00:05:11) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for LGBM on Momentum geometry...
+Dec 20, 2025 14:24:48 (+00:05:14) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Momentum_4: {'focal_alpha': 0.6247240713084175, 'gamma_ratio': 2.87678576602479, 'num_leaves': 408, 'n_estimators': 1599, 'model_type': 'lgbm', 'race_scores': {}}
+Dec 20, 2025 14:24:48 (+00:05:14) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Momentum_3 (3/10)...
+Dec 20, 2025 14:24:49 (+00:05:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 153 objects collected
+Dec 20, 2025 14:25:16 (+00:05:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:25:21 (+00:05:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:25:27 (+00:05:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:25:32 (+00:05:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:25:34 (+00:06:01) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Momentum geometry...
+Dec 20, 2025 14:25:34 (+00:06:01) - src.training.steps.labeling.label_based_layer_2 - WARNING - Insufficient classes in race split. Using LGBM.
+Dec 20, 2025 14:25:34 (+00:06:01) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for LGBM on Momentum geometry...
+Dec 20, 2025 14:25:37 (+00:06:03) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Momentum_3: {'focal_alpha': 0.6247240713084175, 'gamma_ratio': 2.87678576602479, 'num_leaves': 408, 'n_estimators': 1599, 'model_type': 'lgbm', 'race_scores': {}}
+Dec 20, 2025 14:25:37 (+00:06:03) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Momentum_2 (4/10)...
+Dec 20, 2025 14:25:42 (+00:06:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 14:25:42 (+00:06:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 1563 objects collected
+Dec 20, 2025 14:26:03 (+00:06:30) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:26:09 (+00:06:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:26:14 (+00:06:41) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:26:16 (+00:06:42) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (90.6) exceeds threshold (85.0)
+Dec 20, 2025 14:26:20 (+00:06:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 18 objects collected
+Dec 20, 2025 14:26:21 (+00:06:48) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Momentum geometry...
+Dec 20, 2025 14:26:23 (+00:06:49) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.6069, LGBM_Linear=0.5860, XGB=0.5056, XGB_Linear=0.5626, CatBoost=0.5585
+Dec 20, 2025 14:26:23 (+00:06:49) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: LGBM
+Dec 20, 2025 14:26:23 (+00:06:49) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for LGBM on Momentum geometry...
+Dec 20, 2025 14:26:25 (+00:06:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 981 objects collected
+Dec 20, 2025 14:26:27 (+00:06:53) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Momentum_2: {'focal_alpha': 0.4936111842654619, 'gamma_ratio': 0.8899863008405067, 'num_leaves': 149, 'n_estimators': 1867, 'model_type': 'lgbm', 'race_scores': {'lgbm': 0.6068919371027099, 'lgbm_linear': 0.5859819337571095, 'xgb': 0.5056038808966209, 'xgb_linear': 0.5625627300100368, 'catboost': 0.5585480093676816}}
+Dec 20, 2025 14:26:27 (+00:06:53) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Mean Reversion_3 (5/10)...
+Dec 20, 2025 14:26:31 (+00:06:57) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 31 objects collected
+Dec 20, 2025 14:26:52 (+00:07:18) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:26:57 (+00:07:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:27:02 (+00:07:29) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:27:07 (+00:07:34) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:27:10 (+00:07:37) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Mean Reversion geometry...
+Dec 20, 2025 14:27:12 (+00:07:38) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.6459, LGBM_Linear=0.6357, XGB=0.7000, XGB_Linear=0.6049, CatBoost=0.6428
+Dec 20, 2025 14:27:12 (+00:07:38) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: XGB
+Dec 20, 2025 14:27:12 (+00:07:38) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for XGB on Mean Reversion geometry...
+Dec 20, 2025 14:27:13 (+00:07:39) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 606 objects collected
+Dec 20, 2025 14:27:18 (+00:07:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 526 objects collected
+Dec 20, 2025 14:27:20 (+00:07:47) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Mean Reversion_3: {'focal_alpha': 0.5100427059120604, 'gamma_ratio': 1.2606056073988443, 'n_estimators': 515, 'max_depth': 6, 'learning_rate': 0.021649165607921676, 'model_type': 'xgb', 'race_scores': {'lgbm': 0.6459089274623256, 'lgbm_linear': 0.6357098493020823, 'xgb': 0.700042496159001, 'xgb_linear': 0.6049491680559641, 'catboost': 0.6428034389199438}}
+Dec 20, 2025 14:27:20 (+00:07:47) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Mean Reversion_4 (6/10)...
+Dec 20, 2025 14:27:44 (+00:08:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 30 objects collected
+Dec 20, 2025 14:27:49 (+00:08:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 14:27:50 (+00:08:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:27:50 (+00:08:16) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (94.3) exceeds threshold (85.0)
+Dec 20, 2025 14:27:55 (+00:08:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:28:00 (+00:08:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 22 objects collected
+Dec 20, 2025 14:28:03 (+00:08:29) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Mean Reversion geometry...
+Dec 20, 2025 14:28:04 (+00:08:30) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.4672, LGBM_Linear=0.5532, XGB=0.6073, XGB_Linear=0.5038, CatBoost=0.5686
+Dec 20, 2025 14:28:04 (+00:08:30) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: XGB
+Dec 20, 2025 14:28:04 (+00:08:30) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for XGB on Mean Reversion geometry...
+Dec 20, 2025 14:28:06 (+00:08:32) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 41 objects collected
+Dec 20, 2025 14:28:10 (+00:08:37) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Mean Reversion_4: {'focal_alpha': 0.7452905112231414, 'gamma_ratio': 2.7346341885272025, 'n_estimators': 748, 'max_depth': 4, 'learning_rate': 0.040910984222071886, 'model_type': 'xgb', 'race_scores': {'lgbm': 0.4672303271441202, 'lgbm_linear': 0.5532438107869143, 'xgb': 0.6073441644562335, 'xgb_linear': 0.5037577365163571, 'catboost': 0.568633952254642}}
+Dec 20, 2025 14:28:10 (+00:08:37) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Trend Continuation_0 (7/10)...
+Dec 20, 2025 14:28:11 (+00:08:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 653 objects collected
+Dec 20, 2025 14:28:32 (+00:08:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:28:37 (+00:09:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:28:43 (+00:09:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:28:48 (+00:09:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:28:50 (+00:09:16) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Trend Continuation geometry...
+Dec 20, 2025 14:28:51 (+00:09:17) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.5710, LGBM_Linear=0.5541, XGB=0.5133, XGB_Linear=0.5060, CatBoost=0.5869
+Dec 20, 2025 14:28:51 (+00:09:17) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: CATBOOST
+Dec 20, 2025 14:28:51 (+00:09:17) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for CATBOOST on Trend Continuation geometry...
+Dec 20, 2025 14:28:53 (+00:09:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:29:33 (+00:09:59) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Trend Continuation_0: {'iterations': 433, 'learning_rate': 0.0705906387041413, 'depth': 8, 'class_weight_ratio': 5.868010200544057, 'model_type': 'catboost', 'race_scores': {'lgbm': 0.5709994316797922, 'lgbm_linear': 0.5540919054964683, 'xgb': 0.5132946334334659, 'xgb_linear': 0.5059673621823496, 'catboost': 0.5869123974993912}}
+Dec 20, 2025 14:29:33 (+00:09:59) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Trend Continuation_4 (8/10)...
+Dec 20, 2025 14:29:56 (+00:10:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 14:29:56 (+00:10:23) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:30:02 (+00:10:28) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:30:07 (+00:10:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:30:11 (+00:10:37) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Trend Continuation geometry...
+Dec 20, 2025 14:30:12 (+00:10:39) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 207 objects collected
+Dec 20, 2025 14:30:13 (+00:10:39) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.6375, LGBM_Linear=0.6839, XGB=0.6648, XGB_Linear=0.6577, CatBoost=0.6753
+Dec 20, 2025 14:30:13 (+00:10:39) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: LGBM_LINEAR
+Dec 20, 2025 14:30:13 (+00:10:39) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for LGBM_LINEAR on Trend Continuation geometry...
+Dec 20, 2025 14:30:13 (+00:10:39) - src.training.steps.labeling.label_based_layer_2 - WARNING - Unknown model type lgbm_linear, using LGBM
+Dec 20, 2025 14:30:18 (+00:10:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 591 objects collected
+Dec 20, 2025 14:30:23 (+00:10:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 260 objects collected
+Dec 20, 2025 14:30:28 (+00:10:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 154 objects collected
+Dec 20, 2025 14:30:34 (+00:11:00) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 198 objects collected
+Dec 20, 2025 14:30:34 (+00:11:00) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Trend Continuation_4: {'focal_alpha': 0.7948431122270545, 'gamma_ratio': 1.1038873324508498, 'num_leaves': 121, 'n_estimators': 869, 'model_type': 'lgbm', 'race_scores': {'lgbm': 0.6375404530744336, 'lgbm_linear': 0.6839058999253175, 'xgb': 0.6647996016928056, 'xgb_linear': 0.6577047547921334, 'catboost': 0.6752551655464277}}
+Dec 20, 2025 14:30:34 (+00:11:00) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Trend Continuation_3 (9/10)...
+Dec 20, 2025 14:30:39 (+00:11:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 13 objects collected
+Dec 20, 2025 14:30:59 (+00:11:25) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (92.2) exceeds threshold (85.0)
+Dec 20, 2025 14:31:00 (+00:11:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 22 objects collected
+Dec 20, 2025 14:31:05 (+00:11:32) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 12 objects collected
+Dec 20, 2025 14:31:11 (+00:11:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:31:14 (+00:11:41) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Trend Continuation geometry...
+Dec 20, 2025 14:31:15 (+00:11:42) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.5749, LGBM_Linear=0.5207, XGB=0.5933, XGB_Linear=0.5912, CatBoost=0.6877
+Dec 20, 2025 14:31:15 (+00:11:42) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: CATBOOST
+Dec 20, 2025 14:31:15 (+00:11:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for CATBOOST on Trend Continuation geometry...
+Dec 20, 2025 14:31:16 (+00:11:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 10 objects collected
+Dec 20, 2025 14:31:56 (+00:12:22) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Trend Continuation_3: {'iterations': 509, 'learning_rate': 0.03425849478686757, 'depth': 6, 'class_weight_ratio': 3.044251104857908, 'model_type': 'catboost', 'race_scores': {'lgbm': 0.5748772940674348, 'lgbm_linear': 0.5206999573196757, 'xgb': 0.593283183952198, 'xgb_linear': 0.5912291933418694, 'catboost': 0.6877400768245839}}
+Dec 20, 2025 14:31:56 (+00:12:22) - src.training.steps.labeling.label_based_layer_2 - INFO -     Tuning model for geometry Trend Continuation_1 (10/10)...
+Dec 20, 2025 14:32:03 (+00:12:29) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 14:32:19 (+00:12:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:32:24 (+00:12:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:32:30 (+00:12:56) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:32:35 (+00:13:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 10 objects collected
+Dec 20, 2025 14:32:35 (+00:13:01) - src.training.steps.labeling.label_based_layer_2 - INFO - Running quick model race for Trend Continuation geometry...
+Dec 20, 2025 14:32:36 (+00:13:03) - src.training.steps.labeling.label_based_layer_2 - INFO -    Model race scores: LGBM=0.4740, LGBM_Linear=0.5720, XGB=0.5882, XGB_Linear=0.5254, CatBoost=0.5609
+Dec 20, 2025 14:32:36 (+00:13:03) - src.training.steps.labeling.label_based_layer_2 - INFO -    Winner: XGB
+Dec 20, 2025 14:32:36 (+00:13:03) - src.training.steps.labeling.label_based_layer_2 - INFO - Running HPO for XGB on Trend Continuation geometry...
+Dec 20, 2025 14:32:40 (+00:13:06) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 47 objects collected
+Dec 20, 2025 14:32:41 (+00:13:08) - src.training.steps.labeling.label_based_layer_2 - INFO -     Found params for Trend Continuation_1: {'focal_alpha': 0.4496705339342745, 'gamma_ratio': 2.491196722355262, 'n_estimators': 456, 'max_depth': 5, 'learning_rate': 0.041342373002478, 'model_type': 'xgb', 'race_scores': {'lgbm': 0.4740082079343365, 'lgbm_linear': 0.572014852452609, 'xgb': 0.5882352941176471, 'xgb_linear': 0.5254055110416259, 'catboost': 0.560875512995896}}
+Dec 20, 2025 14:32:41 (+00:13:08) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Production Geometries: n=10, by_family={'Momentum': 4, 'Mean Reversion': 2, 'Trend Continuation': 4}
+Dec 20, 2025 14:33:06 (+00:13:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:33:12 (+00:13:38) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:33:17 (+00:13:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:33:22 (+00:13:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:33:28 (+00:13:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 64 objects collected
+Dec 20, 2025 14:33:30 (+00:13:56) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Running OOF Optimization (Analytics)...
+Dec 20, 2025 14:33:30 (+00:13:56) - src.training.steps.labeling.label_based_layer_2 - INFO -    > Processing Fold 1/3...
+Dec 20, 2025 14:33:30 (+00:13:56) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: purged k-fold val_start=0, val_stop=10560, purge_bars=100, test_start_time=2024-12-15 14:45:00, test_end_time=2025-04-04 14:30:00, n_train=21020
+Dec 20, 2025 14:33:30 (+00:13:56) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: n_train_bars=21020, n_train_events=10580, n_test_events=4716
+Dec 20, 2025 14:33:49 (+00:14:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 10 objects collected
+Dec 20, 2025 14:33:54 (+00:14:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:33:58 (+00:14:24) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Mean Reversion
+Dec 20, 2025 14:33:59 (+00:14:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:34:01 (+00:14:28) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: n_events=4917, n_trials=30, probe_feats=70
+Dec 20, 2025 14:34:02 (+00:14:28) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:34:02 (+00:14:28) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00292
+Dec 20, 2025 14:34:02 (+00:14:29) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:34:03 (+00:14:29) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00289
+Dec 20, 2025 14:34:03 (+00:14:30) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:34:04 (+00:14:30) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:34:05 (+00:14:31) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:34:05 (+00:14:32) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:34:06 (+00:14:32) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00293
+Dec 20, 2025 14:34:06 (+00:14:32) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00300
+Dec 20, 2025 14:34:06 (+00:14:33) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00292
+Dec 20, 2025 14:34:07 (+00:14:33) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00292
+Dec 20, 2025 14:34:07 (+00:14:34) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:34:08 (+00:14:34) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00283
+Dec 20, 2025 14:34:08 (+00:14:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:34:09 (+00:14:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00285
+Dec 20, 2025 14:34:09 (+00:14:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00281
+Dec 20, 2025 14:34:09 (+00:14:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 14:34:10 (+00:14:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00278
+Dec 20, 2025 14:34:11 (+00:14:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:34:11 (+00:14:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00288
+Dec 20, 2025 14:34:12 (+00:14:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00288
+Dec 20, 2025 14:34:12 (+00:14:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:34:12 (+00:14:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:34:13 (+00:14:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:34:13 (+00:14:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00285
+Dec 20, 2025 14:34:14 (+00:14:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00296
+Dec 20, 2025 14:34:14 (+00:14:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:34:15 (+00:14:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00294
+Dec 20, 2025 14:34:15 (+00:14:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00290
+Dec 20, 2025 14:34:15 (+00:14:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: extracted_trials=29, cache_hits=0, cache_misses=216
+Dec 20, 2025 14:34:15 (+00:14:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Trend Continuation
+Dec 20, 2025 14:34:19 (+00:14:45) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: n_events=4255, n_trials=30, probe_feats=70
+Dec 20, 2025 14:34:19 (+00:14:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00261
+Dec 20, 2025 14:34:20 (+00:14:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00294
+Dec 20, 2025 14:34:20 (+00:14:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00275
+Dec 20, 2025 14:34:21 (+00:14:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00256
+Dec 20, 2025 14:34:21 (+00:14:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00285
+Dec 20, 2025 14:34:22 (+00:14:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00286
+Dec 20, 2025 14:34:22 (+00:14:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00269
+Dec 20, 2025 14:34:23 (+00:14:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00302
+Dec 20, 2025 14:34:23 (+00:14:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:34:23 (+00:14:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:34:24 (+00:14:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00261
+Dec 20, 2025 14:34:24 (+00:14:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00265
+Dec 20, 2025 14:34:25 (+00:14:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00258
+Dec 20, 2025 14:34:25 (+00:14:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=13, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:34:26 (+00:14:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00237
+Dec 20, 2025 14:34:26 (+00:14:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00293
+Dec 20, 2025 14:34:27 (+00:14:53) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00266
+Dec 20, 2025 14:34:27 (+00:14:53) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00247
+Dec 20, 2025 14:34:27 (+00:14:54) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00281
+Dec 20, 2025 14:34:28 (+00:14:54) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00275
+Dec 20, 2025 14:34:28 (+00:14:55) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00264
+Dec 20, 2025 14:34:29 (+00:14:55) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00273
+Dec 20, 2025 14:34:29 (+00:14:55) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00283
+Dec 20, 2025 14:34:30 (+00:14:56) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00239
+Dec 20, 2025 14:34:30 (+00:14:56) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:34:30 (+00:14:57) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00269
+Dec 20, 2025 14:34:31 (+00:14:57) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00300
+Dec 20, 2025 14:34:31 (+00:14:58) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00285
+Dec 20, 2025 14:34:32 (+00:14:58) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00285
+Dec 20, 2025 14:34:32 (+00:14:59) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00294
+Dec 20, 2025 14:34:32 (+00:14:59) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: extracted_trials=30, cache_hits=0, cache_misses=246
+Dec 20, 2025 14:34:32 (+00:14:59) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Momentum
+Dec 20, 2025 14:34:35 (+00:15:01) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: n_events=1408, n_trials=30, probe_feats=70
+Dec 20, 2025 14:34:35 (+00:15:01) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Momentum, reason=unprofitable, mean_ret=-0.00204
+Dec 20, 2025 14:34:35 (+00:15:01) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Momentum, reason=unprofitable, mean_ret=-0.00273
+Dec 20, 2025 14:34:35 (+00:15:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Momentum, reason=unprofitable, mean_ret=-0.00226
+Dec 20, 2025 14:34:35 (+00:15:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Momentum, reason=pos_rate_limit, pos_rate=0.007, range=[0.01, 0.95]
+Dec 20, 2025 14:34:35 (+00:15:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Momentum, reason=pos_rate_limit, pos_rate=0.009, range=[0.01, 0.95]
+Dec 20, 2025 14:34:36 (+00:15:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Momentum, reason=unprofitable, mean_ret=-0.00251
+Dec 20, 2025 14:34:36 (+00:15:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Momentum, reason=unprofitable, mean_ret=-0.00209
+Dec 20, 2025 14:34:36 (+00:15:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Momentum, reason=unprofitable, mean_ret=-0.00269
+Dec 20, 2025 14:34:36 (+00:15:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Momentum, reason=unprofitable, mean_ret=-0.00268
+Dec 20, 2025 14:34:36 (+00:15:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Momentum, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:34:37 (+00:15:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Momentum, reason=unprofitable, mean_ret=-0.00226
+Dec 20, 2025 14:34:37 (+00:15:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Momentum, reason=unprofitable, mean_ret=-0.00135
+Dec 20, 2025 14:34:37 (+00:15:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Momentum, reason=unprofitable, mean_ret=-0.00212
+Dec 20, 2025 14:34:37 (+00:15:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Momentum, reason=unprofitable, mean_ret=-0.00180
+Dec 20, 2025 14:34:37 (+00:15:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Momentum, reason=unprofitable, mean_ret=-0.00297
+Dec 20, 2025 14:34:38 (+00:15:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Momentum, reason=unprofitable, mean_ret=-0.00208
+Dec 20, 2025 14:34:38 (+00:15:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Momentum, reason=unprofitable, mean_ret=-0.00277
+Dec 20, 2025 14:34:38 (+00:15:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Momentum, reason=pos_rate_limit, pos_rate=0.007, range=[0.01, 0.95]
+Dec 20, 2025 14:34:38 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Momentum, reason=unprofitable, mean_ret=-0.00188
+Dec 20, 2025 14:34:38 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Momentum, reason=unprofitable, mean_ret=-0.00250
+Dec 20, 2025 14:34:38 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Momentum, reason=unprofitable, mean_ret=-0.00218
+Dec 20, 2025 14:34:39 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Momentum, reason=unprofitable, mean_ret=-0.00251
+Dec 20, 2025 14:34:39 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Momentum, reason=unprofitable, mean_ret=-0.00150
+Dec 20, 2025 14:34:39 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Momentum, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:34:39 (+00:15:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Momentum, reason=unprofitable, mean_ret=-0.00245
+Dec 20, 2025 14:34:39 (+00:15:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Momentum, reason=unprofitable, mean_ret=-0.00177
+Dec 20, 2025 14:34:39 (+00:15:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Momentum, reason=unprofitable, mean_ret=-0.00276
+Dec 20, 2025 14:34:40 (+00:15:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Momentum, reason=unprofitable, mean_ret=-0.00275
+Dec 20, 2025 14:34:40 (+00:15:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Momentum, reason=unprofitable, mean_ret=-0.00279
+Dec 20, 2025 14:34:40 (+00:15:06) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: extracted_trials=29, cache_hits=0, cache_misses=275
+Dec 20, 2025 14:34:40 (+00:15:06) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: extracted_trials_per_family={'Mean Reversion': 29, 'Trend Continuation': 30, 'Momentum': 29}
+Dec 20, 2025 14:35:08 (+00:15:35) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: selected_geometries=10, by_family={'Mean Reversion': 2, 'Trend Continuation': 4, 'Momentum': 4}
+Dec 20, 2025 14:35:23 (+00:15:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:35:29 (+00:15:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:35:34 (+00:16:00) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:35:39 (+00:16:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:35:44 (+00:16:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 58 objects collected
+Dec 20, 2025 14:35:48 (+00:16:15) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 27.10%)
+Dec 20, 2025 14:35:48 (+00:16:15) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Mean Reversion_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:49 (+00:16:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 15.08%)
+Dec 20, 2025 14:35:50 (+00:16:16) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Mean Reversion_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:51 (+00:16:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 34.44%)
+Dec 20, 2025 14:35:51 (+00:16:17) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:52 (+00:16:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 10.56%)
+Dec 20, 2025 14:35:52 (+00:16:18) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:53 (+00:16:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 22.65%)
+Dec 20, 2025 14:35:53 (+00:16:19) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank2: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:54 (+00:16:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 12.40%)
+Dec 20, 2025 14:35:54 (+00:16:20) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank3: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:55 (+00:16:21) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 88 objects collected
+Dec 20, 2025 14:35:55 (+00:16:22) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 26.06%)
+Dec 20, 2025 14:35:55 (+00:16:22) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:56 (+00:16:23) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 4.41%)
+Dec 20, 2025 14:35:56 (+00:16:23) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:57 (+00:16:24) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 4.11%)
+Dec 20, 2025 14:35:57 (+00:16:24) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank2: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:35:58 (+00:16:25) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 36.89%)
+Dec 20, 2025 14:35:58 (+00:16:25) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank3: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:36:11 (+00:16:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:36:16 (+00:16:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 14:36:16 (+00:16:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:36:18 (+00:16:45) - src.training.steps.labeling.label_based_layer_2 - INFO - 
+>>> Training multi-output ensemble members...
+Dec 20, 2025 14:36:18 (+00:16:45) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: labeled_events=4716/4716, geometry_channels=10
+Dec 20, 2025 14:36:18 (+00:16:45) - src.training.steps.labeling.label_based_layer_2 - INFO -    > Processing Fold 2/3...
+Dec 20, 2025 14:36:18 (+00:16:45) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: purged k-fold val_start=10560, val_stop=21120, purge_bars=100, test_start_time=2025-04-04 14:45:00, test_end_time=2025-07-23 14:30:00, n_train=20920
+Dec 20, 2025 14:36:18 (+00:16:45) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: n_train_bars=20920, n_train_events=9778, n_test_events=5490
+Dec 20, 2025 14:36:21 (+00:16:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:36:37 (+00:17:03) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:36:42 (+00:17:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:36:46 (+00:17:12) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Momentum
+Dec 20, 2025 14:36:47 (+00:17:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:36:49 (+00:17:15) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: n_events=1820, n_trials=30, probe_feats=70
+Dec 20, 2025 14:36:49 (+00:17:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Momentum, reason=unprofitable, mean_ret=-0.00260
+Dec 20, 2025 14:36:49 (+00:17:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Momentum, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:36:50 (+00:17:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Momentum, reason=unprofitable, mean_ret=-0.00185
+Dec 20, 2025 14:36:50 (+00:17:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Momentum, reason=pos_rate_limit, pos_rate=0.005, range=[0.01, 0.95]
+Dec 20, 2025 14:36:50 (+00:17:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Momentum, reason=unprofitable, mean_ret=-0.00284
+Dec 20, 2025 14:36:50 (+00:17:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Momentum, reason=unprofitable, mean_ret=-0.00251
+Dec 20, 2025 14:36:50 (+00:17:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Momentum, reason=unprofitable, mean_ret=-0.00255
+Dec 20, 2025 14:36:51 (+00:17:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Momentum, reason=unprofitable, mean_ret=-0.00264
+Dec 20, 2025 14:36:51 (+00:17:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Momentum, reason=unprofitable, mean_ret=-0.00308
+Dec 20, 2025 14:36:51 (+00:17:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Momentum, reason=unprofitable, mean_ret=-0.00313
+Dec 20, 2025 14:36:51 (+00:17:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Momentum, reason=unprofitable, mean_ret=-0.00373
+Dec 20, 2025 14:36:51 (+00:17:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Momentum, reason=unprofitable, mean_ret=-0.00258
+Dec 20, 2025 14:36:52 (+00:17:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Momentum, reason=unprofitable, mean_ret=-0.00222
+Dec 20, 2025 14:36:52 (+00:17:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Momentum, reason=unprofitable, mean_ret=-0.00260
+Dec 20, 2025 14:36:52 (+00:17:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Momentum, reason=unprofitable, mean_ret=-0.00279
+Dec 20, 2025 14:36:53 (+00:17:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Momentum, reason=unprofitable, mean_ret=-0.00267
+Dec 20, 2025 14:36:53 (+00:17:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Momentum, reason=unprofitable, mean_ret=-0.00281
+Dec 20, 2025 14:36:53 (+00:17:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Momentum, reason=pos_rate_limit, pos_rate=0.007, range=[0.01, 0.95]
+Dec 20, 2025 14:36:53 (+00:17:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Momentum, reason=unprofitable, mean_ret=-0.00287
+Dec 20, 2025 14:36:53 (+00:17:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Momentum, reason=unprofitable, mean_ret=-0.00273
+Dec 20, 2025 14:36:54 (+00:17:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Momentum, reason=unprofitable, mean_ret=-0.00212
+Dec 20, 2025 14:36:54 (+00:17:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Momentum, reason=unprofitable, mean_ret=-0.00185
+Dec 20, 2025 14:36:54 (+00:17:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Momentum, reason=unprofitable, mean_ret=-0.00214
+Dec 20, 2025 14:36:54 (+00:17:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Momentum, reason=unprofitable, mean_ret=-0.00237
+Dec 20, 2025 14:36:54 (+00:17:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Momentum, reason=unprofitable, mean_ret=-0.00247
+Dec 20, 2025 14:36:55 (+00:17:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Momentum, reason=unprofitable, mean_ret=-0.00233
+Dec 20, 2025 14:36:55 (+00:17:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Momentum, reason=unprofitable, mean_ret=-0.00374
+Dec 20, 2025 14:36:55 (+00:17:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Momentum, reason=unprofitable, mean_ret=-0.00284
+Dec 20, 2025 14:36:55 (+00:17:22) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Momentum, reason=unprofitable, mean_ret=-0.00294
+Dec 20, 2025 14:36:55 (+00:17:22) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: extracted_trials=29, cache_hits=0, cache_misses=413
+Dec 20, 2025 14:36:55 (+00:17:22) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Mean Reversion
+Dec 20, 2025 14:36:59 (+00:17:25) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: n_events=4678, n_trials=30, probe_feats=70
+Dec 20, 2025 14:36:59 (+00:17:25) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:36:59 (+00:17:26) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:37:00 (+00:17:26) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:37:00 (+00:17:27) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00309
+Dec 20, 2025 14:37:01 (+00:17:27) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00293
+Dec 20, 2025 14:37:01 (+00:17:28) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00297
+Dec 20, 2025 14:37:02 (+00:17:28) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:37:02 (+00:17:29) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00301
+Dec 20, 2025 14:37:03 (+00:17:29) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00297
+Dec 20, 2025 14:37:03 (+00:17:30) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:37:04 (+00:17:30) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00297
+Dec 20, 2025 14:37:04 (+00:17:31) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00306
+Dec 20, 2025 14:37:05 (+00:17:31) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:37:05 (+00:17:32) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00292
+Dec 20, 2025 14:37:06 (+00:17:32) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00300
+Dec 20, 2025 14:37:06 (+00:17:33) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:37:07 (+00:17:33) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00283
+Dec 20, 2025 14:37:07 (+00:17:34) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00288
+Dec 20, 2025 14:37:08 (+00:17:34) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00306
+Dec 20, 2025 14:37:08 (+00:17:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00294
+Dec 20, 2025 14:37:09 (+00:17:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:37:09 (+00:17:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00300
+Dec 20, 2025 14:37:10 (+00:17:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00302
+Dec 20, 2025 14:37:10 (+00:17:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:37:11 (+00:17:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00296
+Dec 20, 2025 14:37:11 (+00:17:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00308
+Dec 20, 2025 14:37:12 (+00:17:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:37:12 (+00:17:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00304
+Dec 20, 2025 14:37:12 (+00:17:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:37:12 (+00:17:39) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: extracted_trials=29, cache_hits=0, cache_misses=442
+Dec 20, 2025 14:37:12 (+00:17:39) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Trend Continuation
+Dec 20, 2025 14:37:16 (+00:17:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: n_events=3280, n_trials=30, probe_feats=70
+Dec 20, 2025 14:37:16 (+00:17:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00422
+Dec 20, 2025 14:37:17 (+00:17:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00339
+Dec 20, 2025 14:37:17 (+00:17:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00361
+Dec 20, 2025 14:37:17 (+00:17:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00403
+Dec 20, 2025 14:37:18 (+00:17:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00340
+Dec 20, 2025 14:37:18 (+00:17:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00371
+Dec 20, 2025 14:37:18 (+00:17:45) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00398
+Dec 20, 2025 14:37:19 (+00:17:45) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00352
+Dec 20, 2025 14:37:19 (+00:17:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00352
+Dec 20, 2025 14:37:20 (+00:17:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00325
+Dec 20, 2025 14:37:20 (+00:17:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00437
+Dec 20, 2025 14:37:20 (+00:17:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00427
+Dec 20, 2025 14:37:21 (+00:17:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00415
+Dec 20, 2025 14:37:21 (+00:17:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=13, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00341
+Dec 20, 2025 14:37:21 (+00:17:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00397
+Dec 20, 2025 14:37:22 (+00:17:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00313
+Dec 20, 2025 14:37:22 (+00:17:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00438
+Dec 20, 2025 14:37:22 (+00:17:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00384
+Dec 20, 2025 14:37:23 (+00:17:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00378
+Dec 20, 2025 14:37:23 (+00:17:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00370
+Dec 20, 2025 14:37:24 (+00:17:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00371
+Dec 20, 2025 14:37:24 (+00:17:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00373
+Dec 20, 2025 14:37:24 (+00:17:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00348
+Dec 20, 2025 14:37:25 (+00:17:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00454
+Dec 20, 2025 14:37:25 (+00:17:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00334
+Dec 20, 2025 14:37:25 (+00:17:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00385
+Dec 20, 2025 14:37:26 (+00:17:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00331
+Dec 20, 2025 14:37:26 (+00:17:53) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00346
+Dec 20, 2025 14:37:26 (+00:17:53) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00389
+Dec 20, 2025 14:37:27 (+00:17:53) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00327
+Dec 20, 2025 14:37:27 (+00:17:53) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: extracted_trials=30, cache_hits=0, cache_misses=472
+Dec 20, 2025 14:37:27 (+00:17:53) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: extracted_trials_per_family={'Momentum': 29, 'Mean Reversion': 29, 'Trend Continuation': 30}
+Dec 20, 2025 14:37:53 (+00:18:20) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: selected_geometries=10, by_family={'Momentum': 4, 'Mean Reversion': 2, 'Trend Continuation': 4}
+Dec 20, 2025 14:38:11 (+00:18:38) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 22 objects collected
+Dec 20, 2025 14:38:17 (+00:18:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:38:22 (+00:18:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 14:38:22 (+00:18:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:38:27 (+00:18:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 58 objects collected
+Dec 20, 2025 14:38:32 (+00:18:59) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 23.23%)
+Dec 20, 2025 14:38:32 (+00:18:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 97 objects collected
+Dec 20, 2025 14:38:32 (+00:18:59) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:33 (+00:19:00) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 3.48%)
+Dec 20, 2025 14:38:33 (+00:19:00) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:34 (+00:19:01) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 3.61%)
+Dec 20, 2025 14:38:34 (+00:19:01) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank2: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:35 (+00:19:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 34.92%)
+Dec 20, 2025 14:38:35 (+00:19:02) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank3: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:36 (+00:19:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 23.08%)
+Dec 20, 2025 14:38:36 (+00:19:03) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Mean Reversion_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:37 (+00:19:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 13.21%)
+Dec 20, 2025 14:38:38 (+00:19:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 2 objects collected
+Dec 20, 2025 14:38:38 (+00:19:04) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Mean Reversion_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:39 (+00:19:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 31.65%)
+Dec 20, 2025 14:38:39 (+00:19:05) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:40 (+00:19:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 9.01%)
+Dec 20, 2025 14:38:40 (+00:19:06) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:41 (+00:19:07) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 19.23%)
+Dec 20, 2025 14:38:41 (+00:19:07) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank2: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:42 (+00:19:08) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 11.21%)
+Dec 20, 2025 14:38:42 (+00:19:08) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank3: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:38:43 (+00:19:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 2 objects collected
+Dec 20, 2025 14:38:59 (+00:19:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:39:04 (+00:19:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:39:10 (+00:19:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:39:15 (+00:19:41) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:39:19 (+00:19:46) - src.training.steps.labeling.label_based_layer_2 - INFO - 
+>>> Training multi-output ensemble members...
+Dec 20, 2025 14:39:19 (+00:19:46) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: labeled_events=5490/5490, geometry_channels=10
+Dec 20, 2025 14:39:19 (+00:19:46) - src.training.steps.labeling.label_based_layer_2 - INFO -    > Processing Fold 3/3...
+Dec 20, 2025 14:39:19 (+00:19:46) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: purged k-fold val_start=21120, val_stop=31680, purge_bars=100, test_start_time=2025-07-23 14:45:00, test_end_time=2025-11-10 14:30:00, n_train=21020
+Dec 20, 2025 14:39:19 (+00:19:46) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: n_train_bars=21020, n_train_events=10166, n_test_events=5147
+Dec 20, 2025 14:39:47 (+00:20:14) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 18 objects collected
+Dec 20, 2025 14:39:53 (+00:20:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 42 objects collected
+Dec 20, 2025 14:39:58 (+00:20:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:40:03 (+00:20:30) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:40:08 (+00:20:34) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Momentum
+Dec 20, 2025 14:40:09 (+00:20:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:40:13 (+00:20:39) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: n_events=1953, n_trials=30, probe_feats=70
+Dec 20, 2025 14:40:13 (+00:20:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Momentum, reason=unprofitable, mean_ret=-0.00186
+Dec 20, 2025 14:40:14 (+00:20:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Momentum, reason=unprofitable, mean_ret=-0.00282
+Dec 20, 2025 14:40:14 (+00:20:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Momentum, reason=unprofitable, mean_ret=-0.00166
+Dec 20, 2025 14:40:15 (+00:20:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Momentum, reason=pos_rate_limit, pos_rate=0.009, range=[0.01, 0.95]
+Dec 20, 2025 14:40:15 (+00:20:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Momentum, reason=unprofitable, mean_ret=-0.00274
+Dec 20, 2025 14:40:15 (+00:20:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Momentum, reason=unprofitable, mean_ret=-0.00251
+Dec 20, 2025 14:40:16 (+00:20:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Momentum, reason=unprofitable, mean_ret=-0.00237
+Dec 20, 2025 14:40:16 (+00:20:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Momentum, reason=unprofitable, mean_ret=-0.00262
+Dec 20, 2025 14:40:17 (+00:20:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Momentum, reason=unprofitable, mean_ret=-0.00254
+Dec 20, 2025 14:40:17 (+00:20:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Momentum, reason=unprofitable, mean_ret=-0.00277
+Dec 20, 2025 14:40:17 (+00:20:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Momentum, reason=unprofitable, mean_ret=-0.00235
+Dec 20, 2025 14:40:18 (+00:20:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Momentum, reason=unprofitable, mean_ret=-0.00181
+Dec 20, 2025 14:40:18 (+00:20:45) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Momentum, reason=unprofitable, mean_ret=-0.00184
+Dec 20, 2025 14:40:19 (+00:20:45) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Momentum, reason=unprofitable, mean_ret=-0.00201
+Dec 20, 2025 14:40:19 (+00:20:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Momentum, reason=unprofitable, mean_ret=-0.00274
+Dec 20, 2025 14:40:20 (+00:20:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Momentum, reason=unprofitable, mean_ret=-0.00199
+Dec 20, 2025 14:40:20 (+00:20:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Momentum, reason=unprofitable, mean_ret=-0.00227
+Dec 20, 2025 14:40:21 (+00:20:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Momentum, reason=pos_rate_limit, pos_rate=0.010, range=[0.01, 0.95]
+Dec 20, 2025 14:40:21 (+00:20:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Momentum, reason=unprofitable, mean_ret=-0.00212
+Dec 20, 2025 14:40:22 (+00:20:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Momentum, reason=unprofitable, mean_ret=-0.00255
+Dec 20, 2025 14:40:22 (+00:20:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Momentum, reason=unprofitable, mean_ret=-0.00186
+Dec 20, 2025 14:40:22 (+00:20:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Momentum, reason=unprofitable, mean_ret=-0.00179
+Dec 20, 2025 14:40:23 (+00:20:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Momentum, reason=unprofitable, mean_ret=-0.00150
+Dec 20, 2025 14:40:23 (+00:20:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Momentum, reason=unprofitable, mean_ret=-0.00241
+Dec 20, 2025 14:40:24 (+00:20:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Momentum, reason=unprofitable, mean_ret=-0.00213
+Dec 20, 2025 14:40:24 (+00:20:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Momentum, reason=unprofitable, mean_ret=-0.00159
+Dec 20, 2025 14:40:25 (+00:20:51) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Momentum, reason=unprofitable, mean_ret=-0.00298
+Dec 20, 2025 14:40:25 (+00:20:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Momentum, reason=unprofitable, mean_ret=-0.00272
+Dec 20, 2025 14:40:26 (+00:20:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Momentum, reason=unprofitable, mean_ret=-0.00280
+Dec 20, 2025 14:40:26 (+00:20:52) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Momentum: extracted_trials=29, cache_hits=0, cache_misses=610
+Dec 20, 2025 14:40:26 (+00:20:52) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Mean Reversion
+Dec 20, 2025 14:40:30 (+00:20:56) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 14:40:31 (+00:20:57) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: n_events=4608, n_trials=30, probe_feats=70
+Dec 20, 2025 14:40:31 (+00:20:58) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00274
+Dec 20, 2025 14:40:32 (+00:20:59) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00291
+Dec 20, 2025 14:40:33 (+00:20:59) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00278
+Dec 20, 2025 14:40:34 (+00:21:00) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00277
+Dec 20, 2025 14:40:35 (+00:21:01) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00284
+Dec 20, 2025 14:40:36 (+00:21:02) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00280
+Dec 20, 2025 14:40:37 (+00:21:03) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00277
+Dec 20, 2025 14:40:37 (+00:21:04) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00288
+Dec 20, 2025 14:40:38 (+00:21:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00292
+Dec 20, 2025 14:40:39 (+00:21:05) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00297
+Dec 20, 2025 14:40:40 (+00:21:06) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00269
+Dec 20, 2025 14:40:41 (+00:21:07) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00273
+Dec 20, 2025 14:40:42 (+00:21:08) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00276
+Dec 20, 2025 14:40:43 (+00:21:09) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00263
+Dec 20, 2025 14:40:43 (+00:21:10) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00299
+Dec 20, 2025 14:40:44 (+00:21:11) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00275
+Dec 20, 2025 14:40:45 (+00:21:12) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00266
+Dec 20, 2025 14:40:46 (+00:21:12) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00270
+Dec 20, 2025 14:40:47 (+00:21:13) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00271
+Dec 20, 2025 14:40:48 (+00:21:14) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00281
+Dec 20, 2025 14:40:49 (+00:21:15) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00276
+Dec 20, 2025 14:40:49 (+00:21:16) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00281
+Dec 20, 2025 14:40:50 (+00:21:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00293
+Dec 20, 2025 14:40:51 (+00:21:17) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00295
+Dec 20, 2025 14:40:52 (+00:21:18) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00276
+Dec 20, 2025 14:40:53 (+00:21:19) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00270
+Dec 20, 2025 14:40:54 (+00:21:20) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00284
+Dec 20, 2025 14:40:54 (+00:21:21) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00274
+Dec 20, 2025 14:40:55 (+00:21:22) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Mean Reversion, reason=unprofitable, mean_ret=-0.00285
+Dec 20, 2025 14:40:55 (+00:21:22) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Mean Reversion: extracted_trials=29, cache_hits=0, cache_misses=639
+Dec 20, 2025 14:40:55 (+00:21:22) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing family: Trend Continuation
+Dec 20, 2025 14:41:00 (+00:21:27) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: n_events=3605, n_trials=30, probe_feats=70
+Dec 20, 2025 14:41:01 (+00:21:27) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=0, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00328
+Dec 20, 2025 14:41:01 (+00:21:28) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=1, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00316
+Dec 20, 2025 14:41:03 (+00:21:29) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=2, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00324
+Dec 20, 2025 14:41:03 (+00:21:30) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=3, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00361
+Dec 20, 2025 14:41:04 (+00:21:30) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=4, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00314
+Dec 20, 2025 14:41:05 (+00:21:31) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=5, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00330
+Dec 20, 2025 14:41:06 (+00:21:32) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=6, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00324
+Dec 20, 2025 14:41:06 (+00:21:33) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=7, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00337
+Dec 20, 2025 14:41:07 (+00:21:33) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=8, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00320
+Dec 20, 2025 14:41:08 (+00:21:34) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=9, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00304
+Dec 20, 2025 14:41:09 (+00:21:35) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=10, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00343
+Dec 20, 2025 14:41:09 (+00:21:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=11, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00356
+Dec 20, 2025 14:41:10 (+00:21:36) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=12, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00326
+Dec 20, 2025 14:41:11 (+00:21:37) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=13, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00317
+Dec 20, 2025 14:41:11 (+00:21:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=14, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00324
+Dec 20, 2025 14:41:12 (+00:21:38) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=15, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00308
+Dec 20, 2025 14:41:13 (+00:21:39) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=16, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00363
+Dec 20, 2025 14:41:14 (+00:21:40) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=17, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00317
+Dec 20, 2025 14:41:14 (+00:21:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=18, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00330
+Dec 20, 2025 14:41:15 (+00:21:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=19, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00325
+Dec 20, 2025 14:41:16 (+00:21:42) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=20, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00326
+Dec 20, 2025 14:41:16 (+00:21:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=21, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00329
+Dec 20, 2025 14:41:17 (+00:21:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=22, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00326
+Dec 20, 2025 14:41:18 (+00:21:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=23, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00370
+Dec 20, 2025 14:41:19 (+00:21:45) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=24, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00320
+Dec 20, 2025 14:41:19 (+00:21:46) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=25, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00327
+Dec 20, 2025 14:41:20 (+00:21:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=26, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00327
+Dec 20, 2025 14:41:21 (+00:21:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=27, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00312
+Dec 20, 2025 14:41:22 (+00:21:48) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=28, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00342
+Dec 20, 2025 14:41:22 (+00:21:49) - src.training.steps.labeling.label_based_layer_2 - INFO - [GATE_REJECT] trial=29, family=Trend Continuation, reason=unprofitable, mean_ret=-0.00308
+Dec 20, 2025 14:41:22 (+00:21:49) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Optimize family=Trend Continuation: extracted_trials=30, cache_hits=0, cache_misses=669
+Dec 20, 2025 14:41:22 (+00:21:49) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: extracted_trials_per_family={'Momentum': 29, 'Mean Reversion': 29, 'Trend Continuation': 30}
+Dec 20, 2025 14:42:09 (+00:22:35) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: selected_geometries=10, by_family={'Momentum': 4, 'Mean Reversion': 2, 'Trend Continuation': 4}
+Dec 20, 2025 14:42:38 (+00:23:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 14:42:39 (+00:23:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40 objects collected
+Dec 20, 2025 14:42:44 (+00:23:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:42:49 (+00:23:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:42:55 (+00:23:21) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:43:11 (+00:23:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 58 objects collected
+Dec 20, 2025 14:43:15 (+00:23:41) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 25.52%)
+Dec 20, 2025 14:43:15 (+00:23:41) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:16 (+00:23:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 44 objects collected
+Dec 20, 2025 14:43:17 (+00:23:43) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 4.33%)
+Dec 20, 2025 14:43:17 (+00:23:43) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:19 (+00:23:45) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 4.04%)
+Dec 20, 2025 14:43:19 (+00:23:45) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank2: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:21 (+00:23:47) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 36.73%)
+Dec 20, 2025 14:43:21 (+00:23:47) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Momentum_Rank3: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:22 (+00:23:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 44 objects collected
+Dec 20, 2025 14:43:23 (+00:23:50) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 25.38%)
+Dec 20, 2025 14:43:24 (+00:23:50) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Mean Reversion_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:25 (+00:23:52) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 14.34%)
+Dec 20, 2025 14:43:25 (+00:23:52) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Mean Reversion_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:27 (+00:23:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 65 objects collected
+Dec 20, 2025 14:43:28 (+00:23:54) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 34.20%)
+Dec 20, 2025 14:43:28 (+00:23:54) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank0: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:29 (+00:23:56) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 10.31%)
+Dec 20, 2025 14:43:30 (+00:23:56) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank1: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:32 (+00:23:58) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 21.39%)
+Dec 20, 2025 14:43:32 (+00:23:58) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank2: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:43:32 (+00:23:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 44 objects collected
+Dec 20, 2025 14:43:34 (+00:24:00) - src.training.steps.labeling.label_based_layer_2 - INFO - [Focal Loss] gamma=0.5, alpha=0.6500 (Pos fraction: 12.16%)
+Dec 20, 2025 14:43:34 (+00:24:01) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Trend Continuation_Rank3: 'numpy.ndarray' object has no attribute 'get_label'
+Dec 20, 2025 14:44:10 (+00:24:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:44:15 (+00:24:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:44:21 (+00:24:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:44:26 (+00:24:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:44:31 (+00:24:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 38 objects collected
+Dec 20, 2025 14:44:37 (+00:25:03) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 8 objects collected
+Dec 20, 2025 14:44:39 (+00:25:06) - src.training.steps.labeling.label_based_layer_2 - INFO - 
+>>> Training multi-output ensemble members...
+Dec 20, 2025 14:44:39 (+00:25:06) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: labeled_events=5147/5147, geometry_channels=10
+Dec 20, 2025 14:44:47 (+00:25:13) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 14:44:47 (+00:25:14) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer 2 Pipeline Complete.
+Dec 20, 2025 14:45:08 (+00:25:34) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 20, 2025 14:46:56 (+00:27:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.75
+Dec 20, 2025 14:51:10 (+00:31:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.75
+Dec 20, 2025 14:53:00 (+00:33:27) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (97.5) exceeds threshold (85.0)
+Dec 20, 2025 14:53:23 (+00:33:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 14:53:32 (+00:33:58) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (90.1) exceeds threshold (85.0)
+Dec 20, 2025 14:55:37 (+00:36:04) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 14:57:59 (+00:38:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 20, 2025 15:08:14 (+00:48:41) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 15:10:28 (+00:50:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.80
+Dec 20, 2025 15:10:52 (+00:51:19) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (91.7) exceeds threshold (85.0)
+Dec 20, 2025 15:11:24 (+00:51:51) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (96.1) exceeds threshold (85.0)
+Dec 20, 2025 15:12:46 (+00:53:13) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.81
+Dec 20, 2025 15:14:56 (+00:55:22) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 15:17:05 (+00:57:32) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 15:19:14 (+00:59:40) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 15:21:21 (+01:01:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:23:29 (+01:03:56) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 15:25:36 (+01:06:03) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:27:43 (+01:08:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:29:51 (+01:10:18) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:31:58 (+01:12:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:34:05 (+01:14:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:36:13 (+01:16:40) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:38:21 (+01:18:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:40:30 (+01:20:56) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:42:40 (+01:23:06) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:44:49 (+01:25:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.75
+Dec 20, 2025 15:49:07 (+01:29:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:50:45 (+01:31:12) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (85.5) exceeds threshold (85.0)
+Dec 20, 2025 15:51:17 (+01:31:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 15:53:25 (+01:33:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 15:55:33 (+01:36:00) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 15:57:42 (+01:38:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.75
+Dec 20, 2025 15:59:50 (+01:40:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:00:44 (+01:41:10) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (93.7) exceeds threshold (85.0)
+Dec 20, 2025 16:01:58 (+01:42:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:04:06 (+01:44:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:06:15 (+01:46:41) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:08:23 (+01:48:49) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:10:31 (+01:50:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:12:41 (+01:53:07) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:14:51 (+01:55:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:17:00 (+01:57:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:19:10 (+01:59:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:21:20 (+02:01:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:23:30 (+02:03:57) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:25:40 (+02:06:06) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:27:50 (+02:08:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:30:00 (+02:10:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:32:10 (+02:12:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:34:19 (+02:14:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:36:28 (+02:16:54) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:38:36 (+02:19:02) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:40:45 (+02:21:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:42:53 (+02:23:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:45:01 (+02:25:28) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:47:10 (+02:27:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:49:18 (+02:29:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:51:27 (+02:31:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:53:35 (+02:34:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 16:55:43 (+02:36:10) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 16:57:52 (+02:38:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:00:00 (+02:40:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:02:09 (+02:42:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:04:18 (+02:44:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:06:26 (+02:46:53) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:08:34 (+02:49:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:10:43 (+02:51:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:12:53 (+02:53:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:15:02 (+02:55:29) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:17:12 (+02:57:39) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:19:22 (+02:59:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:21:32 (+03:01:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:23:41 (+03:04:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 17:25:51 (+03:06:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 17:28:01 (+03:08:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 17:30:11 (+03:10:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:32:20 (+03:12:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:34:28 (+03:14:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:36:37 (+03:17:03) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 17:38:45 (+03:19:11) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:40:53 (+03:21:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:43:03 (+03:23:30) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:45:13 (+03:25:40) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:47:23 (+03:27:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:49:33 (+03:29:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:51:43 (+03:32:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:53:52 (+03:34:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:56:00 (+03:36:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 17:58:09 (+03:38:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:00:17 (+03:40:44) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:02:26 (+03:42:52) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:04:34 (+03:45:01) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.76
+Dec 20, 2025 18:06:43 (+03:47:09) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:08:51 (+03:49:18) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:11:00 (+03:51:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:13:10 (+03:53:37) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:15:20 (+03:55:46) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:17:30 (+03:57:56) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:19:20 (+03:59:46) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (92.5) exceeds threshold (85.0)
+Dec 20, 2025 18:19:39 (+04:00:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:21:49 (+04:02:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:23:59 (+04:04:26) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:26:08 (+04:06:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:28:16 (+04:08:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:30:25 (+04:10:51) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:32:33 (+04:12:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:34:41 (+04:15:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:36:49 (+04:17:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:38:58 (+04:19:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:41:07 (+04:21:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:43:15 (+04:23:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:45:24 (+04:25:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:47:32 (+04:27:58) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.77
+Dec 20, 2025 18:49:40 (+04:30:07) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:51:49 (+04:32:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 18:51:52 (+04:32:18) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (90.5) exceeds threshold (85.0)
+Dec 20, 2025 18:53:58 (+04:34:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 18:56:07 (+04:36:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.80
+Dec 20, 2025 18:58:15 (+04:38:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:00:23 (+04:40:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:02:32 (+04:42:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:04:41 (+04:45:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:06:50 (+04:47:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:08:59 (+04:49:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:11:08 (+04:51:35) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:13:19 (+04:53:45) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:15:29 (+04:55:55) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:17:38 (+04:58:05) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:19:49 (+05:00:15) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:21:59 (+05:02:25) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:24:07 (+05:04:34) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:26:16 (+05:06:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.80
+Dec 20, 2025 19:28:24 (+05:08:50) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:30:33 (+05:10:59) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.79
+Dec 20, 2025 19:32:41 (+05:13:08) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:34:49 (+05:15:16) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:36:58 (+05:17:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:39:06 (+05:19:33) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:41:16 (+05:21:42) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.78
+Dec 20, 2025 19:41:21 (+05:21:48) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - 🧠 Memory monitoring reached maximum iterations (3600), auto-stopping
+Dec 20, 2025 20:05:47 (+05:46:13) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (97.4) exceeds threshold (85.0)
+Dec 20, 2025 22:37:57 (+08:18:23) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (90.6) exceeds threshold (85.0)
+Dec 20, 2025 22:41:06 (+08:21:32) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (85.6) exceeds threshold (85.0)
+Dec 20, 2025 22:41:37 (+08:22:04) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (89.1) exceeds threshold (85.0)
+Dec 20, 2025 22:49:30 (+08:29:56) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (85.5) exceeds threshold (85.0)
+Dec 20, 2025 23:39:24 (+09:19:50) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (87.9) exceeds threshold (85.0)

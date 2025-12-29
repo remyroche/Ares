@@ -1,0 +1,183 @@
+Dec 29, 2025 00:16:45 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Dec 29, 2025 00:16:45 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Dec 29, 2025 00:16:45 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 29, 2025 00:16:45 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 29, 2025 00:16:45 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Dec 29, 2025 00:16:45 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Dec 29, 2025 00:16:45 (+00:00:00) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Dec 29, 2025 00:16:45 (+00:00:00) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Dec 29, 2025 00:16:45 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 29, 2025 00:16:45 (+00:00:00) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Dec 29, 2025 00:16:45 (+00:00:00) - utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Dec 29, 2025 00:16:45 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - RegimeEnsembleTrainingConfigManager initialisé
+Dec 29, 2025 00:16:45 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Répertoire config: /Users/remyroche/Documents/Ares/src/config/regime_ensemble_training
+Dec 29, 2025 00:16:45 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Config personnalisée: None
+Dec 29, 2025 00:16:45 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Fallback hardcodé: True
+Dec 29, 2025 00:16:45 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Dec 29, 2025 00:16:45 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Dec 29, 2025 00:16:46 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - 🔧 Initializing Execution Mode Lookback Configuration
+Dec 29, 2025 00:16:46 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ✅ Execution Mode Lookback Configuration initialized
+Dec 29, 2025 00:16:46 (+00:00:00) - ares.registry - INFO - Registered step: rolling_hmm_regime_discovery
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: sr_parameter_optimization
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: regime_clustering
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: regime_ensemble_training
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: sr_clustering
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: sr_detection
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: regime_feature_selection
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: sticky_finite_hmm_regime_discovery
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: xgb_meso_regime
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: xgb_mr_trend_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: hmm_ml_alpha_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: xgb_macro_regime
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_risk_regime_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_smc_regime_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_path_regime_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_mean_reversion_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_breakout_bounce_regime_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_map_regime_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_liquidity_regime_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: ml_volume_force_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: feature_generation_meta_labeling_step
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: sr_labeling_xgb
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.registry - INFO - Registered step: meta_labeling_hpo_experiment
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Starting Simplified Ares Launcher...
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - 🧹 Starting cleanup of duplicate files...
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Cleaning directory: logs (keeping 100 youngest files per group)
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO -   Group 'unified.log': 102 files, keeping 100, deleting 2
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Cleaning directory: artifacts (keeping 3 youngest files per group)
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Cleaning directory: outcomes (keeping 3 youngest files per group)
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO -   Group 'layer0_summary_ETHUSDT_15m.csv': 4 files, keeping 3, deleting 1
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO -   Group 'layer0_report_ETHUSDT_15m.md': 4 files, keeping 3, deleting 1
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - ✅ Cleanup complete: 4 files deleted, 0 files skipped
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Detected positional command: meta_labeling_hpo_sample_weighted
+Dec 29, 2025 00:16:46 (+00:00:01) - src.utils.ml_common.optimization.execution_mode_adapter - INFO - 🔧 Execution mode set to: BLANK
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - 🔧 Execution mode set to: BLANK
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Running single step: meta_labeling_hpo_sample_weighted
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.launcher - INFO - Starting execution of step: meta_labeling_hpo_sample_weighted
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.step.meta_labeling_hpo_sample_weighted - INFO - Starting execution of meta_labeling_hpo_sample_weighted
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.step.meta_labeling_hpo_sample_weighted - INFO - Execution mode resolved for meta_labeling_hpo_sample_weighted: requested_cli=blank → persona=analyst
+Dec 29, 2025 00:16:46 (+00:00:01) - System.VersionManager - INFO - ✅ Loaded version config from config/version_config.json
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=klines_downloading_processing, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-28 23:16:46.468134, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:46 (+00:00:01) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 29, 2025 00:16:46 (+00:00:01) - src.utils.kline_parquet - INFO - load_klines executed in 131.23ms
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'klines_data' not found via router, trying traditional manager
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - WARNING - Artifact not found: klines_data
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=data_collection, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-28 23:16:46.759454, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:46 (+00:00:01) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'market_data' not found via router, trying traditional manager
+Dec 29, 2025 00:16:46 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - WARNING - Artifact not found: market_data
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=data_reading, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-28 23:16:47.166669, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:47 (+00:00:01) - src.utils.kline_parquet - INFO - load_klines executed in 0.43ms
+Dec 29, 2025 00:16:47 (+00:00:01) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'ohlcv_data' not found via router, trying traditional manager
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - WARNING - Artifact not found: ohlcv_data
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:47 (+00:00:01) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-29 00:16:46.464453, information=None, direction=long, model=Analyst
+Dec 29, 2025 00:16:47 (+00:00:01) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 29, 2025 00:16:47 (+00:00:01) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (104, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2877, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2047, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2363, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:48 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2784, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:49 (+00:00:03) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:49 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:49 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:49 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (924, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:50 (+00:00:04) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:53 (+00:00:07) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:53 (+00:00:07) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 29, 2025 00:16:53 (+00:00:07) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 29, 2025 00:16:53 (+00:00:08) - src.utils.kline_parquet - INFO - load_klines executed in 6183.00ms
+Dec 29, 2025 00:17:04 (+00:00:19) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 1510 objects collected
+Dec 29, 2025 00:17:12 (+00:00:27) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 29590 objects collected
+Dec 29, 2025 00:17:14 (+00:00:29) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:17:19 (+00:00:34) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 22862 objects collected
+Dec 29, 2025 00:17:23 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - Starting Layer 2 Pipeline...
+Dec 29, 2025 00:17:23 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Step 1 - Prepare Data and Events...
+Dec 29, 2025 00:17:29 (+00:00:43) - src.training.steps.labeling.label_based_layer_2 - INFO - Generated 15353 events from 31680 bars using CUSUM filter.
+Dec 29, 2025 00:17:29 (+00:00:43) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 40045 objects collected
+Dec 29, 2025 00:17:50 (+00:01:05) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:18:15 (+00:01:29) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 9 objects collected
+Dec 29, 2025 00:18:15 (+00:01:29) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Step 2 - Optimize Production Geometries...
+Dec 29, 2025 00:18:23 (+00:01:37) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:18:34 (+00:01:49) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing geometries: 15353 total events (no family split)
+Dec 29, 2025 00:18:35 (+00:01:49) - src.training.steps.labeling.label_geometry_selection - INFO - Vectorizing 15353 events for horizons [8, 12, 16, 20, 24]...
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - Event dedup: 15353 → 1889 events (min_gap=10 bars)
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - Events after dedup: 15353 → 1889
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped 16 near-constant feature columns after dedup (300 remaining).
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - Generated 1680 raw candidates
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - After hard constraints: 1680 candidates
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - Distance-based deduplication: 1680 -> 84 candidates
+Dec 29, 2025 00:18:38 (+00:01:53) - src.training.steps.labeling.label_geometry_selection - INFO - Training LGBM on 84 pre-filtered candidates...
+Dec 29, 2025 00:19:00 (+00:02:14) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:19:00 (+00:02:14) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=36.84%, uniq=0.32 (no model)
+Dec 29, 2025 00:19:17 (+00:02:32) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:19:17 (+00:02:32) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:19:17 (+00:02:32) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.01%, uniq=0.48 (no model)
+Dec 29, 2025 00:19:33 (+00:02:48) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:19:34 (+00:02:48) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=31.55%, uniq=0.36 (no model)
+Dec 29, 2025 00:20:01 (+00:03:16) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:20:01 (+00:03:16) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=28.90%, uniq=0.38 (no model)
+Dec 29, 2025 00:20:17 (+00:03:32) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory pressure at 0.83
+Dec 29, 2025 00:20:19 (+00:03:34) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:20:19 (+00:03:34) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 00:20:19 (+00:03:34) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=27.90%, uniq=0.39 (no model)
+Dec 29, 2025 00:20:33 (+00:03:48) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:20:43 (+00:03:57) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.01%, uniq=0.48 (no model)
+Dec 29, 2025 00:21:10 (+00:04:25) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: covariance matrix near-singular (cond=1.7e+25)
+Dec 29, 2025 00:21:10 (+00:04:25) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=37.69%, uniq=0.32 (no model)

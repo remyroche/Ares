@@ -1,0 +1,375 @@
+Dec 28, 2025 23:35:18 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Dec 28, 2025 23:35:18 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Dec 28, 2025 23:35:18 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:35:18 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:35:18 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Dec 28, 2025 23:35:18 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Dec 28, 2025 23:35:18 (+00:00:00) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Dec 28, 2025 23:35:18 (+00:00:00) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Dec 28, 2025 23:35:18 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 28, 2025 23:35:18 (+00:00:00) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Dec 28, 2025 23:35:18 (+00:00:00) - utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Dec 28, 2025 23:35:18 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - RegimeEnsembleTrainingConfigManager initialisé
+Dec 28, 2025 23:35:18 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Répertoire config: /Users/remyroche/Documents/Ares/src/config/regime_ensemble_training
+Dec 28, 2025 23:35:18 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Config personnalisée: None
+Dec 28, 2025 23:35:18 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Fallback hardcodé: True
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Dec 28, 2025 23:35:18 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - 🔧 Initializing Execution Mode Lookback Configuration
+Dec 28, 2025 23:35:18 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ✅ Execution Mode Lookback Configuration initialized
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: rolling_hmm_regime_discovery
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: sr_parameter_optimization
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: regime_clustering
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: sr_clustering
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: sr_detection
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: sticky_finite_hmm_regime_discovery
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: xgb_meso_regime
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: xgb_mr_trend_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: hmm_ml_alpha_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: xgb_macro_regime
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_risk_regime_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_smc_regime_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_path_regime_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_mean_reversion_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_breakout_bounce_regime_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_map_regime_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_liquidity_regime_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: ml_volume_force_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: feature_generation_meta_labeling_step
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: sr_labeling_xgb
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.registry - INFO - Registered step: meta_labeling_hpo_experiment
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Starting Simplified Ares Launcher...
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - 🧹 Starting cleanup of duplicate files...
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Cleaning directory: logs (keeping 100 youngest files per group)
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO -   Group 'unified.log': 102 files, keeping 100, deleting 2
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Cleaning directory: artifacts (keeping 3 youngest files per group)
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Cleaning directory: outcomes (keeping 3 youngest files per group)
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - ✅ Cleanup complete: 2 files deleted, 0 files skipped
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Detected positional command: meta_labeling_hpo_sample_weighted
+Dec 28, 2025 23:35:18 (+00:00:00) - src.utils.ml_common.optimization.execution_mode_adapter - INFO - 🔧 Execution mode set to: LIGHT
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - 🔧 Execution mode set to: LIGHT
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Running single step: meta_labeling_hpo_sample_weighted
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.launcher - INFO - Starting execution of step: meta_labeling_hpo_sample_weighted
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - INFO - Starting execution of meta_labeling_hpo_sample_weighted
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - INFO - Execution mode resolved for meta_labeling_hpo_sample_weighted: requested_cli=light → persona=analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.VersionManager - INFO - ✅ Loaded version config from config/version_config.json
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=klines_downloading_processing, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-28 22:35:18.849472, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 28, 2025 23:35:18 (+00:00:00) - src.utils.kline_parquet - INFO - load_klines executed in 1.78ms
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'klines_data' not found via router, trying traditional manager
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - WARNING - Artifact not found: klines_data
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=data_collection, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-28 22:35:18.928696, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'market_data' not found via router, trying traditional manager
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - WARNING - Artifact not found: market_data
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=data_reading, symbol=ETHUSDT, exchange=binance, timeframe=15m, datetime=2025-12-28 22:35:18.997241, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:18 (+00:00:00) - src.utils.kline_parquet - INFO - load_klines executed in 0.24ms
+Dec 28, 2025 23:35:19 (+00:00:00) - ares.step.meta_labeling_hpo_sample_weighted - WARNING - Artifact 'ohlcv_data' not found via router, trying traditional manager
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=15m, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ArtifactManager - WARNING - Artifact not found: ohlcv_data
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ArtifactManager - INFO - 📁 Context set: step=meta_labeling_hpo_sample_weighted, symbol=None, exchange=None, timeframe=None, datetime=2025-12-28 23:35:18.847920, information=None, direction=long, model=Analyst
+Dec 28, 2025 23:35:19 (+00:00:00) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 28, 2025 23:35:19 (+00:00:00) - System.KlinesParquetManager - INFO - ✅ KlinesParquetManager initialized with base_dir: historical_data
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (104, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2877, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2047, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:00) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2363, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2784, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (924, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - System.ParquetUtils - INFO - ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+Dec 28, 2025 23:35:19 (+00:00:01) - src.utils.kline_parquet - INFO - load_klines executed in 463.04ms
+Dec 28, 2025 23:35:22 (+00:00:04) - src.training.steps.labeling.label_based_layer_2 - INFO - Starting Layer 2 Pipeline...
+Dec 28, 2025 23:35:22 (+00:00:04) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Step 1 - Prepare Data and Events...
+Dec 28, 2025 23:35:22 (+00:00:04) - src.training.steps.labeling.label_based_layer_2 - INFO - Generated 1338 events from 2881 bars using CUSUM filter.
+Dec 28, 2025 23:35:24 (+00:00:05) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Step 2 - Optimize Production Geometries...
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing geometries: 1338 total events (no family split)
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - Vectorizing 1337 events for horizons [8, 12, 16, 20, 24]...
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - Event dedup: 1337 → 212 events (min_gap=8 bars)
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - Events after dedup: 1337 → 212
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - Generated 1680 raw candidates
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - After hard constraints: 1680 candidates
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - Distance-based deduplication: 1680 -> 30 candidates
+Dec 28, 2025 23:35:25 (+00:00:06) - src.training.steps.labeling.label_geometry_selection - INFO - Training LGBM on 30 pre-filtered candidates...
+Dec 28, 2025 23:35:25 (+00:00:07) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.79%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:25 (+00:00:07) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=33.96%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:26 (+00:00:07) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=35.38%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:26 (+00:00:08) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=28.77%, uniq=0.30 despite: ['Low Uniqueness (0.30 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:26 (+00:00:08) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.32%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:27 (+00:00:09) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=37.74%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:27 (+00:00:09) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=32.08%, uniq=0.29 despite: ['Low Uniqueness (0.29 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:27 (+00:00:09) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=35.85%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:27 (+00:00:09) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=34.43%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:28 (+00:00:09) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=39.62%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:28 (+00:00:10) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=40.57%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:28 (+00:00:10) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.79%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:29 (+00:00:10) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=31.60%, uniq=0.30 despite: ['Low Uniqueness (0.30 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:29 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.32%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:29 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=35.85%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Pruning 30 accepted geometries based on correlation...
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Balanced (Sep: 0.062) due to correlation 0.90 with Balanced (Sep: 0.202)
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Pain Averse (High Penalty for Drawdown) (Sep: 0.057) due to correlation 0.90 with Balanced (Sep: 0.065)
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Pain Averse (High Penalty for Drawdown) (Sep: 0.048) due to correlation 1.00 with Balanced (Sep: 0.048)
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Momentum Surfer (Tolerates Volatility) (Sep: 0.017) due to correlation 0.96 with Balanced (Sep: 0.048)
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_geometry_selection - INFO - Final Selection: 10 geometries (Best Separation Score: 0.295, Max: 10)
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_based_layer_2 - INFO - Geometry selection complete: 10 geometries selected
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Full Optimization: extracted_trials_per_family={'Unified': 10}
+Dec 28, 2025 23:35:30 (+00:00:11) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Tuning Model Parameters & Selecting Features for Production Geometries...
+Dec 28, 2025 23:35:31 (+00:00:12) - src.training.steps.labeling.label_based_layer_2 - INFO -     Processing geometry Geo_Sel8 (1/1)...
+Dec 28, 2025 23:35:31 (+00:00:12) - src.training.steps.labeling.label_based_layer_2 - INFO -     Selecting features for Geo_Sel8...
+Dec 28, 2025 23:35:32 (+00:00:13) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Step 3 - Running OOF Optimization (Analytics)...
+Dec 28, 2025 23:35:32 (+00:00:13) - src.training.steps.labeling.label_based_layer_2 - INFO -    > Processing Fold 1/3...
+Dec 28, 2025 23:35:32 (+00:00:13) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: purged k-fold val_start=0, val_stop=961, purge_bars=100, test_start_time=2025-11-10 14:45:00, test_end_time=2025-11-20 14:45:00, n_train=1820
+Dec 28, 2025 23:35:32 (+00:00:13) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: n_train_bars=1820, n_train_events=1007, n_test_events=331
+Dec 28, 2025 23:35:32 (+00:00:14) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing geometries: 1007 total events (no family split)
+Dec 28, 2025 23:35:32 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Vectorizing 1006 events for horizons [8, 12, 16, 20, 24]...
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Event dedup: 1006 → 157 events (min_gap=8 bars)
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Events after dedup: 1006 → 157
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Generated 1680 raw candidates
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - After hard constraints: 1680 candidates
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Distance-based deduplication: 1680 -> 30 candidates
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Training LGBM on 30 pre-filtered candidates...
+Dec 28, 2025 23:35:33 (+00:00:14) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=39.49%, uniq=0.22 despite: ['Low Uniqueness (0.22 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:33 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=28.03%, uniq=0.29 despite: ['Low Uniqueness (0.29 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:33 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.31%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:33 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 24 positive samples (need 25)
+Dec 28, 2025 23:35:33 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.38% (no model)
+Dec 28, 2025 23:35:34 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=37.58%, uniq=0.23 despite: ['Low Uniqueness (0.23 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:34 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=29.94%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:34 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 24 positive samples (need 25)
+Dec 28, 2025 23:35:34 (+00:00:15) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=19.75% (no model)
+Dec 28, 2025 23:35:34 (+00:00:16) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=37.58%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:35 (+00:00:17) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=37.58%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:36 (+00:00:18) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 54903 objects collected
+Dec 28, 2025 23:35:36 (+00:00:18) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=33.76%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:36 (+00:00:18) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=38.85%, uniq=0.22 despite: ['Low Uniqueness (0.22 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:36 (+00:00:18) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=32.48%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:37 (+00:00:18) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.94%, uniq=0.23 despite: ['Low Uniqueness (0.23 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:37 (+00:00:18) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=41.40%, uniq=0.22 despite: ['Low Uniqueness (0.22 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:37 (+00:00:19) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=42.68%, uniq=0.22 despite: ['Low Uniqueness (0.22 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:38 (+00:00:19) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=38.22%, uniq=0.23 despite: ['Low Uniqueness (0.23 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:38 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=33.12%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:38 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=31.21%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:38 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.94%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=38.85%, uniq=0.22 despite: ['Low Uniqueness (0.22 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 24 positive samples (need 25)
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.38% (no model)
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Pruning 30 accepted geometries based on correlation...
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Pain Averse (High Penalty for Drawdown) (Sep: 0.165) due to correlation 1.00 with Balanced (Sep: 0.165)
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Balanced (Sep: 0.152) due to correlation 1.00 with Pain Averse (High Penalty for Drawdown) (Sep: 0.152)
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_geometry_selection - INFO - Final Selection: 10 geometries (Best Separation Score: 0.398, Max: 10)
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_based_layer_2 - INFO - Geometry selection complete: 10 geometries selected
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: extracted_trials_per_family={'Unified': 10}
+Dec 28, 2025 23:35:39 (+00:00:20) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: selected_geometries=1, by_family={'Unified': 1}
+Dec 28, 2025 23:35:40 (+00:00:22) - src.training.steps.labeling.label_based_layer_2 - INFO - [LGBM Focal] Gamma(+):0.5 Gamma(-):1.25 | Alpha:0.6500
+Dec 28, 2025 23:35:42 (+00:00:24) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 546 objects collected
+Dec 28, 2025 23:35:43 (+00:00:24) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (92.1) exceeds threshold (85.0)
+Dec 28, 2025 23:35:44 (+00:00:25) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Unified_Rank0: tuple index out of range
+Dec 28, 2025 23:35:45 (+00:00:26) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Bagging: 331 orphan events (no geo coverage) filled with neutral defaults.
+Dec 28, 2025 23:35:45 (+00:00:26) - src.training.steps.labeling.label_based_layer_2 - INFO - 
+>>> Training multi-output ensemble members...
+Dec 28, 2025 23:35:45 (+00:00:26) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 1: labeled_events=331/331, geometry_channels=0
+Dec 28, 2025 23:35:45 (+00:00:26) - src.training.steps.labeling.label_based_layer_2 - INFO -    > Processing Fold 2/3...
+Dec 28, 2025 23:35:45 (+00:00:26) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: purged k-fold val_start=961, val_stop=1921, purge_bars=100, test_start_time=2025-11-20 15:00:00, test_end_time=2025-11-30 14:45:00, n_train=1721
+Dec 28, 2025 23:35:45 (+00:00:26) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: n_train_bars=1721, n_train_events=788, n_test_events=481
+Dec 28, 2025 23:35:46 (+00:00:27) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing geometries: 788 total events (no family split)
+Dec 28, 2025 23:35:46 (+00:00:27) - src.training.steps.labeling.label_geometry_selection - INFO - Vectorizing 787 events for horizons [8, 12, 16, 20, 24]...
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Event dedup: 787 → 121 events (min_gap=8 bars)
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Events after dedup: 787 → 121
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Generated 1680 raw candidates
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - After hard constraints: 1680 candidates
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Distance-based deduplication: 1680 -> 30 candidates
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Training LGBM on 30 pre-filtered candidates...
+Dec 28, 2025 23:35:46 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=40.50%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:47 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=37.19%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:47 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 21 positive samples (need 25)
+Dec 28, 2025 23:35:47 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=23.97% (no model)
+Dec 28, 2025 23:35:47 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 21 positive samples (need 25)
+Dec 28, 2025 23:35:47 (+00:00:28) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.66% (no model)
+Dec 28, 2025 23:35:47 (+00:00:29) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=40.50%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:47 (+00:00:29) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=32.23%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:47 (+00:00:29) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 18 positive samples (need 25)
+Dec 28, 2025 23:35:47 (+00:00:29) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.66% (no model)
+Dec 28, 2025 23:35:48 (+00:00:30) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 327 objects collected
+Dec 28, 2025 23:35:48 (+00:00:30) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=38.02%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:49 (+00:00:30) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 20 positive samples (need 25)
+Dec 28, 2025 23:35:49 (+00:00:30) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=21.49% (no model)
+Dec 28, 2025 23:35:49 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=38.84%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:49 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.36%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:49 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=40.50%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:49 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.36%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=38.02%, uniq=0.26 despite: ['Low Uniqueness (0.26 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=44.63%, uniq=0.23 despite: ['Low Uniqueness (0.23 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=43.80%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 24 positive samples (need 25)
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=25.62% (no model)
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 23 positive samples (need 25)
+Dec 28, 2025 23:35:50 (+00:00:31) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=26.45% (no model)
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=42.15%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.36%, uniq=0.27 despite: ['Low Uniqueness (0.27 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=33.06%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 20 positive samples (need 25)
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.66% (no model)
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=41.32%, uniq=0.25 despite: ['Low Uniqueness (0.25 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:50 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=40.50%, uniq=0.24 despite: ['Low Uniqueness (0.24 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 18 positive samples (need 25)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.66% (no model)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Pruning 30 accepted geometries based on correlation...
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Pain Averse (High Penalty for Drawdown) (Sep: 0.190) due to correlation 0.96 with Pain Averse (High Penalty for Drawdown) (Sep: 0.281)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Balanced (Sep: 0.151) due to correlation 0.90 with Pain Averse (High Penalty for Drawdown) (Sep: 0.201)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Pain Averse (High Penalty for Drawdown) (Sep: 0.121) due to correlation 1.00 with Balanced (Sep: 0.121)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Dropped Balanced (Sep: 0.085) due to correlation 0.99 with Deep Value (Loose Tolerance, Low Target) (Sep: 0.117)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_geometry_selection - INFO - Final Selection: 10 geometries (Best Separation Score: 0.281, Max: 10)
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_based_layer_2 - INFO - Geometry selection complete: 10 geometries selected
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: extracted_trials_per_family={'Unified': 10}
+Dec 28, 2025 23:35:51 (+00:00:32) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: selected_geometries=1, by_family={'Unified': 1}
+Dec 28, 2025 23:35:52 (+00:00:34) - src.training.steps.labeling.label_based_layer_2 - INFO - [LGBM Focal] Gamma(+):0.5 Gamma(-):1.25 | Alpha:0.6500
+Dec 28, 2025 23:35:54 (+00:00:36) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 120 objects collected
+Dec 28, 2025 23:35:55 (+00:00:37) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Unified_Rank0: tuple index out of range
+Dec 28, 2025 23:35:56 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Bagging: 481 orphan events (no geo coverage) filled with neutral defaults.
+Dec 28, 2025 23:35:56 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - 
+>>> Training multi-output ensemble members...
+Dec 28, 2025 23:35:56 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 2: labeled_events=481/481, geometry_channels=0
+Dec 28, 2025 23:35:56 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO -    > Processing Fold 3/3...
+Dec 28, 2025 23:35:56 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: purged k-fold val_start=1921, val_stop=2881, purge_bars=100, test_start_time=2025-11-30 15:00:00, test_end_time=2025-12-10 14:45:00, n_train=1821
+Dec 28, 2025 23:35:56 (+00:00:38) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: n_train_bars=1821, n_train_events=770, n_test_events=526
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_based_layer_2 - INFO - Optimizing geometries: 770 total events (no family split)
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - Vectorizing 770 events for horizons [8, 12, 16, 20, 24]...
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - Event dedup: 770 → 127 events (min_gap=8 bars)
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - Events after dedup: 770 → 127
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - Generated 1680 raw candidates
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - After hard constraints: 1680 candidates
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - Distance-based deduplication: 1680 -> 30 candidates
+Dec 28, 2025 23:35:58 (+00:00:39) - src.training.steps.labeling.label_geometry_selection - INFO - Training LGBM on 30 pre-filtered candidates...
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=31.50%, uniq=0.29 despite: ['Low Uniqueness (0.29 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 20 positive samples (need 25)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=21.26% (no model)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 24 positive samples (need 25)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=23.62% (no model)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 13 positive samples (need 25)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=11.81% (no model)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 20 positive samples (need 25)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.47% (no model)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 18 positive samples (need 25)
+Dec 28, 2025 23:35:58 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=17.32% (no model)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 23 positive samples (need 25)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=22.05% (no model)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 14 positive samples (need 25)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=13.39% (no model)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 18 positive samples (need 25)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=18.11% (no model)
+Dec 28, 2025 23:35:59 (+00:00:40) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.22%, uniq=0.29 despite: ['Low Uniqueness (0.29 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:59 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 21 positive samples (need 25)
+Dec 28, 2025 23:35:59 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.47% (no model)
+Dec 28, 2025 23:35:59 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=30.71%, uniq=0.30 despite: ['Low Uniqueness (0.30 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:35:59 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=34.65%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:36:00 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Relaxed gate: Accepting geometry with survival=36.22%, uniq=0.28 despite: ['Low Uniqueness (0.28 < 0.3)', 'Warning: Hits Max Duration Limit frequently']
+Dec 28, 2025 23:36:00 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 17 positive samples (need 25)
+Dec 28, 2025 23:36:00 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=16.54% (no model)
+Dec 28, 2025 23:36:00 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 22 positive samples (need 25)
+Dec 28, 2025 23:36:00 (+00:00:41) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=22.83% (no model)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 23 positive samples (need 25)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=22.05% (no model)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 21 positive samples (need 25)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=20.47% (no model)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Model skipped: only 20 positive samples (need 25)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Fallback: Accepting geometry with survival=19.69% (no model)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Pruning 30 accepted geometries based on correlation...
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_geometry_selection - INFO - Final Selection: 10 geometries (Best Separation Score: 0.418, Max: 10)
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Geometry selection complete: 10 geometries selected
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: extracted_trials_per_family={'Unified': 10}
+Dec 28, 2025 23:36:00 (+00:00:42) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: selected_geometries=1, by_family={'Unified': 1}
+Dec 28, 2025 23:36:02 (+00:00:44) - src.training.steps.labeling.label_based_layer_2 - INFO - [LGBM Focal] Gamma(+):0.5 Gamma(-):1.25 | Alpha:0.6500
+Dec 28, 2025 23:36:06 (+00:00:47) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧹 Moderate cleanup: 341 objects collected
+Dec 28, 2025 23:36:06 (+00:00:47) - src.training.steps.labeling.label_based_layer_2 - WARNING - Failed to train geometry model for Unified_Rank0: tuple index out of range
+Dec 28, 2025 23:36:07 (+00:00:49) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 Bagging: 526 orphan events (no geo coverage) filled with neutral defaults.
+Dec 28, 2025 23:36:07 (+00:00:49) - src.training.steps.labeling.label_based_layer_2 - INFO - 
+>>> Training multi-output ensemble members...
+Dec 28, 2025 23:36:07 (+00:00:49) - src.training.steps.labeling.label_based_layer_2 - INFO - Layer2 OOF Fold 3: labeled_events=526/526, geometry_channels=0
+Dec 28, 2025 23:36:07 (+00:00:49) - src.training.steps.labeling.label_based_layer_2 - INFO - >>> Layer 2: Step 4 - Generate Reports...
+Dec 28, 2025 23:36:09 (+00:00:50) - ares.step.meta_labeling_hpo_sample_weighted - ERROR - Step meta_labeling_hpo_sample_weighted failed: y_true contains only one label (0). Please provide the list of all expected class labels explicitly through the labels argument.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/training/steps/base_step.py", line 1715, in run
+    execution_result = await self.execute(config)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/steps/labeling/meta_labeling_hpo_sample_weighted.py", line 1525, in execute
+    oof_export_econ, final_model_econ = layer3_analyst_lgbm(
+                                        ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/steps/labeling/label_based_layer_3.py", line 1968, in layer3_analyst_lgbm
+    ll_clf = log_loss(y_val_bin, p_clf)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/sklearn/utils/_param_validation.py", line 218, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/sklearn/metrics/_classification.py", line 3240, in log_loss
+    transformed_labels, y_pred = _validate_multiclass_probabilistic_prediction(
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/sklearn/metrics/_classification.py", line 229, in _validate_multiclass_probabilistic_prediction
+    raise ValueError(
+ValueError: y_true contains only one label (0). Please provide the list of all expected class labels explicitly through the labels argument.
+
+Dec 28, 2025 23:36:09 (+00:00:50) - ares.launcher - ERROR - ❌ Failed to complete step: meta_labeling_hpo_sample_weighted
+Dec 28, 2025 23:36:09 (+00:00:50) - ares.launcher - INFO - ✅ Simplified Ares Launcher completed
+Dec 28, 2025 23:36:09 (+00:00:50) - ares.registry - INFO - Registered step: data_download

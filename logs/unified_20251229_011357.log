@@ -1,0 +1,348 @@
+Dec 29, 2025 01:13:57 (+00:00:00) - numexpr.utils - INFO - NumExpr defaulting to 8 threads.
+Dec 29, 2025 01:13:58 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Dec 29, 2025 01:13:58 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Dec 29, 2025 01:13:58 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Dec 29, 2025 01:13:59 (+00:00:01) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Dec 29, 2025 01:13:59 (+00:00:01) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Dec 29, 2025 01:13:59 (+00:00:01) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 29, 2025 01:13:59 (+00:00:01) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Dec 29, 2025 01:13:59 (+00:00:01) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 29, 2025 01:13:59 (+00:00:01) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Dec 29, 2025 01:13:59 (+00:00:01) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Dec 29, 2025 01:13:59 (+00:00:01) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Dec 29, 2025 01:14:05 (+00:00:08) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Dec 29, 2025 01:14:05 (+00:00:08) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Dec 29, 2025 01:14:07 (+00:00:09) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Dec 29, 2025 01:14:07 (+00:00:09) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Dec 29, 2025 01:14:07 (+00:00:09) - System.EvaluationUtils - INFO - EvaluationUtils delegating core metric computation to unified_evaluator
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ConfidenceMetrics
+Dec 29, 2025 01:14:07 (+00:00:09) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelExplanations
+Dec 29, 2025 01:14:08 (+00:00:10) - MLCommon.ModelExplanations - INFO - LIME library available - LIME explanations enabled
+Dec 29, 2025 01:14:08 (+00:00:10) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelRegistry
+Dec 29, 2025 01:14:08 (+00:00:10) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelExplainability
+Dec 29, 2025 01:14:08 (+00:00:11) - System.tprint - INFO - ✅ Custom logger available for MLCommon.CV
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.ml_common.validation.enhanced_validation - INFO - ✅ Enhanced Validation initialized
+Dec 29, 2025 01:14:08 (+00:00:11) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Dec 29, 2025 01:14:08 (+00:00:11) - System.tprint - INFO - ✅ Custom logger available for MLCommon.HPOUtils
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Dec 29, 2025 01:14:08 (+00:00:11) - src.utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Dec 29, 2025 01:14:08 (+00:00:11) - System.ComplementaryLookbackOptimizer - INFO - ✅ Detected VectorBT v0.28.1
+Dec 29, 2025 01:14:08 (+00:00:11) - src.feature_generation.utils.feature_generation_optimization - INFO - ✅ VectorBT available for feature optimization
+Dec 29, 2025 01:14:08 (+00:00:11) - root - INFO - ✅ VectorBT compatibility layer loaded successfully
+Dec 29, 2025 01:14:09 (+00:00:12) - root - INFO - ✅ Enhanced VectorBT volatility generators loaded successfully
+Dec 29, 2025 01:14:09 (+00:00:12) - src.feature_generation.core.feature_registry.FeatureRegistry - INFO - FeatureRegistry initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔧 Initializing AutoOptimizationConfig...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 📝 Setting up conservative optimization settings...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ Conservative settings configured
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 📝 Setting up balanced optimization settings...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ Balanced settings configured
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 📝 Setting up aggressive optimization settings...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ Aggressive settings configured
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🎯 AutoOptimizationConfig initialized with balanced strategy
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ Auto-optimization enabled for FeatureBank (default)
+Dec 29, 2025 01:14:09 (+00:00:12) - src.feature_generation.utils.memory_pool_optimizer.MemoryPoolOptimizer - INFO - Memory pool optimizer initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - 🔧 Unified Hardware Manager initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - 🔍 Hardware performance monitoring started
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 memory monitoring started
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ✅ Unified Hardware Manager fully initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - 🎯 Optimizing for feature_engineering workload (balanced)
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.hardware_singleton - INFO - 🔍 Detecting hardware capabilities (one-time detection)...
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.hardware_singleton - INFO - ✅ Hardware detection complete: {'cpu_cores': 8, 'gpu_available': True, 'gpu_type': 'mps', 'memory_gb': 16.0, 'mps_available': True, 'gpu_memory_gb': None}
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🚀 Initializing Unified Vectorization Manager...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Initializing optimization components...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Initializing optimization components...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Loading VectorBTRollingOptimizer...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ VectorBTRollingOptimizer loaded
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Loading vectorized backtesting...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.VectorizedBacktestingEngine - INFO - ✅ Vectorized Backtesting Engine initialized successfully
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ Vectorized backtesting loaded
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Loading VectorBT backtesting engine...
+Dec 29, 2025 01:14:09 (+00:00:12) - System.VectorBTBacktestingEngine - INFO - ✅ VectorBT Backtesting Engine initialized successfully
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ VectorBT backtesting engine loaded
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Loading VectorBT financial metrics...
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_financial_metrics - INFO - ✅ VectorBT Financial Metrics initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Risk-free rate: 2.00%
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Annualization factor: 252
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Regime analysis: True
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ VectorBT financial metrics loaded
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Loading VectorBT portfolio optimization...
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ✅ VectorBT Memory Manager initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Total system memory: 16.00GB
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Available memory: 7.17GB
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Max allocated memory: 8.00GB
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ✅ VectorBT Performance Monitor initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - 📊 Monitoring enabled: timing=True, memory=True, gpu=True
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ✅ VectorBT Portfolio Optimizer initialized
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Method: mean_variance
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Rebalancing: monthly
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Risk aversion: 1.0
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Memory manager: 7.17GB available
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - ✅ VectorBT portfolio optimization loaded
+Dec 29, 2025 01:14:09 (+00:00:12) - System.tprint - INFO - 🔄 Loading matrix cross-validation...
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.m1_memory_optimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 29, 2025 01:14:09 (+00:00:12) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.core.vectorbt_batch_processor - INFO - VectorBTBatchProcessor initialized: VectorBT=True, GPU=False, Parallel=True
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.unified_vectorization_manager - INFO - UnifiedVectorizationManager initialized: VectorBT=True, GPU=False, Memory=True
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.matrix_operations.unified_operations.UnifiedMatrixOperations - INFO - 📊 GPU: False, Memory Opt: False, Parallel: False
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.matrix_cross_validation - INFO - 🚀 VectorBT configured for cross-validation optimization
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.matrix_cross_validation - INFO - ✅ Matrix-based cross-validator initialized
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.matrix_cross_validation - INFO - 📊 Configuration - Splits: 5, GPU: True, VectorBT: True
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Matrix cross-validation loaded
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔄 Loading feature importance analyzer...
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - 🔗 Integrating memory skimming with all ML utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported HPO utilities (direct import)
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with HPO utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported Unified CV utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with Unified CV utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with lookahead protection utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ Skipping model evaluation memory integration (deprecated)
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported feature selection utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with feature selection utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported data quality utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with data quality utilities
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integration completed: 6/6 successful
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ThreadGuard
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ threadpoolctl available for thread management
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for MLCommon.BaseSafeguards
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Scikit-learn available for thresholding functionality
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.BaseFramework
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.DataValidation
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Vectorization utilities available for feature selection
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.SelectionMethods
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.QualityMetrics
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.CausalAnalysis
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.MainFramework
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Feature importance analyzer loaded
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔄 Loading technical indicators...
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generators - INFO - ✅ TA-Lib available for enhanced technical indicators
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generators - INFO - Using fallback implementations for feature selection tools
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ✅ Hardware optimization initialized
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ✅ Matrix operations available for vectorization
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Technical indicators loaded
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ℹ️ HMM operations deprecated - using alternative methods
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Component initialization completed
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔄 Setting up performance tracking...
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ Unified Vectorization Manager initialized
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.ml_common.unified_vectorization_manager - INFO - ✅ Unified Vectorization Manager initialized
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 🚀 Initializing FeatureGenerationOptimizer...
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 Configuration loaded: cross_validation
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ✅ FeatureGenerationOptimizer initialized in 0.000s
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 Min lookback: 5, Max lookback: 252
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 CV folds: 3, Parallel processing: True
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO - 🍎 Detected Apple Silicon - applying M1-specific limits
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO - 🔧 Initialized MacM1ParallelOptimizer:
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO -    Max workers: 4
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO -    Chunk size: 1000
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO -    Pool type: Process
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO -    Memory limit per worker: 4096 MB
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.parallel_processing_optimizer - INFO -    M1 Mac detected: True
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ✅ Legacy optimization system available
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ✅ LookbackOptimizer initialized
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ Regular lookback optimization enabled (Analyst mode)
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - ✅ FeatureBank set as global instance
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔧 Auto-registering feature generators...
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔧 Starting auto-registration of feature generators...
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🚀 Initializing 16 feature categories...
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.core.vectorbt_feature_generator - WARNING - ⚠️ GPU acceleration not available in this VectorBT version
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.core.feature_generator.CustomAutoOptimizedFeatureGenerator - INFO - ✅ VectorBT advanced caching enabled: 1000MB, TTL: 3600s
+Dec 29, 2025 01:14:10 (+00:00:13) - System.tprint - INFO - 🔍 Getting settings for balanced optimization level...
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.vectorbt_optimization_integration - INFO - VectorBTOptimizationManager initialized: GPU=False, Memory=True, Parallel=True
+Dec 29, 2025 01:14:10 (+00:00:13) - CustomAutoOptimizedFeatureGenerator - INFO - VectorBT optimization components initialized
+Dec 29, 2025 01:14:10 (+00:00:13) - src.feature_generation.utils.consolidated_rolling_optimizer - INFO - GPU memory test successful
+Dec 29, 2025 01:14:10 (+00:00:13) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.categories.candlestick_pattern - INFO - ✅ VectorBTRollingOptimizer initialized for candlestick patterns
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.categories.candlestick_pattern - INFO - ✅ UnifiedVectorizationManager initialized for candlestick patterns
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ℹ️ VectorBT not available, using core microstructure generators only (numpy-optimized)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Matrix operations initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Hardware manager initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Vectorized core initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.utils.vectorization_optimizer.VectorizationOptimizer - INFO - ✅ Vectorization Optimizer initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ℹ️ VectorBT not available, using core microstructure generators only (numpy-optimized)
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Auto-registration completed. Registered 527 generators
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ Auto-registered 527 generators from 16 categories
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: returns
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 57 generators for category: returns
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: momentum
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 32 generators for category: momentum
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: volume
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 60 generators for category: volume
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: volatility
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 54 generators for category: volatility
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: normalization
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: normalization
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: trend
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 60 generators for category: trend
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: oscillator
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 11 generators for category: oscillator
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: support_resistance
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 50 generators for category: support_resistance
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: custom_support_resistance
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: custom_support_resistance
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: candlestick_pattern
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 16 generators for category: candlestick_pattern
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: cross_timeframe
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 22 generators for category: cross_timeframe
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: microstructure
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 15 generators for category: microstructure
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: entropy
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 35 generators for category: entropy
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: autoencoder
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: autoencoder
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: representation_learning
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: representation_learning
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: order_flow
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: order_flow
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: regime
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: regime
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: legacy
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: legacy
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: time
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: time
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: custom
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 0 generators for category: custom
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: acceleration
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 46 generators for category: acceleration
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: interaction
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 8 generators for category: interaction
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: advanced_statistical
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 6 generators for category: advanced_statistical
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - 🔍 Looking up generators for category: spectral_wavelet
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Found 6 generators for category: spectral_wavelet
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.core.generator_factory - INFO - Populated generator factory with 478 generators
+Dec 29, 2025 01:14:11 (+00:00:13) - System.tprint - INFO - ✅ Generator factory populated with registered generators
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ FeatureBank initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation.core.feature_bank.FeatureBank - INFO - 📊 Matrix ops: True, GPU: True, Lookback opt: True
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation - INFO - ✅ Unified Feature Generation System initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation - INFO - 📦 Version: 2.0.0
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation - INFO - 🔧 Features: Category-based organization, advanced utilities, optimization
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation - INFO - 🚀 Advanced utilities available (optimization, analysis, etc.)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.feature_generation - INFO - ⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - ✅ VectorBT optimization available
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - 🚀 Initializing Enhanced HyperparameterOptimization...
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils.HPOUtils - INFO - ✅ VectorBT Rolling Optimizer initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils.HPOUtils - INFO - ✅ Unified Vectorization Manager initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Parallel processing: True
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Max workers: 4
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Monitoring enabled: True
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - 🚀 Configuration - Non-linear optimization: True
+Dec 29, 2025 01:14:11 (+00:00:13) - MLCommon.HPOUtils - INFO - ✅ Enhanced HyperparameterOptimization initialized successfully
+Dec 29, 2025 01:14:11 (+00:00:13) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Dec 29, 2025 01:14:11 (+00:00:13) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO - 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Critical leakage threshold: 5.0% (was 25%)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Warning leakage threshold: 2.0% (was 10%)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Small dataset multiplier: 1.0 (was 1.5)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • These strict thresholds are ESSENTIAL for financial data integrity
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Even 1-2% leakage can invalidate backtesting results
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • High model scores (>96%) often indicate undetected temporal leakage
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.overfitting_monitoring - INFO - ✅ Overfitting Monitoring initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ✅ HPO with Overfitting Prevention initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.model_complexity_analysis - INFO - ✅ Model Complexity Analyzer initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - EnhancedReportingSystem.EnhancedReportingSystem - INFO - 📊 Enhanced Reporting System initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.reporting.validation_reporting_integration - INFO - ✅ Validation Reporting Integrator initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO - 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Critical leakage threshold: 5.0% (was 25%)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Warning leakage threshold: 2.0% (was 10%)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Small dataset multiplier: 1.0 (was 1.5)
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • These strict thresholds are ESSENTIAL for financial data integrity
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • Even 1-2% leakage can invalidate backtesting results
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.data_leakage_prevention - INFO -    • High model scores (>96%) often indicate undetected temporal leakage
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.overfitting_monitoring - INFO - ✅ Overfitting Monitoring initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.enhanced_validation - INFO - ✅ Enhanced Validation initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ✅ HPO with Overfitting Prevention initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.validation.model_complexity_analysis - INFO - ✅ Model Complexity Analyzer initialized
+Dec 29, 2025 01:14:11 (+00:00:13) - src.utils.ml_common.training.universal_validation_integration - INFO - ✅ Universal Validation Integrator initialized with new utilities
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ModelTraining
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - ✅ ML Common utilities loaded successfully
+Dec 29, 2025 01:14:11 (+00:00:14) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - Initializing SR Clustering module
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - ✅ Successfully imported SRBacktestingEngine components
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - ✅ Successfully imported BacktestingEnhancedClustering components
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - ✅ Successfully imported WeightOptimizationEngine components
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - ✅ Successfully imported PredictiveSREngine components
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - ✅ Successfully imported TradingMLIntegration components
+Dec 29, 2025 01:14:11 (+00:00:14) - System.sr_clustering - INFO - 🎉 SR Clustering module initialization completed successfully
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_gate_feature_step
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - ✅ Feature generation gate feature step registered SUCCESS
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_data_validation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - ✅ Feature generation data validation step registered SUCCESS
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - 🔧 Loading labeling components...
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: meta_labeling_hpo_sample_weighted
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: meta_labeling_hpo_experiment
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: sr_labeling_xgb
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: sr_labeling_xgb_weighted
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: meta_gated_backtest
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - ✅ Meta-gated backtest step registered SUCCESS
+Dec 29, 2025 01:14:11 (+00:00:14) - System.tprint - INFO - ✅ CMI complementarity components loaded successfully
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_final_feature_selection_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_final_validation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_labeling_integration_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_feature_generation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_period_lookback_optimization_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_feature_selection_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_interaction_generation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_data_validation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_labeling_integration_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_feature_generation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_period_lookback_optimization_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_feature_selection_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_interaction_generation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: regime_aware_feature_interaction_generation_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_gate_feature_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_final_feature_selection_step
+Dec 29, 2025 01:14:11 (+00:00:14) - ares.registry - INFO - Registered step: feature_generation_final_validation_step
+Dec 29, 2025 01:14:12 (+00:00:15) - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - AnalystEnsembleTrainingConfigManager initialisé
+Dec 29, 2025 01:14:12 (+00:00:15) - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - Répertoire config: /Users/remyroche/Documents/Ares/src/config/analyst_ensemble_training
+Dec 29, 2025 01:14:12 (+00:00:15) - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - Config personnalisée: None
+Dec 29, 2025 01:14:12 (+00:00:15) - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - Fallback hardcodé: True
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: unified_models_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_base_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_ensemble_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: tactician_base_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: tactician_ensemble_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: gate_training_step
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: unified_models_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_base_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_ensemble_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: tactician_base_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: tactician_ensemble_training
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: gate_training_step
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_base_backtest
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: basic_backtesting_pre
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: basic_backtesting_post
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: monte_carlo_simulation
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: ab_testing
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: reporting
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_base_backtest
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: basic_backtesting_pre
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: basic_backtesting_post
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: monte_carlo_simulation
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: ab_testing
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: reporting
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: final_parameters_optimization
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: real_parameters_optimization
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: analyst_base_backtest
+Dec 29, 2025 01:14:12 (+00:00:15) - ares.registry - INFO - Registered step: meta_gated_backtest
+Dec 29, 2025 01:14:12 (+00:00:15) - sr_error_handlers - INFO - SR Error Handlers module initialized

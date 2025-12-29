@@ -2230,6 +2230,23 @@ class LabelBasedLayer2:
                     if k_override is None:
                         k_override = cfg_signals.get('layer2_default_k', 0.12)
                     cfg_signals['k'] = float(k_override)
+
+                # Expose advanced CUSUM params if configured
+                if 'alpha' not in cfg_signals:
+                    alpha_override = cfg_signals.get('layer2_signal_alpha')
+                    if alpha_override is not None:
+                        cfg_signals['alpha'] = float(alpha_override)
+
+                if 'beta' not in cfg_signals:
+                    beta_override = cfg_signals.get('layer2_signal_beta')
+                    if beta_override is not None:
+                        cfg_signals['beta'] = float(beta_override)
+
+                if 'er_min' not in cfg_signals:
+                    er_min_override = cfg_signals.get('layer2_signal_er_min')
+                    if er_min_override is not None:
+                        cfg_signals['er_min'] = float(er_min_override)
+
             except Exception:
                 pass
             signals = generate_primary_signals(

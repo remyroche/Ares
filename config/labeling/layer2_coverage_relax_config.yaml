@@ -7,6 +7,7 @@ layer2:
   max_pos_rate: 0.85      # Allow high win rate strategies (up from 0.75)
 
   layer2_signal_k: 0.07
+  layer2_signal_alpha: 0.0
   
   # Kappa Range (tp_mult related, expanded for more flexibility)
   kappa_low: 0.5          # Lower bound for profit target multiplier (down from 0.8)

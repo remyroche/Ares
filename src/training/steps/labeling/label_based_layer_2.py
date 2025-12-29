@@ -129,8 +129,14 @@ class RobustFocalLoss:
     """
     Production-grade Focal Loss for LightGBM in Financial ML.
 
+    De Prado 1.3: Preference vs. Outcome Separation
+    - Labels encode objective outcomes (Dominance).
+    - Loss encodes preferences (Utility Shaping).
+
+    This class handles the Utility Shaping via asymmetric gammas.
+
     Enhancements over standard Focal Loss:
-    1. Asymmetric Gamma: Penalize False Positives (Traps) harder than Missed Opportunities.
+    1. Asymmetric Gamma: Penalize False Positives (Traps, gamma_fp) harder than Missed Opportunities (gamma_fn).
     2. Label Smoothing: Prevents the model from becoming over-confident on noisy labels.
     3. Gradient Capping & Mixing: Stabilizes training against outliers.
     4. Guardrails: w_cap prevents the loss from exploding on 'impossible' examples.
@@ -138,8 +144,8 @@ class RobustFocalLoss:
 
     def __init__(
         self,
-        gamma_pos=1.0,
-        gamma_neg=2.5,
+        gamma_pos=1.0, # gamma_fn: Preference for Opportunity (Missed Upside)
+        gamma_neg=2.5, # gamma_fp: Preference for Safety (Traps)
         alpha=None,
         grad_clip=5.0,
         w_cap=3.0,
@@ -1536,6 +1542,38 @@ class LabelBasedLayer2:
         oof_weights = oof_results['weights']
         final_geo_preds = oof_results['individual_geometries']
 
+        # Extract Validation Diagnostics
+        diagnostics = oof_results.get('diagnostics', {})
+        signal_inflation = diagnostics.get('signal_inflation_ratio', 0.0)
+        n_bagged = diagnostics.get('n_bagged_signals', 0)
+        n_base = diagnostics.get('n_base_events', 0)
+        mean_probs = diagnostics.get('mean_consensus_prob', None)
+
+        # Compute divergence metrics
+        divergence_mean = 0.0
+        divergence_std = 0.0
+        corr_max_mean = 0.0
+        coverage_diff_06 = 0.0
+
+        if mean_probs is not None and oof_scores is not None:
+            try:
+                # Align
+                s_max = pd.to_numeric(oof_scores, errors='coerce')
+                s_mean = pd.to_numeric(mean_probs.reindex(s_max.index), errors='coerce')
+
+                valid = s_max.notna() & s_mean.notna()
+                if valid.sum() > 10:
+                    diff = s_max[valid] - s_mean[valid]
+                    divergence_mean = float(diff.mean())
+                    divergence_std = float(diff.std())
+                    corr_max_mean = float(s_max[valid].corr(s_mean[valid]))
+
+                    cov_max_06 = (s_max[valid] > 0.6).mean()
+                    cov_mean_06 = (s_mean[valid] > 0.6).mean()
+                    coverage_diff_06 = float(cov_max_06 - cov_mean_06)
+            except Exception:
+                pass
+
         # --- Extended Metrics Calculation ---
         ranking_metrics = {}
         portfolio_metrics = {}
@@ -1707,7 +1745,15 @@ class LabelBasedLayer2:
                 "- **Diagnosis**:\n",
                 "  - Few features, shallow: Over-regularised\n",
                 "  - Many features, deep: Expressive (desired)\n",
-                "\n### 4. Ranking Quality (Lift & Precision)\n",
+                "\n### 4. Bagging Logic Validation (De Prado 1.2)\n",
+                f"- **Signal Inflation Ratio**: {signal_inflation:.2f}x (Target < 1.8x)\n",
+                f"  - Base Events: {n_base}\n",
+                f"  - Bagged Signals: {n_bagged}\n",
+                f"- **Max vs Mean Consensus**:\n",
+                f"  - Mean Divergence (Max - Mean): {divergence_mean:.4f} (std {divergence_std:.4f})\n",
+                f"  - Correlation: {corr_max_mean:.4f}\n",
+                f"  - Coverage Delta @ 0.6: {coverage_diff_06*100:.1f}pp\n",
+                "\n### 5. Ranking Quality (Lift & Precision)\n",
             ]
 
             # Append Ranking Metrics
@@ -1716,14 +1762,14 @@ class LabelBasedLayer2:
                 for k in sorted(ranking_metrics.keys()):
                     lines.append(f"| {k} | {ranking_metrics[k]:.4f} |\n")
 
-            lines.append("\n### 5. Financial / Business Metrics (Score > 0.5)\n")
+            lines.append("\n### 6. Financial / Business Metrics (Score > 0.5)\n")
             if portfolio_metrics:
                 lines.append("| Metric | Value |\n|---|---|\n")
                 for k in sorted(portfolio_metrics.keys()):
                     lines.append(f"| {k} | {portfolio_metrics[k]:.6f} |\n")
 
             if global_metrics:
-                lines.append("\n### 6. Global Model Quality\n")
+                lines.append("\n### 7. Global Model Quality\n")
                 for k, v in global_metrics.items():
                     lines.append(f"- **{k}**: {v:.4f}\n")
 
@@ -2465,6 +2511,11 @@ class LabelBasedLayer2:
         """
         Compute TP/SL(+optional trailing) exit-model labels and related metrics.
         Label = 1 if the trade exits via profit barrier (or trailing), else 0.
+
+        De Prado 1.3: Objective Outcome Generation
+        This function encodes objective trade outcomes only (Dominance).
+        No preference, asymmetry, or utility shaping occurs here.
+        Preferences are handled exclusively in the loss function (RobustFocalLoss).
 
         Args:
             df: Market data
@@ -4605,15 +4656,18 @@ class LabelBasedLayer2:
         """Extracted optimization objective to avoid nested function re-definition."""
         bounds = self._current_param_bounds.get(str(family)) if isinstance(getattr(self, '_current_param_bounds', None), dict) else None
 
-        # Parameter Space: Kappa and Horizon
+        # Parameter Space: Kappa and Horizon (De Prado 1.1: Economically Constrained)
+        # Use discrete grids for Kappa and Horizon to reduce overfitting/snooping.
+        kappa_grid = [1.25, 1.6, 2.0, 2.5, 3.2, 4.0]  # Log-spaced grid
+        horizon_grid = [12, 24, 48]  # Discrete horizons (12, 24, 48 bars)
+
         # Use family-specific bounds if available
         if isinstance(bounds, dict) and all(k in bounds for k in ('k_low', 'k_high', 'h_low', 'h_high')):
              kappa = trial.suggest_float('kappa', float(bounds['k_low']), float(bounds['k_high']))
              horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
         else:
-             # Default ranges - reduced from 0.5-12.0 to 0.3-8.0 for softer barriers
-             kappa = trial.suggest_float('kappa', 0.3, 8.0)
-             horizon = trial.suggest_int('horizon', 8, 120)
+             kappa = trial.suggest_categorical('kappa', kappa_grid)
+             horizon = trial.suggest_categorical('horizon', horizon_grid)
 
         try:
             sl_low = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_low', 0.3))
@@ -4627,28 +4681,54 @@ class LabelBasedLayer2:
             sl_low = 0.5
         if (not np.isfinite(sl_high)) or sl_high <= float(sl_low):
             sl_high = float(max(float(sl_low) + 0.5, 3.0))
-        sl_mult = trial.suggest_float('sl_mult', float(sl_low), float(sl_high))
+
+        # Enforce Proportionality Constraint: 1.0 <= TP / SL <= 4.0
+        # TP ~ kappa * vol, SL ~ sl_mult * vol  => 1.0 <= kappa / sl_mult <= 4.0
+        # => sl_mult <= kappa AND sl_mult >= kappa / 4.0
+
+        eff_sl_low = max(sl_low, kappa / 4.0)
+        eff_sl_high = min(sl_high, kappa)
+
+        if eff_sl_low > eff_sl_high:
+            # Impossible to satisfy constraints with this kappa and config bounds
+            # Return -1.0 to prune
+            return -1.0
+
+        sl_mult = trial.suggest_float('sl_mult', eff_sl_low, eff_sl_high)
 
         # Distance-based pruning to avoid similar geometries
+        # Note: Normalization logic adapted for discrete grids
+        # Kappa range roughly 1.25-4.0
+        # Horizon range 12-48
+
         params_vector = [kappa, sl_mult, horizon]
-        # Normalize based on bounds (kappa: 0.3-8.0, sl_mult: 0.3-2.0, horizon: 8-120)
+
+        k_min, k_max = 1.25, 4.0
+        sl_min, sl_max = 0.3, 4.0
+        h_min, h_max = 12, 48
+
         normalized_params = [
-            (kappa - 0.3) / (8.0 - 0.3),
-            (sl_mult - 0.3) / (2.0 - 0.3),
-            (horizon - 8) / (120 - 8)
+            (kappa - k_min) / (k_max - k_min + 1e-9),
+            (sl_mult - sl_min) / (sl_max - sl_min + 1e-9),
+            (horizon - h_min) / (h_max - h_min + 1e-9)
         ]
-        threshold = 0.05  # 5% of normalized space; tune as needed
+        threshold = 0.05
         
         for prev_trial in study.trials:
             if prev_trial.value is None or prev_trial.state != optuna.trial.TrialState.COMPLETE:
                 continue
+            # Handle potential missing params in previous trials if schema changed
+            p_k = prev_trial.params.get('kappa', k_min)
+            p_sl = prev_trial.params.get('sl_mult', sl_min)
+            p_h = prev_trial.params.get('horizon', h_min)
+
             prev_norm = [
-                (prev_trial.params['kappa'] - 0.3) / (8.0 - 0.3),
-                (prev_trial.params['sl_mult'] - 0.3) / (2.0 - 0.3),
-                (prev_trial.params['horizon'] - 8) / (120 - 8)
+                (p_k - k_min) / (k_max - k_min + 1e-9),
+                (p_sl - sl_min) / (sl_max - sl_min + 1e-9),
+                (p_h - h_min) / (h_max - h_min + 1e-9)
             ]
             if euclidean(normalized_params, prev_norm) < threshold:
-                return -1.0  # Skip computation for near-duplicates
+                return -1.0
 
         # Compute labels
         labels, returns, _, _, exit_reasons = self._compute_dominance_labels(df, family_events, kappa, horizon, family, sl_mult=sl_mult)
@@ -5694,6 +5774,7 @@ class LabelBasedLayer2:
         # Storage for aggregation
         composite_labels = pd.Series(index=events_df.index, dtype=float)
         composite_prob = pd.Series(index=events_df.index, dtype=float)
+        composite_mean_prob = pd.Series(index=events_df.index, dtype=float)
         composite_returns = pd.Series(index=events_df.index, dtype=float)
         composite_weights = pd.Series(index=events_df.index, dtype=float)
         oof_preds = {} # Store individual geometry predictions (probabilities)
@@ -5885,16 +5966,42 @@ class LabelBasedLayer2:
             # Aggregation Logic: "At Least One" (Max) for Labels/Probs to prevent signal dilution.
             # Weighted Average is too conservative for diverse specialist geometries.
 
-            # Use max(probability) to capture the strongest signal
-            # Mask out invalid geometries first (0.0 prob is valid, but nan/masked should be ignored)
-            # geo_probs_mat is already filled with 0.0 or valid probs.
-            # We want max over valid geometries.
+            # Configurable aggregation mode (De Prado 1.2 Future-proofing)
+            agg_mode = str(getattr(self, '_current_config', {}).get('layer2_aggregation_mode', 'max')).lower()
 
-            # For labels (0/1): Max is equivalent to Logical OR
-            consensus_labels = np.max(geo_labels_mat * valid_mask_mat.astype(float), axis=1)
+            # For probs: Max probability (Default "max")
+            # We also compute Mean for diagnostics (De Prado 1.2)
 
-            # For probs: Max probability
-            consensus_prob = np.max(geo_probs_mat * valid_mask_mat.astype(float), axis=1)
+            valid_counts = np.sum(valid_mask_mat, axis=1)
+            safe_counts = np.maximum(valid_counts, 1.0)
+
+            sum_probs = np.sum(geo_probs_mat * valid_mask_mat.astype(float), axis=1)
+            mean_probs = sum_probs / safe_counts
+
+            max_probs = np.max(geo_probs_mat * valid_mask_mat.astype(float), axis=1)
+
+            if agg_mode == 'mean':
+                consensus_prob = mean_probs
+                consensus_labels = (mean_probs >= 0.5).astype(float)
+            elif agg_mode.startswith('vote'):
+                # vote_k logic (e.g. vote_0.33)
+                try:
+                    k_vote = float(agg_mode.split('_')[1])
+                except:
+                    k_vote = 0.33
+
+                # Count positive labels
+                pos_votes = np.sum((geo_probs_mat >= 0.5) & valid_mask_mat, axis=1)
+                vote_ratio = pos_votes / safe_counts
+                consensus_labels = (vote_ratio >= k_vote).astype(float)
+                # Keep consensus_prob = max_probs to preserve signal strength, but gate with labels
+                consensus_prob = max_probs
+                # Dampen probability if vote failed
+                consensus_prob[consensus_labels == 0.0] = np.minimum(consensus_prob[consensus_labels == 0.0], 0.49)
+            else:
+                # Default: MAX (Logical OR)
+                consensus_prob = max_probs
+                consensus_labels = np.max(geo_labels_mat * valid_mask_mat.astype(float), axis=1)
 
             # Weighted Average Return (Keep conservative for PnL estimation)
             w_returns_sum = np.sum(geo_returns_mat * capped_weights_mat, axis=1)
@@ -5906,6 +6013,7 @@ class LabelBasedLayer2:
             consensus_labels[no_valid_geo] = 0.5  # Neutral label (uncertain)
             consensus_returns[no_valid_geo] = 0.0  # Zero return fallback
             consensus_prob[no_valid_geo] = 0.5  # Neutral probability
+            mean_probs[no_valid_geo] = 0.5 # Safe value for diagnostics
 
             # --- Final Weight Logic: Wsignalgate ---
             # Average Wsignalgate across valid geometries for this event
@@ -5952,6 +6060,7 @@ class LabelBasedLayer2:
             # Assign to main storage
             composite_labels.loc[fam_events.index] = consensus_labels
             composite_prob.loc[fam_events.index] = consensus_prob
+            composite_mean_prob.loc[fam_events.index] = mean_probs
             composite_returns.loc[fam_events.index] = consensus_returns
             composite_weights.loc[fam_events.index] = final_event_weights
 
@@ -6109,6 +6218,11 @@ class LabelBasedLayer2:
         except Exception:
             quality_weights = pd.Series(1.0, index=composite_returns.index)
 
+        # De Prado 1.2: Validation Diagnostics
+        n_base = int(len(events_df))
+        n_bagged = int((l2_label == 1.0).sum())
+        inflation_ratio = n_bagged / max(1, n_base)
+
         return {
             "oof_labels": l2_score,
             "oof_returns": composite_returns,
@@ -6119,5 +6233,11 @@ class LabelBasedLayer2:
             "l2_confidence": l2_confidence,
             "individual_geometries": oof_preds,
             "individual_variances": oof_vars,
-            "selected_trials": [asdict(t) for t in geometries]
+            "selected_trials": [asdict(t) for t in geometries],
+            "diagnostics": {
+                "signal_inflation_ratio": inflation_ratio,
+                "n_bagged_signals": n_bagged,
+                "n_base_events": n_base,
+                "mean_consensus_prob": composite_mean_prob
+            }
         }

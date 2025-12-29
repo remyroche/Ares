@@ -4401,7 +4401,7 @@ class LabelBasedLayer2:
                     params.update({
                         'num_leaves': num_leaves,
                         'n_estimators': n_estimators,
-                        'metric': ['binary_logloss', 'average_precision'],
+                        'metric': ['binary_logloss', 'auc'],
                     })
 
                     # Split for Early Stopping
@@ -4419,8 +4419,8 @@ class LabelBasedLayer2:
                     focal_obj = RobustFocalLoss(gamma_pos=gamma_pos, gamma_neg=gamma_neg, alpha=focal_alpha, verbose=False)
                     params['objective'] = focal_obj
 
-                    # Callback for pruning - using PR-AUC (average_precision) for pruning
-                    pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "average_precision")
+                    # Callback for pruning - using AUC for pruning (average_precision str not supported by LGBM)
+                    pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "auc")
 
                     model = lgb.train(
                         params,
@@ -5647,16 +5647,22 @@ class LabelBasedLayer2:
                             has_val = False
 
                         if has_val:
-                            clf.fit(
-                                X_tr_inner, y_tr_inner,
-                                eval_set=[(X_val_inner, y_val_inner)],
-                                eval_metric='auc',
-                                callbacks=[lgb.early_stopping(stopping_rounds=100, verbose=False)]
-                            )
-                            # Calibrate on inner val
-                            calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
-                            calibrated.fit(X_val_inner, y_val_inner)
-                            models[g.uuid] = calibrated
+                            try:
+                                clf.fit(
+                                    X_tr_inner, y_tr_inner,
+                                    eval_set=[(X_val_inner, y_val_inner)],
+                                    eval_metric='auc',
+                                    callbacks=[lgb.early_stopping(stopping_rounds=100, verbose=False)]
+                                )
+                                # Calibrate on inner val
+                                calibrated = CalibratedClassifierCV(clf, method='sigmoid', cv='prefit')
+                                calibrated.fit(X_val_inner, y_val_inner)
+                                models[g.uuid] = calibrated
+                            except (IndexError, ValueError, Exception) as e:
+                                logger.warning(f"LGBM fit failed with early stopping for {g.uuid}: {e}. Retrying without callbacks.")
+                                # Fallback: Train on full, no calibration possible without leak
+                                clf.fit(X_train, y_train)
+                                models[g.uuid] = clf
                         else:
                             # Fallback: Train on full, no calibration possible without leak
                             clf.fit(X_train, y_train)

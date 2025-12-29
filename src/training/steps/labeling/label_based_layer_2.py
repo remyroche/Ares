@@ -4628,6 +4628,456 @@ class LabelBasedLayer2:
 
         return results
 
+    def _optimization_objective(
+        self,
+        study: optuna.Study,
+        trial: optuna.Trial,
+        df: pd.DataFrame,
+        family: str,
+        family_events: pd.DataFrame,
+        X_events: pd.DataFrame,
+        probe_features: List[str],
+        target_sample_weight_events: Optional[pd.Series]
+    ) -> float:
+        """Extracted optimization objective to avoid nested function re-definition."""
+        bounds = self._current_param_bounds.get(str(family)) if isinstance(getattr(self, '_current_param_bounds', None), dict) else None
+
+        # Parameter Space: Kappa and Horizon (De Prado 1.1: Economically Constrained)
+        # Use discrete grids for Kappa and Horizon to reduce overfitting/snooping.
+        kappa_grid = [1.25, 1.6, 2.0, 2.5, 3.2, 4.0]  # Log-spaced grid
+        horizon_grid = [12, 24, 48]  # Discrete horizons (12, 24, 48 bars)
+
+        # Use family-specific bounds if available
+        if isinstance(bounds, dict) and all(k in bounds for k in ('k_low', 'k_high', 'h_low', 'h_high')):
+             kappa = trial.suggest_float('kappa', float(bounds['k_low']), float(bounds['k_high']))
+             horizon = trial.suggest_int('horizon', int(bounds['h_low']), int(bounds['h_high']))
+        else:
+             kappa = trial.suggest_categorical('kappa', kappa_grid)
+             horizon = trial.suggest_categorical('horizon', horizon_grid)
+
+        try:
+            sl_low = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_low', 0.3))
+        except Exception:
+            sl_low = 0.3
+        try:
+            sl_high = float(getattr(self, '_current_config', {}).get('layer2_sl_mult_high', 2.0))
+        except Exception:
+            sl_high = 2.0
+        if (not np.isfinite(sl_low)) or sl_low <= 0.0:
+            sl_low = 0.5
+        if (not np.isfinite(sl_high)) or sl_high <= float(sl_low):
+            sl_high = float(max(float(sl_low) + 0.5, 3.0))
+
+        # Enforce Proportionality Constraint: 1.0 <= TP / SL <= 4.0
+        # TP ~ kappa * vol, SL ~ sl_mult * vol  => 1.0 <= kappa / sl_mult <= 4.0
+        # => sl_mult <= kappa AND sl_mult >= kappa / 4.0
+
+        eff_sl_low = max(sl_low, kappa / 4.0)
+        eff_sl_high = min(sl_high, kappa)
+
+        if eff_sl_low > eff_sl_high:
+            # Impossible to satisfy constraints with this kappa and config bounds
+            # Return -1.0 to prune
+            return -1.0
+
+        sl_mult = trial.suggest_float('sl_mult', eff_sl_low, eff_sl_high)
+
+        # Distance-based pruning to avoid similar geometries
+        # Note: Normalization logic adapted for discrete grids
+        # Kappa range roughly 1.25-4.0
+        # Horizon range 12-48
+
+        params_vector = [kappa, sl_mult, horizon]
+
+        k_min, k_max = 1.25, 4.0
+        sl_min, sl_max = 0.3, 4.0
+        h_min, h_max = 12, 48
+
+        normalized_params = [
+            (kappa - k_min) / (k_max - k_min + 1e-9),
+            (sl_mult - sl_min) / (sl_max - sl_min + 1e-9),
+            (horizon - h_min) / (h_max - h_min + 1e-9)
+        ]
+        threshold = 0.05
+        
+        # Weights for distance: Kappa (1.5) > SL (1.0) > Horizon (0.5)
+        # Normalized to sum to 3.0 (dimension count) to keep threshold scale similar
+        dist_weights = np.array([1.5, 1.0, 0.5])
+
+        for prev_trial in study.trials:
+            if prev_trial.value is None or prev_trial.state != optuna.trial.TrialState.COMPLETE:
+                continue
+            # Handle potential missing params in previous trials if schema changed
+            p_k = prev_trial.params.get('kappa', k_min)
+            p_sl = prev_trial.params.get('sl_mult', sl_min)
+            p_h = prev_trial.params.get('horizon', h_min)
+
+            prev_norm = [
+                (p_k - k_min) / (k_max - k_min + 1e-9),
+                (p_sl - sl_min) / (sl_max - sl_min + 1e-9),
+                (p_h - h_min) / (h_max - h_min + 1e-9)
+            ]
+            if euclidean(normalized_params, prev_norm, w=dist_weights) < threshold:
+                return -1.0
+
+        # Compute labels
+        labels, returns, _, _, exit_reasons = self._compute_dominance_labels(df, family_events, kappa, horizon, family, sl_mult=sl_mult)
+
+        # Metrics
+        mean_ret = returns.mean()
+        if np.isnan(mean_ret):
+            mean_ret = -1.0
+
+        # Profitability (trade-conditional): only the trades you would take (label==1)
+        try:
+            trade_mask = labels == 1
+            pos_count = int(trade_mask.sum()) if hasattr(trade_mask, 'sum') else 0
+            mean_trade_ret = float(pd.to_numeric(returns[trade_mask], errors='coerce').astype(float).mean()) if pos_count > 0 else float('nan')
+        except Exception:
+            pos_count = 0
+            mean_trade_ret = float('nan')
+
+        # Positive Rate Filter (10-40%)
+        count = labels.notna().sum()
+        if count < 20:
+            return -1.0 # Too few samples
+
+        pos_rate = labels.mean()
+
+        # --- NEW GATES: Time Limit, Frequency, Gini, Sharpe ---
+        # 1. Time Limit Hit Rate < 50%
+        # exit_reasons contains strings like 'timeout', 'profit', 'stop', 'trailing'
+        n_timeout = (exit_reasons == 'timeout').sum()
+        time_limit_hit_rate = float(n_timeout) / float(count) if count > 0 else 1.0
+
+        if time_limit_hit_rate >= 0.5:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=time_limit_hit_rate, rate={time_limit_hit_rate:.3f}")
+             return -1.0
+
+        # 2. Frequency >= 0.75 events/day
+        if len(returns) > 1 and returns.index[-1] > returns.index[0]:
+            duration_days = (returns.index[-1] - returns.index[0]).total_seconds() / 86400.0
+            events_per_day = float(len(returns)) / max(1.0, duration_days)
+        else:
+            events_per_day = 0.0
+
+        if events_per_day < 0.75:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=low_frequency, rate={events_per_day:.3f}/day")
+             return -1.0
+
+        # 3. Gini of Signals > 0.8 (Burstiness)
+        # Using event timestamps differences
+        try:
+            # Convert index diffs to float seconds
+            ts_diffs = pd.Series(returns.index).diff().dropna().dt.total_seconds().values
+            gini_signals = _gini_coefficient(ts_diffs)
+        except Exception:
+            gini_signals = 0.0
+
+        # Requirement: Gini > 0.8. Reject if <= 0.8
+        # Wait, usually high Gini means bursty/clustered.
+        # Requirement text: "Gini of signals > 0.8".
+        if gini_signals <= 0.8:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=low_gini_signals, gini={gini_signals:.3f}")
+             return -1.0
+
+        # 4. Sharpe of Labels < 0.5 (Base Strategy Quality - should be weak)
+        ret_std = returns.std()
+        sharpe_base = (returns.mean() / ret_std) if ret_std > 1e-9 else 0.0
+
+        if sharpe_base >= 0.5:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=high_base_sharpe, sharpe={sharpe_base:.3f}")
+             return -1.0
+
+        # 5. Perfect Information Sharpe > 2.0 (Potential)
+        # Sharpe of returns where label == 1
+        pos_rets = returns[labels == 1]
+        if len(pos_rets) > 1:
+             pos_std = pos_rets.std()
+             perfect_sharpe = (pos_rets.mean() / pos_std) if pos_std > 1e-9 else 0.0
+        else:
+             perfect_sharpe = 0.0
+
+        if perfect_sharpe <= 2.0:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=low_perfect_sharpe, sharpe={perfect_sharpe:.3f}")
+             return -1.0
+
+        # --- OPTIMIZATION: Tighter Pre-Filters ---
+        # If the geometry is fundamentally poor in terms of base statistics, don't waste time on probes.
+        # LOOSENED GATES: Defaults relaxed to [0.001, 0.999] to prioritize learnability.
+        try:
+            min_rate = float(getattr(self, '_current_config', {}).get('layer2_min_pos_rate', 0.001))
+            max_rate = float(getattr(self, '_current_config', {}).get('layer2_max_pos_rate', 0.999))
+        except Exception:
+             min_rate, max_rate = 0.001, 0.999
+
+        if pos_rate < min_rate or pos_rate > max_rate: 
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=pos_rate_limit, pos_rate={pos_rate:.3f}, range=[{min_rate}, {max_rate}]")
+             t_obj = GeometryTrial(
+                family=family,
+                params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                final_score=-1.0,
+                learnability=0.0,
+                robust_magnitude=0.0,
+                stability=0.0,
+                balance=0.0,
+                raw_metrics={'passed': False, 'pos_rate': pos_rate, 'reason': 'pos_rate_limit'},
+                uuid=f"{family}_{trial.number}"
+            )
+             trial.set_user_attr("geometry_object", t_obj)
+             return -1.0
+
+        # Strategic Profitability Gate (allow break-even with risk filters)
+        try:
+            profit_mode = str(getattr(self, '_current_config', {}).get('layer2_profitability_mode', 'intelligent'))
+        except Exception:
+            profit_mode = 'intelligent'
+        profit_mode = str(profit_mode).strip().lower()
+
+        try:
+            min_pos_trades = int(getattr(self, '_current_config', {}).get('layer2_min_positive_trades', 1))
+        except Exception:
+            min_pos_trades = 1
+
+        if profit_mode == 'intelligent':
+            # Allow small losses but require risk compensation
+            # LOOSENED GATES: Defaults set to -1.0 to disable strict PnL requirements.
+            min_trade_ret = float(getattr(self, '_current_config', {}).get('layer2_min_mean_trade_return', -1.0))
+            max_acceptable_loss = float(getattr(self, '_current_config', {}).get('layer2_max_acceptable_loss', -1.0))
+            min_sharpe_proxy = float(getattr(self, '_current_config', {}).get('layer2_min_sharpe_proxy', 0.0))  # Disable Sharpe gate temporarily
+        else:
+            # Original strict mode
+            min_trade_ret = float(getattr(self, '_current_config', {}).get('layer2_min_mean_trade_return', self.transaction_cost))
+            max_acceptable_loss = float('inf')
+            min_sharpe_proxy = -float('inf')
+
+        is_profitable = True
+        if profit_mode in {'trade', 'trade_mean', 'conditional', 'intelligent'}:
+            if int(pos_count) < int(min_pos_trades):
+                is_profitable = False
+            elif (not np.isfinite(mean_trade_ret)) or (float(mean_trade_ret) < float(min_trade_ret)):
+                is_profitable = False
+            elif profit_mode == 'intelligent':
+                # Additional risk filters for intelligent mode
+                # Fix sign logic: defaults are negative, so check strictly less than
+                limit = max_acceptable_loss
+                if limit > 0: limit = -limit # Ensure it is a floor (negative return)
+
+                if float(mean_ret) < limit:  # Don't allow large losses
+                    is_profitable = False
+                # Calculate Sharpe proxy if return data available
+                try:
+                    return_std = returns.std() if len(returns.dropna()) > 1 else float('inf')
+                    sharpe_proxy = float(mean_ret) / float(return_std) if return_std > 0 else -float('inf')
+                    if sharpe_proxy < min_sharpe_proxy:
+                        is_profitable = False
+                except Exception:
+                    pass  # If Sharpe calculation fails, continue
+        else:
+            if float(mean_ret) < float(self.transaction_cost):
+                is_profitable = False
+
+        if not is_profitable:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unprofitable, mean_ret={mean_ret:.5f}")
+             t_obj = GeometryTrial(
+                family=family,
+                params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                final_score=-1.0,
+                learnability=0.0,
+                robust_magnitude=0.0,
+                stability=0.0,
+                balance=0.0,
+                raw_metrics={
+                    'passed': False,
+                    'pos_rate': pos_rate,
+                    'pos_count': float(pos_count),
+                    'mean_trade_ret': float(mean_trade_ret) if np.isfinite(mean_trade_ret) else float('nan'),
+                    'mean_ret': float(mean_ret) if np.isfinite(mean_ret) else float('nan'),
+                    'reason': 'unprofitable'
+                },
+                uuid=f"{family}_{trial.number}"
+            )
+             trial.set_user_attr("geometry_object", t_obj)
+             return -1.0
+
+        # Stability Check (Time-Flip)
+        # Configurable frequency + optional subsampling to reduce compute.
+        try:
+            stability_every = int(getattr(self, '_current_config', {}).get('layer2_stability_every_n_trials', 3))
+        except Exception:
+            stability_every = 3
+        if stability_every <= 0:
+            stability_every = 1
+
+        try:
+            stability_sample_frac = float(getattr(self, '_current_config', {}).get('layer2_stability_sample_frac', 0.7))
+        except Exception:
+            stability_sample_frac = 0.7
+        if (not np.isfinite(stability_sample_frac)) or stability_sample_frac <= 0.0:
+            stability_sample_frac = 1.0
+        stability_sample_frac = float(min(1.0, stability_sample_frac))
+
+        do_stability = (trial.number % int(stability_every)) == 0
+        is_stable = True
+        fam_events_for_checks = family_events
+        if do_stability:
+            if stability_sample_frac < 1.0 and int(len(family_events)) > 50:
+                try:
+                    fam_events_for_checks = family_events.sample(frac=stability_sample_frac, random_state=int(self.random_state))
+                except Exception:
+                    fam_events_for_checks = family_events
+            is_stable = self._check_stability(
+                df,
+                fam_events_for_checks,
+                {'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                0.0,
+                family,
+            )
+            if not is_stable:
+                 logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unstable")
+                 t_obj = GeometryTrial(
+                    family=family,
+                    params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                    final_score=-1.0,
+                    learnability=0.0,
+                    robust_magnitude=0.0,
+                    stability=0.0,
+                    balance=0.0,
+                    raw_metrics={'passed': False, 'pos_rate': pos_rate, 'reason': 'unstable'},
+                    uuid=f"{family}_{trial.number}"
+                )
+                 trial.set_user_attr("geometry_object", t_obj)
+                 return -1.0
+
+        # --- Noise Metrics ---
+
+        # 1. Flip Rate (Barrier Perturbation)
+        # Configurable frequency + optional subsampling to reduce compute.
+        try:
+            perturb_every = int(getattr(self, '_current_config', {}).get('layer2_perturb_every_n_trials', 1))
+        except Exception:
+            perturb_every = 1
+        if perturb_every <= 0:
+            perturb_every = 1
+
+        if (trial.number % int(perturb_every)) == 0:
+            perturb_labels_k, _, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa * 1.05, horizon, family, sl_mult=sl_mult)
+            perturb_labels_sl, _, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, horizon, family, sl_mult=sl_mult * 1.05)
+            perturb_labels_h, _, _, _, _ = self._compute_dominance_labels(df, fam_events_for_checks, kappa, int(horizon * 1.05), family, sl_mult=sl_mult)
+
+            base_lbl = labels.reindex(fam_events_for_checks.index)
+            agree_k = (base_lbl == perturb_labels_k).mean()
+            agree_sl = (base_lbl == perturb_labels_sl).mean()
+            agree_h = (base_lbl == perturb_labels_h).mean()
+            flip_rate = 1.0 - ((agree_k + agree_sl + agree_h) / 3.0)
+        else:
+            flip_rate = 0.0
+
+        # 2. Directional Entropy
+        # H = -p log p - (1-p) log(1-p)
+        p_safe = np.clip(pos_rate, 1e-9, 1.0 - 1e-9)
+        dir_entropy = -(p_safe * np.log(p_safe) + (1.0 - p_safe) * np.log(1.0 - p_safe))
+
+        # 3. Conditional IC (IC | ER bucket)
+        # Since we haven't trained a model yet for this specific geometry inside the loop (only probing next),
+        # we can't calculate IC of predictions yet.
+        # However, we can use the IC from the probe model if it passes.
+        # We will compute it AFTER probe training.
+        
+        if not is_stable:
+             logger.info(f"[GATE_REJECT] trial={trial.number}, family={family}, reason=unstable_recheck")
+             t_obj = GeometryTrial(
+                family=family,
+                params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+                final_score=-1.0,
+                learnability=0.0,
+                robust_magnitude=0.0,
+                stability=0.0,
+                balance=0.0,
+                raw_metrics={
+                    'passed': False,
+                    'pos_rate': pos_rate,
+                    'stable': False,
+                    'flip_rate': flip_rate,
+                    'entropy': dir_entropy
+                },
+                uuid=f"{family}_{trial.number}"
+            )
+             trial.set_user_attr("geometry_object", t_obj)
+             return -1.0
+
+        # Align features to events
+        try:
+            X_geom = X_events.loc[labels.index]
+        except Exception:
+            X_geom = X_events.reindex(labels.index)
+
+        global_feats = [f for f in (probe_features or []) if f in X_geom.columns]
+        X_probe = X_geom[global_feats] if global_feats else X_geom
+
+        probe_weight = None
+        if target_sample_weight_events is not None:
+             # ... weight loading logic ...
+             try:
+                w_probe = target_sample_weight_events.reindex(labels.index)
+                w_probe = pd.to_numeric(w_probe, errors='coerce').astype(float)
+                w_probe = w_probe.replace([np.inf, -np.inf], np.nan).fillna(1.0)
+                w_probe = w_probe.clip(lower=0.0)
+                w_probe = w_probe.reindex(labels.dropna().index)
+                probe_weight = w_probe.values
+             except Exception:
+                probe_weight = None
+
+        probe_res = self._train_probes(X_probe, labels, sample_weight=probe_weight, trial=trial)
+
+        try:
+            learnability = float(probe_res.get('auc', 0.0))
+        except Exception:
+            learnability = 0.0
+        if not np.isfinite(learnability):
+            learnability = 0.0
+
+        # Conditional IC Calculation (approximate using probe results if available)
+        # We don't have per-sample predictions from _train_probes easily without refactoring.
+        # _train_probes uses K-Fold internally and returns aggregated metrics.
+        # We will use the 'ic' from probe_res as a proxy for global IC.
+        # Calculating IC conditioned on ER buckets requires predictions aligned with events.
+        # Since _train_probes doesn't return OOF preds, we skip detailed conditional IC
+        # and just store the global IC in raw_metrics.
+        global_ic = probe_res.get('ic', 0.0)
+
+        # Degeneracy guardrail
+        entropy_norm = _normalized_binary_entropy(pos_rate)
+        degeneracy_floor = 0.25 + 0.75 * entropy_norm
+
+        # Magnitude bonus (using mean return of successful trades vs volatility)
+        ret_std = float(returns.std())
+        sharpe_proxy = float(mean_ret) / (ret_std + 1e-9)
+        mag_component = float(np.clip(sharpe_proxy, 0.0, 3.0))
+
+        final_score = (1.0 + mag_component) * np.log1p(count) * degeneracy_floor * learnability
+
+        t_obj = GeometryTrial(
+            family=family,
+            params={'kappa': kappa, 'sl_mult': sl_mult, 'horizon': horizon},
+            final_score=final_score,
+            learnability=learnability,
+            robust_magnitude=float(mean_ret) * 1000,
+            stability=1.0, # Passed stability check
+            balance=degeneracy_floor,
+            raw_metrics=dict(probe_res, **{
+                'pos_rate': pos_rate,
+                'flip_rate': flip_rate,
+                'entropy': dir_entropy,
+                'ic_global': global_ic
+            }),
+            uuid=f"{family}_{trial.number}"
+        )
+        
+        trial.set_user_attr("geometry_object", t_obj)
+        
+        return final_score
+
     def _select_best_geometries(
         self,
         df: pd.DataFrame,
@@ -4911,13 +5361,15 @@ class LabelBasedLayer2:
 
             # Pick others maximizing normalized distance
             candidate_pool = [t for t in top_tier if t not in fam_selected]
+            dist_weights = np.array([1.5, 1.0, 0.5]) # Kappa > SL > Horizon
 
             while len(fam_selected) < 4 and candidate_pool:
                 best_cand = None
                 max_dist = -1.0
 
                 for cand in candidate_pool:
-                    dists = [np.linalg.norm(get_norm_vec(cand) - get_norm_vec(s)) for s in fam_selected]
+                    # Use Weighted Euclidean Distance
+                    dists = [euclidean(get_norm_vec(cand), get_norm_vec(s), w=dist_weights) for s in fam_selected]
                     min_d = min(dists)
 
                     if min_d > max_dist:
@@ -4953,31 +5405,74 @@ class LabelBasedLayer2:
             # Replaces greedy filtering with Hierarchical Clustering to ensure structural diversity.
 
             # Helper to get return series for a trial
-            ret_cache_global: Dict[str, pd.Series] = {}
+            # Cache stores dict: {'ret': pd.Series, 'dd': pd.Series, 'ratio': float}
+            cache_global: Dict[str, Dict[str, Any]] = {}
             all_events_idx = events_df.index
 
-            def _get_ret_series_global(t_obj: GeometryTrial) -> pd.Series:
+            def _get_metrics_global(t_obj: GeometryTrial) -> Dict[str, Any]:
                 key = str(getattr(t_obj, 'uuid', ''))
-                if key in ret_cache_global:
-                    return ret_cache_global[key]
+                if key in cache_global:
+                    return cache_global[key]
+
                 try:
                     fam_local = str(getattr(t_obj, 'family', ''))
                     fam_events_local = events_df[events_df['family'] == fam_local]
+
                     if fam_events_local.empty:
-                        return pd.Series(0.0, index=all_events_idx)
+                        # Fallback empty
+                        zeros = pd.Series(0.0, index=all_events_idx)
+                        res = {'ret': zeros, 'dd': zeros, 'ratio': 0.0}
+                        cache_global[key] = res
+                        return res
 
-                    _lbl, _ret, _, _, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
+                    # Compute Labels & Metrics
+                    _lbl, _ret, _mfe, _mae, _ = self._compute_dominance_labels(df, fam_events_local, family=fam_local, **t_obj.params)
+
+                    # 1. Returns Series (Aligned)
                     s_evt = pd.to_numeric(_ret, errors='coerce').astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-                    # Align to global index
                     s_glob = pd.Series(0.0, index=all_events_idx, dtype=float)
                     common = s_evt.index.intersection(all_events_idx)
                     s_glob.loc[common] = s_evt.loc[common]
-                except Exception:
-                    s_glob = pd.Series(0.0, index=all_events_idx)
 
-                ret_cache_global[key] = s_glob
-                return s_glob
+                    # 2. Drawdown Series
+                    # Construct Equity Curve -> Drawdowns
+                    equity = s_glob.cumsum()
+                    running_max = equity.cummax()
+                    drawdown = equity - running_max
+                    # Fill NaN at start if any
+                    drawdown = drawdown.fillna(0.0)
+
+                    # 3. MFE/MAE Ratio (Behavioral)
+                    # We compute mean MFE / mean MAE
+                    # Use aligned local series for stats to avoid zeros bias
+                    mfe_local = pd.to_numeric(_mfe, errors='coerce').fillna(0.0)
+                    mae_local = pd.to_numeric(_mae, errors='coerce').fillna(0.0)
+
+                    # Only consider trades that happened
+                    valid_mask = s_evt.abs() > 1e-9
+                    if valid_mask.sum() > 0:
+                        avg_mfe = mfe_local[valid_mask].mean()
+                        avg_mae = mae_local[valid_mask].mean()
+                        if avg_mae > 1e-9:
+                            ratio = avg_mfe / avg_mae
+                        else:
+                            ratio = 10.0 # High cap if no MAE
+                    else:
+                        ratio = 1.0
+
+                    res = {
+                        'ret': s_glob,
+                        'dd': drawdown,
+                        'ratio': float(min(ratio, 20.0)) # Cap at 20
+                    }
+
+                except Exception as e:
+                    logger.warning(f"Error computing global metrics for {key}: {e}")
+                    zeros = pd.Series(0.0, index=all_events_idx)
+                    res = {'ret': zeros, 'dd': zeros, 'ratio': 0.0}
+
+                cache_global[key] = res
+                return res
 
             # -----------------------------------------------------------------
             # Final global (cross-family) diversification pass
@@ -5009,22 +5504,67 @@ class LabelBasedLayer2:
                     all_candidates = list(selected)
                     n_glob = len(all_candidates)
 
-                    # Re-use cache
-                    def _get_ret_global_cached(t_obj):
-                        return _get_ret_series_global(t_obj)
+                    # Gather metrics
+                    metrics_list = [_get_metrics_global(c) for c in all_candidates]
 
-                    series_list = [_get_ret_global_cached(c) for c in all_candidates]
-                    corr_mat = np.zeros((n_glob, n_glob))
+                    # Distance Matrix Components
+                    # 1. Return Correlation (Primary)
+                    corr_mat_ret = np.zeros((n_glob, n_glob))
+                    # 2. Drawdown Correlation (Risk)
+                    corr_mat_dd = np.zeros((n_glob, n_glob))
+                    # 3. Behavioral Diff (MFE/MAE Ratio)
+                    dist_mat_beh = np.zeros((n_glob, n_glob))
+
+                    # Extract ratio array for vectorized diff
+                    ratios = np.array([m['ratio'] for m in metrics_list])
+                    # Normalize ratios for distance calculation?
+                    # Simple absolute difference is okay if scale is reasonable. Ratios are ~1.0-5.0 usually.
 
                     for i in range(n_glob):
-                        for j in range(i, n_glob):
-                            if i == j: c = 1.0
-                            else: c = series_list[i].corr(series_list[j])
-                            corr_mat[i, j] = c
-                            corr_mat[j, i] = c
+                        ret_i = metrics_list[i]['ret']
+                        dd_i = metrics_list[i]['dd']
 
-                    corr_mat = np.nan_to_num(corr_mat, nan=0.0)
-                    dist_mat = 1.0 - np.abs(corr_mat)
+                        for j in range(i, n_glob):
+                            if i == j:
+                                c_ret = 1.0
+                                c_dd = 1.0
+                                d_beh = 0.0
+                            else:
+                                ret_j = metrics_list[j]['ret']
+                                dd_j = metrics_list[j]['dd']
+
+                                c_ret = ret_i.corr(ret_j)
+                                c_dd = dd_i.corr(dd_j)
+                                d_beh = abs(ratios[i] - ratios[j])
+
+                            corr_mat_ret[i, j] = c_ret
+                            corr_mat_ret[j, i] = c_ret
+
+                            corr_mat_dd[i, j] = c_dd
+                            corr_mat_dd[j, i] = c_dd
+
+                            dist_mat_beh[i, j] = d_beh
+                            dist_mat_beh[j, i] = d_beh
+
+                    # Clean NaNs
+                    corr_mat_ret = np.nan_to_num(corr_mat_ret, nan=0.0)
+                    corr_mat_dd = np.nan_to_num(corr_mat_dd, nan=0.0)
+
+                    # Distances
+                    d_ret = 1.0 - np.abs(corr_mat_ret)
+                    d_dd = 1.0 - np.abs(corr_mat_dd)
+
+                    # Normalize behavioral distance to [0, 1] roughly
+                    max_beh = np.max(dist_mat_beh)
+                    if max_beh > 1e-9:
+                        d_beh_norm = dist_mat_beh / max_beh
+                    else:
+                        d_beh_norm = dist_mat_beh
+
+                    # Composite Distance
+                    # D = 0.6 * Return + 0.3 * Drawdown + 0.1 * Behavior
+                    dist_mat = (0.6 * d_ret) + (0.3 * d_dd) + (0.1 * d_beh_norm)
+
                     np.fill_diagonal(dist_mat, 0.0)
 
                     try:
@@ -5035,10 +5575,11 @@ class LabelBasedLayer2:
                         for clust_id in np.unique(labels):
                             indices = np.where(labels == clust_id)[0]
                             cluster_cands = [all_candidates[i] for i in indices]
+                            # Pick best by final score within cluster
                             best = max(cluster_cands, key=lambda x: float(getattr(x, 'final_score', -1.0)))
                             kept.append(best)
 
-                        logger.info(f"Global Clustering reduced {len(selected)} -> {len(kept)} geometries.")
+                        logger.info(f"Global Clustering reduced {len(selected)} -> {len(kept)} geometries using Composite Distance (Ret+DD+Beh).")
                     except Exception as e:
                         logger.warning(f"Global clustering failed: {e}. Using score sort.")
                         kept = sorted(selected, key=lambda x: float(getattr(x, 'final_score', -1.0)), reverse=True)[:max_keep]

@@ -30,6 +30,7 @@ from sklearn.metrics import roc_auc_score
 from scipy.stats import entropy
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success, tprint_error
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -478,12 +479,13 @@ def train_layer4_oof(
     regime_features = compute_layer4_regime_features(market_data)
     
     # 2. Identify Layer 3 Output Columns
-    l3_cols = [c for c in oof_df.columns if c.startswith('meta_prob_')]
+    l3_prob_cols = [c for c in oof_df.columns if c.startswith('meta_prob_')]
+    l3_alpha_cols = [c for c in oof_df.columns if c.startswith('meta_alpha_')]
 
     # 3. Construct Meta Features (Scaling & Disagreement)
-    if not l3_cols:
-        # Fallback to single col if no Multi-Geometry outputs found
-        l3_cols = [l3_prob_col] if l3_prob_col in oof_df.columns else []
+    # Check if we have valid columns
+    if not l3_prob_cols and l3_prob_col in oof_df.columns:
+        l3_prob_cols = [l3_prob_col]
 
     common_idx = oof_df.index.intersection(regime_features.index)
     X_regime = regime_features.loc[common_idx]
@@ -497,31 +499,89 @@ def train_layer4_oof(
         # Compute vol proxy
         vol = market_data['close'].pct_change().rolling(24).std().reindex(common_idx).fillna(0.01).values
 
-    if l3_cols:
-        tprint_info(f"   Found {len(l3_cols)} Layer 3 geometry outputs.")
+    if l3_prob_cols:
+        tprint_info(f"   Found {len(l3_prob_cols)} Layer 3 geometry probability outputs.")
+
+        # 3a. Apply Signal Altering Features to Prob Heads
         X_meta = prepare_scaled_features_for_meta_learner(
-            l3_cols, oof_aligned, vol, l3_models_metadata
+            l3_prob_cols, oof_aligned, vol, l3_models_metadata
         )
 
-        # Disagreement Features (from feature_generation or inline)
-        # inline for simplicity as per requirement to use "features from src... applied to models"
-        # Since we have the raw signals in X_meta or oof_aligned, we can compute disagreement here.
+        # 3b. Disagreement Features (Prob Head)
+        prob_dict = {
+            col.replace('meta_prob_', ''): oof_aligned[col].values
+            for col in l3_prob_cols
+        }
 
-        # Compute row-wise stats on raw probs
-        raw_probs = oof_aligned[l3_cols].values
-        X_meta['ens_mean'] = np.mean(raw_probs, axis=1)
-        X_meta['ens_std'] = np.std(raw_probs, axis=1)
-        X_meta['ens_min'] = np.min(raw_probs, axis=1)
-        X_meta['ens_max'] = np.max(raw_probs, axis=1)
-        X_meta['ens_range'] = X_meta['ens_max'] - X_meta['ens_min']
+        prob_disagreement = calculate_ensemble_disagreement_features(
+            model_predictions={},
+            model_probabilities=prob_dict,
+            feature_names=[
+                'uncertainty', 'confidence_gap', 'avg_divergence',
+                'max_confidence', 'snr_consensus', 'ensemble_prob'
+            ]
+        )
+        for k, v in prob_disagreement.items():
+            X_meta[f'prob_ens_{k}'] = v.values
+
+        # 3c. Disagreement Features (Alpha Head) & Alpha Weighted Mean
+        # Match alphas to probs if possible
+        if l3_alpha_cols:
+            valid_alpha_cols = l3_alpha_cols
+            tprint_info(f"   Found {len(valid_alpha_cols)} Layer 3 geometry alpha outputs.")
+
+            alpha_dict = {
+                col.replace('meta_alpha_', ''): oof_aligned[col].values
+                for col in valid_alpha_cols
+            }
+
+            # Treat Alphas as predictions for disagreement calculation
+            alpha_disagreement = calculate_ensemble_disagreement_features(
+                model_predictions=alpha_dict,
+                model_probabilities={},
+                feature_names=[
+                    'prediction_dispersion', 'prediction_range', 'disagreement_rate'
+                ]
+            )
+            for k, v in alpha_disagreement.items():
+                X_meta[f'alpha_ens_{k}'] = v.values
+
+            # 3d. Alpha Weighted Mean
+            # We need to match prob and alpha columns corresponding to the same geometry
+            # Extract GIDs
+            prob_gids = {c.replace('meta_prob_', ''): c for c in l3_prob_cols}
+            alpha_gids = {c.replace('meta_alpha_', ''): c for c in l3_alpha_cols}
+
+            common_gids = list(set(prob_gids.keys()) & set(alpha_gids.keys()))
+
+            if common_gids:
+                matched_prob_cols = [prob_gids[gid] for gid in common_gids]
+                matched_alpha_cols = [alpha_gids[gid] for gid in common_gids]
+
+                prob_matrix = oof_aligned[matched_prob_cols].values
+                alpha_matrix = oof_aligned[matched_alpha_cols].values
+
+                weighted_sum = np.sum(alpha_matrix * prob_matrix, axis=1)
+                prob_sum = np.sum(prob_matrix, axis=1)
+
+                X_meta['alpha_weighted_mean'] = np.divide(
+                    weighted_sum, prob_sum,
+                    out=np.zeros_like(weighted_sum),
+                    where=prob_sum!=0
+                )
+            else:
+                X_meta['alpha_weighted_mean'] = 0.0
 
         # Merge Regime + Meta
         X = pd.concat([X_regime.reset_index(drop=True), X_meta.reset_index(drop=True)], axis=1)
         X.index = common_idx
 
-        # Primary prob for filtering/sizing anchor (Mean of scaled? or just Mean of raw?)
-        # Let's use Mean of raw for now
-        l3_probs_anchor = X_meta['ens_mean']
+        # Primary prob for filtering/sizing anchor
+        if 'prob_ens_ensemble_prob' in X_meta.columns:
+            l3_probs_anchor = X_meta['prob_ens_ensemble_prob']
+        else:
+            # Fallback
+            l3_probs_anchor = oof_aligned[l3_prob_cols].mean(axis=1)
 
     else:
         tprint_warning("   No Layer 3 outputs found. Using only regime features.")

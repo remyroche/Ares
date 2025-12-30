@@ -87,19 +87,7 @@ class Layer5PositionSizer:
         # Validate columns
         missing = [c for c in [p_col, return_col] if c not in self.df.columns]
         if missing:
-            # Try to map common aliases if missing
-            aliases = {'layer4_prob': 'meta_prob', 'meta_prob': 'layer4_prob', 'realized_return': 'ret'}
-            for req, alias in aliases.items():
-                if req in missing and alias in self.df.columns:
-                    self.df[req] = self.df[alias]
-                    missing.remove(req)
-            if missing:
-                # If layer4_prob is missing, maybe fall back to meta_prob (L3) but warn
-                if 'meta_prob' in self.df.columns:
-                     tprint_warning(f"Layer 4 prob missing, using 'meta_prob' (L3) as fallback.")
-                     self.p_col = 'meta_prob'
-                else:
-                     raise ValueError(f"Missing required columns for Layer 5: {missing}")
+             raise ValueError(f"Missing required columns for Layer 5: {missing}. Ensure LabelBasedLayer4 has run successfully.")
 
     def calculate_sizing(self) -> pd.Series:
         """Apply the Signal-to-Sizing formula (Quadratic Scaling)."""

@@ -591,31 +591,44 @@ def vol_scaled_fixed_label(price: pd.Series, events: pd.DatetimeIndex,
 
 def generate_probe_features(price: pd.Series, volume: pd.Series) -> pd.DataFrame:
     """
-    Standard 'Basis Set' for Probe.
+    Generates a standardized 'Basis Set' of features for Geometry Validation.
+    These use fixed industry-standard lookbacks to serve as a robust benchmark.
     """
     df = pd.DataFrame(index=price.index)
+
+    # 1. Momentum (Immediate & Short-term)
     df['ret_1'] = np.log(price).diff(1)
-    df['ret_12'] = np.log(price).diff(12) 
-    
-    vol_20 = df['ret_1'].rolling(20).std()
-    vol_100 = df['ret_1'].rolling(100).std()
-    df['vol_ratio'] = vol_20 / (vol_100 + 1e-6)
-    
+    df['ret_12'] = np.log(price).diff(12) # Context momentum
+
+    # 2. Oscillator (RSI 14)
+    # Simple pandas implementation or use TA-Lib
     delta = price.diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / (loss + 1e-6)
-    df['rsi'] = 100 - (100 / (1 + rs))
-    
+    rs = gain / (loss + 1e-9)
+    df['rsi_14'] = 100 - (100 / (1 + rs))
+
+    # 3. Volatility Regime (20 vs 100)
+    # Is recent vol expanding relative to history?
+    vol_20 = df['ret_1'].rolling(20).std()
+    vol_100 = df['ret_1'].rolling(100).std()
+    df['vol_ratio'] = vol_20 / (vol_100 + 1e-6)
+
+    # 4. Trend Distance (50 bar MA)
+    # Are we far from the mean?
     ma_50 = price.rolling(50).mean()
     df['trend_dist'] = (price / ma_50) - 1
-    
-    vol_ma = volume.rolling(20).mean()
-    df['vol_shock'] = volume / (vol_ma + 1e-6)
-    
-    return df.replace([np.inf, -np.inf], np.nan).fillna(0)
 
-def get_purged_lgbm_auc(X, y, w, horizon_bars=48) -> float:
+    # 5. Liquidity Shock (Volume vs 20 bar avg)
+    vol_ma_20 = volume.rolling(20).mean()
+    df['vol_shock'] = volume / (vol_ma_20 + 1e-6)
+
+    # Clean up (Probe models hate NaNs)
+    df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    return df
+
+def run_quick_lgbm(X, y, w, horizon_bars=48) -> float:
     if len(y) < 50: return 0.5
     
     n_splits = 3
@@ -910,7 +923,7 @@ def orthogonal_label_generation(
                 # Purged Probe
                 X_curr = X_probe.loc[valid_idx]
                 try:
-                    auc_score = get_purged_lgbm_auc(X_curr, y_cand, w_cand, horizon_bars=h)
+                    auc_score = run_quick_lgbm(X_curr, y_cand, w_cand, horizon_bars=h)
                 except:
                     auc_score = 0.5
                     

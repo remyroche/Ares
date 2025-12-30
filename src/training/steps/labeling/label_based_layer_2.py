@@ -1141,11 +1141,16 @@ class LabelBasedLayer2:
         vol = df['volatility_1d'].fillna(0.0)
         events = events_df.index
 
+        # High/Low if available
+        high = df.get('high')
+        low = df.get('low')
+
         # Call Vectorized
         labels, weights, returns, mfe, mae, _ = compute_dominance_labels(
             price, events, vol,
             risk_budget=risk_budget, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
-            transaction_cost=self.transaction_cost
+            transaction_cost=self.transaction_cost,
+            high=high, low=low
         )
 
         # Return matched format (labels, weights, returns, mfe, mae, exits)

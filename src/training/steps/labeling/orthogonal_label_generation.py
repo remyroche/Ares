@@ -128,7 +128,7 @@ def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, ho
         end_loc = min(loc + horizon, n_bars)
         arr[loc:end_loc] += 1
     
-    arr = np.clip(arr, 0, 1)
+    # Removed clip to allow concurrency calculation
     return pd.DataFrame(arr, index=index, columns=[0])
 
 # ==========================================
@@ -143,7 +143,9 @@ def compute_dominance_labels(
     pt_mult: float = 2.0,
     sl_mult: float = 1.0,
     horizon: int = 120,
-    transaction_cost: float = 0.003
+    transaction_cost: float = 0.003,
+    high: Optional[pd.Series] = None,
+    low: Optional[pd.Series] = None
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Vectorized MFE/MAE Dominance Labeling with Risk Budget.
@@ -171,27 +173,44 @@ def compute_dominance_labels(
     # Get Prices
     price_vals = price.values
     entry_prices = price_vals[valid_idxs]
-    window_prices = price_vals[window_idxs]
 
-    # Compute Returns (relative to entry)
-    returns_matrix = window_prices / entry_prices[:, None] - 1.0
-
-    # 3. Compute MFE/MAE
-    mfe = np.max(returns_matrix, axis=1)
-    mae = np.max(-returns_matrix, axis=1) # Positive magnitude
-
-    # 4. Barrier Checks
-    # Volatility at entry
+    # 3. Compute MFE/MAE & Hits
     vol_vals = volatility.values[valid_idxs]
-    vol_vals = np.maximum(vol_vals, 1e-6) # Safety
+    vol_vals = np.maximum(vol_vals, 1e-6)
 
-    # Thresholds
     pt_thresh = (vol_vals * pt_mult)[:, None]
     sl_thresh = (-vol_vals * sl_mult)[:, None]
 
-    # Hits
-    hit_pt = returns_matrix > pt_thresh
-    hit_sl = returns_matrix < sl_thresh
+    # Check if High/Low provided
+    if high is not None and low is not None:
+        high_vals = high.values
+        low_vals = low.values
+        window_highs = high_vals[window_idxs]
+        window_lows = low_vals[window_idxs]
+
+        # Returns relative to entry
+        high_ret = window_highs / entry_prices[:, None] - 1.0
+        low_ret = window_lows / entry_prices[:, None] - 1.0
+
+        mfe = np.max(high_ret, axis=1)
+        # MAE is max negative excursion (magnitude)
+        mae = -np.min(low_ret, axis=1)
+
+        hit_pt = high_ret > pt_thresh
+        hit_sl = low_ret < sl_thresh
+    else:
+        window_prices = price_vals[window_idxs]
+        returns_matrix = window_prices / entry_prices[:, None] - 1.0
+
+        mfe = np.max(returns_matrix, axis=1)
+        mae = np.max(-returns_matrix, axis=1)
+
+        hit_pt = returns_matrix > pt_thresh
+        hit_sl = returns_matrix < sl_thresh
+
+    # For outcome calculation, we use Close prices if neither hit
+    window_closes = price_vals[window_idxs]
+    close_returns = window_closes / entry_prices[:, None] - 1.0
 
     # Identify first hit indices
     any_pt = np.any(hit_pt, axis=1)
@@ -200,12 +219,10 @@ def compute_dominance_labels(
     first_pt_idx = np.argmax(hit_pt, axis=1)
     first_sl_idx = np.argmax(hit_sl, axis=1)
 
-    # TBM Logic: PT hit before SL?
-    # If PT hit and (SL not hit OR PT index < SL index)
+    # TBM Logic
     win_mask = any_pt & (~any_sl | (first_pt_idx < first_sl_idx))
 
     # Risk Budget Logic: MAE / Stop_Dist <= risk_budget
-    # Stop Distance = sl_mult * vol
     stop_dist = sl_mult * vol_vals
     risk_used = mae / np.maximum(stop_dist, 1e-9)
     risk_mask = risk_used <= risk_budget
@@ -215,31 +232,20 @@ def compute_dominance_labels(
     profit_mask = mfe > min_profit
 
     # Final Label
-    # Label 1 if Win AND Risk Budget Not Exceeded
     final_label_mask = win_mask & risk_mask & profit_mask
     labels = final_label_mask.astype(float)
 
     # 5. Weighting
-    # "Weight by 1 / Volatility" AND "MAE/MFE Dominance score" (MFE/MAE)
-
-    # Ratio (MFE/MAE)
     mae_safe = np.maximum(mae, 1e-9)
     ratio = mfe / mae_safe
-
-    # Magnitude
     magnitude = np.log1p(mfe / transaction_cost)
-
-    # Volatility Adjustment
     vol_adj = 1.0 / vol_vals
-
-    # Combined Weight: Ratio * Magnitude * Vol_Adj
     weights = ratio * magnitude * vol_adj
 
     # 6. Returns
     out_returns = np.where(win_mask, pt_mult * vol_vals, -sl_mult * vol_vals)
-    # Handle Time Outs (neither hit)?
     timeout_mask = (~any_pt) & (~any_sl)
-    out_returns[timeout_mask] = returns_matrix[timeout_mask, -1]
+    out_returns[timeout_mask] = close_returns[timeout_mask, -1]
 
     # Construct Series
     idx = valid_events
@@ -255,6 +261,32 @@ def compute_dominance_labels(
 # ==========================================
 # 2. Quality Gates & Checks
 # ==========================================
+
+def effective_n(labels, max_lag):
+    """Estimate effective sample size accounting for autocorrelation."""
+    labels = np.asarray(labels)
+    n = len(labels)
+    if n <= max_lag: return n
+
+    rho_sum = 0.0
+    # Fast manual autocorrelation for small lag
+    for k in range(1, max_lag + 1):
+        y1 = labels[:-k]
+        y2 = labels[k:]
+        if len(y1) < 2: continue
+        y1_dev = y1 - y1.mean()
+        y2_dev = y2 - y2.mean()
+        denom = np.sqrt(np.sum(y1_dev**2) * np.sum(y2_dev**2))
+        if denom == 0: continue
+        rho = np.sum(y1_dev * y2_dev) / denom
+        rho_sum += rho
+
+    n_eff = n / (1.0 + 2.0 * rho_sum)
+    return max(1.0, n_eff)
+
+def significance_score(labels, max_lag):
+    n_eff = effective_n(labels, max_lag)
+    return np.log1p(n_eff)
 
 def calculate_psr(sharpe, n, skew, kurt, target_sharpe=0):
     if n < 2: return 0.0
@@ -275,7 +307,7 @@ def check_label_quality(
     n = len(labels)
     days = (labels.index[-1] - labels.index[0]).days if n > 0 else 0
     rate = n / days if days > 0 else 0
-    if rate < 0.3: return False, {'n': n}, "Sample Size (< 0.3/day)"
+    if rate < 1.0: return False, {'n': n}, "Sample Size (< 1.0/day)"
 
     pos_rate = labels.mean()
     if pos_rate < 0.075 or pos_rate > 0.925: return False, {'pos_rate': pos_rate}, "Class Balance"
@@ -356,9 +388,9 @@ def calculate_multifactor_score(
         F, _ = f_classif(X, labels)
         f_max = np.nanmax(F) if len(F) > 0 else 0
 
-        days = (labels.index[-1] - labels.index[0]).days if n > 0 else 1
-        cap = 0.7 * days
-        significance = min(np.log1p(n), np.log1p(cap))
+        # New Significance: Effective N
+        max_lag = cand['params'].get('horizon', 120)
+        significance = significance_score(labels, max_lag)
 
         # Stability
         chunk_size = n // 3
@@ -379,8 +411,6 @@ def calculate_multifactor_score(
         indicator = build_indicator_matrix(cand['events'], X.index, horizon=cand['params']['horizon'])
         density = average_uniqueness(indicator)
 
-        # Path Score: Mean( (MFE/Vol) - (|MAE|/Vol) )
-        # Volatility-Normalized Path Asymmetry
         path_asymmetry = (mfe / vol) - (mae.abs() / vol)
         path_score = path_asymmetry.mean()
 
@@ -400,14 +430,13 @@ def calculate_multifactor_score(
         power = max(row['ic'], row['f_stat'])
         raw_sig = df_scores.iloc[i]['significance']
 
-        # Master Formula with Path Score
         final_score = (
             power *
             raw_sig *
             row['stability'] *
             row['balance'] *
             row['density'] *
-            (1.0 + row['path_score']) # Multiplier as requested? "add a new multiplier"
+            (1.0 + row['path_score'])
         )
         cand['score'] = final_score
         cand['power'] = power
@@ -415,24 +444,92 @@ def calculate_multifactor_score(
     return scores
 
 # ==========================================
-# 4. Probe (LGBM)
+# 4. Probe (LGBM - Advanced Metrics)
 # ==========================================
 
-def run_lgbm_probe(X, y, w) -> float:
-    if len(y) < 50: return 0.5
+def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
+    """
+    Advanced Probe: Returns Meta-Label Lift, Yield, Entropy, Consistency.
+    """
+    if len(y) < 50:
+        return {'lift': 0.0, 'yield': 0.0, 'entropy': 1.0, 'consistency': 0.0, 'sharpe_meta': 0.0}
+
     params = {'objective': 'binary', 'metric': 'auc', 'verbosity': -1, 'seed': 42}
     tscv = TimeSeriesSplit(n_splits=3)
-    scores = []
+
+    meta_returns = []
+    base_returns = []
+    preds_all = []
+    labels_all = []
+
     for tr_idx, va_idx in tscv.split(X):
         X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
         y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
         w_tr, w_va = w.iloc[tr_idx], w.iloc[va_idx]
+        ret_va = returns.iloc[va_idx]
+
         if y_tr.nunique() < 2 or y_va.nunique() < 2: continue
+
         dtrain = lgb.Dataset(X_tr, label=y_tr, weight=w_tr)
         dvalid = lgb.Dataset(X_va, label=y_va, weight=w_va)
         model = lgb.train(params, dtrain, valid_sets=[dvalid], callbacks=[lgb.early_stopping(10, verbose=False)])
-        scores.append(model.best_score['valid_0']['auc'])
-    return np.mean(scores) if scores else 0.5
+
+        preds = model.predict(X_va)
+        preds_all.extend(preds)
+        labels_all.extend(y_va)
+
+        # Base: All
+        base_returns.extend(ret_va.values)
+
+        # Meta: Pred > 0.5
+        mask = preds > 0.5
+        if mask.sum() > 0:
+            meta_returns.extend(ret_va[mask].values)
+
+    if not base_returns:
+        return {'lift': 0.0, 'yield': 0.0, 'entropy': 1.0, 'consistency': 0.0, 'sharpe_meta': 0.0}
+
+    # 1. Sharpe Lift
+    def sharpe(r):
+        if len(r) < 2: return 0.0
+        std = np.std(r)
+        if std == 0: return 0.0
+        return np.mean(r) / std
+
+    base_sh = sharpe(base_returns)
+    meta_sh = sharpe(meta_returns) if meta_returns else 0.0
+    lift = meta_sh - base_sh
+
+    # 2. Opportunity Yield
+    days = (returns.index[-1] - returns.index[0]).days if not returns.empty else 1
+    n_pos = len(meta_returns)
+    opp_yield = n_pos / max(1, days)
+
+    # 3. Conditional Outcome Entropy H(Y | Pred > 0.5)
+    # y is binary 0/1.
+    preds_arr = np.array(preds_all)
+    labels_arr = np.array(labels_all)
+    mask = preds_arr > 0.5
+    if mask.sum() > 0:
+        cond_labels = labels_arr[mask]
+        counts = pd.Series(cond_labels).value_counts(normalize=True)
+        cond_entropy = shannon_entropy(counts)
+    else:
+        cond_entropy = 1.0 # High entropy if no signals
+
+    # 4. Sign Consistency
+    if mask.sum() > 0:
+        consistency = np.mean(labels_arr[mask]) # Expected value of Y given signal
+    else:
+        consistency = 0.0
+
+    return {
+        'lift': lift,
+        'yield': opp_yield,
+        'entropy': cond_entropy,
+        'consistency': consistency,
+        'sharpe_meta': meta_sh
+    }
 
 # ==========================================
 # 5. Signal Generators
@@ -507,7 +604,7 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
 
     risk_budget_vals = [1.0, 0.7, 0.4] # Requested Risk Budget thresholds
     lookbacks = [20, 30, 40, 50]
-    
+
     generators = []
     for w in lookbacks:
         generators.append(('ENTROPY', EntropyEvents(), {'window': w}))
@@ -518,7 +615,8 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
         generators.append(('KALMAN', KalmanTrendEvents(), {'q_fast': 1/w, 'q_slow': 1/(w*5)}))
 
     candidates = []
-    
+    outcomes_log = []
+
     for fam, gen, params in generators:
         try:
             if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents, ATRShockEvents, VWAPReversionEvents)):
@@ -527,16 +625,20 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
                 events = gen.generate(price, **params)
         except Exception: continue
         if len(events) < 5: continue
-        
+
         # Iterate Grid
         for grid_item in FIXED_GRID:
             pt = grid_item['pt']
             sl = grid_item['sl']
             for risk_budget in risk_budget_vals:
-                # Vectorized Labeling
+                # Vectorized Labeling (Pass High/Low if avail)
+                high = df.get('high')
+                low = df.get('low')
+
                 labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
                     price, events, df['volatility_1d'],
-                    risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=120
+                    risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=120,
+                    high=high, low=low
                 )
 
                 if labels.empty: continue
@@ -545,13 +647,24 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
                     events, labels, returns, df, probe_features, gen, params
                 )
 
+                outcomes_log.append({
+                    'family': fam,
+                    'params': str(params),
+                    'risk_budget': risk_budget,
+                    'pt_mult': pt,
+                    'sl_mult': sl,
+                    'status': status,
+                    'n': metrics.get('n', 0)
+                })
+
                 if passed:
                     candidates.append({
                         'family': fam,
                         'events': events,
                         'labels': labels,
                         'weights': weights,
-                        'mfe': mfe, 'mae': mae, 'vol': vol, # For Scoring
+                        'returns': returns, # Added returns
+                        'mfe': mfe, 'mae': mae, 'vol': vol,
                         'params': {**params, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': 120},
                         'status': status
                     })
@@ -564,21 +677,31 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
         fam_cands = [c for c in scored_candidates if c['family'] == f]
         fam_cands.sort(key=lambda x: x.get('score', 0), reverse=True)
         top5 = fam_cands[:5]
-        
+
         best_cand = None
-        best_auc = -1
-        
+        best_lift = -999.0
+
         for cand in top5:
             X = probe_features.loc[cand['labels'].index]
-            auc = run_lgbm_probe(X, cand['labels'], cand['weights'])
-            cand['auc'] = auc
-            if auc > best_auc:
-                best_auc = auc
+            # Advanced Probe
+            metrics = run_lgbm_probe(X, cand['labels'], cand['weights'], cand['returns'])
+            cand['metrics_probe'] = metrics
+
+            # Select by Meta-Label Lift
+            lift = metrics['lift']
+            cand['lift'] = lift
+
+            if lift > best_lift:
+                best_lift = lift
                 best_cand = cand
-        
-        if best_cand and best_auc > 0.51:
+
+        # Threshold: Positive Lift?
+        # The user said: "If Meta-model materially improves... base model is good enough."
+        # So Lift > 0 is good.
+        if best_cand and best_lift > 0.0:
             indicator = build_indicator_matrix(best_cand['events'], df.index, horizon=120)
             purity = average_uniqueness(indicator)
+
             geo = OutputGeometry(
                 name=f"{f}_{best_cand['params']}",
                 family=f,
@@ -586,11 +709,22 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
                 labels=best_cand['labels'],
                 weights=best_cand['weights'],
                 purity=purity,
-                auc=best_auc,
+                auc=best_cand['metrics_probe'].get('sharpe_meta', 0.0), # Storing Sharpe as AUC placeholder?
+                # Or store Lift? The class OutputGeometry has `auc` field.
+                # I should probably store Lift or Meta Sharpe in `metrics`.
                 params=best_cand['params'],
-                metrics=best_cand.get('metrics_raw', {})
+                metrics={**best_cand.get('metrics_raw', {}), **best_cand['metrics_probe']}
             )
+            # Update auc field to be useful?
+            # User said "main metrics... should not be AUC".
+            # But OutputGeometry expects `auc`. I'll put Meta Sharpe there or Lift.
+            geo.auc = best_cand['metrics_probe'].get('lift', 0.0)
             final_geoms.append(geo)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = "outcomes"
+    os.makedirs(out_dir, exist_ok=True)
+    pd.DataFrame(outcomes_log).to_csv(f"{out_dir}/geometry_gates_{timestamp}.csv", index=False)
 
     logger.info(f"Selected {len(final_geoms)} Top-1 geometries.")
     return final_geoms

@@ -89,13 +89,15 @@ from src.training.steps.labeling.regime_leaf_feature_extractor import (
 # Import Orthogonal Generation
 from src.training.steps.labeling.orthogonal_label_generation import (
     orthogonal_label_generation,
-    CusumEvents,
-    VolatilityShockEvents,
-    TrendInitiationEvents,
-    MeanReversionExtremeEvents,
-    LiquidityShockEvents,
-    TimeEvents,
-    Geometry as OrthoGeometry
+    AdaptiveSymmetricCUSUMEvents,
+    ATRShockEvents,
+    KalmanTrendEvents,
+    VWAPReversionEvents,
+    MicrostructureEvents,
+    EntropyEvents,
+    TrendModulatedBreakoutEvents,
+    KalmanRegimeEvents,
+    VWAPCrossEvents,
 )
 
 # Configure logging
@@ -902,12 +904,16 @@ class LabelBasedLayer2:
             folds.append((start, end))
 
         generators = {
-            "CUSUM": CusumEvents(),
-            "VOL": VolatilityShockEvents(),
-            "TREND": TrendInitiationEvents(),
-            "MEAN_REV": MeanReversionExtremeEvents(),
-            "LIQUIDITY": LiquidityShockEvents(),
-            "TIME": TimeEvents()
+            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
+            "VOL": ATRShockEvents(),
+            "TREND": TrendModulatedBreakoutEvents(),
+            "MEAN": VWAPReversionEvents(),
+            "LIQUIDITY": MicrostructureEvents(),
+            "ENTROPY": EntropyEvents(),
+            "BREAKOUT": TrendModulatedBreakoutEvents(),
+            "KALMAN": KalmanTrendEvents(),
+            "MR": VWAPReversionEvents(),
+            "VWAP": VWAPCrossEvents()
         }
 
         # For OOF, we treat 'production_geometries' as the selected strategy.

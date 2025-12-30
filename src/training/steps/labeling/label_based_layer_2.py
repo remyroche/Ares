@@ -3585,6 +3585,18 @@ class LabelBasedLayer2:
             logger.warning(f"Vectorized rolling correlation failed: {e}. Falling back to Pandas.")
             return X.corr().abs()
 
+    def _get_feature_category(self, feature: str) -> str:
+        f = feature.lower()
+        if any(x in f for x in ['vol', 'atr', 'std', 'range', 'width', 'bb_', 'envelope', 'zscore', 'log_ret', 'parkinson', 'garman', 'yang']):
+            return 'volatility'
+        if any(x in f for x in ['trend', 'mom', 'slope', 'roc', 'adx', 'macd', 'rsi', 'fast', 'slow', 'direction', 'consist', 'ma_', 'ema', 'fisher', 'aroon', 'stoch']):
+            return 'trend'
+        if any(x in f for x in ['touch', 'break', 'sup', 'res', 'clv', 'dist', 'level', 'fractal', 'wick', 'shadow', 'tail', 'skew', 'kurt']):
+            return 'structure'
+        if any(x in f for x in ['volume', 'obv', 'cmf', 'force', 'mfi', 'churn', 'liquidity', 'flow', 'delta']):
+            return 'volume'
+        return 'other'
+
     def _cluster_and_deduplicate(
         self,
         X: pd.DataFrame,
@@ -3593,6 +3605,7 @@ class LabelBasedLayer2:
     ) -> List[str]:
         """
         Cluster features using Average Absolute Rolling Correlation and select representatives.
+        Enhanced with Category Diversity Guarantee to ensure Trend/Structure features are retained.
         """
         if X.empty:
             return []
@@ -3613,6 +3626,7 @@ class LabelBasedLayer2:
 
             # 2. Hierarchical Clustering
             Z = linkage(condensed_dist, method='average')
+            # 0.15 dist ~= 0.85 correlation threshold
             cluster_labels = fcluster(Z, t=0.15, criterion='distance')
         except Exception:
             # Fallback to simple correlation
@@ -3648,14 +3662,37 @@ class LabelBasedLayer2:
                 winners = [feats_with_scores[0][0]]
                 selected_features.extend(winners)
 
-        # 4. Global Top N
+        # 4. Global Top N with Diversity Guarantee
         if len(selected_features) > top_n:
             final_scores = [
                 (f, feature_scores.get(f, -float('inf')))
                 for f in selected_features
             ]
             final_scores.sort(key=lambda x: x[1], reverse=True)
-            selected_features = [f for f, s in final_scores[:top_n]]
+
+            # Bucket by category
+            by_cat = {}
+            for f, s in final_scores:
+                cat = self._get_feature_category(f)
+                by_cat.setdefault(cat, []).append((f, s))
+
+            # Allocate minimum slots per category (e.g. 15% of top_n)
+            min_slots = int(top_n * 0.15)
+            keep_set = set()
+
+            # 4a. Force min slots for each category
+            for cat, items in by_cat.items():
+                # items are already sorted descending
+                for f, s in items[:min_slots]:
+                    keep_set.add(f)
+
+            # 4b. Fill remainder with best remaining global
+            for f, s in final_scores:
+                if len(keep_set) >= top_n:
+                    break
+                keep_set.add(f)
+
+            selected_features = [f for f, s in final_scores if f in keep_set]
 
         return selected_features
 
@@ -4126,9 +4163,9 @@ class LabelBasedLayer2:
         except Exception:
             cluster_multiplier = 1.5
         try:
-            cluster_cap = int(cfg.get('layer2_cluster_top_n', 140))
+            cluster_cap = int(cfg.get('layer2_cluster_top_n', 200))
         except Exception:
-            cluster_cap = 140
+            cluster_cap = 200
         intermediate_n = int(
             min(
                 len(current_features),
@@ -4157,9 +4194,9 @@ class LabelBasedLayer2:
             return [c for c in fast_subset if c in X_events_full.columns]
 
         try:
-            pre_rfe_pool = int(cfg.get('layer2_rfe_initial_pool', 80))  # Reduced from 110 for speed
+            pre_rfe_pool = int(cfg.get('layer2_rfe_initial_pool', 120))  # Reduced from 110 for speed
         except Exception:
-            pre_rfe_pool = 80
+            pre_rfe_pool = 120
         pre_rfe_candidates = self._cheap_corr_prune(
             X_clean[selected_from_clusters],
             selected_from_clusters,

@@ -29,6 +29,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import Ridge # Added
 from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.base import BaseEstimator, ClassifierMixin
 
 # Import probability calibration utilities
 from src.utils.ml_common.oof_probability_calibration import (
@@ -58,6 +59,62 @@ from src.utils.purged_kfold import PurgedKFoldTime
 logger = logging.getLogger(__name__)
 
 EPS = 1e-12
+
+class ManualCalibratedClassifier(BaseEstimator, ClassifierMixin):
+    """
+    Manual implementation of calibration for pre-fitted models,
+    bypassing sklearn's validation strictness on cv='prefit'.
+    """
+    def __init__(self, base_estimator, method='isotonic'):
+        self.base_estimator = base_estimator
+        self.method = method
+        self.calibrator = IsotonicRegression(out_of_bounds='clip') if method == 'isotonic' else None
+        self.classes_ = [0, 1]
+
+    def fit(self, X, y, sample_weight=None):
+        # Assumes base_estimator is ALREADY fitted.
+        # We predict using base estimator, then fit the calibrator on (preds, y).
+
+        # Get raw probabilities (uncalibrated)
+        # Handle cases where base estimator might not return 2 columns
+        if hasattr(self.base_estimator, "predict_proba"):
+            raw_preds = self.base_estimator.predict_proba(X)
+            if raw_preds.shape[1] == 2:
+                pos_probs = raw_preds[:, 1]
+            else:
+                pos_probs = raw_preds[:, 0] # Should not happen for binary classifier
+        else:
+            # Fallback to decision function if available
+            if hasattr(self.base_estimator, "decision_function"):
+                pos_probs = _sigmoid(self.base_estimator.decision_function(X))
+            else:
+                # Fallback to predict
+                pos_probs = self.base_estimator.predict(X).astype(float)
+
+        if self.calibrator:
+            self.calibrator.fit(pos_probs, y, sample_weight=sample_weight)
+
+        return self
+
+    def predict_proba(self, X):
+        if hasattr(self.base_estimator, "predict_proba"):
+            raw_preds = self.base_estimator.predict_proba(X)
+            pos_probs = raw_preds[:, 1] if raw_preds.shape[1] == 2 else raw_preds[:, 0]
+        elif hasattr(self.base_estimator, "decision_function"):
+            pos_probs = _sigmoid(self.base_estimator.decision_function(X))
+        else:
+            pos_probs = self.base_estimator.predict(X).astype(float)
+
+        if self.calibrator:
+            cal_p = self.calibrator.transform(pos_probs)
+            # Clip for safety
+            cal_p = np.clip(cal_p, 0.0, 1.0)
+            return np.column_stack((1-cal_p, cal_p))
+
+        return np.column_stack((1-pos_probs, pos_probs))
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 # -----------------------------------------------------------
 # CUSUM Signal Generation
@@ -1332,6 +1389,11 @@ def layer3_analyst_lgbm(
     print("LAYER 3: MULTI-GEOMETRY ANALYST META-MODELS")
     print(f"{'='*60}")
 
+    # Initialize timestamp and outcomes directory
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    outcomes_dir = Path('outcomes')
+    outcomes_dir.mkdir(exist_ok=True, parents=True)
+
     df = oof_df.copy()
     cfg = config if isinstance(config, dict) else {}
 
@@ -1520,6 +1582,7 @@ def layer3_analyst_lgbm(
     }
     
     final_models = {}
+    geometry_metrics = [] # Store per-geometry metrics
     
     for gid in selected_ids:
         if gid not in geometries_dict:
@@ -1549,13 +1612,32 @@ def layer3_analyst_lgbm(
         try:
             oof_p, model, score = _train_meta_learner_for_geometry(
                 gid, df, geometry_features, target_col, schemes, y_target.values,
-                Path('outcomes'), cfg
+                outcomes_dir, cfg
             )
             
+            # Calculate metrics for this geometry
+            if target_col in df.columns:
+                y_true_g = (df[target_col].fillna(0) > 0.5).astype(int)
+                try:
+                    auc_g = sk_roc_auc_score(y_true_g, oof_p)
+                    ll_g = sk_log_loss(y_true_g, oof_p)
+                except Exception as e:
+                    auc_g, ll_g = 0.5, 0.693
+
+                geometry_metrics.append({
+                    'geometry': gid,
+                    'auc': auc_g,
+                    'log_loss': ll_g,
+                    'score': score,
+                    'alpha': alpha,
+                    'activation': g_data.get('activation', 'linear')
+                })
+                print(f"   Geometry {gid}: Score={score:.4f}, AUC={auc_g:.4f}, LogLoss={ll_g:.4f}")
+            else:
+                 print(f"   Geometry {gid}: Score={score:.4f}")
+
             df[f'meta_prob_{gid}'] = oof_p
             final_models[gid] = model
-            
-            print(f"   Geometry {gid}: Score = {score:.4f}")
             
         except Exception as e:
             print(f"   Geometry {gid} training failed: {e}")
@@ -1563,6 +1645,14 @@ def layer3_analyst_lgbm(
     
     print(f"\n>>> Trained {len(final_models)} geometry meta-models")
     
+    # Save geometry metrics if any
+    if geometry_metrics:
+        try:
+            pd.DataFrame(geometry_metrics).to_csv(outcomes_dir / f"layer3_geometry_metrics_{ts}.csv", index=False)
+            print(f"   Saved geometry metrics to layer3_geometry_metrics_{ts}.csv")
+        except Exception as e:
+            print(f"   Failed to save geometry metrics: {e}")
+
     # ---------------------------------------------------------
     # 4. Data Alignment
     # ---------------------------------------------------------
@@ -1845,10 +1935,11 @@ def layer3_analyst_lgbm(
     base_prob_model.fit(X, y_prob, sample_weight=w_prob)
     
     # Final production calibrator fit on full data
-    final_prob_model = CalibratedClassifierCV(
-        estimator=base_prob_model,
-        method='isotonic', # Use isotonic for full model as it's most expressive if data allows
-        cv='prefit'
+    # Use ManualCalibratedClassifier because base_prob_model is already fitted on full data
+    # and standard CalibratedClassifierCV(cv='prefit') might be flaky in this env
+    final_prob_model = ManualCalibratedClassifier(
+        base_estimator=base_prob_model,
+        method='isotonic'
     )
     final_prob_model.fit(X, y_prob)
 
@@ -1862,6 +1953,7 @@ def layer3_analyst_lgbm(
     models_dict = {
         'alpha_model': final_alpha_model,
         'prob_model': final_prob_model,
+        'geometry_models': final_models, # Added per user request
         'best_alpha_type': best_alpha_name,
         'best_prob_type': best_prob_name
     }

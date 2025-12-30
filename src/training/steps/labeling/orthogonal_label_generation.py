@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import lightgbm as lgb
 import logging
-from itertools import combinations
+from itertools import combinations, product
 from sklearn.metrics import mutual_info_score
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.stats import entropy as shannon_entropy
@@ -26,7 +26,7 @@ class OutputGeometry:
     Standardized output object for the pipeline.
     Compatible with downstream Layer 3 GeometryTrial.
     """
-    def __init__(self, name, family, events, labels, weights, purity, auc, cluster_id=None):
+    def __init__(self, name, family, events, labels, weights, purity, auc, cluster_id=None, params=None):
         self.name = name
         self.family = family
         self.events = events
@@ -35,6 +35,7 @@ class OutputGeometry:
         self.purity = purity      # Uniqueness Score
         self.auc = auc            # Learnability Score (The Tournament Metric)
         self.cluster_id = cluster_id
+        self.params = params or {}
     
     def __repr__(self):
         return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)} | Cluster={self.cluster_id}>"
@@ -176,32 +177,6 @@ def normalized_mi(y1: pd.Series, y2: pd.Series) -> float:
     
     denom = min(h1, h2)
     return mi / denom if denom > 0 else 0.0
-
-def label_distribution_stable(labels: pd.Series, splits: int = 5, eps: float = 0.15) -> bool:
-    """
-    Checks if label distribution is stationary across time chunks.
-    """
-    if len(labels) < splits * 10: 
-        return True 
-
-    labels = labels.sort_index()
-    chunks = np.array_split(labels, splits)
-    
-    for a, b in combinations(chunks, 2):
-        if len(a) < 10 or len(b) < 10:
-            continue
-            
-        pa = a.value_counts(normalize=True)
-        pb = b.value_counts(normalize=True)
-        pa, pb = pa.align(pb, fill_value=0)
-        
-        d = shannon_entropy(pa, pb)
-        if not np.isfinite(d): 
-             d = 1.0
-             
-        if d > eps:
-            return False
-    return True
 
 def check_class_balance(labels: pd.Series, min_class_samples: int = 20) -> Dict:
     counts = labels.value_counts()
@@ -443,85 +418,171 @@ class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
 
 
 # ==========================================
-# 2. Labeling Logic (Triple Barrier)
+# 2. Labeling Logic (Trailing Stop Vectorized)
 # ==========================================
 
-def triple_barrier_label(price: pd.Series, events: pd.DatetimeIndex,
-                         volatility: pd.Series,
-                         horizon: int = 24,
-                         pt: float = 1.0,
-                         sl: float = 1.0,
-                         min_ret: float = 0.002) -> pd.DataFrame:
+def get_price_path_matrix(df: pd.DataFrame, events: pd.DatetimeIndex, horizon: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Standard Triple Barrier Method.
-    Crucially: If vertical barrier is hit (time expires), we take the return at that point
-    rather than dropping the label or setting it to 0.
+    Extracts (N_events, Horizon) matrices for High, Low, and Close prices using fancy indexing.
+    Starts from t+1 (next bar) to avoid lookahead bias of the signal bar itself.
     """
-    out = {}
+    n_events = len(events)
+    # Get integer locations
+    event_idx = df.index.get_indexer(events)
 
-    # Pre-compute barriers for speed
-    vol_s = volatility.reindex(events).fillna(method='bfill').fillna(0.01)
+    # Filter out events near the end
+    valid_mask = (event_idx != -1) & (event_idx < len(df) - horizon - 1)
+    event_idx = event_idx[valid_mask]
 
-    # 1. Vertical Barrier (Time)
-    # We use integer indexing which is faster
+    if len(event_idx) == 0:
+        return np.array([]), np.array([]), np.array([])
 
-    price_vals = price.values
+    # Create indices matrix: (N, Horizon)
+    # Start checking from t+1
+    idx_matrix = event_idx[:, None] + np.arange(1, horizon + 1)
 
-    for t in events:
-        if t not in price.index: continue
+    # Extract
+    if 'high' in df.columns and 'low' in df.columns:
+        highs = df['high'].values[idx_matrix]
+        lows = df['low'].values[idx_matrix]
+    else:
+        # Fallback to close if OHLC not available (though strongly discouraged)
+        highs = df['close'].values[idx_matrix]
+        lows = df['close'].values[idx_matrix]
         
-        idx_start = price.index.get_loc(t)
-        idx_end = min(idx_start + horizon, len(price) - 1)
-        
-        if idx_start == idx_end: continue
-        
-        path = price_vals[idx_start : idx_end + 1]
-        ret_path = (path / path[0]) - 1
-        
-        # Dynamic Thresholds
-        trgt = max(min_ret, vol_s[t] * pt)
-        stop = max(min_ret, vol_s[t] * sl)
+    closes = df['close'].values[idx_matrix]
 
-        # Touch times
-        # First time return > target
-        touch_pt = np.argmax(ret_path > trgt)
-        # First time return < -stop
-        touch_sl = np.argmax(ret_path < -stop)
+    return highs, lows, closes
 
-        # Logic:
-        # If touch_pt > 0 and (touch_sl == 0 or touch_pt < touch_sl): Win
-        # If touch_sl > 0 and (touch_pt == 0 or touch_sl < touch_pt): Loss
-        # Else: Vertical Barrier (Time expiration) -> Sign of return
+def vectorized_trailing_stop_label(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    volatility: pd.Series,
+    horizon: int = 120,
+    gap: float = 2.0,
+    sl_mult: float = 1.0,
+    min_profit: float = 0.002
+) -> pd.DataFrame:
+    """
+    Vectorized Trailing Stop Labeling.
+    Implements a "Pessimistic" ratchet:
+      1. Check Low against previous Stop.
+      2. Update HWM with High.
+      3. Update Stop based on HWM.
+    """
+    # 1. Prepare Data
+    # Align volatility
+    vol_events = volatility.reindex(events).fillna(method='bfill').fillna(0.01).values
 
-        label = 0
-        final_idx = -1
+    # Entry Prices (Close at signal time)
+    entry_prices = df['close'].reindex(events).values
 
-        if touch_pt > 0 and (touch_sl == 0 or touch_pt < touch_sl):
-            label = 1
-            final_idx = touch_pt
-        elif touch_sl > 0 and (touch_pt == 0 or touch_sl < touch_pt):
-            label = -1
-            final_idx = touch_sl
-        else:
-            # Vertical Barrier Logic
-            final_ret = ret_path[-1]
-            if final_ret > min_ret: label = 1
-            elif final_ret < -min_ret: label = -1
-            else: label = 0 # Noise
-            final_idx = len(ret_path) - 1
-            
-        if label != 0:
-            out[t] = {
-                'label': label,
-                'ret': ret_path[final_idx],
-                'trgt': trgt
-            }
-            
-    if not out: return pd.DataFrame()
-    df = pd.DataFrame.from_dict(out, orient='index')
-    # Weight by return magnitude relative to target (concept from AFML)
-    df['weight'] = (df['ret'].abs() / df['trgt']).clip(0, 2.0)
-    return df
+    # Filter valid events (handled in get_price_path but we need consistency)
+    event_locs = df.index.get_indexer(events)
+    valid_mask = (event_locs != -1) & (event_locs < len(df) - horizon - 1)
+
+    if np.sum(valid_mask) == 0:
+        return pd.DataFrame()
+
+    events = events[valid_mask]
+    vol_events = vol_events[valid_mask]
+    entry_prices = entry_prices[valid_mask]
+
+    # Get Future Paths (N, H)
+    highs, lows, closes = get_price_path_matrix(df, events, horizon)
+
+    if highs.size == 0:
+        return pd.DataFrame()
+
+    n_events, h = highs.shape
+
+    # 2. Compute Initial Stops
+    # Initial Stop = Entry * (1 - SL * Vol)
+    initial_stops = entry_prices * (1 - sl_mult * vol_events)
+
+    # 3. Compute High Water Marks (HWM)
+    # We include Entry Price in HWM calculation to ensure HWM starts at least at Entry
+    # Concatenate Entry to Highs to compute cumulative max, then slice off Entry
+    # Shape: (N, H+1)
+    augmented_highs = np.column_stack((entry_prices, highs))
+    hwm_stream = np.maximum.accumulate(augmented_highs, axis=1)
+
+    # 4. Compute Ratchet Stops
+    # Potential Stop = HWM * (1 - Gap * Vol)
+    # We broadcast vol_events to (N, 1)
+    gap_pct = (vol_events * gap)[:, None]
+    potential_stops = hwm_stream * (1 - gap_pct)
+
+    # Ratchet: Stop can only go UP.
+    ratchet_stops_stream = np.maximum.accumulate(potential_stops, axis=1)
+
+    # Floor with Initial Stop
+    # Broadcast Initial Stops to (N, H+1)
+    ratchet_stops_stream = np.maximum(ratchet_stops_stream, initial_stops[:, None])
+
+    # 5. Check Exits (Pessimistic)
+    # At step k (bar t+1+k), we check Low[k] against Stop from previous step.
+    # Stop from previous step is ratchet_stops_stream[:, k] (index k corresponds to state after bar k-1)
+    # Note: ratchet_stops_stream column 0 is derived from Entry Price.
+    # This is the stop active for the first bar (Highs/Lows column 0).
+    # So we use columns 0 to H-1 of Ratchet Stream as effective stops for bars 0 to H-1.
+    effective_stops = ratchet_stops_stream[:, :-1]
+
+    # Check Hits: Low <= Effective Stop
+    hits = lows <= effective_stops
+
+    # Find first hit index
+    # argmax returns index of first True. If no True, returns 0.
+    first_hit_idx = np.argmax(hits, axis=1)
+
+    # Check if there was actually a hit (if argmax=0, check if index 0 is True)
+    # Or simpler: verify any hit in the row
+    has_hit = np.any(hits, axis=1)
+
+    # 6. Determine Exit Price and PnL
+    exit_prices = np.zeros(n_events)
+    # exit_indices = np.zeros(n_events, dtype=int)
+
+    # For hits: Exit Price is the Stop Level triggered
+    # We take effective_stops[row, hit_idx]
+    # Use fancy indexing
+    row_indices = np.arange(n_events)
+
+    # Default (No Hit): Exit at last Close (Time Expiry)
+    exit_prices[~has_hit] = closes[~has_hit, -1]
+    # exit_indices[~has_hit] = h - 1
+
+    # For Hits:
+    hit_rows = row_indices[has_hit]
+    hit_cols = first_hit_idx[has_hit]
+    exit_prices[has_hit] = effective_stops[hit_rows, hit_cols]
+    # exit_indices[has_hit] = hit_cols
+
+    # Calculate Returns
+    returns = (exit_prices - entry_prices) / entry_prices
+
+    # 7. Generate Labels and Weights
+    # Label 1 if Return > min_profit, else -1 (or 0)
+    labels = np.where(returns > min_profit, 1.0, -1.0)
+
+    # Weighting (similar to TBM)
+    # Weight by return magnitude relative to target?
+    # Here target is infinite.
+    # We can scale by volatility or Sharpe proxy.
+    # Let's use Return / (Gap * Vol) as a proxy for "R-multiple" captured
+    # (Gap*Vol is roughly the risk)
+    risk_unit = gap_pct[:, 0] * entry_prices # Approx initial risk distance
+    r_multiple = np.abs(returns * entry_prices) / (risk_unit + 1e-9)
+    weights = np.clip(r_multiple, 0.1, 2.0)
+
+    # Construct DataFrame
+    out_df = pd.DataFrame({
+        'label': labels,
+        'ret': returns,
+        'weight': weights
+    }, index=events)
+
+    return out_df
 
 # ==========================================
 # 3. Probe & Validation Tools (Purged CV)
@@ -779,6 +840,7 @@ def orthogonal_label_generation(
     """
     Main Execution Pipeline for Orthogonal Label Generation.
     Replaces standard greedy selection with ONC-style clustering.
+    Implements Trailing Stop Logic with Grid Search.
     """
     logger.info("--- Starting Advanced Geometry Generation ---")
     
@@ -787,7 +849,9 @@ def orthogonal_label_generation(
     
     # Use df_full if provided, else construct min necessary
     if df_full is None:
-        df_full = pd.DataFrame({'close': price, 'volume': volume})
+        # Warning: Using Close for High/Low if df_full is not provided
+        logger.warning("df_full not provided. Using Close for High/Low path simulation.")
+        df_full = pd.DataFrame({'close': price, 'high': price, 'low': price, 'volume': volume})
     elif 'volume' not in df_full.columns and volume is not None:
         df_full['volume'] = volume
 
@@ -831,17 +895,19 @@ def orthogonal_label_generation(
         ('VWAP_CROSS', VWAPCrossEvents(), {'lookback': 50}),
     ]
     
-    # 3. Process Candidates
+    # 3. Labeling Grid (Trailing Gap x Stop Loss)
+    # Grid: Gap [1.5, 2.0, 2.5, 3.0] x SL [0.4, 0.6]
+    trailing_gaps = [1.5, 2.0, 2.5, 3.0]
+    stop_loss_mults = [0.4, 0.6]
+    labeling_grid = list(product(trailing_gaps, stop_loss_mults))
+
+    # 4. Process Candidates
     candidates = []
     volatility = price.pct_change().rolling(20).std()
         
     for name, gen, params in generators:
         # A. Generate Events
         try:
-            # Pass df_full to all generators that might need it (OHLCV)
-            # If generator signature is restricted, kwargs will handle it if mapped correctly?
-            # BaseEventGenerator.generate takes (data, **params).
-            # We need to dispatch correctly.
             if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents,
                                 ATRShockEvents, VWAPReversionEvents, VWAPCrossEvents)):
                 events = gen.generate(df_full, **params)
@@ -853,46 +919,52 @@ def orthogonal_label_generation(
             
         if len(events) < 30: continue
 
-        # B. Label (Triple Barrier)
-        # Using fixed horizon 24 for now as per snippet, or could loop horizons
-        # Assuming horizon=24 is the target for "Teachers"
-        h = 24
-        labeled_df = triple_barrier_label(price, events, volatility, horizon=h)
-        if labeled_df.empty: continue
+        # B. Loop over Labeling Grid (Trailing Stop)
+        for gap, sl in labeling_grid:
+            grid_name = f"{name}_G{gap}_S{sl}"
 
-        # NEW: Check Class Balance (re-added as per reviewer feedback)
-        balance_check = check_class_balance(labeled_df['label'])
-        if not balance_check['valid']:
-             logger.debug(f"Skipping {name}: Imbalanced classes {balance_check['balance_ratio']:.2f}")
-             continue
+            # Trailing Stop Labeling (Vectorized)
+            h = 120 # Standard horizon for Trailing Stop to play out
+            labeled_df = vectorized_trailing_stop_label(
+                df_full, events, volatility, horizon=h, gap=gap, sl_mult=sl
+            )
 
-        # C. Probe (Learnability Check)
-        y = labeled_df['label']
-        w = labeled_df['weight']
+            if labeled_df.empty: continue
 
-        # Align probe features to events
-        X_curr = X_probe.loc[y.index]
+            # Check Class Balance
+            balance_check = check_class_balance(labeled_df['label'])
+            if not balance_check['valid']:
+                 continue
 
-        try:
-            auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
-        except Exception:
-            auc = 0.5
+            # C. Probe (Learnability Check)
+            y = labeled_df['label']
+            w = labeled_df['weight']
 
-        candidates.append({
-            'name': name,
-            'family': name.split('_')[0],
-            'events': events,
-            'labels': y,
-            'weights': w,
-            'auc': auc,
-            'indicator': build_indicator_matrix(events, price.index, horizon=h)
-        })
-        logger.info(f"Generated {name}: AUC={auc:.3f}, Events={len(events)}")
+            # Align probe features to events
+            X_curr = X_probe.loc[y.index]
+
+            try:
+                auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
+            except Exception:
+                auc = 0.5
+
+            candidates.append({
+                'name': grid_name,
+                'family': name.split('_')[0],
+                'events': events,
+                'labels': y,
+                'weights': w,
+                'auc': auc,
+                'indicator': build_indicator_matrix(events, price.index, horizon=h),
+                'params': {**params, 'gap': gap, 'sl_mult': sl, 'horizon': h}
+            })
+
+        logger.info(f"Processed {name}, Total Candidates: {len(candidates)}")
 
     if not candidates:
         return []
 
-    # 4. Cluster for Orthogonality (The "Teacher" Selection)
+    # 5. Cluster for Orthogonality (The "Teacher" Selection)
     logger.info("--- Clustering Geometries ---")
     cluster_map = cluster_geometries(candidates)
     
@@ -904,14 +976,14 @@ def orthogonal_label_generation(
         clusters[c_id].append(cand)
         cand['cluster_id'] = c_id
 
-    # 5. Selection (Best AUC per Cluster)
+    # 6. Selection (Best AUC per Cluster)
     final_geometries = []
 
     for c_id, group in clusters.items():
         # Pick the best AUC in this cluster
         best_in_cluster = max(group, key=lambda x: x['auc'])
 
-        # Purity Calculation (Using average uniqueness logic)
+        # Purity Calculation
         purity = average_uniqueness(best_in_cluster['indicator'])
 
         geo = OutputGeometry(
@@ -922,10 +994,11 @@ def orthogonal_label_generation(
             best_in_cluster['weights'],
             purity,
             best_in_cluster['auc'],
-            cluster_id=c_id
+            cluster_id=c_id,
+            params=best_in_cluster['params']
         )
 
-        # Threshold: Only accept if AUC is better than random + margin
+        # Threshold
         if geo.auc > tau_auc:
             final_geometries.append(geo)
 

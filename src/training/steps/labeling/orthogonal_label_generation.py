@@ -26,7 +26,7 @@ class OutputGeometry:
     Standardized output object for the pipeline.
     Compatible with downstream Layer 3 GeometryTrial.
     """
-    def __init__(self, name, family, events, labels, weights, purity, auc, cluster_id=None):
+    def __init__(self, name, family, events, labels, weights, purity, auc, cluster_id=None, params=None):
         self.name = name
         self.family = family
         self.events = events
@@ -35,9 +35,13 @@ class OutputGeometry:
         self.purity = purity      # Uniqueness Score
         self.auc = auc            # Learnability Score (The Tournament Metric)
         self.cluster_id = cluster_id
+        self.params = params if params is not None else {}
     
     def __repr__(self):
         return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)} | Cluster={self.cluster_id}>"
+
+# Alias for compatibility if needed
+Geometry = OutputGeometry
 
 class KalmanFilter1D:
     """
@@ -769,8 +773,9 @@ def cluster_geometries(geometries: List[Dict]) -> Dict[str, int]:
 # ==========================================
 
 def orthogonal_label_generation(
-    price: pd.Series,
-    volume: pd.Series,
+    data: Union[pd.Series, pd.DataFrame],
+    labelers: Optional[Dict[str, Callable]] = None,
+    volume: Optional[pd.Series] = None,
     df_full: Optional[pd.DataFrame] = None,
     tau_auc: float = 0.52,
     tau_mi: float = 0.15,
@@ -781,13 +786,28 @@ def orthogonal_label_generation(
     Replaces standard greedy selection with ONC-style clustering.
     """
     logger.info("--- Starting Advanced Geometry Generation ---")
+
+    # 0. Data Standardization
+    if isinstance(data, pd.DataFrame):
+        price = data['close']
+        if volume is None and 'volume' in data.columns:
+            volume = data['volume']
+        if df_full is None:
+            df_full = data
+    else:
+        price = data
+
+    if volume is None and df_full is not None and 'volume' in df_full.columns:
+        volume = df_full['volume']
     
     # 1. Generate Probe Features
     X_probe = generate_probe_features(price, volume)
     
     # Use df_full if provided, else construct min necessary
     if df_full is None:
-        df_full = pd.DataFrame({'close': price, 'volume': volume})
+        df_full = pd.DataFrame({'close': price})
+        if volume is not None:
+            df_full['volume'] = volume
     elif 'volume' not in df_full.columns and volume is not None:
         df_full['volume'] = volume
 
@@ -839,9 +859,6 @@ def orthogonal_label_generation(
         # A. Generate Events
         try:
             # Pass df_full to all generators that might need it (OHLCV)
-            # If generator signature is restricted, kwargs will handle it if mapped correctly?
-            # BaseEventGenerator.generate takes (data, **params).
-            # We need to dispatch correctly.
             if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents,
                                 ATRShockEvents, VWAPReversionEvents, VWAPCrossEvents)):
                 events = gen.generate(df_full, **params)
@@ -853,41 +870,78 @@ def orthogonal_label_generation(
             
         if len(events) < 30: continue
 
-        # B. Label (Triple Barrier)
-        # Using fixed horizon 24 for now as per snippet, or could loop horizons
-        # Assuming horizon=24 is the target for "Teachers"
-        h = 24
-        labeled_df = triple_barrier_label(price, events, volatility, horizon=h)
-        if labeled_df.empty: continue
+        # Define Labeling Variants
+        if labelers:
+            variants = list(labelers.items())
+        else:
+            # Fallback to default Triple Barrier if no labelers provided
+            variants = [("DEFAULT", partial(triple_barrier_label, volatility=volatility, horizon=24))]
 
-        # NEW: Check Class Balance (re-added as per reviewer feedback)
-        balance_check = check_class_balance(labeled_df['label'])
-        if not balance_check['valid']:
-             logger.debug(f"Skipping {name}: Imbalanced classes {balance_check['balance_ratio']:.2f}")
-             continue
+        for lbl_name, lbl_func in variants:
+            # B. Label
+            try:
+                # Dispatch based on provided labelers or default
+                if labelers:
+                     labeled_df = lbl_func(df_full, events)
+                     h = 120 # Default assumption for dominance wrapper
+                else:
+                     labeled_df = lbl_func(price, events)
+                     h = 24
+            except Exception as e:
+                # Try fallback call with price
+                try:
+                    labeled_df = lbl_func(price, events)
+                    h = 24
+                except Exception as e2:
+                    continue
 
-        # C. Probe (Learnability Check)
-        y = labeled_df['label']
-        w = labeled_df['weight']
+            # Standardize output
+            if isinstance(labeled_df, tuple):
+                y = labeled_df[0]
+                w = pd.Series(1.0, index=y.index) # Default weights
+            elif isinstance(labeled_df, pd.DataFrame) and 'label' in labeled_df.columns:
+                 y = labeled_df['label']
+                 w = labeled_df.get('weight', pd.Series(1.0, index=y.index))
+            elif isinstance(labeled_df, pd.Series):
+                 y = labeled_df
+                 w = pd.Series(1.0, index=y.index)
+            else:
+                 continue
 
-        # Align probe features to events
-        X_curr = X_probe.loc[y.index]
+            if y.empty: continue
 
-        try:
-            auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
-        except Exception:
-            auc = 0.5
+            # Filter NaNs
+            y = y.dropna()
+            w = w.reindex(y.index).fillna(1.0)
+            events_filtered = events[events.isin(y.index)]
 
-        candidates.append({
-            'name': name,
-            'family': name.split('_')[0],
-            'events': events,
-            'labels': y,
-            'weights': w,
-            'auc': auc,
-            'indicator': build_indicator_matrix(events, price.index, horizon=h)
-        })
-        logger.info(f"Generated {name}: AUC={auc:.3f}, Events={len(events)}")
+            # Check Class Balance
+            balance_check = check_class_balance(y)
+            if not balance_check['valid']:
+                 continue
+
+            # C. Probe (Learnability Check)
+            X_curr = X_probe.reindex(y.index).fillna(0)
+
+            try:
+                auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
+            except Exception:
+                auc = 0.5
+
+            variant_name = f"{name}_{lbl_name}" if lbl_name != "DEFAULT" else name
+
+            candidates.append({
+                'name': variant_name,
+                'family': name.split('_')[0],
+                'events': events_filtered,
+                'labels': y,
+                'weights': w,
+                'auc': auc,
+                'params': params,
+                'labeler_name': lbl_name,
+                'indicator': build_indicator_matrix(events_filtered, price.index, horizon=h)
+            })
+            logger.info(f"Generated {variant_name}: AUC={auc:.3f}, Events={len(events_filtered)}")
 
     if not candidates:
         return []
@@ -922,7 +976,8 @@ def orthogonal_label_generation(
             best_in_cluster['weights'],
             purity,
             best_in_cluster['auc'],
-            cluster_id=c_id
+            cluster_id=c_id,
+            params=best_in_cluster.get('params')
         )
 
         # Threshold: Only accept if AUC is better than random + margin

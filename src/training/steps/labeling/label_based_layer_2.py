@@ -34,7 +34,7 @@ from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.tree import DecisionTreeClassifier
-from scipy.stats import spearmanr, rankdata
+from scipy.stats import spearmanr, rankdata, entropy as shannon_entropy
 from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
 from scipy.cluster.hierarchy import linkage, fcluster
@@ -572,6 +572,87 @@ class GeometryTrial:
     race_score: Optional[float] = None
     events: Optional[pd.DatetimeIndex] = None # Added for orthogonality
 
+def get_entropy(series: pd.Series, base=2) -> float:
+    """Computes Shannon Entropy of a digitized series."""
+    value_counts = series.value_counts(normalize=True, sort=False)
+    return shannon_entropy(value_counts, base=base)
+
+
+def roll_entropy(series: pd.Series, window: int = 20, bins: int = 10) -> pd.Series:
+    """Rolling Entropy to detect structural breaks."""
+    def _ent(x):
+        hist, bin_edges = np.histogram(x, bins=bins, density=True)
+        # Avoid log(0)
+        hist = hist[hist > 0]
+        return -np.sum(hist * np.log2(hist))
+
+    return series.rolling(window).apply(_ent, raw=True)
+
+
+def get_serial_correlation(series: pd.Series, window: int = 20) -> pd.Series:
+    """
+    Rolling serial correlation (autocorrelation at lag 1).
+    High positive = Trending; Negative = Mean Reverting.
+    """
+    return series.rolling(window).apply(lambda x: pd.Series(x).autocorr(lag=1), raw=True)
+
+
+def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
+    """
+    Maps events to the full timeline.
+    Crucial for uniqueness calculations.
+    """
+    arr = np.zeros(len(index), dtype=int)
+    valid_events = events.intersection(index)
+    if valid_events.empty:
+        return pd.DataFrame(0, index=index, columns=[0])
+
+
+    event_locs = index.get_indexer(valid_events)
+    event_locs = event_locs[event_locs != -1]
+
+    n_bars = len(index)
+    for loc in event_locs:
+        end_loc = min(loc + horizon, n_bars)
+        arr[loc:end_loc] += 1
+
+    # Cap at 1 for binary "Active" status
+    arr = np.clip(arr, 0, 1)
+    return pd.DataFrame(arr, index=index, columns=[0])
+
+
+def generate_market_state_probe(price: pd.Series, volume: pd.Series) -> pd.DataFrame:
+    """
+    A 'Theory of Mind' Probe.
+    Instead of just RSI, we test if the geometry is learnable based on
+    Information Theory and Market Microstructure states.
+    """
+    df = pd.DataFrame(index=price.index)
+
+    # 1. Serial Correlation (Trendiness vs Mean Reversion state)
+    df['serial_corr'] = get_serial_correlation(price.pct_change(), window=20)
+
+    # 2. Volatility Ratio (Expansion/Contraction state)
+    vol_short = price.pct_change().rolling(10).std()
+    vol_long = price.pct_change().rolling(60).std()
+    df['vol_regime'] = vol_short / (vol_long + 1e-9)
+
+    # 3. Entropy (Information state)
+    # Are returns random or structured?
+    df['entropy'] = roll_entropy(np.log(price).diff().fillna(0), window=50)
+
+    # 4. Amihud Illiquidity (Liquidity state)
+    # High value = Price moves easily with little volume (Fragile)
+    ret_abs = price.pct_change().abs()
+    df['illiquidity'] = (ret_abs / (volume * price + 1e-9)).rolling(20).mean()
+
+    # 5. Relative Drawdown (Psychological state)
+    roll_max = price.rolling(100).max()
+    df['drawdown'] = (price / roll_max) - 1.0
+
+    return df.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+
 class LabelBasedLayer2:
     """
     Layer 2: Regime-Conditional Geometry Optimization & Meta-Labeling.
@@ -1036,6 +1117,15 @@ class LabelBasedLayer2:
         signals = pd.DataFrame({'consensus': 1.0}, index=df.index)
         try:
             X = create_meta_features(df, signals, events_df.index)
+
+            # --- Enhanced Probe Features ---
+            if 'close' in df.columns and 'volume' in df.columns:
+                probe_feats = generate_market_state_probe(df['close'], df['volume'])
+                # Reindex to events
+                probe_feats_events = probe_feats.reindex(events_df.index).fillna(0.0)
+                X = pd.concat([X, probe_feats_events], axis=1)
+            # -------------------------------
+
             return X
         except Exception as e:
             logger.warning(f"Feature generation failed: {e}")

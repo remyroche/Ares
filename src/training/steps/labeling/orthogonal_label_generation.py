@@ -38,21 +38,25 @@ FIXED_GRID = [
 ]
 
 class OutputGeometry:
-    def __init__(self, name, family, events, labels, weights, purity, auc, params, metrics=None):
+    
+    def __init__(self, name, family, events, labels, weights, purity, auc, cluster_id=None, params=None):
         self.name = name
         self.family = family
         self.events = events
         self.labels = labels
         self.weights = weights
-        self.purity = purity
-        self.auc = auc
-        self.params = params
-        self.metrics = metrics or {}
+        self.purity = purity      # Uniqueness Score
+        self.auc = auc            # Learnability Score (The Tournament Metric)
+        self.cluster_id = cluster_id
+        self.params = params if params is not None else {}
     
     def __repr__(self):
         return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)}>"
 
 # Compatibility Alias
+Geometry = OutputGeometry
+
+# Alias for compatibility if needed
 Geometry = OutputGeometry
 
 class KalmanFilter1D:
@@ -614,6 +618,86 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
         generators.append(('MR_VWAP', VWAPReversionEvents(), {'lookback': w}))
         generators.append(('KALMAN', KalmanTrendEvents(), {'q_fast': 1/w, 'q_slow': 1/(w*5)}))
 
+def orthogonal_label_generation(
+    data: Union[pd.Series, pd.DataFrame],
+    labelers: Optional[Dict[str, Callable]] = None,
+    volume: Optional[pd.Series] = None,
+    df_full: Optional[pd.DataFrame] = None,
+    tau_auc: float = 0.52,
+    tau_mi: float = 0.15,
+    tau_uniq: float = 0.10
+) -> List[OutputGeometry]:
+    """
+    Main Execution Pipeline for Orthogonal Label Generation.
+    Replaces standard greedy selection with ONC-style clustering.
+    """
+    logger.info("--- Starting Advanced Geometry Generation ---")
+
+    # 0. Data Standardization
+    if isinstance(data, pd.DataFrame):
+        price = data['close']
+        if volume is None and 'volume' in data.columns:
+            volume = data['volume']
+        if df_full is None:
+            df_full = data
+    else:
+        price = data
+
+    if volume is None and df_full is not None and 'volume' in df_full.columns:
+        volume = df_full['volume']
+    
+    # 1. Generate Probe Features
+    X_probe = generate_probe_features(price, volume)
+    
+    # Use df_full if provided, else construct min necessary
+    if df_full is None:
+        df_full = pd.DataFrame({'close': price})
+        if volume is not None:
+            df_full['volume'] = volume
+    elif 'volume' not in df_full.columns and volume is not None:
+        df_full['volume'] = volume
+
+    # 2. Define Candidates (Generators)
+    # Including multiple variations to feed the clustering
+    generators = [
+        # Structural Family (Entropy)
+        ('ENTROPY', EntropyEvents(), {'window': 24}),
+        ('ENTROPY_FAST', EntropyEvents(), {'window': 12}),
+        ('ENTROPY_SLOW', EntropyEvents(), {'window': 48}),
+        
+        # Volatility Family (Adaptive CUSUM Upgrade)
+        ('CUSUM_ADAPT', AdaptiveSymmetricCUSUMEvents(), {'multiplier': 0.5, 'vol_window': 50}),
+        ('CUSUM_TIGHT', AdaptiveSymmetricCUSUMEvents(), {'multiplier': 0.3, 'vol_window': 20}),
+        ('CUSUM_LOOSE', AdaptiveSymmetricCUSUMEvents(), {'multiplier': 0.8, 'vol_window': 50}),
+        
+        # Liquidity Family
+        ('LIQUIDITY', MicrostructureEvents(), {'window': 20}),
+        ('LIQUIDITY_FAST', MicrostructureEvents(), {'window': 10}),
+        
+        # Breakout Family (Trend Modulated)
+        ('BREAKOUT', TrendModulatedBreakoutEvents(), {'lookback': 48, 'anchor_window': 100}),
+        ('BREAKOUT_FAST', TrendModulatedBreakoutEvents(), {'lookback': 20, 'anchor_window': 50}),
+
+        # Kalman Trend (Replaces MA Trend)
+        ('KALMAN_TREND', KalmanTrendEvents(), {'q_fast': 1e-3, 'q_slow': 1e-5}),
+        ('KALMAN_TREND_SENS', KalmanTrendEvents(), {'q_fast': 5e-3, 'q_slow': 5e-5}),
+
+        # Volatility Shock (ATR Upgrade)
+        ('VOL_SHOCK', ATRShockEvents(), {'lookback': 14, 'long_window': 50, 'z': 2.0}),
+        ('VOL_SHOCK_EXT', ATRShockEvents(), {'lookback': 14, 'long_window': 100, 'z': 3.0}),
+
+        # Mean Reversion (VWAP Upgrade)
+        ('MR_VWAP', VWAPReversionEvents(), {'lookback': 50, 'z': 2.5}),
+        ('MR_VWAP_FAST', VWAPReversionEvents(), {'lookback': 24, 'z': 2.0}),
+
+        # Kalman Regime (New)
+        ('KALMAN_REGIME', KalmanRegimeEvents(), {'Q': 1e-4, 'R': 0.01, 'z': 2.0}),
+
+        # VWAP Cross (New)
+        ('VWAP_CROSS', VWAPCrossEvents(), {'lookback': 50}),
+    ]
+    
+    # 3. Process Candidates
     candidates = []
     outcomes_log = []
 
@@ -728,3 +812,131 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
 
     logger.info(f"Selected {len(final_geoms)} Top-1 geometries.")
     return final_geoms
+            # Pass df_full to all generators that might need it (OHLCV)
+            if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents,
+                                ATRShockEvents, VWAPReversionEvents, VWAPCrossEvents)):
+                events = gen.generate(df_full, **params)
+            else:
+                events = gen.generate(price, **params)
+        except Exception as e:
+            logger.warning(f"Generator {name} failed: {e}")
+            continue
+            
+        if len(events) < 30: continue
+
+        # Define Labeling Variants
+        if labelers:
+            variants = list(labelers.items())
+        else:
+            # Fallback to default Triple Barrier if no labelers provided
+            variants = [("DEFAULT", partial(triple_barrier_label, volatility=volatility, horizon=24))]
+
+        for lbl_name, lbl_func in variants:
+            # B. Label
+            try:
+                # Dispatch based on provided labelers or default
+                if labelers:
+                     labeled_df = lbl_func(df_full, events)
+                     h = 120 # Default assumption for dominance wrapper
+                else:
+                     labeled_df = lbl_func(price, events)
+                     h = 24
+            except Exception as e:
+                # Try fallback call with price
+                try:
+                    labeled_df = lbl_func(price, events)
+                    h = 24
+                except Exception as e2:
+                    continue
+
+            # Standardize output
+            if isinstance(labeled_df, tuple):
+                y = labeled_df[0]
+                w = pd.Series(1.0, index=y.index) # Default weights
+            elif isinstance(labeled_df, pd.DataFrame) and 'label' in labeled_df.columns:
+                 y = labeled_df['label']
+                 w = labeled_df.get('weight', pd.Series(1.0, index=y.index))
+            elif isinstance(labeled_df, pd.Series):
+                 y = labeled_df
+                 w = pd.Series(1.0, index=y.index)
+            else:
+                 continue
+
+            if y.empty: continue
+
+            # Filter NaNs
+            y = y.dropna()
+            w = w.reindex(y.index).fillna(1.0)
+            events_filtered = events[events.isin(y.index)]
+
+            # Check Class Balance
+            balance_check = check_class_balance(y)
+            if not balance_check['valid']:
+                 continue
+
+            # C. Probe (Learnability Check)
+            X_curr = X_probe.reindex(y.index).fillna(0)
+
+            try:
+                auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
+            except Exception:
+                auc = 0.5
+
+            variant_name = f"{name}_{lbl_name}" if lbl_name != "DEFAULT" else name
+
+            candidates.append({
+                'name': variant_name,
+                'family': name.split('_')[0],
+                'events': events_filtered,
+                'labels': y,
+                'weights': w,
+                'auc': auc,
+                'params': params,
+                'labeler_name': lbl_name,
+                'indicator': build_indicator_matrix(events_filtered, price.index, horizon=h)
+            })
+            logger.info(f"Generated {variant_name}: AUC={auc:.3f}, Events={len(events_filtered)}")
+
+    if not candidates:
+        return []
+
+    # 4. Cluster for Orthogonality (The "Teacher" Selection)
+    logger.info("--- Clustering Geometries ---")
+    cluster_map = cluster_geometries(candidates)
+    
+    # Group by cluster
+    clusters = {}
+    for cand in candidates:
+        c_id = cluster_map[cand['name']]
+        if c_id not in clusters: clusters[c_id] = []
+        clusters[c_id].append(cand)
+        cand['cluster_id'] = c_id
+
+    # 5. Selection (Best AUC per Cluster)
+    final_geometries = []
+
+    for c_id, group in clusters.items():
+        # Pick the best AUC in this cluster
+        best_in_cluster = max(group, key=lambda x: x['auc'])
+
+        # Purity Calculation (Using average uniqueness logic)
+        purity = average_uniqueness(best_in_cluster['indicator'])
+
+        geo = OutputGeometry(
+            best_in_cluster['name'],
+            best_in_cluster['family'],
+            best_in_cluster['events'],
+            best_in_cluster['labels'],
+            best_in_cluster['weights'],
+            purity,
+            best_in_cluster['auc'],
+            cluster_id=c_id,
+            params=best_in_cluster.get('params')
+        )
+
+        # Threshold: Only accept if AUC is better than random + margin
+        if geo.auc > tau_auc:
+            final_geometries.append(geo)
+
+    logger.info(f"Selected {len(final_geometries)} orthogonal geometries from {len(clusters)} clusters.")
+    return final_geometries

@@ -97,6 +97,13 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     LiquidityShockEvents,
     TimeEvents,
     OutputGeometry as OrthoGeometry
+    AdaptiveSymmetricCUSUMEvents,
+    ATRShockEvents,
+    TrendModulatedBreakoutEvents,
+    VWAPReversionEvents,
+    MicrostructureEvents,
+    EntropyEvents,
+    Geometry as OrthoGeometry
 )
 
 # Configure logging
@@ -899,12 +906,13 @@ class LabelBasedLayer2:
             folds.append((start, end))
 
         generators = {
-            "CUSUM": CusumEvents(),
-            "VOL": VolatilityShockEvents(),
-            "TREND": TrendInitiationEvents(),
-            "MEAN_REV": MeanReversionExtremeEvents(),
-            "LIQUIDITY": LiquidityShockEvents(),
-            "TIME": TimeEvents()
+            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
+            "VOL": ATRShockEvents(),
+            "TREND": TrendModulatedBreakoutEvents(),
+            "MEAN_REV": VWAPReversionEvents(),
+            "LIQUIDITY": MicrostructureEvents(),
+            "ENTROPY": EntropyEvents(),
+            # "TIME": EntropyEvents() # Replacing TIME with Entropy as it is structural
         }
 
         # For OOF, we treat 'production_geometries' as the selected strategy.

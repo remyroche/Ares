@@ -726,7 +726,12 @@ def generate_primary_signals(
     """
     # Extract data
     close = df['close']
-    volume = df['volume'] if 'volume' in df.columns else None
+    if 'volume' in df.columns:
+        volume = df['volume']
+    elif 'Volume' in df.columns:
+        volume = df['Volume']
+    else:
+        volume = None
 
     # Generate Dual CUSUM Signals
     # Note: vol_window matches window_vol, er_window matches window_er
@@ -9443,7 +9448,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     )
 
             # Volume flag after potential realignment
-            volume_available = 'volume' in market_data.columns
+            volume_available = 'volume' in market_data.columns or 'Volume' in market_data.columns
 
             # Attach rolling HMM regimes and specialist features aligned to train_index
             try:

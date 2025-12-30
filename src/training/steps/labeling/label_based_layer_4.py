@@ -641,6 +641,11 @@ def train_layer4_oof(
     # 1. Regime Features (Global)
     regime_features = compute_layer4_regime_features(market_data)
     
+    # Deduplicate oof_df index to prevent alignment explosions
+    if oof_df.index.duplicated().any():
+        tprint_warning(f"train_layer4_oof: oof_df has {oof_df.index.duplicated().sum()} duplicate indices. Keeping first.")
+        oof_df = oof_df[~oof_df.index.duplicated(keep='first')]
+
     # 2. Identify Layer 3 Output Columns (Prob and Alpha heads)
     prob_cols = [c for c in oof_df.columns if c.startswith('meta_prob_')]
     alpha_cols = [c for c in oof_df.columns if c.startswith('meta_alpha_')]

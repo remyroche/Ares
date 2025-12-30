@@ -139,14 +139,14 @@ def compute_dominance_labels(
     price: pd.Series,
     events: pd.DatetimeIndex,
     volatility: pd.Series,
-    kappa: float = 2.0,
-    pt_mult: float = 2.0, # Renamed for clarity from grid
+    risk_budget: float = 1.0,
+    pt_mult: float = 2.0,
     sl_mult: float = 1.0,
     horizon: int = 120,
     transaction_cost: float = 0.003
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
-    Vectorized MFE/MAE Dominance Labeling.
+    Vectorized MFE/MAE Dominance Labeling with Risk Budget.
     Returns: labels, weights, returns, mfe, mae, volatility
     """
     # 1. Filter events within bounds
@@ -165,7 +165,6 @@ def compute_dominance_labels(
         return tuple([pd.Series(dtype=float)] * 6)
 
     # 2. Construct Window Matrix (N x Horizon)
-    # This is fast for reasonable N (~thousands). For very large N, consider chunking.
     offsets = np.arange(1, horizon + 1)
     window_idxs = valid_idxs[:, None] + offsets[None, :]
 
@@ -195,7 +194,6 @@ def compute_dominance_labels(
     hit_sl = returns_matrix < sl_thresh
 
     # Identify first hit indices
-    # argmax returns 0 if no True found, so we need to check if any True exists
     any_pt = np.any(hit_pt, axis=1)
     any_sl = np.any(hit_sl, axis=1)
 
@@ -206,46 +204,40 @@ def compute_dominance_labels(
     # If PT hit and (SL not hit OR PT index < SL index)
     win_mask = any_pt & (~any_sl | (first_pt_idx < first_sl_idx))
 
-    # Dominance Logic: MFE > Kappa * MAE
-    # Avoid div/0
-    mae_safe = np.maximum(mae, 1e-9)
-    ratio = mfe / mae_safe
-    dominance_mask = ratio > kappa
+    # Risk Budget Logic: MAE / Stop_Dist <= risk_budget
+    # Stop Distance = sl_mult * vol
+    stop_dist = sl_mult * vol_vals
+    risk_used = mae / np.maximum(stop_dist, 1e-9)
+    risk_mask = risk_used <= risk_budget
 
     # Economic viability
     min_profit = transaction_cost * 1.1
     profit_mask = mfe > min_profit
 
     # Final Label
-    # "Label 1 if MFE > Kappa * MAE (and upper triple barrier is hit)"
-    final_label_mask = win_mask & dominance_mask & profit_mask
+    # Label 1 if Win AND Risk Budget Not Exceeded
+    final_label_mask = win_mask & risk_mask & profit_mask
     labels = final_label_mask.astype(float)
 
     # 5. Weighting
-    # "Weight by 1 / Volatility"
-    # Base Weight from Ratio & Magnitude
-    base_weight = np.log1p(ratio) * np.log1p(mfe / transaction_cost)
-    # Apply Volatility Adjustment
-    vol_adj = 1.0 / vol_vals
-    weights = base_weight * vol_adj
+    # "Weight by 1 / Volatility" AND "MAE/MFE Dominance score" (MFE/MAE)
 
-    # Zero out weights for non-labels if desired, or keep for analysis.
-    # Usually we only weight positive labels for some purposes, but for training we want weights for all.
-    # However, 'weights' here derived from MFE/MAE ratio usually implies "Quality of the trade".
-    # For negative labels, ratio might be low.
-    # Let's keep the formula.
+    # Ratio (MFE/MAE)
+    mae_safe = np.maximum(mae, 1e-9)
+    ratio = mfe / mae_safe
+
+    # Magnitude
+    magnitude = np.log1p(mfe / transaction_cost)
+
+    # Volatility Adjustment
+    vol_adj = 1.0 / vol_vals
+
+    # Combined Weight: Ratio * Magnitude * Vol_Adj
+    weights = ratio * magnitude * vol_adj
 
     # 6. Returns
-    # For PSR, we want the outcome.
-    # If win: Return = PT * Vol (since we hit barrier) or MFE?
-    # TBM implies exit at barrier.
-    # If loss: Return = -SL * Vol.
-    # If time out: Return = returns_matrix[:, -1]
-
     out_returns = np.where(win_mask, pt_mult * vol_vals, -sl_mult * vol_vals)
     # Handle Time Outs (neither hit)?
-    # TBM usually considers TimeOut as vertical barrier exit.
-    # Indices where neither hit:
     timeout_mask = (~any_pt) & (~any_sl)
     out_returns[timeout_mask] = returns_matrix[timeout_mask, -1]
 
@@ -511,7 +503,7 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
     probe_features['rsi_14'] = 100 - (100 / (1 + (price.diff().where(lambda x: x>0, 0).rolling(14).mean() / price.diff().where(lambda x: x<0, 0).abs().rolling(14).mean().replace(0, 1e-9))))
     probe_features.fillna(0, inplace=True)
 
-    dominance_vals = [1.5, 2.0] # Requested Kappa values
+    risk_budget_vals = [1.0, 0.7, 0.4] # Requested Risk Budget thresholds
     lookbacks = [20, 30, 40, 50]
     
     generators = []
@@ -538,11 +530,11 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
         for grid_item in FIXED_GRID:
             pt = grid_item['pt']
             sl = grid_item['sl']
-            for kappa in dominance_vals:
+            for risk_budget in risk_budget_vals:
                 # Vectorized Labeling
                 labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
                     price, events, df['volatility_1d'],
-                    kappa=kappa, pt_mult=pt, sl_mult=sl, horizon=120
+                    risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=120
                 )
 
                 if labels.empty: continue
@@ -558,7 +550,7 @@ def orthogonal_label_generation(df: pd.DataFrame, *args, **kwargs) -> List[Outpu
                         'labels': labels,
                         'weights': weights,
                         'mfe': mfe, 'mae': mae, 'vol': vol, # For Scoring
-                        'params': {**params, 'kappa': kappa, 'pt_mult': pt, 'sl_mult': sl, 'horizon': 120},
+                        'params': {**params, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': 120},
                         'status': status
                     })
 

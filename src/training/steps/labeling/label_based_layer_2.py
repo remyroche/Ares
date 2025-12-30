@@ -1131,9 +1131,9 @@ class LabelBasedLayer2:
         # Use Vectorized Implementation from orthogonal_label_generation
 
         # Params
-        kappa = float(kwargs.get('kappa', 2.0))
+        risk_budget = float(kwargs.get('risk_budget', 1.0))
         sl_mult = float(kwargs.get('sl_mult', 1.0))
-        pt_mult = float(kwargs.get('pt_mult', 2.0)) # Need PT for vector check
+        pt_mult = float(kwargs.get('pt_mult', 2.0))
         horizon = int(kwargs.get('horizon', 120))
 
         # Data
@@ -1144,7 +1144,7 @@ class LabelBasedLayer2:
         # Call Vectorized
         labels, weights, returns, mfe, mae, _ = compute_dominance_labels(
             price, events, vol,
-            kappa=kappa, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
+            risk_budget=risk_budget, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
             transaction_cost=self.transaction_cost
         )
 

@@ -1007,8 +1007,10 @@ def select_geometries(
 
     # Generate candidates (only with valid min_ratio >= 1.5 upfront)
     candidates = []
-    base_alphas = [0.3, 0.5, 1.0, 1.5, 2.0]           # Expanded from [0.5, 1.0, 1.5]
-    base_betas = [0.3, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]  # Expanded from [0.5, 1.0, 1.5, 2.0]
+    # RELAXED MAE PENALTY: Lowered alpha values (0.1, 0.2) to reduce MAE penalty.
+    # Added higher beta values (3.5, 4.0) to increase MFE reward.
+    base_alphas = [0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.2]
+    base_betas = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
     base_min_ratios = [1.5, 2.0, 2.5, 3.0]              # Expanded from [1.5, 2.0]
 
     for h in horizons:
@@ -1025,8 +1027,10 @@ def select_geometries(
     for _ in range(jitter_count):
         h = int(rng.choice(horizons))
         q = float(np.clip(rng.normal(loc=0.5, scale=0.25), 0.1, 0.9))  # Expanded range
-        a = float(np.clip(rng.normal(loc=1.0, scale=0.6), 0.2, 2.2))   # Expanded range  
-        b = float(np.clip(rng.normal(loc=1.2, scale=0.7), 0.3, 2.8))   # Expanded range
+        # RELAXED MAE PENALTY: Shifted alpha distribution mean from 1.0 to 0.6
+        a = float(np.clip(rng.normal(loc=0.6, scale=0.4), 0.1, 1.5))   # Relaxed range
+        # INCREASED MFE REWARD: Shifted beta distribution mean from 1.2 to 2.0
+        b = float(np.clip(rng.normal(loc=2.0, scale=0.8), 0.5, 4.0))   # Higher reward range
         mr = float(rng.choice(base_min_ratios))
         candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr, horizon=h))
 

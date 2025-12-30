@@ -1442,6 +1442,20 @@ def layer3_analyst_lgbm(
         if c in df.columns:
             candidate_features.append(c)
 
+    # ---------------------------------------------------------
+    # 2. Geometry Generation & Selection
+    # ---------------------------------------------------------
+
+    # Expect pre-computed CUSUM signals from previous layers
+    # Look for CUSUM columns in the input dataframe
+    cusum_cols = [c for c in df.columns if 'trend_signal' in c or 'reversal_signal' in c]
+
+    # Add CUSUM signals to candidate features if present
+    # This gives the meta-model direct visibility into the signal state
+    if cusum_cols:
+        print(f"   Adding {len(cusum_cols)} CUSUM signals to feature set.")
+        candidate_features.extend(cusum_cols)
+
     meta_features = [c for c in list(dict.fromkeys(candidate_features)) if c in df.columns]
 
     # Clean features
@@ -1452,14 +1466,6 @@ def layer3_analyst_lgbm(
     # Define global features (exclude geometry-specific features that will be added later)
     global_features = meta_features.copy()
 
-    # ---------------------------------------------------------
-    # 2. Geometry Generation & Selection
-    # ---------------------------------------------------------
-    
-    # Expect pre-computed CUSUM signals from previous layers
-    # Look for CUSUM columns in the input dataframe
-    cusum_cols = [c for c in df.columns if 'trend_signal' in c or 'reversal_signal' in c]
-    
     if not cusum_cols:
         print("⚠️ No CUSUM signals found in input. Using fallback signals.")
         # Create minimal fallback signals
@@ -1841,16 +1847,16 @@ def layer3_analyst_lgbm(
     
     # Fit Final Prob Model (Full Data)
     print("   Fitting Final Prob Model (Full) with Enhanced Calibration...")
+    # Use CV=3 for robust calibration instead of prefit on training data (which leaks)
     base_prob_model = lgb.LGBMClassifier(**best_prob_params)
-    base_prob_model.fit(X, y_prob, sample_weight=w_prob)
     
     # Final production calibrator fit on full data
     final_prob_model = CalibratedClassifierCV(
         estimator=base_prob_model,
         method='isotonic', # Use isotonic for full model as it's most expressive if data allows
-        cv='prefit'
+        cv=3
     )
-    final_prob_model.fit(X, y_prob)
+    final_prob_model.fit(X, y_prob, sample_weight=w_prob)
 
     # ---------------------------------------------------------
     # Output Assembly

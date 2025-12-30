@@ -97,6 +97,120 @@ def kalman_smooth_trend(prices: pd.Series, Q: float = 1e-5, R: float = 0.01) -> 
     kf = KalmanFilter1D(Q=Q, R=R, initial_value=prices.iloc[0] if len(prices) > 0 else 0.0)
     return kf.filter_series(prices)
 
+def compute_dual_cusum_statistics(
+    close: pd.Series,
+    volume: Optional[pd.Series] = None,
+    k: float = 0.12,
+    er_min: float = 0.2,
+    window_vol: int = 20,
+    window_er: int = 10,
+    Q: float = 1e-5,
+    R: float = 0.01
+) -> pd.DataFrame:
+    """
+    Compute continuous Dual CUSUM statistics.
+
+    Generates:
+    - S_trend_pos, S_trend_neg: Trend CUSUM accumulators
+    - S_rev_pos, S_rev_neg: Reversal CUSUM accumulators
+    - smoothed_return: Kalman smoothed returns
+    - residual_return: Deviation from smoothed return
+
+    Args:
+        close: Close prices
+        volume: Volume series (optional)
+        k: Threshold sensitivity
+        er_min: Minimum Efficiency Ratio to accumulate
+        window_vol: Window for volatility
+        window_er: Window for ER
+        Q, R: Kalman parameters
+
+    Returns:
+        DataFrame with columns: ['S_trend_pos', 'S_trend_neg', 'S_rev_pos', 'S_rev_neg', 'smoothed_return', 'residual_return']
+    """
+    # 1. Compute log returns
+    log_ret = np.log(close / close.shift(1)).fillna(0.0)
+
+    # 2. Kalman Filter
+    kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]))
+    log_ret_smooth_raw, _ = kf.filter_series(log_ret)
+
+    if not isinstance(log_ret_smooth_raw, pd.Series):
+        log_ret_smooth_series = pd.Series(log_ret_smooth_raw, index=close.index).fillna(0.0)
+    else:
+        log_ret_smooth_series = log_ret_smooth_raw.fillna(0.0)
+
+    # 3. ER and Volatility
+    # Volatility on smoothed returns
+    sigma = log_ret_smooth_series.rolling(window_vol, min_periods=1).std()
+
+    # ER Calculation
+    change = log_ret_smooth_series.rolling(window_er).sum().abs()
+    volatility = log_ret_smooth_series.abs().rolling(window_er, min_periods=1).sum()
+    ER = (change / (volatility + 1e-12)).fillna(0.0)
+
+    # Threshold h_t
+    # Simplified threshold for feature generation (ignoring complex regime modulation)
+    h_t = (k * sigma).fillna(0.0)
+
+    # 5. Residuals for Reversal
+    expected_return = log_ret_smooth_series.rolling(window_vol, min_periods=1).mean()
+    residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
+
+    # 6. CUSUM Loop
+    n = len(close)
+    r_arr = log_ret_smooth_series.to_numpy()
+    res_arr = residual_ret.to_numpy()
+    h_arr = h_t.to_numpy()
+    er_arr = ER.to_numpy()
+
+    S_trend_pos_arr = np.zeros(n)
+    S_trend_neg_arr = np.zeros(n)
+    S_rev_pos_arr = np.zeros(n)
+    S_rev_neg_arr = np.zeros(n)
+
+    S_tp, S_tn = 0.0, 0.0
+    S_rp, S_rn = 0.0, 0.0
+
+    for t in range(n):
+        if er_arr[t] < er_min:
+            S_tp, S_tn = 0.0, 0.0
+            S_rp, S_rn = 0.0, 0.0
+        else:
+            cur_h = h_arr[t]
+            if np.isnan(cur_h) or cur_h <= 0:
+                cur_h = 1e-4
+
+            # Trend CUSUM
+            S_tp = max(0.0, S_tp + r_arr[t])
+            S_tn = min(0.0, S_tn + r_arr[t])
+
+            # Reset if threshold hit (simulating signal generation resets)
+            if S_tp > cur_h: S_tp = 0.0
+            if S_tn < -cur_h: S_tn = 0.0
+
+            # Reversal CUSUM
+            S_rp = max(0.0, S_rp + res_arr[t])
+            S_rn = min(0.0, S_rn + res_arr[t])
+
+            if S_rp > cur_h: S_rp = 0.0
+            if S_rn < -cur_h: S_rn = 0.0
+
+        S_trend_pos_arr[t] = S_tp
+        S_trend_neg_arr[t] = S_tn
+        S_rev_pos_arr[t] = S_rp
+        S_rev_neg_arr[t] = S_rn
+
+    return pd.DataFrame({
+        'S_trend_pos': S_trend_pos_arr,
+        'S_trend_neg': S_trend_neg_arr,
+        'S_rev_pos': S_rev_pos_arr,
+        'S_rev_neg': S_rev_neg_arr,
+        'smoothed_return': log_ret_smooth_series,
+        'residual_return': residual_ret
+    }, index=close.index)
+
+
 def compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     """Compute RSI (Relative Strength Index)."""
     delta = prices.diff()
@@ -366,8 +480,6 @@ def compute_hilbert_phase(series: pd.Series) -> pd.Series:
     # Ehlers Simple Hilbert Transform (Causal)
     # Q[t] = trend[t] - trend[t-2]?
     # Using simple difference proxy for quadrature
-    # Q = centered.diff(2) * -1 (90 deg lag)?
-    # Let's use standard approximation:
     # Q = I shifted by 90 deg.
     # Q[t] = 0.0962*P[t] + 0.5769*P[t-2] - 0.5769*P[t-4] - 0.0962*P[t-6] (Ehlers Coefficients)
     # But simple diff is often used as rough proxy.
@@ -494,6 +606,58 @@ def create_meta_features(
     else:
         volume = pd.Series(1.0, index=df.index, dtype=float)
         volume_available = False
+
+    # ===== 0. ORTHOGONAL CUSUM & EFFICIENCY FEATURES (NEW) =====
+    # Dual CUSUM Continuous Stats
+    cusum_stats = compute_dual_cusum_statistics(
+        close,
+        volume if volume_available else None,
+        k=0.12, window_vol=20, window_er=10, er_min=0.2
+    )
+    features['cusum_trend_pos'] = _align_to_features(_norm(cusum_stats['S_trend_pos'], 'cusum_trend_pos'), n_features)
+    features['cusum_trend_neg'] = _align_to_features(_norm(cusum_stats['S_trend_neg'], 'cusum_trend_neg'), n_features)
+    features['cusum_rev_pos'] = _align_to_features(_norm(cusum_stats['S_rev_pos'], 'cusum_rev_pos'), n_features)
+    features['cusum_rev_neg'] = _align_to_features(_norm(cusum_stats['S_rev_neg'], 'cusum_rev_neg'), n_features)
+    features['smoothed_return'] = _align_to_features(_norm(cusum_stats['smoothed_return'], 'smoothed_return'), n_features)
+    features['residual_return'] = _align_to_features(_norm(cusum_stats['residual_return'], 'residual_return'), n_features)
+
+    # Rolling Efficiency Ratios
+    # Ensure log_ret and er_30 are available/calculated
+    er_30 = get_efficiency_ratio(close, 30)
+    features['rolling_efficiency_ratio'] = _align_to_features(_norm(er_30.rolling(30).mean(), 'rolling_efficiency_ratio'), n_features)
+    features['efficiency_ratio_volatility'] = _align_to_features(_norm(er_30.rolling(30).std(), 'efficiency_ratio_volatility'), n_features)
+
+    # Geometry-Specific Lag Features from Signals
+    signal_cols = [c for c in signals.columns if 'signal' in c.lower() or 'consensus' in c.lower()]
+    abs_signal_sum = pd.Series(0.0, index=df.index)
+
+    # Recalculate vol_short if not available from earlier block
+    if 'log_ret' not in locals():
+        log_ret = np.log(close).diff()
+    vol_short_local = log_ret.rolling(window=20).std()
+
+    for col in signal_cols:
+        sig_series = signals[col].fillna(0)
+        abs_signal_sum += sig_series.abs()
+
+        # Lags
+        for lag in [1, 2, 3]:
+            features[f'{col}_lag_{lag}'] = _align_to_features(sig_series.shift(lag), n_features)
+
+        # Cumulative/Rolling
+        features[f'{col}_rolling_sum_3'] = _align_to_features(sig_series.rolling(3).sum(), n_features)
+        features[f'{col}_rolling_std_5'] = _align_to_features(sig_series.rolling(5).std(), n_features)
+
+        # Interactions
+        features[f'{col}_x_ret'] = _align_to_features(_norm(sig_series * log_ret, f'{col}_x_ret'), n_features)
+        features[f'{col}_x_vol'] = _align_to_features(_norm(sig_series * vol_short_local, f'{col}_x_vol'), n_features)
+
+        # Recent Performance (Momentum of signals)
+        perf = (sig_series.shift(1) * log_ret).rolling(10).mean()
+        features[f'{col}_recent_performance'] = _align_to_features(_norm(perf, f'{col}_recent_performance'), n_features)
+
+    # Cross-Geometry Features
+    features['signal_cluster_count'] = _align_to_features(_norm(abs_signal_sum, 'signal_cluster_count'), n_features)
 
     # ===== 1. CANDLE GEOMETRY & MICRO-SENTIMENT (BASE) =====
     # Base timeframe calculation

@@ -6,6 +6,7 @@ from itertools import combinations
 from sklearn.metrics import mutual_info_score
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.stats import entropy as shannon_entropy
+from scipy.special import expit
 from typing import List, Dict, Union, Callable, Optional, Tuple
 from functools import partial
 
@@ -37,69 +38,41 @@ class OutputGeometry:
 
 class KalmanFilter1D:
     """
-    Simple 1D Kalman filter for signal smoothing.
-    Copied from mtf_feature_generation.py to ensure availability.
-
-    State-space model:
-        x_t = x_{t-1} + mu + w_t    (state evolution)
-        y_t = x_t + v_t              (observation)
-
-    Where w_t ~ N(0, Q) and v_t ~ N(0, R)
+    Simple 1D Kalman Filter for trend smoothing.
+    Required by generate_dual_cusum_signals.
     """
-
     def __init__(self, Q: float = 1e-5, R: float = 0.01, initial_value: float = 0.0):
-        """
-        Args:
-            Q: Process variance (smaller = smoother evolution)
-            R: Observation variance (larger = more smoothing)
-            initial_value: Initial state estimate
-        """
         self.Q = Q  # Process variance
-        self.R = R  # Observation variance
+        self.R = R  # Measurement variance
         self.x = initial_value  # State estimate
-        self.P = 1.0  # State variance
-
-    def update(self, measurement: float) -> Tuple[float, float]:
-        """
-        Update filter with new measurement.
-
-        Returns:
-            Tuple of (filtered_value, state_variance)
-        """
-        # Predict
-        x_prior = self.x
-        P_prior = self.P + self.Q
-
-        # Update
-        K = P_prior / (P_prior + self.R)  # Kalman gain
-        self.x = x_prior + K * (measurement - x_prior)
-        self.P = (1 - K) * P_prior
-
-        return self.x, self.P
+        self.P = 1.0  # Error covariance
 
     def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
-        """
-        Filter entire time series.
+        values = series.values
+        n = len(values)
+        x_hat = np.zeros(n)
+        P_hat = np.zeros(n)
 
-        Returns:
-            Tuple of (filtered_series, variance_series)
-        """
-        filtered = []
-        variances = []
+        x = self.x
+        P = self.P
+        Q = self.Q
+        R = self.R
 
-        for val in series:
-            if pd.isna(val):
-                filtered.append(np.nan)
-                variances.append(np.nan)
-            else:
-                x_filt, P_filt = self.update(val)
-                filtered.append(x_filt)
-                variances.append(P_filt)
+        for i in range(n):
+            # Prediction step
+            x_pred = x
+            P_pred = P + Q
 
-        return (
-            pd.Series(filtered, index=series.index),
-            pd.Series(variances, index=series.index)
-        )
+            # Update step
+            z = values[i]
+            K = P_pred / (P_pred + R)
+            x = x_pred + K * (z - x_pred)
+            P = (1 - K) * P_pred
+
+            x_hat[i] = x
+            P_hat[i] = P
+
+        return pd.Series(x_hat, index=series.index), pd.Series(P_hat, index=series.index)
 
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """
@@ -200,6 +173,25 @@ def label_distribution_stable(labels: pd.Series, splits: int = 5, eps: float = 0
         if d > eps:
             return False
     return True
+
+def check_class_balance(labels: pd.Series, min_class_samples: int = 20) -> Dict:
+    counts = labels.value_counts()
+    total = len(labels)
+    n_buy = counts.get(1, 0)
+    n_sell = counts.get(-1, 0)
+    n_signals = n_buy + n_sell
+
+    valid = True
+    if n_signals < min_class_samples:
+        valid = False
+
+    return {
+        "valid": valid,
+        "total": total,
+        "n_buy": n_buy,
+        "n_sell": n_sell,
+        "balance_ratio": n_signals / total if total > 0 else 0
+    }
 
 # ==========================================
 # 1. Event Generators (The 7 Families + Controls)
@@ -477,8 +469,8 @@ class ImprovedCUSUMEvents(BaseEventGenerator):
             
             # Compute Composite Signal
             composite = (
-                w_trend * dual_signals['trend_signal'] -
-                w_reversal * dual_signals['reversal_signal']
+                w_trend * dual_signals['trend_signal'] +   # Trend is primary direction
+                w_reversal * dual_signals['reversal_signal'] # Reversal adds to it
             )
             
             return composite.index[composite != 0]
@@ -589,6 +581,94 @@ def vol_scaled_fixed_label(price: pd.Series, events: pd.DatetimeIndex,
 # 3. Probe & Validation Tools (Purged CV)
 # ==========================================
 
+class RobustFocalLoss:
+    """
+    Production-grade Focal Loss for LightGBM in Financial ML.
+    """
+
+    def __init__(
+        self,
+        gamma_pos=1.0, # gamma_fn: Preference for Opportunity (Missed Upside)
+        gamma_neg=2.5, # gamma_fp: Preference for Safety (Traps)
+        alpha=None,
+        grad_clip=5.0,
+        w_cap=3.0,
+        mix=0.25,
+        label_smoothing=0.02,
+        verbose=True
+    ):
+        self.gamma_pos = gamma_pos
+        self.gamma_neg = gamma_neg
+        self.grad_clip = grad_clip
+        self.w_cap = w_cap
+        self.mix = mix
+        self.label_smoothing = label_smoothing
+        self.alpha = alpha
+        self.verbose = verbose
+        self._is_init = False
+
+    def _init_alpha(self, labels):
+        """Auto-compute alpha based on prevalence if not provided."""
+        if self.alpha is None:
+            n_pos = np.sum(labels > 0.5)
+            n_total = len(labels)
+            if n_total > 0:
+                # Standard inverse frequency: High alpha for rare positives
+                self.alpha = 1.0 - (n_pos / n_total)
+            else:
+                self.alpha = 0.5
+
+        # Clamp alpha for safety
+        self.alpha = np.clip(self.alpha, 0.05, 0.95)
+
+        if self.verbose:
+            logger.info(f"[LGBM Focal] Gamma(+):{self.gamma_pos} Gamma(-):{self.gamma_neg} | Alpha:{self.alpha:.4f}")
+
+        self._is_init = True
+
+    def __call__(self, preds, train_data):
+        if hasattr(train_data, 'get_label'):
+             labels = train_data.get_label()
+        else:
+             labels = train_data
+
+        # Lazy init alpha on first call to handle data loading
+        if not self._is_init:
+            self._init_alpha(labels)
+
+        # 1. Label Smoothing (Crucial for Finance)
+        y_smooth = labels * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        # 2. Robust Sigmoid
+        p = expit(preds)
+        p = np.clip(p, 1e-7, 1 - 1e-7)
+
+        # 3. Vectorized Asymmetric Gamma
+        gamma_arr = np.where(labels > 0.5, self.gamma_pos, self.gamma_neg)
+
+        # 4. Focal Weights with Capping
+        focal_weight = np.where(labels > 0.5, (1 - p), p) ** gamma_arr
+        focal_weight = np.minimum(focal_weight, self.w_cap)
+
+        # 5. Gradient & Hessian Calculation
+        grad_bce = p - y_smooth
+        alpha_factor = np.where(labels > 0.5, self.alpha, (1 - self.alpha))
+        grad_focal = alpha_factor * focal_weight * grad_bce
+        hess_bce = p * (1 - p)
+        hess_focal = alpha_factor * focal_weight * hess_bce
+
+        # 6. Mixing (Stability Anchor)
+        grad = self.mix * grad_focal + (1 - self.mix) * grad_bce
+        hess = self.mix * hess_focal + (1 - self.mix) * hess_bce
+
+        # 7. Clipping & Safety
+        if self.grad_clip:
+            grad = np.clip(grad, -self.grad_clip, self.grad_clip)
+
+        hess = np.maximum(hess, 1e-6) # Prevent divide-by-zero
+
+        return grad, hess
+
 def generate_probe_features(price: pd.Series, volume: pd.Series) -> pd.DataFrame:
     """
     Generates a standardized 'Basis Set' of features for Geometry Validation.
@@ -628,7 +708,7 @@ def generate_probe_features(price: pd.Series, volume: pd.Series) -> pd.DataFrame
 
     return df
 
-def run_quick_lgbm(X, y, w, horizon_bars=48) -> float:
+def get_purged_lgbm_auc(X, y, w, horizon_bars=48) -> float:
     if len(y) < 50: return 0.5
     
     n_splits = 3
@@ -638,19 +718,23 @@ def run_quick_lgbm(X, y, w, horizon_bars=48) -> float:
     tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap)
     scores = []
     
+    # Updated: Use RobustFocalLoss
+    focal_loss = RobustFocalLoss(gamma_pos=1.0, gamma_neg=2.0, verbose=False)
+
     params = {
-        'objective': 'multiclass',
-        'num_class': 3,
-        'metric': 'auc_mu',
+        'objective': focal_loss,  # Custom objective
+        'metric': 'auc',          # Metric compatible with binary classification
         'verbosity': -1,
         'max_depth': 3,
         'num_leaves': 8,
         'learning_rate': 0.1,
-        'n_estimators': 50
+        'n_estimators': 50,
+        'is_unbalance': True      # Handle imbalance explicitly
     }
     
-    y_map = y.map({-1:0, 0:1, 1:2})
-    
+    # Remap labels to binary (Predicting if we have a winning trade)
+    y_binary = (y.abs() > 0).astype(int)
+
     if len(y) < 100: 
         split_idx = int(len(y) * 0.7)
         tr_idx, va_idx = np.arange(split_idx), np.arange(split_idx + gap, len(y))
@@ -664,20 +748,24 @@ def run_quick_lgbm(X, y, w, horizon_bars=48) -> float:
         if len(tr_idx) < 20 or len(va_idx) < 20: continue
         
         curr_X_tr, curr_X_tr_valid = X.iloc[tr_idx], X.iloc[va_idx]
-        curr_y_tr, curr_y_tr_valid = y_map.iloc[tr_idx], y_map.iloc[va_idx]
+        curr_y_tr, curr_y_tr_valid = y_binary.iloc[tr_idx], y_binary.iloc[va_idx]
         curr_w_tr, curr_w_tr_valid = w.iloc[tr_idx], w.iloc[va_idx]
         
+        # Check if valid set has both classes
+        if len(curr_y_tr_valid.unique()) < 2:
+             continue
+
         dtrain = lgb.Dataset(curr_X_tr, label=curr_y_tr, weight=curr_w_tr)
         dvalid = lgb.Dataset(curr_X_tr_valid, label=curr_y_tr_valid, weight=curr_w_tr_valid)
         
-        model = lgb.train(params, dtrain, valid_sets=[dvalid], 
-                          callbacks=[lgb.early_stopping(10, verbose=False)])
-        
         try:
-            score = model.best_score['valid_0']['auc_mu']
+            model = lgb.train(params, dtrain, valid_sets=[dvalid],
+                              callbacks=[lgb.early_stopping(10, verbose=False)])
+
+            score = model.best_score['valid_0']['auc']
             scores.append(score)
             valid_splits_count += 1
-        except:
+        except Exception as e:
             pass
             
     return np.mean(scores) if valid_splits_count > 0 else 0.5
@@ -919,11 +1007,24 @@ def orthogonal_label_generation(
                 w_cand = res['weight']
                 valid_idx = y_cand.index
                 n_labeled = len(y_cand)
+
+                # --- NEW: Class Balance Check ---
+                balance_stats = check_class_balance(y_cand, min_class_samples=20)
+                if not balance_stats['valid']:
+                     metrics_report.append({
+                        'name': name,
+                        'stage': 'BalanceCheck',
+                        'n_labeled': n_labeled,
+                        'balance': balance_stats,
+                        'status': 'Imbalanced'
+                    })
+                     continue
+                # --------------------------------
                 
                 # Purged Probe
                 X_curr = X_probe.loc[valid_idx]
                 try:
-                    auc_score = run_quick_lgbm(X_curr, y_cand, w_cand, horizon_bars=h)
+                    auc_score = get_purged_lgbm_auc(X_curr, y_cand, w_cand, horizon_bars=h)
                 except:
                     auc_score = 0.5
                     
@@ -937,7 +1038,8 @@ def orthogonal_label_generation(
                     # Pass horizon to build accurate duration-based indicator matrix
                     "indicator": build_indicator_matrix(events, index, horizon=h),
                     "n_generated": n_events_generated,
-                    "n_labeled": n_labeled
+                    "n_labeled": n_labeled,
+                    "stats": balance_stats # Store stats
                 })
 
                 metrics_report.append({
@@ -976,7 +1078,10 @@ def orthogonal_label_generation(
         logger.info(f"\n{report_df.to_string(index=False)}")
 
         # Summary by Family
-        report_df['family'] = report_df['name'].apply(lambda x: x.split('_')[0])
+        if 'family' not in report_df.columns:
+            # Try to extract family from name
+             report_df['family'] = report_df['name'].apply(lambda x: x.split('_')[0] if isinstance(x, str) else 'Unknown')
+
         summary = report_df.groupby(['family', 'final_status']).size().unstack(fill_value=0)
         logger.info(f"\nSummary by Family:\n{summary.to_string()}")
 

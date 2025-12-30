@@ -361,6 +361,47 @@ class XGBFocalLoss:
 # Multi-Output Model Functions (Cross-Geometry Learning)
 # ==============================================================================
 
+def generate_probe_features(price: pd.Series, volume: pd.Series) -> pd.DataFrame:
+    """
+    Generates a standardized 'Basis Set' of features for Geometry Validation.
+    These use fixed industry-standard lookbacks to serve as a robust benchmark.
+    """
+    df = pd.DataFrame(index=price.index)
+
+    # 1. Momentum (Immediate & Short-term)
+    df['ret_1'] = np.log(price).diff(1)
+    df['ret_12'] = np.log(price).diff(12) # Context momentum
+
+    # 2. Oscillator (RSI 14)
+    # Simple pandas implementation
+    delta = price.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    # Avoid div/0
+    rs = gain / (loss + 1e-9)
+    df['rsi_14'] = 100 - (100 / (1 + rs))
+
+    # 3. Volatility Regime (20 vs 100)
+    # Is recent vol expanding relative to history?
+    vol_20 = df['ret_1'].rolling(20).std()
+    vol_100 = df['ret_1'].rolling(100).std()
+    df['vol_ratio'] = vol_20 / (vol_100 + 1e-6)
+
+    # 4. Trend Distance (50 bar MA)
+    # Are we far from the mean?
+    ma_50 = price.rolling(50).mean()
+    df['trend_dist'] = (price / (ma_50 + 1e-9)) - 1
+
+    # 5. Liquidity Shock (Volume vs 20 bar avg)
+    vol_ma_20 = volume.rolling(20).mean()
+    df['vol_shock'] = volume / (vol_ma_20 + 1e-6)
+
+    # Clean up (Probe models hate NaNs)
+    df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    return df
+
+
 def _build_multi_target_matrix(
     events_df: pd.DataFrame,
     geometries: List,
@@ -1161,8 +1202,10 @@ class LabelBasedLayer2:
         if not events_df.empty:
             events_df['family'] = self._assign_barrier_families(events_df)
             try:
-                X_probe_events = self._build_geometry_independent_event_features(df, events_df)
-                self._global_probe_features = self._select_global_probe_features(X_probe_events)
+                # Use Probe Basis set for validation
+                X_probe_events = self._build_geometry_independent_event_features(df, events_df, mode='probe')
+                # No selection needed for basis set
+                self._global_probe_features = list(X_probe_events.columns)
             except Exception:
                 self._global_probe_features = []
                 X_probe_events = pd.DataFrame(index=events_df.index)
@@ -1243,8 +1286,8 @@ class LabelBasedLayer2:
         if production_geometries:
             tprint_info(">>> Layer 2: Tier 3 Execution - Full HPO & Feature Selection for Survivors...")
 
-            # Build shared data for RFE
-            X_events_full = self._build_geometry_independent_event_features(df, events_df)
+            # Build shared data for RFE (Full Feature Set)
+            X_events_full = self._build_geometry_independent_event_features(df, events_df, mode='full')
             w_l1_prod = self._get_target_sample_weight_for_events(df, events_df)
             vol_prod = df['volatility_1d'].reindex(events_df.index).fillna(0.0)
 
@@ -1597,7 +1640,11 @@ class LabelBasedLayer2:
             X_test_events = None
 
             try:
-                X_train_events_full = self._build_geometry_independent_event_features(df_train, events_train)
+                # OOF Models are production-like, so they use the full feature set (or selected subset)
+                # But here we are building the full feature set to potentially select from or train on.
+                X_train_events_full = self._build_geometry_independent_event_features(df_train, events_train, mode='full')
+                # If using selected features from production (monolithic), we might not need probe features here
+                # But if we are re-selecting per fold, we need full features.
                 fold_probe_features = self._select_global_probe_features(X_train_events_full)
             except Exception:
                 X_train_events_full = None
@@ -1718,7 +1765,8 @@ class LabelBasedLayer2:
                 df_label = df.iloc[: label_end_pos + 1]
 
                 try:
-                    X_test_events_full = self._build_geometry_independent_event_features(df_label, events_test)
+                    # Test set also uses full features for OOF predictions
+                    X_test_events_full = self._build_geometry_independent_event_features(df_label, events_test, mode='full')
                     if X_test_events_full is not None and not getattr(X_test_events_full, 'empty', True):
                         cols = feature_cols_for_models or [str(c) for c in list(X_test_events_full.columns)]
                         X_test_events = X_test_events_full.reindex(columns=cols).fillna(0.0)
@@ -3150,8 +3198,38 @@ class LabelBasedLayer2:
         self,
         df: pd.DataFrame,
         events_df: pd.DataFrame,
+        mode: str = 'full'
     ) -> pd.DataFrame:
-        """Build one feature matrix for all events, independent of TP/SL/Horizon geometry."""
+        """
+        Build feature matrix for all events.
+
+        Args:
+            df: Market Data (OHLCV)
+            events_df: Events
+            mode: 'full' (MTF Meta Features) or 'probe' (Basis Set only)
+        """
+        if mode == 'probe':
+            # Use lightweight basis set for validation
+            close = df['close'] if 'close' in df.columns else df['Close']
+
+            # Check volume availability
+            vol_col = None
+            if 'volume' in df.columns: vol_col = 'volume'
+            elif 'Volume' in df.columns: vol_col = 'Volume'
+
+            if vol_col:
+                volume = pd.to_numeric(df[vol_col], errors='coerce').fillna(0.0)
+            else:
+                volume = pd.Series(1.0, index=close.index)
+
+            # Generate features (Basis Set)
+            probe_feats = generate_probe_features(close, volume)
+
+            # Align to events
+            X_events = probe_feats.reindex(events_df.index).fillna(0.0)
+            return X_events
+
+        # --- FULL MODE (Production / Titan RFE) ---
         signals = pd.DataFrame(index=df.index)
         try:
             if self._primary_signals is not None and 'consensus' in self._primary_signals.columns:
@@ -4787,15 +4865,19 @@ class LabelBasedLayer2:
 
             y_sub = valid_lbls.loc[indices]
 
-            # Need features
-            X_events = self._build_geometry_independent_event_features(df, fam_events.loc[indices])
-            # Filter to probe features if global selection is done?
-            # We don't have easy access to 'global_probe_features' here unless we store it or re-derive.
-            # But 'run' stores it in self._global_probe_features.
-            if getattr(self, '_global_probe_features', None):
-                cols = [c for c in self._global_probe_features if c in X_events.columns]
-                if cols:
-                    X_events = X_events[cols]
+            # Need features (Use Probe Basis if we want fast HPO)
+            # Actually, `tune_geometry_model_params` is Tier 3 (Production) optimization.
+            # It should ideally use the *full* feature set or the *selected* feature set for that geometry.
+            # Since selection happens *after* or *during* Tier 3, we often tune on full features or a large subset.
+            # However, for consistency with the initial screening, we can start with full.
+            # BUT, the user explicitly asked for probe features for the "weak" probe.
+            # This function runs "Small HPO" for the WINNING geometries.
+            # It should probably use the full set to find optimal params for the production model.
+            X_events = self._build_geometry_independent_event_features(df, fam_events.loc[indices], mode='full')
+
+            # If we have probe features defined (from Tier 1), we could use them, but this is Tier 3 HPO.
+            # We usually tune on the full set to get the best model.
+            # No filtering to probe features here.
 
             X_sub = X_events.fillna(0.0)
 
@@ -5092,8 +5174,8 @@ class LabelBasedLayer2:
         # Keep family assignment for backward compatibility and logging
         events_df['family'] = self._assign_barrier_families(events_df)
 
-        # Build feature matrix once for ALL events
-        X_events_all = self._build_geometry_independent_event_features(df, events_df)
+        # Build feature matrix once for ALL events (Probe Basis)
+        X_events_all = self._build_geometry_independent_event_features(df, events_df, mode='probe')
         
         # Check we have enough events total
         if len(events_df) < 50:

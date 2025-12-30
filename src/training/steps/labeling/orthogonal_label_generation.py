@@ -128,6 +128,12 @@ def average_uniqueness(indicator: pd.DataFrame) -> float:
     if valid_c.empty: return 0.0
     return (1.0 / valid_c).mean()
 
+def calculate_sharpe(returns: pd.Series) -> float:
+    """Calculates Sharpe Ratio of a returns series."""
+    if returns.empty or returns.std() == 0:
+        return 0.0
+    return returns.mean() / returns.std()
+
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """
     Maps events to the full timeline as a binary indicator series.
@@ -730,43 +736,53 @@ def get_purged_cv_score(X, y, w, horizon_bars=48) -> float:
 # 4. Clustering & Selection
 # ==========================================
 
-def cluster_geometries(geometries: List[Dict]) -> Dict[str, int]:
+def calculate_jaccard_distance_matrix(candidates: List[Dict]) -> np.ndarray:
+    """Calculates pairwise Jaccard distance between event sets."""
+    n = len(candidates)
+    dist_mat = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i + 1, n):
+            s1 = set(candidates[i]['events'])
+            s2 = set(candidates[j]['events'])
+            if not s1 and not s2:
+                d = 0.0
+            else:
+                inter = len(s1.intersection(s2))
+                union = len(s1.union(s2))
+                d = 1.0 - (inter / union) if union > 0 else 1.0
+            dist_mat[i, j] = d
+            dist_mat[j, i] = d
+    return dist_mat
+
+def cluster_geometries_jaccard(candidates: List[Dict], n_clusters: int = 5) -> Dict[str, int]:
     """
-    Uses Hierarchical Clustering (ONC-style) to group geometries.
+    Groups geometries into `n_clusters` based on Jaccard distance of event timestamps.
     Returns a dict mapping {name: cluster_id}.
     """
-    if not geometries:
+    if not candidates:
         return {}
+    
+    # 1. Calculate Distance Matrix
+    dist_mat = calculate_jaccard_distance_matrix(candidates)
+    
+    # 2. Handle Small N case
+    if len(candidates) <= n_clusters:
+        return {c['name']: i + 1 for i, c in enumerate(candidates)}
 
-    # 1. Create correlation matrix of labels
-    # We need a common index
-    all_dates = sorted(list(set().union(*[g['labels'].index for g in geometries])))
-    
-    df_labels = pd.DataFrame(index=all_dates)
-    for g in geometries:
-        # Realign to common index, fill NA with 0 (neutral)
-        df_labels[g['name']] = g['labels'].reindex(all_dates).fillna(0)
-
-    # Correlation matrix (Spearman for non-linear dependency)
-    corr_mat = df_labels.corr(method='spearman').fillna(0)
-    
-    # Distance matrix
-    dist_mat = np.sqrt(0.5 * (1 - corr_mat)).clip(0, 1) # Metric distance
-    dist_mat = dist_mat.fillna(1.0) # Safety
-    
-    # Hierarchical Clustering
+    # 3. Hierarchical Clustering (Ward)
     try:
-        # squareform is needed if input is a distance matrix
-        linkage = sch.linkage(squareform(dist_mat.values, checks=False), method='ward')
+        # Convert to condensed distance matrix format required by linkage
+        condensed_dist = squareform(dist_mat, checks=False)
+        linkage_matrix = sch.linkage(condensed_dist, method='ward')
         
-        # Max distance threshold for clusters (e.g., dist=0.7 implies corr ~0)
-        # Higher threshold = fewer clusters
-        cluster_ids = sch.fcluster(linkage, t=0.7, criterion='distance')
+        # 'maxclust' criterion forces exactly n_clusters (or fewer if not possible)
+        cluster_ids = sch.fcluster(linkage_matrix, t=n_clusters, criterion='maxclust')
         
-        return dict(zip(df_labels.columns, cluster_ids))
+        return {c['name']: int(cid) for c, cid in zip(candidates, cluster_ids)}
     except Exception as e:
         logger.warning(f"Clustering failed: {e}. Assigning all to cluster 1.")
-        return {g['name']: 1 for g in geometries}
+        return {c['name']: 1 for c in candidates}
+
 
 # ==========================================
 # 5. Main Pipeline
@@ -783,7 +799,13 @@ def orthogonal_label_generation(
 ) -> List[OutputGeometry]:
     """
     Main Execution Pipeline for Orthogonal Label Generation.
-    Replaces standard greedy selection with ONC-style clustering.
+    Optimized Workflow:
+    1. Generate Events & Labels.
+    2. Rank by "Cheap Score" (Sharpe/Uniqueness).
+    3. Keep Top 50%.
+    4. Cluster by Jaccard Similarity (5 clusters).
+    5. Select Best per Cluster.
+    6. Run Expensive LGBM Probe only on selected few.
     """
     logger.info("--- Starting Advanced Geometry Generation ---")
 
@@ -800,7 +822,7 @@ def orthogonal_label_generation(
     if volume is None and df_full is not None and 'volume' in df_full.columns:
         volume = df_full['volume']
     
-    # 1. Generate Probe Features
+    # 1. Generate Probe Features (Needed later for LGBM, prepared now)
     X_probe = generate_probe_features(price, volume)
     
     # Use df_full if provided, else construct min necessary
@@ -812,7 +834,6 @@ def orthogonal_label_generation(
         df_full['volume'] = volume
 
     # 2. Define Candidates (Generators)
-    # Including multiple variations to feed the clustering
     generators = [
         # Structural Family (Entropy)
         ('ENTROPY', EntropyEvents(), {'window': 24}),
@@ -851,14 +872,13 @@ def orthogonal_label_generation(
         ('VWAP_CROSS', VWAPCrossEvents(), {'lookback': 50}),
     ]
     
-    # 3. Process Candidates
+    # 3. Process Candidates (Cheap Phase)
     candidates = []
     volatility = price.pct_change().rolling(20).std()
         
     for name, gen, params in generators:
         # A. Generate Events
         try:
-            # Pass df_full to all generators that might need it (OHLCV)
             if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents,
                                 ATRShockEvents, VWAPReversionEvents, VWAPCrossEvents)):
                 events = gen.generate(df_full, **params)
@@ -874,34 +894,38 @@ def orthogonal_label_generation(
         if labelers:
             variants = list(labelers.items())
         else:
-            # Fallback to default Triple Barrier if no labelers provided
             variants = [("DEFAULT", partial(triple_barrier_label, volatility=volatility, horizon=24))]
 
         for lbl_name, lbl_func in variants:
             # B. Label
             try:
-                # Dispatch based on provided labelers or default
                 if labelers:
                      labeled_df = lbl_func(df_full, events)
                      h = 120 # Default assumption for dominance wrapper
                 else:
                      labeled_df = lbl_func(price, events)
                      h = 24
-            except Exception as e:
-                # Try fallback call with price
+            except Exception:
                 try:
                     labeled_df = lbl_func(price, events)
                     h = 24
-                except Exception as e2:
+                except Exception:
                     continue
 
             # Standardize output
+            returns = None
+
             if isinstance(labeled_df, tuple):
                 y = labeled_df[0]
-                w = pd.Series(1.0, index=y.index) # Default weights
+                # Try to extract returns (index 1 in standard tuple)
+                if len(labeled_df) > 1:
+                    returns = labeled_df[1]
+                w = pd.Series(1.0, index=y.index)
             elif isinstance(labeled_df, pd.DataFrame) and 'label' in labeled_df.columns:
                  y = labeled_df['label']
                  w = labeled_df.get('weight', pd.Series(1.0, index=y.index))
+                 if 'ret' in labeled_df.columns:
+                     returns = labeled_df['ret']
             elif isinstance(labeled_df, pd.Series):
                  y = labeled_df
                  w = pd.Series(1.0, index=y.index)
@@ -914,19 +938,23 @@ def orthogonal_label_generation(
             y = y.dropna()
             w = w.reindex(y.index).fillna(1.0)
             events_filtered = events[events.isin(y.index)]
+            if returns is not None:
+                returns = returns.reindex(y.index).fillna(0.0)
 
             # Check Class Balance
             balance_check = check_class_balance(y)
             if not balance_check['valid']:
                  continue
 
-            # C. Probe (Learnability Check)
-            X_curr = X_probe.reindex(y.index).fillna(0)
+            # C. Cheap Score Calculation
+            # Primary: Sharpe of Realized Returns. Secondary: Uniqueness.
+            indicator = build_indicator_matrix(events_filtered, price.index, horizon=h)
+            purity = average_uniqueness(indicator)
 
-            try:
-                auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
-            except Exception:
-                auc = 0.5
+            if returns is not None:
+                cheap_score = calculate_sharpe(returns)
+            else:
+                cheap_score = purity # Fallback
 
             variant_name = f"{name}_{lbl_name}" if lbl_name != "DEFAULT" else name
 
@@ -936,37 +964,62 @@ def orthogonal_label_generation(
                 'events': events_filtered,
                 'labels': y,
                 'weights': w,
-                'auc': auc,
+                'returns': returns,
+                'cheap_score': cheap_score,
+                'purity': purity,
                 'params': params,
                 'labeler_name': lbl_name,
-                'indicator': build_indicator_matrix(events_filtered, price.index, horizon=h)
+                'indicator': indicator,
+                'horizon': h
             })
-            logger.info(f"Generated {variant_name}: AUC={auc:.3f}, Events={len(events_filtered)}")
 
     if not candidates:
         return []
 
-    # 4. Cluster for Orthogonality (The "Teacher" Selection)
-    logger.info("--- Clustering Geometries ---")
-    cluster_map = cluster_geometries(candidates)
+    # 4. Filter Top 50% by Cheap Score
+    logger.info(f"Generated {len(candidates)} candidates. Filtering top 50% by score...")
+    candidates.sort(key=lambda x: x['cheap_score'], reverse=True)
+
+    # Keep at least 5 for clustering, unless total < 5
+    keep_n = max(5, len(candidates) // 2)
+    top_candidates = candidates[:keep_n]
+    logger.info(f"Retained {len(top_candidates)} candidates.")
+
+    # 5. Cluster (5 Clusters) by Jaccard Similarity
+    logger.info("--- Clustering Geometries (Jaccard) ---")
+    cluster_map = cluster_geometries_jaccard(top_candidates, n_clusters=5)
     
     # Group by cluster
     clusters = {}
-    for cand in candidates:
+    for cand in top_candidates:
         c_id = cluster_map[cand['name']]
         if c_id not in clusters: clusters[c_id] = []
         clusters[c_id].append(cand)
         cand['cluster_id'] = c_id
 
-    # 5. Selection (Best AUC per Cluster)
+    # 6. Select Top 1 per Cluster & Run LGBM Probe
     final_geometries = []
 
     for c_id, group in clusters.items():
-        # Pick the best AUC in this cluster
-        best_in_cluster = max(group, key=lambda x: x['auc'])
+        # Pick best by cheap_score in this cluster
+        best_in_cluster = max(group, key=lambda x: x['cheap_score'])
 
-        # Purity Calculation (Using average uniqueness logic)
-        purity = average_uniqueness(best_in_cluster['indicator'])
+        logger.info(f"Cluster {c_id}: Selected {best_in_cluster['name']} (Score: {best_in_cluster['cheap_score']:.3f}). Running Probe...")
+
+        # Run Expensive LGBM Probe
+        X_curr = X_probe.reindex(best_in_cluster['labels'].index).fillna(0)
+
+        try:
+            auc = get_purged_cv_score(
+                X_curr,
+                best_in_cluster['labels'],
+                best_in_cluster['weights'],
+                horizon_bars=best_in_cluster['horizon']
+            )
+        except Exception:
+            auc = 0.5
+
+        logger.info(f"--> Probe AUC: {auc:.3f}")
 
         geo = OutputGeometry(
             best_in_cluster['name'],
@@ -974,13 +1027,13 @@ def orthogonal_label_generation(
             best_in_cluster['events'],
             best_in_cluster['labels'],
             best_in_cluster['weights'],
-            purity,
-            best_in_cluster['auc'],
+            best_in_cluster['purity'],
+            auc,
             cluster_id=c_id,
             params=best_in_cluster.get('params')
         )
 
-        # Threshold: Only accept if AUC is better than random + margin
+        # Final Gate
         if geo.auc > tau_auc:
             final_geometries.append(geo)
 

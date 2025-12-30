@@ -86,6 +86,8 @@ from src.training.steps.labeling.regime_leaf_feature_extractor import (
     extract_regime_leaf_onehot_features,
 )
 
+from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_selection_pipeline
+
 # Import Orthogonal Generation
 from src.training.steps.labeling.orthogonal_label_generation import (
     orthogonal_label_generation,
@@ -870,6 +872,19 @@ class LabelBasedLayer2:
         # Select global probe features based on Union
         self._global_probe_features = self._select_global_probe_features(X_events_full)
 
+        # 4. Per-Geometry Titan RFE (Adaptive)
+        tprint_info(">>> Layer 2: Running Titan RFE per geometry...")
+        for gt in production_geometries:
+            try:
+                selected_feats = self._run_titan_rfe_for_geometry(df, gt)
+                if selected_feats:
+                    gt.selected_features = selected_feats
+                    tprint_success(f"   ✅ {gt.uuid}: Selected {len(selected_feats)} features")
+                else:
+                    tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set.")
+            except Exception as e:
+                tprint_error(f"   ❌ {gt.uuid}: Feature selection failed: {e}")
+
         return production_geometries, self._global_probe_features
 
     def run_oof_analytics(
@@ -968,13 +983,21 @@ class LabelBasedLayer2:
                 X_train = self._build_geometry_independent_event_features(df_train, train_evts_df)
                 if X_train.empty: continue
 
-                if global_probe_features:
-                    cols = [c for c in global_probe_features if c in X_train.columns]
-                    X_train = X_train[cols]
-
-                # Append geometry specific features
+                # Append geometry specific features first
                 geo_feats = self._compute_specific_geometry_features(df_train, X_train.index, gt.params)
                 X_train = pd.concat([X_train, geo_feats], axis=1).fillna(0.0)
+
+                # Feature Selection Application
+                # Priority: Geometry specific selection > Global selection > All
+                selected_cols = None
+                if gt.selected_features:
+                    selected_cols = [c for c in gt.selected_features if c in X_train.columns]
+                elif global_probe_features:
+                    selected_cols = [c for c in global_probe_features if c in X_train.columns]
+
+                if selected_cols:
+                    X_train = X_train[selected_cols]
+
                 X_train = X_train.loc[valid_lbls.index]
                 y_train = valid_lbls
 
@@ -1019,14 +1042,20 @@ class LabelBasedLayer2:
                 X_test = self._build_geometry_independent_event_features(df_context, test_evts_df)
                 if X_test.empty: continue
 
-                if global_probe_features:
-                    cols = [c for c in global_probe_features if c in X_test.columns]
-                    X_test = X_test[cols]
-
                 # Geo features using params from production geometry object
                 gt = next(g for g in production_geometries if g.uuid == gt_uuid)
                 geo_feats = self._compute_specific_geometry_features(df_context, X_test.index, gt.params)
                 X_test = pd.concat([X_test, geo_feats], axis=1).fillna(0.0)
+
+                # Feature Selection Application (Test)
+                selected_cols = None
+                if gt.selected_features:
+                    selected_cols = [c for c in gt.selected_features if c in X_test.columns]
+                elif global_probe_features:
+                    selected_cols = [c for c in global_probe_features if c in X_test.columns]
+
+                if selected_cols:
+                    X_test = X_test[selected_cols]
 
                 # Predict
                 preds = model.predict_proba(X_test)[:, 1]
@@ -1106,6 +1135,57 @@ class LabelBasedLayer2:
         feats = pd.DataFrame(index=events_index)
         feats['geo_vol_to_stop'] = vol / stop_size
         return feats.fillna(0.0)
+
+    def _run_titan_rfe_for_geometry(self, df: pd.DataFrame, gt: GeometryTrial) -> List[str]:
+        """
+        Run adaptive Titan RFE for a specific geometry.
+        """
+        # 1. Regenerate events/labels for this geometry on the full df (or relevant slice)
+
+        # Re-generate events if not present or need full context
+        if gt.events is None or len(gt.events) == 0:
+            return []
+
+        events_df = pd.DataFrame(index=gt.events)
+
+        # Compute labels
+        # Note: We use the same params as optimization
+        labels, _, _, _, _ = self._compute_dominance_labels(df, events_df, **gt.params)
+        valid_mask = ~labels.isna()
+        y = labels[valid_mask]
+
+        if len(y) < 50:
+            return []
+
+        # Build features
+        # We use the subset of events
+        events_subset = events_df.loc[y.index]
+        X = self._build_geometry_independent_event_features(df, events_subset)
+
+        if X.empty:
+            return []
+
+        # Add geometry specific features
+        geo_feats = self._compute_specific_geometry_features(df, X.index, gt.params)
+        X = pd.concat([X, geo_feats], axis=1).fillna(0.0)
+
+        # Run Pipeline
+        # We aim for ~60 features but adaptive to sample size (1 per 100 samples)
+        # The pipeline handles the adaptation internally.
+        target_sets = [60, 50, 40, 30, 20, 10]
+
+        feature_sets, _ = lgbm_feature_selection_pipeline(
+            X, y,
+            target_feature_sets=target_sets,
+            samples_per_feature_ratio=100
+        )
+
+        if not feature_sets:
+            return list(X.columns)[:10] # Fallback
+
+        # Return the largest available set (keys are ints)
+        best_k = max(feature_sets.keys())
+        return feature_sets[best_k]
 
     def _select_global_probe_features(self, X_events: pd.DataFrame) -> List[str]:
         if X_events is None or X_events.empty: return []

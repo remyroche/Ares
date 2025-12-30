@@ -3169,6 +3169,26 @@ class LabelBasedLayer2:
 
         # 1) Align base features to events
         X_events = meta_features.reindex(events_df.index)
+
+        # Explicitly inject Regime Context (One-Hot) to ensure "Regime Awareness"
+        try:
+            regime_features = pd.DataFrame(index=df.index)
+            if 'trend_regime' in df.columns:
+                tr_dummies = pd.get_dummies(df['trend_regime'], prefix='regime_trend', dtype=float)
+                regime_features = pd.concat([regime_features, tr_dummies], axis=1)
+
+            if 'vol_regime' in df.columns:
+                vr_dummies = pd.get_dummies(df['vol_regime'], prefix='regime_vol', dtype=float)
+                regime_features = pd.concat([regime_features, vr_dummies], axis=1)
+
+            if not regime_features.empty:
+                # Align to events
+                regime_events = regime_features.reindex(events_df.index).fillna(0.0)
+                X_events = pd.concat([X_events, regime_events], axis=1)
+
+        except Exception as e:
+            logger.warning(f"Failed to inject regime context features: {e}")
+
         try:
             X_events = X_events.replace([np.inf, -np.inf], np.nan)
         except Exception as e:
@@ -3994,9 +4014,9 @@ class LabelBasedLayer2:
             cfg = {}
 
         try:
-            target_n = int(cfg.get('layer2_supervised_feature_count', 50))
+            target_n = int(cfg.get('layer2_supervised_feature_count', 70))
         except Exception:
-            target_n = 50
+            target_n = 70
 
         try:
             max_rows = int(cfg.get('layer2_supervised_feature_max_rows', 4000))  # Reduced from 8000 for speed

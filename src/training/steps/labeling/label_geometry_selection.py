@@ -14,12 +14,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # --- Economic Constraints for Geometry Pre-Filtering ---
-MAX_HORIZON_BARS = 24       # 6h at 15m timeframe
+MAX_HORIZON_BARS = 48       # 12h at 15m timeframe
 MIN_SL_PCT = 0.004          # 0.4% floor
 MAX_TP_PCT = 0.05           # 5% ceiling
 MIN_TP_SL_RATIO = 1.5       # TP >= 1.5 * SL (positive expectancy)
-MAX_FINAL_GEOMETRIES = 10   # Target output count
-MIN_GEOMETRY_DISTANCE = 0.10  # Normalized distance threshold for deduplication
+MIN_SL_SIGMA = 0.5          # Minimum stop-loss in sigma units (prevent too-tight stops)
+MAX_FINAL_GEOMETRIES = 18    # Increased from 12 to allow more diverse candidates
+MIN_GEOMETRY_DISTANCE = 0.15  # Normalized distance threshold for deduplication
 
 # --- 1. Data Structures ---
 
@@ -64,6 +65,17 @@ class Event:
     sigma: float           # Volatility at entry
 
 @dataclass
+class LearnabilityMetrics:
+    """Comprehensive learnability metrics for geometry evaluation."""
+    feature_importance_sum: float = 0.0     # Total feature importance magnitude
+    auc_early: float = 0.5                   # AUC on early split (first 70%)
+    auc_late: float = 0.5                    # AUC on late split (last 30%)
+    auc_stability: float = 0.0              # |early - late| penalty (lower = more stable)
+    temporal_consistency: float = 0.0       # IC-IR style: mean_lift / std_lift
+    n_survivors: int = 0                    # Absolute number of surviving events
+    composite_score: float = 0.0            # Final combined learnability score
+
+@dataclass
 class GateDiagnostics:
     """Detailed report on why a geometry passed or failed."""
     passed: bool
@@ -73,6 +85,7 @@ class GateDiagnostics:
     avg_pr_lift: float
     ks_stat: float
     entropy_reduction: float
+    learnability: Optional[LearnabilityMetrics] = None
     reasons: List[str] = field(default_factory=list)
 
 # --- 2. Loss Function (TradingFocalLoss) ---
@@ -287,7 +300,7 @@ def get_average_uniqueness(selected_indices, all_events_df) -> float:
     return float(np.mean(event_scores)) if event_scores else 0.0
 
 
-def filter_informative_features(features_df: pd.DataFrame, event_ids: pd.Index, variance_threshold: float = 1e-8) -> Optional[pd.DataFrame]:
+def filter_informative_features(features_df: pd.DataFrame, event_ids: pd.Index, variance_threshold: float = 1e-12) -> Optional[pd.DataFrame]:
     """
     Aligns the feature matrix to the deduplicated events and removes columns
     with variance below the specified threshold.
@@ -465,7 +478,7 @@ def apply_hard_constraints(
     This is the key optimization to avoid wasted computation.
     
     Note: sl_sigma values are in SIGMA units (volatility-normalized), not raw percentages.
-    So we only filter by horizon and min_ratio here.
+    So we filter by horizon, min_ratio, and minimum sl_sigma here.
     """
     valid = []
     for g in candidates:
@@ -477,12 +490,37 @@ def apply_hard_constraints(
         if g.min_ratio < MIN_TP_SL_RATIO:
             continue
         
+        # 3. Minimum stop-loss constraint (prevent too-tight stops)
+        if g.sl_sigma and g.sl_sigma < MIN_SL_SIGMA:
+            continue
+        
         # Note: MIN_SL_PCT and MAX_TP_PCT don't apply because sl_sigma is in sigma units
         # (typically 0.5 to 3.0), not raw percentage values (0.004 = 0.4%)
         
         valid.append(g)
     
     return valid
+
+
+def parameter_diversity_penalty(new_geom: Geometry, selected_geoms: List[Geometry]) -> bool:
+    """
+    Check if new geometry is too similar to already selected ones in parameter space.
+    Returns True if geometry should be rejected due to similarity.
+    """
+    for sel_geom in selected_geoms:
+        # Check parameter similarity
+        sl_diff = abs(new_geom.sl_quantile - sel_geom.sl_quantile)
+        alpha_diff = abs(new_geom.alpha - sel_geom.alpha) / 2.0  # Normalized
+        beta_diff = abs(new_geom.beta - sel_geom.beta) / 2.0    # Normalized
+        ratio_diff = abs(new_geom.min_ratio - sel_geom.min_ratio) / 3.0  # Normalized
+        horizon_diff = abs(new_geom.horizon - sel_geom.horizon) / 24.0   # Normalized
+        
+        # If all parameters are very similar, reject
+        if (sl_diff < 0.1 and alpha_diff < 0.3 and beta_diff < 0.3 and 
+            ratio_diff < 0.2 and horizon_diff < 0.2):
+            return True
+    
+    return False
 
 
 def deduplicate_by_distance(
@@ -509,6 +547,161 @@ def deduplicate_by_distance(
     return kept
 
 
+# --- 4.6 Learnability Scoring ---
+
+def compute_learnability_metrics(
+    survivor_ids: Set[int],
+    all_event_ids: List[int],
+    features_df: pd.DataFrame,
+    temporal_split_ratio: float = 0.7,
+    min_samples_per_split: int = 30,
+    min_survivors_absolute: int = 50,
+) -> LearnabilityMetrics:
+    """
+    Compute comprehensive learnability metrics for a geometry.
+    
+    Combines:
+    1. Feature importance magnitude - higher = features matter
+    2. Temporal stability - AUC in early vs late splits should be consistent
+    3. Temporal consistency - IC-IR style (mean / std) across time
+    4. Minimum survivor count - ensure enough samples for learning
+    
+    Returns LearnabilityMetrics with composite score.
+    """
+    metrics = LearnabilityMetrics()
+    metrics.n_survivors = len(survivor_ids)
+    
+    # Early exit if insufficient data
+    if features_df.empty or len(survivor_ids) < min_survivors_absolute:
+        return metrics
+    
+    # Build target
+    target = pd.Series(0, index=all_event_ids)
+    target.loc[list(survivor_ids)] = 1
+    
+    X = features_df.loc[all_event_ids].copy()
+    y = target.loc[all_event_ids]
+    
+    # Drop low-variance features
+    variances = X.var()
+    informative_cols = variances[variances >= 1e-6].index.tolist()
+    if len(informative_cols) < 3:
+        return metrics
+    X = X[informative_cols]
+    
+    # Temporal split: first 70% = early, last 30% = late
+    n_total = len(X)
+    split_idx = int(n_total * temporal_split_ratio)
+    
+    if split_idx < min_samples_per_split or (n_total - split_idx) < min_samples_per_split:
+        return metrics
+    
+    X_early, X_late = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_early, y_late = y.iloc[:split_idx], y.iloc[split_idx:]
+    
+    # Check class diversity in both splits
+    if len(np.unique(y_early)) < 2 or len(np.unique(y_late)) < 2:
+        return metrics
+    
+    n_pos_early = int(y_early.sum())
+    n_pos_late = int(y_late.sum())
+    if n_pos_early < 10 or n_pos_late < 10:
+        return metrics
+    
+    # Further split early data for train/val within early period
+    early_train_idx = int(len(X_early) * 0.75)
+    X_train = X_early.iloc[:early_train_idx]
+    X_val = X_early.iloc[early_train_idx:]
+    y_train = y_early.iloc[:early_train_idx]
+    y_val = y_early.iloc[early_train_idx:]
+    
+    if len(np.unique(y_train)) < 2 or len(np.unique(y_val)) < 2:
+        return metrics
+    
+    try:
+        # Train weak learner
+        train_data = lgb.Dataset(X_train, label=y_train)
+        
+        params = {
+            'objective': 'binary',
+            'metric': 'auc',
+            'max_depth': 4,
+            'num_leaves': 15,
+            'learning_rate': 0.05,
+            'verbose': -1,
+            'verbosity': -1,  # SILENCE WARNINGS
+            'min_child_samples': 10,
+            'reg_lambda': 1.0,
+            'reg_alpha': 0.5,
+            'n_jobs': 1,
+        }
+        
+        model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=100,
+            callbacks=[lgb.early_stopping(20, verbose=False)],
+            valid_sets=[lgb.Dataset(X_val, label=y_val)],
+        )
+        
+        # 1. Feature importance magnitude
+        importances = model.feature_importance(importance_type='gain')
+        metrics.feature_importance_sum = float(np.sum(importances))
+        
+        # 2. AUC on early validation
+        preds_early = model.predict(X_val)
+        try:
+            auc_early = roc_auc_score(y_val, preds_early)
+            metrics.auc_early = float(auc_early)
+        except Exception:
+            metrics.auc_early = 0.5
+        
+        # 3. AUC on late split (out-of-time validation)
+        preds_late = model.predict(X_late)
+        try:
+            auc_late = roc_auc_score(y_late, preds_late)
+            metrics.auc_late = float(auc_late)
+        except Exception:
+            metrics.auc_late = 0.5
+        
+        # 4. Temporal stability: penalize large drops between early and late
+        metrics.auc_stability = abs(metrics.auc_early - metrics.auc_late)
+        
+        # 5. Temporal consistency: IC-IR style
+        # If both AUC lifts are positive and stable, high consistency
+        lift_early = metrics.auc_early - 0.5
+        lift_late = metrics.auc_late - 0.5
+        mean_lift = (lift_early + lift_late) / 2.0
+        std_lift = np.std([lift_early, lift_late]) + 0.01
+        metrics.temporal_consistency = mean_lift / std_lift
+        
+        # 6. Composite learnability score
+        # Components:
+        # - Feature importance (normalized, capped)
+        # - AUC lift (mean of early and late)
+        # - Stability bonus (low difference = bonus)
+        # - Temporal consistency
+        
+        importance_score = min(1.0, metrics.feature_importance_sum / 1000.0)  # Normalize
+        auc_lift_score = (mean_lift + 0.5) * 2.0  # Scale to [0, 2] roughly
+        stability_bonus = max(0, 0.2 - metrics.auc_stability)  # Bonus if stable
+        consistency_score = max(0, metrics.temporal_consistency)
+        
+        # Weighted combination
+        metrics.composite_score = (
+            0.25 * importance_score +
+            0.35 * auc_lift_score +
+            0.20 * stability_bonus +
+            0.20 * consistency_score
+        )
+        
+    except Exception as e:
+        logger.debug(f"Learnability computation failed: {e}")
+        return metrics
+    
+    return metrics
+
+
 # --- 5. Diagnostics-First Gates ---
 
 def run_diagnostics_gates(
@@ -516,67 +709,83 @@ def run_diagnostics_gates(
     events_df: pd.DataFrame,
     fold_metrics: dict,
     geometry: Geometry,
+    features_df: Optional[pd.DataFrame] = None,
     # Tunable Thresholds (relaxed defaults for robustness)
-    default_min_survival: float = 0.005,  # Reduced from 0.01
+    default_min_survival: float = 0.005,
     tail_min_survival: float = 0.005,
-    min_uniqueness: float = 0.15,         # Reduced from 0.4 to match fallback
-    min_auc_lift: float = 0.01,           # Adjusted to 0.01 as requested (Requires AUC >= 0.51)
-    min_pr_lift: float = 0.0,
+    min_uniqueness: float = 0.15,
+    min_survivors_absolute: int = 50,         # Minimum absolute survivor count
+    min_learnability_score: float = 0.15,     # Minimum composite learnability
+    max_temporal_instability: float = 0.20,   # Max AUC difference between early/late (relaxed from 0.15)
 ) -> GateDiagnostics:
+    """
+    Enhanced diagnostics with learnability-based gating.
     
+    Gates:
+    1. Survival Rate - minimum percentage of events surviving
+    2. Uniqueness - minimum average uniqueness (independent samples)
+    3. Absolute Survivors - minimum count for learning
+    4. Learnability Score - composite of feature importance + temporal stability
+    5. Temporal Stability - AUC shouldn't drop significantly in late period
+    """
     reasons = []
     is_passing = True
+    learnability = None
     
     # 1. Survival Rate Gate
     current_min_survival = tail_min_survival if geometry.is_tail else default_min_survival
+    rate = len(survivor_ids) / len(events_df) if len(events_df) > 0 else 0.0
     
-    rate = len(survivor_ids) / len(events_df)
     if rate < current_min_survival:
         is_passing = False
         reasons.append(f"Low Survival ({rate:.2%} < {current_min_survival:.2%})")
         
-    # 2. Uniqueness Gate
+    # 2. Uniqueness Gate - ensures independent samples for learning
     avg_u = get_average_uniqueness(survivor_ids, events_df)
     if avg_u < min_uniqueness:
         is_passing = False
         reasons.append(f"Low Uniqueness ({avg_u:.2f} < {min_uniqueness})")
     
-    # 3. Holding Time Gate - use real duration_bars if available
-    subset = events_df.loc[survivor_ids]
-    duration_col = 'duration_bars' if 'duration_bars' in subset.columns else 'duration'
-    if duration_col in subset.columns:
-        max_duration = events_df[duration_col].max()
-        if subset[duration_col].quantile(0.95) >= max_duration * 0.99:
-            # reasons.append("Warning: Hits Max Duration Limit frequently")
-            # is_passing = False  # DO NOT REJECT BASED ON HOLDING TIME warning
-            pass
-
-    # 4. Fold Persistence / Learnability Gate
+    # 3. Absolute Survivors Gate - ensures enough samples
+    n_survivors = len(survivor_ids)
+    if n_survivors < min_survivors_absolute:
+        is_passing = False
+        reasons.append(f"Too Few Survivors ({n_survivors} < {min_survivors_absolute})")
+    
+    # 4 & 5. Learnability Gates - feature importance + temporal stability
+    if features_df is not None and not features_df.empty:
+        learnability = compute_learnability_metrics(
+            survivor_ids=set(survivor_ids),
+            all_event_ids=list(events_df.index),
+            features_df=features_df,
+            min_survivors_absolute=min_survivors_absolute,
+        )
+        
+        # Gate on composite learnability score
+        if learnability.composite_score < min_learnability_score:
+            is_passing = False
+            reasons.append(f"Low Learnability ({learnability.composite_score:.3f} < {min_learnability_score})")
+        
+        # Gate on temporal stability (penalize regime-dependent geometries)
+        if learnability.auc_stability > max_temporal_instability:
+            is_passing = False
+            reasons.append(f"Temporal Instability ({learnability.auc_stability:.3f} > {max_temporal_instability})")
+    
+    # Legacy metrics from fold_metrics (for backward compatibility)
     avg_auc = 0.0
     avg_pr_lift = 0.0
     ks_stat = 0.0
     entropy_val = 1.0
 
     if fold_metrics:
-        # fold_metrics is a dict with keys like 'auc', 'ks', 'entropy'
         aucs = [m.get('auc_lift', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
         if aucs:
             avg_auc = np.mean(aucs)
-            # Gate on AUC
-            if avg_auc < min_auc_lift:
-                is_passing = False
-                reasons.append(f"Low Learnability (AUC Lift {avg_auc:.3f})")
 
         prs = [m.get('pr_lift', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
         if prs:
             avg_pr_lift = np.mean(prs)
-            # Gate on PR Lift - De Prado: Precision-Recall is critical for imbalanced datasets
-            if avg_pr_lift < min_pr_lift:
-                is_passing = False
-                reasons.append(f"Low Precision Lift ({avg_pr_lift:.3f})")
 
-        # We might not have KS/Entropy yet if this is pre-training check.
-        # If we do (post-training check):
         kss = [m.get('ks_stat', 0.0) for m in fold_metrics.values() if isinstance(m, dict)]
         if kss:
             ks_stat = np.mean(kss)
@@ -592,7 +801,8 @@ def run_diagnostics_gates(
         avg_auc_lift=avg_auc,
         avg_pr_lift=avg_pr_lift,
         ks_stat=ks_stat,
-        entropy_reduction=(1.0 - entropy_val), # Higher is better
+        entropy_reduction=(1.0 - entropy_val),
+        learnability=learnability,
         reasons=reasons
     )
 
@@ -691,6 +901,7 @@ def train_model_for_geometry(
         'metric': ['auc', 'average_precision'], # Monitor AUC and PR-AUC (De Prado)
         'max_depth': 3, # Weak Learner Constraint
         'verbose': -1,
+        'verbosity': -1, # SILENCE WARNINGS
         'num_leaves': 7, # 2^3 - 1
         'learning_rate': 0.05
     }
@@ -700,7 +911,10 @@ def train_model_for_geometry(
         train_data,
         valid_sets=[val_data],
         num_boost_round=100,
-        callbacks=[lgb.early_stopping(20, verbose=False)]
+        callbacks=[
+            lgb.early_stopping(20, verbose=False),
+            lgb.log_evaluation(period=0) # Disable print
+        ]
     )
     
     # Predict on Validation set for metrics
@@ -756,7 +970,9 @@ def select_geometries(
 ) -> List[Tuple[Geometry, Set[int]]]:
     
     # Define horizons to sweep (constrained to max 6h = 24 bars)
-    horizons = [8, 12, 16, 20, 24]
+    horizons = [12, 24, 48]
+
+    rng = np.random.default_rng()
 
     logger.info(f"Vectorizing {len(events)} events for horizons {horizons}...")
     df = events_to_dataframe(events, horizons=horizons)
@@ -772,7 +988,7 @@ def select_geometries(
         logger.info(f"Events after dedup: {original_count} → {len(df)}")
 
     # Align and filter feature matrix to deduplicated events
-    filtered_features = filter_informative_features(features_df, df.index, variance_threshold=1e-8)
+    filtered_features = filter_informative_features(features_df, df.index, variance_threshold=1e-12)
     if filtered_features is None or filtered_features.empty:
         logger.warning("Feature matrix unavailable after deduplication; skipping geometry selection.")
         return []
@@ -791,14 +1007,28 @@ def select_geometries(
 
     # Generate candidates (only with valid min_ratio >= 1.5 upfront)
     candidates = []
+    base_alphas = [0.3, 0.5, 1.0, 1.5, 2.0]           # Expanded from [0.5, 1.0, 1.5]
+    base_betas = [0.3, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]  # Expanded from [0.5, 1.0, 1.5, 2.0]
+    base_min_ratios = [1.5, 2.0, 2.5, 3.0]              # Expanded from [1.5, 2.0]
+
     for h in horizons:
-        if h not in thresholds_map: continue
+        if h not in thresholds_map:
+            continue
         for q in quantiles:
-            for a in [0.5, 1.0, 1.5]:
-                for b in [0.5, 1.0, 1.5, 2.0]:
-                    # Only generate candidates with min_ratio >= MIN_TP_SL_RATIO
-                    for mr in [1.5, 2.0, 2.5, 3.0]:
+            for a in base_alphas:
+                for b in base_betas:
+                    for mr in base_min_ratios:
                         candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr, horizon=h))
+
+    # Randomized jittered combinations to avoid identical survivor sets
+    jitter_count = int(min(500, len(candidates))) or 100  # Increased from 200/50
+    for _ in range(jitter_count):
+        h = int(rng.choice(horizons))
+        q = float(np.clip(rng.normal(loc=0.5, scale=0.25), 0.1, 0.9))  # Expanded range
+        a = float(np.clip(rng.normal(loc=1.0, scale=0.6), 0.2, 2.2))   # Expanded range  
+        b = float(np.clip(rng.normal(loc=1.2, scale=0.7), 0.3, 2.8))   # Expanded range
+        mr = float(rng.choice(base_min_ratios))
+        candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr, horizon=h))
 
     # Deduplicate exact matches
     candidates = list(set(candidates))
@@ -826,7 +1056,10 @@ def select_geometries(
         col_mfe = f'norm_mfe_{h}'
 
         # B. Apply Quantile-Based Filters using horizon-specific norm_mae
-        thresh = thresholds_map[h][geom.sl_quantile]
+        # Find nearest available quantile in thresholds_map for jittered candidates
+        available_quantiles = sorted(thresholds_map[h].keys())
+        nearest_q = min(available_quantiles, key=lambda x: abs(x - geom.sl_quantile))
+        thresh = thresholds_map[h][nearest_q]
         mask_sl = df[col_mae] <= thresh
         
         # Score Calculation
@@ -852,70 +1085,96 @@ def select_geometries(
             filtered_features
         )
         
-        # FALLBACK: Accept geometry based on survival rate if LGBM fails
-        # Require both good survival AND uniqueness before accepting without model
+        # DIAGNOSTIC: Use logistic probe for telemetry, not hard gating
+        # Primary gating is via learnability composite score
         if model is None:
+            # Log probe metrics for diagnostic purposes
             probe_output = run_logistic_probe(filtered_features, target_series)
+            probe_auc = 0.0
+            probe_preds = np.full(len(df), 0.5)
             if probe_output is not None:
                 probe_preds, probe_metrics = probe_output
-                diag = run_diagnostics_gates(
-                    list(survivor_ids),
-                    df,
-                    {0: probe_metrics},
-                    geom
-                )
-                if diag.passed:
-                    separation_score = (probe_metrics['ks_stat'] + (1.0 - probe_metrics['entropy'])) / 2.0
-                    resolved_geom = replace(geom, sl_sigma=float(thresh))
-                    accepted_candidates.append({
-                        'geometry': resolved_geom,
-                        'survivors': survivor_ids,
-                        'preds': probe_preds,
-                        'survival_rate': diag.survival_rate,
-                        'metrics': probe_metrics,
-                        'separation_score': separation_score,
-                        'model': None
-                    })
-                    continue
+                probe_auc = probe_metrics.get('auc_lift', 0.0)
+                logger.debug(f"Probe diagnostic: AUC_lift={probe_auc:.3f}, PR_lift={probe_metrics.get('pr_lift', 0.0):.3f}")
             
-            # Compute uniqueness before fallback decision
-            avg_uniqueness = get_average_uniqueness(survivor_ids, df)
+            # Run gates with learnability check (probe results are informational only)
+            diag = run_diagnostics_gates(
+                list(survivor_ids),
+                df,
+                {},  # No fold metrics - rely on learnability computation
+                geom,
+                features_df=filtered_features,
+            )
             
-            if survival_rate >= 0.10 and avg_uniqueness >= 0.25:
-                logger.info(f"Fallback: Accepting geometry with survival={survival_rate:.2%}, uniq={avg_uniqueness:.2f} (no model)")
+            # Compute economic metrics for tie-breaking
+            # NOTE: These require realized returns which we compute from MFE
+            survivor_mfe = df.loc[list(survivor_ids), f'norm_mfe_{geom.horizon}'] if f'norm_mfe_{geom.horizon}' in df.columns else pd.Series(dtype=float)
+            survivor_mae = df.loc[list(survivor_ids), f'norm_mae_{geom.horizon}'] if f'norm_mae_{geom.horizon}' in df.columns else pd.Series(dtype=float)
+            
+            # Sharpe proxy = mean(MFE - MAE) / std(MFE - MAE)
+            if len(survivor_mfe) > 10:
+                returns_proxy = survivor_mfe - survivor_mae
+                sharpe_proxy = float(returns_proxy.mean() / (returns_proxy.std() + 1e-6))
+                win_rate = float((returns_proxy > 0).mean())
+            else:
+                sharpe_proxy = 0.0
+                win_rate = 0.5
+            
+            if diag.passed:
+                learn_score = diag.learnability.composite_score if diag.learnability else 0.0
                 resolved_geom = replace(geom, sl_sigma=float(thresh))
                 accepted_candidates.append({
                     'geometry': resolved_geom,
                     'survivors': survivor_ids,
-                    'preds': np.full(len(df), 0.5),  # Flat predictions
-                    'survival_rate': survival_rate,
-                    'metrics': {'auc_lift': 0.0, 'pr_lift': 0.0, 'ks_stat': 0.0, 'entropy': 1.0},
-                    'separation_score': survival_rate,  # Use survival as score
+                    'preds': probe_preds,
+                    'survival_rate': diag.survival_rate,
+                    'metrics': {'auc_lift': probe_auc, 'sharpe_proxy': sharpe_proxy, 'win_rate': win_rate},
+                    'separation_score': learn_score,
+                    'sharpe_proxy': sharpe_proxy,
+                    'win_rate': win_rate,
+                    'learnability': diag.learnability,
                     'model': None
                 })
+                continue
             else:
-                logger.info(f"Fallback rejected: survival={survival_rate:.2%}, uniq={avg_uniqueness:.2f} (need >=5%, >=0.15)")
+                # Log rejection but don't require probe success
+                logger.info(f"Gate rejected (no model): survival={survival_rate:.2%}, uniq={diag.avg_uniqueness:.2f}, reasons={diag.reasons}")
             continue
 
-        # C. Run Diagnostics Gates (Post-Training check included)
+        # C. Run Diagnostics Gates with Learnability Check
         diag = run_diagnostics_gates(
             list(survivor_ids),
             df,
             {0: metrics},
-            geom
+            geom,
+            features_df=filtered_features,
         )
         
-        # Accept if gates pass - NO RELAXED MODE
-        # Geometries must meet all diagnostic thresholds
+        # Accept if gates pass - learnability gates now handle quality checks
         if not diag.passed:
             logger.info(f"Gate rejected: survival={survival_rate:.2%}, uniq={diag.avg_uniqueness:.2f}, reasons={diag.reasons}")
             continue
 
-        # Store Candidate
-        # We store the "Separation Score" for ranking
-        # Combine KS and Entropy Reduction
-        # KS is [0,1], Entropy Reduction is [0,1]
-        separation_score = (metrics['ks_stat'] + (1.0 - metrics['entropy'])) / 2.0
+        # Compute economic metrics for tie-breaking
+        h = geom.horizon
+        survivor_mfe = df.loc[list(survivor_ids), f'norm_mfe_{h}'] if f'norm_mfe_{h}' in df.columns else pd.Series(dtype=float)
+        survivor_mae = df.loc[list(survivor_ids), f'norm_mae_{h}'] if f'norm_mae_{h}' in df.columns else pd.Series(dtype=float)
+        
+        if len(survivor_mfe) > 10:
+            returns_proxy = survivor_mfe - survivor_mae
+            sharpe_proxy = float(returns_proxy.mean() / (returns_proxy.std() + 1e-6))
+            win_rate = float((returns_proxy > 0).mean())
+        else:
+            sharpe_proxy = 0.0
+            win_rate = 0.5
+
+        # Store Candidate with learnability-based ranking
+        # Primary: learnability.composite_score (if available)
+        # Fallback: KS + entropy reduction
+        if diag.learnability and diag.learnability.composite_score > 0:
+            separation_score = diag.learnability.composite_score
+        else:
+            separation_score = (metrics['ks_stat'] + (1.0 - metrics['entropy'])) / 2.0
         
         # Create resolved geometry with concrete sl_sigma
         resolved_geom = replace(geom, sl_sigma=float(thresh))
@@ -927,49 +1186,144 @@ def select_geometries(
             'survival_rate': diag.survival_rate,
             'metrics': metrics,
             'separation_score': separation_score,
+            'sharpe_proxy': sharpe_proxy,
+            'win_rate': win_rate,
+            'learnability': diag.learnability,
             'model': model
         })
 
     # E. Prediction-Correlation Pruning
-    # "Optimize for Separation... Tie breaker: keep the one with higher survival rate?"
-    # Let's prioritize Separation Score first, then Survival.
+    # Keep geometries with uncorrelated predictions (< 0.85 corr) for ensemble diversity
+    # Rank by: learnability score (primary), then economic tie-breakers (sharpe, win_rate)
     
-    logger.info(f"Pruning {len(accepted_candidates)} accepted geometries based on correlation...")
+    logger.info(f"Pruning {len(accepted_candidates)} accepted geometries based on prediction correlation...")
     
     final_selection = []
     
-    # Sort by Separation Score descending
-    accepted_candidates.sort(key=lambda x: (x['separation_score'], x['survival_rate']), reverse=True)
+    # Sort by: separation_score (learnability), sharpe_proxy, win_rate, survival_rate
+    accepted_candidates.sort(
+        key=lambda x: (x['separation_score'], x.get('sharpe_proxy', 0), x.get('win_rate', 0.5), x['survival_rate']),
+        reverse=True
+    )
+    
+    # Log top candidates with learnability details
+    for i, cand in enumerate(accepted_candidates[:10]):
+        learn = cand.get('learnability')
+        if learn:
+            logger.info(f"  Candidate {i+1}: {cand['geometry'].archetype} (H={cand['geometry'].horizon}) | "
+                       f"Score={cand['separation_score']:.3f}, "
+                       f"AUC_early={learn.auc_early:.3f}, AUC_late={learn.auc_late:.3f}, "
+                       f"Stability={learn.auc_stability:.3f}, FeatImp={learn.feature_importance_sum:.1f}")
     
     if accepted_candidates:
         all_preds = np.array([c['preds'] for c in accepted_candidates])
         
         if len(accepted_candidates) > 1:
+            # Handle NaN in predictions by filling with 0.5
+            all_preds = np.nan_to_num(all_preds, nan=0.5)
             corr_matrix = np.corrcoef(all_preds)
+            corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
         else:
             corr_matrix = np.array([[1.0]])
             
-        is_dropped = [False] * len(accepted_candidates)
+    
+            
+    # --- Diversity-Aware Selection (Horizon Round-Robin) ---
+    # Instead of picking top N globally (which might favor one horizon),
+    # we pick round-robin from each horizon bucket to ensure time-diversity.
+    
+    # 1. Bucket by Horizon
+    by_horizon = {}
+    for i, cand in enumerate(accepted_candidates):
+        cand['_idx'] = i  # Store original index for correlation matrix lookups
+        h = cand['geometry'].horizon
+        if h not in by_horizon:
+            by_horizon[h] = []
+        by_horizon[h].append(cand)
         
-        for i in range(len(accepted_candidates)):
-            if is_dropped[i]:
+    # 2. Sort within buckets by score
+    for h in by_horizon:
+        by_horizon[h].sort(
+            key=lambda x: (x['separation_score'], x.get('sharpe_proxy', 0), x.get('win_rate', 0.5), x['survival_rate']),
+            reverse=True
+        )
+
+    # 3. Round-Robin Selection
+    final_selection = []
+    active_horizons = sorted(by_horizon.keys())
+    horizon_counts = {h: 0 for h in active_horizons}
+    
+    # RELAX: Increased from 0.85 to 0.92 to allow more "cousin" geometries 
+    # if they are high quality.
+    CORR_THRESHOLD = 0.92 
+    
+    while len(final_selection) < MAX_FINAL_GEOMETRIES and active_horizons:
+        made_selection = False
+        
+        # Iterate through horizons (copy list to allow removal)
+        for h in list(active_horizons):
+            if not by_horizon[h] or horizon_counts[h] >= 4:
+                if h in active_horizons:
+                    active_horizons.remove(h)
                 continue
-            
-            final_selection.append(accepted_candidates[i])
-            
-            for j in range(i + 1, len(accepted_candidates)):
-                if is_dropped[j]:
-                    continue
                 
-                corr = corr_matrix[i, j]
-                if abs(corr) > 0.9:
-                    is_dropped[j] = True
-                    logger.info(f"Dropped {accepted_candidates[j]['geometry'].archetype} (Sep: {accepted_candidates[j]['separation_score']:.3f}) due to correlation {corr:.2f} with {accepted_candidates[i]['geometry'].archetype} (Sep: {accepted_candidates[i]['separation_score']:.3f})")
+            # Try top candidate from this horizon
+            cand = by_horizon[h].pop(0)
+            
+            # Check Correlation against ALL currently selected
+            is_correlated = False
+            drop_msg = ""
+            
+            for selected in final_selection:
+                # Use precomputed correlation matrix
+                c_val = corr_matrix[cand['_idx'], selected['_idx']]
+                
+                if abs(c_val) > CORR_THRESHOLD:
+                    is_correlated = True
+                    drop_msg = f"corr {c_val:.2f} with {selected['geometry'].archetype} (H={selected['geometry'].horizon})"
+                    break
+            
+            # Check parameter space diversity
+            param_similar = False
+            selected_geoms = [s['geometry'] for s in final_selection]
+            if parameter_diversity_penalty(cand['geometry'], selected_geoms):
+                param_similar = True
+                drop_msg = f"parameter similarity with selected geometries"
+            
+            if not is_correlated and not param_similar:
+                final_selection.append(cand)
+                horizon_counts[h] += 1
+                made_selection = True
+                # Check limit immediately
+                if len(final_selection) >= MAX_FINAL_GEOMETRIES:
+                    break
+            else:
+                logger.info(f"Dropped {cand['geometry'].archetype} (H={cand['geometry'].horizon}, Score={cand['separation_score']:.3f}): {drop_msg}")
+        
+        # Determine if we should stop
+        if len(final_selection) >= MAX_FINAL_GEOMETRIES:
+            break
+            
+        if not made_selection:
+            # If we iterate through all active horizons and pick nothing (all correlated),
+            # we are done. Remaining candidates are all redundant.
+            break
 
     result = []
-    for item in final_selection[:MAX_FINAL_GEOMETRIES]:  # Limit to target count
-        result.append((item['geometry'], item['survivors']))
-        
-    best_score_str = f"{final_selection[0]['separation_score']:.3f}" if final_selection else "N/A"
-    logger.info(f"Final Selection: {len(result)} geometries (Best Separation Score: {best_score_str}, Max: {MAX_FINAL_GEOMETRIES})")
+    # Final selection: keep only top 2 geometries per horizon to ensure diversity
+    horizon_geometries = {}
+    for item in final_selection[:MAX_FINAL_GEOMETRIES]:
+        h = item['geometry'].horizon
+        if h not in horizon_geometries:
+            horizon_geometries[h] = []
+        horizon_geometries[h].append(item)
+    
+    # Keep top 2 per horizon (already sorted by score within each horizon)
+    for h, items in horizon_geometries.items():
+        for item in items[:2]:  # Top 2 per horizon
+            result.append((item['geometry'], item['survivors']))
+    
+    best_score = final_selection[0]['separation_score'] if final_selection else 0.0
+    logger.info(f"Final Selection: {len(result)} geometries (Best Learnability Score: {best_score:.3f})")
+    logger.info(f"Horizon distribution: {[(h, len(items[:2])) for h, items in horizon_geometries.items()]}")
     return result

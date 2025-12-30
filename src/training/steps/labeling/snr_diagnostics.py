@@ -402,7 +402,7 @@ def _compute_prob_fold_metrics(
         y_te_clean = y_te[mask_te]
         p_te_clean = p_te[mask_te]
 
-        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+        if len(y_tr_clean) < 20 or len(y_te_clean) < 10:
             continue
 
         uniq_tr = np.unique(y_tr_clean)
@@ -675,7 +675,7 @@ def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame, direction: str 
     y_clean = y[valid_mask]
     X_clean = X.loc[y_clean.index].fillna(0)
 
-    if len(y_clean) < 50:
+    if len(y_clean) < 20:
         logger.warning("Only %d valid samples after cleaning; diagnostics may be noisy", len(y_clean))
 
     return X_clean, y_clean
@@ -1304,7 +1304,7 @@ def _run_label_shuffle_cv(
         y_te_clean = y_te[mask_te]
         X_te_clean = X_te[mask_te]
 
-        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+        if len(y_tr_clean) < 20 or len(y_te_clean) < 10:
             continue
         if len(np.unique(y_tr_clean)) < 2 or len(np.unique(y_te_clean)) < 2:
             continue
@@ -1375,7 +1375,7 @@ def _compute_strict_holdout_metrics(
     y_clean = y_array[mask]
 
     n_total = len(y_clean)
-    if n_total < 100:
+    if n_total < 20:
         return {
             "n_total": int(n_total),
             "n_train": 0,
@@ -2443,7 +2443,7 @@ def run_model_robustness(
             y_te_clean = y_te[mask_te]
             X_te_clean = X_te[mask_te]
 
-            if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+            if len(y_tr_clean) < 20 or len(y_te_clean) < 10:
                 continue
 
             clf = lgb.LGBMClassifier(
@@ -2702,7 +2702,7 @@ def run_model_robustness(
     if _is_label_based_df(df):
         label_shuffle_metrics = {"n_folds": 0}
         try:
-            if y_all.size >= 100 and p_all.size == y_all.size:
+            if y_all.size >= 50 and p_all.size == y_all.size:
                 rng = np.random.default_rng(42)
                 perm_aucs = []
                 for _ in range(200):
@@ -3333,7 +3333,7 @@ def run_trading_simulation(
         valid_mask = valid_mask & binary_labels.notna()
 
     n_valid = int(valid_mask.sum())
-    if n_valid < 50:
+    if n_valid < 20:
         print(f"Insufficient valid samples ({n_valid}) for trading simulation diagnostics.")
         return
 
@@ -3397,6 +3397,29 @@ def run_trading_simulation(
             "n_samples": 0,
             "isotonic_calibration_applied": False,
         }
+
+    # --- Profit by Probability Bucket (Attribution) ---
+    buckets = [
+        (0.5, 0.6, "[0.5, 0.6)"),
+        (0.6, 0.7, "[0.6, 0.7)"),
+        (0.7, 0.8, "[0.7, 0.8)"),
+        (0.8, 1.0, "[0.8, 1.0]")
+    ]
+    profit_attribution = []
+    for low, high, label in buckets:
+        mask = (prob_valid >= low) & (prob_valid < high) if high < 1.0 else (prob_valid >= low)
+        n_in_bucket = int(mask.sum())
+        if n_in_bucket > 0:
+            avg_ret = float(np.mean(returns_valid[mask]))
+            total_ret = float(np.sum(returns_valid[mask]))
+            win_rate = float(np.mean(labels_valid[mask] == 1.0)) if labels_valid is not None else float(np.mean(returns_valid[mask] > 0))
+            profit_attribution.append({
+                "bucket": label,
+                "n_samples": n_in_bucket,
+                "avg_return": avg_ret,
+                "total_return": total_ret,
+                "win_rate": win_rate
+            })
 
     # -------------------------------------------------------------------------
     # 2. Trading Simulation at Different Probability Thresholds
@@ -3865,6 +3888,14 @@ def run_trading_simulation(
     print(f"Max Calibration Error (MCE): {calibration_metrics.get('max_calibration_error', float('nan')):.4f}")
     print()
 
+    print("-- Profit Attribution by Probability Bucket --")
+    if profit_attribution:
+        for pa in profit_attribution:
+            print(f"  {pa['bucket']}: n={pa['n_samples']} | AvgRet={pa['avg_return']*100:.4f}% | WinRate={pa['win_rate']*100:.1f}%")
+    else:
+        print("  (No attribution data available)")
+    print()
+
     print("-- Trading Metrics by Probability Threshold --")
     print()
 
@@ -3903,6 +3934,7 @@ def run_trading_simulation(
         "n_valid_samples": int(n_valid),
         "calibration": calibration_metrics,
         "calibration_curve": calibration_curve_data,
+        "profit_attribution": profit_attribution,
         "threshold_results": threshold_results,
     }
     if regime_threshold_results:
@@ -3934,9 +3966,21 @@ def run_trading_simulation(
         f"- {brier_comment}",
         f"- {ece_comment}",
         "",
+        "## Profit Attribution by Probability Bucket",
+        "",
+        "| Bucket | Samples | Avg Return | Total Return | Win Rate |",
+        "|--------|---------|------------|--------------|----------|",
+    ]
+    for pa in profit_attribution:
+        md_lines.append(
+            f"| {pa['bucket']} | {pa['n_samples']} | {pa['avg_return']*100:.4f}% | "
+            f"{pa['total_return']*100:.3f}% | {pa['win_rate']*100:.1f}% |"
+        )
+    md_lines.extend([
+        "",
         "## Trading Metrics by Probability Threshold",
         "",
-    ]
+    ])
 
     # Add threshold results to markdown
     for key in sorted(threshold_results.keys()):

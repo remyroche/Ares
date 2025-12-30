@@ -1,0 +1,53 @@
+{
+  "section": "label_learnability",
+  "n_valid": 7421,
+  "positive_rate": 0.4846049609562806,
+  "learnability": NaN,
+  "mean_auc": NaN,
+  "balance": 0.0,
+  "combined": NaN,
+  "diagnostics": {
+    "mode": "label_based_meta_prob",
+    "folds": [
+      {
+        "fold": 1,
+        "n_train": 1856,
+        "n_test": 1855,
+        "auc": NaN,
+        "brier": NaN,
+        "ap": NaN
+      },
+      {
+        "fold": 2,
+        "n_train": 3711,
+        "n_test": 1855,
+        "auc": NaN,
+        "brier": NaN,
+        "ap": NaN
+      },
+      {
+        "fold": 3,
+        "n_train": 5566,
+        "n_test": 1855,
+        "auc": NaN,
+        "brier": NaN,
+        "ap": NaN
+      }
+    ],
+    "mean_auc": NaN,
+    "std_auc": NaN
+  },
+  "summary_score": {
+    "score": 1.0,
+    "rating": "Great",
+    "comment": "Combined score \u2265 0.6 \u2192 good overall label quality."
+  },
+  "meta": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "timestamp_utc": "20251229_231200"
+  }
+}

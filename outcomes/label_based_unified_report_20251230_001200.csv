@@ -1,0 +1,43 @@
+layer,metric,value
+label_based_layer_2,n_total,7421
+label_based_layer_2,n_labeled,7421
+label_based_layer_2,coverage,1.0
+label_based_layer_2,pos_rate,0.5492521223554777
+label_based_layer_2,mean_return,0.0008042410331992637
+label_based_layer_2,median_return,-0.0035667861719976173
+label_based_layer_2,std_return,0.014823471170932852
+label_based_layer_2,mean_weight,1.0
+label_based_layer_2,median_weight,0.10594319720138808
+label_based_layer_2,std_weight,5.707032196043456
+label_based_layer_2,weight_entropy_norm,0.729930343505709
+label_based_layer_3,n_eval,7421
+label_based_layer_3,auc,0.4736934606439597
+label_based_layer_3,log_loss,0.7153728917314752
+label_based_layer_3,brier,0.26103085588953606
+label_based_layer_3,ece,0.12632160992837907
+label_based_layer_3,target_is_binary_like,False
+label_based_layer_3,prob_mean,0.5448635854033825
+label_based_layer_3,prob_std,0.030562929380800463
+label_based_layer_3,meta_prob_nan,0
+label_based_layer_3,meta_prob_nan_pct,0.0
+label_based_layer_3,size_trade_n,6884
+label_based_layer_3,size_trade_n_eval,6884
+label_based_layer_3,size_trade_auc,0.47684387555069796
+label_based_layer_3,size_trade_log_loss,0.7173816276174603
+label_based_layer_3,size_trade_brier,0.2620301841426218
+label_based_layer_3,size_trade_ece,0.1353609375435741
+label_based_layer_3,size_trade_target_is_binary_like,False
+label_based_layer_3,size_trade_prob_mean,0.5505265389381121
+label_based_layer_3,size_trade_prob_std,0.020378528207729615
+label_based_layer_4,layer4_enabled,False
+label_based_layer_4,reason,train_layer4_oof() got an unexpected keyword argument 'l3_quantile_thresholds'
+label_based_layer_5,Total PnL,0.13881981302951518
+label_based_layer_5,Avg Trade PnL,2.0165574234386276e-05
+label_based_layer_5,Trade Count,6884
+label_based_layer_5,Turnover Estimate,896.0208267182959
+label_based_layer_5,Net Sortino,0.6540084409197507
+label_based_layer_5,Maximum Drawdown,0.2241348604773281
+label_based_layer_5,Total Return,0.14503437180709988
+label_based_layer_5,AUC,0.4736934606439597
+label_based_layer_5,Runtime,"{'n_rows': 7421, 'total_ms': 2.1242500079097226}"
+label_based_layer_5,pmin_sweep_csv,outcomes/layer5_pmin_sweep_20251230_001200.csv

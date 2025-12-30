@@ -398,13 +398,14 @@ def _align_to_features(arr: Any, n: int) -> np.ndarray:
     padded[: len(values)] = values
     return padded
 
+
 def create_meta_features(
     df: pd.DataFrame,
     signals: pd.DataFrame,
     volume_available: bool = True,
     include_raw_signals: bool = False,
     use_kalman: bool = True,
-    windows: List[int] = [5, 10, 20, 50, 100, 150],
+    windows: List[int] = [10, 20, 50, 100, 150, 200],
 ) -> pd.DataFrame:
     """
     Create features for the meta-model with Multi-Timeframe support.
@@ -465,7 +466,12 @@ def create_meta_features(
     low = df['low']
     close = df['close']
     open_p = df.get('open', close) # Fallback if open missing
-    volume = df['volume'] if volume_available and 'volume' in df.columns else pd.Series(1, index=df.index)
+    if volume_available and 'volume' in df.columns:
+        volume = pd.to_numeric(df['volume'], errors='coerce').fillna(method='ffill').fillna(method='bfill').fillna(0.0)
+        volume_available = volume.notna().any()
+    else:
+        volume = pd.Series(1.0, index=df.index, dtype=float)
+        volume_available = False
 
     # ===== 1. CANDLE GEOMETRY & MICRO-SENTIMENT (BASE) =====
     # Base timeframe calculation
@@ -642,6 +648,24 @@ def create_meta_features(
         slope_stab = slope.rolling(w).mean() / (slope.rolling(w).std() + 1e-9)
         features[f'trend_slope_stability_w{w}'] = _align_to_features(_norm(slope_stab, f'trend_slope_stability_w{w}'), n_features)
 
+        # ADX
+        adx, pdi, mdi = compute_adx(high, low, close, period=w)
+        features[f'adx_w{w}'] = _align_to_features(_norm(adx, f'adx_w{w}'), n_features)
+        features[f'adx_trend_strength_w{w}'] = _align_to_features(_norm((pdi - mdi) / (adx + 1e-9), f'adx_trend_strength_w{w}'), n_features)
+
+        # MACD (Scaled to window)
+        # Fast=w/2, Slow=w, Signal=w/3
+        macd, macd_sig, macd_hist = compute_macd(close, fast=max(2, w//2), slow=w, signal=max(2, w//3))
+        features[f'macd_hist_w{w}'] = _align_to_features(_norm(macd_hist, f'macd_hist_w{w}'), n_features)
+
+        # Hurst
+        features[f'hurst_proxy_w{w}'] = _align_to_features(_norm(compute_hurst_proxy(close, window=w), f'hurst_proxy_w{w}'), n_features)
+
+        # Donchian Channel
+        d_upper, d_lower, d_pos = compute_donchian_channel(high, low, close, window=w)
+        features[f'donchian_position_w{w}'] = _align_to_features(_norm(d_pos, f'donchian_position_w{w}'), n_features)
+        features[f'donchian_width_w{w}'] = _align_to_features(_norm((d_upper - d_lower) / (close + 1e-9), f'donchian_width_w{w}'), n_features)
+
         # --- 5. CYCLE & REGIME ---
         # Fisher Transform
         fisher = compute_fisher_transform(high, low, window=w)
@@ -654,6 +678,13 @@ def create_meta_features(
 
         # Aroon
         features[f'aroon_oscillator_w{w}'] = _align_to_features(_norm(compute_aroon(high, low, w), f'aroon_oscillator_w{w}'), n_features)
+
+        # Stochastic
+        stoch_k, stoch_d = compute_stochastic(high, low, close, k_period=w, d_period=max(3, w//5))
+        features[f'stochastic_k_w{w}'] = _align_to_features(_norm(stoch_k, f'stochastic_k_w{w}'), n_features)
+        
+        # CCI
+        features[f'cci_w{w}'] = _align_to_features(_norm(compute_cci(high, low, close, period=w), f'cci_w{w}'), n_features)
 
         # --- 6. VOLUME-PRICE EFFICIENCY ---
         if volume_available:
@@ -686,6 +717,20 @@ def create_meta_features(
             vol_mean = volume.rolling(w).mean()
             is_climax = volume > 3 * vol_mean
             features[f'climax_volume_flag_w{w}'] = _align_to_features(_norm(is_climax.astype(float), f'climax_volume_flag_w{w}'), n_features)
+
+            # CMF
+            features[f'cmf_w{w}'] = _align_to_features(_norm(compute_cmf(high, low, close, volume, period=w), f'cmf_w{w}'), n_features)
+
+            # Force Index
+            features[f'force_index_w{w}'] = _align_to_features(_norm(compute_force_index(close, volume, period=w), f'force_index_w{w}'), n_features)
+
+            # Volume Delta (Rolling Sum)
+            vol_delta = compute_volume_delta(close, open_p, volume)
+            features[f'volume_delta_w{w}'] = _align_to_features(_norm(vol_delta.rolling(w).sum(), f'volume_delta_w{w}'), n_features)
+
+            # OBV (Slope)
+            obv = compute_obv(close, volume)
+            features[f'obv_slope_w{w}'] = _align_to_features(_norm(obv.diff(w), f'obv_slope_w{w}'), n_features)
 
         # --- 7. VWAP & CONTEXT ---
         if volume_available:
@@ -793,6 +838,29 @@ def create_meta_features(
         aligned = np.sign(rsi_slope) == np.sign(ma_slope)
         features[f'trend_alignment_score_w{w}'] = _align_to_features(_norm(aligned.astype(float), f'trend_alignment_score_w{w}'), n_features)
 
+        # Price-Volume Correlation
+        if volume_available:
+             # Correlation between Returns and Volume Change
+             vol_chg = volume.pct_change()
+             pv_corr = returns.rolling(w).corr(vol_chg).fillna(0)
+             features[f'price_vol_correlation_w{w}'] = _align_to_features(_norm(pv_corr, f'price_vol_correlation_w{w}'), n_features)
+
+        # --- 13. CROSS-TIMEFRAME RATIOS ---
+        # Compare w vs w_long (e.g. w*4)
+        w_long = w * 4
+        # SMA Ratio (Trend Extension)
+        sma_w = close.rolling(w).mean()
+        sma_long = close.rolling(w_long).mean()
+        features[f'sma_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(sma_w / (sma_long + 1e-9), f'sma_ratio_w{w}_vs_w{w_long}'), n_features)
+
+        # RSI Ratio (Momentum Divergence)
+        rsi_long = compute_rsi(close, period=w_long)
+        features[f'rsi_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(rsi_w / (rsi_long + 1e-9), f'rsi_ratio_w{w}_vs_w{w_long}'), n_features)
+
+        # Volatility Ratio (Vol Compression/Expansion)
+        vol_long = log_ret.rolling(w_long).std()
+        features[f'vol_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(vol_w / (vol_long + 1e-9), f'vol_ratio_w{w}_vs_w{w_long}'), n_features)
+
         # Vol Trend Conflict: Vol rising, Price falling (Panic?) or Vol falling, Price rising (Drift)
         # Vol Slope * Price Slope
         features[f'vol_trend_conflict_w{w}'] = _align_to_features(_norm(vol_slope * ma_slope, f'vol_trend_conflict_w{w}'), n_features)
@@ -803,9 +871,6 @@ def create_meta_features(
         features[f'compression_x_momentum_w{w}'] = _align_to_features(_norm(mom_abs / (bb_width + 1e-9), f'compression_x_momentum_w{w}'), n_features)
 
         # Absorption x Vol Spike
-        # Absorption ~ (High Vol, Low Move). Vol Spike ~ High Vol.
-        # Absorption defined in OFI section as absorption_ratio
-        # We can construct local proxy: Vol / Range
         if volume_available:
             features[f'absorption_x_vol_spike_w{w}'] = _align_to_features(_norm(rpv * is_vol_spike.astype(float), f'absorption_x_vol_spike_w{w}'), n_features)
 
@@ -815,5 +880,10 @@ def create_meta_features(
     features['returns_1h'] = _align_to_features(_norm(close_1h.pct_change(), 'returns_1h'), n_features)
     close_4h = df['close'].rolling(16).mean()
     features['returns_4h'] = _align_to_features(_norm(close_4h.pct_change(), 'returns_4h'), n_features)
+
+    try:
+        logger.info(f"[MTF] create_meta_features produced {int(len(features.columns))} columns prior to Layer2 filtering.")
+    except Exception:
+        pass
 
     return features

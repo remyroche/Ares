@@ -1,0 +1,12 @@
+# Layer5 Report
+- timestamp: 20251229_231200
+
+## Metrics
+- Total PnL: 0.13881981302951518
+- Avg Trade PnL: 2.0165574234386276e-05
+- Trade Count: 6884
+- Turnover Estimate: 896.0208267182959
+- Net Sortino: 0.6540084409197507
+- Maximum Drawdown: 0.2241348604773281
+- Total Return: 0.14503437180709988
+- AUC: 0.4736934606439597

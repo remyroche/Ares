@@ -1,14 +1,14 @@
 {
-  "Total PnL": 0.0,
-  "Avg Trade PnL": 0.0,
-  "Trade Count": 0,
-  "Turnover Estimate": 0.0,
-  "Net Sortino": 0.0,
-  "Maximum Drawdown": 1.000088900582341e-12,
-  "Total Return": 0.0,
-  "AUC": NaN,
+  "Total PnL": 0.00012621675286098272,
+  "Avg Trade PnL": 3.124177051014418e-07,
+  "Trade Count": 404,
+  "Turnover Estimate": 3.178525589943519,
+  "Net Sortino": 0.03358297248358782,
+  "Maximum Drawdown": 0.0035304443835164623,
+  "Total Return": 0.0001254783943764881,
+  "AUC": 0.5030218872494436,
   "Runtime": {
-    "n_rows": 15353,
-    "total_ms": 1.4088330008235062
+    "n_rows": 7421,
+    "total_ms": 2.202750009018928
   }
 }

@@ -456,6 +456,166 @@ class Layer4RiskFilter:
         return self.model.predict_proba(X_scaled)[:, 1]
 
 # ---------------------------------------------------------------------------
+# Helper Functions for Prob/Alpha Head Processing
+# ---------------------------------------------------------------------------
+
+def _generate_disagreement_features(
+    cols: List[str], 
+    oof_df: pd.DataFrame, 
+    prefix: str
+) -> Dict[str, pd.Series]:
+    """
+    Generate disagreement features for either Prob or Alpha heads.
+    
+    Args:
+        cols: List of column names for the head type
+        oof_df: DataFrame containing the OOF predictions
+        prefix: 'prob' or 'alpha' for naming
+    
+    Returns:
+        Dict of disagreement features
+    """
+    try:
+        from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
+        
+        # Extract the relevant columns
+        head_data = oof_df[cols]
+        
+        # Create model predictions dict (using raw values as "predictions")
+        model_predictions = {col.replace(f'meta_{prefix}_', ''): head_data[col].values for col in cols}
+        
+        # Create model probabilities dict (for alpha heads, treat as probabilities too)
+        if prefix == 'prob':
+            model_probabilities = {col.replace('meta_prob_', ''): head_data[col].values for col in cols}
+        else:  # alpha heads - treat alpha values as probabilities for disagreement calculation
+            # Clip alpha to [0,1] range for probability calculation
+            alpha_probs = np.clip(head_data.values, 0.0, 1.0)
+            model_probabilities = {col.replace('meta_alpha_', ''): alpha_probs[:, i] for i, col in enumerate(cols)}
+        
+        # Calculate disagreement features
+        disagreement_features = calculate_ensemble_disagreement_features(
+            model_predictions=model_predictions,
+            model_probabilities=model_probabilities
+        )
+        
+        # Rename features with prefix
+        prefixed_features = {}
+        for name, series in disagreement_features.items():
+            prefixed_features[f'{prefix}_{name}'] = series
+            
+        return prefixed_features
+        
+    except Exception as e:
+        # Fallback: compute basic disagreement stats
+        tprint_warning(f"   Could not use ensemble_disagreement module: {e}. Using fallback.")
+        head_data = oof_df[cols].values
+        
+        features = {}
+        features[f'{prefix}_ens_mean'] = pd.Series(np.mean(head_data, axis=1), index=oof_df.index)
+        features[f'{prefix}_ens_std'] = pd.Series(np.std(head_data, axis=1), index=oof_df.index)
+        features[f'{prefix}_ens_min'] = pd.Series(np.min(head_data, axis=1), index=oof_df.index)
+        features[f'{prefix}_ens_max'] = pd.Series(np.max(head_data, axis=1), index=oof_df.index)
+        features[f'{prefix}_ens_range'] = features[f'{prefix}_ens_max'] - features[f'{prefix}_ens_min']
+        
+        return features
+
+def _apply_signal_altering_features(
+    X_meta: pd.DataFrame, 
+    prob_cols: List[str]
+) -> Dict[str, pd.Series]:
+    """
+    Apply signal-altering features (EWMA, etc.) to Prob heads only.
+    
+    Args:
+        X_meta: Meta features DataFrame containing scaled prob signals
+        prob_cols: Original prob column names
+    
+    Returns:
+        Dict of signal-altered features
+    """
+    features = {}
+    
+    try:
+        # Apply EWMA to each prob head's scaled signal
+        for col in prob_cols:
+            gid = col.replace('meta_prob_', '')
+            scaled_col = f'{gid}_sig_scaled'
+            
+            if scaled_col in X_meta.columns:
+                scaled_series = X_meta[scaled_col]
+                
+                # EWMA features
+                features[f'{gid}_ewma_15'] = scaled_series.ewm(span=15).mean()
+                features[f'{gid}_ewma_50'] = scaled_series.ewm(span=50).mean()
+                
+                # Momentum features
+                features[f'{gid}_momentum_5'] = scaled_series.diff(5)
+                features[f'{gid}_momentum_20'] = scaled_series.diff(20)
+                
+                # Volatility of signal
+                features[f'{gid}_signal_vol_20'] = scaled_series.rolling(20).std()
+                
+                # Rate of change
+                features[f'{gid}_signal_roc_10'] = scaled_series.pct_change(10)
+                
+    except Exception as e:
+        tprint_warning(f"   Error applying signal-altering features: {e}")
+    
+    return features
+
+def _calculate_alpha_weighted_mean(
+    alpha_cols: List[str], 
+    prob_cols: List[str], 
+    oof_df: pd.DataFrame
+) -> pd.Series:
+    """
+    Calculate alpha weighted mean using prob weights.
+    
+    Formula:
+        weighted_sum = sum(alpha_i * prob_i)
+        prob_sum = sum(prob_i)
+        alpha_weighted_mean = weighted_sum / prob_sum
+    
+    Args:
+        alpha_cols: List of alpha column names
+        prob_cols: List of prob column names  
+        oof_df: DataFrame containing the data
+    
+    Returns:
+        Series of alpha weighted mean values
+    """
+    try:
+        if not alpha_cols or not prob_cols:
+            return pd.Series(0.0, index=oof_df.index)
+            
+        # Extract matrices
+        alpha_matrix = oof_df[alpha_cols].values
+        prob_matrix = oof_df[prob_cols].values
+        
+        # Ensure same number of columns
+        min_cols = min(alpha_matrix.shape[1], prob_matrix.shape[1])
+        alpha_matrix = alpha_matrix[:, :min_cols]
+        prob_matrix = prob_matrix[:, :min_cols]
+        
+        # Calculate weighted sum and probability sum
+        weighted_sum = np.sum(alpha_matrix * prob_matrix, axis=1)
+        prob_sum = np.sum(prob_matrix, axis=1)
+        
+        # Calculate weighted mean (avoid division by zero)
+        alpha_weighted_mean = np.divide(
+            weighted_sum, 
+            prob_sum, 
+            out=np.zeros_like(weighted_sum), 
+            where=prob_sum != 0
+        )
+        
+        return pd.Series(alpha_weighted_mean, index=oof_df.index)
+        
+    except Exception as e:
+        tprint_warning(f"   Error calculating alpha weighted mean: {e}")
+        return pd.Series(0.0, index=oof_df.index)
+
+# ---------------------------------------------------------------------------
 # Training Orchestration
 # ---------------------------------------------------------------------------
 
@@ -467,23 +627,32 @@ def train_layer4_oof(
     return_col: str = 'realized_return',
     n_folds: int = 5,
     config: Optional[Dict[str, Any]] = None,
-    # New arg for multiple models
-    l3_models_metadata: Optional[Dict] = None
+    # New args for multiple models
+    l3_models_metadata: Optional[Dict] = None,
+    l3_quantile_thresholds: Optional[List[float]] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     
     tprint_info(">>> Running Layer 4 OOF Training & Optimization...")
+    if l3_quantile_thresholds:
+        tprint_info(f"    Received L3 Quantile Thresholds: {l3_quantile_thresholds}")
+
     cfg = config or {}
     
     # 1. Regime Features (Global)
     regime_features = compute_layer4_regime_features(market_data)
     
-    # 2. Identify Layer 3 Output Columns
-    l3_cols = [c for c in oof_df.columns if c.startswith('meta_prob_')]
-
+    # 2. Identify Layer 3 Output Columns (Prob and Alpha heads)
+    prob_cols = [c for c in oof_df.columns if c.startswith('meta_prob_')]
+    alpha_cols = [c for c in oof_df.columns if c.startswith('meta_alpha_')]
+    
     # 3. Construct Meta Features (Scaling & Disagreement)
-    if not l3_cols:
+    if not prob_cols:
         # Fallback to single col if no Multi-Geometry outputs found
-        l3_cols = [l3_prob_col] if l3_prob_col in oof_df.columns else []
+        prob_cols = [l3_prob_col] if l3_prob_col in oof_df.columns else []
+    
+    if not alpha_cols:
+        # Fallback: try to find any alpha-like columns
+        alpha_cols = [c for c in oof_df.columns if 'alpha' in c.lower() and c != 'target_alpha']
 
     common_idx = oof_df.index.intersection(regime_features.index)
     X_regime = regime_features.loc[common_idx]
@@ -497,41 +666,62 @@ def train_layer4_oof(
         # Compute vol proxy
         vol = market_data['close'].pct_change().rolling(24).std().reindex(common_idx).fillna(0.01).values
 
-    if l3_cols:
-        tprint_info(f"   Found {len(l3_cols)} Layer 3 geometry outputs.")
-        X_meta = prepare_scaled_features_for_meta_learner(
-            l3_cols, oof_aligned, vol, l3_models_metadata
+    meta_features_dict = {}
+    
+    # 4. Process Prob heads (with disagreement features)
+    if prob_cols:
+        tprint_info(f"   Found {len(prob_cols)} Layer 3 Prob geometry outputs.")
+        
+        # Generate disagreement features for Prob heads
+        prob_disagreement = _generate_disagreement_features(prob_cols, oof_aligned, 'prob')
+        meta_features_dict.update(prob_disagreement)
+        
+        # Prepare scaled features for Prob heads
+        X_meta_prob = prepare_scaled_features_for_meta_learner(
+            prob_cols, oof_aligned, vol, l3_models_metadata
         )
-
-        # Disagreement Features (from feature_generation or inline)
-        # inline for simplicity as per requirement to use "features from src... applied to models"
-        # Since we have the raw signals in X_meta or oof_aligned, we can compute disagreement here.
-
-        # Compute row-wise stats on raw probs
-        raw_probs = oof_aligned[l3_cols].values
-        X_meta['ens_mean'] = np.mean(raw_probs, axis=1)
-        X_meta['ens_std'] = np.std(raw_probs, axis=1)
-        X_meta['ens_min'] = np.min(raw_probs, axis=1)
-        X_meta['ens_max'] = np.max(raw_probs, axis=1)
-        X_meta['ens_range'] = X_meta['ens_max'] - X_meta['ens_min']
-
+        
+        # Apply signal-altering features to Prob head only
+        signal_features = _apply_signal_altering_features(X_meta_prob, prob_cols)
+        meta_features_dict.update(signal_features)
+        
+        # Primary prob for filtering/sizing anchor
+        raw_probs = oof_aligned[prob_cols].values
+        primary_prob = np.mean(raw_probs, axis=1)
+        
+    else:
+        tprint_warning("   No Layer 3 Prob outputs found.")
+        primary_prob = pd.Series(0.5, index=common_idx)
+    
+    # 5. Process Alpha heads (with disagreement features only)
+    if alpha_cols:
+        tprint_info(f"   Found {len(alpha_cols)} Layer 3 Alpha geometry outputs.")
+        
+        # Generate disagreement features for Alpha heads
+        alpha_disagreement = _generate_disagreement_features(alpha_cols, oof_aligned, 'alpha')
+        meta_features_dict.update(alpha_disagreement)
+        
+        # Calculate alpha weighted mean
+        alpha_weighted_mean = _calculate_alpha_weighted_mean(alpha_cols, prob_cols, oof_aligned)
+        meta_features_dict['alpha_weighted_mean'] = alpha_weighted_mean
+        
+    else:
+        tprint_warning("   No Layer 3 Alpha outputs found.")
+        meta_features_dict['alpha_weighted_mean'] = pd.Series(0.0, index=common_idx)
+    
+    # 6. Combine all features
+    if meta_features_dict:
+        X_meta = pd.DataFrame(meta_features_dict)
         # Merge Regime + Meta
         X = pd.concat([X_regime.reset_index(drop=True), X_meta.reset_index(drop=True)], axis=1)
         X.index = common_idx
-
-        # Primary prob for filtering/sizing anchor (Mean of scaled? or just Mean of raw?)
-        # Let's use Mean of raw for now
-        l3_probs_anchor = X_meta['ens_mean']
-
     else:
-        tprint_warning("   No Layer 3 outputs found. Using only regime features.")
         X = X_regime
-        l3_probs_anchor = pd.Series(0.5, index=common_idx)
-
+    
     y_true = pd.to_numeric(oof_aligned[target_col], errors='coerce')
     returns = pd.to_numeric(oof_aligned[return_col], errors='coerce')
 
-    # 4. OOF CV
+    # 7. OOF CV
     from src.utils.purged_kfold import PurgedKFoldTime
     cv = PurgedKFoldTime(n_splits=n_folds, purge=pd.Timedelta(minutes=60))
     
@@ -541,7 +731,7 @@ def train_layer4_oof(
     X_vals = X.values
     y_vals = y_true.values
     r_vals = returns.values
-    l3_vals = l3_probs_anchor.values
+    l3_vals = primary_prob.values
 
     splits = list(cv.split(X))
 
@@ -560,7 +750,7 @@ def train_layer4_oof(
         l4_model.fit(
             X.iloc[train_idx][mask_tr],
             y_true.iloc[train_idx][mask_tr],
-            l3_probs_anchor.iloc[train_idx][mask_tr],
+            primary_prob.iloc[train_idx][mask_tr],
             returns.iloc[train_idx][mask_tr]
         )
         l4_oof_probs[val_idx] = l4_model.predict_proba(X.iloc[val_idx])

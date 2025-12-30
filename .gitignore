@@ -65,6 +65,7 @@ Thumbs.db
 # =============================================================================
 # Log directories and files
 /log/
+/logs/
 ares_*.log
 ares_errors_*.log
 ares_full_*.log
@@ -206,8 +207,7 @@ dmypy.json
 # =============================================================================
 # LARGE FILES AND MEDIA
 # =============================================================================
-# Large data files
-*.csv
+# Large data file
 *.parquet
 *.feather
 *.arrow
@@ -252,7 +252,6 @@ _site/
 # Memory dumps
 *.dmp
 *.hprof
-outcomes/market_analysis_hybrid_nas_tas_regime_discovery_outcome_*.json
 
 # Ignore huge rolling HMM HPO results
 artifacts/rolling_hmm_hpo_results.json

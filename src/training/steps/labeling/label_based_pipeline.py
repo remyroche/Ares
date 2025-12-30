@@ -32,6 +32,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 import math
+import logging
 
 import numpy as np
 import pandas as pd
@@ -111,10 +112,12 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     HierarchicalParameterOptimizer,
     OptimizationStage,
     create_param_group,
+    create_param_grid,
 )
 
+logger = logging.getLogger(__name__)
 
-def _soft_sharpe_scale(raw_sharpe: float, scale: float = 30.0) -> float:
+def sharpe_scale(raw_sharpe: float, scale: float = 30.0) -> float:
     """Apply soft scaling to Sharpe ratio using arcsinh transform.
     
     Unlike tanh which saturates quickly, arcsinh provides a softer compression:
@@ -12448,7 +12451,7 @@ class LabelBasedPipelineStep(BaseStep):
                 if bool(layer2_econ_win_enabled):
                     y_auc = (returns_for_auc > float(layer2_econ_win_floor)).astype(float)
                 else:
-                    y_auc = (returns_for_auc > 0.0).astype(float)
+                    y_auc = pd.Series((returns_for_auc > 0.0).astype(float), index=l2_t_events, dtype=float)
                 p_auc_raw = np.asarray(cv_preds)
                 if getattr(p_auc_raw, "ndim", 0) == 1 and getattr(p_auc_raw, "dtype", None) is not None and p_auc_raw.dtype == object:
                     try:
@@ -12461,13 +12464,42 @@ class LabelBasedPipelineStep(BaseStep):
                     p_auc = np.asarray(p_auc_raw[:, 0], dtype=float)
                 else:
                     p_auc = np.asarray(p_auc_raw, dtype=float)
-                m_auc = np.isfinite(y_auc) & np.isfinite(p_auc)
-                if int(np.sum(m_auc)) >= 20:
-                    if int(np.unique(y_auc[m_auc]).size) >= 2:
-                        mean_auc = float(roc_auc_score(y_auc[m_auc].astype(int), p_auc[m_auc]))
-                    else:
-                        mean_auc = 0.5
+
+                p_auc_series = pd.Series(p_auc, index=l2_t_events, dtype=float)
+                combined_auc = pd.concat(
+                    [
+                        y_auc.rename("y").replace([np.inf, -np.inf], np.nan),
+                        p_auc_series.rename("p").replace([np.inf, -np.inf], np.nan),
+                    ],
+                    axis=1,
+                ).dropna()
+
+                logger.debug(
+                    "Layer2 AUC inputs: total=%d, finite_pairs=%d, nan_y=%d, nan_p=%d, "
+                    "p_min=%.6f, p_max=%.6f",
+                    len(y_auc),
+                    len(combined_auc),
+                    int(len(y_auc) - y_auc.dropna().shape[0]),
+                    int(len(p_auc_series) - p_auc_series.dropna().shape[0]),
+                    float(combined_auc["p"].min()) if not combined_auc.empty else float("nan"),
+                    float(combined_auc["p"].max()) if not combined_auc.empty else float("nan"),
+                )
+
+                if not combined_auc.empty and combined_auc["y"].nunique() >= 2 and len(combined_auc) >= 20:
+                    mean_auc_raw = roc_auc_score(combined_auc["y"].astype(int).values, combined_auc["p"].values)
+                    mean_auc = float(mean_auc_raw)
+                    logger.debug(
+                        "Layer2 AUC result: raw=%.12f rounded=%.6f n_pairs=%d",
+                        mean_auc,
+                        round(mean_auc, 6),
+                        len(combined_auc),
+                    )
                 else:
+                    logger.debug(
+                        "Layer2 AUC fallback triggered: n_pairs=%d, unique_y=%d",
+                        len(combined_auc),
+                        combined_auc["y"].nunique() if not combined_auc.empty else 0,
+                    )
                     mean_auc = 0.5
             except Exception:
                 mean_auc = 0.5

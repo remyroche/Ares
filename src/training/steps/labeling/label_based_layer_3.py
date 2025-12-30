@@ -1,4 +1,5 @@
 from typing import List, Tuple, Optional, Any, Dict
+import copy
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
@@ -10,7 +11,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from scipy.stats import spearmanr, kurtosis, f_oneway, rankdata
-from scipy.special import logit
+from scipy.special import logit, expit
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
@@ -905,21 +906,20 @@ def _run_layer3_hpo(
     def objective(trial):
         # Hyperparameters for LGBM
         params = {
-            'num_leaves': trial.suggest_int('num_leaves', 16, 256),
-            'max_depth': trial.suggest_int('max_depth', 4, 8),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.05),
-            'n_estimators': trial.suggest_int('n_estimators', 400, 800),
-            'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 20, 50),
-            'min_sum_hessian_in_leaf': trial.suggest_float('min_sum_hessian_in_leaf', 1e-3, 1e-2),
-            'lambda_l1': trial.suggest_float('lambda_l1', 0.3, 0.7),
-            'lambda_l2': 0.0, # Will set constraint later or let it float? Snippet uses 2x L1 constraint.
+            'num_leaves': trial.suggest_int('num_leaves', 16, 64),
+            'max_depth': trial.suggest_int('max_depth', 3, 5),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.03),
+            'n_estimators': trial.suggest_int('n_estimators', 100, 400),
+            'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 50, 200),
+            'min_sum_hessian_in_leaf': trial.suggest_float('min_sum_hessian_in_leaf', 1e-3, 1e-1),
+            'lambda_l1': trial.suggest_float('lambda_l1', 0.1, 5.0),
+            'lambda_l2': trial.suggest_float('lambda_l2', 0.1, 10.0),
             'bagging_freq': 1,
-            'feature_fraction': 0.8,
-            'bagging_fraction': 0.8,
+            'feature_fraction': 0.7,
+            'bagging_fraction': 0.7,
             'n_jobs': 1,
             'verbosity': -1
         }
-        params['lambda_l2'] = 2.0 * params['lambda_l1']
 
         try:
             # Alpha Models (Regression)
@@ -969,7 +969,6 @@ def _run_layer3_hpo(
                 model = lgb.LGBMClassifier(**params)
 
                 # Check for binary targets
-                # If custom obj, we might need y_train as 0/1 integers
                 y_tr_bin = (y_train >= 0.5).astype(int)
                 y_val_bin = (y_val >= 0.5).astype(int)
 
@@ -982,21 +981,12 @@ def _run_layer3_hpo(
                 )
 
                 # Predict
-                # For custom obj, predict_proba might return raw scores if class is not updated?
-                # LGBMClassifier usually handles sigmoid automatically for built-in,
-                # but for custom obj it might return margin?
-                # Scikit-learn API with custom objective typically needs careful handling.
-                # However, model.predict_proba() usually works if obj returns grad/hess.
-                # Let's assume standard behavior or raw margin -> sigmoid.
-
                 preds = model.predict_proba(X_val)[:, 1]
-
-                # Score: ScoreL3 (Maximize)
+                # ScoreL3: AUC + Excess LogLoss
                 auc = roc_auc_score(y_val_bin, preds)
                 ll = log_loss(y_val_bin, preds)
-                # Approximate ScoreL3
                 score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
-                return score
+                return score if np.isfinite(score) else -999.0
 
         except Exception as e:
             # print(f"Trial failed: {e}")
@@ -1116,11 +1106,79 @@ def _dump_layer3_feature_inventory(*args, **kwargs):
     pass
 
 # -----------------------------------------------------------
+# Geometry-Specific Feature Generation
+# -----------------------------------------------------------
+
+
+def _generate_geometry_specific_nn_features(
+    market_data: pd.DataFrame,
+    geometry_horizon: float,
+    embed_dim: int = 8
+) -> pd.DataFrame:
+    """
+    Generate NN sequence features with sequence length adapted to geometry horizon.
+    
+    Args:
+        market_data: OHLCV data
+        geometry_horizon: The effective horizon of the geometry (in bars)
+        embed_dim: Embedding dimension
+    
+    Returns:
+        DataFrame with NN embedding features
+    """
+    
+    # Scale sequence length based on geometry horizon
+    # Default is 24 bars, scale proportionally but keep reasonable bounds
+    default_seq_len = 24
+    scale_factor = geometry_horizon / default_seq_len
+    seq_len = max(8, min(48, int(default_seq_len * scale_factor)))
+    
+    try:
+        nn_df = generate_nn_sequence_embeddings(
+            market_data=market_data,
+            encoder_type="stacked",
+            seq_len=seq_len,
+            embed_dim=embed_dim,
+            use_conv=True,
+            use_lstm=True,
+            use_attention=False
+        )
+        return nn_df if nn_df is not None else pd.DataFrame(index=market_data.index)
+    except Exception as e:
+        print(f"⚠️ Geometry-specific NN features failed: {e}")
+        return pd.DataFrame(index=market_data.index)
+
+# -----------------------------------------------------------
 # Training Pipeline Components
 # -----------------------------------------------------------
 
 def _run_layer3_hpo(X, y, w, model_type, n_trials=20):
-    # Minimal HPO impl
+    """HPO for Layer 3 models. Supports LGBM classifier/regressor and Ridge."""
+    
+    # Handle Ridge model types separately
+    if model_type == 'alpha_ridge':
+        def ridge_objective(trial):
+            params = {
+                'alpha': trial.suggest_float('alpha', 0.01, 100.0, log=True),
+            }
+            split = int(len(X) * 0.8)
+            X_tr, X_val = X[:split], X[split:]
+            y_tr, y_val = y[:split], y[split:]
+            w_tr = w[:split]
+            
+            from sklearn.linear_model import Ridge
+            model = Ridge(**params)
+            model.fit(X_tr, y_tr, sample_weight=w_tr)
+            preds = model.predict(X_val)
+            # Use negative MSE as score (higher is better)
+            mse = np.mean((preds - y_val) ** 2)
+            return -mse
+        
+        study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=42))
+        study.optimize(ridge_objective, n_trials=n_trials)
+        return study.best_params  # Returns {'alpha': ...}
+    
+    # LGBM models
     def objective(trial):
         params = {
             'num_leaves': trial.suggest_int('num_leaves', 16, 128),
@@ -1259,24 +1317,15 @@ def layer3_analyst_lgbm(
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Revised Layer 3: Dual-Head Architecture (Alpha Generation + Probability Calibration).
-
-    1. Alpha Generator (Head A): Predicts Vol-Standardized Returns (Alpha).
-       - Race: Ridge vs LGBM(Huber) vs LGBM(AsymmetricMSE)
-       - Metric: ScoreIC (Spearman + Stability)
-       - Output: 'meta_alpha'
-
-    2. Probability Calibrator (Head B): Predicts Probability of Profit (0/1).
-       - Race: LGBM(LogLoss) vs LGBM(FocalLoss)
-       - Metric: ScoreL3 (AUC, LogLoss, ECE)
-       - Output: 'meta_prob'
-    """
-    print(f"\n{'='*60}")
-    print("LAYER 3: DUAL-HEAD META-MODEL (ALPHA + PROBABILITY)")
-    Layer 3 Orchestrator:
-    1. Computes CUSUM signals.
-    2. Generates and Selects Geometries.
-    3. Trains a Meta-Learner for each selected geometry.
+    Revised Layer 3: Multi-Geometry Meta-Models with Geometry-Specific Features.
+    
+    Process:
+    1. Receives pre-computed signals (including CUSUM from previous layers).
+    2. Generates and Selects Adaptive Geometries.
+    3. For each selected geometry:
+       - Generates geometry-specific regime features (scaled horizons)
+       - Generates geometry-specific NN features (scaled sequence lengths)
+       - Trains a Meta-Learner
     4. Aggregates results.
     """
     print(f"\n{'='*60}")
@@ -1297,12 +1346,12 @@ def layer3_analyst_lgbm(
 
     # 1. Base Feature Generation (Global)
     # ... (Keep existing logic to generate global features)
+    safe_base_cols = []  # Initialize to empty list to avoid UnboundLocalError
     if base_model_cols:
         safe_base_cols = [c for c in base_model_cols if c in df.columns]
         df[safe_base_cols] = df[safe_base_cols].fillna(0.5)
 
     if market_data is not None and isinstance(market_data, pd.DataFrame) and not market_data.empty:
-    if market_data is not None:
         for c in ['volume', 'high', 'low', 'close']:
             if c in market_data.columns:
                 df[c] = market_data[c].reindex(df.index)
@@ -1319,78 +1368,55 @@ def layer3_analyst_lgbm(
     candidate_features = []
     candidate_features.extend(safe_base_cols)
 
-    # --- NEW: Regime Leaf & NN Sequence Features ---
-    if market_data is not None and not market_data.empty:
-        # 1. Regime Leaf Features
+    # --- Geometry-Specific Features ---
+    # Generate regime and NN features based on geometry characteristics
+    # Note: This should be called after geometry selection with actual geometry data
+    # For now, we'll create a placeholder that can be enhanced when geometry loop is restored
+    
+    def generate_features_for_geometry(alpha: float, geometry_id: str = "default"):
+        """Generate features for a specific geometry with given alpha parameter"""
         try:
-            print("<< Generating Regime Leaf Features...")
-            rl_config = {
+            # Horizon based on geometry alpha parameter
+            # alpha=0 (pure reversal) -> 4 bars, alpha=1 (pure trend) -> 16 bars
+            geometry_horizon = 4 + alpha * 12  # Linear mapping from 4 to 16 bars
+            
+            print(f"   Geometry {geometry_id}: alpha={alpha:.2f} -> horizon={geometry_horizon:.1f} bars")
+            
+            # Generate regime features with geometry-specific horizons
+            base_regime_config = {
                 "enabled_targets": [
-                    "regime_trendiness",
-                    "regime_volatility",
-                    "regime_trend_efficiency",
-                    "regime_memory",
-                    "regime_liquidity",
-                    "regime_volume_force_direction",
-                    "regime_breakout",
-                    "regime_future_range",
-                    "regime_downside_ae",
-                    "regime_upside_ae",
-                    "regime_tail_min_bar",
-                    "regime_jump_max_abs_bar",
+                    "regime_trendiness", "regime_volatility", "regime_trend_efficiency",
+                    "regime_memory", "regime_liquidity", "regime_volume_force_direction",
+                    "regime_breakout", "regime_future_range", "regime_downside_ae",
+                    "regime_upside_ae", "regime_tail_min_bar", "regime_jump_max_abs_bar",
                     "regime_vol_of_vol"
                 ],
-                "inputs": {
-                    "input_source": "ohlcv_only",
-                    "ohlcv_feature_config": {}
-                },
+                "inputs": {"input_source": "ohlcv_only", "ohlcv_feature_config": {}},
                 "onehot": {"enabled": False},
                 "interaction_feature": {"enabled": True, "include_base": True},
                 "reporting": {"enabled": False},
                 "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}
             }
-
-            rl_df = extract_regime_leaf_onehot_features(
-                X=pd.DataFrame(index=df.index),
-                market_data=market_data,
-                config=rl_config,
-                random_state=42,
-                verbose=False
-            )
-
-            if rl_df is not None and not rl_df.empty:
-                # Align and merge
-                rl_df = rl_df.reindex(df.index).fillna(0.0)
-                new_rl_cols = [c for c in rl_df.columns if c not in df.columns]
-                if new_rl_cols:
-                    df = pd.concat([df, rl_df[new_rl_cols]], axis=1)
-                    candidate_features.extend(new_rl_cols)
-                    print(f"   Added {len(new_rl_cols)} regime leaf features")
+            
+            # Regime feature extraction moved to Layer 2
+            print(f"     Skipping redundant regime extraction (now in Layer 2)")
+            
+            # Generate NN features with geometry-specific sequence length (DISABLED)
+            # nn_df = _generate_geometry_specific_nn_features(market_data, geometry_horizon, embed_dim=8)
+            # if nn_df is not None and not nn_df.empty:
+            #     nn_df = nn_df.reindex(df.index).fillna(0.0)
+            #     new_nn_cols = [f'{geometry_id}_nn_{c}' for c in nn_df.columns if c not in df.columns]
+            #     if new_nn_cols:
+            #         for col in nn_df.columns:
+            #             df[f'{geometry_id}_nn_{col}'] = nn_df[col]
+            #         candidate_features.extend(new_nn_cols)
+            #         print(f"     Added {len(new_nn_cols)} NN features")
+                    
         except Exception as e:
-            print(f"⚠️ Regime leaf extraction failed: {e}")
-
-        # 2. NN Sequence Embeddings
-        try:
-            print("<< Generating NN Sequence Embeddings...")
-            nn_df = generate_nn_sequence_embeddings(
-                market_data=market_data,
-                encoder_type="stacked",
-                seq_len=24,
-                embed_dim=8,
-                use_conv=True,
-                use_lstm=True,
-                use_attention=False
-            )
-
-            if nn_df is not None and not nn_df.empty:
-                nn_df = nn_df.reindex(df.index).fillna(0.0)
-                new_nn_cols = [c for c in nn_df.columns if c not in df.columns]
-                if new_nn_cols:
-                    df = pd.concat([df, nn_df[new_nn_cols]], axis=1)
-                    candidate_features.extend(new_nn_cols)
-                    print(f"   Added {len(new_nn_cols)} NN embedding features")
-        except Exception as e:
-            print(f"⚠️ NN embedding generation failed: {e}")
+            print(f"⚠️ Geometry {geometry_id} features failed: {e}")
+    
+    # Geometry-specific features will be generated in the loop above
+    # for each selected geometry
 
     candidate_features.extend(
         [
@@ -1423,8 +1449,122 @@ def layer3_analyst_lgbm(
     if other_cols:
         df[other_cols] = df[other_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
+    # Define global features (exclude geometry-specific features that will be added later)
+    global_features = meta_features.copy()
+
     # ---------------------------------------------------------
-    # 2. Data Alignment
+    # 2. Geometry Generation & Selection
+    # ---------------------------------------------------------
+    
+    # Expect pre-computed CUSUM signals from previous layers
+    # Look for CUSUM columns in the input dataframe
+    cusum_cols = [c for c in df.columns if 'trend_signal' in c or 'reversal_signal' in c]
+    
+    if not cusum_cols:
+        print("⚠️ No CUSUM signals found in input. Using fallback signals.")
+        # Create minimal fallback signals
+        cusum_df = pd.DataFrame(index=df.index)
+        cusum_df['trend_signal_24'] = np.zeros(len(df))
+        cusum_df['reversal_signal_24'] = np.zeros(len(df))
+    else:
+        cusum_df = df[cusum_cols]
+        print(f"Found CUSUM signals: {cusum_cols}")
+    
+    # Get required data for geometry generation
+    vol_s = df['volatility_1d'] if 'volatility_1d' in df.columns else pd.Series(0.01, index=df.index)
+    mfe_s = df.get('mfe', pd.Series(0.02, index=df.index))  # Default MFE
+    mae_s = df.get('mae', pd.Series(0.01, index=df.index))  # Default MAE
+    
+    print("<< Generating Adaptive Geometries...")
+    geometries_dict = generate_geometries_adaptive(
+        base_signals=cusum_df,
+        volatility=vol_s,
+        mfe=mfe_s,
+        mae=mae_s
+    )
+    
+    print(f"Generated {len(geometries_dict)} geometries")
+    
+    # Select best geometries
+    y_target = df[target_col].fillna(0)
+    selected_geoms_df = select_best_geometries_production(
+        geometries_dict, y_target, top_k=6, n_jobs=1
+    )
+    
+    if selected_geoms_df.empty:
+        print("⚠️ No geometries selected! Using fallback.")
+        selected_ids = ['fallback']
+        # Create fallback geometry
+        if not geometries_dict:
+            geometries_dict['fallback'] = {
+                'composite_signal': np.zeros(len(df)),
+                'sigma_eff': vol_s.values,
+                'alpha': 0.5,
+                'activation': 'linear'
+            }
+    else:
+        selected_ids = selected_geoms_df['id'].values.tolist()
+        print(f"Selected {len(selected_ids)} geometries: {selected_ids}")
+    
+    # ---------------------------------------------------------
+    # 3. Multi-Geometry Meta-Learner Training
+    # ---------------------------------------------------------
+    
+    # Prepare weighting schemes
+    w_l1 = finalize_sample_weights(layer1_weight) if layer1_weight is not None else np.ones(len(df))
+    w_l2 = finalize_sample_weights(layer2_weight) if layer2_weight is not None else np.ones(len(df))
+    schemes = {
+        'S1_L1': w_l1,
+        'S2_L1_L2': w_l1 * w_l2,
+        'S3_L2': w_l2
+    }
+    
+    final_models = {}
+    
+    for gid in selected_ids:
+        if gid not in geometries_dict:
+            continue
+            
+        print(f"\n--- Training Meta-Learner for Geometry: {gid} ---")
+        
+        g_data = geometries_dict[gid]
+        alpha = g_data.get('alpha', 0.5)
+        sig = g_data['composite_signal']
+        sigma = g_data['sigma_eff']
+        
+        # Add geometry signal to dataframe
+        df[f'{gid}_sig'] = sig
+        df[f'{gid}_sigma'] = sigma
+        df[f'{gid}_sig_x_vol'] = sig * sigma
+        
+        # Generate geometry-specific features
+        generate_features_for_geometry(alpha, gid)
+        
+        # Collect all features for this geometry (NN features disabled)
+        geometry_features = [f'{gid}_sig', f'{gid}_sigma', f'{gid}_sig_x_vol']
+        geometry_features.extend([c for c in df.columns if c.startswith(f'{gid}_rl_')])  # Only regime features
+        geometry_features.extend(global_features)  # Include global features
+        
+        # Train meta-learner for this geometry
+        try:
+            oof_p, model, score = _train_meta_learner_for_geometry(
+                gid, df, geometry_features, target_col, schemes, y_target.values,
+                Path('outcomes'), cfg
+            )
+            
+            df[f'meta_prob_{gid}'] = oof_p
+            final_models[gid] = model
+            
+            print(f"   Geometry {gid}: Score = {score:.4f}")
+            
+        except Exception as e:
+            print(f"   Geometry {gid} training failed: {e}")
+            df[f'meta_prob_{gid}'] = 0.5  # Fallback probability
+    
+    print(f"\n>>> Trained {len(final_models)} geometry meta-models")
+    
+    # ---------------------------------------------------------
+    # 4. Data Alignment
     # ---------------------------------------------------------
     
     # Must use original index alignment
@@ -1457,10 +1597,16 @@ def layer3_analyst_lgbm(
     w_alpha = finalize_sample_weights(w_alpha) # MAD scale / Center at 1.0
 
     # B. Prob Weights: Standard Layer 2 Composite (passed in)
-    # Using L2 weights as base, maybe combined with L1?
-    # layer2_weight is already passed aligned.
     w_prob = layer2_weight.reindex(df.index).fillna(1.0).values
     w_prob = finalize_sample_weights(w_prob)
+
+    # 4. Integrate Specialist Signals into Final Feature Matrix
+    specialist_cols = [c for c in df.columns if c.startswith('meta_prob_g_')]
+    if specialist_cols:
+        print(f"   Integrating {len(specialist_cols)} Specialist signals into the final ensemble...")
+        meta_features.extend(specialist_cols)
+        # Ensure no duplicates
+        meta_features = list(dict.fromkeys(meta_features))
 
     # Clean Feature Matrix
     X = df[meta_features]
@@ -1521,18 +1667,16 @@ def layer3_analyst_lgbm(
 
         # Compute ScoreIC
         if fold_ics:
-            score_ic = _calculate_ic_score(None, None, fold_ics) # Only needs folds for IR calc if global not available?
-            # Actually _calculate_ic_score takes vectors.
-            # Let's use average IC for race simplicity or implement IR logic here.
-            # Score = 100*MeanIC + 50*(Mean/Std)
+            # Score = 100*MeanIC + 50*(Mean/Std) - IC IR metric
             mean_ic = np.mean(fold_ics)
             std_ic = np.std(fold_ics) + 1e-6
             score_ic = 100 * mean_ic + 50 * (mean_ic / std_ic)
         else:
             score_ic = -999.0
+            mean_ic = 0.0  # Set default for print statement
             
         alpha_scores[cand['name']] = score_ic
-        print(f"     ScoreIC: {score_ic:.4f} (Mean IC: {np.mean(fold_ics):.4f})")
+        print(f"     ScoreIC: {score_ic:.4f} (Mean IC: {mean_ic:.4f})")
 
     best_alpha_name = max(alpha_scores, key=alpha_scores.get)
     best_alpha_cand = next(c for c in alpha_candidates if c['name'] == best_alpha_name)
@@ -1542,7 +1686,6 @@ def layer3_analyst_lgbm(
     best_alpha_params = _run_layer3_hpo(
         X, pd.Series(y_alpha), w_alpha,
         model_type=best_alpha_cand['type'],
-        objective_func=best_alpha_cand['obj'],
         n_trials=25
     )
 
@@ -1629,7 +1772,6 @@ def layer3_analyst_lgbm(
     best_prob_params = _run_layer3_hpo(
         X, pd.Series(y_prob), w_prob,
         model_type='classifier',
-        objective_func=best_prob_cand['obj'],
         n_trials=25
     )
 
@@ -1670,14 +1812,45 @@ def layer3_analyst_lgbm(
         preds = cal_model.predict_proba(X_val)[:, 1]
         meta_prob_oof[val_idx] = preds
 
-    # Fit Final Prob Model (Full Data)
-    print("   Fitting Final Prob Model (Full)...")
-    final_prob_model = CalibratedClassifierCV(
-        estimator=lgb.LGBMClassifier(**best_prob_params),
+    # Improved Calibration using OOFProbabilityCalibrator
+    # OOFCalibrationConfig only accepts: method, isotonic_out_of_bounds, platt_regularization, 
+    # temperature_search_range, beta_prior_strength, min_samples_for_calibration, validation_split,
+    # output_range, clip_to_range, cache_dir, model_id
+    cal_config = OOFCalibrationConfig(
         method='isotonic',
-        cv=3 # Internal CV for calibration on full fit
+        min_samples_for_calibration=100
     )
-    final_prob_model.fit(X, y_prob, sample_weight=w_prob)
+    
+    calibrator = OOFProbabilityCalibrator(config=cal_config)
+    
+    # Calibrate the OOF predictions using the proper interface
+    # Create a pd.Series from meta_prob_oof for the calibrator
+    oof_series = pd.Series(meta_prob_oof, index=df.index)
+    y_true_series = pd.Series(y_prob, index=df.index)
+    
+    # Fit and transform to get calibrated predictions
+    try:
+        calibrated_series = calibrator.fit_transform(
+            oof_predictions=oof_series,
+            y_true=y_true_series
+        )
+        meta_prob_oof = calibrated_series.values
+        print(f"   Calibration complete: {calibrator.get_calibration_metrics()}")
+    except Exception as e:
+        print(f"   ⚠️ OOF Calibration failed: {e}, using raw probabilities")
+    
+    # Fit Final Prob Model (Full Data)
+    print("   Fitting Final Prob Model (Full) with Enhanced Calibration...")
+    base_prob_model = lgb.LGBMClassifier(**best_prob_params)
+    base_prob_model.fit(X, y_prob, sample_weight=w_prob)
+    
+    # Final production calibrator fit on full data
+    final_prob_model = CalibratedClassifierCV(
+        estimator=base_prob_model,
+        method='isotonic', # Use isotonic for full model as it's most expressive if data allows
+        cv='prefit'
+    )
+    final_prob_model.fit(X, y_prob)
 
     # ---------------------------------------------------------
     # Output Assembly
@@ -1758,143 +1931,6 @@ def plot_diagnostics(y_true, y_prob, output_path=None):
         plt.close(fig)
     except Exception as e:
         print(f"Failed to generate plots: {e}")
-    # Identify Global Features (exclude temp geometry ones)
-    global_features = [c for c in df.columns if c not in ['target', target_col] and 'meta_prob' not in c]
     
-    # 2. Compute CUSUM Signals
-    if market_data is not None:
-        print("<< Computing CUSUM Signals (Trend/Reversal)...")
-        cusum_df = compute_cusum_signals_multi_window(market_data, windows=[12, 24, 48])
-        # Align with df
-        cusum_df = cusum_df.reindex(df.index).fillna(0.0)
-    else:
-        print("⚠️ No market_data, skipping CUSUM generation.")
-        cusum_df = pd.DataFrame(index=df.index)
-
-    # 3. Generate Geometries
-    # Need Volatility, MFE, MAE for selection
-    # If MFE/MAE not in df, we must approximate or skip selection (use all default)
-    if 'mfe' in df.columns and 'mae' in df.columns:
-        mfe_s = df['mfe']
-        mae_s = df['mae']
-    else:
-        # Fallback if MFE/MAE missing (e.g. inference mode?)
-        # For inference, we use saved geometries?
-        # But this function is usually for training.
-        # Let's assume training context has MFE/MAE.
-        mfe_s = pd.Series(0, index=df.index)
-        mae_s = pd.Series(1, index=df.index) # Avoid div/0
-
-    vol_s = df['volatility_1d'] if 'volatility_1d' in df.columns else pd.Series(0.01, index=df.index)
-    
-    print("<< Generating Meta-Geometries...")
-    geometries_dict = generate_geometries_adaptive(
-        base_signals=cusum_df,
-        volatility=vol_s,
-        mfe=mfe_s,
-        mae=mae_s
-    )
-    
-    # 4. Select Best Geometries
-    print("<< Selecting Best Geometries...")
-    y_target = df[target_col].fillna(0)
-    
-    selected_geoms_df = select_best_geometries_production(
-        geometries_dict,
-        y_target,
-        top_k=5,
-        n_jobs=1 # Use 1 job inside the function if we parallelize outer? Or keep parallel here.
-    )
-    
-    if selected_geoms_df.empty:
-        print("⚠️ No geometries selected! Using fallback (average signal).")
-        # Create a dummy geometry
-        selected_ids = ['default']
-        # Add average signal to dict
-        if not geometries_dict:
-             # Very basic fallback
-             geometries_dict['default'] = {
-                 'composite_signal': np.zeros(len(df)),
-                 'sigma_eff': vol_s.values,
-                 'z_auc': 0, 'z_stab': 0, 'z_rad': 0, 'z_safe': 0
-             }
-        else:
-             # Just pick the first one
-             first_key = list(geometries_dict.keys())[0]
-             selected_ids = [first_key]
-             geometries_dict[first_key].update({'z_auc': 0, 'z_stab': 0, 'z_rad': 0, 'z_safe': 0})
-    else:
-        selected_ids = selected_geoms_df['id'].values.tolist()
-        print(f"   Selected {len(selected_ids)}: {selected_ids}")
-
-    # 5. Prepare Weighting Schemes (Once)
-    # ... (Same logic as original file to prepare schemes dictionary)
-    w_l1 = finalize_sample_weights(layer1_weight) if layer1_weight is not None else np.ones(len(df))
-    w_l2 = finalize_sample_weights(layer2_weight) if layer2_weight is not None else np.ones(len(df))
-    schemes = {
-        'S1_L1': w_l1,
-        'S2_L1_L2': w_l1 * w_l2,
-        'S3_L2': w_l2
-    }
-    # Add others if needed...
-
-    # 6. Train Meta-Learner per Geometry
-    final_models = {}
-    
-    for gid in selected_ids:
-        # Prepare specific DataFrame for this geometry
-        # Add the composite signal and sigma_eff
-        g_data = geometries_dict[gid]
-        sig = g_data['composite_signal']
-        sigma = g_data['sigma_eff']
-        
-        # Create augmented features
-        # We assume signal vector aligns with df (since it came from cusum_df reindexed to df)
-
-        # Construct local DF
-        # We modify df in place? No, concurrency issues if we parallelize.
-        # Just pass global_features + new cols.
-
-        # We need to add columns to df temporarily or create X matrix.
-        # Let's create a feature set list.
-
-        df[f'{gid}_sig'] = sig
-        df[f'{gid}_sigma'] = sigma
-
-        # Add some derived features for this geometry
-        df[f'{gid}_sig_x_vol'] = sig * sigma
-
-        current_meta_features = global_features + [f'{gid}_sig', f'{gid}_sigma', f'{gid}_sig_x_vol']
-
-        # Train
-        oof_p, model, score = _train_meta_learner_for_geometry(
-            gid, df, current_meta_features, target_col, schemes, y_target.values,
-            Path('outcomes'), cfg
-        )
-
-        df[f'meta_prob_{gid}'] = oof_p
-        final_models[gid] = model
-
-        # Save geometry metadata for inference reconstruction
-        # We also need z-scores for Layer 4 scaling
-        row = selected_geoms_df[selected_geoms_df['id'] == gid]
-        z_scores = {}
-        if not row.empty:
-            z_scores = {
-                'z_auc': float(row['z_auc'].values[0]),
-                'z_stab': float(row.get('z_stab', pd.Series([0])).values[0]),
-                'z_rad': float(row['z_rad'].values[0]),
-                'z_safe': float(row['z_safe'].values[0])
-            }
-
-        final_models[f'{gid}_meta'] = {
-            'alpha': g_data.get('alpha'),
-            'activation': g_data.get('activation'),
-            'z_scores': z_scores
-        }
-
-    # 7. Summary Reporting (Aggregated)
-    # ...
-
-    # Return df with all meta_prob_* columns, and the dict of models
-    return df, final_models
+    # Return nothing
+    return

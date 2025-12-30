@@ -1462,6 +1462,25 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             except Exception:
                 l3_target = pd.Series(np.nan, index=l3_input_df.index, dtype=float)
 
+        # ENSURE BINARY TARGETS: Convert any continuous targets to strict {0,1} for binary classification
+        try:
+            if isinstance(l3_target, pd.Series):
+                # Log target distribution before conversion for debugging
+                unique_vals = np.unique(l3_target.dropna().values)
+                tprint_info(f"Layer3 target distribution before binarization: unique_vals={unique_vals[:10]}{'...' if len(unique_vals)>10 else ''}")
+                
+                # Force binary conversion at 0.5 threshold
+                l3_target = (l3_target >= 0.5).astype(float).where(l3_target.notna())
+                
+                # Verify binary conversion
+                unique_after = np.unique(l3_target.dropna().values)
+                tprint_info(f"Layer3 target distribution after binarization: unique_vals={unique_after}")
+                
+                if not np.all(np.isin(unique_after, [0.0, 1.0])):
+                    tprint_warning("Target binarization failed - some non-binary values remain")
+        except Exception as e:
+            tprint_warning(f"Failed to binarize Layer3 targets: {e}")
+
         l3_input_df[target_col] = l3_target
 
         try:
@@ -1517,10 +1536,11 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # ---------------------------------------------------------
             tprint_info(">>> Executing Layer 3: Weighting Scheme Comparison & Training...")
 
-            # --- Target Variant 1: Economic Target (Default) ---
-            tprint_info("   [Target A] Training on Economic Target (continuous)...")
+            # --- Target Variant 1: Binary Economic Target ---
+            tprint_info("   [Target A] Training on Binary Economic Target...")
             l3_input_econ = l3_input_df.copy()
-            l3_input_econ[target_col] = l3_target  # Economic target (soft)
+            # Use the already binarized l3_target from our fix above
+            l3_input_econ[target_col] = l3_target
 
             oof_export_econ, final_model_econ = layer3_analyst_lgbm(
                 oof_df=l3_input_econ,
@@ -1538,8 +1558,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # --- Target Variant 2: Binary Consensus (Layer 2) ---
             tprint_info("   [Target B] Training on Binary Consensus (Layer 2)...")
             l3_input_bin = l3_input_df.copy()
-            # Restore binary labels from Layer 2 (l2_labels is binary thresholded at 0.5)
+            # Restore binary labels from Layer 2 and ensure proper binarization
             l2_labels_binary = l2_labels.reindex(l3_input_bin.index)
+            l2_labels_binary = (l2_labels_binary >= 0.5).astype(float).where(l2_labels_binary.notna())
             l3_input_bin[target_col] = l2_labels_binary
 
             oof_export_bin, final_model_bin = layer3_analyst_lgbm(
@@ -1571,11 +1592,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 ece = met.get("ece", 0.0)
                 return 100 * (auc - 0.5) + 50 * (0.693 - ll) - 200 * ece
 
-            # Note: For Economic Target run, target_col has soft labels.
-            # For Binary Target run, target_col has binary labels.
-            # Metrics are comparable if we evaluate against the specific target used for training?
-            # Or should we evaluate both against the Economic outcome?
-            # Usually we select based on the target it was trained for (internal consistency).
+            # Note: Both Economic and Binary Target runs now use binary labels for proper classification metrics.
+            # Economic targets are binarized at 0.5 threshold before training.
 
             score_econ = _quick_score(oof_export_econ, target_col)
             score_bin = _quick_score(oof_export_bin, target_col) # uses binary labels in this DF
@@ -1585,8 +1603,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             # Create Comparison Table
             comp_rows = [
-                {"Target_Type": "Economic (Soft)", "Score": score_econ, "Used_For_Production": False},
-                {"Target_Type": "Binary (L2)",     "Score": score_bin,  "Used_For_Production": False}
+                {"Target_Type": "Economic (Binarized)", "Score": score_econ, "Used_For_Production": False},
+                {"Target_Type": "Binary Consensus", "Score": score_bin, "Used_For_Production": False},
             ]
 
             # Logic: Default to Economic unless Binary is significantly better?

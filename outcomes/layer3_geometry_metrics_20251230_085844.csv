@@ -1,0 +1,2 @@
+geometry,auc,log_loss,score,alpha,activation
+g1,0.5736294517807123,0.86322258212175,0.8,0.5,linear

@@ -1847,16 +1847,16 @@ def layer3_analyst_lgbm(
     
     # Fit Final Prob Model (Full Data)
     print("   Fitting Final Prob Model (Full) with Enhanced Calibration...")
+    # Use CV=3 for robust calibration instead of prefit on training data (which leaks)
     base_prob_model = lgb.LGBMClassifier(**best_prob_params)
-    base_prob_model.fit(X, y_prob, sample_weight=w_prob)
     
     # Final production calibrator fit on full data
     final_prob_model = CalibratedClassifierCV(
         estimator=base_prob_model,
         method='isotonic', # Use isotonic for full model as it's most expressive if data allows
-        cv='prefit'
+        cv=3
     )
-    final_prob_model.fit(X, y_prob)
+    final_prob_model.fit(X, y_prob, sample_weight=w_prob)
 
     # ---------------------------------------------------------
     # Output Assembly

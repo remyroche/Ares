@@ -654,9 +654,15 @@ def train_layer4_oof(
         # Fallback: try to find any alpha-like columns
         alpha_cols = [c for c in oof_df.columns if 'alpha' in c.lower() and c != 'target_alpha']
 
-    common_idx = oof_df.index.intersection(regime_features.index)
-    X_regime = regime_features.loc[common_idx]
-    oof_aligned = oof_df.loc[common_idx]
+    # ALIGNMENT FIX: Use reindex to preserve oof_df structure (handling potential duplicates or gaps)
+    # intersection() does not preserve duplicates and can cause length mismatch if oof_df has duplicates
+    X_regime = regime_features.reindex(oof_df.index).fillna(0.0)
+
+    # Ensure index name is consistent if needed
+    if X_regime.index.name != oof_df.index.name:
+        X_regime.index.name = oof_df.index.name
+
+    oof_aligned = oof_df.copy()
     
     # Prepare Scaled Features
     # We need volatility for scaling
@@ -664,7 +670,9 @@ def train_layer4_oof(
         vol = oof_aligned['volatility_1d'].values
     else:
         # Compute vol proxy
-        vol = market_data['close'].pct_change().rolling(24).std().reindex(common_idx).fillna(0.01).values
+        # Need to use market data reindexed to oof_aligned
+        vol_proxy = market_data['close'].pct_change().rolling(24).std().reindex(oof_aligned.index).fillna(0.01)
+        vol = vol_proxy.values
 
     meta_features_dict = {}
     
@@ -691,7 +699,7 @@ def train_layer4_oof(
         
     else:
         tprint_warning("   No Layer 3 Prob outputs found.")
-        primary_prob = pd.Series(0.5, index=common_idx)
+        primary_prob = pd.Series(0.5, index=oof_aligned.index)
     
     # 5. Process Alpha heads (with disagreement features only)
     if alpha_cols:
@@ -707,14 +715,16 @@ def train_layer4_oof(
         
     else:
         tprint_warning("   No Layer 3 Alpha outputs found.")
-        meta_features_dict['alpha_weighted_mean'] = pd.Series(0.0, index=common_idx)
+        meta_features_dict['alpha_weighted_mean'] = pd.Series(0.0, index=oof_aligned.index)
     
     # 6. Combine all features
+    # Concat axis=1 aligns by index. Since X_regime was reindexed to oof_df.index,
+    # and meta_features are generated from oof_df, alignment should be perfect.
     if meta_features_dict:
-        X_meta = pd.DataFrame(meta_features_dict)
+        X_meta = pd.DataFrame(meta_features_dict, index=oof_aligned.index)
         # Merge Regime + Meta
-        X = pd.concat([X_regime.reset_index(drop=True), X_meta.reset_index(drop=True)], axis=1)
-        X.index = common_idx
+        # Use concat along columns. Index already aligned.
+        X = pd.concat([X_regime, X_meta], axis=1)
     else:
         X = X_regime
     
@@ -725,20 +735,22 @@ def train_layer4_oof(
     from src.utils.purged_kfold import PurgedKFoldTime
     cv = PurgedKFoldTime(n_splits=n_folds, purge=pd.Timedelta(minutes=60))
     
-    l4_oof_probs = np.full(len(common_idx), np.nan)
+    l4_oof_probs = np.full(len(oof_aligned), np.nan)
     
     # We loop manually to handle index alignment carefully
-    X_vals = X.values
-    y_vals = y_true.values
-    r_vals = returns.values
-    l3_vals = primary_prob.values
+    # X is now aligned to oof_aligned
 
+    # Note: PurgedKFoldTime splits based on index time.
     splits = list(cv.split(X))
 
     for fold_idx, (train_idx, val_idx) in enumerate(splits):
         tprint_info(f"   Fold {fold_idx + 1}/{n_folds}...")
         
-        mask_tr = np.isfinite(y_vals[train_idx]) & np.isfinite(r_vals[train_idx])
+        # Use iloc for integer indexing from split
+        y_tr_fold = y_true.iloc[train_idx]
+        r_tr_fold = returns.iloc[train_idx]
+
+        mask_tr = np.isfinite(y_tr_fold) & np.isfinite(r_tr_fold)
         
         if mask_tr.sum() < 50: continue
             
@@ -747,15 +759,23 @@ def train_layer4_oof(
             l3_keep_fraction=float(cfg.get('layer4_quantile_threshold', 0.6))
         )
 
+        # Note: primary_prob is numpy array if calculated above, or Series if fallback
+        if isinstance(primary_prob, pd.Series):
+             prob_tr = primary_prob.iloc[train_idx]
+        else:
+             prob_tr = primary_prob[train_idx]
+
+        # Use array slicing for probs if numpy
+        prob_tr_valid = prob_tr[mask_tr] if isinstance(prob_tr, np.ndarray) else prob_tr[mask_tr]
+
         l4_model.fit(
             X.iloc[train_idx][mask_tr],
-            y_true.iloc[train_idx][mask_tr],
-            primary_prob.iloc[train_idx][mask_tr],
-            returns.iloc[train_idx][mask_tr]
+            y_tr_fold[mask_tr],
+            prob_tr_valid,
+            r_tr_fold[mask_tr]
         )
         l4_oof_probs[val_idx] = l4_model.predict_proba(X.iloc[val_idx])
 
-    oof_aligned = oof_aligned.copy()
     oof_aligned['layer4_prob'] = l4_oof_probs
     
     metrics = {

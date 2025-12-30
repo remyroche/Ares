@@ -1,4 +1,0 @@
-Category,Name,Goal,Target,AUC,PR_AUC,LogLoss,Score,Details
-Weighting Scheme,S1_L1,Cross Entropy (Default),l2_consensus_target,0.5,,9.21034037197629,-625.8470185988145,"Rating: Toxic, Top30_Win: 1.0"
-Weighting Scheme,S2_L1_L2,Cross Entropy (Default),l2_consensus_target,0.5,,9.21034037197629,-625.8470185988145,"Rating: Toxic, Top30_Win: 1.0"
-Weighting Scheme,S3_L2,Cross Entropy (Default),l2_consensus_target,0.5,,9.21034037197629,-625.8470185988145,"Rating: Toxic, Top30_Win: 1.0"

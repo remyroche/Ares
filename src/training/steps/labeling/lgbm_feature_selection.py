@@ -58,6 +58,8 @@ DEFAULT_LGBM_PARAMS = {
 }
 
 # Feature selection configuration
+ITERATIVE_SELECTION_BUFFER_RATIO = 1.5
+
 FEATURE_SELECTION_CONFIG = {
     "subsample_fraction": 0.65,  # 65% subsampling
     "n_iterations": 10,  # Number of LGBM runs
@@ -601,10 +603,16 @@ def lgbm_feature_selection_pipeline(
     # We aim for the largest target set + some buffer for RFE to work with
     # But strictly capped to avoid "10x" issue.
     # If largest target is 10, we don't want to output 100.
-    # Maybe 1.5x buffer is enough.
     largest_target = adaptive_target_sets[0]
-    iterative_target = min(len(kept_features), int(largest_target * 1.5))
-    iterative_target = max(iterative_target, largest_target) # Ensure at least largest target
+    # Use max(1, ...) for safety with tiny datasets
+    iterative_target = min(
+        len(kept_features),
+        int(max(1, largest_target) * ITERATIVE_SELECTION_BUFFER_RATIO)
+    )
+    # Ensure at least largest target (unless input features < target)
+    iterative_target = max(iterative_target, largest_target)
+    # Clamp to input count again just in case
+    iterative_target = min(iterative_target, len(kept_features))
 
     tprint_info(f"   🎯 Iterative Selection Target: {iterative_target} (buffer for RFE)")
 

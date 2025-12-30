@@ -858,7 +858,8 @@ class LabelBasedLayer2:
                 balance=1.0,
                 raw_metrics={},
                 uuid=f"{og.name}_{i}",
-                events=og.events # Store events!
+                events=og.events, # Store events!
+                selected_features=None # Initialize explicitly
             )
             production_geometries.append(gt)
 
@@ -990,8 +991,12 @@ class LabelBasedLayer2:
                 # Feature Selection Application
                 # Priority: Geometry specific selection > Global selection > All
                 selected_cols = None
-                if gt.selected_features:
-                    selected_cols = [c for c in gt.selected_features if c in X_train.columns]
+
+                # Check for selected_features safely
+                gt_selected = getattr(gt, 'selected_features', None)
+
+                if gt_selected:
+                    selected_cols = [c for c in gt_selected if c in X_train.columns]
                 elif global_probe_features:
                     selected_cols = [c for c in global_probe_features if c in X_train.columns]
 
@@ -1049,8 +1054,12 @@ class LabelBasedLayer2:
 
                 # Feature Selection Application (Test)
                 selected_cols = None
-                if gt.selected_features:
-                    selected_cols = [c for c in gt.selected_features if c in X_test.columns]
+
+                # Check for selected_features safely
+                gt_selected = getattr(gt, 'selected_features', None)
+
+                if gt_selected:
+                    selected_cols = [c for c in gt_selected if c in X_test.columns]
                 elif global_probe_features:
                     selected_cols = [c for c in global_probe_features if c in X_test.columns]
 
@@ -1162,7 +1171,7 @@ class LabelBasedLayer2:
         events_subset = events_df.loc[y.index]
         X = self._build_geometry_independent_event_features(df, events_subset)
 
-        if X.empty:
+        if X is None or X.empty:
             return []
 
         # Add geometry specific features
@@ -1181,7 +1190,11 @@ class LabelBasedLayer2:
         )
 
         if not feature_sets:
-            return list(X.columns)[:10] # Fallback
+            # Fallback: respect adaptive limit
+            # max_allowed was calculated inside pipeline, but we can approximate it or be safe
+            n_samples = len(y)
+            limit = max(1, n_samples // 100)
+            return list(X.columns)[:limit]
 
         # Return the largest available set (keys are ints)
         best_k = max(feature_sets.keys())

@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import joblib
+from dataclasses import asdict
 
 from sklearn.metrics import roc_auc_score, log_loss, brier_score_loss
 
@@ -453,23 +454,6 @@ def _compute_layer4_sweep_metrics(
             "total_pnl": float(np.nansum(pnl)),
             "profit_factor": float(profit_factor) if np.isfinite(profit_factor) else float("nan"),
             "win_rate": float(win_rate) if np.isfinite(win_rate) else float("nan"),
-        }
-    except Exception:
-        return {
-            "p_min": float(p_min),
-            "n_prob_ge_pmin": 0,
-            "gate_n_eval": 0,
-            "gate_auc": float("nan"),
-            "gate_ece": float("nan"),
-            "gate_avg_pnl": float("nan"),
-            "gate_total_pnl": float("nan"),
-            "gate_profit_factor": float("nan"),
-            "gate_win_rate": float("nan"),
-            "n_trades": 0,
-            "avg_trade_pnl": float("nan"),
-            "total_pnl": float("nan"),
-            "profit_factor": float("nan"),
-            "win_rate": float("nan"),
         }
 
 
@@ -1310,9 +1294,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         
         # Assemble OOF predictions from individual geometries
         geo_preds_df = pd.DataFrame(index=events_df.index)
-        for uuid, preds in individual_geos.items():
-            # preds are already Series on the correct index (or reindex safe)
-            geo_preds_df[uuid] = preds.reindex(events_df.index)
+        if not individual_geos or len(individual_geos) == 0:
+            tprint_warning("   Layer 2 'individual_geos' is empty! Layer 3 will have no base models.")
+        else:
+            tprint_info(f"   Integrating {len(individual_geos)} base model geometries for Layer 3.")
+            for uuid, preds in individual_geos.items():
+                # preds are already Series on the correct index (or reindex safe)
+                geo_preds_df[uuid] = preds.reindex(events_df.index)
             
         geo_cols = list(geo_preds_df.columns)
         
@@ -1607,25 +1595,33 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 {"Target_Type": "Binary Consensus", "Score": score_bin, "Used_For_Production": False},
             ]
 
-            # Logic: Default to Economic unless Binary is significantly better?
-            # Or trust the user preference?
-            # Current default is Economic.
-            # If user explicitly wants binary, they set layer3_use_econ_target=False.
-            # But here we force-ran both.
-            # Let's keep Economic as primary unless configured otherwise, or if Binary is strictly better.
-            # Actually, standardizing on Economic is the design intent. We'll keep Econ as production
-            # but export both metrics.
+            # Smart Selection Logic
+            use_econ_target_cfg = config.get("layer3_use_econ_target", None) # None = Auto
 
-            # Allow config override to pick binary
-            force_binary = not bool(config.get("layer3_use_econ_target", True))
+            if use_econ_target_cfg is False:
+                 # User forced Binary
+                 tprint_info("   [Selection] Config forced Binary Target.")
+                 winner_target = "binary"
+            elif use_econ_target_cfg is True:
+                 # User forced Economic
+                 tprint_info("   [Selection] Config forced Economic Target.")
+                 winner_target = "economic"
+            else:
+                 # Auto Selection based on Score
+                 # Using a small margin to prefer Economic (default) if close
+                 margin = 0.5
+                 if score_bin > (score_econ + margin):
+                     tprint_info(f"   [Selection] Auto-selecting Binary Target (Score {score_bin:.2f} > {score_econ:.2f}).")
+                     winner_target = "binary"
+                 else:
+                     tprint_info(f"   [Selection] Auto-selecting Economic Target (Default or Better Score).")
+                     winner_target = "economic"
 
-            if force_binary:
-                tprint_info("   [Selection] Config forced Binary Target.")
+            if winner_target == "binary":
                 oof_export = oof_export_bin
                 final_model = final_model_bin
                 comp_rows[1]["Used_For_Production"] = True
             else:
-                tprint_info("   [Selection] Defaulting to Economic Target.")
                 oof_export = oof_export_econ
                 final_model = final_model_econ
                 comp_rows[0]["Used_For_Production"] = True

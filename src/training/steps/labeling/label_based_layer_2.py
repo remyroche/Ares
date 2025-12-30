@@ -99,10 +99,10 @@ LAYER2_MODEL_CONSTANTS = {
     'metric': 'binary_logloss',
     'max_depth': -1,
     'learning_rate': 0.03,  # Reduced from 0.05 for better convergence
-    'lambda_l1': 0.01,
+    'lambda_l1': 0.5,
     'lambda_l2': 0.05,       # Reduced from 0.1 to allow more learning  
     'num_leaves': 31,
-    'min_data_in_leaf': 5, # Reduced to 5 (Hunter Mode)
+    'min_data_in_leaf': 20,
     'min_sum_hessian_in_leaf': 1e-3,
     'feature_fraction': 0.95, # Increased from 0.9 to use more features
     'bagging_fraction': 0.95,  # Increased from 0.9 to use more data

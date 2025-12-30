@@ -44,8 +44,6 @@ from src.training.steps.labeling.label_based_layer_2 import LabelBasedLayer2
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm, plot_diagnostics
 # Import Layer 4 (Risk Filter) and Layer 5 (Position Sizing)
 from src.training.steps.labeling.label_based_layer_4 import (
-    Layer4RiskFilter,
-    compute_layer4_regime_features,
     train_layer4_oof,
 )
 from src.training.steps.labeling.oos_integration import (
@@ -455,6 +453,8 @@ def _compute_layer4_sweep_metrics(
             "profit_factor": float(profit_factor) if np.isfinite(profit_factor) else float("nan"),
             "win_rate": float(win_rate) if np.isfinite(win_rate) else float("nan"),
         }
+    except Exception:
+        return {}
 
 
 def _write_layer5_pmin_sweep(
@@ -1743,44 +1743,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     p_col_for_sizing = 'final_score'
 
                     # Train a final model on the full data for saving (evaluation uses OOF above)
-                    try:
-                        l4_regime_features = compute_layer4_regime_features(market_data)
-                        common_idx = l4_input.index.intersection(l4_regime_features.index)
-                        if len(common_idx) >= 100:
-                            X_full = l4_regime_features.loc[common_idx]
-                            y_full_raw = pd.to_numeric(l4_input.loc[common_idx, target_col], errors='coerce')
-                            l3_full = pd.to_numeric(l4_input.loc[common_idx, 'meta_prob'], errors='coerce')
-
-                            labeled = y_full_raw.notna() & pd.to_numeric(l3_full, errors='coerce').notna()
-                            if int(labeled.sum()) >= 100:
-                                try:
-                                    include_l3_prob_feature = bool(config.get('layer4_include_l3_prob_feature', True))
-                                except Exception:
-                                    include_l3_prob_feature = True
-
-                                # Calculate meta-features on full series before slicing
-                                if include_l3_prob_feature:
-                                    X_full = X_full.copy()
-                                    l3_full_numeric = pd.to_numeric(l3_full, errors='coerce')
-                                    X_full['l3_prob'] = l3_full_numeric
-                                    X_full['l3_lag'] = l3_full_numeric.ewm(span=5, adjust=False).mean()
-
-                                X_fit = X_full.loc[labeled]
-                                y_fit = (pd.to_numeric(y_full_raw.loc[labeled], errors='coerce').astype(float) >= 0.5).astype(int)
-                                l3_fit = pd.to_numeric(l3_full.loc[labeled], errors='coerce')
-
-                                l4_risk_filter = Layer4RiskFilter(
-                                    n_estimators=int(config.get('layer4_n_estimators', 100)),
-                                    max_depth=int(config.get('layer4_max_depth', 5)),
-                                    min_samples_leaf=int(config.get('layer4_min_samples_leaf', 20)),
-                                    l3_quantile_threshold=layer4_quantile_threshold,
-                                )
-                                l4_risk_filter.fit(X=X_fit, y_true=y_fit, l3_probs=l3_fit)
-                                if l4_risk_filter._is_fitted:
-                                    l4_model_path = outcomes_dir / "layer4_risk_filter.joblib"
-                                    l4_risk_filter.save(str(l4_model_path))
-                    except Exception:
-                        pass
+                    # NOTE: Layer 4 is now Triple Barrier Sizing (Deterministic), no model to train.
 
                     l4_risk_metrics = {
                         'layer4_enabled': True,
@@ -1794,7 +1757,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         'oof': l4_oof_metrics,
                     }
 
-                    tprint_success(f"   Layer 4 Risk Filter OOF complete. Final score formula: {layer4_final_score_formula}")
+                    tprint_success(f"   Layer 4 Triple Barrier Sizing complete.")
                 else:
                     tprint_warning("   Layer 4 Risk Filter OOF failed/empty. Using L3 probs directly.")
                     l4_risk_metrics = {'layer4_enabled': False, 'reason': 'oof_failed_or_empty'}
@@ -2022,7 +1985,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 trained_models = {
                     'layer2': layer2,
                     'layer3': final_model,
-                    'layer4': l4_model if 'l4_model' in locals() else None
+                    'layer4': None
                 }
                 
                 oos_predictions = generate_oos_predictions(

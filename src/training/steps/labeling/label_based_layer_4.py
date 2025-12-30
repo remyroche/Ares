@@ -1,791 +1,443 @@
-"""Layer 4 — Risk Filter & Sizing Optimizer.
+"""Layer 4 — Triple Barrier Trailing Profit & Sizing.
 
-This module implements a risk-filter and sizing optimization stage that sits between Layer 3 (meta-model)
-and Layer 5 (position sizing). It selects and optimizes a model (ExtraTrees, Ridge, or LGBM)
-to maximize a portfolio utility function (PnL, Sortino, Drawdown) under a specific sizing assumption.
+Layer2 is about learnability, layer3 about relation to target (IC, calibration),
+layer4 is about position sizing. I want to trade it with a triple barrier method
+that includes trailing profit.
 
-Sizing Assumption:
-    Size = 0 if p < 0.5
-    Size = ((p - 0.5) / 0.5) ^ 2 if p >= 0.5
-    (Quadratic scaling above threshold)
+This module implements:
+1.  Triple Barrier Trailing Logic (Exit Strategy).
+2.  Inverse Volatility Sizing (Position Sizing).
+3.  Integration with Layer 5 via `layer4_prob` proxy generation.
 
-Objective:
-    Utility = 0.7 * Norm_PnL + 0.15 * Norm_Sortino + 0.15 * (1 - Norm_DD)
+Ensure compatibility with label_based_layer_5:
+Layer 5 calculates Size = ((p - 0.5) / 0.5) ^ 2.
+We reverse this to generate `layer4_prob` such that Layer 5 produces our desired
+Inverse Volatility Size.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, Tuple, List
-import itertools
-import math
-import joblib
-import optuna
-import lightgbm as lgb
-from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.metrics import roc_auc_score
-from scipy.stats import entropy
+from typing import Optional, Dict, Any, Tuple, List
+from pathlib import Path
+from datetime import datetime
+import json
 
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success, tprint_error
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
-LAYER4_REGIME_FEATURES = [
-    'rv_z_short',
-    'slope_short', 'adx_proxy', 'momentum_short', 'snr',
-    'time_since_last_vol_spike', 'time_since_last_large_candle',
-    'choppiness_index', 'variance_ratio', 'permutation_entropy',
-    'hour_sin', 'hour_cos', 'is_weekend',
-    'efficiency_ratio',
-    'volatility_roc', 'er_roc',
-    'close_over_max_12', 'close_over_max_24', 'close_over_max_48',
-    'close_over_min_12', 'close_over_min_24', 'close_over_min_48',
-    'vol_adjusted_momentum',
-]
-
-# ---------------------------------------------------------------------------
-# Utility Functions
-# ---------------------------------------------------------------------------
-
-def _clip_keep_fraction(x: float) -> float:
-    try:
-        x = float(x)
-    except Exception:
-        return 0.6
-    if not np.isfinite(x):
-        return 0.6
-    return float(np.clip(x, 0.01, 1.0))
-
-def _l3_threshold_from_keep_fraction(l3_values: np.ndarray, keep_fraction: float) -> float:
-    keep_fraction = _clip_keep_fraction(keep_fraction)
-    finite_mask = np.isfinite(l3_values)
-    if not np.any(finite_mask):
-        return float('nan')
-    return float(np.quantile(l3_values[finite_mask], 1.0 - keep_fraction))
-
-def sizing_function(probs: np.ndarray, threshold: float = 0.5, gamma: float = 2.0) -> np.ndarray:
-    """
-    Apply sizing logic:
-    Size = 0 if p < threshold
-    Size = ((p - threshold) / (1 - threshold)) ^ gamma if p >= threshold
-    """
-    p = np.clip(probs, 0.0, 1.0)
-    denom = 1.0 - threshold
-    if denom < 1e-6:
-        denom = 1e-6
-
-    # Scale: (p - thr) / (1 - thr)
-    scaled = (p - threshold) / denom
-    scaled = np.clip(scaled, 0.0, 1.0)
-
-    # Apply gamma
-    sizes = np.power(scaled, gamma)
-
-    # Zero out below threshold (already handled by clip(0,1) but explicit check for safety)
-    sizes = np.where(p < threshold, 0.0, sizes)
-    return sizes
-
-def calculate_portfolio_utility(
-    returns: np.ndarray,
-    sizes: np.ndarray,
-    transaction_cost: float = 0.0000
-) -> float:
-    """
-    Calculate custom portfolio utility:
-    Utility = 0.7 * Norm_PnL + 0.15 * Norm_Sortino + 0.15 * (1 - Norm_DD)
-    """
-    if len(returns) == 0:
-        return 0.0
-
-    net_rets = returns - transaction_cost
-    pnl_series = sizes * net_rets
-
-    total_pnl = np.sum(pnl_series)
-
-    # 2. Sortino
-    downside = np.minimum(0.0, pnl_series)
-    downside_sq = downside ** 2
-    mean_sq_down = np.mean(downside_sq)
-
-    if mean_sq_down < 1e-12:
-        sortino = 0.0
-    else:
-        sortino = np.mean(pnl_series) / np.sqrt(mean_sq_down)
-        sortino = np.clip(sortino, -2.0, 10.0)
-
-    # 3. Max Drawdown
-    equity = np.cumprod(1.0 + pnl_series)
-    running_max = np.maximum.accumulate(equity)
-    dd = 1.0 - (equity / (running_max + 1e-12))
-    max_dd = np.max(dd)
-
-    # 4. Normalize and Combine
-    total_return = equity[-1] - 1.0
-    norm_return = np.clip(total_return / 0.5, -1.0, 1.0)
-    norm_sortino = np.clip(sortino / 3.0, -1.0, 1.0)
-    norm_dd = np.clip(max_dd / 0.2, 0.0, 1.0)
-
-    utility = 0.7 * norm_return + 0.15 * norm_sortino + 0.15 * (1.0 - norm_dd)
-
-    return float(utility)
-
-def prepare_scaled_features_for_meta_learner(
-    l3_cols: List[str],
-    raw_signals: pd.DataFrame, # Containing meta_prob_* columns
-    volatility: np.ndarray,
-    models_metadata: Optional[Dict] = None, # Dict containing z-scores per gid
-    impact_factor: float = 0.6,
-    sensitivity: float = 0.5
+def triple_barrier_trailing_label(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    volatility: pd.Series,
+    horizon: int = 24,
+    sl: float = 1.0,
+    trailing_gap: Optional[float] = None,
+    pt: Optional[float] = None,
+    min_ret: float = 0.003
 ) -> pd.DataFrame:
     """
-    Implements Option 3: Signal Pre-Scaling.
-    Embeds static quality metrics into the dynamic signal magnitude.
+    Advanced Triple Barrier Labeler with Trailing Profit Logic.
+    
+    Implements a "Rising Floor" trade structure:
+    - If trailing_gap is set: The Upper Barrier is removed (Infinity).
+      The Lower Barrier (Stop Loss) ratchets up as price makes new highs.
+    - If trailing_gap is None: Uses standard Fixed Upper/Lower Barriers.
+    
+    Args:
+        df: DataFrame with 'close', 'high', 'low' columns.
+        events: DatetimeIndex of signal entry times.
+        volatility: Series of volatility (e.g., ATR or StdDev) aligned with df.
+        horizon: Maximum holding period in bars (Vertical Barrier).
+        sl: Initial Stop Loss multiplier (e.g., 1.0 * Volatility).
+        trailing_gap: The distance (in Volatility units) the stop trails behind the High.
+                      If None, defaults to Fixed Barrier logic.
+        pt: Fixed Profit Target multiplier (Only used if trailing_gap is None).
+        min_ret: Minimum return required to label as '1' (accounts for fees).
+
+    Returns:
+        DataFrame containing:
+        - 'label': {-1, 0, 1}
+        - 'ret': Raw return of the trade
+        - 'weight': Sample weight based on Inverse Volatility
     """
-    meta_features = {}
+    out = {}
 
-    # We expect raw_signals to contain columns like 'meta_prob_g_a0.50_linear'
-    # We extract the GID from the column name
+    # 1. Config: Fee Floors
+    # We enforce a minimum stop distance to prevent trading inside the spread/fees.
+    # 0.3% Fees + 0.1% Spread Buffer = 0.4% Floor.
+    STOP_LOSS_FLOOR = 0.004
 
-    for col in l3_cols:
-        gid = col.replace('meta_prob_', '')
-        raw_sig = raw_signals[col].values
 
-        # Get quality z-score for this geometry if available
-        z_score = 0.0
-        if models_metadata and f'{gid}_meta' in models_metadata:
-             meta = models_metadata[f'{gid}_meta']
-             if 'z_scores' in meta:
-                 zs = meta['z_scores']
-                 # Weights: 30% AUC, 20% Stability, 30% RAD, 20% Safety
-                 # Assuming these keys exist in metadata
-                 z_score = (
-                    0.3 * zs.get('z_auc', 0) +
-                    0.1 * zs.get('z_stab', 0) +
-                    0.3 * zs.get('z_rad', 0) +
-                    0.2 * zs.get('z_safe', 0)
-                 )
+    # 2. Pre-fetch Data for Speed
+    # Align volatility to events
+    vol_s = volatility.reindex(events).fillna(method='bfill')
 
-        # --- THE SCALING FORMULA ---
-        multiplier = 1.0 + impact_factor * np.tanh(sensitivity * z_score)
-
-        # Apply scaling
-        scaled_sig = raw_sig * multiplier
-
-        # Feature A: The Scaled Signal
-        meta_features[f"{gid}_sig_scaled"] = scaled_sig
-
-        # Feature B: Rolling Z-Score
-        sig_series = pd.Series(scaled_sig)
-        rolling_z = (sig_series - sig_series.rolling(50).mean()) / (sig_series.rolling(50).std() + 1e-6)
-        meta_features[f"{gid}_sig_z50"] = rolling_z.fillna(0).values
-
-        # Feature C: Signal Momentum (Divergence)
-        ewma_15 = sig_series.ewm(span=15).mean()
-        meta_features[f"{gid}_sig_div"] = (sig_series - ewma_15).values
-
-    # Assemble
-    X_meta = pd.DataFrame(meta_features)
-
-    # Global Volatility Context
-    X_meta['global_vol_rank'] = pd.Series(volatility).rolling(100).rank().fillna(0.5).values
-
-    return X_meta
-
-# ---------------------------------------------------------------------------
-# Feature Computation
-# ---------------------------------------------------------------------------
-
-def compute_layer4_regime_features(ohlcv: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute self-contained OHLCV-based regime features for Layer 4.
-    """
-    df = ohlcv.copy()
-
-    # Use existing Layer 3 features if available, else compute
-    try:
-        from src.feature_generation.categories.layer3_specific_features import _compute_gate_regime_features
-        features = _compute_gate_regime_features(df)
-    except Exception:
-        features = pd.DataFrame(index=df.index)
-
-    # Ensure base features exist
-    close = df['close']
-    high = df['high']
-    low = df['low']
-    log_ret = np.log(close / close.shift(1)).fillna(0.0)
-
-    # ... (Keep existing features logic) ...
-    # Re-implementing explicitly for safety and adding new ones
-
-    features['rv_short'] = log_ret.rolling(window=12).std() * np.sqrt(12)
-    rv_long = log_ret.rolling(window=200).std()
-    features['rv_z_short'] = (features['rv_short'] - rv_long) / (rv_long + 1e-8)
-
-    features['slope_short'] = np.log(close).diff(12).abs()
-
-    # ADX Proxy
-    tr = (high - low) / close
-    tr_smooth = tr.rolling(14).sum()
-    up = high.diff()
-    down = low.diff()
-    p_dm = np.where((up > down) & (up > 0), up, 0)
-    m_dm = np.where((down > up) & (down > 0), down, 0)
-    p_di = pd.Series(p_dm, index=df.index).rolling(14).sum() / (tr_smooth + 1e-8)
-    m_di = pd.Series(m_dm, index=df.index).rolling(14).sum() / (tr_smooth + 1e-8)
-    dx = 100 * (p_di - m_di).abs() / (p_di + m_di + 1e-8)
-    features['adx_proxy'] = dx.rolling(14).mean()
-
-    features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
-    features['snr'] = features['momentum_short'] / (features['rv_short'] + 1e-8)
-
-    # Vol Spike / Large Candle timing (simplified)
-    # ...
-
-    # NEW FEATURES
-    # Rate of change of volatility or ER
-    features['volatility_roc'] = features['rv_short'].pct_change(5)
-
-    er_window = 10
-    change = (close - close.shift(er_window)).abs()
-    volatility = close.diff().abs().rolling(er_window).sum()
-    features['efficiency_ratio'] = change / (volatility + 1e-8)
-    features['er_roc'] = features['efficiency_ratio'].pct_change(5)
-
-    # Close / Rolling Max/Min
-    for w in [12, 24, 48]:
-        features[f'close_over_max_{w}'] = close / (close.rolling(w).max() + 1e-8)
-        features[f'close_over_min_{w}'] = close / (close.rolling(w).min() + 1e-8)
-
-    # Volatility-adjusted momentum
-    features['vol_adjusted_momentum'] = (close.pct_change(12) / (features['rv_short'] + 1e-8))
-
-    # Fill NaNs
-    features = features.fillna(0.0)
-
-    # Filter to requested
-    final_cols = [c for c in LAYER4_REGIME_FEATURES if c in features.columns]
-    return features[final_cols]
-
-# ---------------------------------------------------------------------------
-# Layer 4 Risk Filter
-# ---------------------------------------------------------------------------
-
-class Layer4RiskFilter:
-    """
-    Layer 4 Risk Filter & Optimizer.
-    """
-
-    def __init__(
-        self,
-        n_estimators: int = 300,
-        max_depth: int = 5,
-        min_samples_leaf: int = 20,
-        class_weight: str = 'balanced',
-        random_state: int = 42,
-        n_jobs: int = -1,
-        l3_keep_fraction: float = 0.6,
-        n_trials: int = 20,
-        sizing_threshold: float = 0.5,
-        sizing_gamma: float = 2.0,
-    ):
-        self.n_estimators = n_estimators
-        self.max_depth = max_depth
-        self.min_samples_leaf = min_samples_leaf
-        self.class_weight = class_weight
-        self.random_state = random_state
-        self.n_jobs = n_jobs
-        self.l3_keep_fraction = _clip_keep_fraction(l3_keep_fraction)
-        self.n_trials = n_trials
-        self.sizing_threshold = sizing_threshold
-        self.sizing_gamma = sizing_gamma
-
-        self.model = None
-        self.scaler = None
-        self.imputer = None
-        self.feature_names: List[str] = []
-        self.winning_model_type_: Optional[str] = None
-        self.best_params_: Optional[Dict[str, Any]] = None
+    # Extract arrays (Fast Numpy Access)
+    closes = df['close'].values
+    if 'high' in df.columns and 'low' in df.columns:
+        highs = df['high'].values
+        lows = df['low'].values
+    else:
+        # Fallback if OHLC not available (Not recommended for Trailing)
+        highs = closes; lows = closes
         
-        self._is_fitted = False
+    index = df.index
+    n_bars = len(df)
 
-    def fit(
-        self,
-        X: pd.DataFrame,
-        y_true: pd.Series,
-        # l3_probs is now optional or handled differently via X features
-        l3_probs: Optional[pd.Series] = None,
-        returns: pd.Series = None,
-        sample_weight: Optional[pd.Series] = None,
-    ) -> 'Layer4RiskFilter':
-        """
-        Train Layer 4 with Model Race and HPO.
-        """
-        tprint_info(">>> Training Layer 4 Risk Filter (Race + HPO)...")
+    # 3. Main Event Loop
+    for t in events:
+        if t not in index: continue
+        
+        # Get Integer Location of Entry
+        i_0 = index.get_loc(t)
+        
+        # Define Vertical Barrier (Time Expiry)
+        i_1 = min(i_0 + horizon, n_bars - 1)
+        if i_1 <= i_0: continue
+        
+        # Get Volatility at Entry
+        curr_vol = vol_s[t]
+        if curr_vol <= 0: curr_vol = 0.01 # Safety floor
+        
+        entry_price = closes[i_0]
+        
+        # --- A. Determine Safe Distances (Fee Floor Logic) ---
+        raw_stop_dist = curr_vol * sl
+        safe_stop_dist = max(raw_stop_dist, STOP_LOSS_FLOOR)
+        
+        # --- B. Trailing Stop Logic (The "Rising Floor") ---
+        if trailing_gap is not None:
+            # 1. Initialize Stop at Entry
+            stop_price = entry_price * (1 - safe_stop_dist)
+            max_price = entry_price # High Water Mark
+            exit_idx = -1
+            
+            # Apply Fee Floor to the Gap as well
+            raw_gap_dist = curr_vol * trailing_gap
+            safe_gap_dist = max(raw_gap_dist, STOP_LOSS_FLOOR)
 
-        # Basic filtering if l3_probs provided (legacy or using primary/mean prob)
-        if l3_probs is not None:
-             l3_arr = pd.to_numeric(l3_probs, errors='coerce').values
-             l3_threshold = _l3_threshold_from_keep_fraction(l3_arr, self.l3_keep_fraction)
-             training_mask = np.isfinite(l3_arr) & (l3_arr >= l3_threshold)
+            # 2. Walk Forward Path (Bar by Bar)
+            # Start at i_0 + 1 because we enter on Close of i_0
+            for k in range(i_0 + 1, i_1 + 1):
+                c_low = lows[k]
+                c_high = highs[k]
+                
+                # a. Check Stop Hit First (Pessimistic Assumption)
+                # We check Low against Current Stop
+                if c_low < stop_price:
+                    exit_idx = k
+                    exit_price = stop_price
+                    break
+                
+                # b. Ratchet Logic (Optimistic Update)
+                # If we survived the Low, check if High raised the ceiling
+                if c_high > max_price:
+                    max_price = c_high
+
+                    # The Ratchet: Stop moves UP to (NewHigh - Gap)
+                    # It NEVER moves down (max logic)
+                    new_stop = max_price * (1 - safe_gap_dist)
+                    stop_price = max(stop_price, new_stop)
+
+            # 3. Determine Outcome
+            if exit_idx != -1:
+                # Stopped Out (Could be a Win if Stop Ratcheted above Entry)
+                raw_ret = (exit_price / entry_price) - 1
+            else:
+                # Vertical Barrier Hit (Time Expired)
+                raw_ret = (closes[i_1] / entry_price) - 1
+
+
+        # --- C. Standard Fixed Barrier Logic ---
         else:
-             # Use all data if no explicit L3 prob for filtering
-             training_mask = np.ones(len(y_true), dtype=bool)
+            # Implied R:R Ratio logic if PT is provided
+            eff_pt = pt if pt is not None else 1.0
+            rr_ratio = eff_pt / sl
+            safe_target_dist = safe_stop_dist * rr_ratio
+            
+            trgt_price = entry_price * (1 + safe_target_dist)
+            stop_price = entry_price * (1 - safe_stop_dist)
 
-        n_train = int(np.sum(training_mask))
-        if n_train < 100:
-            tprint_warning(f"Too few samples ({n_train}). Skipping L4.")
-            return self
+            # Simple Path Check
+            raw_ret = 0.0
+            path_slice_high = highs[i_0+1 : i_1+1]
+            path_slice_low = lows[i_0+1 : i_1+1]
+            path_slice_close = closes[i_0+1 : i_1+1]
 
-        X_sub = X.loc[training_mask].copy()
-        y_sub = y_true.loc[training_mask].values.astype(int)
-        r_sub = returns.loc[training_mask].values.astype(float)
+            # Find first touch index
+            # This is a simplified vectorized check for Fixed Barrier
+            # For strict correctness, iteration (like above) is better,
+            # but this is faster for fixed levels.
+            touch_up = np.argmax(path_slice_high > trgt_price)
+            touch_dn = np.argmax(path_slice_low < stop_price)
+
+            # Note: argmax returns 0 if condition never met, OR if index 0 met it.
+            # We must verify if the condition actually exists.
+            has_up = np.any(path_slice_high > trgt_price)
+            has_dn = np.any(path_slice_low < stop_price)
+
+            if has_up and (not has_dn or touch_up < touch_dn):
+                raw_ret = safe_target_dist # Hit Target
+            elif has_dn and (not has_up or touch_dn < touch_up):
+                raw_ret = -safe_stop_dist # Hit Stop
+            else:
+                raw_ret = (path_slice_close[-1] / entry_price) - 1 # Time Expiry
+
+
+        # --- D. Final Labeling & Weighting ---
         
-        if sample_weight is not None:
-            w_sub = sample_weight.loc[training_mask].values
+        # 1. Label
+        if raw_ret > min_ret:
+            label = 1
+        elif raw_ret < -min_ret:
+            label = -1
         else:
-            w_sub = np.ones(len(y_sub))
+            label = 0
 
-        self.feature_names = X_sub.columns.tolist()
-
-        # Preprocessing
-        self.imputer = SimpleImputer(strategy='median')
-        self.scaler = StandardScaler()
-        X_imp = self.imputer.fit_transform(X_sub)
-        X_scaled = self.scaler.fit_transform(X_imp)
-
-        # Race
-        winner, best_score = self._run_model_race(X_scaled, y_sub, r_sub, w_sub)
-        self.winning_model_type_ = winner
-        tprint_success(f"   Race Winner: {winner} (Utility: {best_score:.4f})")
-
-        # HPO
-        best_params = self._run_hpo(winner, X_scaled, y_sub, r_sub, w_sub)
-        self.best_params_ = best_params
-        tprint_info(f"   Best Params: {best_params}")
-
-        # Final Fit
-        self.model = self._build_model(winner, best_params)
-        self.model.fit(X_scaled, y_sub, sample_weight=w_sub)
+        # 2. Sample Weight (Inverse Volatility)
+        # We value stability. A win in low vol is worth more leverage than a win in high vol.
+        # Logic: Target Vol (1%) / Current Vol
+        weight = np.clip(0.01 / (curr_vol + 1e-4), 0.5, 2.0)
         
-        self._is_fitted = True
-        return self
+        # Bonus: Reward "Home Runs" (Outliers)
+        # If the trade captured > 3 Sigma move, boost importance
+        if label == 1 and abs(raw_ret) > (curr_vol * 3):
+            weight *= 1.5
 
-    def _run_model_race(self, X, y, r, w):
-        candidates = ['extratrees', 'ridge', 'lgbm']
-        scores = {}
-        tscv = TimeSeriesSplit(n_splits=3)
-        for cand in candidates:
-            fold_scores = []
-            for train_idx, val_idx in tscv.split(X):
-                model = self._build_model(cand, default=True)
-                try:
-                    model.fit(X[train_idx], y[train_idx], sample_weight=w[train_idx])
-                    probs = model.predict_proba(X[val_idx])[:, 1]
-                    sizes = sizing_function(probs, self.sizing_threshold, self.sizing_gamma)
-                    util = calculate_portfolio_utility(r[val_idx], sizes)
-                    fold_scores.append(util)
-                except Exception:
-                    fold_scores.append(-1.0)
-            scores[cand] = np.mean(fold_scores)
-        best = max(scores, key=scores.get)
-        return best, scores[best]
 
-    def _run_hpo(self, model_type, X, y, r, w):
-        split = int(len(X) * 0.8)
-        X_tr, X_val = X[:split], X[split:]
-        y_tr, y_val = y[:split], y[split:]
-        r_val = r[split:]
-        w_tr = w[:split]
+        if label != 0:
+            out[t] = {
+                'label': label,
+                'ret': raw_ret,
+                'weight': weight
+            }
 
-        def objective(trial):
-            params = {}
-            if model_type == 'lgbm':
-                # Not too tightly regularized
-                params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 800),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1),
-                    'num_leaves': trial.suggest_int('num_leaves', 20, 100),
-                    'reg_lambda': trial.suggest_float('reg_lambda', 0.1, 5.0),
-                }
-            elif model_type == 'extratrees':
-                params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 500),
-                    'max_depth': trial.suggest_int('max_depth', 5, 20),
-                }
-            elif model_type == 'ridge':
-                params = {'C': trial.suggest_float('C', 0.1, 10.0)}
+    return pd.DataFrame.from_dict(out, orient='index')
 
-            try:
-                model = self._build_model(model_type, params)
-                model.fit(X_tr, y_tr, sample_weight=w_tr)
-                probs = model.predict_proba(X_val)[:, 1]
-                sizes = sizing_function(probs, self.sizing_threshold, self.sizing_gamma)
-                return calculate_portfolio_utility(r_val, sizes)
-            except Exception:
-                return -10.0
-
-        study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=42))
-        study.optimize(objective, n_trials=self.n_trials)
-        return study.best_params
-
-    def _build_model(self, model_type, params=None, default=False):
-        if params is None: params = {}
-        if model_type == 'lgbm':
-            p = params.copy() if not default else {'n_estimators': 300}
-            p.update({'random_state': 42, 'n_jobs': 1, 'verbose': -1})
-            return lgb.LGBMClassifier(**p)
-        elif model_type == 'extratrees':
-            p = params.copy() if not default else {'n_estimators': 300}
-            p.update({'random_state': 42, 'n_jobs': -1})
-            return ExtraTreesClassifier(**p)
-        elif model_type == 'ridge':
-            p = params.copy() if not default else {'C': 1.0}
-            return LogisticRegression(penalty='l2', solver='lbfgs', max_iter=1000, random_state=42, **p)
-        return None
-
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        if not self._is_fitted or self.model is None:
-            return np.full(len(X), 0.5)
-        X_imp = self.imputer.transform(X)
-        X_scaled = self.scaler.transform(X_imp)
-        return self.model.predict_proba(X_scaled)[:, 1]
 
 # ---------------------------------------------------------------------------
-# Helper Functions for Prob/Alpha Head Processing
-# ---------------------------------------------------------------------------
-
-def _generate_disagreement_features(
-    cols: List[str], 
-    oof_df: pd.DataFrame, 
-    prefix: str
-) -> Dict[str, pd.Series]:
-    """
-    Generate disagreement features for either Prob or Alpha heads.
-    
-    Args:
-        cols: List of column names for the head type
-        oof_df: DataFrame containing the OOF predictions
-        prefix: 'prob' or 'alpha' for naming
-    
-    Returns:
-        Dict of disagreement features
-    """
-    try:
-        from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
-        
-        # Extract the relevant columns
-        head_data = oof_df[cols]
-        
-        # Create model predictions dict (using raw values as "predictions")
-        model_predictions = {col.replace(f'meta_{prefix}_', ''): head_data[col].values for col in cols}
-        
-        # Create model probabilities dict (for alpha heads, treat as probabilities too)
-        if prefix == 'prob':
-            model_probabilities = {col.replace('meta_prob_', ''): head_data[col].values for col in cols}
-        else:  # alpha heads - treat alpha values as probabilities for disagreement calculation
-            # Clip alpha to [0,1] range for probability calculation
-            alpha_probs = np.clip(head_data.values, 0.0, 1.0)
-            model_probabilities = {col.replace('meta_alpha_', ''): alpha_probs[:, i] for i, col in enumerate(cols)}
-        
-        # Calculate disagreement features
-        disagreement_features = calculate_ensemble_disagreement_features(
-            model_predictions=model_predictions,
-            model_probabilities=model_probabilities
-        )
-        
-        # Rename features with prefix
-        prefixed_features = {}
-        for name, series in disagreement_features.items():
-            prefixed_features[f'{prefix}_{name}'] = series
-            
-        return prefixed_features
-        
-    except Exception as e:
-        # Fallback: compute basic disagreement stats
-        tprint_warning(f"   Could not use ensemble_disagreement module: {e}. Using fallback.")
-        head_data = oof_df[cols].values
-        
-        features = {}
-        features[f'{prefix}_ens_mean'] = pd.Series(np.mean(head_data, axis=1), index=oof_df.index)
-        features[f'{prefix}_ens_std'] = pd.Series(np.std(head_data, axis=1), index=oof_df.index)
-        features[f'{prefix}_ens_min'] = pd.Series(np.min(head_data, axis=1), index=oof_df.index)
-        features[f'{prefix}_ens_max'] = pd.Series(np.max(head_data, axis=1), index=oof_df.index)
-        features[f'{prefix}_ens_range'] = features[f'{prefix}_ens_max'] - features[f'{prefix}_ens_min']
-        
-        return features
-
-def _apply_signal_altering_features(
-    X_meta: pd.DataFrame, 
-    prob_cols: List[str]
-) -> Dict[str, pd.Series]:
-    """
-    Apply signal-altering features (EWMA, etc.) to Prob heads only.
-    
-    Args:
-        X_meta: Meta features DataFrame containing scaled prob signals
-        prob_cols: Original prob column names
-    
-    Returns:
-        Dict of signal-altered features
-    """
-    features = {}
-    
-    try:
-        # Apply EWMA to each prob head's scaled signal
-        for col in prob_cols:
-            gid = col.replace('meta_prob_', '')
-            scaled_col = f'{gid}_sig_scaled'
-            
-            if scaled_col in X_meta.columns:
-                scaled_series = X_meta[scaled_col]
-                
-                # EWMA features
-                features[f'{gid}_ewma_15'] = scaled_series.ewm(span=15).mean()
-                features[f'{gid}_ewma_50'] = scaled_series.ewm(span=50).mean()
-                
-                # Momentum features
-                features[f'{gid}_momentum_5'] = scaled_series.diff(5)
-                features[f'{gid}_momentum_20'] = scaled_series.diff(20)
-                
-                # Volatility of signal
-                features[f'{gid}_signal_vol_20'] = scaled_series.rolling(20).std()
-                
-                # Rate of change
-                features[f'{gid}_signal_roc_10'] = scaled_series.pct_change(10)
-                
-    except Exception as e:
-        tprint_warning(f"   Error applying signal-altering features: {e}")
-    
-    return features
-
-def _calculate_alpha_weighted_mean(
-    alpha_cols: List[str], 
-    prob_cols: List[str], 
-    oof_df: pd.DataFrame
-) -> pd.Series:
-    """
-    Calculate alpha weighted mean using prob weights.
-    
-    Formula:
-        weighted_sum = sum(alpha_i * prob_i)
-        prob_sum = sum(prob_i)
-        alpha_weighted_mean = weighted_sum / prob_sum
-    
-    Args:
-        alpha_cols: List of alpha column names
-        prob_cols: List of prob column names  
-        oof_df: DataFrame containing the data
-    
-    Returns:
-        Series of alpha weighted mean values
-    """
-    try:
-        if not alpha_cols or not prob_cols:
-            return pd.Series(0.0, index=oof_df.index)
-            
-        # Extract matrices
-        alpha_matrix = oof_df[alpha_cols].values
-        prob_matrix = oof_df[prob_cols].values
-        
-        # Ensure same number of columns
-        min_cols = min(alpha_matrix.shape[1], prob_matrix.shape[1])
-        alpha_matrix = alpha_matrix[:, :min_cols]
-        prob_matrix = prob_matrix[:, :min_cols]
-        
-        # Calculate weighted sum and probability sum
-        weighted_sum = np.sum(alpha_matrix * prob_matrix, axis=1)
-        prob_sum = np.sum(prob_matrix, axis=1)
-        
-        # Calculate weighted mean (avoid division by zero)
-        alpha_weighted_mean = np.divide(
-            weighted_sum, 
-            prob_sum, 
-            out=np.zeros_like(weighted_sum), 
-            where=prob_sum != 0
-        )
-        
-        return pd.Series(alpha_weighted_mean, index=oof_df.index)
-        
-    except Exception as e:
-        tprint_warning(f"   Error calculating alpha weighted mean: {e}")
-        return pd.Series(0.0, index=oof_df.index)
-
-# ---------------------------------------------------------------------------
-# Training Orchestration
+# Training Orchestration (Adapted for Layer 4 Sizing Calculation)
 # ---------------------------------------------------------------------------
 
 def train_layer4_oof(
     oof_df: pd.DataFrame,
     market_data: pd.DataFrame,
-    l3_prob_col: str = 'meta_prob', # Legacy single col, or prefix?
+    l3_prob_col: str = 'meta_prob',
     target_col: str = 'target',
     return_col: str = 'realized_return',
     n_folds: int = 5,
     config: Optional[Dict[str, Any]] = None,
-    # New args for multiple models
+    # Kept for signature compatibility but ignored
     l3_models_metadata: Optional[Dict] = None,
     l3_quantile_thresholds: Optional[List[float]] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Apply Triple Barrier Trailing Logic and Volatility Sizing.
     
-    tprint_info(">>> Running Layer 4 OOF Training & Optimization...")
-    if l3_quantile_thresholds:
-        tprint_info(f"    Received L3 Quantile Thresholds: {l3_quantile_thresholds}")
-
+    This replaces the legacy Risk Filter model. Instead of training a model,
+    it simulates the specific Triple Barrier strategy and sets 'layer4_prob'
+    to achieve the desired Inverse Volatility Sizing in Layer 5.
+    """
+    
+    tprint_info(">>> Running Layer 4 Triple Barrier Sizing...")
     cfg = config or {}
     
-    # 1. Regime Features (Global)
-    regime_features = compute_layer4_regime_features(market_data)
-    
-    # Deduplicate oof_df index to prevent alignment explosions
+    # 1. Prepare Data
     if oof_df.index.duplicated().any():
         tprint_warning(f"train_layer4_oof: oof_df has {oof_df.index.duplicated().sum()} duplicate indices. Keeping first.")
         oof_df = oof_df[~oof_df.index.duplicated(keep='first')]
 
-    # 2. Identify Layer 3 Output Columns (Prob and Alpha heads)
-    prob_cols = [c for c in oof_df.columns if c.startswith('meta_prob_')]
-    alpha_cols = [c for c in oof_df.columns if c.startswith('meta_alpha_')]
-    
-    # 3. Construct Meta Features (Scaling & Disagreement)
-    if not prob_cols:
-        # Fallback to single col if no Multi-Geometry outputs found
-        prob_cols = [l3_prob_col] if l3_prob_col in oof_df.columns else []
-    
-    if not alpha_cols:
-        # Fallback: try to find any alpha-like columns
-        alpha_cols = [c for c in oof_df.columns if 'alpha' in c.lower() and c != 'target_alpha']
-
-    # ALIGNMENT FIX: Use reindex to preserve oof_df structure (handling potential duplicates or gaps)
-    # intersection() does not preserve duplicates and can cause length mismatch if oof_df has duplicates
-    X_regime = regime_features.reindex(oof_df.index).fillna(0.0)
-
-    # Ensure index name is consistent if needed
-    if X_regime.index.name != oof_df.index.name:
-        X_regime.index.name = oof_df.index.name
-
     oof_aligned = oof_df.copy()
     
-    # Prepare Scaled Features
-    # We need volatility for scaling
+    # Ensure market data covers oof
+    common_idx = oof_aligned.index.intersection(market_data.index)
+    if len(common_idx) < len(oof_aligned) * 0.9:
+        tprint_warning("Market data coverage low for OOF events. Results may be inaccurate.")
+    
+    df_eval = market_data.loc[common_idx]
+
+    # 2. Config extraction
+    sl = float(cfg.get('layer4_sl', 1.0))
+    trailing_gap = cfg.get('layer4_trailing_gap')
+    if trailing_gap is not None:
+        trailing_gap = float(trailing_gap)
+    else:
+        # Default behavior: If not specified, use 1.5 as in user example, or allow None?
+        # User said "trade it with a triple barrier method that includes trailing profit."
+        # If config is missing, default to 1.5 for trailing gap to ensure trailing logic is active.
+        trailing_gap = 1.5
+
+    horizon = int(cfg.get('layer4_horizon', 48))
+    pt = cfg.get('layer4_pt')
+    if pt is not None: pt = float(pt)
+    
+    # 3. Volatility
     if 'volatility_1d' in oof_aligned.columns:
-        vol = oof_aligned['volatility_1d'].values
+        vol = oof_aligned['volatility_1d']
+    elif 'volatility_1d' in market_data.columns:
+        vol = market_data['volatility_1d'].reindex(oof_aligned.index).fillna(0.01)
     else:
-        # Compute vol proxy
-        # Need to use market data reindexed to oof_aligned
-        vol_proxy = market_data['close'].pct_change().rolling(24).std().reindex(oof_aligned.index).fillna(0.01)
-        vol = vol_proxy.values
+        vol = df_eval['close'].pct_change().rolling(24).std().reindex(oof_aligned.index).fillna(0.01)
 
-    meta_features_dict = {}
-    
-    # 4. Process Prob heads (with disagreement features)
-    if prob_cols:
-        tprint_info(f"   Found {len(prob_cols)} Layer 3 Prob geometry outputs.")
-        
-        # Generate disagreement features for Prob heads
-        prob_disagreement = _generate_disagreement_features(prob_cols, oof_aligned, 'prob')
-        meta_features_dict.update(prob_disagreement)
-        
-        # Prepare scaled features for Prob heads
-        X_meta_prob = prepare_scaled_features_for_meta_learner(
-            prob_cols, oof_aligned, vol, l3_models_metadata
-        )
-        
-        # Apply signal-altering features to Prob head only
-        signal_features = _apply_signal_altering_features(X_meta_prob, prob_cols)
-        meta_features_dict.update(signal_features)
-        
-        # Primary prob for filtering/sizing anchor
-        raw_probs = oof_aligned[prob_cols].values
-        primary_prob = np.mean(raw_probs, axis=1)
-        
-    else:
-        tprint_warning("   No Layer 3 Prob outputs found.")
-        primary_prob = pd.Series(0.5, index=oof_aligned.index)
-    
-    # 5. Process Alpha heads (with disagreement features only)
-    if alpha_cols:
-        tprint_info(f"   Found {len(alpha_cols)} Layer 3 Alpha geometry outputs.")
-        
-        # Generate disagreement features for Alpha heads
-        alpha_disagreement = _generate_disagreement_features(alpha_cols, oof_aligned, 'alpha')
-        meta_features_dict.update(alpha_disagreement)
-        
-        # Calculate alpha weighted mean
-        alpha_weighted_mean = _calculate_alpha_weighted_mean(alpha_cols, prob_cols, oof_aligned)
-        meta_features_dict['alpha_weighted_mean'] = alpha_weighted_mean
-        
-    else:
-        tprint_warning("   No Layer 3 Alpha outputs found.")
-        meta_features_dict['alpha_weighted_mean'] = pd.Series(0.0, index=oof_aligned.index)
-    
-    # 6. Combine all features
-    # Concat axis=1 aligns by index. Since X_regime was reindexed to oof_df.index,
-    # and meta_features are generated from oof_df, alignment should be perfect.
-    if meta_features_dict:
-        X_meta = pd.DataFrame(meta_features_dict, index=oof_aligned.index)
-        # Merge Regime + Meta
-        # Use concat along columns. Index already aligned.
-        X = pd.concat([X_regime, X_meta], axis=1)
-    else:
-        X = X_regime
-    
-    y_true = pd.to_numeric(oof_aligned[target_col], errors='coerce')
-    returns = pd.to_numeric(oof_aligned[return_col], errors='coerce')
+    # 4. Run Triple Barrier
+    # We run on ALL oof events to get potential sizing/returns
+    tprint_info(f"   Executing Triple Barrier: SL={sl}, Gap={trailing_gap}, Hz={horizon}")
 
-    # 7. OOF CV
-    from src.utils.purged_kfold import PurgedKFoldTime
-    cv = PurgedKFoldTime(n_splits=n_folds, purge=pd.Timedelta(minutes=60))
+    tb_results = triple_barrier_trailing_label(
+        df=market_data,
+        events=oof_aligned.index,
+        volatility=vol,
+        horizon=horizon,
+        sl=sl,
+        trailing_gap=trailing_gap,
+        pt=pt
+    )
+
+    # 5. Integrate Results
+    # Initialize columns
+    oof_aligned['layer4_return'] = 0.0
+    oof_aligned['layer4_weight'] = 0.0
+    oof_aligned['layer4_prob'] = 0.5 # Default (Size 0)
     
-    l4_oof_probs = np.full(len(oof_aligned), np.nan)
-    
-    # We loop manually to handle index alignment carefully
-    # X is now aligned to oof_aligned
-
-    # Note: PurgedKFoldTime splits based on index time.
-    splits = list(cv.split(X))
-
-    for fold_idx, (train_idx, val_idx) in enumerate(splits):
-        tprint_info(f"   Fold {fold_idx + 1}/{n_folds}...")
+    if not tb_results.empty:
+        # Align results
+        res_aligned = tb_results.reindex(oof_aligned.index)
         
-        # Use iloc for integer indexing from split
-        y_tr_fold = y_true.iloc[train_idx]
-        r_tr_fold = returns.iloc[train_idx]
-
-        mask_tr = np.isfinite(y_tr_fold) & np.isfinite(r_tr_fold)
+        # Store Raw Results
+        oof_aligned['layer4_return'] = res_aligned['ret'].fillna(0.0)
+        oof_aligned['layer4_weight'] = res_aligned['weight'].fillna(0.0) # This includes Home Run bonus
+        oof_aligned['layer4_label'] = res_aligned['label'].fillna(0)
         
-        if mask_tr.sum() < 50: continue
-            
-        l4_model = Layer4RiskFilter(
-            n_trials=10,
-            l3_keep_fraction=float(cfg.get('layer4_quantile_threshold', 0.6))
-        )
-
-        # Note: primary_prob is numpy array if calculated above, or Series if fallback
-        if isinstance(primary_prob, pd.Series):
-             prob_tr = primary_prob.iloc[train_idx]
+        # Override realized_return for Layer 5 Backtest
+        oof_aligned[return_col] = oof_aligned['layer4_return']
+        
+        # 6. Generate Compatible layer4_prob
+        # Goal: Layer 5 Size = Weight (Inverse Vol)
+        # Layer 5: Size = ((p - 0.5) / 0.5) ^ 2  (assuming gamma=2)
+        # Inverse: p = 0.5 * sqrt(Size) + 0.5
+        
+        # We use the Base Weight (without Home Run bonus) for sizing to avoid lookahead.
+        # Recalculate base weight locally
+        curr_vol = vol
+        base_weight = np.clip(0.01 / (curr_vol + 1e-4), 0.5, 2.0)
+        
+        # Gate: Only trade if Layer 3 Probability is high enough (if available)
+        # Or if the user wants purely Vol Sizing, we assume L3 has already filtered the OOF set.
+        # But OOF usually contains all samples.
+        # We need a decision trigger.
+        # Check if l3_prob_col exists
+        if l3_prob_col in oof_aligned.columns:
+            l3_probs = pd.to_numeric(oof_aligned[l3_prob_col], errors='coerce').fillna(0.5)
+            # Simple Gate: If L3 > 0.5, apply Vol Sizing. Else Size 0.
+            # Using 0.5 as neutral threshold.
+            trade_mask = l3_probs > 0.5
         else:
-             prob_tr = primary_prob[train_idx]
+            # If no L3 prob, assume all events are valid (e.g. filtered upstream)
+            trade_mask = pd.Series(True, index=oof_aligned.index)
 
-        # Use array slicing for probs if numpy
-        prob_tr_valid = prob_tr[mask_tr] if isinstance(prob_tr, np.ndarray) else prob_tr[mask_tr]
+        # Calculate P
+        # Clip Size to max 1.0 because Layer 5 usually caps p at 1.0 -> Size 1.0
+        # But user weight goes to 2.0.
+        # If Layer 5 caps p at 1.0, max Size is 1.0.
+        # To support Size > 1.0, Layer 5 needs to allow p > 1.0 or change formula.
+        # Assuming Layer 5 is strict (p clipped 0-1), we clamp our target size to 1.0.
+        target_size = np.minimum(base_weight, 1.0)
+        
+        derived_p = 0.5 * np.sqrt(target_size) + 0.5
+        
+        # Apply Gate
+        final_p = np.where(trade_mask, derived_p, 0.4) # 0.4 -> Size 0
 
-        l4_model.fit(
-            X.iloc[train_idx][mask_tr],
-            y_tr_fold[mask_tr],
-            prob_tr_valid,
-            r_tr_fold[mask_tr]
-        )
-        l4_oof_probs[val_idx] = l4_model.predict_proba(X.iloc[val_idx])
-
-    oof_aligned['layer4_prob'] = l4_oof_probs
+        oof_aligned['layer4_prob'] = final_p
+        
+    else:
+        tprint_warning("   Triple Barrier returned no results.")
     
+    # 7. Metrics & Report
     metrics = {
-        'l4_oof_coverage': float(np.mean(np.isfinite(l4_oof_probs))),
-        'l4_oof_mean': float(np.nanmean(l4_oof_probs))
+        'l4_mean_ret': float(oof_aligned['layer4_return'].mean()),
+        'l4_win_rate': float((oof_aligned['layer4_return'] > 0).mean()),
+        'l4_avg_weight': float(oof_aligned['layer4_weight'].mean()),
+        'l4_sl_param': sl,
+        'l4_gap_param': trailing_gap
     }
     
+    _generate_report(oof_aligned, metrics, cfg)
+    
     return oof_aligned, metrics
+
+def _generate_report(df: pd.DataFrame, metrics: Dict, config: Dict):
+    """Save Layer 4 Report."""
+    try:
+        outcomes_dir = Path(config.get("outcomes_dir", "outcomes"))
+        outcomes_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        lines = [
+            "# Layer 4 Triple Barrier Report\n",
+            f"Timestamp: {ts}\n\n",
+            "## Configuration\n",
+            f"- SL: {metrics.get('l4_sl_param')}\n",
+            f"- Trailing Gap: {metrics.get('l4_gap_param')}\n",
+            "\n## Results\n",
+            f"- Mean Return: {metrics.get('l4_mean_ret'):.6f}\n",
+            f"- Win Rate: {metrics.get('l4_win_rate'):.2%}\n",
+            f"- Avg Weight (Size): {metrics.get('l4_avg_weight'):.4f}\n"
+        ]
+        
+        report_path = outcomes_dir / f"layer4_report_{ts}.md"
+        report_path.write_text("".join(lines))
+        tprint_success(f"   Layer 4 Report saved to {report_path}")
+
+    except Exception as e:
+        tprint_warning(f"   Failed to generate Layer 4 report: {e}")
+
+
+# ==========================================
+# Demo / Test Script
+# ==========================================
+if __name__ == "__main__":
+    # 1. Create Synthetic Data (Trending Regime)
+    dates = pd.date_range('2024-01-01', periods=200, freq='15min')
+    
+    # Simulate a price path that goes up, pulls back, then goes up again
+    # Perfect for testing trailing stops
+    path = np.linspace(100, 105, 200) # Baseline trend
+    noise = np.random.normal(0, 0.2, 200) # Volatility
+    price_close = path + noise
+    
+    df = pd.DataFrame({
+        'close': price_close,
+        'high': price_close + 0.1, # Mock High
+        'low': price_close - 0.1   # Mock Low
+    }, index=dates)
+
+    # 2. Calculate Volatility
+    volatility = df['close'].pct_change().rolling(10).std().fillna(0.002)
+
+    # 3. Define dummy events (e.g., every 20th bar)
+    events = df.index[::20]
+
+    print("--- Running Triple Barrier with Trailing Profit ---")
+
+    # 4. Run Labeler
+    # Scenario: Wide Trend Following
+    # Stop = 1.0x Vol, Trail = 1.5x Vol
+    labels = triple_barrier_trailing_label(
+        df,
+        events,
+        volatility,
+        horizon=48,
+        sl=1.0,
+        trailing_gap=1.5
+    )
+
+    print("\nResulting Labels:")
+    print(labels.head())
+
+    print("\nDistribution:")
+    print(labels['label'].value_counts())
+
+    print("\nMean Return of Winners:")
+    if 1 in labels['label'].values:
+        print(f"{labels[labels['label']==1]['ret'].mean():.4%}")

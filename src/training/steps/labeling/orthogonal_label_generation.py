@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from itertools import combinations
-from sklearn.metrics import mutual_info_score, roc_auc_score
+from sklearn.metrics import mutual_info_score
 from scipy.stats import entropy as shannon_entropy
 from typing import List, Dict, Union, Callable, Any, Tuple
 from functools import partial
@@ -73,10 +73,15 @@ class TimeEvents(BaseEventGenerator):
         return df.index[::step]
 
 class ImprovedCUSUMEvents(BaseEventGenerator):
-    """Wrapper for existing CUSUM filter."""
+    """
+    Wrapper for existing CUSUM filter.
+    Uses the CUSUM event generator pre existing in layer2 (via generate_primary_signals).
+    """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
         k = params.get('k', 0.12)
         try:
+            # generate_primary_signals returns a DataFrame with 'consensus' column
+            # We assume it handles the logic correctly using volatility if available
             signals = generate_primary_signals(df, k=k)
             if 'consensus' in signals.columns:
                 return signals.index[signals['consensus'] != 0]
@@ -86,29 +91,29 @@ class ImprovedCUSUMEvents(BaseEventGenerator):
 
 class SymmetricCusumEvents(BaseEventGenerator):
     """
-    De Prado Standard Symmetric CUSUM.
-    Detects structural breaks in mean price.
+    The De Prado Standard (Chapter 2).
+    Detects structural breaks in the mean price.
+    More robust to noise than Simple Moving Average crossovers.
     """
     def generate(self, df: pd.DataFrame, h: float = 0.05) -> pd.DatetimeIndex:
-        # h is threshold in percent
-        # Use simple returns
-        price = df['close']
-        diff = price.pct_change()
+        # h is the threshold in percent (e.g., 0.05 = 5% deviation triggers event)
+        # In practice, we often set h based on daily volatility (e.g., h = vol * 2)
 
+        price = df['close']
         t_events = []
         s_pos = 0.0
         s_neg = 0.0
 
-        # Iterate (using simple loop for clarity/correctness, can be numba-optimized)
-        # Assuming diff index is monotonic
+        # using simple returns for this implementation
+        diff = price.pct_change()
 
-        # Use numpy arrays for speed
-        r_arr = diff.values
-        idx_arr = diff.index
+        # Iterate
+        # Using numpy iteration for basic performance
+        idx = diff.index
+        r_values = diff.values
 
-        # Skip first NaN
-        for i in range(1, len(r_arr)):
-            r = r_arr[i]
+        for i in range(1, len(r_values)):
+            r = r_values[i]
             if np.isnan(r): continue
 
             s_pos = max(0.0, s_pos + r)
@@ -117,58 +122,66 @@ class SymmetricCusumEvents(BaseEventGenerator):
             if s_pos > h:
                 s_neg = 0.0
                 s_pos = 0.0
-                t_events.append(idx_arr[i])
+                t_events.append(idx[i])
             elif s_neg < -h:
                 s_neg = 0.0
                 s_pos = 0.0
-                t_events.append(idx_arr[i])
+                t_events.append(idx[i])
 
         return pd.DatetimeIndex(t_events)
 
 class HurstStateEvents(BaseEventGenerator):
     """
-    Trigger when Hurst Exponent initiates a Trend Regime (> 0.6).
+    Detects when the market switches from "Random Walk" to "Trend".
+    Triggers when Hurst Exponent crosses critical thresholds.
     """
-    def _get_hurst_rolling_apply(self, x):
-        # Simplified R/S or similar approximation
-        # x is a numpy array of price
+    def get_hurst(self, series):
+        # Simplified R/S analysis or similar
+        # (Using a quick approximation for performance in loops)
         try:
-            lags = np.arange(2, 20)
-            # Calculate standard deviation of diffs for various lags
-            # This is a rough proxy for diffusion speed
+            lags = range(2, 20)
+            # series is a pandas Series or numpy array passed by rolling.apply
+            # rolling.apply passes numpy array if raw=True, Series if raw=False
+            # We used raw=False in the provided snippet
+
+            # Note: series is a slice of the window
+            arr = np.array(series)
+
             tau = []
             for lag in lags:
-                # diff(lag)
-                d = x[lag:] - x[:-lag]
-                if len(d) < 2:
+                # Standard deviation of differences
+                diff = arr[lag:] - arr[:-lag]
+                if len(diff) < 2:
                     tau.append(np.nan)
-                    continue
-                tau.append(np.std(d))
+                else:
+                    tau.append(np.sqrt(np.std(diff)))
 
-            # Polyfit log-log
-            # tau ~ lag^H
-            # log(tau) ~ H * log(lag)
-            valid = np.isfinite(tau) & (np.array(tau) > 0)
-            if np.sum(valid) < 3: return 0.5
+            # Filter NaNs/Infs
+            valid_idx = [i for i, t in enumerate(tau) if np.isfinite(t) and t > 0]
+            if len(valid_idx) < 3: return 0.5
 
-            log_lags = np.log(lags[valid])
-            log_tau = np.log(np.array(tau)[valid])
+            x = np.log([lags[i] for i in valid_idx])
+            y = np.log([tau[i] for i in valid_idx])
 
-            poly = np.polyfit(log_lags, log_tau, 1)
-            return poly[0] # This slope is H
+            poly = np.polyfit(x, y, 1)
+            return poly[0] * 2.0
         except:
             return 0.5
 
     def generate(self, df: pd.DataFrame, lookback: int = 100, threshold: float = 0.6) -> pd.DatetimeIndex:
+        # Warning: Hurst is computationally expensive.
+        # rolling_apply is slow. We generate events sparsely.
+
         price = df['close']
-        # Use pandas rolling with a simplified hurst calc
-        # rolling().apply is slow, so we might want to step or optimize.
-        # Given constraints, we apply it.
 
-        hurst = price.rolling(lookback).apply(self._get_hurst_rolling_apply, raw=True)
+        # Use rolling apply with raw=False to match the provided snippet logic structure
+        # (though raw=True is usually faster with numpy)
+        hurst_vals = price.rolling(lookback).apply(self.get_hurst, raw=False)
 
-        # Trigger initiation
-        trigger = (hurst > threshold) & (hurst.shift(1) <= threshold)
+        # Trigger when we cross INTO a trend regime (H > 0.6)
+        # We only want the *initiation* of the regime, not every day inside it.
+
+        trigger = (hurst_vals > threshold) & (hurst_vals.shift(1) <= threshold)
         return df.index[trigger]
 
 # ==========================================
@@ -238,7 +251,6 @@ def orthogonal_label_generation(
     candidates = []
 
     # 1. Define Event Families & Variations
-    # Instantiate generators
     gen_vol = VolatilityShockEvents()
     gen_trend = TrendInitiationEvents()
     gen_mr = MeanReversionExtremeEvents()
@@ -270,7 +282,7 @@ def orthogonal_label_generation(
         ("LIQ_FAST", gen_liq, {"lookback": 20}),
         ("LIQ_MED", gen_liq, {"lookback": 50}),
 
-        # CUSUM
+        # CUSUM (Improved)
         ("CUSUM_STD", gen_cusum, {"k": 0.12}),
         ("CUSUM_SENS", gen_cusum, {"k": 0.05}),
 
@@ -315,7 +327,6 @@ def orthogonal_label_generation(
                     continue
 
                 # Score Candidate (Learnability AUC)
-                # If scorer provided, use it. Else default 0.5.
                 score = 0.5
                 if scorer:
                     try:
@@ -324,8 +335,7 @@ def orthogonal_label_generation(
                         print(f"Scoring failed for {fam_name}_{lbl_name}: {e}")
                         score = 0.0
 
-                if score < 0.5: # If worse than random, maybe flip? No, De Prado says 0.5 is floor.
-                    score = 0.0
+                # Floor at 0.0 (random/worse)
 
                 g = Geometry(
                     name=f"{fam_name}_{lbl_name}",

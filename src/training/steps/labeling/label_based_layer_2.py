@@ -2854,9 +2854,28 @@ class LabelBasedLayer2:
 
     def _assign_barrier_families(self, events_df: pd.DataFrame) -> pd.Series:
         """
-        Assign barrier families.
-        Refactored: Returns 'Unified' for all events (no family distinction).
+        Assign barrier families based on regime columns.
+        Uses 'trend_regime' if available, otherwise defaults to 'Unified'.
         """
+        # If trend_regime is available, use it to split events into families
+        if 'trend_regime' in events_df.columns:
+            # Map trend_regime values to semantic family names
+            # If standard names (High/Low) use those, else use raw
+            try:
+                families = events_df['trend_regime'].fillna('Unified').astype(str)
+                # Standardize
+                families = families.replace({
+                    'High': 'Trend',
+                    'Low': 'Mean Reversion',
+                    '0': 'Mean Reversion',
+                    '1': 'Trend'
+                })
+                # If everything is 'Unified' or nan, fallback
+                if families.nunique() > 0:
+                    return families
+            except Exception:
+                pass
+
         return pd.Series('Unified', index=events_df.index, dtype=object)
 
     def _compute_dominance_labels(
@@ -5667,10 +5686,37 @@ class LabelBasedLayer2:
                 return (fs, lrn, -stab)
 
             trials.sort(key=_sort_key, reverse=True)
-            # Keep all candidates since upstream selection already pruned to top 10/20
-            # Previously: n_top = max(2, int(len(trials) * 0.2))
-            n_top = len(trials)
-            top_tier = trials[:n_top]
+
+            # --- HORIZON BUCKETING (Diversity Enforcement) ---
+            # Instead of just picking top N, we force selection from different time horizons
+            # Buckets: Short (<24), Medium (24-60), Long (>60)
+
+            buckets = {'Short': [], 'Medium': [], 'Long': []}
+            for t in trials:
+                h = int(t.params.get('horizon', 0))
+                if h < 24:
+                    buckets['Short'].append(t)
+                elif h <= 60:
+                    buckets['Medium'].append(t)
+                else:
+                    buckets['Long'].append(t)
+
+            # Select best 3 from each bucket
+            top_tier = []
+            for b_name in ['Short', 'Medium', 'Long']:
+                # Sort by score again to be safe
+                b_trials = sorted(buckets[b_name], key=_sort_key, reverse=True)
+                # Take top 3
+                top_tier.extend(b_trials[:3])
+
+            # Add remaining top scorers to fill pool (up to 20 total)
+            remaining = [t for t in trials if t not in top_tier]
+            remaining.sort(key=_sort_key, reverse=True)
+            fill_needed = max(0, 20 - len(top_tier))
+            top_tier.extend(remaining[:fill_needed])
+
+            # Re-sort combined pool
+            top_tier.sort(key=_sort_key, reverse=True)
 
             try:
                 cfg_hs = getattr(self, '_current_config', {})

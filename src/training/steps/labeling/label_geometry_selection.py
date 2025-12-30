@@ -19,8 +19,8 @@ MIN_SL_PCT = 0.004          # 0.4% floor
 MAX_TP_PCT = 0.05           # 5% ceiling
 MIN_TP_SL_RATIO = 1.5       # TP >= 1.5 * SL (positive expectancy)
 MIN_SL_SIGMA = 0.5          # Minimum stop-loss in sigma units (prevent too-tight stops)
-MAX_FINAL_GEOMETRIES = 18    # Increased from 12 to allow more diverse candidates
-MIN_GEOMETRY_DISTANCE = 0.15  # Normalized distance threshold for deduplication
+MAX_FINAL_GEOMETRIES = 30    # Increased to allow more diverse candidates
+MIN_GEOMETRY_DISTANCE = 0.05  # Relaxed distance threshold for deduplication (was 0.15)
 
 # --- 1. Data Structures ---
 
@@ -713,10 +713,10 @@ def run_diagnostics_gates(
     # Tunable Thresholds (relaxed defaults for robustness)
     default_min_survival: float = 0.005,
     tail_min_survival: float = 0.005,
-    min_uniqueness: float = 0.15,
+    min_uniqueness: float = 0.05,            # Relaxed from 0.15
     min_survivors_absolute: int = 50,         # Minimum absolute survivor count
-    min_learnability_score: float = 0.15,     # Minimum composite learnability
-    max_temporal_instability: float = 0.20,   # Max AUC difference between early/late (relaxed from 0.15)
+    min_learnability_score: float = 0.05,     # Relaxed from 0.15 (Allow Weak Learners)
+    max_temporal_instability: float = 0.30,   # Relaxed from 0.20
 ) -> GateDiagnostics:
     """
     Enhanced diagnostics with learnability-based gating.
@@ -967,7 +967,7 @@ def select_geometries(
     events: List[Event],
     fold_metrics_map: Dict,
     features_df: pd.DataFrame
-) -> List[Tuple[Geometry, Set[int]]]:
+) -> List[Tuple[Geometry, Set[int], Dict[str, Any]]]:
     
     # Define horizons to sweep (constrained to max 6h = 24 bars)
     horizons = [12, 24, 48]
@@ -1021,7 +1021,7 @@ def select_geometries(
                         candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr, horizon=h))
 
     # Randomized jittered combinations to avoid identical survivor sets
-    jitter_count = int(min(500, len(candidates))) or 100  # Increased from 200/50
+    jitter_count = int(min(800, len(candidates))) or 500  # Increased for diversity
     for _ in range(jitter_count):
         h = int(rng.choice(horizons))
         q = float(np.clip(rng.normal(loc=0.5, scale=0.25), 0.1, 0.9))  # Expanded range
@@ -1253,9 +1253,9 @@ def select_geometries(
     active_horizons = sorted(by_horizon.keys())
     horizon_counts = {h: 0 for h in active_horizons}
     
-    # RELAX: Increased from 0.85 to 0.92 to allow more "cousin" geometries 
+    # RELAX: Increased from 0.85 to 0.95 to allow more "cousin" geometries
     # if they are high quality.
-    CORR_THRESHOLD = 0.92 
+    CORR_THRESHOLD = 0.95
     
     while len(final_selection) < MAX_FINAL_GEOMETRIES and active_horizons:
         made_selection = False
@@ -1310,7 +1310,7 @@ def select_geometries(
             break
 
     result = []
-    # Final selection: keep only top 2 geometries per horizon to ensure diversity
+    # Final selection: keep only top 6 geometries per horizon to ensure diversity
     horizon_geometries = {}
     for item in final_selection[:MAX_FINAL_GEOMETRIES]:
         h = item['geometry'].horizon
@@ -1318,12 +1318,14 @@ def select_geometries(
             horizon_geometries[h] = []
         horizon_geometries[h].append(item)
     
-    # Keep top 2 per horizon (already sorted by score within each horizon)
+    # Keep top 6 per horizon (already sorted by score within each horizon)
     for h, items in horizon_geometries.items():
-        for item in items[:2]:  # Top 2 per horizon
-            result.append((item['geometry'], item['survivors']))
+        for item in items[:6]:  # Top 6 per horizon (Increased from 2)
+            # Pass full metadata for downstream analysis
+            meta = {k: v for k, v in item.items() if k not in ['geometry', 'survivors', 'model', 'preds']}
+            result.append((item['geometry'], item['survivors'], meta))
     
     best_score = final_selection[0]['separation_score'] if final_selection else 0.0
     logger.info(f"Final Selection: {len(result)} geometries (Best Learnability Score: {best_score:.3f})")
-    logger.info(f"Horizon distribution: {[(h, len(items[:2])) for h, items in horizon_geometries.items()]}")
+    logger.info(f"Horizon distribution: {[(h, len(items[:6])) for h, items in horizon_geometries.items()]}")
     return result

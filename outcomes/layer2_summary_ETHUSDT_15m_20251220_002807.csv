@@ -1,2 +1,0 @@
-timestamp,symbol,timeframe,n_bars,n_events,cache_hits,cache_misses,production_geometries_n,oof_labeled_events,oof_nonzero_weight_events,oof_geometry_channels,extracted_trials_Mean Reversion,extracted_trials_Trend Continuation,extracted_trials_Momentum,production_geos_Mean Reversion,production_geos_Trend Continuation,production_geos_Momentum
-20251220_002807,ETHUSDT,15m,34561,12614,0,595,10,8778,8778,10,30,30,30,2,4,4

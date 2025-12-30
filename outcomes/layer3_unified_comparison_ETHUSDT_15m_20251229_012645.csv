@@ -1,6 +1,0 @@
-Category,Name,Goal,Target,AUC,PR_AUC,LogLoss,Score,Details
-Weighting Scheme,S1_L1,Cross Entropy (Default),l2_consensus_target,0.5,,0.6931471805599453,-100.00735902799727,"Rating: Toxic, Top30_Win: 0.0"
-Weighting Scheme,S2_L1_L2,Cross Entropy (Default),l2_consensus_target,0.5,,0.6931471805599453,-100.00735902799727,"Rating: Toxic, Top30_Win: 0.0"
-Weighting Scheme,S3_L2,Cross Entropy (Default),l2_consensus_target,0.5,,0.6931471805599453,-100.00735902799727,"Rating: Toxic, Top30_Win: 0.0"
-Model Architecture,LGBM Classifier,Binary Classification,Binary,0.0,,9.992007221626413e-16,-15.350000000000051,Model Race (Holdout)
-Model Architecture,LGBM Regressor,Regression (Soft),Soft,0.5,,0.6931471805599453,-0.007359027997266843,Model Race (Holdout)

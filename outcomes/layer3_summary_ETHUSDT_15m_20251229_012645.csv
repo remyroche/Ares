@@ -1,2 +1,0 @@
-timestamp,symbol,timeframe,n_rows_input,n_rows_after_target_dropna,n_base_models,winner_scheme,winner_score,auc,pr_auc,logloss,ece,ic,mce,brier,honest_auc,honest_pr_auc,honest_logloss,honest_ece,honest_brier,honest_n_train,honest_n_holdout
-20251229_012645,ETHUSDT,15m,15353,15353,0,S1_L1,-100.00735902799727,0.5,,0.6931471805599453,0.5,0.0,0.5,0.0,,,0.6931471805599453,0.5,0.25,13002,2303

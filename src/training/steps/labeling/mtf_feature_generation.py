@@ -453,21 +453,43 @@ def create_meta_features(
              if any(x in name_lower for x in ['position', 'ratio', 'score', 'percent', 'pct', 'oscillator', 'index', 'flag', 'count']):
                  pass
              else:
-                 return atr_normalize(series, df['high'], df['low'], df['close'], window=14).fillna(0).to_numpy()
+                 # Use robust variables if possible, but _norm is defined before high/low/close extraction.
+                 # So we need to access df robustly here too.
+                 # However, high/low/close are available in outer scope if we move _norm definition after extraction.
+                 # Or we access them robustly here.
+                 _high = df['high'] if 'high' in df.columns else df.get('High', df.get('close', df.get('Close')))
+                 _low = df['low'] if 'low' in df.columns else df.get('Low', df.get('close', df.get('Close')))
+                 _close = df['close'] if 'close' in df.columns else df['Close']
+                 return atr_normalize(series, _high, _low, _close, window=14).fillna(0).to_numpy()
 
         return winsorized_zscore_normalize(series, window=600).fillna(0).to_numpy()
 
+    # Robust column extraction (case-insensitive)
+    close = df['close'] if 'close' in df.columns else df['Close']
+    high = df['high'] if 'high' in df.columns else df.get('High', close)
+    low = df['low'] if 'low' in df.columns else df.get('Low', close)
+
     # Pre-calc common series
-    returns = df['close'].pct_change()
-    log_ret = np.log(df['close']).diff()
+    returns = close.pct_change()
+    log_ret = np.log(close).diff()
     features['log_ret'] = _align_to_features(_norm(log_ret, 'log_ret'), n_features)
 
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    open_p = df.get('open', close) # Fallback if open missing
-    if volume_available and 'volume' in df.columns:
-        volume = pd.to_numeric(df['volume'], errors='coerce').fillna(method='ffill').fillna(method='bfill').fillna(0.0)
+    if 'open' in df.columns:
+        open_p = df['open']
+    elif 'Open' in df.columns:
+        open_p = df['Open']
+    else:
+        open_p = close
+
+    # Check for volume column (case-insensitive)
+    vol_col = None
+    if 'volume' in df.columns:
+        vol_col = 'volume'
+    elif 'Volume' in df.columns:
+        vol_col = 'Volume'
+
+    if volume_available and vol_col is not None:
+        volume = pd.to_numeric(df[vol_col], errors='coerce').fillna(method='ffill').fillna(method='bfill').fillna(0.0)
         volume_available = volume.notna().any()
     else:
         volume = pd.Series(1.0, index=df.index, dtype=float)
@@ -810,7 +832,7 @@ def create_meta_features(
         # This is effectively max amplitude
 
         # Drawdown Depth (Current price vs Rolling Max)
-        dd_w = (df['close'] / df['close'].rolling(w).max()) - 1.0
+        dd_w = (close / close.rolling(w).max()) - 1.0
         features[f'drawdown_w{w}'] = _align_to_features(_norm(dd_w, f'drawdown_w{w}'), n_features)
 
         # Max Adverse Excursion (MAE) Proxy -> Alias to Drawdown
@@ -876,9 +898,10 @@ def create_meta_features(
 
     # ===== LEGACY SUPPORT / CROSS-TIMEFRAME SPECIFIC =====
     # Add back some key legacy features if not covered
-    close_1h = df['close'].rolling(4).mean()
+    # Use robust 'close' extracted earlier
+    close_1h = close.rolling(4).mean()
     features['returns_1h'] = _align_to_features(_norm(close_1h.pct_change(), 'returns_1h'), n_features)
-    close_4h = df['close'].rolling(16).mean()
+    close_4h = close.rolling(16).mean()
     features['returns_4h'] = _align_to_features(_norm(close_4h.pct_change(), 'returns_4h'), n_features)
 
     try:

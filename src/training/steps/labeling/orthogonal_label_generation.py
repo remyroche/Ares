@@ -37,6 +37,10 @@ class OutputGeometry:
         self.cluster_id = cluster_id
         self.params = params if params is not None else {}
     
+    @property
+    def avg_uniqueness(self):
+        return self.purity
+
     def __repr__(self):
         return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)} | Cluster={self.cluster_id}>"
 
@@ -127,6 +131,12 @@ def average_uniqueness(indicator: pd.DataFrame) -> float:
     valid_c = concurrency[concurrency > 0]
     if valid_c.empty: return 0.0
     return (1.0 / valid_c).mean()
+
+def calculate_sharpe(returns: pd.Series) -> float:
+    """Calculates Sharpe Ratio of a returns series."""
+    if returns.empty or returns.std() == 0:
+        return 0.0
+    return returns.mean() / returns.std()
 
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """

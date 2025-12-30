@@ -6,7 +6,6 @@ import os
 from itertools import combinations
 from datetime import datetime
 from typing import List, Dict, Union, Callable, Optional, Tuple
-from joblib import Parallel, delayed
 from scipy.stats import spearmanr, entropy as shannon_entropy, norm
 from scipy.special import expit
 from sklearn.feature_selection import f_classif, mutual_info_classif
@@ -177,6 +176,12 @@ def compute_dominance_labels(
                 if ratio > kappa:
                     label = 1
                     weight = np.log1p(ratio) * np.log1p(mfe / transaction_cost)
+
+                    # Weight by 1 / Volatility
+                    # "Focus heavily on learning the low-volatility setups"
+                    vol_val = max(vol_s[t], 1e-6)
+                    weight = weight * (1.0 / vol_val)
+
                     ret_val = mfe # Optimistic return for winner
 
         labels[t] = label

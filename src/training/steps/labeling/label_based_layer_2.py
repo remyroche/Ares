@@ -95,7 +95,7 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     MeanReversionExtremeEvents,
     LiquidityShockEvents,
     TimeEvents,
-    Geometry as OrthoGeometry
+    OutputGeometry as OrthoGeometry
 )
 
 # Configure logging
@@ -821,8 +821,8 @@ class LabelBasedLayer2:
         tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization...")
 
         # 1. Generate & Filter
-        labelers = self._get_labeler_menu()
-        ortho_geoms = orthogonal_label_generation(df, labelers)
+        # Note: orthogonal_label_generation now handles labeling/looping internally
+        ortho_geoms = orthogonal_label_generation(df)
 
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
@@ -831,14 +831,10 @@ class LabelBasedLayer2:
         # 2. Convert to GeometryTrial
         production_geometries = []
         for i, og in enumerate(ortho_geoms):
-            # Construct params.
-            # Note: og.params comes from the partial keywords (kappa, sl_mult, horizon)
-            # og.labeler_name e.g. "SCALP"
-            # og.family e.g. "VOL"
+            # Note: og is now an OutputGeometry with .purity, .auc, .params
             
-            # Re-verify learnability/score if needed, but orthogonal_label_generation
-            # uses uniqueness/MI. We can assign a default score or use uniqueness.
-            score = og.avg_uniqueness if og.avg_uniqueness is not None else 1.0
+            # Score
+            score = og.purity if og.purity is not None else 1.0
 
             # Params
             params = og.params.copy()
@@ -850,11 +846,11 @@ class LabelBasedLayer2:
                 family=og.family,
                 params=params,
                 final_score=score * 100.0, # Scale up
-                learnability=0.5, # Placeholder
+                learnability=og.auc, # Use the actual Probe AUC
                 robust_magnitude=0.0,
                 stability=1.0,
                 balance=1.0,
-                raw_metrics={},
+                raw_metrics=og.metrics,
                 uuid=f"{og.name}_{i}",
                 events=og.events # Store events!
             )

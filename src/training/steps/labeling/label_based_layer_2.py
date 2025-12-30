@@ -1456,6 +1456,7 @@ class LabelBasedLayer2:
         oof_confidence = pd.Series(np.nan, index=indices)
         oof_returns = pd.Series(np.nan, index=indices)
         oof_weights = pd.Series(np.nan, index=indices)
+        oof_mean_probs = pd.Series(np.nan, index=indices)
 
         # Storage for Tree Diagnostics
         self._all_tree_stats = [] # Store on instance for report usage
@@ -1751,6 +1752,12 @@ class LabelBasedLayer2:
                 oof_returns.loc[target_idx] = fold_output['oof_returns'].reindex(target_idx)
                 oof_weights.loc[target_idx] = fold_output['weights'].reindex(target_idx)
 
+                # Capture diagnostics mean prob
+                if 'diagnostics' in fold_output and 'mean_consensus_prob' in fold_output['diagnostics']:
+                    mp = fold_output['diagnostics']['mean_consensus_prob']
+                    if isinstance(mp, pd.Series):
+                        oof_mean_probs.loc[target_idx] = mp.reindex(target_idx)
+
                 # Assign individual geometry preds and variances
                 for uuid, series in fold_output['individual_geometries'].items():
                     if uuid in oof_geo_preds:
@@ -1775,6 +1782,11 @@ class LabelBasedLayer2:
         except Exception:
             quality_weights = pd.Series(1.0, index=oof_returns.index)
 
+        # Calculate Diagnostics
+        n_base = int(len(events_df))
+        n_bagged = int((oof_labels == 1.0).sum())
+        inflation_ratio = n_bagged / max(1, n_base)
+
         return {
             "oof_labels": oof_scores,
             "oof_returns": oof_returns,
@@ -1785,7 +1797,13 @@ class LabelBasedLayer2:
             "individual_geometries": final_geo_preds,
             "individual_variances": final_geo_vars,
             "quality_weights": quality_weights,
-            "tree_stats": self._all_tree_stats  # Return tree stats for bundle persistence
+            "tree_stats": self._all_tree_stats,
+            "diagnostics": {
+                "signal_inflation_ratio": inflation_ratio,
+                "n_bagged_signals": n_bagged,
+                "n_base_events": n_base,
+                "mean_consensus_prob": oof_mean_probs
+            }
         }
 
     def _calculate_ranking_metrics(self, y_true: pd.Series, y_score: pd.Series) -> Dict[str, float]:
@@ -6507,8 +6525,10 @@ class LabelBasedLayer2:
                     fill_mask = (~np.isfinite(prob_vals)) & not_na.to_numpy(dtype=bool, copy=False)
                     if np.any(fill_mask):
                         prob_vals = prob_vals.copy()
-                        prob_vals[fill_mask] = pd.to_numeric(lbls_aligned, errors='coerce').astype(float).fillna(0.0).to_numpy(dtype=float, copy=False)[fill_mask]
-                    prob_vals = np.where(np.isfinite(prob_vals), prob_vals, 0.0)
+                        # Do NOT fill with labels. Use 0.5 (neutral/uncertain) or 0.0.
+                        # Using 0.5 implies we don't know, which is safer than leaking truth.
+                        prob_vals[fill_mask] = 0.5
+                    prob_vals = np.where(np.isfinite(prob_vals), prob_vals, 0.5)
                     prob_vals = np.clip(prob_vals, 0.0, 1.0)
                     geo_probs_mat[:, i] = prob_vals
                 except Exception:

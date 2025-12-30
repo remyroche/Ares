@@ -5122,7 +5122,7 @@ class LabelBasedLayer2:
         unified_family = 'Unified'
         trials = []
         
-        for i, (geom, survivors) in enumerate(selected_raw):
+        for i, (geom, survivors, meta) in enumerate(selected_raw):
             survival_rate = len(survivors) / len(selection_events) if selection_events else 0.0
 
             params = {
@@ -5133,15 +5133,28 @@ class LabelBasedLayer2:
                 'horizon': geom.horizon
             }
 
+            # Use metadata from selection step
+            learnability_score = 0.5
+            if isinstance(meta, dict):
+                # Try composite score first, then raw separation
+                if meta.get('learnability') and hasattr(meta['learnability'], 'composite_score'):
+                    learnability_score = meta['learnability'].composite_score
+                else:
+                    learnability_score = meta.get('separation_score', 0.5)
+
+            # Final score should reflect Learnability + Economic potential
+            # If separation_score is available, use it. Otherwise fallback to survival rate.
+            final_score = meta.get('separation_score', survival_rate * 100.0) if isinstance(meta, dict) else survival_rate * 100.0
+
             t_obj = GeometryTrial(
                 family=unified_family,  # Single unified family
                 params=params,
-                final_score=survival_rate * 100.0,
-                learnability=0.5,
-                robust_magnitude=0.0,
-                stability=1.0,
+                final_score=float(final_score),
+                learnability=float(learnability_score),
+                robust_magnitude=float(meta.get('sharpe_proxy', 0.0)) if isinstance(meta, dict) else 0.0,
+                stability=1.0, # Pre-filtered for stability
                 balance=1.0,
-                raw_metrics={'passed': True, 'survivors': len(survivors)},
+                raw_metrics=dict(meta, passed=True, survivors=len(survivors)) if isinstance(meta, dict) else {'passed': True, 'survivors': len(survivors)},
                 uuid=f"Geo_Sel{i}"
             )
             trials.append(t_obj)

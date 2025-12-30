@@ -128,12 +128,6 @@ def average_uniqueness(indicator: pd.DataFrame) -> float:
     if valid_c.empty: return 0.0
     return (1.0 / valid_c).mean()
 
-def calculate_sharpe(returns: pd.Series) -> float:
-    """Calculates Sharpe Ratio of a returns series."""
-    if returns.empty or returns.std() == 0:
-        return 0.0
-    return returns.mean() / returns.std()
-
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """
     Maps events to the full timeline as a binary indicator series.
@@ -801,7 +795,7 @@ def orthogonal_label_generation(
     Main Execution Pipeline for Orthogonal Label Generation.
     Optimized Workflow:
     1. Generate Events & Labels.
-    2. Rank by "Cheap Score" (Sharpe/Uniqueness).
+    2. Rank by Uniqueness (Purity).
     3. Keep Top 50%.
     4. Cluster by Jaccard Similarity (5 clusters).
     5. Select Best per Cluster.
@@ -913,19 +907,12 @@ def orthogonal_label_generation(
                     continue
 
             # Standardize output
-            returns = None
-
             if isinstance(labeled_df, tuple):
                 y = labeled_df[0]
-                # Try to extract returns (index 1 in standard tuple)
-                if len(labeled_df) > 1:
-                    returns = labeled_df[1]
                 w = pd.Series(1.0, index=y.index)
             elif isinstance(labeled_df, pd.DataFrame) and 'label' in labeled_df.columns:
                  y = labeled_df['label']
                  w = labeled_df.get('weight', pd.Series(1.0, index=y.index))
-                 if 'ret' in labeled_df.columns:
-                     returns = labeled_df['ret']
             elif isinstance(labeled_df, pd.Series):
                  y = labeled_df
                  w = pd.Series(1.0, index=y.index)
@@ -938,8 +925,6 @@ def orthogonal_label_generation(
             y = y.dropna()
             w = w.reindex(y.index).fillna(1.0)
             events_filtered = events[events.isin(y.index)]
-            if returns is not None:
-                returns = returns.reindex(y.index).fillna(0.0)
 
             # Check Class Balance
             balance_check = check_class_balance(y)
@@ -947,14 +932,11 @@ def orthogonal_label_generation(
                  continue
 
             # C. Cheap Score Calculation
-            # Primary: Sharpe of Realized Returns. Secondary: Uniqueness.
+            # Primary: Uniqueness (Purity).
             indicator = build_indicator_matrix(events_filtered, price.index, horizon=h)
             purity = average_uniqueness(indicator)
 
-            if returns is not None:
-                cheap_score = calculate_sharpe(returns)
-            else:
-                cheap_score = purity # Fallback
+            cheap_score = purity
 
             variant_name = f"{name}_{lbl_name}" if lbl_name != "DEFAULT" else name
 
@@ -964,7 +946,6 @@ def orthogonal_label_generation(
                 'events': events_filtered,
                 'labels': y,
                 'weights': w,
-                'returns': returns,
                 'cheap_score': cheap_score,
                 'purity': purity,
                 'params': params,
@@ -977,7 +958,7 @@ def orthogonal_label_generation(
         return []
 
     # 4. Filter Top 50% by Cheap Score
-    logger.info(f"Generated {len(candidates)} candidates. Filtering top 50% by score...")
+    logger.info(f"Generated {len(candidates)} candidates. Filtering top 50% by Uniqueness...")
     candidates.sort(key=lambda x: x['cheap_score'], reverse=True)
 
     # Keep at least 5 for clustering, unless total < 5

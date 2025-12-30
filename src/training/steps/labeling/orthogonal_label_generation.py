@@ -5,14 +5,16 @@ from sklearn.metrics import mutual_info_score
 from scipy.stats import entropy as shannon_entropy
 from typing import List, Dict, Union, Callable, Any
 from functools import partial
+import logging
 
-# Import CUSUM generator
-# We assume this is available in the codebase as per memory/context
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Import CUSUM generator dependency
 try:
     from src.training.steps.labeling.feature_generation_meta_labeling_step import generate_primary_signals
 except ImportError:
-    # Fallback or placeholder if direct import fails during test/planning, but should work in production
-    pass
+    generate_primary_signals = None
 
 # ==========================================
 # 1. Event Generators (Orthogonal Families)
@@ -22,22 +24,136 @@ class BaseEventGenerator:
     """
     Abstract base class for event generation strategies.
     """
-    def generate(self, data: Union[pd.Series, pd.DataFrame], **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
         raise NotImplementedError
+
+class SymmetricCusumEvents(BaseEventGenerator):
+    """
+    The De Prado Standard (Chapter 2). Detects structural breaks in the mean price.
+    More robust to noise than Simple Moving Average crossovers.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 0.05) -> pd.DatetimeIndex:
+        # h is the threshold in percent (e.g., 0.05 = 5% deviation triggers event)
+        # In practice, we often set h based on daily volatility (e.g., h = vol * 2)
+        price = df['close']
+        t_events = []
+        s_pos = 0
+        s_neg = 0
+
+        # diff = price.pct_change().diff() # or raw log-returns
+        diff = price.pct_change() # using simple returns for this implementation
+
+        # Calculate dynamic threshold based on rolling vol (optional but recommended)
+        # Here we use fixed 'h' for simplicity, or you can pass a vol series
+
+        # Using loop as per instructions, but accessing values for speed
+        diff_vals = diff.values
+        index = diff.index
+
+        # Skip first element (NaN)
+        for i in range(1, len(diff)):
+            r = diff_vals[i]
+            s_pos = max(0, s_pos + r)
+            s_neg = min(0, s_neg + r)
+
+            if s_pos > h:
+                s_neg = 0
+                s_pos = 0
+                t_events.append(index[i])
+            elif s_neg < -h:
+                s_neg = 0
+                s_pos = 0
+                t_events.append(index[i])
+
+        return pd.DatetimeIndex(t_events)
+
+class ImprovedCUSUMEvents(BaseEventGenerator):
+    """
+    Wrapper for the existing CUSUM filter logic (Layer 2 pre-existing).
+    """
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        # Defaults matching Layer 2 legacy
+        k = params.get('k', 0.12) # Default threshold
+
+        if generate_primary_signals is None:
+            logger.warning("generate_primary_signals not available, skipping ImprovedCUSUMEvents")
+            return pd.DatetimeIndex([])
+
+        try:
+            signals = generate_primary_signals(df, k=k)
+            # signals is a DataFrame with 'consensus'
+            if 'consensus' in signals.columns:
+                # Events are where consensus != 0
+                return signals.index[signals['consensus'] != 0]
+        except Exception as e:
+            logger.warning(f"CUSUM generation failed: {e}")
+
+        return pd.DatetimeIndex([])
+
+class HurstStateEvents(BaseEventGenerator):
+    """
+    Detects when the market switches from "Random Walk" to "Trend".
+    Triggers when Hurst Exponent crosses critical thresholds.
+    """
+    def get_hurst(self, series):
+        # Simplified R/S analysis or similar
+        # (Using a quick approximation for performance in loops)
+        lags = range(2, 20)
+
+        # Convert to numpy for performance
+        arr = series.values
+
+        # Calculate std of diffs at various lags
+        # tau = [np.sqrt(np.std(series.diff(lag).dropna())) for lag in lags]
+        tau = []
+        for lag in lags:
+            if len(arr) > lag:
+                diff = arr[lag:] - arr[:-lag]
+                tau.append(np.sqrt(np.std(diff)))
+            else:
+                tau.append(np.nan)
+
+        # Filter NaNs/Zeros/Infs for log
+        lags_clean = []
+        tau_clean = []
+        for l, t in zip(lags, tau):
+            if t > 0 and np.isfinite(t):
+                lags_clean.append(l)
+                tau_clean.append(t)
+
+        if len(lags_clean) < 2:
+            return 0.5
+
+        try:
+            poly = np.polyfit(np.log(lags_clean), np.log(tau_clean), 1)
+            return poly[0] * 2.0
+        except Exception:
+            return 0.5
+
+    def generate(self, df: pd.DataFrame, lookback: int = 100, threshold: float = 0.6) -> pd.DatetimeIndex:
+        # Warning: Hurst is computationally expensive.
+        # rolling_apply is slow. We generate events sparsely.
+        price = df['close']
+
+        # Use rolling apply
+        hurst_vals = price.rolling(lookback).apply(self.get_hurst, raw=False)
+
+        # Trigger when we cross INTO a trend regime (H > threshold)
+        # We only want the initiation of the regime, not every day inside it.
+        trigger = (hurst_vals > threshold) & (hurst_vals.shift(1) <= threshold)
+
+        return price.index[trigger]
 
 class VolatilityShockEvents(BaseEventGenerator):
     """
     Detects sudden spikes in volatility relative to the running history.
-    Uses expanding window to avoid look-ahead bias.
     """
     def generate(self, df: pd.DataFrame, lookback: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
-        # Expecting 'volatility_1d' or calculate it from close
         if 'volatility_1d' in df.columns:
             vol = df['volatility_1d']
         else:
             vol = df['close'].pct_change().rolling(lookback).std()
 
-        # Expanding window statistics
         vol_mean = vol.expanding(min_periods=lookback).mean()
         vol_std = vol.expanding(min_periods=lookback).std()
 
@@ -55,9 +171,6 @@ class TrendInitiationEvents(BaseEventGenerator):
         ma_s = price.rolling(short).mean()
         ma_l = price.rolling(long).mean()
 
-        # Signal: Short crosses above Long (and was previously below)
-        # We capture both directions if needed, but here we check crossover
-        # For simplicity, we can return both Up and Down crossovers
         cross_up = (ma_s > ma_l) & (ma_s.shift(1) <= ma_l.shift(1))
         cross_down = (ma_s < ma_l) & (ma_s.shift(1) >= ma_l.shift(1))
 
@@ -73,16 +186,16 @@ class MeanReversionExtremeEvents(BaseEventGenerator):
         std = price.rolling(lookback).std()
 
         zscore = (price - mean) / std
-        # Extreme deviation in either direction
         return df.index[np.abs(zscore) > z]
 
 class LiquidityShockEvents(BaseEventGenerator):
     """
-    Detects volume spikes, often indicating information arrival.
+    Detects volume spikes.
     """
     def generate(self, df: pd.DataFrame, lookback: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
+        if 'volume' not in df.columns:
+            return pd.DatetimeIndex([])
         volume = df['volume']
-        # Use expanding window for normalization
         vol_mean = volume.expanding(min_periods=lookback).mean()
         vol_std = volume.expanding(min_periods=lookback).std()
 
@@ -96,27 +209,6 @@ class TimeEvents(BaseEventGenerator):
     """
     def generate(self, df: pd.DataFrame, step: int = 50) -> pd.DatetimeIndex:
         return df.index[::step]
-
-class CusumEvents(BaseEventGenerator):
-    """
-    Wrapper for the existing CUSUM filter logic.
-    """
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        # Defaults matching Layer 2 legacy
-        k = params.get('k', 0.12) # Default threshold
-        # We invoke generate_primary_signals
-        # Note: generate_primary_signals expects 'volatility_1d' in df
-
-        try:
-            signals = generate_primary_signals(df, k=k)
-            # signals is a DataFrame with 'consensus'
-            if 'consensus' in signals.columns:
-                # Events are where consensus != 0
-                return signals.index[signals['consensus'] != 0]
-        except Exception as e:
-            print(f"CUSUM generation failed: {e}")
-
-        return pd.DatetimeIndex([])
 
 # ==========================================
 # 2. Geometry & Tools
@@ -136,77 +228,31 @@ class Geometry:
         self.family = family
         self.labeler_name = labeler_name
         self.params = params or {}
+        self.score = 0.0
 
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex) -> pd.Series:
-    """
-    Maps events to the full timeline.
-    """
     ind = pd.Series(0, index=index)
     valid_events = events.intersection(index)
     ind.loc[valid_events] = 1
     return ind
 
 def average_uniqueness(indicators: pd.DataFrame) -> float:
-    """
-    Calculates average uniqueness (1 / concurrency) across all events.
-    """
     if indicators.empty:
         return 0.0
     concurrency = indicators.sum(axis=1)
-    # Avoid division by zero
     uniq = indicators.div(concurrency, axis=0).replace([np.inf, np.nan], 0)
-
-    # We only care about uniqueness when the event is actually active (indicator > 0)
     valid = indicators > 0
     if not valid.any().any():
         return 0.0
-
     return uniq[indicators > 0].mean().mean()
 
 def normalized_mi(y1: pd.Series, y2: pd.Series) -> float:
-    """
-    Calculates Normalized Mutual Information between two label sets.
-    """
     common = y1.index.intersection(y2.index)
-    if len(common) < 10: # Require some overlap to judge
+    if len(common) < 10:
         return 0.0
-
-    # Discretize if continuous (though labels here are likely binary 0/1)
-    # Assuming binary labels for this calculation
     mi = mutual_info_score(y1.loc[common], y2.loc[common])
-
-    # Normalize by entropy of y1 to get range [0, 1] relative to the candidate
     entropy = shannon_entropy(y1.loc[common].value_counts())
-
     return mi / entropy if entropy > 0 else 0.0
-
-def label_distribution_stable(labels: pd.Series, splits: int = 5, eps: float = 0.1) -> bool:
-    """
-    Checks if label distribution is stationary across time chunks.
-    """
-    if len(labels) < splits * 20: # Require decent sample size
-        return True # Not enough data to fail check
-
-    chunks = np.array_split(labels, splits)
-
-    for a, b in combinations(chunks, 2):
-        if len(a) < 10 or len(b) < 10:
-            continue
-
-        pa = a.value_counts(normalize=True)
-        pb = b.value_counts(normalize=True)
-
-        # Align indexes (ensure both have -1, 0, 1)
-        pa, pb = pa.align(pb, fill_value=0)
-
-        d = shannon_entropy(pa, pb)
-        if not np.isfinite(d): # Handle distinct support
-             d = 1.0
-
-        if d > eps:
-            return False
-    return True
-
 
 # ==========================================
 # 3. Main Orchestration
@@ -215,35 +261,67 @@ def label_distribution_stable(labels: pd.Series, splits: int = 5, eps: float = 0
 def orthogonal_label_generation(
     df: pd.DataFrame,
     labelers: Dict[str, Callable[[pd.DataFrame, pd.DatetimeIndex], pd.Series]],
+    scorer: Callable[[pd.DataFrame, pd.DatetimeIndex, pd.Series], float] = None,
     tau_uniqueness: float = 0.1,
-    tau_mi: float = 0.1
+    tau_mi: float = 0.5 # Relaxed from 0.1 to allow some correlation
 ) -> List[Geometry]:
 
     index = df.index
 
-    # 1. Instantiate Generators
-    event_families = {
-        "CUSUM": CusumEvents(),
-        "VOL": VolatilityShockEvents(),
-        "TREND": TrendInitiationEvents(),
-        "MEAN_REV": MeanReversionExtremeEvents(),
-        "LIQUIDITY": LiquidityShockEvents(),
-        "TIME": TimeEvents()
+    # 1. Instantiate Generators with Variations (The Tournament Candidates)
+    # "VOL_FAST, VOL_MED, VOL_SLOW" etc.
+
+    generators = {
+        # Volatility Shocks
+        "VOL_FAST": partial(VolatilityShockEvents().generate, lookback=20, z=2.0),
+        "VOL_MED": partial(VolatilityShockEvents().generate, lookback=50, z=2.0),
+        "VOL_SLOW": partial(VolatilityShockEvents().generate, lookback=100, z=2.0),
+
+        # Trend Initiation
+        "TREND_FAST": partial(TrendInitiationEvents().generate, short=10, long=30),
+        "TREND_MED": partial(TrendInitiationEvents().generate, short=20, long=60),
+        "TREND_SLOW": partial(TrendInitiationEvents().generate, short=50, long=200),
+
+        # Mean Reversion
+        "MEAN_REV_FAST": partial(MeanReversionExtremeEvents().generate, lookback=20, z=2.0),
+        "MEAN_REV_MED": partial(MeanReversionExtremeEvents().generate, lookback=50, z=2.5),
+        "MEAN_REV_SLOW": partial(MeanReversionExtremeEvents().generate, lookback=100, z=3.0),
+
+        # Liquidity
+        "LIQ_FAST": partial(LiquidityShockEvents().generate, lookback=20, z=2.0),
+        "LIQ_MED": partial(LiquidityShockEvents().generate, lookback=50, z=2.5),
+
+        # New Generators
+        "SYM_CUSUM_5": partial(SymmetricCusumEvents().generate, h=0.05),
+        "SYM_CUSUM_2": partial(SymmetricCusumEvents().generate, h=0.02),
+
+        "IMP_CUSUM": ImprovedCUSUMEvents().generate,
+
+        "HURST_100": partial(HurstStateEvents().generate, lookback=100, threshold=0.6),
+        "HURST_200": partial(HurstStateEvents().generate, lookback=200, threshold=0.6),
+
+        # Control
+        "TIME": TimeEvents().generate
     }
 
     candidates = []
 
     # 2. Generate Candidates (Cartesian Product of Family x Labeler)
-    print(f"Generating candidates from {len(event_families)} families x {len(labelers)} labelers...")
+    print(f"Generating candidates from {len(generators)} families x {len(labelers)} labelers...")
 
-    for fam_name, fam in event_families.items():
+    for gen_name, gen_func in generators.items():
         try:
             # Generate Events
-            # Some generators might take specific params, using defaults here
-            events = fam.generate(df)
+            try:
+                if isinstance(gen_func, partial):
+                    events = gen_func(df)
+                else:
+                    events = gen_func(df)
+            except Exception as e:
+                # Some generators might fail if missing columns (e.g. volume)
+                continue
 
             if len(events) < 10:
-                print(f"Skipping family {fam_name}: Too few events ({len(events)})")
                 continue
 
             for lbl_name, lbl_func in labelers.items():
@@ -254,70 +332,77 @@ def orthogonal_label_generation(
 
                 # Generate Labels
                 try:
-                    # Expecting label_func(df, events) -> pd.Series
                     labels = lbl_func(df, events)
                 except Exception as e:
-                    print(f"Skipping {fam_name}_{lbl_name}: Label generation failed ({e})")
+                    print(f"Skipping {gen_name}_{lbl_name}: Label generation failed ({e})")
                     continue
 
                 if labels.empty or labels.dropna().empty:
                     continue
 
+                # Check for minimum positive labels
+                if labels.sum() < 5:
+                    continue
+
                 g = Geometry(
-                    name=f"{fam_name}_{lbl_name}",
+                    name=f"{gen_name}_{lbl_name}",
                     events=events,
                     labels=labels,
-                    family=fam_name,
+                    family=gen_name.split('_')[0], # Group by broad family for reporting
                     labeler_name=lbl_name,
                     params=lbl_params
                 )
                 g.indicator = build_indicator_matrix(events, index)
+
+                # Calculate Score (Learnability)
+                if scorer:
+                    try:
+                        score = scorer(df, events, labels)
+                        g.score = score
+                    except Exception as e:
+                        print(f"Scoring failed for {g.name}: {e}")
+                        g.score = 0.0
+                else:
+                    g.score = 0.5
+
                 candidates.append(g)
 
         except Exception as e:
-            print(f"Error processing family {fam_name}: {e}")
+            print(f"Error processing generator {gen_name}: {e}")
             continue
 
-    # 3. Filter for Uniqueness and Orthogonality
-    accepted = []
-    global_indicator = pd.DataFrame(index=index) # Tracks all accepted events so far
+    # 3. Sort by Score
+    candidates.sort(key=lambda x: x.score, reverse=True)
 
-    print(f"Generated {len(candidates)} candidate geometries. Starting filter...")
+    # 4. Filter for Orthogonality
+    accepted = []
+
+    print(f"Generated {len(candidates)} candidate geometries. Starting filter (Tau_MI={tau_mi})...")
+
+    # We maintain a list of accepted geometries to check MI against
+    # The prompt says "The MI check detects this. It gets rejected."
 
     for g in candidates:
-        # A. Check Marginal Uniqueness (vs everything already accepted)
-        # If nothing accepted yet, uniqueness is 1.0 (self)
-        if global_indicator.empty:
-            uniq = 1.0
-        else:
-            temp_indicator = pd.concat([global_indicator, g.indicator], axis=1).fillna(0)
-            uniq = average_uniqueness(temp_indicator)
+        if g.score < 0.51: # Minimum learnability threshold (random is 0.5)
+             continue
 
-        g.avg_uniqueness = uniq
-
-        if uniq < tau_uniqueness:
-            print(f"Rejected {g.name}: Uniqueness {uniq:.2f} < {tau_uniqueness}")
-            continue
-
-        # B. Check Mutual Information (Redundancy in outcome)
         redundant = False
         for a in accepted:
             mi = normalized_mi(g.labels, a.labels)
+
+            # Also check event overlap?
+            # Prompt implies MI check on labels.
+            # "It likely overlaps 80% with the winner. The MI check detects this."
+
             if mi > tau_mi:
-                print(f"Rejected {g.name}: High MI with {a.name} ({mi:.2f})")
+                print(f"Rejected {g.name} (Score {g.score:.4f}): High MI with {a.name} ({mi:.2f})")
                 redundant = True
                 break
+
         if redundant:
             continue
 
-        # C. Check Stability
-        if not label_distribution_stable(g.labels):
-            print(f"Rejected {g.name}: Unstable label distribution")
-            continue
-
-        # Accept
         accepted.append(g)
-        global_indicator[g.name] = g.indicator
-        print(f"Accepted {g.name}")
+        print(f"Accepted {g.name} (Score {g.score:.4f})")
 
     return accepted

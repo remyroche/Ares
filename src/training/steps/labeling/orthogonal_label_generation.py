@@ -1,18 +1,18 @@
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
+import logging
 from itertools import combinations
 from sklearn.metrics import mutual_info_score
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.stats import entropy as shannon_entropy
-from typing import List, Dict, Union, Callable
+from typing import List, Dict, Union, Callable, Optional
 from functools import partial
 
-# Placeholder for existing codebase import
-try:
-    from src.training.steps.labeling.feature_generation_meta_labeling_step import generate_primary_signals
-except ImportError:
-    generate_primary_signals = None
+# Setup Logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 # ==========================================
 # 0. Data Structures & Helpers
@@ -31,16 +31,45 @@ class OutputGeometry:
         self.weights = weights
         self.purity = purity      # Uniqueness Score
         self.auc = auc            # Learnability Score (The Tournament Metric)
+    
+    def __repr__(self):
+        return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)}>"
 
-def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex) -> pd.DataFrame:
+def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """
     Maps events to the full timeline as a binary indicator series.
-    Returns DataFrame to be compatible with arithmetic operations later.
+    Marks the ENTIRE duration of the label (from t to t+horizon) as active.
+    This ensures De Prado's uniqueness metric accounts for trade overlap duration.
     """
-    ind = pd.Series(0, index=index)
+    # Create an empty integer array for speed
+    arr = np.zeros(len(index), dtype=int)
+    
+    # Get integer locations of events
+    # We intersection check first to ensure events are within index range
     valid_events = events.intersection(index)
-    ind.loc[valid_events] = 1
-    return ind.to_frame()
+    
+    if valid_events.empty:
+        return pd.DataFrame(0, index=index, columns=[0])
+
+    # Convert timestamps to integer locations in the index
+    # Note: searchsorted is fast but requires sorted index
+    event_locs = index.get_indexer(valid_events)
+    event_locs = event_locs[event_locs != -1] # Safety check
+    
+    # Mark durations
+    # A simple loop is fast enough for ~500 events
+    # For very large arrays, we could use difference array accumulation
+    n_bars = len(index)
+    for loc in event_locs:
+        end_loc = min(loc + horizon, n_bars)
+        arr[loc:end_loc] += 1
+        
+    # Any value > 0 means the strategy is "in the market"
+    # We clamp to 1 because we are building a binary indicator of "Active Status"
+    # The sum across geometries (concurrency) is calculated later
+    arr = np.clip(arr, 0, 1)
+    
+    return pd.DataFrame(arr, index=index, columns=[0])
 
 def average_uniqueness(indicators: pd.DataFrame) -> float:
     """
@@ -51,8 +80,10 @@ def average_uniqueness(indicators: pd.DataFrame) -> float:
         return 0.0
 
     concurrency = indicators.sum(axis=1)
-    uniqueness = indicators.div(concurrency, axis=0)
+    # Avoid div by zero
+    uniqueness = indicators.div(concurrency, axis=0).fillna(0)
 
+    # only count rows where this geometry is active
     mask = indicators > 0
     uniq_vals = uniqueness[mask]
 
@@ -108,6 +139,114 @@ def label_distribution_stable(labels: pd.Series, splits: int = 5, eps: float = 0
 # 1. Event Generators (The 7 Families + Controls)
 # ==========================================
 
+def generate_dual_cusum_signals(
+    close: pd.Series,
+    volume: Optional[pd.Series] = None,
+    k: float = 0.12,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    er_min: float = 0.2,
+    window_vol: int = 20,
+    window_er: int = 10,
+    Q: float = 1e-5,
+    R: float = 0.01
+) -> pd.DataFrame:
+    """
+    Generate dual CUSUM signals for trend-following and mean-reversion using optimized Kalman filter.
+    """
+    # 1. Compute log returns
+    log_ret = np.log(close / close.shift(1)).fillna(0.0)
+
+    # 2. Apply 1D Kalman filter (Reuse existing optimized class)
+    kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]))
+    log_ret_smooth_raw, _ = kf.filter_series(log_ret)
+
+    # Ensure it's a series with correct index for rolling operations
+    if not isinstance(log_ret_smooth_raw, pd.Series):
+        log_ret_smooth_series = pd.Series(log_ret_smooth_raw, index=close.index).fillna(0.0)
+    else:
+        log_ret_smooth_series = log_ret_smooth_raw.fillna(0.0)
+
+    # 3. Rolling volatility & ER (Vectorized)
+    sigma = log_ret_smooth_series.rolling(window_vol, min_periods=1).std()
+
+    # Efficiency Ratio calculation
+    change = log_ret_smooth_series.rolling(window_er).sum().abs()
+    volatility = log_ret_smooth_series.abs().rolling(window_er, min_periods=1).sum()
+    ER = (change / (volatility + 1e-12)).fillna(0.0)
+
+    # 4. Liquidity & Thresholds
+    liquidity_mod = pd.Series(1.0, index=close.index)
+    if volume is not None:
+        vol_ma = volume.rolling(window_vol, min_periods=1).mean()
+        rel_volume = volume / (vol_ma + 1e-9)
+        liquidity_mod = 1.0 + beta * (1.0 - rel_volume)
+        liquidity_mod = liquidity_mod.clip(0.5, 2.0)
+
+    regime_mod = 1.0 + alpha * (1.0 - ER)
+    h_t = (k * sigma * regime_mod * liquidity_mod).fillna(0.0)
+
+    # 5. Residuals for Reversal Logic
+    expected_return = log_ret_smooth_series.rolling(window_vol, min_periods=1).mean()
+    residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
+
+    # 6. CUSUM Loop (Optimized Numpy)
+    n = len(close)
+
+    # Convert to numpy for speed
+    r_arr = log_ret_smooth_series.to_numpy()
+    res_arr = residual_ret.to_numpy()
+    h_arr = h_t.to_numpy()
+    er_arr = ER.to_numpy()
+
+    trend_signal = np.zeros(n)
+    reversal_signal = np.zeros(n)
+
+    S_trend_pos, S_trend_neg = 0.0, 0.0
+    S_rev_pos, S_rev_neg = 0.0, 0.0
+
+    for t in range(n):
+        if er_arr[t] < er_min:
+            S_trend_pos, S_trend_neg = 0.0, 0.0
+            S_rev_pos, S_rev_neg = 0.0, 0.0
+            continue
+
+        cur_h = h_arr[t]
+        if np.isnan(cur_h) or cur_h <= 0:
+             cur_h = 1e-4
+
+        # Trend CUSUM (on smoothed returns)
+        S_trend_pos = max(0.0, S_trend_pos + r_arr[t])
+        S_trend_neg = min(0.0, S_trend_neg + r_arr[t])
+
+        if S_trend_pos > cur_h:
+            trend_signal[t] = 1
+            S_trend_pos = 0.0
+        elif S_trend_neg < -cur_h:
+            trend_signal[t] = -1
+            S_trend_neg = 0.0
+
+        # Reversal CUSUM (Mean Reversion on Residuals)
+        S_rev_pos = max(0.0, S_rev_pos + res_arr[t])
+        S_rev_neg = min(0.0, S_rev_neg + res_arr[t])
+
+        if S_rev_pos > cur_h:
+            reversal_signal[t] = 1 # Overextended UP -> Expect Reversal
+            S_rev_pos = 0.0
+        elif S_rev_neg < -cur_h:
+            reversal_signal[t] = -1 # Overextended DOWN -> Expect Reversal
+            S_rev_neg = 0.0
+
+    # Pack results
+    signals = pd.DataFrame({
+        'trend_signal': trend_signal,
+        'reversal_signal': reversal_signal,
+        'h_t': h_t,
+        'er': ER
+    }, index=close.index)
+
+    return signals
+
 class BaseEventGenerator:
     def generate(self, data: Union[pd.Series, pd.DataFrame], **params) -> pd.DatetimeIndex:
         raise NotImplementedError
@@ -116,20 +255,16 @@ class BaseEventGenerator:
 class RandomEvents(BaseEventGenerator):
     """
     Null Hypothesis 1: Random Sampling.
-    If this has High AUC, your model is overfitting or leaking.
     """
     def generate(self, price: pd.Series, n_events: int = 100) -> pd.DatetimeIndex:
-        # Sample random indices from the price index
         if len(price) < n_events: n_events = len(price)
-        # Use numpy choice for speed
-        rng = np.random.default_rng(42) # Fixed seed for reproducibility check
+        rng = np.random.default_rng(42) 
         random_indices = rng.choice(price.index, size=n_events, replace=False)
         return pd.DatetimeIndex(np.sort(random_indices))
 
 class TimeEvents(BaseEventGenerator):
     """
     Null Hypothesis 2: Time-based sampling.
-    Tests if "Time alone" explains labels.
     """
     def generate(self, price: pd.Series, step: int = 50) -> pd.DatetimeIndex:
         return price.index[::step]
@@ -138,47 +273,36 @@ class TimeEvents(BaseEventGenerator):
 class LowVolatilityEvents(BaseEventGenerator):
     """
     Triggers when volatility is exceptionally LOW (Bottom Quantile).
-    Ensures model learns 'Boring' regimes, not just crisis regimes.
     """
     def generate(self, price: pd.Series, lookback: int = 50, quantile: float = 0.20) -> pd.DatetimeIndex:
         returns = price.pct_change()
         vol = returns.rolling(lookback).std()
-        # Rolling quantile to adapt to changing market baselines
         thresh = vol.rolling(lookback * 5).quantile(quantile)
-        
         trigger = (vol < thresh) & (vol.shift(1) >= thresh.shift(1))
         return price.index[trigger]
 
 class ChopEvents(BaseEventGenerator):
     """
-    Triggers in Trendless/Choppy markets.
-    Uses Efficiency Ratio (ER) < Threshold.
+    Triggers in Trendless/Choppy markets. Efficiency Ratio (ER) < Threshold.
     """
     def generate(self, price: pd.Series, lookback: int = 20, er_thresh: float = 0.3) -> pd.DatetimeIndex:
         change = price.diff(lookback).abs()
         path = price.diff().abs().rolling(lookback).sum()
         er = change / (path + 1e-6)
-        
-        # Trigger when market becomes inefficient/choppy
         trigger = (er < er_thresh) & (er.shift(1) >= er_thresh)
         return price.index[trigger]
 
 # --- STANDARD FAMILIES ---
 class VolatilityShockEvents(BaseEventGenerator):
-    """
-    Supports both Z-Score (Parametric) and Quantile (Non-Parametric) triggers.
-    """
     def generate(self, price: pd.Series, lookback: int = 50, z: float = 2.0, use_quantile: bool = False, q: float = 0.95) -> pd.DatetimeIndex:
         returns = price.pct_change()
         vol = returns.rolling(lookback).std()
         
         if use_quantile:
-            # Non-parametric trigger
             thresh = vol.rolling(lookback*5).quantile(q)
             trigger = vol > thresh
             return price.index[trigger]
         else:
-            # Standard Z-score trigger
             vol_mean = vol.expanding(min_periods=lookback).mean()
             vol_std = vol.expanding(min_periods=lookback).std()
             zscore = (vol - vol_mean) / (vol_std + 1e-6)
@@ -192,13 +316,27 @@ class TrendInitiationEvents(BaseEventGenerator):
         return price.index[cross]
 
 class BreakoutEvents(BaseEventGenerator):
-    def generate(self, price: pd.Series, lookback: int = 20) -> pd.DatetimeIndex:
+    """
+    Detects Donchian Channel Breakouts.
+    Updated to support splitting Long (High) and Short (Low) breakouts for orthogonality.
+    """
+    def generate(self, price: pd.Series, lookback: int = 20, side: str = 'both') -> pd.DatetimeIndex:
         rolling_max = price.rolling(lookback).max().shift(1)
         rolling_min = price.rolling(lookback).min().shift(1)
+        
         breakout_high = price > rolling_max
         breakout_low = price < rolling_min
-        return price.index[(breakout_high & ~breakout_high.shift(1).fillna(False)) | 
-                           (breakout_low & ~breakout_low.shift(1).fillna(False))]
+        
+        # Filter for initiation only
+        event_high = breakout_high & ~breakout_high.shift(1).fillna(False)
+        event_low = breakout_low & ~breakout_low.shift(1).fillna(False)
+        
+        if side == 'long':
+            return price.index[event_high]
+        elif side == 'short':
+            return price.index[event_low]
+        else:
+            return price.index[event_high | event_low]
 
 class MeanReversionExtremeEvents(BaseEventGenerator):
     def generate(self, price: pd.Series, lookback: int = 50, z: float = 2.5) -> pd.DatetimeIndex:
@@ -233,20 +371,60 @@ class SymmetricCusumEvents(BaseEventGenerator):
         return pd.DatetimeIndex(t_events)
 
 class ImprovedCUSUMEvents(BaseEventGenerator):
+    """
+    Wrapper for existing CUSUM filter logic from Layer 2.
+    Implemented locally to avoid circular dependencies.
+    """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        # Default Params matching generate_primary_signals defaults
         k = params.get('k', 0.12)
-        if generate_primary_signals is not None:
-            try:
-                signals = generate_primary_signals(df, k=k)
-                if 'consensus' in signals.columns:
-                    return signals.index[signals['consensus'] != 0]
-                return signals.index
-            except Exception:
-                pass
+        vol_window = params.get('vol_window', 20)
+        er_window = params.get('er_window', 10)
+        er_min = params.get('er_min', 0.2)
+        alpha = params.get('alpha', 1.0)
+        beta = params.get('beta', 1.0)
+        w_trend = params.get('w_trend', 1.0)
+        w_reversal = params.get('w_reversal', 1.0)
+        
+        # Extract series
+        close = df['close'] if 'close' in df.columns else df.iloc[:, 0]
+        
+        volume = None
+        if 'volume' in df.columns:
+            volume = df['volume']
+        elif 'Volume' in df.columns:
+            volume = df['Volume']
+            
         try:
-            return SymmetricCusumEvents().generate(df['close'], h=0.01)
-        except:
-            return pd.DatetimeIndex([])
+            dual_signals = generate_dual_cusum_signals(
+                close=close,
+                volume=volume,
+                k=k,
+                alpha=alpha,
+                beta=beta,
+                er_min=er_min,
+                window_vol=vol_window,
+                window_er=er_window,
+                Q=1e-5,
+                R=0.01
+            )
+            
+            # Compute Composite Signal
+            composite = (
+                w_trend * dual_signals['trend_signal'] -
+                w_reversal * dual_signals['reversal_signal']
+            )
+            
+            return composite.index[composite != 0]
+            
+        except Exception as e:
+            print(f"Improved CUSUM failed, falling back: {e}")
+            # Fallback
+            try:
+                return SymmetricCusumEvents().generate(close, h=0.01)
+            except:
+                return pd.DatetimeIndex([])
+
 
 class HurstStateEvents(BaseEventGenerator):
     def _get_hurst_exponent(self, ts):
@@ -256,7 +434,9 @@ class HurstStateEvents(BaseEventGenerator):
         return poly[0] * 2.0
 
     def generate(self, price: pd.Series, lookback: int = 100, threshold: float = 0.6) -> pd.DatetimeIndex:
+        # Step optimization for speed
         hurst = price.rolling(lookback, step=5).apply(self._get_hurst_exponent, raw=True)
+        # Forward fill carefully to avoid looking ahead (ffill propagates past value forward)
         hurst = hurst.reindex(price.index).ffill() 
         trigger = (hurst > threshold) & (hurst.shift(1) <= threshold)
         return price.index[trigger]
@@ -350,8 +530,6 @@ def vol_scaled_fixed_label(price: pd.Series, events: pd.DatetimeIndex,
 def generate_probe_features(price: pd.Series, volume: pd.Series) -> pd.DataFrame:
     """
     Standard 'Basis Set' for Probe.
-    Note: For true subspace orthogonality, features should theoretically be partitioned,
-    but we use a global set here to benchmark all families on the same playing field.
     """
     df = pd.DataFrame(index=price.index)
     df['ret_1'] = np.log(price).diff(1)
@@ -379,7 +557,8 @@ def get_purged_lgbm_auc(X, y, w, horizon_bars=48) -> float:
     if len(y) < 50: return 0.5
     
     n_splits = 3
-    gap = horizon_bars + 5 
+    # Gap must encompass the entire label horizon to prevent leakage
+    gap = int(1.1 * horizon_bars) + 2 
     
     tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap)
     scores = []
@@ -445,17 +624,15 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
     accepted_objects = []
     global_indicator = pd.DataFrame() 
     
-    print(f"--- Starting Selection on {len(candidates)} Candidates ---")
+    logger.info(f"--- Starting Selection on {len(candidates)} Candidates ---")
     
     for cand in candidates:
         name = cand['name']
         
         # --- NULL HYPOTHESIS CHECK ---
-        # If Controls are high-ranking, warn the user heavily.
         if cand['family'] == 'CONTROL':
-            if cand['auc'] > 0.54: # Threshold for "Suspiciously Learnable"
-                print(f"⚠️  WARNING: Control Geometry {name} has High AUC ({cand['auc']:.3f}). Possible Leakage!")
-            # We explicitly do NOT accept controls into the final set, they are for audit.
+            if cand['auc'] > 0.54: 
+                logger.warning(f"⚠️  WARNING: Control Geometry {name} has High AUC ({cand['auc']:.3f}). Possible Leakage!")
             continue
             
         # A. Junk Filter
@@ -464,7 +641,7 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
 
         # B. Stability Filter
         if not label_distribution_stable(cand['labels']):
-            print(f"Discard {name}: Unstable Labels")
+            logger.debug(f"Discard {name}: Unstable Labels")
             continue
             
         # C. Redundancy Filter
@@ -472,7 +649,7 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
         for acc in accepted_configs:
             mi_score = normalized_mi(cand['labels'], acc['labels'])
             if mi_score > tau_mi:
-                print(f"Discard {name}: Redundant with {acc['name']} (MI={mi_score:.2f})")
+                logger.debug(f"Discard {name}: Redundant with {acc['name']} (MI={mi_score:.2f})")
                 is_redundant = True
                 break
         
@@ -495,11 +672,11 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
             avg_uniq = uniq_vals.mean() 
         
         if avg_uniq < tau_uniq:
-            print(f"Discard {name}: Low Uniqueness ({avg_uniq:.2f})")
+            logger.debug(f"Discard {name}: Low Uniqueness ({avg_uniq:.2f})")
             continue
             
         # ACCEPT
-        print(f"Select  {name}: AUC={cand['auc']:.3f}, Uniq={avg_uniq:.2f}")
+        logger.info(f"Select  {name}: AUC={cand['auc']:.3f}, Uniq={avg_uniq:.2f}")
         
         geo = OutputGeometry(name, cand['family'], cand['events'], cand['labels'], 
                              cand['weights'], avg_uniq, cand['auc'])
@@ -524,32 +701,41 @@ def orthogonal_label_generation(
     
     index = price.index
     
-    # 0. Volatility for Dynamic Labeling
+    # 0. Volatility for Dynamic Labeling & Floors
     daily_vol = price.pct_change().rolling(20).std()
+    # Calculate robust floor for profitability (e.g. 25% of avg vol)
+    avg_vol = daily_vol.mean()
+    robust_floor = max(0.001, avg_vol * 0.25) if not np.isnan(avg_vol) else 0.002
+    logger.info(f"Dynamic Label Floor Set to: {robust_floor:.5f}")
     
     # 1. Probe Features
-    print("--- Generating Probe Features (Basis Set) ---")
+    logger.info("--- Generating Probe Features (Basis Set) ---")
     X_probe = generate_probe_features(price, volume)
     
     # 2. Build 3D Hypothesis Grid
     regimes = [12, 24, 48]
     configs = []
     
-    # --- CONTROLS (NULL HYPOTHESES) ---
+    # --- CONTROLS ---
     configs.append({"f": "CONTROL", "t": "RANDOM", "g": RandomEvents(), "p": {"n_events": 200}})
     configs.append({"f": "CONTROL", "t": "TIME", "g": TimeEvents(), "p": {"step": 50}})
     
-    # --- ANTI-BIAS (BALANCING) ---
+    # --- ANTI-BIAS ---
     configs.append({"f": "LOW_VOL", "t": "Q20", "g": LowVolatilityEvents(), "p": {"lookback": 50, "quantile": 0.20}})
     configs.append({"f": "CHOP", "t": "ER30", "g": ChopEvents(), "p": {"lookback": 20, "er_thresh": 0.3}})
 
     # --- STANDARD FAMILIES ---
     for r in regimes:
-        # Note: Volatility now uses quantile trigger option? Let's use standard Z for main grid
-        configs.append({"f": "VOL", "t": str(r), "g": VolatilityShockEvents(), "p": {"lookback": r, "z": 2.0}})
+        # Volatility: Standard Z-Score AND Quantile Variants
+        configs.append({"f": "VOL", "t": f"{r}_Z", "g": VolatilityShockEvents(), "p": {"lookback": r, "z": 2.0, "use_quantile": False}})
+        configs.append({"f": "VOL", "t": f"{r}_Q", "g": VolatilityShockEvents(), "p": {"lookback": r, "use_quantile": True, "q": 0.95}})
+        
         configs.append({"f": "MR", "t": str(r), "g": MeanReversionExtremeEvents(), "p": {"lookback": r, "z": 2.5}})
         configs.append({"f": "LIQ", "t": str(r), "g": LiquidityShockEvents(), "p": {"lookback": r, "z": 2.0}})
-        configs.append({"f": "BREAK", "t": str(r), "g": BreakoutEvents(), "p": {"lookback": r}})
+        
+        # Breakouts: Split Long/Short for orthogonality
+        configs.append({"f": "BREAK_L", "t": str(r), "g": BreakoutEvents(), "p": {"lookback": r, "side": "long"}})
+        configs.append({"f": "BREAK_S", "t": str(r), "g": BreakoutEvents(), "p": {"lookback": r, "side": "short"}})
         
     trend_pairs = [(12, 24), (24, 48), (12, 48)]
     for s, l in trend_pairs:
@@ -567,7 +753,7 @@ def orthogonal_label_generation(
     horizons = [12, 24, 48]
     candidates = []
     
-    print(f"--- Generating Candidates from {len(configs)} Generators ---")
+    logger.info(f"--- Generating Candidates from {len(configs)} Generators ---")
     
     for conf in configs:
         fam, tag, gen, params = conf['f'], conf['t'], conf['g'], conf['p']
@@ -590,7 +776,8 @@ def orthogonal_label_generation(
                 price, events, 
                 volatility=daily_vol, 
                 horizon=h, 
-                min_ret_factor=0.5,   
+                min_ret_factor=0.5, 
+                min_ret_floor=robust_floor,
                 dominance_ratio=1.5
             )
             
@@ -619,7 +806,8 @@ def orthogonal_label_generation(
                     "labels": y_cand,
                     "weights": w_cand,
                     "auc": auc_score,
-                    "indicator": build_indicator_matrix(events, index)
+                    # Pass horizon to build accurate duration-based indicator matrix
+                    "indicator": build_indicator_matrix(events, index, horizon=h)
                 })
 
     # 4. Selection

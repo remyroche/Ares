@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 MAX_HORIZON_BARS = 48       # 12h at 15m timeframe
 MIN_SL_PCT = 0.004          # 0.4% floor
 MAX_TP_PCT = 0.05           # 5% ceiling
-MIN_TP_SL_RATIO = 1.5       # TP >= 1.5 * SL (positive expectancy)
+MIN_TP_SL_RATIO = 1.2       # Reduced from 1.5 to allow sniper/high-accuracy setups
 MIN_SL_SIGMA = 0.5          # Minimum stop-loss in sigma units (prevent too-tight stops)
-MAX_FINAL_GEOMETRIES = 18    # Increased from 12 to allow more diverse candidates
+MAX_FINAL_GEOMETRIES = 30   # Increased from 18 to allow broader diversity
 MIN_GEOMETRY_DISTANCE = 0.15  # Normalized distance threshold for deduplication
 
 # --- 1. Data Structures ---
@@ -1007,9 +1007,9 @@ def select_geometries(
 
     # Generate candidates (only with valid min_ratio >= 1.5 upfront)
     candidates = []
-    base_alphas = [0.3, 0.5, 1.0, 1.5, 2.0]           # Expanded from [0.5, 1.0, 1.5]
-    base_betas = [0.3, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]  # Expanded from [0.5, 1.0, 1.5, 2.0]
-    base_min_ratios = [1.5, 2.0, 2.5, 3.0]              # Expanded from [1.5, 2.0]
+    base_alphas = [0.3, 0.5, 0.7, 1.0, 1.2, 1.5, 2.0, 2.5]           # Expanded range
+    base_betas = [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0]  # Expanded range
+    base_min_ratios = [1.2, 1.5, 1.8, 2.0, 2.5, 3.0]                 # Expanded range including 1.2
 
     for h in horizons:
         if h not in thresholds_map:
@@ -1021,7 +1021,7 @@ def select_geometries(
                         candidates.append(Geometry(sl_quantile=q, alpha=a, beta=b, min_ratio=mr, horizon=h))
 
     # Randomized jittered combinations to avoid identical survivor sets
-    jitter_count = int(min(500, len(candidates))) or 100  # Increased from 200/50
+    jitter_count = int(min(1000, len(candidates))) or 200  # Increased from 500 to 1000
     for _ in range(jitter_count):
         h = int(rng.choice(horizons))
         q = float(np.clip(rng.normal(loc=0.5, scale=0.25), 0.1, 0.9))  # Expanded range
@@ -1262,7 +1262,8 @@ def select_geometries(
         
         # Iterate through horizons (copy list to allow removal)
         for h in list(active_horizons):
-            if not by_horizon[h] or horizon_counts[h] >= 4:
+            # Increased per-horizon cap from 4 to 8 to allow more diversity
+            if not by_horizon[h] or horizon_counts[h] >= 8:
                 if h in active_horizons:
                     active_horizons.remove(h)
                 continue
@@ -1310,7 +1311,7 @@ def select_geometries(
             break
 
     result = []
-    # Final selection: keep only top 2 geometries per horizon to ensure diversity
+    # Final selection: keep only top 5 geometries per horizon to ensure diversity
     horizon_geometries = {}
     for item in final_selection[:MAX_FINAL_GEOMETRIES]:
         h = item['geometry'].horizon
@@ -1318,12 +1319,12 @@ def select_geometries(
             horizon_geometries[h] = []
         horizon_geometries[h].append(item)
     
-    # Keep top 2 per horizon (already sorted by score within each horizon)
+    # Keep top 5 per horizon (already sorted by score within each horizon)
     for h, items in horizon_geometries.items():
-        for item in items[:2]:  # Top 2 per horizon
+        for item in items[:5]:  # Top 5 per horizon (increased from 2)
             result.append((item['geometry'], item['survivors']))
     
     best_score = final_selection[0]['separation_score'] if final_selection else 0.0
     logger.info(f"Final Selection: {len(result)} geometries (Best Learnability Score: {best_score:.3f})")
-    logger.info(f"Horizon distribution: {[(h, len(items[:2])) for h, items in horizon_geometries.items()]}")
+    logger.info(f"Horizon distribution: {[(h, len(items[:5])) for h, items in horizon_geometries.items()]}")
     return result

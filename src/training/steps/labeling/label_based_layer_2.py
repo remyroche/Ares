@@ -1227,8 +1227,8 @@ class LabelBasedLayer2:
             for h in sorted(by_horizon.keys()):
                 # Sort by race_score descending
                 geoms_h = sorted(by_horizon[h], key=lambda x: getattr(x, 'race_score', 0) or 0, reverse=True)
-                # Keep top 2 from this horizon
-                kept_h = geoms_h[:2]
+                # Keep top 5 from this horizon (increased from 2 for diversity)
+                kept_h = geoms_h[:5]
                 for g in kept_h:
                     score = getattr(g, 'race_score', 0) or 0
                     if score >= 0.52:

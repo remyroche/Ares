@@ -717,25 +717,6 @@ class LabelBasedLayer2:
         rng = np.random.default_rng(self.random_state)
         return index.take(np.sort(rng.choice(len(index), size=max_rows, replace=False)))
 
-    def _dominance_label_wrapper(self, df: pd.DataFrame, events: pd.DatetimeIndex, **params) -> pd.Series:
-        """Wrapper for _compute_dominance_labels to fit Orthogonal Generator interface."""
-        # Construct a dummy events_df with just the index
-        # We need to preserve 'family' if possible, but params usually cover it
-        dummy_events = pd.DataFrame(index=events)
-        # Call existing logic
-        labels, _, _, _, _ = self._compute_dominance_labels(
-            df, dummy_events, **params
-        )
-        return labels
-
-    def _get_labeler_menu(self) -> Dict[str, Callable]:
-        """Define the menu of labelers with baked-in parameters."""
-        return {
-            "SCALP": partial(self._dominance_label_wrapper, kappa=1.5, sl_mult=0.5, horizon=12),
-            "SWING": partial(self._dominance_label_wrapper, kappa=2.0, sl_mult=1.0, horizon=24),
-            "TREND": partial(self._dominance_label_wrapper, kappa=3.0, sl_mult=1.5, horizon=48)
-        }
-
     def run(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         Execute the Layer 2 pipeline.
@@ -821,8 +802,8 @@ class LabelBasedLayer2:
         tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization...")
 
         # 1. Generate & Filter
-        labelers = self._get_labeler_menu()
-        ortho_geoms = orthogonal_label_generation(df, labelers)
+        # Now calls the updated orthogonal_label_generation which handles params internally
+        ortho_geoms = orthogonal_label_generation(df)
 
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
@@ -831,26 +812,35 @@ class LabelBasedLayer2:
         # 2. Convert to GeometryTrial
         production_geometries = []
         for i, og in enumerate(ortho_geoms):
-            # Construct params.
-            # Note: og.params comes from the partial keywords (kappa, sl_mult, horizon)
-            # og.labeler_name e.g. "SCALP"
-            # og.family e.g. "VOL"
+            # og is OutputGeometry with .params, .events, .auc, .purity
             
-            # Re-verify learnability/score if needed, but orthogonal_label_generation
-            # uses uniqueness/MI. We can assign a default score or use uniqueness.
-            score = og.avg_uniqueness if og.avg_uniqueness is not None else 1.0
-
-            # Params
+            # Extract params directly from OutputGeometry
             params = og.params.copy()
+
+            # MFE/MAE Dominance needs 'kappa', 'sl_mult', 'horizon'
+            # The optimization returned 'pt' and 'sl' (TBM params).
+            # We map TBM pt/sl to Dominance Kappa/SL_Mult?
+            # Or we respect the chosen params.
+            # Dominance Logic: Kappa = Ratio of Profit to Loss.
+            # TBM PT = pt * vol, SL = sl * vol.
+            # Implied Kappa = pt / sl.
+            # Implied SL Mult = sl.
+
+            if 'pt' in params and 'sl' in params:
+                params['kappa'] = params['pt'] / params['sl']
+                params['sl_mult'] = params['sl']
+
             # Ensure horizon is present
             if 'horizon' not in params:
                 params['horizon'] = 120 # Fallback
+
+            score = og.purity if og.purity is not None else 1.0
 
             gt = GeometryTrial(
                 family=og.family,
                 params=params,
                 final_score=score * 100.0, # Scale up
-                learnability=0.5, # Placeholder
+                learnability=og.auc, # Use the AUC from optimization
                 robust_magnitude=0.0,
                 stability=1.0,
                 balance=1.0,

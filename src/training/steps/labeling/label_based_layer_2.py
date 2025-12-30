@@ -89,6 +89,7 @@ from src.training.steps.labeling.regime_leaf_feature_extractor import (
 # Import Orthogonal Generation
 from src.training.steps.labeling.orthogonal_label_generation import (
     orthogonal_label_generation,
+    compute_dominance_labels,
     CusumEvents,
     VolatilityShockEvents,
     TrendInitiationEvents,
@@ -948,18 +949,13 @@ class LabelBasedLayer2:
                 # Build dummy events df
                 train_evts_df = pd.DataFrame(index=train_evts_idx)
                 
-                # Compute labels
-                labels, _, _, _, _ = self._compute_dominance_labels(df_train, train_evts_df, **gt.params)
+                # Compute labels & weights
+                labels, weights, _, _, _, _ = self._compute_dominance_labels(df_train, train_evts_df, **gt.params)
                 valid_lbls = labels.dropna()
                 
                 if len(valid_lbls) < 20: continue
 
                 # Features
-                # Build features on df_train for these events
-                # We use union of train events for efficiency? No, per geometry is safer here.
-                # Just use global probe features
-                # Need to build X for train_evts_idx
-                # _build_geometry_independent_event_features expects df and events_df
                 X_train = self._build_geometry_independent_event_features(df_train, train_evts_df)
                 if X_train.empty: continue
 
@@ -970,8 +966,12 @@ class LabelBasedLayer2:
                 # Append geometry specific features
                 geo_feats = self._compute_specific_geometry_features(df_train, X_train.index, gt.params)
                 X_train = pd.concat([X_train, geo_feats], axis=1).fillna(0.0)
-                X_train = X_train.loc[valid_lbls.index]
-                y_train = valid_lbls
+
+                # Align all
+                common_idx = valid_lbls.index.intersection(X_train.index)
+                X_train = X_train.loc[common_idx]
+                y_train = valid_lbls.loc[common_idx]
+                w_train = weights.loc[common_idx] if weights is not None else None
 
                 # Train Model
                 try:
@@ -981,7 +981,7 @@ class LabelBasedLayer2:
                     params['metric'] = 'auc'
 
                     clf = lgb.LGBMClassifier(**params)
-                    clf.fit(X_train, y_train)
+                    clf.fit(X_train, y_train, sample_weight=w_train)
                     trained_models[gt.uuid] = clf
                 except Exception as e:
                     logger.warning(f"Training failed for {gt.uuid} on fold {i}: {e}")
@@ -1128,79 +1128,31 @@ class LabelBasedLayer2:
             return pd.DataFrame(index=events_df.index)
 
     def _compute_dominance_labels(self, df, events_df, **kwargs):
-        # Full Dominance Logic (MFE > Kappa * MAE)
+        # Use Vectorized Implementation from orthogonal_label_generation
 
         # Params
         kappa = float(kwargs.get('kappa', 2.0))
         sl_mult = float(kwargs.get('sl_mult', 1.0))
+        pt_mult = float(kwargs.get('pt_mult', 2.0)) # Need PT for vector check
         horizon = int(kwargs.get('horizon', 120))
 
-        # Setup Signals (Assume Long/Consensus if available)
-        # If events_df has 'event_consensus', use it. Else default to 1.0 (Long)
-        if 'event_consensus' in events_df.columns:
-            # Reconstruct full signal series
-            consensus = pd.Series(0.0, index=df.index)
-            consensus.loc[events_df.index] = events_df['event_consensus']
-            signals = pd.DataFrame({'consensus': consensus})
-        else:
-            signals = pd.DataFrame({'consensus': 1.0}, index=df.index)
+        # Data
+        price = df['close']
+        vol = df['volatility_1d'].fillna(0.0)
+        events = events_df.index
 
-        # Volatility
-        vol_series = df['volatility_1d'].fillna(0.0)
-
-        # Stop Threshold (Absolute)
-        # raw_stop = sl_mult * vol
-        # We need this aligned to DF for compute_realized_returns
-        stop_threshold = (vol_series * sl_mult).clip(lower=0.004) # Min SL 0.4%
-
-        # Run Paths
-        (
-            realized_returns, _, exit_reasons, _,
-            mfe_series, mae_series, _, _
-        ) = compute_realized_returns(
-            df=df,
-            signals=signals,
-            profit_threshold=None, # Infinite PT for Dominance calculation
-            stop_threshold=stop_threshold,
-            horizon=horizon,
-            transaction_cost=self.transaction_cost,
-            min_event_spacing=0
+        # Call Vectorized
+        labels, weights, returns, mfe, mae, _ = compute_dominance_labels(
+            price, events, vol,
+            kappa=kappa, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
+            transaction_cost=self.transaction_cost
         )
 
-        # Alignment
-        idx = events_df.index
-        mfe = mfe_series.reindex(idx).fillna(0.0)
-        mae = mae_series.reindex(idx).fillna(0.0)
-        exits = exit_reasons.reindex(idx).fillna('')
+        # Return matched format (labels, weights, returns, mfe, mae, exits)
+        # Exits is dummy for now
+        exits = pd.Series('', index=labels.index)
 
-        # Dominance Rule: MFE > Kappa * MAE
-        # And NOT stopped out (exit != 'stop')
-        # Note: if stopped out, realized_return is loss.
-        # Dominance usually implies we *could* have taken profit before stop.
-        # But if 'stop' is hit, it means MAE > Stop.
-        # If MFE > K*MAE is true, but MAE > Stop, did we win?
-        # Standard TBM: First touch matters.
-        # compute_realized_returns handles first touch of Stop.
-        # If exit == 'stop', we hit stop first. So Label = 0.
-
-        is_stop = exits == 'stop'
-        # Check ratio
-        # Avoid div/0
-        mae_safe = mae.replace(0.0, 1e-9)
-        ratio = mfe / mae_safe
-
-        is_dominance = ratio > kappa
-
-        binary_labels = (is_dominance & (~is_stop)).astype(float)
-
-        # Sanity: if MFE is tiny, it's not a win
-        # Enforce Min Profit > Cost
-        min_profit = self.transaction_cost * 1.1
-        is_profit_enough = mfe > min_profit
-
-        binary_labels = binary_labels & is_profit_enough.astype(float)
-
-        return binary_labels, realized_returns.reindex(idx), mfe, mae, exits
+        return labels, weights, returns, mfe, mae, exits
 
     def generate_reports(self, *args, **kwargs):
         pass

@@ -5,14 +5,10 @@ from itertools import combinations
 from sklearn.metrics import mutual_info_score
 from sklearn.model_selection import KFold
 from scipy.stats import entropy as shannon_entropy
-from typing import List, Dict, Union, Callable
+from typing import List, Dict, Union, Callable, Optional
 from functools import partial
 
-# Placeholder for existing codebase import
-try:
-    from src.training.steps.labeling.feature_generation_meta_labeling_step import generate_primary_signals
-except ImportError:
-    generate_primary_signals = None
+from src.training.steps.labeling.mtf_feature_generation import KalmanFilter1D
 
 # ==========================================
 # 0. Data Structures & Helpers
@@ -31,6 +27,9 @@ class OutputGeometry:
         self.weights = weights
         self.purity = purity      # Uniqueness Score
         self.auc = auc            # Learnability Score (The Tournament Metric)
+
+# Alias for backward compatibility
+Geometry = OutputGeometry
 
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex) -> pd.DataFrame:
     """
@@ -123,6 +122,114 @@ def label_distribution_stable(labels: pd.Series, splits: int = 5, eps: float = 0
 # 1. Event Generators (The 6 Families)
 # ==========================================
 
+def generate_dual_cusum_signals(
+    close: pd.Series,
+    volume: Optional[pd.Series] = None,
+    k: float = 0.12,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    er_min: float = 0.2,
+    window_vol: int = 20,
+    window_er: int = 10,
+    Q: float = 1e-5,
+    R: float = 0.01
+) -> pd.DataFrame:
+    """
+    Generate dual CUSUM signals for trend-following and mean-reversion using optimized Kalman filter.
+    """
+    # 1. Compute log returns
+    log_ret = np.log(close / close.shift(1)).fillna(0.0)
+
+    # 2. Apply 1D Kalman filter (Reuse existing optimized class)
+    kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]))
+    log_ret_smooth_raw, _ = kf.filter_series(log_ret)
+
+    # Ensure it's a series with correct index for rolling operations
+    if not isinstance(log_ret_smooth_raw, pd.Series):
+        log_ret_smooth_series = pd.Series(log_ret_smooth_raw, index=close.index).fillna(0.0)
+    else:
+        log_ret_smooth_series = log_ret_smooth_raw.fillna(0.0)
+
+    # 3. Rolling volatility & ER (Vectorized)
+    sigma = log_ret_smooth_series.rolling(window_vol, min_periods=1).std()
+
+    # Efficiency Ratio calculation
+    change = log_ret_smooth_series.rolling(window_er).sum().abs()
+    volatility = log_ret_smooth_series.abs().rolling(window_er, min_periods=1).sum()
+    ER = (change / (volatility + 1e-12)).fillna(0.0)
+
+    # 4. Liquidity & Thresholds
+    liquidity_mod = pd.Series(1.0, index=close.index)
+    if volume is not None:
+        vol_ma = volume.rolling(window_vol, min_periods=1).mean()
+        rel_volume = volume / (vol_ma + 1e-9)
+        liquidity_mod = 1.0 + beta * (1.0 - rel_volume)
+        liquidity_mod = liquidity_mod.clip(0.5, 2.0)
+
+    regime_mod = 1.0 + alpha * (1.0 - ER)
+    h_t = (k * sigma * regime_mod * liquidity_mod).fillna(0.0)
+
+    # 5. Residuals for Reversal Logic
+    expected_return = log_ret_smooth_series.rolling(window_vol, min_periods=1).mean()
+    residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
+
+    # 6. CUSUM Loop (Optimized Numpy)
+    n = len(close)
+
+    # Convert to numpy for speed
+    r_arr = log_ret_smooth_series.to_numpy()
+    res_arr = residual_ret.to_numpy()
+    h_arr = h_t.to_numpy()
+    er_arr = ER.to_numpy()
+
+    trend_signal = np.zeros(n)
+    reversal_signal = np.zeros(n)
+
+    S_trend_pos, S_trend_neg = 0.0, 0.0
+    S_rev_pos, S_rev_neg = 0.0, 0.0
+
+    for t in range(n):
+        if er_arr[t] < er_min:
+            S_trend_pos, S_trend_neg = 0.0, 0.0
+            S_rev_pos, S_rev_neg = 0.0, 0.0
+            continue
+
+        cur_h = h_arr[t]
+        if np.isnan(cur_h) or cur_h <= 0:
+             cur_h = 1e-4
+
+        # Trend CUSUM (on smoothed returns)
+        S_trend_pos = max(0.0, S_trend_pos + r_arr[t])
+        S_trend_neg = min(0.0, S_trend_neg + r_arr[t])
+
+        if S_trend_pos > cur_h:
+            trend_signal[t] = 1
+            S_trend_pos = 0.0
+        elif S_trend_neg < -cur_h:
+            trend_signal[t] = -1
+            S_trend_neg = 0.0
+
+        # Reversal CUSUM (Mean Reversion on Residuals)
+        S_rev_pos = max(0.0, S_rev_pos + res_arr[t])
+        S_rev_neg = min(0.0, S_rev_neg + res_arr[t])
+
+        if S_rev_pos > cur_h:
+            reversal_signal[t] = 1 # Overextended UP -> Expect Reversal
+            S_rev_pos = 0.0
+        elif S_rev_neg < -cur_h:
+            reversal_signal[t] = -1 # Overextended DOWN -> Expect Reversal
+            S_rev_neg = 0.0
+
+    # Pack results
+    signals = pd.DataFrame({
+        'trend_signal': trend_signal,
+        'reversal_signal': reversal_signal,
+        'h_t': h_t,
+        'er': ER
+    }, index=close.index)
+
+    return signals
+
 class BaseEventGenerator:
     def generate(self, data: Union[pd.Series, pd.DataFrame], **params) -> pd.DatetimeIndex:
         raise NotImplementedError
@@ -182,31 +289,63 @@ class SymmetricCusumEvents(BaseEventGenerator):
                 t_events.append(i)
         return pd.DatetimeIndex(t_events)
 
+# Alias for backward compatibility
+CusumEvents = SymmetricCusumEvents
+
 class ImprovedCUSUMEvents(BaseEventGenerator):
     """
     Wrapper for existing CUSUM filter logic from Layer 2.
+    Implemented locally to avoid circular dependencies.
     """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        # Default Params matching generate_primary_signals defaults
         k = params.get('k', 0.12)
+        vol_window = params.get('vol_window', 20)
+        er_window = params.get('er_window', 10)
+        er_min = params.get('er_min', 0.2)
+        alpha = params.get('alpha', 1.0)
+        beta = params.get('beta', 1.0)
+        w_trend = params.get('w_trend', 1.0)
+        w_reversal = params.get('w_reversal', 1.0)
         
-        # Attempt to use the injected/imported generator
-        if generate_primary_signals is not None:
-            try:
-                signals = generate_primary_signals(df, k=k)
-                if 'consensus' in signals.columns:
-                    return signals.index[signals['consensus'] != 0]
-                return signals.index
-            except Exception as e:
-                print(f"Primary CUSUM failed, falling back: {e}")
+        # Extract series
+        close = df['close'] if 'close' in df.columns else df.iloc[:, 0]
         
-        # Fallback: Robust Symmetric CUSUM with dynamic vol
+        volume = None
+        if 'volume' in df.columns:
+            volume = df['volume']
+        elif 'Volume' in df.columns:
+            volume = df['Volume']
+
         try:
-            vol = df['close'].pct_change().rolling(100).std()
-            # If h is not static, we simulate the 'Improved' logic
-            # Here we just use a static approximation for the fallback
-            return SymmetricCusumEvents().generate(df['close'], h=0.01)
-        except:
-            return pd.DatetimeIndex([])
+            dual_signals = generate_dual_cusum_signals(
+                close=close,
+                volume=volume,
+                k=k,
+                alpha=alpha,
+                beta=beta,
+                er_min=er_min,
+                window_vol=vol_window,
+                window_er=er_window,
+                Q=1e-5,
+                R=0.01
+            )
+
+            # Compute Composite Signal
+            composite = (
+                w_trend * dual_signals['trend_signal'] -
+                w_reversal * dual_signals['reversal_signal']
+            )
+
+            return composite.index[composite != 0]
+
+        except Exception as e:
+            print(f"Improved CUSUM failed, falling back: {e}")
+            # Fallback
+            try:
+                return SymmetricCusumEvents().generate(close, h=0.01)
+            except:
+                return pd.DatetimeIndex([])
 
 class HurstStateEvents(BaseEventGenerator):
     """
@@ -224,6 +363,15 @@ class HurstStateEvents(BaseEventGenerator):
         hurst = hurst.reindex(price.index).ffill() 
         trigger = (hurst > threshold) & (hurst.shift(1) <= threshold)
         return price.index[trigger]
+
+class TimeEvents(BaseEventGenerator):
+    """
+    Generates events based on time intervals (e.g. daily, hourly).
+    Useful for time-based labeling strategies.
+    """
+    def generate(self, price: pd.Series, freq: str = '1D') -> pd.DatetimeIndex:
+        # Resample to frequency and take the last timestamp
+        return price.resample(freq).last().dropna().index
 
 # ==========================================
 # 2. Labeling Logic

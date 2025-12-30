@@ -664,6 +664,14 @@ def get_purged_cv_score(X, y, w, horizon_bars=48) -> float:
     """
     if len(y) < 50: return 0.5
     
+    # 1. Filter Constant Features (Robustness)
+    # LightGBM crashes if all features are filtered out by pre-filter
+    # So we manually remove them first.
+    try:
+        X = X.loc[:, (X != X.iloc[0]).any()]
+    except Exception:
+        pass
+
     # Check for empty features
     if X.shape[1] == 0:
         return 0.5
@@ -685,7 +693,9 @@ def get_purged_cv_score(X, y, w, horizon_bars=48) -> float:
         'num_leaves': 8,
         'learning_rate': 0.1,
         'n_estimators': 50,
-        'is_unbalance': True
+        'is_unbalance': True,
+        'min_data_in_leaf': 2, # Robustness for small samples
+        'feature_pre_filter': False # Prevent "No features" error
     }
     
     # Remap labels to binary
@@ -710,6 +720,10 @@ def get_purged_cv_score(X, y, w, horizon_bars=48) -> float:
         # Check if valid set has both classes
         if len(curr_y_tr_valid.unique()) < 2:
              continue
+
+        # Double check feature existence
+        if curr_X_tr.shape[1] == 0:
+            continue
 
         dtrain = lgb.Dataset(curr_X_tr, label=curr_y_tr, weight=curr_w_tr)
         dvalid = lgb.Dataset(curr_X_tr_valid, label=curr_y_tr_valid, weight=curr_w_tr_valid)
@@ -920,13 +934,20 @@ def orthogonal_label_generation(
             if not balance_check['valid']:
                  continue
 
-            # C. Probe (Learnability Check)
-            X_curr = X_probe.reindex(y.index).fillna(0)
-
+        # C. Proxy Scoring (Entropy * log(Count)) instead of Full Probe
+        # This allows us to defer the expensive LGBM probe until AFTER selection.
             try:
-                auc = get_purged_cv_score(X_curr, y, w, horizon_bars=h)
+                # 1. Entropy (Information Content)
+                probs = y.value_counts(normalize=True)
+                ent = shannon_entropy(probs)
+
+                # 2. Log-Count (Statistical Significance)
+                # Log scaling prevents count from dominating too much
+                count_score = np.log1p(len(y))
+
+                proxy_score = ent * count_score
             except Exception:
-                auc = 0.5
+                proxy_score = 0.0
 
             variant_name = f"{name}_{lbl_name}" if lbl_name != "DEFAULT" else name
 
@@ -936,12 +957,13 @@ def orthogonal_label_generation(
                 'events': events_filtered,
                 'labels': y,
                 'weights': w,
-                'auc': auc,
+            'proxy_score': proxy_score, # Stored for selection
                 'params': params,
                 'labeler_name': lbl_name,
+            'horizon': h, # Store horizon for probe
                 'indicator': build_indicator_matrix(events_filtered, price.index, horizon=h)
             })
-            logger.info(f"Generated {variant_name}: AUC={auc:.3f}, Events={len(events_filtered)}")
+        logger.info(f"Generated {variant_name}: ProxyScore={proxy_score:.3f}, Events={len(events_filtered)}")
 
     if not candidates:
         return []
@@ -958,12 +980,27 @@ def orthogonal_label_generation(
         clusters[c_id].append(cand)
         cand['cluster_id'] = c_id
 
-    # 5. Selection (Best AUC per Cluster)
+    # 5. Selection (Best Proxy Score per Cluster -> Then Probe)
     final_geometries = []
 
     for c_id, group in clusters.items():
-        # Pick the best AUC in this cluster
-        best_in_cluster = max(group, key=lambda x: x['auc'])
+        # Pick the best Proxy Score in this cluster
+        best_in_cluster = max(group, key=lambda x: x['proxy_score'])
+
+        # NOW run the expensive probe on the Winner
+        X_curr = X_probe.reindex(best_in_cluster['labels'].index).fillna(0)
+        h = best_in_cluster.get('horizon', 24)
+
+        try:
+            if X_curr.shape[1] > 0 and len(X_curr) > 20:
+                auc = get_purged_cv_score(X_curr, best_in_cluster['labels'], best_in_cluster['weights'], horizon_bars=h)
+            else:
+                auc = 0.5
+        except Exception:
+            auc = 0.5
+
+        best_in_cluster['auc'] = auc
+        logger.info(f"Probed Cluster {c_id} Winner ({best_in_cluster['name']}): AUC={auc:.3f}")
 
         # Purity Calculation (Using average uniqueness logic)
         purity = average_uniqueness(best_in_cluster['indicator'])

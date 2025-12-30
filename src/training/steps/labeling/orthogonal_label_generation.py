@@ -6,7 +6,7 @@ from itertools import combinations
 from sklearn.metrics import mutual_info_score
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.stats import entropy as shannon_entropy
-from typing import List, Dict, Union, Callable, Optional
+from typing import List, Dict, Union, Callable, Optional, Tuple
 from functools import partial
 
 # Setup Logger
@@ -34,6 +34,72 @@ class OutputGeometry:
     
     def __repr__(self):
         return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)}>"
+
+class KalmanFilter1D:
+    """
+    Simple 1D Kalman filter for signal smoothing.
+    Copied from mtf_feature_generation.py to ensure availability.
+
+    State-space model:
+        x_t = x_{t-1} + mu + w_t    (state evolution)
+        y_t = x_t + v_t              (observation)
+
+    Where w_t ~ N(0, Q) and v_t ~ N(0, R)
+    """
+
+    def __init__(self, Q: float = 1e-5, R: float = 0.01, initial_value: float = 0.0):
+        """
+        Args:
+            Q: Process variance (smaller = smoother evolution)
+            R: Observation variance (larger = more smoothing)
+            initial_value: Initial state estimate
+        """
+        self.Q = Q  # Process variance
+        self.R = R  # Observation variance
+        self.x = initial_value  # State estimate
+        self.P = 1.0  # State variance
+
+    def update(self, measurement: float) -> Tuple[float, float]:
+        """
+        Update filter with new measurement.
+
+        Returns:
+            Tuple of (filtered_value, state_variance)
+        """
+        # Predict
+        x_prior = self.x
+        P_prior = self.P + self.Q
+
+        # Update
+        K = P_prior / (P_prior + self.R)  # Kalman gain
+        self.x = x_prior + K * (measurement - x_prior)
+        self.P = (1 - K) * P_prior
+
+        return self.x, self.P
+
+    def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+        """
+        Filter entire time series.
+
+        Returns:
+            Tuple of (filtered_series, variance_series)
+        """
+        filtered = []
+        variances = []
+
+        for val in series:
+            if pd.isna(val):
+                filtered.append(np.nan)
+                variances.append(np.nan)
+            else:
+                x_filt, P_filt = self.update(val)
+                filtered.append(x_filt)
+                variances.append(P_filt)
+
+        return (
+            pd.Series(filtered, index=series.index),
+            pd.Series(variances, index=series.index)
+        )
 
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """
@@ -157,7 +223,7 @@ def generate_dual_cusum_signals(
     # 1. Compute log returns
     log_ret = np.log(close / close.shift(1)).fillna(0.0)
 
-    # 2. Apply 1D Kalman filter (Reuse existing optimized class)
+    # 2. Apply 1D Kalman filter
     kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]))
     log_ret_smooth_raw, _ = kf.filter_series(log_ret)
 
@@ -418,12 +484,8 @@ class ImprovedCUSUMEvents(BaseEventGenerator):
             return composite.index[composite != 0]
             
         except Exception as e:
-            print(f"Improved CUSUM failed, falling back: {e}")
-            # Fallback
-            try:
-                return SymmetricCusumEvents().generate(close, h=0.01)
-            except:
-                return pd.DatetimeIndex([])
+            logger.warning(f"Improved CUSUM failed for params {params}: {e}. Skipping geometry.")
+            return pd.DatetimeIndex([])
 
 
 class HurstStateEvents(BaseEventGenerator):
@@ -588,12 +650,12 @@ def get_purged_lgbm_auc(X, y, w, horizon_bars=48) -> float:
     for tr_idx, va_idx in splits:
         if len(tr_idx) < 20 or len(va_idx) < 20: continue
         
-        curr_X_tr, curr_X_va = X.iloc[tr_idx], X.iloc[va_idx]
-        curr_y_tr, curr_y_va = y_map.iloc[tr_idx], y_map.iloc[va_idx]
-        curr_w_tr, curr_w_va = w.iloc[tr_idx], w.iloc[va_idx]
+        curr_X_tr, curr_X_tr_valid = X.iloc[tr_idx], X.iloc[va_idx]
+        curr_y_tr, curr_y_tr_valid = y_map.iloc[tr_idx], y_map.iloc[va_idx]
+        curr_w_tr, curr_w_tr_valid = w.iloc[tr_idx], w.iloc[va_idx]
         
         dtrain = lgb.Dataset(curr_X_tr, label=curr_y_tr, weight=curr_w_tr)
-        dvalid = lgb.Dataset(curr_X_va, label=curr_y_va, weight=curr_w_va)
+        dvalid = lgb.Dataset(curr_X_tr_valid, label=curr_y_tr_valid, weight=curr_w_tr_valid)
         
         model = lgb.train(params, dtrain, valid_sets=[dvalid], 
                           callbacks=[lgb.early_stopping(10, verbose=False)])
@@ -619,6 +681,28 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
             -len(x['labels'])   
         )
     )
+
+    # 1.1 Check MI between CUSUM variants if present
+    cusum_variants = [c for c in candidates if "CUSUM" in c['family']]
+    if len(cusum_variants) > 1:
+        logger.info("\n--- CUSUM Variants MI Analysis ---")
+        # Group by family+type to pick best repr for each variant
+        # Actually just pairwise check all high AUC ones?
+        # Let's check top 1 of each CUSUM subtype
+        unique_cusum_types = {}
+        for c in cusum_variants:
+            t_key = f"{c['family']}_{c.get('name', '').split('_')[1]}" # e.g. CUSUM_IMP_TREND
+            if t_key not in unique_cusum_types and c['auc'] > 0.52: # Only check reasonably good ones
+                unique_cusum_types[t_key] = c
+
+        keys = list(unique_cusum_types.keys())
+        if len(keys) > 1:
+            for i in range(len(keys)):
+                for j in range(i+1, len(keys)):
+                    k1, k2 = keys[i], keys[j]
+                    mi = normalized_mi(unique_cusum_types[k1]['labels'], unique_cusum_types[k2]['labels'])
+                    logger.info(f"MI({k1}, {k2}) = {mi:.4f}")
+        logger.info("----------------------------------\n")
     
     accepted_configs = []
     accepted_objects = []
@@ -633,15 +717,19 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
         if cand['family'] == 'CONTROL':
             if cand['auc'] > 0.54: 
                 logger.warning(f"⚠️  WARNING: Control Geometry {name} has High AUC ({cand['auc']:.3f}). Possible Leakage!")
+            # Mark status for reporting
+            cand['status'] = 'CONTROL'
             continue
             
         # A. Junk Filter
         if cand['auc'] < tau_auc:
+            cand['status'] = 'REJECT_LOW_AUC'
             continue
 
         # B. Stability Filter
         if not label_distribution_stable(cand['labels']):
             logger.debug(f"Discard {name}: Unstable Labels")
+            cand['status'] = 'REJECT_UNSTABLE'
             continue
             
         # C. Redundancy Filter
@@ -651,6 +739,7 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
             if mi_score > tau_mi:
                 logger.debug(f"Discard {name}: Redundant with {acc['name']} (MI={mi_score:.2f})")
                 is_redundant = True
+                cand['status'] = f'REJECT_REDUNDANT_{acc["name"]}'
                 break
         
         if is_redundant: continue
@@ -673,10 +762,13 @@ def select_best_geometries(candidates: List[Dict], tau_auc=0.55, tau_mi=0.15, ta
         
         if avg_uniq < tau_uniq:
             logger.debug(f"Discard {name}: Low Uniqueness ({avg_uniq:.2f})")
+            cand['status'] = 'REJECT_LOW_UNIQ'
             continue
             
         # ACCEPT
         logger.info(f"Select  {name}: AUC={cand['auc']:.3f}, Uniq={avg_uniq:.2f}")
+        cand['status'] = 'SELECTED'
+        cand['final_uniqueness'] = avg_uniq
         
         geo = OutputGeometry(name, cand['family'], cand['events'], cand['labels'], 
                              cand['weights'], avg_uniq, cand['auc'])
@@ -745,7 +837,9 @@ def orthogonal_label_generation(
     for r, h in cusum_settings:
         configs.append({"f": "CUSUM_SYM", "t": str(r), "g": SymmetricCusumEvents(), "p": {"h": h}})
     
-    configs.append({"f": "CUSUM_IMP", "t": "STD", "g": ImprovedCUSUMEvents(), "p": {"k": 0.12}})
+    # Improved CUSUM split into Orthogonal Components
+    configs.append({"f": "CUSUM_IMP_TREND", "t": "STD_T", "g": ImprovedCUSUMEvents(), "p": {"k": 0.12, "w_trend": 1.0, "w_reversal": 0.0}})
+    configs.append({"f": "CUSUM_IMP_REV", "t": "STD_R", "g": ImprovedCUSUMEvents(), "p": {"k": 0.12, "w_trend": 0.0, "w_reversal": 1.0}})
     
     for r in regimes:
         configs.append({"f": "HURST", "t": str(r), "g": HurstStateEvents(), "p": {"lookback": r * 2, "threshold": 0.6}})
@@ -755,19 +849,32 @@ def orthogonal_label_generation(
     
     logger.info(f"--- Generating Candidates from {len(configs)} Generators ---")
     
+    # Store detailed metrics for reporting
+    metrics_report = []
+
     for conf in configs:
         fam, tag, gen, params = conf['f'], conf['t'], conf['g'], conf['p']
         
-        if fam == "CUSUM_IMP": data_src = df_full
+        if "CUSUM_IMP" in fam: data_src = df_full
         elif fam == "LIQ": data_src = volume
         else: data_src = price
             
         try:
             events = gen.generate(data_src, **params)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Generator {fam}_{tag} failed: {e}")
             continue
             
-        if len(events) < 30: continue
+        n_events_generated = len(events)
+
+        if n_events_generated < 30:
+            metrics_report.append({
+                'name': f"{fam}_{tag}",
+                'stage': 'Generation',
+                'n_events': n_events_generated,
+                'status': 'Skipped (<30 events)'
+            })
+            continue
             
         for h in horizons:
             # 1. Dynamic MAE/MFE
@@ -786,11 +893,19 @@ def orthogonal_label_generation(
             res_sym = vol_scaled_fixed_label(price, events, horizon=h, vol_lookback=20, z_threshold=1.5)
             
             for name, res in [(name_mae, res_mae), (name_sym, res_sym)]:
-                if res.empty: continue
+                if res.empty:
+                    metrics_report.append({
+                        'name': name,
+                        'stage': 'Labeling',
+                        'n_labeled': 0,
+                        'status': 'Empty Labels'
+                    })
+                    continue
                 
                 y_cand = res['label']
                 w_cand = res['weight']
                 valid_idx = y_cand.index
+                n_labeled = len(y_cand)
                 
                 # Purged Probe
                 X_curr = X_probe.loc[valid_idx]
@@ -807,7 +922,18 @@ def orthogonal_label_generation(
                     "weights": w_cand,
                     "auc": auc_score,
                     # Pass horizon to build accurate duration-based indicator matrix
-                    "indicator": build_indicator_matrix(events, index, horizon=h)
+                    "indicator": build_indicator_matrix(events, index, horizon=h),
+                    "n_generated": n_events_generated,
+                    "n_labeled": n_labeled
+                })
+
+                metrics_report.append({
+                    'name': name,
+                    'stage': 'Probe',
+                    'n_generated': n_events_generated,
+                    'n_labeled': n_labeled,
+                    'auc': auc_score,
+                    'status': 'Candidate'
                 })
 
     # 4. Selection
@@ -818,4 +944,27 @@ def orthogonal_label_generation(
         tau_uniq=tau_uniq
     )
     
+    # Final Report Log
+    logger.info("\n=== Geometry Selection Report ===")
+
+    # Update metrics_report with selection status
+    # Create a map from name to status in candidates
+    cand_status_map = {c['name']: c.get('status', 'Unknown') for c in candidates}
+
+    report_df = pd.DataFrame(metrics_report)
+    if not report_df.empty:
+        # Update status from selection phase if applicable
+        report_df['final_status'] = report_df['name'].map(cand_status_map).fillna(report_df['status'])
+
+        # Sort by AUC descending (if available)
+        if 'auc' in report_df.columns:
+            report_df = report_df.sort_values(by='auc', ascending=False, na_position='last')
+
+        logger.info(f"\n{report_df.to_string(index=False)}")
+
+        # Summary by Family
+        report_df['family'] = report_df['name'].apply(lambda x: x.split('_')[0])
+        summary = report_df.groupby(['family', 'final_status']).size().unstack(fill_value=0)
+        logger.info(f"\nSummary by Family:\n{summary.to_string()}")
+
     return final_geometries

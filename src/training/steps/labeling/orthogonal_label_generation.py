@@ -87,6 +87,43 @@ def roll_entropy(series: pd.Series, window: int = 24, bins: int = 10) -> pd.Seri
 
     return series.rolling(window).apply(_entropy_calc, raw=True)
 
+def calc_vwap(price: pd.Series, volume: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate Volume Weighted Average Price (VWAP).
+    """
+    pv = price * volume
+    cum_pv = pv.rolling(window).sum()
+    cum_vol = volume.rolling(window).sum()
+    return cum_pv / (cum_vol + 1e-9)
+
+def calc_tr(df: pd.DataFrame, close: pd.Series) -> pd.Series:
+    """
+    Calculate True Range (TR).
+    Uses High/Low if available in df, otherwise falls back to abs(diff(Close)).
+    """
+    # Case-insensitive check
+    cols = {c.lower(): c for c in df.columns}
+
+    if 'high' in cols and 'low' in cols:
+        high = df[cols['high']]
+        low = df[cols['low']]
+        prev_close = close.shift(1)
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    else:
+        # Fallback
+        tr = close.diff().abs()
+    return tr
+
+def average_uniqueness(indicator: pd.DataFrame) -> float:
+    """Calculates the average uniqueness of a signal based on its indicator matrix."""
+    concurrency = indicator.sum(axis=1)
+    valid_c = concurrency[concurrency > 0]
+    if valid_c.empty: return 0.0
+    return (1.0 / valid_c).mean()
+
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
     """
     Maps events to the full timeline as a binary indicator series.
@@ -122,27 +159,6 @@ def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, ho
     arr = np.clip(arr, 0, 1)
     
     return pd.DataFrame(arr, index=index, columns=[0])
-
-def average_uniqueness(indicators: pd.DataFrame) -> float:
-    """
-    Calculates average uniqueness (1 / concurrency) across all events.
-    Matches AFML Ch. 4 logic exactly.
-    """
-    if indicators.empty:
-        return 0.0
-
-    concurrency = indicators.sum(axis=1)
-    # Avoid div by zero
-    uniqueness = indicators.div(concurrency, axis=0).fillna(0)
-
-    # only count rows where this geometry is active
-    mask = indicators > 0
-    uniq_vals = uniqueness[mask]
-
-    if uniq_vals.count().sum() == 0:
-        return 0.0
-
-    return uniq_vals.mean().mean()
 
 def normalized_mi(y1: pd.Series, y2: pd.Series) -> float:
     """
@@ -224,7 +240,7 @@ class EntropyEvents(BaseEventGenerator):
         log_ret = np.log(price).diff().fillna(0)
         # Calculate rolling entropy of returns
         ent = roll_entropy(log_ret, window=window, bins=10)
-        
+
         # Z-Score of entropy
         ent_mean = ent.rolling(window*5).mean()
         ent_std = ent.rolling(window*5).std()
@@ -235,12 +251,156 @@ class EntropyEvents(BaseEventGenerator):
         return price.index[trigger]
 
 
-class AdaptiveCUSUMEvents(BaseEventGenerator):
+class MicrostructureEvents(BaseEventGenerator):
     """
-    IMPROVED FAMILY: Volatility.
-    Uses a dynamic threshold 'h' based on recent volatility.
+    NEW FAMILY: Liquidity/Microstructure.
+    Uses Amihud Illiquidity proxy (AbsRet / Volume) to find liquidity gaps.
     """
-    def generate(self, price: pd.Series, vol_window: int = 50, factor: float = 0.5) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, window: int = 20, z: float = 2.0) -> pd.DatetimeIndex:
+        # Requires Volume
+        if 'volume' not in df.columns: return pd.DatetimeIndex([])
+
+        ret = df['close'].pct_change().abs()
+        amihud = ret / (df['volume'] * df['close'] + 1e-9)
+
+        # Rolling Z-Score of Illiquidity
+        mu = amihud.rolling(window).mean()
+        sigma = amihud.rolling(window).std()
+        z_score = (amihud - mu) / (sigma + 1e-9)
+
+        trigger = z_score > z
+        return df.index[trigger]
+
+
+class TrendModulatedBreakoutEvents(BaseEventGenerator):
+    """
+    Detects Donchian Channel Breakouts with Trend Modulation.
+    Only allows Longs if price > Anchor, Shorts if price < Anchor.
+    """
+    def generate(self, df: pd.DataFrame, lookback: int = 20, anchor_window: int = 100) -> pd.DatetimeIndex:
+        price = df['close']
+
+        # Donchian Channel Breakout
+        rolling_max = price.rolling(lookback).max().shift(1)
+        rolling_min = price.rolling(lookback).min().shift(1)
+
+        # Anchor (Trend Filter)
+        # Use VWAP if volume available, else SMA
+        if 'volume' in df.columns:
+            anchor = calc_vwap(price, df['volume'], anchor_window)
+        else:
+            anchor = price.rolling(anchor_window).mean()
+
+        breakout_high = (price > rolling_max) & (price > anchor)
+        breakout_low = (price < rolling_min) & (price < anchor)
+
+        breakout = breakout_high | breakout_low
+        # Initiation only
+        event = breakout & ~breakout.shift(1).fillna(False)
+        return price.index[event]
+
+
+class KalmanTrendEvents(BaseEventGenerator):
+    """
+    Replaces SMA Crossovers with Kalman Filter Crossovers (Fast vs Slow).
+    Significantly reduces lag.
+    """
+    def generate(self, price: pd.Series, q_fast: float = 1e-3, q_slow: float = 1e-5) -> pd.DatetimeIndex:
+        # Fast Filter
+        kf_fast = KalmanFilter1D(Q=q_fast, R=0.01, initial_value=price.iloc[0])
+        fast_line, _ = kf_fast.filter_series(price)
+
+        # Slow Filter
+        kf_slow = KalmanFilter1D(Q=q_slow, R=0.01, initial_value=price.iloc[0])
+        slow_line, _ = kf_slow.filter_series(price)
+
+        # Crossover Logic
+        cross = (fast_line > slow_line) & (fast_line.shift(1) <= slow_line.shift(1))
+        # Also could detect bearish cross: (fast_line < slow_line) & (fast_line.shift(1) >= slow_line.shift(1))
+        # But usually TrendInitiation implies checking both or specific direction.
+
+        cross_bull = (fast_line > slow_line) & (fast_line.shift(1) <= slow_line.shift(1))
+        cross_bear = (fast_line < slow_line) & (fast_line.shift(1) >= slow_line.shift(1))
+
+        return price.index[cross_bull | cross_bear]
+
+
+class ATRShockEvents(BaseEventGenerator):
+    """
+    Volatility Shock using ATR Normalization instead of StdDev.
+    Captures Gap volatility.
+    """
+    def generate(self, df: pd.DataFrame, lookback: int = 14, long_window: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
+        price = df['close']
+        tr = calc_tr(df, price)
+
+        atr = tr.rolling(lookback).mean()
+        atr_mean = atr.rolling(long_window).mean()
+        atr_std = atr.rolling(long_window).std()
+
+        z_score = (atr - atr_mean) / (atr_std + 1e-9)
+
+        trigger = z_score > z
+        return price.index[trigger]
+
+
+class VWAPReversionEvents(BaseEventGenerator):
+    """
+    Mean Reversion using VWAP as the anchor.
+    """
+    def generate(self, df: pd.DataFrame, lookback: int = 50, z: float = 2.5) -> pd.DatetimeIndex:
+        price = df['close']
+        if 'volume' not in df.columns: return pd.DatetimeIndex([])
+
+        vwap = calc_vwap(price, df['volume'], lookback)
+        std = price.rolling(lookback).std()
+
+        zscore = (price - vwap) / (std + 1e-6)
+        return price.index[np.abs(zscore) > z]
+
+
+class KalmanRegimeEvents(BaseEventGenerator):
+    """
+    Triggers when price deviates significantly from the Kalman trend estimate.
+    Parameters modeled after label_based_layer_0 optimization ranges.
+    """
+    def generate(self, price: pd.Series, Q: float = 1e-4, R: float = 0.01, z: float = 2.0) -> pd.DatetimeIndex:
+        kf = KalmanFilter1D(Q=Q, R=R, initial_value=price.iloc[0])
+        trend, _ = kf.filter_series(price)
+
+        # Deviation
+        diff = price - trend
+        # We need a dynamic threshold for deviation.
+        # Using rolling std of the diff itself
+
+        std = diff.rolling(20).std()
+        zscore = diff / (std + 1e-9)
+
+        # Trigger on extreme deviation
+        return price.index[np.abs(zscore) > z]
+
+
+class VWAPCrossEvents(BaseEventGenerator):
+    """
+    Triggers when price crosses the VWAP (Liquidity/Value validation).
+    """
+    def generate(self, df: pd.DataFrame, lookback: int = 50) -> pd.DatetimeIndex:
+        price = df['close']
+        if 'volume' not in df.columns: return pd.DatetimeIndex([])
+
+        vwap = calc_vwap(price, df['volume'], lookback)
+
+        cross_up = (price > vwap) & (price.shift(1) <= vwap.shift(1))
+        cross_down = (price < vwap) & (price.shift(1) >= vwap.shift(1))
+
+        return price.index[cross_up | cross_down]
+
+
+class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
+    """
+    Symmetric CUSUM with Dynamic Thresholds based on Volatility.
+    """
+    def generate(self, price: pd.Series, multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
         t_events = []
         s_pos = 0
         s_neg = 0
@@ -256,7 +416,6 @@ class AdaptiveCUSUMEvents(BaseEventGenerator):
         # Handle nans at start
         start_idx = vol_window
         if np.isnan(vol_val[start_idx]):
-            # find first valid index
             valid_indices = np.where(~np.isnan(vol_val))[0]
             if len(valid_indices) > 0:
                 start_idx = valid_indices[0]
@@ -264,7 +423,7 @@ class AdaptiveCUSUMEvents(BaseEventGenerator):
                 return pd.DatetimeIndex([])
 
         for i in range(start_idx, len(price)):
-            h = vol_val[i] * factor # Dynamic Threshold
+            h = vol_val[i] * multiplier # Dynamic Threshold
             if np.isnan(h) or h == 0: continue
 
             r = diff_val[i]
@@ -281,42 +440,6 @@ class AdaptiveCUSUMEvents(BaseEventGenerator):
                 t_events.append(idx[i])
 
         return pd.DatetimeIndex(t_events)
-
-
-class MicrostructureEvents(BaseEventGenerator):
-    """
-    NEW FAMILY: Liquidity/Microstructure.
-    Uses Amihud Illiquidity proxy (AbsRet / Volume) to find liquidity gaps.
-    """
-    def generate(self, df: pd.DataFrame, window: int = 20, z: float = 2.0) -> pd.DatetimeIndex:
-        # Requires Volume
-        if 'volume' not in df.columns: return pd.DatetimeIndex([])
-        
-        ret = df['close'].pct_change().abs()
-        amihud = ret / (df['volume'] * df['close'] + 1e-9)
-        
-        # Rolling Z-Score of Illiquidity
-        mu = amihud.rolling(window).mean()
-        sigma = amihud.rolling(window).std()
-        z_score = (amihud - mu) / (sigma + 1e-9)
-
-        trigger = z_score > z
-        return df.index[trigger]
-
-
-class BreakoutEvents(BaseEventGenerator):
-    """
-    Detects Donchian Channel Breakouts.
-    """
-    def generate(self, price: pd.Series, lookback: int = 20) -> pd.DatetimeIndex:
-        # Donchian Channel Breakout
-        rolling_max = price.rolling(lookback).max().shift(1)
-        rolling_min = price.rolling(lookback).min().shift(1)
-
-        breakout = (price > rolling_max) | (price < rolling_min)
-        # Initiation only
-        event = breakout & ~breakout.shift(1).fillna(False)
-        return price.index[event]
 
 
 # ==========================================
@@ -341,7 +464,7 @@ def triple_barrier_label(price: pd.Series, events: pd.DatetimeIndex,
 
     # 1. Vertical Barrier (Time)
     # We use integer indexing which is faster
-    
+
     price_vals = price.values
 
     for t in events:
@@ -369,10 +492,10 @@ def triple_barrier_label(price: pd.Series, events: pd.DatetimeIndex,
         # If touch_pt > 0 and (touch_sl == 0 or touch_pt < touch_sl): Win
         # If touch_sl > 0 and (touch_pt == 0 or touch_sl < touch_pt): Loss
         # Else: Vertical Barrier (Time expiration) -> Sign of return
-        
+
         label = 0
         final_idx = -1
-        
+
         if touch_pt > 0 and (touch_sl == 0 or touch_pt < touch_sl):
             label = 1
             final_idx = touch_pt
@@ -662,6 +785,12 @@ def orthogonal_label_generation(
     # 1. Generate Probe Features
     X_probe = generate_probe_features(price, volume)
     
+    # Use df_full if provided, else construct min necessary
+    if df_full is None:
+        df_full = pd.DataFrame({'close': price, 'volume': volume})
+    elif 'volume' not in df_full.columns and volume is not None:
+        df_full['volume'] = volume
+
     # 2. Define Candidates (Generators)
     # Including multiple variations to feed the clustering
     generators = [
@@ -670,35 +799,51 @@ def orthogonal_label_generation(
         ('ENTROPY_FAST', EntropyEvents(), {'window': 12}),
         ('ENTROPY_SLOW', EntropyEvents(), {'window': 48}),
         
-        # Volatility Family (Adaptive CUSUM)
-        ('CUSUM_ADAPT', AdaptiveCUSUMEvents(), {'vol_window': 50, 'factor': 0.5}),
-        ('CUSUM_TIGHT', AdaptiveCUSUMEvents(), {'vol_window': 20, 'factor': 0.3}),
-        ('CUSUM_LOOSE', AdaptiveCUSUMEvents(), {'vol_window': 50, 'factor': 0.8}),
+        # Volatility Family (Adaptive CUSUM Upgrade)
+        ('CUSUM_ADAPT', AdaptiveSymmetricCUSUMEvents(), {'multiplier': 0.5, 'vol_window': 50}),
+        ('CUSUM_TIGHT', AdaptiveSymmetricCUSUMEvents(), {'multiplier': 0.3, 'vol_window': 20}),
+        ('CUSUM_LOOSE', AdaptiveSymmetricCUSUMEvents(), {'multiplier': 0.8, 'vol_window': 50}),
         
         # Liquidity Family
         ('LIQUIDITY', MicrostructureEvents(), {'window': 20}),
         ('LIQUIDITY_FAST', MicrostructureEvents(), {'window': 10}),
         
-        # Breakout Family
-        ('BREAKOUT', BreakoutEvents(), {'lookback': 48}),
-        ('BREAKOUT_FAST', BreakoutEvents(), {'lookback': 20}),
+        # Breakout Family (Trend Modulated)
+        ('BREAKOUT', TrendModulatedBreakoutEvents(), {'lookback': 48, 'anchor_window': 100}),
+        ('BREAKOUT_FAST', TrendModulatedBreakoutEvents(), {'lookback': 20, 'anchor_window': 50}),
+
+        # Kalman Trend (Replaces MA Trend)
+        ('KALMAN_TREND', KalmanTrendEvents(), {'q_fast': 1e-3, 'q_slow': 1e-5}),
+        ('KALMAN_TREND_SENS', KalmanTrendEvents(), {'q_fast': 5e-3, 'q_slow': 5e-5}),
+
+        # Volatility Shock (ATR Upgrade)
+        ('VOL_SHOCK', ATRShockEvents(), {'lookback': 14, 'long_window': 50, 'z': 2.0}),
+        ('VOL_SHOCK_EXT', ATRShockEvents(), {'lookback': 14, 'long_window': 100, 'z': 3.0}),
+
+        # Mean Reversion (VWAP Upgrade)
+        ('MR_VWAP', VWAPReversionEvents(), {'lookback': 50, 'z': 2.5}),
+        ('MR_VWAP_FAST', VWAPReversionEvents(), {'lookback': 24, 'z': 2.0}),
+
+        # Kalman Regime (New)
+        ('KALMAN_REGIME', KalmanRegimeEvents(), {'Q': 1e-4, 'R': 0.01, 'z': 2.0}),
+
+        # VWAP Cross (New)
+        ('VWAP_CROSS', VWAPCrossEvents(), {'lookback': 50}),
     ]
     
     # 3. Process Candidates
     candidates = []
     volatility = price.pct_change().rolling(20).std()
-    
-    # Use df_full if provided, else construct min necessary
-    if df_full is None:
-        df_full = pd.DataFrame({'close': price, 'volume': volume})
-    elif 'volume' not in df_full.columns and volume is not None:
-        df_full['volume'] = volume
         
     for name, gen, params in generators:
         # A. Generate Events
         try:
-            if isinstance(gen, MicrostructureEvents):
-                # Need DF with volume
+            # Pass df_full to all generators that might need it (OHLCV)
+            # If generator signature is restricted, kwargs will handle it if mapped correctly?
+            # BaseEventGenerator.generate takes (data, **params).
+            # We need to dispatch correctly.
+            if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents,
+                                ATRShockEvents, VWAPReversionEvents, VWAPCrossEvents)):
                 events = gen.generate(df_full, **params)
             else:
                 events = gen.generate(price, **params)
@@ -767,10 +912,6 @@ def orthogonal_label_generation(
         best_in_cluster = max(group, key=lambda x: x['auc'])
 
         # Purity Calculation (Using average uniqueness logic)
-        # We calculate purity relative to ITSELF (should be 1) + others if we selected them
-        # But here we just want to populate the field
-        # In reality purity depends on the final set.
-        # For now, we calculate self-purity or placeholder 1.0 as per snippet
         purity = average_uniqueness(best_in_cluster['indicator'])
 
         geo = OutputGeometry(

@@ -58,6 +58,8 @@ DEFAULT_LGBM_PARAMS = {
 }
 
 # Feature selection configuration
+ITERATIVE_SELECTION_BUFFER_RATIO = 1.5
+
 FEATURE_SELECTION_CONFIG = {
     "subsample_fraction": 0.65,  # 65% subsampling
     "n_iterations": 10,  # Number of LGBM runs
@@ -521,6 +523,7 @@ def lgbm_feature_selection_pipeline(
     metadata: Optional[Dict[str, Any]] = None,
     returns: Optional[pd.Series] = None,
     sample_weight: Optional[np.ndarray] = None,
+    samples_per_feature_ratio: int = 100,
 ) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
     """
     Complete LGBM-based feature selection pipeline.
@@ -530,6 +533,11 @@ def lgbm_feature_selection_pipeline(
     2. Iterative LGBM importance filtering (subsample 65%, 10 runs, remove bottom 30% features appearing ≥70% of runs)
     3. Permutation importance RFE (50% sample, 3 shuffles, remove 10 features per step)
     
+    Adaptive Logic:
+    - Enforces max 1 feature per N samples (default 100).
+    - Adjusts target feature sets dynamically.
+    - Scales Iterative LGBM target to avoid bottleneck for RFE.
+
     Args:
         X: Feature matrix
         y: Binary labels (fallback if returns not provided)
@@ -539,22 +547,45 @@ def lgbm_feature_selection_pipeline(
         metadata: Optional metadata (exchange, asset, etc.)
         returns: Optional realized returns - if provided, uses sign(returns) as target
         sample_weight: Optional sample weights (e.g., return-magnitude weighted)
+        samples_per_feature_ratio: Minimum samples per feature ratio (default 100)
         
     Returns:
         Tuple of (feature_sets_dict, pipeline_log)
     """
     target_type = "sign_returns" if returns is not None else "labels"
-    tprint(f"🚀 Starting LGBM feature selection pipeline", "INFO")
-    tprint(f"   ↪ Initial features: {len(X.columns)}", "INFO")
-    tprint(f"   ↪ Target sets: {target_feature_sets}", "INFO")
-    tprint(f"   ↪ Target type: {target_type}", "INFO")
+    tprint_info(f"🚀 Starting LGBM feature selection pipeline")
+    tprint_info(f"   ↪ Initial features: {len(X.columns)}")
+    tprint_info(f"   ↪ Target sets (Requested): {target_feature_sets}")
+    tprint_info(f"   ↪ Target type: {target_type}")
+
+    # --- Adaptive Feature Limit ---
+    n_samples = len(y)
+    max_features_allowed = max(1, n_samples // samples_per_feature_ratio)
+    tprint_info(f"   📏 Adaptive Limit: Max {max_features_allowed} features (1 per {samples_per_feature_ratio} samples)")
+
+    # Filter/Adjust target sets
+    adaptive_target_sets = sorted([s for s in target_feature_sets if s <= max_features_allowed], reverse=True)
+    if not adaptive_target_sets:
+        # Fallback: Create steps down from max_allowed
+        step = max(1, max_features_allowed // 4)
+        adaptive_target_sets = sorted(list(set([
+            max_features_allowed,
+            max(1, max_features_allowed - step),
+            max(1, max_features_allowed - 2 * step)
+        ])), reverse=True)
+        # Ensure we don't have duplicates or empty list
+        if not adaptive_target_sets:
+            adaptive_target_sets = [max_features_allowed]
+
+    tprint_info(f"   ↪ Adaptive Target Sets: {adaptive_target_sets}")
     
     pipeline_log: Dict[str, Any] = {
         "timestamp": datetime.now().isoformat(),
         "metadata": metadata or {},
         "initial_features": len(X.columns),
-        "target_sets": target_feature_sets,
+        "target_sets": adaptive_target_sets,
         "target_type": target_type,
+        "max_features_allowed": max_features_allowed,
         "stages": {},
     }
     
@@ -568,12 +599,27 @@ def lgbm_feature_selection_pipeline(
         "dropped_features": dropped_features,
     }
     
-    # Stage 2: Iterative LGBM importance selection (target: 80 features)
-    initial_target = max(target_feature_sets)
-    selected_features_80, importance_log = iterative_lgbm_importance_selection(
+    # Stage 2: Iterative LGBM importance selection
+    # We aim for the largest target set + some buffer for RFE to work with
+    # But strictly capped to avoid "10x" issue.
+    # If largest target is 10, we don't want to output 100.
+    largest_target = adaptive_target_sets[0]
+    # Use max(1, ...) for safety with tiny datasets
+    iterative_target = min(
+        len(kept_features),
+        int(max(1, largest_target) * ITERATIVE_SELECTION_BUFFER_RATIO)
+    )
+    # Ensure at least largest target (unless input features < target)
+    iterative_target = max(iterative_target, largest_target)
+    # Clamp to input count again just in case
+    iterative_target = min(iterative_target, len(kept_features))
+
+    tprint_info(f"   🎯 Iterative Selection Target: {iterative_target} (buffer for RFE)")
+
+    selected_features_iter, importance_log = iterative_lgbm_importance_selection(
         X_pruned[kept_features],
         y,
-        target_n_features=initial_target,
+        target_n_features=iterative_target,
         subsample_fraction=FEATURE_SELECTION_CONFIG["subsample_fraction"],
         n_iterations=FEATURE_SELECTION_CONFIG["n_iterations"],
         bottom_percentile=FEATURE_SELECTION_CONFIG["bottom_percentile"],
@@ -584,37 +630,49 @@ def lgbm_feature_selection_pipeline(
     )
     pipeline_log["stages"]["iterative_importance"] = importance_log
     
-    # Stage 3: Permutation importance RFE (for 70, 60, 50)
-    smaller_targets = [t for t in target_feature_sets if t < initial_target]
-    if smaller_targets and len(selected_features_80) >= min(smaller_targets):
-        feature_sets_rfe, rfe_log = permutation_importance_rfe(
-            X_pruned[selected_features_80],
-            y,
-            feature_sets=smaller_targets,
-            sample_fraction=FEATURE_SELECTION_CONFIG["permutation_sample_fraction"],
-            n_repeats=FEATURE_SELECTION_CONFIG["permutation_n_repeats"],
-            features_per_step=FEATURE_SELECTION_CONFIG["rfe_features_per_step"],
-            log_dir=log_dir,
-            returns=returns,
-            sample_weight=sample_weight,
-        )
-        pipeline_log["stages"]["permutation_rfe"] = rfe_log
-    else:
-        feature_sets_rfe = {}
+    # Stage 3: Permutation importance RFE
+    # We use adaptive_target_sets here
+    # The first set in adaptive_target_sets might be == iterative_target or close to it.
+    # RFE should start from selected_features_iter.
     
-    # Combine results
-    feature_sets_dict: Dict[int, List[str]] = {initial_target: selected_features_80}
-    feature_sets_dict.update(feature_sets_rfe)
+    # If the iterative process landed on exactly the largest target, we might skip RFE for that target?
+    # No, keep it consistent.
     
-    # Ensure all target sets are present (fill with best available if not)
-    for target in target_feature_sets:
-        if target not in feature_sets_dict:
-            # Find closest larger set
-            larger_sets = [k for k in feature_sets_dict.keys() if k >= target]
-            if larger_sets:
-                closest = min(larger_sets)
-                feature_sets_dict[target] = feature_sets_dict[closest][:target]
-                tprint_warning(f"   ⚠️ Created {target}-feature set from {closest}-feature set")
+    # Define RFE targets: All adaptive sets
+    feature_sets_rfe, rfe_log = permutation_importance_rfe(
+        X_pruned[selected_features_iter],
+        y,
+        feature_sets=adaptive_target_sets,
+        sample_fraction=FEATURE_SELECTION_CONFIG["permutation_sample_fraction"],
+        n_repeats=FEATURE_SELECTION_CONFIG["permutation_n_repeats"],
+        features_per_step=max(1, FEATURE_SELECTION_CONFIG["rfe_features_per_step"]), # Ensure > 0
+        log_dir=log_dir,
+        returns=returns,
+        sample_weight=sample_weight,
+    )
+    pipeline_log["stages"]["permutation_rfe"] = rfe_log
+
+    feature_sets_dict = feature_sets_rfe
+
+    # Ensure all original requested targets are present if possible (clipping to max allowed)
+    # If user asked for 80, but we maxed at 15, we return 15 for '80' key?
+    # Or we just return what we found. The calling code should handle it.
+    # For compatibility, let's map requested keys to best available.
+
+    for req_target in target_feature_sets:
+        if req_target not in feature_sets_dict:
+            # Find closest available set
+            available_sizes = sorted(feature_sets_dict.keys())
+            if available_sizes:
+                # If requested 80, but we have [15, 12, 10], pick 15.
+                # If requested 5, pick 10? No, pick closest.
+                closest = min(available_sizes, key=lambda x: abs(x - req_target))
+
+                # If closest is significantly smaller than requested due to limit, it's fine.
+                # Just alias it.
+                feature_sets_dict[req_target] = feature_sets_dict[closest]
+                # Don't warn excessively, just log
+                # tprint_warning(f"   ⚠️ mapped requested {req_target} to available {closest}")
     
     pipeline_log["feature_sets"] = {
         k: {"count": len(v), "features": v} 

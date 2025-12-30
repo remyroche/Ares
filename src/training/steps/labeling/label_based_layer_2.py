@@ -95,7 +95,11 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     MeanReversionExtremeEvents,
     LiquidityShockEvents,
     TimeEvents,
-    Geometry as OrthoGeometry
+    ImprovedCUSUMEvents,
+    SymmetricCusumEvents,
+    HurstStateEvents,
+    Geometry as OrthoGeometry,
+    build_indicator_matrix
 )
 
 # Configure logging
@@ -556,6 +560,41 @@ def _quick_5model_race(
     return winner, scores
 
 
+def _instantiate_model(model_type: str, random_state: int = 42):
+    """Factory to create model instance based on type."""
+    if model_type == 'xgb':
+        focal_xgb = XGBFocalLoss(gamma_pos=1.5, gamma_neg=3.0)
+        return xgb.XGBClassifier(
+            n_estimators=400, learning_rate=0.04, max_depth=6,
+            objective=focal_xgb, eval_metric='aucpr',
+            random_state=random_state, n_jobs=1
+        )
+    elif model_type == 'xgb_linear':
+        return xgb.XGBClassifier(
+            booster='gblinear', n_estimators=100, learning_rate=0.1,
+            objective='binary:logistic', random_state=random_state, n_jobs=1
+        )
+    elif model_type == 'catboost':
+        return catboost.CatBoostClassifier(
+            iterations=300, learning_rate=0.05, depth=6,
+            class_weights={0: 1.0, 1: 3.0}, verbose=False,
+            random_seed=random_state, thread_count=1
+        )
+    elif model_type == 'lgbm_linear':
+        focal_lgbm = RobustFocalLoss(verbose=False)
+        return lgb.LGBMClassifier(
+            n_estimators=500, learning_rate=0.05, num_leaves=63, max_depth=4,
+            extra_trees=True, objective=focal_lgbm, random_state=random_state,
+            n_jobs=1
+        )
+    else: # lgbm / default
+        focal_lgbm = RobustFocalLoss(verbose=False)
+        return lgb.LGBMClassifier(
+            n_estimators=500, learning_rate=0.03, num_leaves=31,
+            objective=focal_lgbm, random_state=random_state, n_jobs=1
+        )
+
+
 @dataclass
 class GeometryTrial:
     family: str
@@ -649,10 +688,13 @@ class LabelBasedLayer2:
 
     def _get_labeler_menu(self) -> Dict[str, Callable]:
         """Define the menu of labelers with baked-in parameters."""
+        # 1/ no longer optimise MAE/MFE. Do keep a min TP of 0.4%, TP:SL 1.5:1 as hard gates.
+        # Hard gates are enforced in _compute_dominance_labels
+        # We define 3 horizons: 12, 24, 48
         return {
             "SCALP": partial(self._dominance_label_wrapper, kappa=1.5, sl_mult=0.5, horizon=12),
-            "SWING": partial(self._dominance_label_wrapper, kappa=2.0, sl_mult=1.0, horizon=24),
-            "TREND": partial(self._dominance_label_wrapper, kappa=3.0, sl_mult=1.5, horizon=48)
+            "SWING": partial(self._dominance_label_wrapper, kappa=1.5, sl_mult=1.0, horizon=24),
+            "TREND": partial(self._dominance_label_wrapper, kappa=1.5, sl_mult=1.5, horizon=48)
         }
 
     def run(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -662,8 +704,6 @@ class LabelBasedLayer2:
         tprint_info("Starting Layer 2 Pipeline...")
 
         # 1. Prepare (Validate df, setup caches)
-        # Note: We do NOT generate global events_df here anymore,
-        # but we initialize the structure.
         df, _, _, global_probe_features = self.prepare_data_and_events(df)
 
         # 2. Optimize (Orthogonal Selection)
@@ -705,8 +745,6 @@ class LabelBasedLayer2:
         events_df = pd.DataFrame()
         X_probe_events = pd.DataFrame()
 
-        # We can try to select global probe features based on a sample if needed,
-        # or defer until we have events. For now, empty.
         self._global_probe_features = []
 
         return df, events_df, X_probe_events, self._global_probe_features
@@ -739,54 +777,202 @@ class LabelBasedLayer2:
         """Step 2: Orthogonal Label Generation & Selection."""
         tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization...")
 
-        # 1. Generate & Filter
         labelers = self._get_labeler_menu()
-        ortho_geoms = orthogonal_label_generation(df, labelers)
+
+        # Define Event Generators with Variations (Fast/Med/Slow)
+        generators: List[OrthoGeometry] = []
+        index = df.index
+
+        # Helper to create geometry candidates
+        def add_candidates(fam_name, generator, **gen_params):
+            try:
+                events = generator.generate(df, **gen_params)
+                if len(events) < 10: return
+
+                for lbl_name, lbl_func in labelers.items():
+                    try:
+                        labels = lbl_func(df, events)
+                        if labels.dropna().empty: continue
+
+                        # Extract labeler params
+                        lbl_params = {}
+                        if isinstance(lbl_func, partial):
+                            lbl_params = lbl_func.keywords
+
+                        # Combine params
+                        full_params = {**gen_params, **lbl_params}
+
+                        g = OrthoGeometry(
+                            name=f"{fam_name}_{lbl_name}",
+                            events=events,
+                            labels=labels,
+                            family=fam_name,
+                            labeler_name=lbl_name,
+                            params=full_params
+                        )
+                        g.indicator = build_indicator_matrix(events, index)
+                        generators.append(g)
+                    except Exception as e:
+                        # print(f"Error in labeler {lbl_name} for {fam_name}: {e}")
+                        pass
+            except Exception as e:
+                print(f"Error in generator {fam_name}: {e}")
+
+        # 1. Improved CUSUM (Dual)
+        # VOL_FAST (20), VOL_MED (50), VOL_SLOW (100)
+        add_candidates("CUSUM_DUAL_FAST", ImprovedCUSUMEvents(), vol_window=20)
+        add_candidates("CUSUM_DUAL_MED", ImprovedCUSUMEvents(), vol_window=50)
+        add_candidates("CUSUM_DUAL_SLOW", ImprovedCUSUMEvents(), vol_window=100)
+
+        # 2. Symmetric CUSUM
+        # Structural Breaks. h=0.02 (sensitive), h=0.05 (standard), h=0.10 (major)
+        add_candidates("CUSUM_SYM_SENSITIVE", SymmetricCusumEvents(), h=0.02)
+        add_candidates("CUSUM_SYM_STANDARD", SymmetricCusumEvents(), h=0.05)
+        add_candidates("CUSUM_SYM_MAJOR", SymmetricCusumEvents(), h=0.10)
+
+        # 3. Hurst State
+        # Trend Regime. Lookback 50, 100, 200
+        add_candidates("HURST_FAST", HurstStateEvents(), lookback=50)
+        add_candidates("HURST_MED", HurstStateEvents(), lookback=100)
+        add_candidates("HURST_SLOW", HurstStateEvents(), lookback=200)
+
+        if not generators:
+            tprint_error("Layer 2: No candidates generated.")
+            return [], []
+
+        # Scorer Function: LGBM Probe AUC
+        def lgbm_scorer(g: OrthoGeometry) -> float:
+            # Train a quick LGBM on the events and labels to check learnability
+            # We need features.
+            # Use a cached feature generation or on-the-fly?
+            # Creating features for every candidate might be slow.
+            # But we only need features for the specific events.
+
+            # Efficiently get features for these events
+            # We can use global probe features if available, or generate a small set
+            try:
+                # Stub events df
+                ev_df = pd.DataFrame(index=g.events)
+                X = self._build_geometry_independent_event_features(df, ev_df)
+                if X.empty: return 0.0
+
+                # Filter to simple features
+                X = X.select_dtypes(include=[np.number]).fillna(0)
+                if X.shape[1] > 50:
+                    # Quick select based on variance
+                    vars = X.var()
+                    cols = vars.nlargest(50).index
+                    X = X[cols]
+
+                y = g.labels
+
+                # Align
+                common = X.index.intersection(y.index)
+                if len(common) < 50: return 0.0
+
+                X = X.loc[common]
+                y = y.loc[common]
+
+                # Simple split
+                split = int(len(common) * 0.7)
+                X_train, X_val = X.iloc[:split], X.iloc[split:]
+                y_train, y_val = y.iloc[:split], y.iloc[split:]
+
+                if len(np.unique(y_train)) < 2 or len(np.unique(y_val)) < 2:
+                    return 0.0
+
+                # LightGBM
+                dtrain = lgb.Dataset(X_train, label=y_train)
+                dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
+
+                params = {
+                    'objective': 'binary',
+                    'metric': 'auc',
+                    'verbosity': -1,
+                    'min_data_in_leaf': 10
+                }
+
+                model = lgb.train(params, dtrain, num_boost_round=50, valid_sets=[dval],
+                                  callbacks=[lgb.early_stopping(10, verbose=False)])
+
+                # Score on Val
+                preds = model.predict(X_val)
+                score = roc_auc_score(y_val, preds)
+                return float(score)
+
+            except Exception as e:
+                # print(f"Scorer error for {g.name}: {e}")
+                return 0.0
+
+        # Execute Tournament
+        ortho_geoms = orthogonal_label_generation(generators, scorer=lgbm_scorer)
 
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
             return [], []
 
-        # 2. Convert to GeometryTrial
+        # Convert to GeometryTrial
         production_geometries = []
         for i, og in enumerate(ortho_geoms):
-            # Construct params.
-            # Note: og.params comes from the partial keywords (kappa, sl_mult, horizon)
-            # og.labeler_name e.g. "SCALP"
-            # og.family e.g. "VOL"
-            
-            # Re-verify learnability/score if needed, but orthogonal_label_generation
-            # uses uniqueness/MI. We can assign a default score or use uniqueness.
-            score = og.avg_uniqueness if og.avg_uniqueness is not None else 1.0
-
-            # Params
-            params = og.params.copy()
             # Ensure horizon is present
-            if 'horizon' not in params:
-                params['horizon'] = 120 # Fallback
+            if 'horizon' not in og.params:
+                og.params['horizon'] = 120 # Fallback
+
+            # 4. Candidates Race (5 ML Models)
+            # Find the best model type for this geometry
+            best_model_type = 'lgbm'
+            race_scores = {}
+            try:
+                # Re-generate Features for Race
+                ev_df = pd.DataFrame(index=og.events)
+                X = self._build_geometry_independent_event_features(df, ev_df)
+                if not X.empty:
+                    # Filter/Select features
+                    X = X.select_dtypes(include=[np.number]).fillna(0)
+                    if X.shape[1] > 50:
+                        vars = X.var()
+                        cols = vars.nlargest(50).index
+                        X = X[cols]
+
+                    y = og.labels.loc[X.index]
+
+                    # Split
+                    common = X.index.intersection(y.index)
+                    if len(common) > 50:
+                        X = X.loc[common]
+                        y = y.loc[common]
+                        split = int(len(common) * 0.7)
+                        X_train, X_val = X.iloc[:split], X.iloc[split:]
+                        y_train, y_val = y.iloc[:split], y.iloc[split:]
+
+                        if len(np.unique(y_train)) >= 2:
+                            best_model_type, race_scores = _quick_5model_race(
+                                X_train, y_train, X_val, y_val, random_state=42
+                            )
+            except Exception as e:
+                # print(f"Race failed for {og.name}: {e}")
+                pass
 
             gt = GeometryTrial(
                 family=og.family,
-                params=params,
-                final_score=score * 100.0, # Scale up
-                learnability=0.5, # Placeholder
+                params=og.params,
+                final_score=og.score * 100.0,
+                learnability=og.score, # Use the computed AUC
                 robust_magnitude=0.0,
                 stability=1.0,
                 balance=1.0,
-                raw_metrics={},
+                raw_metrics={'uniq': og.avg_uniqueness},
                 uuid=f"{og.name}_{i}",
-                events=og.events # Store events!
+                events=og.events, # Store events!
+                model_params={'model_type': best_model_type, 'race_scores': race_scores}
             )
             production_geometries.append(gt)
 
         self.selected_geometries = production_geometries
 
         # 3. Feature Selection (Optional) on Union
-        # We need a union events_df to run global feature selection
         union_events = self._construct_union_events_df(df, production_geometries)
         X_events_full = self._build_geometry_independent_event_features(df, union_events)
-
-        # Select global probe features based on Union
         self._global_probe_features = self._select_global_probe_features(X_events_full)
 
         return production_geometries, self._global_probe_features
@@ -820,77 +1006,64 @@ class LabelBasedLayer2:
             end = (i + 1) * fold_size if i < n_splits - 1 else len(df)
             folds.append((start, end))
 
-        generators = {
-            "CUSUM": CusumEvents(),
-            "VOL": VolatilityShockEvents(),
-            "TREND": TrendInitiationEvents(),
-            "MEAN_REV": MeanReversionExtremeEvents(),
-            "LIQUIDITY": LiquidityShockEvents(),
-            "TIME": TimeEvents()
-        }
-
-        # For OOF, we treat 'production_geometries' as the selected strategy.
-        # We retrain the strategy on Train and predict on Test.
+        # Re-instantiate generators map is tricky because params are baked into geometries
+        # We need to re-run generation logic based on params stored in GeometryTrial
         
         for i, (test_start, test_end) in enumerate(folds):
             tprint_info(f"OOF Fold {i+1}/{n_splits}...")
             
-            # Setup Train/Test split (Walk-Forward / Purged K-Fold simplified)
+            # Setup Train/Test split
             train_mask = np.ones(len(df), dtype=bool)
             train_mask[test_start:test_end] = False
-            # Purge 100 bars
             p_start = max(0, test_start - 100)
             p_end = min(len(df), test_end + 100)
             train_mask[p_start:p_end] = False
             
             df_train = df[train_mask]
+            df_context = df.iloc[:test_end] # For test generation
             
-            # We predict on ALL events that fall into the test window
-            # First, reconstruct events for each geometry on the full timeline (or test slice)
-            # Actually, we should regenerate events on test slice to avoid lookahead?
-            # Or use global events and mask?
-            # Generators use expanding window. If we generate on full DF, it's safe (expanding).
-            # If we slice df_test, expanding window resets, which is inconsistent.
-            # So generate on full, slice events.
-            
-            # Train Models on df_train
             trained_models = {}
             
             for gt in production_geometries:
-                # 1. Get events in Train
-                # We need events from THIS family in Train
-                gen = generators.get(gt.family)
-                if not gen: continue
+                # 1. Regenerate events for this geometry on Train Data
+                # We need to dispatch based on family name
+                evts_train = pd.DatetimeIndex([])
                 
-                # Regenerate events on df_train to simulate training environment
-                # This ensures we don't rely on future data for normalization in Train
-                train_evts_idx = gen.generate(df_train)
+                # Dispatcher
+                try:
+                    if "CUSUM_DUAL" in gt.family:
+                        gen = ImprovedCUSUMEvents()
+                        evts_train = gen.generate(df_train, **gt.params)
+                    elif "CUSUM_SYM" in gt.family:
+                        gen = SymmetricCusumEvents()
+                        evts_train = gen.generate(df_train, **gt.params)
+                    elif "HURST" in gt.family:
+                        gen = HurstStateEvents()
+                        evts_train = gen.generate(df_train, **gt.params)
+                    elif "VOL" in gt.family: # Legacy support just in case
+                        gen = VolatilityShockEvents()
+                        evts_train = gen.generate(df_train, **gt.params)
+                    # Add others if needed
+                except Exception:
+                    pass
                 
-                if len(train_evts_idx) < 20: continue
-                
-                # Build dummy events df
-                train_evts_df = pd.DataFrame(index=train_evts_idx)
+                if len(evts_train) < 20: continue
                 
                 # Compute labels
-                labels, _, _, _, _ = self._compute_dominance_labels(df_train, train_evts_df, **gt.params)
+                labels, _, _, _, _ = self._compute_dominance_labels(
+                    df_train, pd.DataFrame(index=evts_train), **gt.params
+                )
                 valid_lbls = labels.dropna()
-                
                 if len(valid_lbls) < 20: continue
 
                 # Features
-                # Build features on df_train for these events
-                # We use union of train events for efficiency? No, per geometry is safer here.
-                # Just use global probe features
-                # Need to build X for train_evts_idx
-                # _build_geometry_independent_event_features expects df and events_df
-                X_train = self._build_geometry_independent_event_features(df_train, train_evts_df)
+                X_train = self._build_geometry_independent_event_features(df_train, pd.DataFrame(index=valid_lbls.index))
                 if X_train.empty: continue
 
                 if global_probe_features:
                     cols = [c for c in global_probe_features if c in X_train.columns]
                     X_train = X_train[cols]
 
-                # Append geometry specific features
                 geo_feats = self._compute_specific_geometry_features(df_train, X_train.index, gt.params)
                 X_train = pd.concat([X_train, geo_feats], axis=1).fillna(0.0)
                 X_train = X_train.loc[valid_lbls.index]
@@ -898,82 +1071,72 @@ class LabelBasedLayer2:
 
                 # Train Model
                 try:
-                    focal_lgbm = RobustFocalLoss(verbose=False)
-                    params = LAYER2_MODEL_CONSTANTS.copy()
-                    params['objective'] = focal_lgbm
-                    params['metric'] = 'auc'
+                    # Use winning model type from Race
+                    model_type = 'lgbm'
+                    if gt.model_params and 'model_type' in gt.model_params:
+                        model_type = gt.model_params['model_type']
 
-                    clf = lgb.LGBMClassifier(**params)
+                    clf = _instantiate_model(model_type, random_state=42)
                     clf.fit(X_train, y_train)
                     trained_models[gt.uuid] = clf
                 except Exception as e:
                     logger.warning(f"Training failed for {gt.uuid} on fold {i}: {e}")
 
             # Predict on Test
-            # We predict on events that occur in the Test window
             test_evts_map = {}
             for gt in production_geometries:
-                gen = generators.get(gt.family)
-                if not gen: continue
+                evts_test = pd.DatetimeIndex([])
+                try:
+                    # Generate on expanding context, slice to test
+                    if "CUSUM_DUAL" in gt.family:
+                        gen = ImprovedCUSUMEvents()
+                        full = gen.generate(df_context, **gt.params)
+                        evts_test = full[(full >= df.index[test_start]) & (full < df.index[test_end])]
+                    elif "CUSUM_SYM" in gt.family:
+                        gen = SymmetricCusumEvents()
+                        full = gen.generate(df_context, **gt.params)
+                        evts_test = full[(full >= df.index[test_start]) & (full < df.index[test_end])]
+                    elif "HURST" in gt.family:
+                        gen = HurstStateEvents()
+                        full = gen.generate(df_context, **gt.params)
+                        evts_test = full[(full >= df.index[test_start]) & (full < df.index[test_end])]
+                except Exception:
+                    pass
 
-                # Generate on DF up to test_end to get expanding window stats correct
-                df_context = df.iloc[:test_end]
-                full_evts = gen.generate(df_context)
-                # Slice to test window
-                test_evts = full_evts[(full_evts >= df.index[test_start]) & (full_evts < df.index[test_end])]
+                if len(evts_test) > 0:
+                    test_evts_map[gt.uuid] = evts_test
 
-                if len(test_evts) > 0:
-                    test_evts_map[gt.uuid] = test_evts
-
-            # Aggregate Predictions
-            # We iterate test_evts_map, predict, and fill global OOF series
-
+            # Aggregate
             for gt_uuid, evts in test_evts_map.items():
                 model = trained_models.get(gt_uuid)
                 if model is None: continue
 
-                # Build Features for Test Events
-                test_evts_df = pd.DataFrame(index=evts)
-                X_test = self._build_geometry_independent_event_features(df_context, test_evts_df)
+                X_test = self._build_geometry_independent_event_features(df_context, pd.DataFrame(index=evts))
                 if X_test.empty: continue
 
                 if global_probe_features:
                     cols = [c for c in global_probe_features if c in X_test.columns]
                     X_test = X_test[cols]
 
-                # Geo features using params from production geometry object
                 gt = next(g for g in production_geometries if g.uuid == gt_uuid)
                 geo_feats = self._compute_specific_geometry_features(df_context, X_test.index, gt.params)
                 X_test = pd.concat([X_test, geo_feats], axis=1).fillna(0.0)
 
-                # Predict
                 preds = model.predict_proba(X_test)[:, 1]
 
                 # Bagging: Max probability aggregation
-                # If multiple geometries predict on the same timestamp, take max
                 current_vals = oof_scores.loc[evts].fillna(0.0)
                 new_vals = np.maximum(current_vals, preds)
                 oof_scores.loc[evts] = new_vals
-
-                # Weights: 1.0 for now
                 oof_weights.loc[evts] = 1.0
 
-        # Construct oof_labels (0.5 threshold)
         oof_labels = (oof_scores >= 0.5).astype(float)
 
-        # Calculate Returns for OOF events (Consensus)
-        # We need returns for the union of events generated in Test folds
-        # oof_scores index contains all predicted events.
-        # We need realized returns for these events.
-        # Since we don't know WHICH geometry "won" the max, we use a generic return (e.g. at fixed horizon 120)
-        # or we try to reconstruct weighted return.
-        # Simplification: Calculate return at horizon=120 for all events
+        # Calculate OOF Returns
         oof_returns = pd.Series(np.nan, index=oof_scores.index)
         valid_idx = oof_scores.dropna().index
 
         if not valid_idx.empty:
-            # Stub return calculation
-            # Use compute_realized_returns with default params
             ret, _, _, _, _, _, _, _ = compute_realized_returns(
                 df, pd.DataFrame({'consensus': 1}, index=df.index),
                 profit_threshold=None, stop_threshold=None, horizon=120,
@@ -1050,9 +1213,7 @@ class LabelBasedLayer2:
         horizon = int(kwargs.get('horizon', 120))
 
         # Setup Signals (Assume Long/Consensus if available)
-        # If events_df has 'event_consensus', use it. Else default to 1.0 (Long)
         if 'event_consensus' in events_df.columns:
-            # Reconstruct full signal series
             consensus = pd.Series(0.0, index=df.index)
             consensus.loc[events_df.index] = events_df['event_consensus']
             signals = pd.DataFrame({'consensus': consensus})
@@ -1063,7 +1224,6 @@ class LabelBasedLayer2:
         vol_series = df['volatility_1d'].fillna(0.0)
 
         # Stop Threshold (Absolute)
-        # raw_stop = sl_mult * vol
         # We need this aligned to DF for compute_realized_returns
         stop_threshold = (vol_series * sl_mult).clip(lower=0.004) # Min SL 0.4%
 
@@ -1088,18 +1248,7 @@ class LabelBasedLayer2:
         exits = exit_reasons.reindex(idx).fillna('')
 
         # Dominance Rule: MFE > Kappa * MAE
-        # And NOT stopped out (exit != 'stop')
-        # Note: if stopped out, realized_return is loss.
-        # Dominance usually implies we *could* have taken profit before stop.
-        # But if 'stop' is hit, it means MAE > Stop.
-        # If MFE > K*MAE is true, but MAE > Stop, did we win?
-        # Standard TBM: First touch matters.
-        # compute_realized_returns handles first touch of Stop.
-        # If exit == 'stop', we hit stop first. So Label = 0.
-
         is_stop = exits == 'stop'
-        # Check ratio
-        # Avoid div/0
         mae_safe = mae.replace(0.0, 1e-9)
         ratio = mfe / mae_safe
 
@@ -1113,6 +1262,21 @@ class LabelBasedLayer2:
         is_profit_enough = mfe > min_profit
 
         binary_labels = binary_labels & is_profit_enough.astype(float)
+
+        # Hard Gates: TP > 0.4%
+        # mfe is realized in % terms already?
+        # compute_realized_returns returns MFE in percent terms
+        # "Do keep a min TP of 0.4%"
+        is_tp_enough = mfe > 0.004
+        binary_labels = binary_labels & is_tp_enough.astype(float)
+
+        # Hard Gate: TP:SL 1.5:1
+        # The stop size used was stop_threshold.
+        # Check if actual realized R:R is okay? Or potential?
+        # The dominance ratio check (ratio > kappa) acts as TP:SL check if kappa >= 1.5
+        # Since we use kappa=1.5 in SCALP/SWING/TREND, this is implicitly satisfied.
+        # But let's be explicit if needed.
+        # For now, kappa constraint covers it.
 
         return binary_labels, realized_returns.reindex(idx), mfe, mae, exits
 

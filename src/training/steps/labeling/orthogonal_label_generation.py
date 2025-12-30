@@ -275,7 +275,7 @@ def check_label_quality(
     n = len(labels)
     days = (labels.index[-1] - labels.index[0]).days if n > 0 else 0
     rate = n / days if days > 0 else 0
-    if rate < 3.0: return False, {'n': n}, "Sample Size (< 3/day)"
+    if rate < 0.3: return False, {'n': n}, "Sample Size (< 0.3/day)"
 
     pos_rate = labels.mean()
     if pos_rate < 0.075 or pos_rate > 0.925: return False, {'pos_rate': pos_rate}, "Class Balance"
@@ -356,7 +356,9 @@ def calculate_multifactor_score(
         F, _ = f_classif(X, labels)
         f_max = np.nanmax(F) if len(F) > 0 else 0
 
-        significance = np.log1p(n)
+        days = (labels.index[-1] - labels.index[0]).days if n > 0 else 1
+        cap = 0.7 * days
+        significance = min(np.log1p(n), np.log1p(cap))
 
         # Stability
         chunk_size = n // 3

@@ -40,7 +40,11 @@ from src.utils.tprint import tprint_success, tprint_warning, tprint_info, tprint
 
 from src.training.steps.labeling.label_based_layer_0 import run_layer0_kalman_vwap
 from src.training.steps.labeling.label_based_layer_2 import LabelBasedLayer2
-from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm, plot_diagnostics
+from src.training.steps.labeling.label_based_layer_3 import (
+    layer3_analyst_lgbm,
+    plot_diagnostics,
+    compute_cusum_signals_multi_window,
+)
 # Import Layer 4 (Risk Filter) and Layer 5 (Position Sizing)
 from src.training.steps.labeling.label_based_layer_4 import (
     Layer4RiskFilter,
@@ -1331,6 +1335,43 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 l3_input_df[c] = events_df[c]
             elif c in market_data.columns:
                  l3_input_df[c] = market_data.loc[l3_input_df.index, c]
+
+        # --- Inject CUSUM Signals for Layer 3 Geometries ---
+        # Layer 3 requires trend_signal_* and reversal_signal_* to generate adaptive geometries.
+        # If missing, it falls back to zeros, causing "Zombie Layer" behavior.
+        # We compute them here on the full market data and merge.
+
+        cusum_cols_exist = any(c.startswith('trend_signal_') for c in market_data.columns)
+
+        if not cusum_cols_exist:
+            tprint_info("   Generating CUSUM signals for Layer 3 geometries...")
+            try:
+                # Use default params (k=0.5, alpha=0.5) or from config
+                sig_k = float(config.get('layer3_signal_k', 0.5))
+                sig_alpha = float(config.get('layer3_signal_alpha', 0.5))
+
+                cusum_df = compute_cusum_signals_multi_window(
+                    market_data,
+                    windows=[12, 24, 48],
+                    k=sig_k,
+                    alpha=sig_alpha
+                )
+
+                # Merge into l3_input_df (aligned to events)
+                cols_to_add = [c for c in cusum_df.columns if c not in l3_input_df.columns]
+                if cols_to_add:
+                    # Reindex to event timestamps
+                    cusum_events = cusum_df.reindex(l3_input_df.index).fillna(0.0)
+                    l3_input_df = pd.concat([l3_input_df, cusum_events[cols_to_add]], axis=1)
+                    tprint_success(f"   Added {len(cols_to_add)} CUSUM signal columns to Layer 3 input.")
+            except Exception as e:
+                tprint_warning(f"   Failed to generate CUSUM signals: {e}")
+        else:
+            # If already in market_data, copy them
+            cols_to_copy = [c for c in market_data.columns if c.startswith('trend_signal_') or c.startswith('reversal_signal_')]
+            if cols_to_copy:
+                l3_input_df[cols_to_copy] = market_data.loc[l3_input_df.index, cols_to_copy].fillna(0.0)
+                tprint_info(f"   Copied {len(cols_to_copy)} existing CUSUM signals to Layer 3 input.")
         
         target_col = 'l2_consensus_target'
         l3_target = l2_labels

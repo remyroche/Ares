@@ -2382,17 +2382,25 @@ def get_uniqueness_weight(events: pd.DatetimeIndex, index: pd.DatetimeIndex, hor
 
     return uniqueness
 
-def get_final_de_prado_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list = None, component_weights: Dict[str, float] = None) -> pd.Series:
+def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list = None,
+                               component_weights: Dict[str, float] = None, family: str = None) -> pd.Series:
     if component_weights is None:
         component_weights = {'vol': 1.0, 'atr': 1.0, 'sr': 1.0, 'tail': 1.0}
 
-    v_w = volume_cusum_weight(df, events) * component_weights.get('vol', 1.0)
-    atr_w = atr_cusum_weight(df, events) * component_weights.get('atr', 1.0)
-    sr_w = sr_cusum_weight(df, events, sr_levels) * component_weights.get('sr', 1.0)
-    t_w = tail_cusum_weight(df, events) * component_weights.get('tail', 1.0)
+    intensity = pd.Series(0.0, index=events)
+
+    if family == 'VOL_PARTICIPATION':
+        intensity = volume_cusum_weight(df, events) * component_weights.get('vol', 1.0)
+    elif family == 'RANGE_ATR':
+        intensity = atr_cusum_weight(df, events) * component_weights.get('atr', 1.0)
+    elif family == 'SR_CUSUM':
+        intensity = sr_cusum_weight(df, events, sr_levels) * component_weights.get('sr', 1.0)
+    elif family == 'TAIL_RISK':
+        intensity = tail_cusum_weight(df, events) * component_weights.get('tail', 1.0)
+
     u_w = get_uniqueness_weight(events, df.index)
 
-    final_weights = (1 + v_w + atr_w + sr_w + t_w) * u_w
+    final_weights = (1 + intensity) * u_w
     return final_weights
 
 def _safe_to_markdown(df: pd.DataFrame) -> str:
@@ -2751,7 +2759,7 @@ def orthogonal_label_generation(
         # "Combining Weights (De Prado Meta-Weighting) ... After generating all events, combine intensity with uniqueness"
         # We can calculate this here.
 
-        final_weights = get_final_de_prado_weights(df_full, cand['events'], sr_levels, component_weights=signal_weights)
+        final_weights = get_signal_specific_weights(df_full, cand['events'], sr_levels, component_weights=signal_weights, family=cand['family'])
         # Blend or replace? "update with this" suggests using it.
         # Use final_weights as the primary weights for the geometry.
 

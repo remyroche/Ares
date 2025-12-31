@@ -116,7 +116,7 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     compute_vol_state_labels,
     OutputGeometry as OrthoGeometry,
     GENERATOR_PARAM_NAMES,
-    get_final_de_prado_weights,
+    get_signal_specific_weights,
     SupportResistanceBreakEvents,
     ATRShockEvents,
     TrendModulatedBreakoutEvents,
@@ -658,8 +658,8 @@ class LabelBasedLayer2:
         events_df = pd.DataFrame(index=events)
         
         # Pre-compute signal weights for this event set once
-        base_signal_weights = get_final_de_prado_weights(
-            df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights
+        base_signal_weights = get_signal_specific_weights(
+            df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights, family=family
         )
 
         # Compute labels for all geometries in this family
@@ -762,7 +762,7 @@ class LabelBasedLayer2:
                  labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
 
             # Apply signal weights
-            signal_w = get_final_de_prado_weights(df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights)
+            signal_w = get_signal_specific_weights(df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights, family=family)
             if signal_w is not None and not signal_w.empty:
                 aligned = signal_w.reindex(labels.index).fillna(0.0)
                 final_w = weights * aligned

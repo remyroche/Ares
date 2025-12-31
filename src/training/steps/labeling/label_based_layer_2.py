@@ -107,9 +107,15 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     VolatilityCusumEvents,
     LiquidityCusumEvents,
     VolumeCusumEvents,
+    TailRiskCusumEvents,
+    TrendRegimeCusumEvents,
+    VolatilityStateEvents,
     compute_dominance_labels,
     compute_volatility_labels,
     compute_path_degradation_labels,
+    compute_tail_regime_labels,
+    compute_trend_persistence_labels,
+    compute_vol_state_labels,
     OutputGeometry as OrthoGeometry
 )
 
@@ -538,6 +544,9 @@ class LabelBasedLayer2:
             "VOL_CUSUM": VolatilityCusumEvents(),
             "LIQ_CUSUM": LiquidityCusumEvents(),
             "VOL_PARTICIPATION": VolumeCusumEvents(),
+            "TAIL_RISK": TailRiskCusumEvents(),
+            "TREND_REGIME": TrendRegimeCusumEvents(),
+            "VOL_STATE": VolatilityStateEvents(),
         }
 
         cpu_guess = max(1, (os.cpu_count() or 4) - 1)
@@ -636,6 +645,17 @@ class LabelBasedLayer2:
                     d_sigma = pt * 0.5
                     horizon = int(gt.params.get('horizon', 20))
                     labels, weights, _, _, _, _ = compute_path_degradation_labels(df_train, events, horizon=horizon, d_sigma=d_sigma)
+                elif family == 'TAIL_RISK':
+                    pt = gt.params.get('pt_mult', 2.0)
+                    z_thresh = pt * 0.6
+                    horizon = int(gt.params.get('horizon', 20))
+                    labels, weights, _, _, _, _ = compute_tail_regime_labels(df_train, events, horizon=horizon, z_thresh=z_thresh, metric_col=gt.params.get('metric', 'skew'))
+                elif family == 'TREND_REGIME':
+                    horizon = int(gt.params.get('horizon', 20))
+                    labels, weights, _, _, _, _ = compute_trend_persistence_labels(df_train, events, horizon=horizon)
+                elif family == 'VOL_STATE':
+                    horizon = int(gt.params.get('horizon', 20))
+                    labels, weights, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
                 else:
                     # Map params to Volatility Logic
                     pt = gt.params.get('pt_mult', 2.0)
@@ -666,6 +686,17 @@ class LabelBasedLayer2:
                  d_sigma = pt * 0.5
                  horizon = int(gt.params.get('horizon', 20))
                  labels, _, _, _, _, _ = compute_path_degradation_labels(df_train, events, horizon=horizon, d_sigma=d_sigma)
+            elif family == 'TAIL_RISK':
+                 pt = gt.params.get('pt_mult', 2.0)
+                 z_thresh = pt * 0.6
+                 horizon = int(gt.params.get('horizon', 20))
+                 labels, _, _, _, _, _ = compute_tail_regime_labels(df_train, events, horizon=horizon, z_thresh=z_thresh, metric_col=gt.params.get('metric', 'skew'))
+            elif family == 'TREND_REGIME':
+                 horizon = int(gt.params.get('horizon', 20))
+                 labels, _, _, _, _, _ = compute_trend_persistence_labels(df_train, events, horizon=horizon)
+            elif family == 'VOL_STATE':
+                 horizon = int(gt.params.get('horizon', 20))
+                 labels, _, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
             else:
                  pt = gt.params.get('pt_mult', 2.0)
                  k_factor = 1.1 + (pt * 0.1)
@@ -1249,6 +1280,17 @@ class LabelBasedLayer2:
              d_sigma = pt * 0.5
              horizon = int(gt.params.get('horizon', 20))
              labels, _, _, _, _, _ = compute_path_degradation_labels(df, gt.events, horizon=horizon, d_sigma=d_sigma)
+        elif gt.family == 'TAIL_RISK':
+             pt = gt.params.get('pt_mult', 2.0)
+             z_thresh = pt * 0.6
+             horizon = int(gt.params.get('horizon', 20))
+             labels, _, _, _, _, _ = compute_tail_regime_labels(df, gt.events, horizon=horizon, z_thresh=z_thresh, metric_col=gt.params.get('metric', 'skew'))
+        elif gt.family == 'TREND_REGIME':
+             horizon = int(gt.params.get('horizon', 20))
+             labels, _, _, _, _, _ = compute_trend_persistence_labels(df, gt.events, horizon=horizon)
+        elif gt.family == 'VOL_STATE':
+             horizon = int(gt.params.get('horizon', 20))
+             labels, _, _, _, _, _ = compute_vol_state_labels(df, gt.events, horizon=horizon)
         else:
              pt = gt.params.get('pt_mult', 2.0)
              k_factor = 1.1 + (pt * 0.1)

@@ -242,6 +242,92 @@ def compute_volatility_labels(
     return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
 
 
+def compute_path_degradation_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 20,
+    d_sigma: float = 1.5
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Market Stress (Path Degradation).
+    Target: 1 if Max Intra-Horizon Drawdown > d_sigma * volatility.
+
+    Returns matched signature: labels, weights, returns, mfe, mae, vol
+    """
+    if events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d']
+    else:
+        vol = df['close'].pct_change().rolling(100).std()
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Map events to integers
+    if df.index.tz is not None:
+        idx_base = df.index.tz_localize(None)
+    else:
+        idx_base = df.index
+
+    if valid_events.tz is not None:
+        events_norm = valid_events.tz_localize(None)
+    else:
+        events_norm = valid_events
+
+    event_idxs = idx_base.get_indexer(events_norm)
+    n_bars = len(df)
+
+    # Filter valid
+    valid_mask = (event_idxs != -1) & (event_idxs < (n_bars - horizon))
+    valid_idxs = event_idxs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Window Matrix
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+
+    high_vals = df['high'].values[window_idxs]
+    low_vals = df['low'].values[window_idxs]
+
+    # Calculate Max Drawdown
+    # Running Max of Highs
+    running_max = np.maximum.accumulate(high_vals, axis=1)
+    # Drawdown from running max to current low
+    drawdowns = (running_max - low_vals) / running_max
+    max_dd = np.max(drawdowns, axis=1)
+
+    # Thresholds
+    vol_vals = vol.values[valid_idxs]
+    # Ensure vol is not zero
+    vol_vals = np.maximum(vol_vals, 1e-6)
+
+    thresholds = vol_vals * d_sigma
+
+    labels_arr = (max_dd > thresholds).astype(float)
+
+    # Weights: Severity of breakdown
+    weights_arr = np.log1p(max_dd / thresholds)
+
+    # "Returns": Max Drawdown (negative)
+    returns_arr = -max_dd
+
+    s_labels = pd.Series(labels_arr, index=final_events)
+    s_weights = pd.Series(weights_arr, index=final_events)
+    s_returns = pd.Series(returns_arr, index=final_events)
+    s_mfe = pd.Series(np.zeros_like(returns_arr), index=final_events)
+    s_mae = pd.Series(max_dd, index=final_events)
+    s_vol = pd.Series(vol_vals, index=final_events)
+
+    return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
+
+
 def compute_dominance_labels(
     price: pd.Series,
     events: pd.DatetimeIndex,
@@ -1989,8 +2075,8 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
         {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
     ]
     
-    # Horizon options (restricted to 3 timeframes)
-    horizon_options = [12, 24, 48]  # 3h, 6h, 12h
+    # Horizon options (Restricted to 12 and 48 per instruction)
+    horizon_options = [12, 48]
     
     # Family-specific parameter grids (restricted to 12, 24, 48)
     family_grids = {
@@ -2149,10 +2235,19 @@ def orthogonal_label_generation(
                                 risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
                                 high=high, low=low
                             )
+                        elif fam == 'LIQ_CUSUM':
+                            # Liquidity Stress -> Path Degradation
+                            # d_sigma map from pt: pt=[1.5, 4.0] -> d=[0.75, 2.0]
+                            d_sigma = pt * 0.5
+                            labels, weights, returns, mfe, mae, vol = compute_path_degradation_labels(
+                                df_full, events, horizon=horizon, d_sigma=d_sigma
+                            )
                         else:
-                            # State/Regime Labeling
-                            # Mapping PT to Expansion Factor k
-                            k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+                            # Volatility & Volume -> Volatility Expansion
+                            # k_factor map from pt: pt=[1.5, 4.0] -> k=[1.25, 1.5]
+                            # User requested 1.2-1.5.
+                            # Formula: 1.1 + pt * 0.1 -> 1.5=>1.25, 4.0=>1.5
+                            k_factor = 1.1 + (pt * 0.1)
                             labels, weights, returns, mfe, mae, vol = compute_volatility_labels(
                                 df_full, events, horizon=horizon, k=k_factor
                             )

@@ -109,6 +109,7 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     VolumeCusumEvents,
     compute_dominance_labels,
     compute_volatility_labels,
+    compute_path_degradation_labels,
     OutputGeometry as OrthoGeometry
 )
 
@@ -630,10 +631,15 @@ class LabelBasedLayer2:
             try:
                 if family == 'PRICE_CUSUM':
                     labels, weights, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+                elif family == 'LIQ_CUSUM':
+                    pt = gt.params.get('pt_mult', 2.0)
+                    d_sigma = pt * 0.5
+                    horizon = int(gt.params.get('horizon', 20))
+                    labels, weights, _, _, _, _ = compute_path_degradation_labels(df_train, events, horizon=horizon, d_sigma=d_sigma)
                 else:
                     # Map params to Volatility Logic
                     pt = gt.params.get('pt_mult', 2.0)
-                    k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+                    k_factor = 1.1 + (pt * 0.1)
                     horizon = int(gt.params.get('horizon', 20))
                     labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
 
@@ -655,9 +661,14 @@ class LabelBasedLayer2:
 
             if family == 'PRICE_CUSUM':
                 labels, _, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+            elif family == 'LIQ_CUSUM':
+                 pt = gt.params.get('pt_mult', 2.0)
+                 d_sigma = pt * 0.5
+                 horizon = int(gt.params.get('horizon', 20))
+                 labels, _, _, _, _, _ = compute_path_degradation_labels(df_train, events, horizon=horizon, d_sigma=d_sigma)
             else:
                  pt = gt.params.get('pt_mult', 2.0)
-                 k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+                 k_factor = 1.1 + (pt * 0.1)
                  horizon = int(gt.params.get('horizon', 20))
                  labels, _, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
 
@@ -1233,9 +1244,14 @@ class LabelBasedLayer2:
         # Note: We use the same params as optimization
         if gt.family == 'PRICE_CUSUM':
              labels, _, _, _, _, _ = self._compute_dominance_labels(df, events_df, **gt.params)
+        elif gt.family == 'LIQ_CUSUM':
+             pt = gt.params.get('pt_mult', 2.0)
+             d_sigma = pt * 0.5
+             horizon = int(gt.params.get('horizon', 20))
+             labels, _, _, _, _, _ = compute_path_degradation_labels(df, gt.events, horizon=horizon, d_sigma=d_sigma)
         else:
              pt = gt.params.get('pt_mult', 2.0)
-             k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+             k_factor = 1.1 + (pt * 0.1)
              horizon = int(gt.params.get('horizon', 20))
              labels, _, _, _, _, _ = compute_volatility_labels(df, gt.events, horizon=horizon, k=k_factor)
 

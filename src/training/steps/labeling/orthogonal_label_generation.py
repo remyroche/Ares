@@ -2257,6 +2257,12 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
         'VOL_PARTICIPATION': {
             'base_params': [(4.0, 100), (3.0, 50)],  # h, span
         },
+        'RANGE_ATR': {
+            'base_params': [(2.0, 14, 20), (1.5, 14, 20)], # h, atr_window, vol_window
+        },
+        'SR_CUSUM': {
+            'base_params': [(2.0,)], # h (sr_levels passed separately)
+        },
         'TAIL_RISK': {
             'base_params': [(2.0, 50, 'skew'), (2.0, 50, 'kurt')], # h, window, metric
         },
@@ -2278,6 +2284,125 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
 # 8. Main Pipeline
 # ==========================================
 
+def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: float = 2.0, vol_window: int = 20, atr_window: int = 14, sr_levels: list = None) -> Dict[str, float]:
+    thresholds = {}
+    if len(df) < 100: return thresholds
+
+    duration_days = (df.index[-1] - df.index[0]).days + 1
+    bars_per_day = len(df) / max(1, duration_days)
+    target_fraction = target_events_per_day / max(1, bars_per_day)
+
+    # Price
+    if 'close' in df.columns:
+        price_metric = df['close'].pct_change().fillna(0).abs()
+        thresholds['price'] = max(price_metric.quantile(1 - target_fraction), 1e-9)
+
+    # Volatility
+    if 'close' in df.columns:
+        ret = df['close'].pct_change()
+        vol = ret.ewm(span=vol_window, adjust=False).std()
+        vol_metric = np.log(vol).diff().fillna(0).abs()
+        thresholds['volatility'] = max(vol_metric.quantile(1 - target_fraction), 1e-9)
+
+    # Volume
+    if 'volume' in df.columns:
+        vol_avg = df['volume'].ewm(span=vol_window, adjust=False).mean()
+        volume_metric = np.log(df['volume'] / (vol_avg + 1e-9)).fillna(0).abs()
+        thresholds['volume'] = max(volume_metric.quantile(1 - target_fraction), 1e-9)
+
+    # ATR / Range
+    if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
+        tr = np.maximum(df['high'] - df['low'],
+                        np.maximum(abs(df['high'] - df['close'].shift(1)),
+                                   abs(df['low'] - df['close'].shift(1))))
+        atr = tr.rolling(atr_window).mean()
+        atr_norm = (atr / atr.rolling(vol_window).mean() - 1).fillna(0).abs()
+        thresholds['atr'] = max(atr_norm.quantile(1 - target_fraction), 1e-9)
+
+    # S/R
+    if 'close' in df.columns and sr_levels and len(sr_levels) > 0:
+        sr_dist = np.array([min(abs(c - l) for l in sr_levels) for c in df['close']])
+        sr_metric = pd.Series(sr_dist, index=df.index).abs()
+        thresholds['sr'] = max(sr_metric.quantile(1 - target_fraction), 1e-9)
+    else:
+        thresholds['sr'] = None
+
+    return thresholds
+
+def volume_cusum_weight(df: pd.DataFrame, events: pd.DatetimeIndex, persistence_factor: float = 1.0) -> pd.Series:
+    if events.empty or 'volume' not in df.columns: return pd.Series(0, index=events)
+    vol_avg = df['volume'].ewm(span=20, adjust=False).mean()
+    vol_norm = (df['volume'] / (vol_avg + 1e-9)) - 1.0
+    price_ret = df['close'].pct_change().fillna(0)
+    signed_vol_proxy = np.sign(vol_norm) * price_ret
+    weight = abs(signed_vol_proxy) * persistence_factor
+    return weight.reindex(events).fillna(0)
+
+def atr_cusum_weight(df: pd.DataFrame, events: pd.DatetimeIndex, atr_window: int = 14, vol_window: int = 20) -> pd.Series:
+    if events.empty or 'high' not in df.columns: return pd.Series(0, index=events)
+    tr = df['high'] - df['low']
+    atr = tr.rolling(atr_window).mean().fillna(1e-9)
+    atr_change = np.log(atr / atr.rolling(vol_window).mean()).fillna(0)
+    weight = abs(atr_change)
+    return weight.reindex(events).fillna(0)
+
+def sr_cusum_weight(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list) -> pd.Series:
+    if events.empty or not sr_levels: return pd.Series(0, index=events)
+    close_vals = df['close'].values
+    sr_arr = np.array(sr_levels)
+    distance = (close_vals[:, None] - sr_arr[None, :]).min(axis=1)
+    weight = pd.Series(abs(distance), index=df.index)
+    return weight.reindex(events).fillna(0)
+
+def tail_cusum_weight(df: pd.DataFrame, events: pd.DatetimeIndex, window: int = 50) -> pd.Series:
+    if events.empty: return pd.Series(0, index=events)
+    returns = df['close'].pct_change()
+    kurt = returns.rolling(window).kurt().fillna(0)
+    min_k = kurt.rolling(window).min()
+    max_k = kurt.rolling(window).max()
+    weight = (kurt - min_k) / (max_k - min_k + 1e-9)
+    return weight.reindex(events).fillna(0)
+
+def get_uniqueness_weight(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 24) -> pd.Series:
+    indicator = build_indicator_matrix(events, index, horizon=horizon)
+    concurrency = indicator.sum(axis=1)
+    # uniqueness = 1 / concurrency
+    # average uniqueness over event lifespan
+    uniqueness = pd.Series(0.0, index=events)
+    if events.empty: return uniqueness
+
+    # Map events to index locations
+    evt_locs = index.get_indexer(events)
+    for i, loc in enumerate(evt_locs):
+        if loc == -1: continue
+        end_loc = min(loc + horizon, len(index))
+        c = concurrency.iloc[loc:end_loc]
+        if len(c) > 0:
+            uniqueness.iloc[i] = (1.0 / c).mean()
+
+    return uniqueness
+
+def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list = None,
+                               component_weights: Dict[str, float] = None, family: str = None) -> pd.Series:
+    if component_weights is None:
+        component_weights = {'vol': 1.0, 'atr': 1.0, 'sr': 1.0, 'tail': 1.0}
+
+    intensity = pd.Series(0.0, index=events)
+
+    if family == 'VOL_PARTICIPATION':
+        intensity = volume_cusum_weight(df, events) * component_weights.get('vol', 1.0)
+    elif family == 'RANGE_ATR':
+        intensity = atr_cusum_weight(df, events) * component_weights.get('atr', 1.0)
+    elif family == 'SR_CUSUM':
+        intensity = sr_cusum_weight(df, events, sr_levels) * component_weights.get('sr', 1.0)
+    elif family == 'TAIL_RISK':
+        intensity = tail_cusum_weight(df, events) * component_weights.get('tail', 1.0)
+
+    u_w = get_uniqueness_weight(events, df.index)
+
+    final_weights = (1 + intensity) * u_w
+    return final_weights
+
 def _safe_to_markdown(df: pd.DataFrame) -> str:
     """Fallback for to_markdown() if tabulate is missing."""
     try:
@@ -2296,7 +2421,8 @@ def orthogonal_label_generation(
     volume: Optional[pd.Series] = None,
     df_full: Optional[pd.DataFrame] = None,
     target_signals_per_day: float = 7.5,
-    use_adaptive_thresholds: bool = True
+    use_adaptive_thresholds: bool = True,
+    signal_weights: Optional[Dict[str, float]] = None
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -2336,12 +2462,28 @@ def orthogonal_label_generation(
     # 3. Build Enhanced Candidate Configurations
     generator_configs = []
     
+    # Identify S/R levels for SRCusumEvents
+    sr_gen = SupportResistanceBreakEvents()
+    res, sup = sr_gen._identify_sr_levels(df_full, lookback=50, min_touches=3, current_time=df_full.index[-1])
+    sr_levels = [r['price'] for r in res] + [s['price'] for s in sup]
+
+    # Calculate adaptive thresholds if requested
+    adaptive_thresholds = {}
+    if use_adaptive_thresholds:
+         adaptive_thresholds = calibrate_all_cusum_thresholds(
+             df_full, target_events_per_day=target_signals_per_day,
+             sr_levels=sr_levels
+         )
+         tprint_info(f"Calibrated Thresholds: {adaptive_thresholds}")
+
     # Replaced signal families with the 4 Orthogonal CUSUMs
     base_generators = [
         ('PRICE_CUSUM', AdaptiveSymmetricCUSUMEvents()),
         ('VOL_CUSUM', VolatilityCusumEvents()),
         ('LIQ_CUSUM', LiquidityCusumEvents()),
         ('VOL_PARTICIPATION', VolumeCusumEvents()),
+        ('RANGE_ATR', RangeATRcusumEvents()),
+        ('SR_CUSUM', SRCusumEvents()),
         ('TAIL_RISK', TailRiskCusumEvents()),
         ('TREND_REGIME', TrendRegimeCusumEvents()),
         ('VOL_STATE', VolatilityStateEvents()),
@@ -2354,6 +2496,46 @@ def orthogonal_label_generation(
         
         # Add base parameters only (no variations)
         for params in base_params:
+            # Inject SR levels for SR_CUSUM
+            if fam == 'SR_CUSUM':
+                 # params is tuple, convert to list to append
+                 p_list = list(params)
+                 if len(p_list) == 1: # (h,)
+                      p_list.append(sr_levels)
+                 params = tuple(p_list)
+
+            # Inject calibrated threshold if available
+            # Note: params structure varies.
+            # PRICE_CUSUM: (multiplier, vol_window) -> multiplier is approx k.
+            # VOL_CUSUM: (h, vol_span)
+            # LIQ_CUSUM: (h, vol_span)
+            # VOL_PARTICIPATION: (h, span)
+            # RANGE_ATR: (h, atr_window, vol_window)
+            # SR_CUSUM: (h, sr_levels)
+
+            if use_adaptive_thresholds:
+                p_list = list(params)
+                if fam == 'PRICE_CUSUM': # param 0 is multiplier/k
+                     # Calibrated 'price' is a threshold for price change, not directly k.
+                     # AdaptiveSymmetricCUSUM uses k * sigma.
+                     # Calibrated threshold is raw price change quantile.
+                     # We can leave as is or map.
+                     pass
+                elif fam == 'VOL_CUSUM' and 'volatility' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['volatility']
+                elif fam == 'LIQ_CUSUM':
+                     # LIQ uses diff of log(TR/Vol).
+                     # Calibrated thresholds doesn't directly give this.
+                     pass
+                elif fam == 'VOL_PARTICIPATION' and 'volume' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['volume']
+                elif fam == 'RANGE_ATR' and 'atr' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['atr']
+                elif fam == 'SR_CUSUM' and 'sr' in adaptive_thresholds and adaptive_thresholds['sr'] is not None:
+                     p_list[0] = adaptive_thresholds['sr']
+
+                params = tuple(p_list)
+
             generator_configs.append((fam, gen, params))
     
     tprint_info(f"Generated {len(generator_configs)} enhanced candidate configurations")
@@ -2371,10 +2553,14 @@ def orthogonal_label_generation(
                 # Extended list of classes requiring DataFrame
                 df_required = DF_REQUIRED_CLASSES + (
                     'VolatilityCusumEvents', 'LiquidityCusumEvents', 'VolumeCusumEvents',
+                    'RangeATRcusumEvents', 'SRCusumEvents',
                     'TailRiskCusumEvents', 'TrendRegimeCusumEvents', 'VolatilityStateEvents'
                 )
 
                 if gen.__class__.__name__ in df_required:
+                    # Special handling for SR_CUSUM if sr_levels passed as positional
+                    # SRCusumEvents.generate(df, h, sr_levels)
+                    # params is (h, sr_levels)
                     events = gen.generate(df_full, *params)
                 else:
                     events = gen.generate(price, *params)
@@ -2567,12 +2753,22 @@ def orthogonal_label_generation(
         indicator = build_indicator_matrix(cand['events'], price.index, horizon=120)
         purity = average_uniqueness(indicator)
 
+        # Get De Prado Weights (combining all signals)
+        # Note: cand['weights'] currently uses specific dominance weights.
+        # We can augment/replace with De Prado meta-weights if desired.
+        # "Combining Weights (De Prado Meta-Weighting) ... After generating all events, combine intensity with uniqueness"
+        # We can calculate this here.
+
+        final_weights = get_signal_specific_weights(df_full, cand['events'], sr_levels, component_weights=signal_weights, family=cand['family'])
+        # Blend or replace? "update with this" suggests using it.
+        # Use final_weights as the primary weights for the geometry.
+
         geo = OutputGeometry(
             name=f"{cand['family']}_{cand['params']}",
             family=cand['family'],
             events=cand['events'],
             labels=cand['labels'],
-            weights=cand['weights'],
+            weights=final_weights, # Use combined weights
             purity=purity,
             auc=metrics.get('lift', 0.0),  # Store lift as primary metric
             params=cand['params'],
@@ -2831,50 +3027,90 @@ class LiquidityCusumEvents(BaseEventGenerator):
         return pd.DatetimeIndex(events)
 
 class VolumeCusumEvents(BaseEventGenerator):
-    """
-    VOLUME CUSUM — Participation Shock.
-    """
-    def generate(self, df: pd.DataFrame, h: float = 4.0, span: int = 100) -> pd.DatetimeIndex:
-        if isinstance(df, pd.Series):
-            # Assumes series is volume? Or Price?
-            # User snippet uses 'volume' column
-            if df.name and 'volume' in df.name.lower():
-                volume = df
-            else:
-                logger.warning("VolumeCusumEvents requires volume data")
-                return pd.DatetimeIndex([])
-        else:
-            if 'volume' not in df.columns:
-                 logger.warning("VolumeCusumEvents requires volume data")
-                 return pd.DatetimeIndex([])
-            volume = df['volume']
+    """Detect abnormal volume relative to rolling average, weighted by signed price impact."""
+    def generate(self, df: pd.DataFrame, h: float = 4.0, span: int = 20) -> pd.DatetimeIndex:
+        if 'close' not in df.columns or 'volume' not in df.columns:
+            return pd.DatetimeIndex([])
 
+        close = df['close']
+        volume = df['volume']
         vol_avg = volume.ewm(span=span, adjust=False).mean()
-        # vol_surprise = np.log(volume / vol_avg)
-        vol_surprise = np.log(volume / (vol_avg + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
-
-        # Normalize
-        norm = vol_surprise.rolling(100).std()
-        xt = vol_surprise / (norm + 1e-9)
+        vol_norm = (volume / (vol_avg + 1e-9)) - 1.0
+        price_ret = close.pct_change().fillna(0)
+        signed_vol_proxy = np.sign(vol_norm) * price_ret
 
         s_pos, s_neg = 0.0, 0.0
         events = []
 
-        vals = xt.values
-        idx = volume.index
+        # Optimization: use numpy for speed
+        svp = signed_vol_proxy.values
+        idx = df.index
 
-        for t in range(1, len(vals)):
-            x = vals[t]
-            if np.isnan(x): continue
-
+        for t in range(1, len(df)):
+            x = svp[t]
             s_pos = max(0.0, s_pos + x)
             s_neg = min(0.0, s_neg + x)
-
             if s_pos > h or abs(s_neg) > h:
                 events.append(idx[t])
                 s_pos, s_neg = 0.0, 0.0
 
         return pd.DatetimeIndex(events)
+
+
+class RangeATRcusumEvents(BaseEventGenerator):
+    """Detects bursts of intrabar volatility independent of price direction."""
+    def generate(self, df: pd.DataFrame, h: float = 2.0, atr_window: int = 14, vol_window: int = 20) -> pd.DatetimeIndex:
+        if 'high' not in df.columns or 'low' not in df.columns or 'close' not in df.columns:
+            return pd.DatetimeIndex([])
+
+        tr = df['high'] - df['low']
+        atr = tr.rolling(atr_window).mean().fillna(1e-9)
+        atr_change = np.log(atr / atr.rolling(vol_window).mean()).fillna(0)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        vals = atr_change.values
+        idx = df.index
+
+        for t in range(1, len(df)):
+            x = vals[t]
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+
+class SRCusumEvents(BaseEventGenerator):
+    """Detects persistent price movement relative to key levels."""
+    def generate(self, df: pd.DataFrame, h: float = 2.0, sr_levels: list = None) -> pd.DatetimeIndex:
+        if 'close' not in df.columns or not sr_levels:
+            return pd.DatetimeIndex([])
+
+        close_vals = df['close'].values
+        sr_arr = np.array(sr_levels)
+
+        # Calculate distance to nearest level (vectorized)
+        distance = (close_vals[:, None] - sr_arr[None, :]).min(axis=1)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        idx = df.index
+
+        for t in range(1, len(df)):
+            x = distance[t] - distance[t-1]
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
 
 class TailRiskCusumEvents(BaseEventGenerator):
     """

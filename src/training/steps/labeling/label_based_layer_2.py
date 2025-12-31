@@ -103,6 +103,8 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     VolatilityCusumEvents,
     LiquidityCusumEvents,
     VolumeCusumEvents,
+    RangeATRcusumEvents,
+    SRCusumEvents,
     TailRiskCusumEvents,
     TrendRegimeCusumEvents,
     VolatilityStateEvents,
@@ -113,7 +115,16 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     compute_trend_persistence_labels,
     compute_vol_state_labels,
     OutputGeometry as OrthoGeometry,
-    GENERATOR_PARAM_NAMES
+    GENERATOR_PARAM_NAMES,
+    get_signal_specific_weights,
+    SupportResistanceBreakEvents,
+    ATRShockEvents,
+    TrendModulatedBreakoutEvents,
+    VWAPReversionEvents,
+    MicrostructureEvents,
+    EntropyEvents,
+    KalmanTrendEvents,
+    VWAPCrossEvents
 )
 
 # Configure logging
@@ -522,6 +533,7 @@ class LabelBasedLayer2:
         self.random_state = random_state
         self.verbose = verbose
         self.force_hpo = force_hpo
+        self.signal_weights = None
 
         self.selected_geometries: List[GeometryTrial] = []
         self._labels_cache = {}
@@ -534,6 +546,7 @@ class LabelBasedLayer2:
         self._feature_cache = {}  # Cache features per fold
         self._events_cache = {}   # Cache events per family per fold
         self._label_cache = {}    # Cache labels per family per fold
+        self._weight_cache = {}   # Cache weights per family per fold
 
         # Event generators for each family
         self.generators = {
@@ -541,6 +554,8 @@ class LabelBasedLayer2:
             "VOL_CUSUM": VolatilityCusumEvents(),
             "LIQ_CUSUM": LiquidityCusumEvents(),
             "VOL_PARTICIPATION": VolumeCusumEvents(),
+            "RANGE_ATR": RangeATRcusumEvents(),
+            "SR_CUSUM": SRCusumEvents(),
             "TAIL_RISK": TailRiskCusumEvents(),
             "TREND_REGIME": TrendRegimeCusumEvents(),
             "VOL_STATE": VolatilityStateEvents(),
@@ -555,6 +570,7 @@ class LabelBasedLayer2:
 
     def execute(self, df: pd.DataFrame, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         self._current_config = dict(config or {})
+        self.signal_weights = self._current_config.get('signal_weights', None)
         return self.run(df)
 
 
@@ -633,15 +649,23 @@ class LabelBasedLayer2:
         return self._feature_cache[cache_key]
     
     def _compute_labels_batch(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
-                            geometries: List, family: str, fold_idx: int) -> Dict[str, pd.Series]:
-        """Compute labels for multiple geometries of the same family at once."""
-        tprint_info(f"🔄 Computing batch labels for {len(geometries)} {family} geometries (fold {fold_idx})...")
+                            geometries: List, family: str, fold_idx: int,
+                            sr_levels: List = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
+        """Compute labels and weights for multiple geometries of the same family at once."""
+        tprint_info(f"🔄 Computing batch labels/weights for {len(geometries)} {family} geometries (fold {fold_idx})...")
         
         # Create events df once
         events_df = pd.DataFrame(index=events)
         
+        # Pre-compute signal weights for this event set once
+        base_signal_weights = get_signal_specific_weights(
+            df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights, family=family
+        )
+
         # Compute labels for all geometries in this family
         labels_dict = {}
+        weights_dict = {}
+
         for gt in geometries:
             try:
                 if family == 'PRICE_CUSUM':
@@ -662,26 +686,49 @@ class LabelBasedLayer2:
                 elif family == 'VOL_STATE':
                     horizon = int(gt.params.get('horizon', 24))
                     labels, weights, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
+                elif family == 'RANGE_ATR' or family == 'SR_CUSUM':
+                    # Use Volatility Expansion Logic as proxy for now, or implement specific logic
+                    # Usually ATR bursts (RangeATR) imply vol expansion.
+                    # SR Breakouts (SR_CUSUM) imply regime change/expansion.
+                    pt = gt.params.get('pt_mult', 2.0)
+                    k_factor = 1.1 + (pt * 0.1)
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
                 else:
-                    # Map params to Volatility Logic
+                    # Map params to Volatility Logic (VOL_CUSUM, VOL_PARTICIPATION)
                     pt = gt.params.get('pt_mult', 2.0)
                     k_factor = 1.1 + (pt * 0.1)
                     horizon = int(gt.params.get('horizon', 24))
                     labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
 
                 labels_dict[gt.uuid] = labels
+                # Use De Prado weights if available (base_signal_weights), otherwise fall back to dominance weights
+                # Combine them? e.g. multiply.
+                if base_signal_weights is not None and not base_signal_weights.empty:
+                    # Align weights
+                    aligned_base_w = base_signal_weights.reindex(labels.index).fillna(0.0)
+                    # For dominance labels, 'weights' is outcome quality.
+                    # For signal weights, it is input quality.
+                    # Product seems appropriate.
+                    final_w = weights * aligned_base_w
+                    weights_dict[gt.uuid] = final_w
+                else:
+                    weights_dict[gt.uuid] = weights
+
             except Exception as e:
                 tprint_warning(f"⚠️ Label computation failed for {gt.uuid}: {e}")
                 labels_dict[gt.uuid] = pd.Series([], dtype=float)
+                weights_dict[gt.uuid] = pd.Series([], dtype=float)
         
-        return labels_dict
+        return labels_dict, weights_dict
 
     def _get_cached_labels(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
-                          gt, family: str, fold_idx: int) -> pd.Series:
-        """Get cached labels or compute and cache them."""
-        cache_key = self._get_cache_key("labels", f"{family}_{gt.uuid}", fold_idx)
+                          gt, family: str, fold_idx: int, sr_levels: List = None) -> Tuple[pd.Series, pd.Series]:
+        """Get cached labels/weights or compute and cache them."""
+        cache_key_lbl = self._get_cache_key("labels", f"{family}_{gt.uuid}", fold_idx)
+        cache_key_wgt = self._get_cache_key("weights", f"{family}_{gt.uuid}", fold_idx)
         
-        if cache_key not in self._label_cache:
+        if cache_key_lbl not in self._label_cache:
             # Compute single geometry (fallback)
             events_df = pd.DataFrame(index=events)
 
@@ -703,17 +750,31 @@ class LabelBasedLayer2:
             elif family == 'VOL_STATE':
                  horizon = int(gt.params.get('horizon', 24))
                  labels, _, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
+            elif family == 'RANGE_ATR' or family == 'SR_CUSUM':
+                 pt = gt.params.get('pt_mult', 2.0)
+                 k_factor = 1.1 + (pt * 0.1)
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
             else:
                  pt = gt.params.get('pt_mult', 2.0)
                  k_factor = 1.1 + (pt * 0.1)
                  horizon = int(gt.params.get('horizon', 24))
-                 labels, _, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+                 labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
 
-            self._label_cache[cache_key] = labels
+            # Apply signal weights
+            signal_w = get_signal_specific_weights(df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights, family=family)
+            if signal_w is not None and not signal_w.empty:
+                aligned = signal_w.reindex(labels.index).fillna(0.0)
+                final_w = weights * aligned
+            else:
+                final_w = weights
+
+            self._label_cache[cache_key_lbl] = labels
+            self._weight_cache[cache_key_wgt] = final_w
         else:
             tprint_info(f"✅ Using cached labels for {gt.uuid} (fold {fold_idx})")
         
-        return self._label_cache[cache_key]
+        return self._label_cache[cache_key_lbl], self._weight_cache[cache_key_wgt]
 
     def clear_caches(self):
         """Clear all performance optimization caches."""
@@ -751,8 +812,14 @@ class LabelBasedLayer2:
         # but we initialize the structure.
         df, _, _, global_probe_features = self.prepare_data_and_events(df)
 
+        # Calculate SR Levels globally once
+        sr_gen = SupportResistanceBreakEvents()
+        res, sup = sr_gen._identify_sr_levels(df, lookback=50, min_touches=3, current_time=df.index[-1])
+        self.sr_levels = [r['price'] for r in res] + [s['price'] for s in sup]
+
         # 2. Optimize (Orthogonal Selection)
         # This returns GeometryTrial objects which contain their own events.
+        # Pass signal_weights to orthogonal_label_generation
         production_geometries, production_selected_features = self.optimize_production_geometries(
             df, None, global_probe_features=global_probe_features
         )
@@ -847,7 +914,7 @@ class LabelBasedLayer2:
 
         # 1. Generate & Filter
         # Note: orthogonal_label_generation now handles labeling/looping internally
-        ortho_geoms = orthogonal_label_generation(df)
+        ortho_geoms = orthogonal_label_generation(df, signal_weights=self.signal_weights)
 
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
@@ -1110,15 +1177,19 @@ class LabelBasedLayer2:
                     tprint_warning(f"⚠️ No features generated for {family}")
                     continue
                 
-                # 3. Compute labels for all geometries in this group at once
-                labels_dict = self._compute_labels_batch(df_train, train_evts_idx, group_geometries, family, i)
+                # 3. Compute labels and weights for all geometries in this group at once
+                labels_dict, weights_dict = self._compute_labels_batch(
+                    df_train, train_evts_idx, group_geometries, family, i, sr_levels=self.sr_levels
+                )
                 
                 # 4. Process each geometry in the family
-                for gt in family_geometries:
+                for gt in group_geometries: # Fixed: family_geometries -> group_geometries
                     tprint_info(f"🚀 Training {gt.uuid} (family: {family})")
                     
-                    # Get labels for this geometry
+                    # Get labels and weights for this geometry
                     labels = labels_dict.get(gt.uuid)
+                    weights = weights_dict.get(gt.uuid)
+
                     if labels is None or len(labels) < 20:
                         tprint_warning(f"⚠️ Too few valid labels for {gt.uuid}")
                         continue
@@ -1141,9 +1212,12 @@ class LabelBasedLayer2:
                         X_train_final = X_train_geo
                         tprint_info(f"   📊 Using all {len(X_train_geo.columns)} features for {gt.uuid}")
                     
-                    # Align labels with features
+                    # Align labels and weights with features
                     y_train = labels.loc[X_train_final.index]
-                    w_train = None
+                    if weights is not None:
+                        w_train = weights.reindex(y_train.index).fillna(0.0)
+                    else:
+                        w_train = None
     
                     # Train Model
                     try:
@@ -1311,6 +1385,11 @@ class LabelBasedLayer2:
         elif gt.family == 'VOL_STATE':
              horizon = int(gt.params.get('horizon', 24))
              labels, _, _, _, _, _ = compute_vol_state_labels(df, gt.events, horizon=horizon)
+        elif gt.family == 'RANGE_ATR' or gt.family == 'SR_CUSUM':
+             pt = gt.params.get('pt_mult', 2.0)
+             k_factor = 1.1 + (pt * 0.1)
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_volatility_labels(df, gt.events, horizon=horizon, k=k_factor)
         else:
              pt = gt.params.get('pt_mult', 2.0)
              k_factor = 1.1 + (pt * 0.1)

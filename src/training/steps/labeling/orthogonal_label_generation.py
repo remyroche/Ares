@@ -1175,7 +1175,8 @@ GENERATOR_PARAM_NAMES = {
     'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold'],
     'TailRiskCusumEvents': ['h', 'window', 'metric'],
     'TrendRegimeCusumEvents': ['h', 'fast', 'slow'],
-    'VolatilityStateEvents': ['h', 'vol_span']
+    'VolatilityStateEvents': ['h', 'vol_span'],
+    'AdaptiveSymmetricCUSUMEvents': ['multiplier', 'vol_window']
 }
 
 DF_REQUIRED_CLASSES = (
@@ -2698,35 +2699,47 @@ def generate_dual_cusum_signals(
 
 
 class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
-    """Symmetric CUSUM with Dynamic Thresholds based on Volatility."""
-    def generate(self, price: pd.Series, multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
-        t_events = []
-        s_pos, s_neg = 0, 0
-        diff = np.log(price).diff()
-        vol = diff.rolling(vol_window).std()
-        diff_val, vol_val, idx = diff.values, vol.values, price.index
+    """
+    Fully Adaptive CUSUM (Dual Signal: Trend + Mean Reversion).
+    Re-enabled to generate both mean reversions and trends using Kalman filtering.
+    """
+    def generate(self, data: Union[pd.Series, pd.DataFrame], multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
+        if isinstance(data, pd.DataFrame):
+            close = data['close']
+            volume = data.get('volume')
+        else:
+            close = data
+            volume = None
 
-        start_idx = vol_window
-        if start_idx < len(vol_val) and np.isnan(vol_val[start_idx]):
-            valid_indices = np.where(~np.isnan(vol_val))[0]
-            start_idx = valid_indices[0] if len(valid_indices) > 0 else len(price)
+        try:
+            # Map multiplier to 'k' (threshold scaling)
+            # Standard k is around 0.1-0.2 for daily? Or just a scalar.
+            # In generate_dual_cusum_signals, k is used as k * sigma.
+            # Our multiplier is passed as 0.5 or 0.75 in the grid.
+            # Dual CUSUM default k is 0.12.
+            # If multiplier is 0.5, it's aggressive.
+            # I will use multiplier directly as k.
 
-        for i in range(start_idx, len(price)):
-            h = vol_val[i] * multiplier
-            if np.isnan(h) or h == 0:
-                continue
-            r = diff_val[i]
-            if np.isnan(r):
-                continue
-            s_pos = max(0, s_pos + r)
-            s_neg = min(0, s_neg + r)
-            if s_pos > h:
-                s_neg = s_pos = 0
-                t_events.append(idx[i])
-            elif s_neg < -h:
-                s_neg = s_pos = 0
-                t_events.append(idx[i])
-        return pd.DatetimeIndex(t_events)
+            dual_signals = generate_dual_cusum_signals(
+                close=close, volume=volume,
+                k=multiplier, # multiplier serves as threshold 'k'
+                vol_window=vol_window,
+                window_vol=vol_window
+            )
+
+            # Combine signals (Trend + Reversion)
+            # We want events for EITHER.
+            # Using simple OR logic on non-zero signals.
+
+            w_trend = 1.0
+            w_reversal = 1.0
+
+            composite = w_trend * dual_signals['trend_signal'] + w_reversal * dual_signals['reversal_signal']
+            return composite.index[composite != 0]
+
+        except Exception as e:
+            logger.warning(f"AdaptiveSymmetricCUSUMEvents failed: {e}")
+            return pd.DatetimeIndex([])
 
 
 class VolatilityCusumEvents(BaseEventGenerator):

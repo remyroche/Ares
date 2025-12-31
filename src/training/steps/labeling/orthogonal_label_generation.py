@@ -2761,12 +2761,16 @@ class VolatilityCusumEvents(BaseEventGenerator):
         vol = ewma_volatility(ret, span=vol_span)
         log_vol_change = np.log(vol).diff()
 
+        # Normalize (Consistency Update)
+        norm = log_vol_change.rolling(100).std()
+        xt = log_vol_change / (norm + 1e-9)
+
         s_pos, s_neg = 0.0, 0.0
         events = []
 
         # Iteration
         # Vectorization is hard for CUSUM, loop is fine
-        vals = log_vol_change.values
+        vals = xt.values
         idx = close.index
 
         for t in range(1, len(vals)):
@@ -2801,10 +2805,16 @@ class LiquidityCusumEvents(BaseEventGenerator):
         # Handle potential zeros/nans
         liq_stress = np.log(true_range / (vol + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
 
+        # CUSUM on changes (consistent with trend/vol)
+        xt_raw = liq_stress.diff()
+        # Normalize
+        norm = xt_raw.rolling(100).std()
+        xt = xt_raw / (norm + 1e-9)
+
         s_pos, s_neg = 0.0, 0.0
         events = []
 
-        vals = liq_stress.values
+        vals = xt.values
         idx = df.index
 
         for t in range(1, len(vals)):
@@ -2843,10 +2853,14 @@ class VolumeCusumEvents(BaseEventGenerator):
         # vol_surprise = np.log(volume / vol_avg)
         vol_surprise = np.log(volume / (vol_avg + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
 
+        # Normalize
+        norm = vol_surprise.rolling(100).std()
+        xt = vol_surprise / (norm + 1e-9)
+
         s_pos, s_neg = 0.0, 0.0
         events = []
 
-        vals = vol_surprise.values
+        vals = xt.values
         idx = volume.index
 
         for t in range(1, len(vals)):
@@ -2964,10 +2978,11 @@ class VolatilityStateEvents(BaseEventGenerator):
 
         # CUSUM on vol changes (similar to VolCusum but maybe different tuning)
         # xt = diff(log(vol))
-        xt = np.log(vol).diff()
+        xt_raw = np.log(vol).diff()
 
-        # Normalize? CUSUM on log vol diffs is already standard.
-        # VolCusum used raw log diffs.
+        # Normalize
+        norm = xt_raw.rolling(100).std()
+        xt = xt_raw / (norm + 1e-9)
 
         s_pos, s_neg = 0.0, 0.0
         events = []
@@ -3080,3 +3095,178 @@ class TimeEvents(BaseEventGenerator):
 
 # Aliases
 CusumEvents = AdaptiveSymmetricCUSUMEvents
+
+# ==========================================
+# 9. Meta-Learning Dataset Generation
+# ==========================================
+
+def apply_persistence_label(df: pd.DataFrame, events: pd.DatetimeIndex, series_col: str, horizon: int = 48, threshold: float = 0.0) -> pd.Series:
+    """
+    Generic persistence labeler.
+    Returns 1 if series_col > threshold on average over horizon.
+    """
+    if events.empty or series_col not in df.columns:
+        return pd.Series(0, index=df.index)
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return pd.Series(0, index=df.index)
+
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+
+    # Filter valid
+    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
+    valid_idxs = event_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return pd.Series(0, index=df.index)
+
+    # Window Matrix
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+
+    vals = df[series_col].values[window_idxs]
+    avg_vals = np.mean(vals, axis=1)
+
+    labels = (avg_vals > threshold).astype(int)
+
+    out = pd.Series(0, index=df.index)
+    out.loc[final_events] = labels
+    return out
+
+def apply_triple_barrier_multi(df: pd.DataFrame, events: pd.DatetimeIndex,
+                                pt_sl: Tuple[float,float]=(2.0, 1.0), # multipliers for vol
+                                horizons: list=[12,48]) -> pd.DataFrame:
+    """
+    Returns a DataFrame of price labels for multiple horizons using volatility-adjusted barriers.
+    Columns: 'price_label_{horizon}'
+    """
+    out = pd.DataFrame(0, index=df.index, columns=[f'price_label_{h}' for h in horizons], dtype=int)
+    close = df['close'].values
+
+    # Volatility
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d'].values
+    else:
+        vol = df['close'].pct_change().rolling(100).std().fillna(0).values
+
+    # Normalize TZ
+    if df.index.tz is not None:
+        idx_base = df.index.tz_localize(None)
+    else:
+        idx_base = df.index
+
+    if events.tz is not None:
+        events_norm = events.tz_localize(None)
+    else:
+        events_norm = events
+
+    event_idxs = idx_base.get_indexer(events_norm)
+    valid_mask = (event_idxs != -1)
+    valid_idxs = event_idxs[valid_mask]
+
+    for h in horizons:
+        # Filter for horizon
+        h_mask = valid_idxs < (len(close) - h)
+        h_idxs = valid_idxs[h_mask]
+
+        if len(h_idxs) == 0:
+            continue
+
+        # Vectorized Window
+        offsets = np.arange(1, h + 1)
+        window_idxs = h_idxs[:, None] + offsets[None, :]
+
+        window_prices = close[window_idxs]
+        entry_prices = close[h_idxs]
+        entry_vols = vol[h_idxs]
+
+        # Avoid zero vol
+        entry_vols = np.maximum(entry_vols, 1e-6)
+
+        ret = window_prices / entry_prices[:, None] - 1.0
+
+        up_barrier = pt_sl[0] * entry_vols
+        down_barrier = pt_sl[1] * entry_vols
+
+        hit_up = ret >= up_barrier[:, None]
+        hit_down = ret <= -down_barrier[:, None]
+
+        # First hit logic
+        first_up = np.argmax(hit_up, axis=1)
+        first_down = np.argmax(hit_down, axis=1)
+
+        # Mask where no hit occurred (argmax returns 0 if all false, need to check if actually hit)
+        any_up = np.any(hit_up, axis=1)
+        any_down = np.any(hit_down, axis=1)
+
+        labels = np.zeros(len(h_idxs), dtype=int)
+
+        # Vectorized check
+        # Case 1: Only Up
+        mask_up = any_up & ~any_down
+        labels[mask_up] = 1
+
+        # Case 2: Only Down
+        mask_down = any_down & ~any_up
+        labels[mask_down] = -1
+
+        # Case 3: Both
+        mask_both = any_up & any_down
+        # first_up < first_down -> 1
+        sub_mask_up = mask_both & (first_up < first_down)
+        labels[sub_mask_up] = 1
+
+        sub_mask_down = mask_both & (first_down < first_up)
+        labels[sub_mask_down] = -1
+
+        # Assign to output
+        evt_timestamps = events_norm[valid_mask][h_mask]
+
+        # Align TZ if needed
+        if df.index.tz is not None and evt_timestamps.tz is None:
+             evt_timestamps = evt_timestamps.tz_localize(df.index.tz)
+
+        out.loc[evt_timestamps, f'price_label_{h}'] = labels
+
+    return out
+
+def create_meta_learning_dataset_dualTBM(df: pd.DataFrame, base_features: pd.DataFrame,
+                                         pt_sl=(2.0, 1.0), tbm_horizons=[12,48]):
+    meta_df = base_features.copy()
+
+    # Directional price labels for multiple horizons
+    if 'price_dual_cusum' in base_features.columns:
+        price_events = base_features.index[base_features['price_dual_cusum']==1]
+        # Normalize timezones
+        if df.index.tz != price_events.tz:
+             if price_events.tz is None: price_events = price_events.tz_localize(df.index.tz)
+             else: price_events = price_events.tz_convert(df.index.tz)
+
+        tbm_labels = apply_triple_barrier_multi(df, price_events, pt_sl=pt_sl, horizons=tbm_horizons)
+        meta_df = pd.concat([meta_df, tbm_labels], axis=1)
+
+    # Contextual labels
+    context_map = {
+        'volatility_cusum': 'volatility_1d',
+        'liquidity_cusum': 'liq_stress',
+        'volume_cusum': 'volume',
+        'tailrisk_cusum': 'tail_metric',
+        'trend_regime_cusum': 'trend',
+        'vol_state_cusum': 'vol_state'
+    }
+
+    for col, series_col in context_map.items():
+        if col in base_features.columns and series_col in df.columns:
+            events = base_features.index[base_features[col]==1]
+            if df.index.tz != events.tz:
+                 if events.tz is None: events = events.tz_localize(df.index.tz)
+                 else: events = events.tz_convert(df.index.tz)
+
+            lbl = apply_persistence_label(df, events, series_col=series_col, horizon=48, threshold=0.0)
+            meta_df[f'{col}_label'] = lbl
+
+    return meta_df

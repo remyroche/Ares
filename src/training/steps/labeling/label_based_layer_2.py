@@ -94,10 +94,6 @@ from src.training.steps.labeling.label_geometry_selection import (
     MIN_TP_SL_RATIO
 )
 
-from src.training.steps.labeling.regime_leaf_feature_extractor import (
-    extract_regime_leaf_onehot_features,
-)
-
 from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_selection_pipeline
 
 # Import Orthogonal Generation

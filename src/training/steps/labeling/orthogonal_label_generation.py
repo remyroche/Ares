@@ -1885,29 +1885,24 @@ def final_diversity_filter(
 def get_enhanced_parameter_grids() -> Dict[str, Dict]:
     """
     Define enhanced parameter grids for each signal family including:
-    - TP/SL ratios (expanded from fixed grid)
-    - Horizons (multiple timeframes)
+    - Barrier Regimes (replacing dense grid search)
     - Lookback variations
-    - MFE/MAE optimization parameters
     """
     
-    # Enhanced TPSL grid (more granular)
-    tpsl_grid = [
-        # Conservative (high win rate)
-        {'id': '1.5:1', 'pt': 1.5, 'sl': 1.0},
-        {'id': '2:1', 'pt': 2.0, 'sl': 1.0},
+    # User-Specified Barrier Regimes to Restore Orthogonality
+    barrier_regimes = [
+        # 1. Momentum: Short, tight PT / loose SL
+        {'id': 'MOMENTUM', 'horizon': 12, 'pt_mult': 1.5, 'sl_mult': 3.0, 'risk_budget': 1.0},
         
-        # Balanced
-        {'id': '2.5:1', 'pt': 2.5, 'sl': 1.0},
-        {'id': '3:1', 'pt': 3.0, 'sl': 1.0},
-        {'id': '3.5:1', 'pt': 3.5, 'sl': 1.0},
+        # 2. Mean Reversion: Short, loose PT / tight SL
+        {'id': 'MEAN_REV', 'horizon': 12, 'pt_mult': 3.0, 'sl_mult': 1.5, 'risk_budget': 1.0},
         
-        # Aggressive (high reward)
-        {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
+        # 3. Breakout: Medium, symmetric
+        {'id': 'BREAKOUT', 'horizon': 48, 'pt_mult': 3.0, 'sl_mult': 3.0, 'risk_budget': 1.0},
+
+        # 4. Trend: Long, vertical barrier dominant (Wide barriers)
+        {'id': 'TREND',    'horizon': 120, 'pt_mult': 6.0, 'sl_mult': 3.0, 'risk_budget': 1.0},
     ]
-    
-    # Horizon options (restricted to 3 timeframes)
-    horizon_options = [12, 24, 48]  # 3h, 6h, 12h
     
     # Family-specific parameter grids (restricted to 12, 24, 48)
     family_grids = {
@@ -1957,8 +1952,7 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
     }
     
     return {
-        'tpsl_grid': tpsl_grid,
-        'horizon_options': horizon_options,
+        'barrier_regimes': barrier_regimes,
         'family_grids': family_grids,
     }
 
@@ -1990,21 +1984,7 @@ def orthogonal_label_generation(
     Enhanced Execution Pipeline for Orthogonal Label Generation.
     Implements: Generate -> Score -> Top 50% -> Probe -> Final Diversity Filter.
     
-    OPTIMIZATION PARAMETERS:
-    - TP/SL ratios: 6 enhanced ratios (1.5:1 to 4:1)
-    - Horizons: 3 timeframes (12, 24, 48 bars) - optimized per geometry
-    - Lookbacks: Family-specific parameters using 12, 24, 48 bars
-    - Risk budget: 3 possibilities (0.4, 0.7, 1.0) - 0=no drawdown before TP, 1=very close to SL on average
-    
-    Args:
-        data: Price series or dataframe with OHLCV data
-        volume: Volume series (optional)
-        df_full: Full dataframe with OHLCV (optional)
-        target_signals_per_day: Target signal generation rate per feature
-        use_adaptive_thresholds: Whether to use adaptive thresholding
-    
-    Returns:
-        List of diverse OutputGeometry objects optimized per signal family
+    Uses DISTINCT BARRIER REGIMES to ensure orthogonality.
     """
     tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
 
@@ -2104,62 +2084,64 @@ def orthogonal_label_generation(
             # Create parameter dict for logging
             param_dict = dict(zip(GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, []), params))
 
-            # Iterate Enhanced Grids
-            tpsl_grid = param_grids['tpsl_grid']
-            horizon_options = param_grids['horizon_options']
-            risk_budget_options = [0.4, 0.7, 1.0]  # 0=no drawdown before TP, 1=very close to SL on average
+            # Iterate Barrier Regimes (Replacing Grid Search)
+            barrier_regimes = param_grids['barrier_regimes']
             
-            for grid_item in tpsl_grid:
-                pt = grid_item['pt']
-                sl = grid_item['sl']
+            for regime in barrier_regimes:
+                pt = regime['pt_mult']
+                sl = regime['sl_mult']
+                horizon = regime['horizon']
+                risk_budget = regime['risk_budget']
+                regime_id = regime['id']
                 
-                for horizon in horizon_options:
-                    for risk_budget in risk_budget_options:
-                        high = df_full.get('high')
-                        low = df_full.get('low')
+                high = df_full.get('high')
+                low = df_full.get('low')
 
-                        labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
-                            price, events, df_full['volatility_1d'],
-                            risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
-                            high=high, low=low
-                        )
+                labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                    price, events, df_full['volatility_1d'],
+                    risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                    high=high, low=low
+                )
 
-                        if labels.empty:
-                            logger.warning(f"DEBUG: Labels empty for {fam} (RB={risk_budget}, PT={pt}, SL={sl})")
-                            continue
+                if labels.empty:
+                    logger.warning(f"DEBUG: Labels empty for {fam} ({regime_id})")
+                    continue
 
-                        passed, metrics, status = check_label_quality(
-                            events, labels, returns, df_full, X_probe, gen, param_dict
-                        )
+                passed, metrics, status = check_label_quality(
+                    events, labels, returns, df_full, X_probe, gen, param_dict
+                )
 
-                        outcomes_log.append({
-                            'family': fam,
-                            'params': str(param_dict),
-                            'pt_mult': pt,
-                            'sl_mult': sl,
-                            'horizon': horizon,
-                            'risk_budget': risk_budget,
-                            'status': status,
-                            'n': metrics.get('n', 0),
-                            'pos_rate': metrics.get('pos_rate', 0),
-                            'min_p': metrics.get('min_p', 1.0),
-                            'max_mi': metrics.get('max_mi', 0.0),
-                            'signals_per_day': round(signals_per_day, 2),
-                            'target_signals_per_day': target_signals_per_day,
-                            'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
-                        })
+                outcomes_log.append({
+                    'family': fam,
+                    'regime': regime_id,
+                    'params': str(param_dict),
+                    'pt_mult': pt,
+                    'sl_mult': sl,
+                    'horizon': horizon,
+                    'risk_budget': risk_budget,
+                    'status': status,
+                    'n': metrics.get('n', 0),
+                    'pos_rate': metrics.get('pos_rate', 0),
+                    'min_p': metrics.get('min_p', 1.0),
+                    'max_mi': metrics.get('max_mi', 0.0),
+                    'signals_per_day': round(signals_per_day, 2),
+                    'target_signals_per_day': target_signals_per_day,
+                    'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
+                })
 
-                        if passed:
-                            candidates.append({
-                                'family': fam,
-                                'events': events,
-                                'labels': labels,
-                                'weights': weights,
-                                'returns': returns,
-                                'mfe': mfe, 'mae': mae, 'vol': vol,
-                                'params': {**param_dict, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': horizon},
-                                'status': status
-                            })
+                if passed:
+                    # Append regime to params so it appears in the OutputGeometry name
+                    geo_params = {**param_dict, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': horizon, 'regime': regime_id}
+                    candidates.append({
+                        'family': fam,
+                        'events': events,
+                        'labels': labels,
+                        'weights': weights,
+                        'returns': returns,
+                        'mfe': mfe, 'mae': mae, 'vol': vol,
+                        'params': geo_params,
+                        'status': status
+                    })
 
     # 4. Multi-Factor Scoring
     # 4. Multi-Factor Scoring

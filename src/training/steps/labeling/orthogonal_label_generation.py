@@ -1882,32 +1882,38 @@ def final_diversity_filter(
 # 7. Enhanced Parameter Grids
 # ==========================================
 
+BARRIER_REGIMES = {
+    "MOMENTUM": {
+        "desc": "Short hold, quick profit taking, loose stop to survive noise",
+        "horizon": 12,      # Short (~3h on 15m)
+        "pt_mult": 1.5,     # Tight PT
+        "sl_mult": 3.0,     # Loose SL
+    },
+    "MEAN_REVERSION": {
+        "desc": "Short hold, betting on snap back, tight stop if wrong",
+        "horizon": 12,      # Short (~3h)
+        "pt_mult": 3.0,     # Loose PT (needs significant reversion)
+        "sl_mult": 1.5,     # Tight SL (cut quickly if trend continues)
+    },
+    "BREAKOUT": {
+        "desc": "Medium hold, symmetric risk/reward",
+        "horizon": 24,      # Medium (~6h)
+        "pt_mult": 2.0,     # Balanced PT
+        "sl_mult": 2.0,     # Balanced SL
+    },
+    "TREND": {
+        "desc": "Long hold, wide barriers to capture drift",
+        "horizon": 48,      # Long (~12h)
+        "pt_mult": 4.0,     # Wide target
+        "sl_mult": 2.0,     # Moderate stop
+    }
+}
+
 def get_enhanced_parameter_grids() -> Dict[str, Dict]:
     """
-    Define enhanced parameter grids for each signal family including:
-    - TP/SL ratios (expanded from fixed grid)
-    - Horizons (multiple timeframes)
-    - Lookback variations
-    - MFE/MAE optimization parameters
+    Define enhanced parameter grids for each signal family.
+    Note: TP/SL ratios and Horizons are now handled by BARRIER_REGIMES.
     """
-    
-    # Enhanced TPSL grid (more granular)
-    tpsl_grid = [
-        # Conservative (high win rate)
-        {'id': '1.5:1', 'pt': 1.5, 'sl': 1.0},
-        {'id': '2:1', 'pt': 2.0, 'sl': 1.0},
-        
-        # Balanced
-        {'id': '2.5:1', 'pt': 2.5, 'sl': 1.0},
-        {'id': '3:1', 'pt': 3.0, 'sl': 1.0},
-        {'id': '3.5:1', 'pt': 3.5, 'sl': 1.0},
-        
-        # Aggressive (high reward)
-        {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
-    ]
-    
-    # Horizon options (restricted to 3 timeframes)
-    horizon_options = [12, 24, 48]  # 3h, 6h, 12h
     
     # Family-specific parameter grids (restricted to 12, 24, 48)
     family_grids = {
@@ -1957,8 +1963,6 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
     }
     
     return {
-        'tpsl_grid': tpsl_grid,
-        'horizon_options': horizon_options,
         'family_grids': family_grids,
     }
 
@@ -2104,62 +2108,72 @@ def orthogonal_label_generation(
             # Create parameter dict for logging
             param_dict = dict(zip(GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, []), params))
 
-            # Iterate Enhanced Grids
-            tpsl_grid = param_grids['tpsl_grid']
-            horizon_options = param_grids['horizon_options']
+            # Iterate through Barrier Regimes
             risk_budget_options = [0.4, 0.7, 1.0]  # 0=no drawdown before TP, 1=very close to SL on average
             
-            for grid_item in tpsl_grid:
-                pt = grid_item['pt']
-                sl = grid_item['sl']
+            # Use defined barrier regimes instead of generic grid to restore orthogonality
+            for regime_name, regime_params in BARRIER_REGIMES.items():
+                pt = regime_params['pt_mult']
+                sl = regime_params['sl_mult']
+                horizon = regime_params['horizon']
                 
-                for horizon in horizon_options:
-                    for risk_budget in risk_budget_options:
-                        high = df_full.get('high')
-                        low = df_full.get('low')
+                for risk_budget in risk_budget_options:
+                    high = df_full.get('high')
+                    low = df_full.get('low')
 
-                        labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
-                            price, events, df_full['volatility_1d'],
-                            risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
-                            high=high, low=low
-                        )
+                    labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                        price, events, df_full['volatility_1d'],
+                        risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                        high=high, low=low
+                    )
 
-                        if labels.empty:
-                            logger.warning(f"DEBUG: Labels empty for {fam} (RB={risk_budget}, PT={pt}, SL={sl})")
-                            continue
+                    if labels.empty:
+                        logger.warning(f"DEBUG: Labels empty for {fam} {regime_name} (RB={risk_budget})")
+                        continue
 
-                        passed, metrics, status = check_label_quality(
-                            events, labels, returns, df_full, X_probe, gen, param_dict
-                        )
+                    passed, metrics, status = check_label_quality(
+                        events, labels, returns, df_full, X_probe, gen, param_dict
+                    )
 
-                        outcomes_log.append({
+                    # Store full parameters including regime
+                    full_params = {
+                        **param_dict,
+                        'regime': regime_name,
+                        'risk_budget': risk_budget,
+                        'pt_mult': pt,
+                        'sl_mult': sl,
+                        'horizon': horizon
+                    }
+
+                    outcomes_log.append({
+                        'family': fam,
+                        'regime': regime_name,
+                        'params': str(param_dict),
+                        'pt_mult': pt,
+                        'sl_mult': sl,
+                        'horizon': horizon,
+                        'risk_budget': risk_budget,
+                        'status': status,
+                        'n': metrics.get('n', 0),
+                        'pos_rate': metrics.get('pos_rate', 0),
+                        'min_p': metrics.get('min_p', 1.0),
+                        'max_mi': metrics.get('max_mi', 0.0),
+                        'signals_per_day': round(signals_per_day, 2),
+                        'target_signals_per_day': target_signals_per_day,
+                        'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
+                    })
+
+                    if passed:
+                        candidates.append({
                             'family': fam,
-                            'params': str(param_dict),
-                            'pt_mult': pt,
-                            'sl_mult': sl,
-                            'horizon': horizon,
-                            'risk_budget': risk_budget,
-                            'status': status,
-                            'n': metrics.get('n', 0),
-                            'pos_rate': metrics.get('pos_rate', 0),
-                            'min_p': metrics.get('min_p', 1.0),
-                            'max_mi': metrics.get('max_mi', 0.0),
-                            'signals_per_day': round(signals_per_day, 2),
-                            'target_signals_per_day': target_signals_per_day,
-                            'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
+                            'events': events,
+                            'labels': labels,
+                            'weights': weights,
+                            'returns': returns,
+                            'mfe': mfe, 'mae': mae, 'vol': vol,
+                            'params': full_params,
+                            'status': status
                         })
-
-                        if passed:
-                            candidates.append({
-                                'family': fam,
-                                'events': events,
-                                'labels': labels,
-                                'weights': weights,
-                                'returns': returns,
-                                'mfe': mfe, 'mae': mae, 'vol': vol,
-                                'params': {**param_dict, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': horizon},
-                                'status': status
-                            })
 
     # 4. Multi-Factor Scoring
     # 4. Multi-Factor Scoring

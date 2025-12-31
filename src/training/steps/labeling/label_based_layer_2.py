@@ -119,7 +119,10 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     MeanReversionExtremeEvents,
     LiquidityShockEvents,
     TimeEvents,
-    OutputGeometry as OrthoGeometry
+    OutputGeometry as OrthoGeometry,
+    PriceCusumEvents,
+    VolatilityCusumEvents,
+    RangeCusumEvents
 )
 
 # Configure logging
@@ -543,20 +546,23 @@ class LabelBasedLayer2:
 
         # Event generators for each family
         self.generators = {
-            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
-            "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "KALMAN_TREND": KalmanTrendEvents(),
-            "FVG_SMART_MONEY": None,  # Will be handled separately if needed
-            "MR_VWAP": VWAPReversionEvents(),
+            "CUSUM_PRICE": PriceCusumEvents(),
+            "CUSUM_VOL": VolatilityCusumEvents(),
+            "CUSUM_RANGE": RangeCusumEvents(),
+            # "CUSUM": AdaptiveSymmetricCUSUMEvents(),
+            # "VOL": ATRShockEvents(),
+            # "TREND": TrendModulatedBreakoutEvents(),
+            # "MEAN": VWAPReversionEvents(),
+            # "LIQUIDITY": MicrostructureEvents(),
+            # "ENTROPY": EntropyEvents(),
+            # "BREAKOUT": TrendModulatedBreakoutEvents(),
+            # "KALMAN": KalmanTrendEvents(),
+            # "MR": VWAPReversionEvents(),
+            # "VWAP": VWAPCrossEvents(),
+            # "MEAN_REV": VWAPReversionEvents(),
+            # "KALMAN_TREND": KalmanTrendEvents(),
+            # "FVG_SMART_MONEY": None,  # Will be handled separately if needed
+            # "MR_VWAP": VWAPReversionEvents(),
         }
 
         cpu_guess = max(1, (os.cpu_count() or 4) - 1)
@@ -886,19 +892,22 @@ class LabelBasedLayer2:
             folds.append((start, end))
 
         generators = {
-            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
-            "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
+            "CUSUM_PRICE": PriceCusumEvents(),
+            "CUSUM_VOL": VolatilityCusumEvents(),
+            "CUSUM_RANGE": RangeCusumEvents(),
+            # "CUSUM": AdaptiveSymmetricCUSUMEvents(),
+            # "VOL": ATRShockEvents(),
+            # "TREND": TrendModulatedBreakoutEvents(),
+            # "MEAN": VWAPReversionEvents(),
+            # "LIQUIDITY": MicrostructureEvents(),
+            # "ENTROPY": EntropyEvents(),
+            # "BREAKOUT": TrendModulatedBreakoutEvents(),
+            # "KALMAN": KalmanTrendEvents(),
+            # "MR": VWAPReversionEvents(),
+            # "VWAP": VWAPCrossEvents(),
+            # "MEAN_REV": VWAPReversionEvents(),
+            # "LIQUIDITY": MicrostructureEvents(),
+            # "ENTROPY": EntropyEvents(),
             # "TIME": EntropyEvents() # Replacing TIME with Entropy as it is structural
         }
 

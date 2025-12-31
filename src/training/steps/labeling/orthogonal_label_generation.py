@@ -169,7 +169,7 @@ def ewma_volatility(returns, span=100):
 def compute_volatility_labels(
     df: pd.DataFrame,
     events: pd.DatetimeIndex,
-    horizon: int = 48,
+    horizon: int = 24,
     k: float = 1.3
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
@@ -245,7 +245,7 @@ def compute_volatility_labels(
 def compute_path_degradation_labels(
     df: pd.DataFrame,
     events: pd.DatetimeIndex,
-    horizon: int = 48,
+    horizon: int = 24,
     d_sigma: float = 1.5
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
@@ -331,7 +331,7 @@ def compute_path_degradation_labels(
 def compute_tail_regime_labels(
     df: pd.DataFrame,
     events: pd.DatetimeIndex,
-    horizon: int = 48,
+    horizon: int = 24,
     metric_col: str = 'skew',
     z_thresh: float = 1.5
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
@@ -393,7 +393,7 @@ def compute_tail_regime_labels(
 def compute_trend_persistence_labels(
     df: pd.DataFrame,
     events: pd.DatetimeIndex,
-    horizon: int = 48,
+    horizon: int = 24,
     trend_col: str = 'trend'
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
@@ -446,7 +446,7 @@ def compute_trend_persistence_labels(
 def compute_vol_state_labels(
     df: pd.DataFrame,
     events: pd.DatetimeIndex,
-    horizon: int = 48
+    horizon: int = 24
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Labeling for Volatility State Persistence.

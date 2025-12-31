@@ -203,12 +203,15 @@ class FeatureBank:
             tprint("✅ FeatureBank set as global instance")
             # Auto-register default generators only for the global instance
             tprint("🔧 Auto-registering feature generators...")
+            self._lazy_registry = {}  # Initialize lazy registry
             self._auto_register_generators()
         else:
             # Use existing global feature bank instance - copy its registry
             self.logger.debug("🔄 Using existing global feature bank instance")
             # Copy registry and other state from global instance to maintain consistency
             self.registry = _global_feature_bank.registry
+            # Copy lazy registry if it exists
+            self._lazy_registry = getattr(_global_feature_bank, '_lazy_registry', {}).copy()
             self.feature_cache = _global_feature_bank.feature_cache
             self.state_cache = _global_feature_bank.state_cache
             self.persist_generator_state = _global_feature_bank.persist_generator_state
@@ -255,107 +258,97 @@ class FeatureBank:
 
     def _auto_register_generators(self) -> None:
         """
-        Auto-register default feature generators from all categories.
+        Auto-register default feature generators using LAZY LOADING.
+        Populates _lazy_registry instead of creating generators immediately.
         """
         global _global_feature_bank
 
-        # Check if auto-registration has already been completed globally to prevent duplicates
         if _global_feature_bank and hasattr(_global_feature_bank, '_auto_registration_completed') and _global_feature_bank._auto_registration_completed:
             self.logger.debug("🔄 Auto-registration already completed globally, skipping")
-            # Mark as completed on current instance too
             self._auto_registration_completed = True
             return
 
-        # Also check if we already have generators registered (defensive check)
-        if self.registry and len(self.registry.get_all()) > 0:
-            self.logger.debug(f"🔄 Registry already has {len(self.registry.get_all())} generators, skipping auto-registration")
-            # Mark as completed on current instance too
-            self._auto_registration_completed = True
-            return
+        tprint("🔧 Configuring lazy loading for feature generators...")
+        
+        # Initialize _lazy_registry if not exists
+        if not hasattr(self, '_lazy_registry'):
+            self._lazy_registry = {}
 
-        tprint("🔧 Starting auto-registration of feature generators...")
-        try:
-            # List of categories to auto-register
-            # NOTE: CUSTOM_SUPPORT_RESISTANCE is intentionally excluded (disabled by default)
-            # Enable it manually by registering custom SR generators explicitly
-            # Build categories list - REGIME only if explicitly enabled
-            categories_to_register = []
+        # Map categories to their creation functions
+        category_creators = {
+            FeatureCategory.REGIME: self._create_regime_generators,
+            FeatureCategory.MOMENTUM: self._create_momentum_generators,
+            FeatureCategory.VOLATILITY: self._create_volatility_generators,
+            FeatureCategory.TREND: self._create_trend_generators,
+            FeatureCategory.VOLUME: self._create_volume_generators,
+            FeatureCategory.SUPPORT_RESISTANCE: self._create_sr_generators,
+            FeatureCategory.CUSTOM_SUPPORT_RESISTANCE: self._create_custom_sr_generators,
+            FeatureCategory.RETURNS: self._create_returns_generators,
+            FeatureCategory.OSCILLATOR: self._create_oscillator_generators,
+            FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators,
+            FeatureCategory.ENTROPY: self._create_entropy_generators,
+            FeatureCategory.ORDER_FLOW: self._create_order_flow_generators,
+            FeatureCategory.ACCELERATION: self._create_acceleration_generators,
+            FeatureCategory.CROSS_TIMEFRAME: self._create_cross_timeframe_generators,
+            FeatureCategory.INTERACTION: self._create_interaction_generators,
+            FeatureCategory.MICROSTRUCTURE: self._create_microstructure_generators,
+            FeatureCategory.ADVANCED_STATISTICAL: self._create_advanced_statistical_generators,
+            FeatureCategory.SPECTRAL_WAVELET: self._create_spectral_wavelet_generators
+        }
 
-            # Add REGIME category ONLY if explicitly enabled (for regime models training)
-            if self.config.enable_regime_features:
-                categories_to_register.append(FeatureCategory.REGIME)
-                tprint("🎯 [FEATURE_BANK] REGIME features ENABLED (regime models training mode)", color="green")
-            else:
-                tprint("ℹ️ [FEATURE_BANK] REGIME features DISABLED (standard mode)", color="cyan")
+        # Categories to register
+        categories_to_register = list(category_creators.keys())
+        
+        # Remove REGIME if not enabled
+        if not self.config.enable_regime_features:
+             if FeatureCategory.REGIME in categories_to_register:
+                 categories_to_register.remove(FeatureCategory.REGIME)
+             tprint("ℹ️ [FEATURE_BANK] REGIME features DISABLED (standard mode)", color="cyan")
+        else:
+             tprint("🎯 [FEATURE_BANK] REGIME features ENABLED (regime models training mode)", color="green")
+             
+        # Remove CUSTOM_SR by default (it's optional)
+        if FeatureCategory.CUSTOM_SUPPORT_RESISTANCE in categories_to_register:
+            categories_to_register.remove(FeatureCategory.CUSTOM_SUPPORT_RESISTANCE)
 
-            # Add standard categories (always enabled)
-            categories_to_register.extend([
-                FeatureCategory.MOMENTUM,
-                FeatureCategory.VOLATILITY,
-                FeatureCategory.TREND,
-                FeatureCategory.VOLUME,
-                FeatureCategory.SUPPORT_RESISTANCE,  # Pre-created SR levels only
-                # FeatureCategory.CUSTOM_SUPPORT_RESISTANCE,  # DISABLED by default - custom SR features
-                FeatureCategory.RETURNS,
-                FeatureCategory.OSCILLATOR,
-                FeatureCategory.CANDLESTICK_PATTERN,
-                FeatureCategory.ENTROPY,
-                FeatureCategory.ORDER_FLOW,
-                FeatureCategory.ACCELERATION,
-                FeatureCategory.CROSS_TIMEFRAME,
-                FeatureCategory.INTERACTION,
-                FeatureCategory.MICROSTRUCTURE,
-                FeatureCategory.ADVANCED_STATISTICAL,
-                FeatureCategory.SPECTRAL_WAVELET
-            ])
+        # Register lazy loaders
+        count = 0
+        for category in categories_to_register:
+            creator = category_creators.get(category)
+            if creator:
+                self._lazy_registry[category] = creator
+                count += 1
+                
+        tprint(f"✅ Registered lazy loaders for {count} categories. Generators will be created on demand.")
+        self._auto_registration_completed = True
+        
+        # Mark global
+        if _global_feature_bank:
+            _global_feature_bank._auto_registration_completed = True
 
-            registered_count = 0
-            total_categories = len(categories_to_register)
-            tprint(f"🚀 Initializing {total_categories} feature categories...")
-
-            for i, category in enumerate(categories_to_register, 1):
-                try:
-                    # Debug: Check if category is the right type
-                    if isinstance(category, str):
-                        self.logger.error(f"❌ Category is a string: {category} (type: {type(category)})")
-                        tprint(f"❌ Category is a string: {category} (type: {type(category)})")
-                        continue
-
-                    self.logger.debug(f"Processing category {i}/{total_categories}: {category.value}")
-                    generators = self._create_default_generators_for_category(category)
-                    self.logger.debug(f"Created {len(generators)} generators for {category.value}")
-                    for generator in generators:
-                        self.register_generator(generator)
-                        registered_count += 1
-                    self.logger.debug(f"Progress: {i}/{total_categories} categories completed")
-                except Exception as e:
-                    # Debug: Check category type in exception handler
-                    if isinstance(category, str):
-                        tprint(f"⚠️ Failed to register {category} generators (category is string): {e}")
-                        self.logger.warning(f"⚠️ Failed to register {category} generators (category is string): {e}")
-                    else:
-                        tprint(f"⚠️ Failed to register {category.value} generators: {e}")
-                        self.logger.warning(f"⚠️ Failed to register {category.value} generators: {e}")
-
-            tprint(f"✅ Auto-registration completed. Registered {registered_count} generators")
-            self.logger.info(f"✅ Auto-registered {registered_count} generators from {len(categories_to_register)} categories")
-
-            # Populate the generator factory with the registered generators
+    def _ensure_category_loaded(self, category: FeatureCategory) -> None:
+        """Helper to lazy-load generators for a category if pending."""
+        if hasattr(self, '_lazy_registry') and category in self._lazy_registry:
             try:
-                self.generator_factory.populate_from_feature_bank(self)
-                tprint("✅ Generator factory populated with registered generators")
+                tprint(f"⚡ Lazy initializing category: {category.value}...")
+                creator_func = self._lazy_registry.pop(category)
+                generators = creator_func()
+                
+                # Convert to auto-optimized if enabled
+                if self.config.enable_auto_optimization:
+                    auto_optimized_generators = []
+                    for generator in generators:
+                        auto_optimized_generators.append(self._convert_to_auto_optimized(generator))
+                    generators = auto_optimized_generators
+                
+                # Register
+                for generator in generators:
+                    self.register_generator(generator)
+                    
+                tprint(f"✅ Lazy initialization complete for {category.value}")
             except Exception as e:
-                tprint(f"⚠️ Failed to populate generator factory: {e}")
-                self.logger.warning(f"Failed to populate generator factory: {e}")
-
-            # Mark auto-registration as completed globally to prevent duplicates
-            self._auto_registration_completed = True
-            if _global_feature_bank:
-                _global_feature_bank._auto_registration_completed = True
-
-        except Exception as e:
-            tprint(f"❌ Auto-registration failed: {e}")
-            self.logger.warning(f"⚠️ Auto-registration failed: {e}")
+                tprint(f"❌ Lazy initialization failed for {category.value}: {e}")
+                self.logger.error(f"Lazy initialization failed for {category.value}: {e}")
 
     def _create_default_generators_for_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
         """
@@ -639,7 +632,15 @@ class FeatureBank:
         except Exception as e:
             tprint(f"⚠️ Failed to create trend generators: {e}")
             self.logger.warning(f"⚠️ Failed to create trend generators: {e}")
-
+        
+        # DELETED for lazy loading - generator factory should use feature bank on demand
+        # try:
+        #     self.generator_factory.populate_from_feature_bank(self)
+        #     tprint("✅ Generator factory populated with registered generators")
+        # except Exception as e:
+        #     tprint(f"⚠️ Failed to populate generator factory: {e}")
+        #     self.logger.warning(f"Failed to populate generator factory: {e}")
+        
         return generators
 
     def _create_volume_generators(self) -> List[FeatureGenerator]:
@@ -1059,8 +1060,11 @@ class FeatureBank:
         """
         if isinstance(category, FeatureCategory):
             tprint(f"🔍 Looking up generators for category: {category.value}")
+            # Trigger lazy load
+            self._ensure_category_loaded(category)
         else:
             tprint(f"🔍 Looking up generators for category: {category}")
+            
         generators = self.registry.get_by_category(category)
         if isinstance(category, FeatureCategory):
             tprint(f"✅ Found {len(generators)} generators for category: {category.value}")

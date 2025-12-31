@@ -31,7 +31,7 @@ Quality Features:
 """
 
 # Type annotations for lazy-loaded quality utilities
-from typing import Optional, TYPE_CHECKING, Any, Union
+from typing import Optional, TYPE_CHECKING, Any, Union, Dict, List, Tuple, Callable
 import sys
 import os
 from pathlib import Path
@@ -77,15 +77,100 @@ if TYPE_CHECKING:
         StatisticalValidator = Any
         QualityAlertManager = Any
 
-import asyncio
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Awaitable, Set
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-from enum import Enum
-import sys
+# Lazy imports for heavy dependencies
+_pandas = None
+_numpy = None
+_asyncio = None
+_datetime = None
+_timedelta = None
+_dataclass = None
+_field = None
+_Enum = None
+
+def _lazy_import_heavy_dependencies():
+    """Import heavy dependencies only when needed."""
+    global _pandas, _numpy, _asyncio, _datetime, _timedelta, _dataclass, _field, _Enum
+    
+    if _pandas is not None:
+        return
+    
+    import pandas as pd
+    import numpy as np
+    import asyncio
+    from datetime import datetime, timedelta
+    from dataclasses import dataclass, field
+    from enum import Enum
+    
+    _pandas = pd
+    _numpy = np
+    _asyncio = asyncio
+    _datetime = datetime
+    _timedelta = timedelta
+    _dataclass = dataclass
+    _field = field
+    _Enum = Enum
+
+# Make imports available at module level through properties
+class LazyImports:
+    @property
+    def pd(self):
+        if _pandas is None:
+            _lazy_import_heavy_dependencies()
+        return _pandas
+    
+    @property
+    def np(self):
+        if _numpy is None:
+            _lazy_import_heavy_dependencies()
+        return _numpy
+    
+    @property
+    def asyncio(self):
+        if _asyncio is None:
+            _lazy_import_heavy_dependencies()
+        return _asyncio
+    
+    @property
+    def datetime(self):
+        if _datetime is None:
+            _lazy_import_heavy_dependencies()
+        return _datetime
+    
+    @property
+    def timedelta(self):
+        if _timedelta is None:
+            _lazy_import_heavy_dependencies()
+        return _timedelta
+    
+    @property
+    def dataclass(self):
+        if _dataclass is None:
+            _lazy_import_heavy_dependencies()
+        return _dataclass
+    
+    @property
+    def field(self):
+        if _field is None:
+            _lazy_import_heavy_dependencies()
+        return _field
+    
+    @property
+    def Enum(self):
+        if _Enum is None:
+            _lazy_import_heavy_dependencies()
+        return _Enum
+
+lazy_imports = LazyImports()
+
+# Forward references for backward compatibility
+pd = lazy_imports.pd
+np = lazy_imports.np
+asyncio = lazy_imports.asyncio
+datetime = lazy_imports.datetime
+timedelta = lazy_imports.timedelta
+dataclass = lazy_imports.dataclass
+field = lazy_imports.field
+Enum = lazy_imports.Enum
 
 # Add project root to path for imports
 # File is at: Ares/src/training/steps/data_collection/enhanced_klines_processing_pipeline.py
@@ -122,6 +207,7 @@ tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_f
 
 # Global variables for lazy-loaded quality utilities with type annotations
 QUALITY_UTILITIES_AVAILABLE: bool = False
+QUALITY_UTILITIES_DISABLED: bool = False  # Flag to disable quality utilities entirely
 _COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[Any] = None
 _DATA_QUALITY_FRAMEWORK: Optional[Any] = None
 _COMPREHENSIVE_QUALITY_SCORER: Optional[Any] = None
@@ -136,8 +222,8 @@ _ANALYZE_DUPLICATES_COMPREHENSIVE = None
 class FallbackQualityResult:
     """Fallback quality result."""
     passed: bool
-    issues: List[str]
-    warnings: List[str]
+    issues: 'List[str]'
+    warnings: 'List[str]'
     quality_score: float
 
 # Define QualityScoreLevel, QualityScore, and QualityAssessment before lazy import
@@ -155,37 +241,38 @@ class QualityScore:
     """Quality score result."""
     overall_score: float
     level: QualityScoreLevel
-    component_scores: Dict[str, float]
-    issues: List[str]
-    warnings: List[str]
-    recommendations: List[str]
-    assessment_timestamp: datetime
-    data_shape: Tuple[int, int]
+    component_scores: 'Dict[str, float]'
+    issues: 'List[str]'
+    warnings: 'List[str]'
+    recommendations: 'List[str]'
+    assessment_timestamp: 'datetime'
+    data_shape: 'Tuple[int, int]'
 
 @dataclass
 class QualityAssessment:
     """Quality assessment result."""
     overall_score: float
-    metrics: List[str]
+    metrics: 'List[str]'
     issues_found: int
     warnings_found: int
     critical_issues: int
-    assessment_timestamp: datetime
-    data_shape: Tuple[int, int]
+    assessment_timestamp: 'datetime'
+    data_shape: 'Tuple[int, int]'
 
 def _lazy_import_quality_utilities():
-    """Lazy import of quality utilities to avoid circular imports."""
-    global QUALITY_UTILITIES_AVAILABLE, _COMPREHENSIVE_DUPLICATE_ANALYZER, _DATA_QUALITY_FRAMEWORK
+    """Lazy import of quality utilities to avoid circular imports and memory usage."""
+    global QUALITY_UTILITIES_AVAILABLE, QUALITY_UTILITIES_DISABLED, _COMPREHENSIVE_DUPLICATE_ANALYZER, _DATA_QUALITY_FRAMEWORK
     global _COMPREHENSIVE_QUALITY_SCORER, _ADVANCED_QUALITY_METRICS, _DATA_CLEANER
     global _STATISTICAL_VALIDATOR, _QUALITY_ALERT_SYSTEM, _ANALYZE_DUPLICATES_COMPREHENSIVE
     
-    if QUALITY_UTILITIES_AVAILABLE is True:
+    if QUALITY_UTILITIES_AVAILABLE is True or QUALITY_UTILITIES_DISABLED is True:
         return
     
     # Get the current module to update module-level names
     current_module = sys.modules[__name__]
     
     try:
+        # Import only when actually needed to reduce memory footprint
         from src.utils.data.quality.comprehensive_duplicate_analyzer import (
             ComprehensiveDuplicateAnalyzer as ImportedComprehensiveDuplicateAnalyzer,
             analyze_duplicates_comprehensive as imported_analyze_duplicates_comprehensive
@@ -217,6 +304,8 @@ def _lazy_import_quality_utilities():
         setattr(current_module, 'analyze_duplicates_comprehensive', imported_analyze_duplicates_comprehensive)
         
         QUALITY_UTILITIES_AVAILABLE = True
+        if QUALITY_UTILITIES_AVAILABLE:
+            tprint_info("✅ Quality utilities loaded successfully")
     except ImportError as e:
         tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
         QUALITY_UTILITIES_AVAILABLE = False
@@ -234,10 +323,6 @@ def _lazy_import_quality_utilities():
         def analyze_duplicates_comprehensive(df):
             return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
 
-        _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
-        _COMPREHENSIVE_DUPLICATE_ANALYZER = ComprehensiveDuplicateAnalyzer
-
-        # Fallback classes for missing quality utilities
         class DataQualityFramework:
             def validate_data(self, df, thresholds=None):
                 return FallbackQualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
@@ -304,41 +389,153 @@ def _lazy_import_quality_utilities():
 
 # Initialize quality utilities at module load time
 _lazy_import_quality_utilities()
-# Import ExchangeInterface from the proper location
-try:
-    from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
-    EXCHANGE_INTERFACE_AVAILABLE = True
-except ImportError as e:  # Allow running without trading stack (use existing klines only)
-    EXCHANGE_INTERFACE_AVAILABLE = False
-    ExchangeInterface = None  # type: ignore
-    create_exchange_interface = None  # type: ignore
-    # Retry import after stubs are available
+# Lazy imports for exchange interface to avoid Python version issues
+_ExchangeInterface = None
+_create_exchange_interface = None
+_EXCHANGE_INTERFACE_AVAILABLE = False
+
+def _lazy_import_exchange_interface():
+    """Import exchange interface only when needed."""
+    global _ExchangeInterface, _create_exchange_interface, _EXCHANGE_INTERFACE_AVAILABLE
+    
+    if _ExchangeInterface is not None:
+        return
+    
     try:
-        from src.trading.execution.exchange_interface import ExchangeInterface as _EI, create_exchange_interface as _CEI
-        ExchangeInterface = _EI
-        create_exchange_interface = _CEI
-        EXCHANGE_INTERFACE_AVAILABLE = True
+        from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+        _ExchangeInterface = ExchangeInterface
+        _create_exchange_interface = create_exchange_interface
+        _EXCHANGE_INTERFACE_AVAILABLE = True
+    except ImportError as e:  # Allow running without trading stack (use existing klines only)
+        _EXCHANGE_INTERFACE_AVAILABLE = False
+
+# Exchange interface access through properties
+class LazyExchangeInterface:
+    @property
+    def ExchangeInterface(self):
+        if _ExchangeInterface is None:
+            _lazy_import_exchange_interface()
+        return _ExchangeInterface
+    
+    @property
+    def create_exchange_interface(self):
+        if _create_exchange_interface is None:
+            _lazy_import_exchange_interface()
+        return _create_exchange_interface
+    
+    @property
+    def EXCHANGE_INTERFACE_AVAILABLE(self):
+        if _ExchangeInterface is None:
+            _lazy_import_exchange_interface()
+        return _EXCHANGE_INTERFACE_AVAILABLE
+
+lazy_exchange_interface = LazyExchangeInterface()
+
+# Exchange interface available through lazy_exchange_interface property
+# ExchangeInterface = lazy_exchange_interface.ExchangeInterface  # Commented out to avoid immediate import
+# create_exchange_interface = lazy_exchange_interface.create_exchange_interface  # Commented out to avoid immediate import
+# EXCHANGE_INTERFACE_AVAILABLE = lazy_exchange_interface.EXCHANGE_INTERFACE_AVAILABLE  # Commented out to avoid immediate import
+
+_KlinesParquetManager = None
+_fill_1m_gaps_and_resample_for_symbol = None
+_ExchangeType = None
+_TradingMode = None
+_create_exchange_dispatcher = None
+_ExchangeConfig = None
+_UnifiedOHLCVStandardizer = None
+
+def _lazy_import_exchange_modules():
+    """Import exchange modules only when needed."""
+    global _KlinesParquetManager, _fill_1m_gaps_and_resample_for_symbol
+    global _ExchangeType, _TradingMode, _create_exchange_dispatcher, _ExchangeConfig
+    global _UnifiedOHLCVStandardizer
+    
+    if _KlinesParquetManager is not None:
+        return
+    
+    from src.utils.data.klines_parquet import KlinesParquetManager
+    from src.training.steps.data_collection.klines_gap_filler_1m import fill_1m_gaps_and_resample_for_symbol
+    from exchanges.exchange_types import ExchangeType, TradingMode
+    
+    _KlinesParquetManager = KlinesParquetManager
+    _fill_1m_gaps_and_resample_for_symbol = fill_1m_gaps_and_resample_for_symbol
+    _ExchangeType = ExchangeType
+    _TradingMode = TradingMode
+    
+    # Try to import dispatcher
+    try:
+        from exchanges.exchange_dispatcher import create_exchange_dispatcher, ExchangeConfig
+        _create_exchange_dispatcher = create_exchange_dispatcher
+        _ExchangeConfig = ExchangeConfig
     except Exception:
         pass
-from exchanges.exchange_types import ExchangeType, TradingMode
-# Dispatcher factory to wire exchange-specific adapters
-try:
-    from exchanges.exchange_dispatcher import create_exchange_dispatcher, ExchangeConfig
-except Exception:
-    create_exchange_dispatcher = None  # type: ignore
-    ExchangeConfig = None  # type: ignore
+    
+    # Try to import standardizer
+    try:
+        from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+        _UnifiedOHLCVStandardizer = UnifiedOHLCVStandardizer
+    except Exception:
+        pass
 
-# Import the proper classes from their locations (fallback stubs to bypass missing exchange deps)
-try:
-    from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
-except Exception:
-    class UnifiedOHLCVStandardizer:  # type: ignore
-        """Fallback no-op standardizer when exchange shared modules are unavailable."""
-        def standardize(self, df, *args, **kwargs):
-            return df
+# Exchange module access through properties
+class LazyExchangeImports:
+    @property
+    def KlinesParquetManager(self):
+        if _KlinesParquetManager is None:
+            _lazy_import_exchange_modules()
+        return _KlinesParquetManager
+    
+    @property
+    def fill_1m_gaps_and_resample_for_symbol(self):
+        if _fill_1m_gaps_and_resample_for_symbol is None:
+            _lazy_import_exchange_modules()
+        return _fill_1m_gaps_and_resample_for_symbol
+    
+    @property
+    def ExchangeType(self):
+        if _ExchangeType is None:
+            _lazy_import_exchange_modules()
+        return _ExchangeType
+    
+    @property
+    def TradingMode(self):
+        if _TradingMode is None:
+            _lazy_import_exchange_modules()
+        return _TradingMode
+    
+    @property
+    def create_exchange_dispatcher(self):
+        if _create_exchange_dispatcher is None:
+            _lazy_import_exchange_modules()
+        return _create_exchange_dispatcher
+    
+    @property
+    def ExchangeConfig(self):
+        if _ExchangeConfig is None:
+            _lazy_import_exchange_modules()
+        return _ExchangeConfig
+    
+    @property
+    def UnifiedOHLCVStandardizer(self):
+        if _UnifiedOHLCVStandardizer is None:
+            _lazy_import_exchange_modules()
+            if _UnifiedOHLCVStandardizer is None:
+                # Fallback no-op standardizer
+                class UnifiedOHLCVStandardizer:
+                    def standardize(self, df, *args, **kwargs):
+                        return df
+            return _UnifiedOHLCVStandardizer
 
-from src.utils.data.klines_parquet import KlinesParquetManager
-from src.training.steps.data_collection.klines_gap_filler_1m import fill_1m_gaps_and_resample_for_symbol
+lazy_exchange_imports = LazyExchangeImports()
+
+# Exchange modules available through lazy_exchange_imports properties
+# KlinesParquetManager = lazy_exchange_imports.KlinesParquetManager  # Commented out to avoid immediate import
+# fill_1m_gaps_and_resample_for_symbol = lazy_exchange_imports.fill_1m_gaps_and_resample_for_symbol  # Commented out to avoid immediate import
+# ExchangeType = lazy_exchange_imports.ExchangeType  # Commented out to avoid immediate import
+# TradingMode = lazy_exchange_imports.TradingMode  # Commented out to avoid immediate import
+# create_exchange_dispatcher = lazy_exchange_imports.create_exchange_dispatcher  # Commented out to avoid immediate import
+# ExchangeConfig = lazy_exchange_imports.ExchangeConfig  # Commented out to avoid immediate import
+# UnifiedOHLCVStandardizer = lazy_exchange_imports.UnifiedOHLCVStandardizer  # Commented out to avoid immediate import
 
 class StorageConfig:
     """Simple storage config."""
@@ -419,6 +616,47 @@ class PipelineConfig:
     force_download: bool = False  # If True, ignore existing data and download fresh
     storage_config: Optional[StorageConfig] = None
 
+class LazyComponentLoader:
+    """Lazy loader for expensive pipeline components to defer initialization until needed."""
+    
+    _components = {}
+    _instances = {}
+    
+    @classmethod
+    def register(cls, name: str, component_factory: Callable, dependencies: List[str] = None):
+        """Register a component with its factory function and dependencies."""
+        cls._components[name] = {
+            'factory': component_factory,
+            'dependencies': dependencies or []
+        }
+    
+    @classmethod
+    def get_component(cls, name: str, pipeline_instance=None):
+        """Get or create component instance lazily."""
+        if name not in cls._instances:
+            if name not in cls._components:
+                raise ValueError(f"Component {name} not registered")
+            
+            # Check dependencies first
+            component_info = cls._components[name]
+            for dep in component_info['dependencies']:
+                if dep not in cls._instances:
+                    cls.get_component(dep, pipeline_instance)
+            
+            # Create instance using factory
+            factory = component_info['factory']
+            if pipeline_instance:
+                instance = factory(pipeline_instance)
+            else:
+                instance = factory()
+            cls._instances[name] = instance
+        return cls._instances[name]
+    
+    @classmethod
+    def clear_cache(cls):
+        """Clear all cached instances (useful for testing)."""
+        cls._instances.clear()
+
 class EnhancedKlinesProcessingPipeline:
     """
     Enhanced klines data processing pipeline with comprehensive type hints,
@@ -448,16 +686,13 @@ class EnhancedKlinesProcessingPipeline:
         self.exchange = self.config.exchange.lower()
         self.enable_logging = self.config.enable_logging
 
-        # Initialize components
-        self.data_standardizer = UnifiedOHLCVStandardizer()
-        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
-
-        # Initialize parquet manager with explicit exchange so data is stored
-        # under the correct exchange subdirectory (e.g., binance, bingx, etc.)
-        self.klines_manager = KlinesParquetManager(
-            data_dir=self.config.data_dir,
-            exchange=self.exchange,
-        )
+        # Register lazy component factories
+        self._register_lazy_components()
+        
+        # Initialize lazy components (deferred until first use)
+        self._data_standardizer = None
+        self._duplicate_analyzer = None
+        self._klines_manager = None
 
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -481,6 +716,47 @@ class EnhancedKlinesProcessingPipeline:
             tprint_info(f"   🔧 Gap filling: {'enabled' if self.config.enable_gap_filling else 'disabled'}")
             tprint_info(f"   📊 Resampling: {'enabled' if self.config.enable_resampling else 'disabled'}")
             tprint_info(f"   🔄 Batch compatible: {'enabled' if self.config.batch_compatible else 'disabled'}")
+    
+    def _register_lazy_components(self):
+        """Register all lazy component factories."""
+        
+        def create_data_standardizer():
+            return lazy_exchange_imports.UnifiedOHLCVStandardizer()
+        
+        def create_duplicate_analyzer():
+            return ComprehensiveDuplicateAnalyzer()
+        
+        def create_klines_manager(pipeline):
+            return lazy_exchange_imports.KlinesParquetManager(
+                data_dir=pipeline.config.data_dir,
+                exchange=pipeline.exchange,
+            )
+        
+        # Register components
+        LazyComponentLoader.register('data_standardizer', create_data_standardizer)
+        LazyComponentLoader.register('duplicate_analyzer', create_duplicate_analyzer)
+        LazyComponentLoader.register('klines_manager', create_klines_manager)
+    
+    @property
+    def data_standardizer(self):
+        """Lazy-loaded data standardizer."""
+        if self._data_standardizer is None:
+            self._data_standardizer = LazyComponentLoader.get_component('data_standardizer')
+        return self._data_standardizer
+    
+    @property
+    def duplicate_analyzer(self):
+        """Lazy-loaded duplicate analyzer."""
+        if self._duplicate_analyzer is None:
+            self._duplicate_analyzer = LazyComponentLoader.get_component('duplicate_analyzer')
+        return self._duplicate_analyzer
+    
+    @property
+    def klines_manager(self):
+        """Lazy-loaded klines manager."""
+        if self._klines_manager is None:
+            self._klines_manager = LazyComponentLoader.get_component('klines_manager', self)
+        return self._klines_manager
 
     @staticmethod
     def _ensure_naive_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -941,7 +1217,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str,
         years: int,
-        exchange_interface: ExchangeInterface,
+        exchange_interface: "ExchangeInterface",
         resampling_config: Optional[ResamplingConfig] = None,
         max_gap_minutes: Optional[int] = None,
         create_consolidated: bool = True,
@@ -954,7 +1230,7 @@ class EnhancedKlinesProcessingPipeline:
             symbol: Trading symbol (e.g., "ETHUSDT")
             interval: Data interval (e.g., "1m")
             years: Number of years of data to process
-            exchange_interface: ExchangeInterface instance for data access
+            exchange_interface: "ExchangeInterface" instance for data access
             resampling_config: Configuration for data resampling
             max_gap_minutes: Maximum allowed gap in minutes (uses config default if None)
             create_consolidated: Whether to create consolidated output file
@@ -1270,10 +1546,10 @@ class EnhancedKlinesProcessingPipeline:
             'rate_limits': {}
         }
         
-        from src.trading.execution.exchange_interface import ExchangeInterface
+        from src.trading.execution.exchange_interface import ExchangeInterface as ImportedExchangeInterface
         if self.enable_logging:
             tprint_info(f"🔌 Creating ExchangeInterface with config: {exchange_config}")
-        exchange_interface = ExchangeInterface(exchange_config)
+        exchange_interface = ImportedExchangeInterface(exchange_config)
         if self.enable_logging:
             tprint_info(f"🔌 ExchangeInterface created: {exchange_interface}")
         
@@ -1362,7 +1638,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str,
         years: int,
-        exchange_interface: ExchangeInterface
+        exchange_interface: "ExchangeInterface"
     ) -> ProcessingResult:
         """Download or load klines data from exchange or existing files."""
         start_time = datetime.now()
@@ -1528,13 +1804,13 @@ class EnhancedKlinesProcessingPipeline:
 
             # Ensure dispatcher is wired for live download
             if exchange_interface is not None and getattr(exchange_interface, "dispatcher", None) is None:
-                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
+                if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
                     try:
-                        ex_type = ExchangeType(self.exchange) if isinstance(self.exchange, str) else self.exchange
+                        ex_type = lazy_exchange_imports.ExchangeType(self.exchange) if isinstance(self.exchange, str) else self.exchange
                     except Exception:
-                        ex_type = ExchangeType.BINANCE if str(self.exchange).lower() == "binance" else ExchangeType.BINANCE
+                        ex_type = lazy_exchange_imports.ExchangeType.BINANCE if str(self.exchange).lower() == "binance" else lazy_exchange_imports.ExchangeType.BINANCE
                     try:
-                        dispatcher_cfg = ExchangeConfig(
+                        dispatcher_cfg = lazy_exchange_imports.ExchangeConfig(
                             exchange_type=ex_type,
                             api_key=getattr(exchange_interface, "api_key", None),
                             api_secret=getattr(exchange_interface, "api_secret", None),
@@ -1543,12 +1819,18 @@ class EnhancedKlinesProcessingPipeline:
                             use_testnet=getattr(exchange_interface, "use_testnet", False),
                             trade_symbol=symbol,
                         )
-                        exchange_interface.dispatcher = create_exchange_dispatcher(dispatcher_cfg)
+                        dispatcher = lazy_exchange_imports.create_exchange_dispatcher(dispatcher_cfg)
+                        # Initialize dispatcher if supported
+                        if hasattr(dispatcher, "initialize"):
+                            dispatcher.initialize()
+                        # Wire dispatcher to interface
+                        exchange_interface.dispatcher = dispatcher
+                        if self.enable_logging:
+                            tprint_info(f"🔌 Dispatcher wired to exchange interface")
                     except Exception as e:
                         if self.enable_logging:
-                            tprint_warning(f"⚠️ Failed to wire dispatcher; live download may be empty: {e}")
+                            tprint_warning(f"⚠️ Failed to wire dispatcher: {e}")
 
-            # Download fresh data from exchange in batches
             if self.enable_logging:
                 tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
                 
@@ -2217,7 +2499,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str,
         max_gap_minutes: int,
-        exchange_interface: ExchangeInterface
+        exchange_interface: "ExchangeInterface"
     ) -> ProcessingResult:
         """Detect and fill data gaps."""
         start_time = datetime.now()
@@ -2638,7 +2920,7 @@ class EnhancedKlinesProcessingPipeline:
         gaps: List[GapInfo],
         symbol: str,
         interval: str,
-        exchange_interface: ExchangeInterface
+        exchange_interface: "ExchangeInterface"
     ) -> pd.DataFrame:
         """Fill gaps by re-downloading data in batches.
 
@@ -2942,7 +3224,7 @@ class EnhancedKlinesProcessingPipeline:
         interval: str,
         interval_minutes: int,
         batch_size: int,
-        exchange_interface: ExchangeInterface
+        exchange_interface: "ExchangeInterface"
     ) -> Optional[pd.DataFrame]:
         """Download remaining gap candles by scanning forward in daily windows to work around exchange limits."""
         collected_frames: List[pd.DataFrame] = []
@@ -3743,7 +4025,7 @@ async def process_klines_data_enhanced(
     symbol: str,
     interval: str,
     years: int,
-    exchange_interface: ExchangeInterface,
+    exchange_interface: "ExchangeInterface",
     config: Optional[PipelineConfig] = None,
     resampling_config: Optional[ResamplingConfig] = None,
     max_gap_minutes: Optional[int] = None,
@@ -3757,7 +4039,7 @@ async def process_klines_data_enhanced(
         symbol: Trading symbol (e.g., "ETHUSDT")
         interval: Data interval (e.g., "1m")
         years: Number of years of data to process
-        exchange_interface: ExchangeInterface instance for data access
+        exchange_interface: "ExchangeInterface" instance for data access
         config: Pipeline configuration
         resampling_config: Configuration for data resampling
         max_gap_minutes: Maximum allowed gap in minutes
@@ -3787,6 +4069,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Enhanced Klines Data Processing Pipeline')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name (binance, bingx, okx, etc.)')
     parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol (e.g., ETHUSDT)')
+    parser.add_argument('--assets', type=str, default='ETH,BTC,LINK,SOL,AVAX,BNB', help='Comma-separated list of assets for multi-asset processing (e.g., ETH,BTC,LINK)')
+    parser.add_argument('--global', action='store_true', help='Global multi-asset processing mode (full execution)')
+    parser.add_argument('--global-dry', action='store_true', help='Global multi-asset processing mode (blank execution)')
     parser.add_argument('--interval', type=str, default='1m', help='Data interval (1m, 5m, 1h, etc.)')
     parser.add_argument('--years', type=int, default=4, help='Number of years of data to collect')
     parser.add_argument('--data-dir', type=str, default='historical_data', help='Data directory')
@@ -3797,7 +4082,13 @@ if __name__ == "__main__":
     parser.add_argument('--no-gap-filling', action='store_true', help='Disable gap filling')
     parser.add_argument('--no-resampling', action='store_true', help='Disable resampling')
     parser.add_argument('--no-quality-validation', action='store_true', help='Disable quality validation')
+    parser.add_argument('--disable-quality-utilities', action='store_true', help='Disable quality utilities entirely for faster startup')
     args = parser.parse_args()
+
+    # Disable quality utilities if flag is set
+    if args.disable_quality_utilities:
+        QUALITY_UTILITIES_DISABLED = True
+        print("⚡ Quality utilities disabled for faster startup")
 
     os.environ.setdefault("OMP_NUM_THREADS", "2")
     os.environ.setdefault("MKL_NUM_THREADS", "2")
@@ -3857,15 +4148,15 @@ if __name__ == "__main__":
             # Create exchange interface (prefer factory + dispatcher)
             print(f"🔗 Connecting to {args.exchange.upper()}...")
             exchange_interface = None
-            if EXCHANGE_INTERFACE_AVAILABLE and ExchangeInterface is not None:
+            if lazy_exchange_interface.EXCHANGE_INTERFACE_AVAILABLE and lazy_exchange_interface.ExchangeInterface is not None:
                 dispatcher = None
-                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
+                if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
                     try:
-                        ex_type = ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
+                        ex_type = lazy_exchange_imports.ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
                     except Exception:
-                        ex_type = ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else ExchangeType.BINANCE
+                        ex_type = lazy_exchange_imports.ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else lazy_exchange_imports.ExchangeType.BINANCE
                     try:
-                        dispatcher_cfg = ExchangeConfig(
+                        dispatcher_cfg = lazy_exchange_imports.ExchangeConfig(
                             exchange_type=ex_type,
                             api_key=args.api_key or None,
                             api_secret=args.api_secret or None,
@@ -3873,9 +4164,9 @@ if __name__ == "__main__":
                             subaccount_id=None,
                             use_testnet=args.use_testnet,
                             trade_symbol=args.symbol,
-                            mode=TradingMode.TRADE,  # allow live data pulls
+                            mode=lazy_exchange_imports.TradingMode.TRADE,  # allow live data pulls
                         )
-                        dispatcher = create_exchange_dispatcher(dispatcher_cfg)
+                        dispatcher = lazy_exchange_imports.create_exchange_dispatcher(dispatcher_cfg)
                         # Initialize dispatcher if supported
                         try:
                             init_ret = dispatcher.initialize()
@@ -3902,10 +4193,10 @@ if __name__ == "__main__":
                     'rate_limits': {},
                 }
                 try:
-                    if create_exchange_interface is not None:
-                        exchange_interface = create_exchange_interface(exchange_config)
+                    if lazy_exchange_interface.create_exchange_interface is not None:
+                        exchange_interface = lazy_exchange_interface.create_exchange_interface(exchange_config)
                     else:
-                        exchange_interface = ExchangeInterface(exchange_config)
+                        exchange_interface = lazy_exchange_interface.ExchangeInterface(exchange_config)
                     if dispatcher is not None:
                         exchange_interface.dispatcher = dispatcher
                     await exchange_interface.connect()
@@ -4005,7 +4296,7 @@ if __name__ == "__main__":
                 'testnet': True,
                 'rate_limits': {}
             }
-            exchange_interface = ExchangeInterface(exchange_config)
+            exchange_interface = lazy_exchange_interface.ExchangeInterface(exchange_config)
             
             try:
                 await exchange_interface.connect()

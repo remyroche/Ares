@@ -62,7 +62,7 @@ ITERATIVE_SELECTION_BUFFER_RATIO = 1.5
 
 FEATURE_SELECTION_CONFIG = {
     "subsample_fraction": 0.65,  # 65% subsampling
-    "n_iterations": 10,  # Number of LGBM runs
+    "n_iterations": 5,  # Number of LGBM runs (reduced from 10)
     "bottom_percentile": 0.30,  # Bottom 30% of importance
     "discard_threshold": 0.70,  # Discard if in bottom 70% of the time
     "target_features_initial": 80,  # Initial target after iteration
@@ -560,22 +560,22 @@ def lgbm_feature_selection_pipeline(
 
     # --- Adaptive Feature Limit ---
     n_samples = len(y)
-    max_features_allowed = max(1, n_samples // samples_per_feature_ratio)
-    tprint_info(f"   📏 Adaptive Limit: Max {max_features_allowed} features (1 per {samples_per_feature_ratio} samples)")
+    max_features_allowed = max(15, n_samples // samples_per_feature_ratio)
+    tprint_info(f"   📏 Adaptive Limit: Max {max_features_allowed} features (1 per {samples_per_feature_ratio} samples, min 15)")
 
     # Filter/Adjust target sets
     adaptive_target_sets = sorted([s for s in target_feature_sets if s <= max_features_allowed], reverse=True)
     if not adaptive_target_sets:
-        # Fallback: Create steps down from max_allowed
+        # Fallback: Create steps down from max_allowed, but ensure minimum 15
         step = max(1, max_features_allowed // 4)
         adaptive_target_sets = sorted(list(set([
             max_features_allowed,
-            max(1, max_features_allowed - step),
-            max(1, max_features_allowed - 2 * step)
+            max(15, max_features_allowed - step),
+            max(15, max_features_allowed - 2 * step)
         ])), reverse=True)
         # Ensure we don't have duplicates or empty list
         if not adaptive_target_sets:
-            adaptive_target_sets = [max_features_allowed]
+            adaptive_target_sets = [max(15, max_features_allowed)]
 
     tprint_info(f"   ↪ Adaptive Target Sets: {adaptive_target_sets}")
     
@@ -630,29 +630,15 @@ def lgbm_feature_selection_pipeline(
     )
     pipeline_log["stages"]["iterative_importance"] = importance_log
     
-    # Stage 3: Permutation importance RFE
-    # We use adaptive_target_sets here
-    # The first set in adaptive_target_sets might be == iterative_target or close to it.
-    # RFE should start from selected_features_iter.
-    
-    # If the iterative process landed on exactly the largest target, we might skip RFE for that target?
-    # No, keep it consistent.
-    
-    # Define RFE targets: All adaptive sets
-    feature_sets_rfe, rfe_log = permutation_importance_rfe(
-        X_pruned[selected_features_iter],
-        y,
-        feature_sets=adaptive_target_sets,
-        sample_fraction=FEATURE_SELECTION_CONFIG["permutation_sample_fraction"],
-        n_repeats=FEATURE_SELECTION_CONFIG["permutation_n_repeats"],
-        features_per_step=max(1, FEATURE_SELECTION_CONFIG["rfe_features_per_step"]), # Ensure > 0
-        log_dir=log_dir,
-        returns=returns,
-        sample_weight=sample_weight,
-    )
-    pipeline_log["stages"]["permutation_rfe"] = rfe_log
-
-    feature_sets_dict = feature_sets_rfe
+    # Skip Stage 3: Permutation importance RFE - only per-geometry features needed
+    # Return iterative selection results directly
+    feature_sets_dict = {}
+    for target_size in adaptive_target_sets:
+        # Use iterative results, capped to target size
+        if len(selected_features_iter) >= target_size:
+            feature_sets_dict[target_size] = selected_features_iter[:target_size]
+        else:
+            feature_sets_dict[target_size] = selected_features_iter.copy()
 
     # Ensure all original requested targets are present if possible (clipping to max allowed)
     # If user asked for 80, but we maxed at 15, we return 15 for '80' key?

@@ -82,6 +82,13 @@ except Exception:
         )
     except Exception:
         MetaLabelingHPOExperimentStep = None
+# Global multi-asset meta-labeling HPO step
+try:
+    from .global_meta_labeling_hpo_sample_weighted import (
+        GlobalMetaLabelingHPOSampleWeightedStep,
+    )
+except Exception:
+    GlobalMetaLabelingHPOSampleWeightedStep = None
 
 # Weighted meta-labeling production step (2025-12-11)
 try:
@@ -183,3 +190,37 @@ __all__ = [
     "run_winning_feature_set_selection",
     "METRIC_WEIGHTS",
 ]
+
+# Register steps with Ares registry
+try:
+    from src.training.steps.base_step import step_registry
+    
+    # Register meta-labeling HPO sample weighted step
+    if MetaLabelingHPOSampleWeightedStep is not None:
+        step_registry.register('meta_labeling_hpo_sample_weighted', MetaLabelingHPOSampleWeightedStep)
+        # Register aliases
+        step_registry.register('meta_labeling_hpo', MetaLabelingHPOSampleWeightedStep)
+        step_registry.register('meta_labeling_sample_weighted', MetaLabelingHPOSampleWeightedStep)
+    
+    # Register meta-labeling HPO experiment step (fallback)
+    if MetaLabelingHPOExperimentStep is not None:
+        step_registry.register('meta_labeling_hpo_experiment', MetaLabelingHPOExperimentStep)
+        step_registry.register('sr_labeling_xgb', MetaLabelingHPOExperimentStep)  # Alias
+    
+    # Register weighted meta-labeling step
+    if WeightedMetaLabelingStep is not None:
+        step_registry.register('weighted_meta_labeling', WeightedMetaLabelingStep)
+    
+    # Register global meta-labeling HPO step
+    if GlobalMetaLabelingHPOSampleWeightedStep is not None:
+        step_registry.register('global_meta_labeling_hpo_sample_weighted', GlobalMetaLabelingHPOSampleWeightedStep)
+    
+except ImportError:
+    # Registry not available, skip registration
+    pass
+except Exception as e:
+    # Registration failed, log warning
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Failed to register labeling steps: {e}")
+

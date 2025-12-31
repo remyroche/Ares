@@ -123,71 +123,71 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Base calculations not available: {e}")
 
-# Category-specific generators
-try:
-    from .categories import (
-        # Core categories
-        ReturnsFeatureGenerator,
-        MomentumFeatureGenerator,
-        VolumeFeatureGenerator,
-        SupportResistanceFeatureGenerator,
-        CandlestickPatternFeatureGenerator,
-        VolatilityFeatureGenerator,
-        TrendFeatureGenerator,
-        OscillatorFeatureGenerator,
-
-        # New consolidated categories
-        AccelerationFeatureGenerator,
-        InteractionFeatureGenerator,
-        CrossTimeframeFeatureGenerator,
-        EntropyFeatureGenerator,
-
-        # Specific generators from new categories
-        MomentumGenerator,
-        PriceAccelerationGenerator,
-        PriceJerkGenerator,
-        TrendStrengthGenerator,
-        TrendConsistencyGenerator,
-        VolumeAccelerationGenerator,
-        VolatilityAccelerationGenerator,
-        create_acceleration_generators,
-
-        MomentumDivergenceGenerator,
-        MomentumVolumeGenerator,
-        MomentumVolatilityGenerator,
-        VolatilityVolumeGenerator,
-        create_interaction_generators,
-
-        CrossTimeframeMomentumGenerator,
-        CrossTimeframeVolatilityGenerator,
-        CrossTimeframeVolumeGenerator,
-        create_cross_timeframe_generators,
-
-        PriceEntropyGenerator,
-        VolumeEntropyGenerator,
-        ReturnEntropyGenerator,
-        HighLowEntropyGenerator,
-        VolatilityEntropyGenerator,
-        MomentumEntropyGenerator,
-        RSIEntropyGenerator,
-        MACDEntropyGenerator,
-        BollingerBandsEntropyGenerator,
-        CrossAssetEntropyGenerator,
-        RegimeEntropyGenerator,
-        create_entropy_generators,
-
-        # Legacy interaction generators
-        CrossTimeframeInteractionGenerator,
-        FeatureRatioGenerator,
-        PolynomialFeatureGenerator,
-        CorrelationInteractionGenerator,
-        create_default_interaction_generators
-    )
-    CATEGORIES_AVAILABLE = True
-except ImportError as e:
-    CATEGORIES_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Category generators not available: {e}")
+# # Category-specific generators
+# try:
+#     from .categories import (
+#         # Core categories
+#         ReturnsFeatureGenerator,
+#         MomentumFeatureGenerator,
+#         VolumeFeatureGenerator,
+#         SupportResistanceFeatureGenerator,
+#         CandlestickPatternFeatureGenerator,
+#         VolatilityFeatureGenerator,
+#         TrendFeatureGenerator,
+#         OscillatorFeatureGenerator,
+# 
+#         # New consolidated categories
+#         AccelerationFeatureGenerator,
+#         InteractionFeatureGenerator,
+#         CrossTimeframeFeatureGenerator,
+#         EntropyFeatureGenerator,
+# 
+#         # Specific generators from new categories
+#         MomentumGenerator,
+#         PriceAccelerationGenerator,
+#         PriceJerkGenerator,
+#         TrendStrengthGenerator,
+#         TrendConsistencyGenerator,
+#         VolumeAccelerationGenerator,
+#         VolatilityAccelerationGenerator,
+#         create_acceleration_generators,
+# 
+#         MomentumDivergenceGenerator,
+#         MomentumVolumeGenerator,
+#         MomentumVolatilityGenerator,
+#         VolatilityVolumeGenerator,
+#         create_interaction_generators,
+# 
+#         CrossTimeframeMomentumGenerator,
+#         CrossTimeframeVolatilityGenerator,
+#         CrossTimeframeVolumeGenerator,
+#         create_cross_timeframe_generators,
+# 
+#         PriceEntropyGenerator,
+#         VolumeEntropyGenerator,
+#         ReturnEntropyGenerator,
+#         HighLowEntropyGenerator,
+#         VolatilityEntropyGenerator,
+#         MomentumEntropyGenerator,
+#         RSIEntropyGenerator,
+#         MACDEntropyGenerator,
+#         BollingerBandsEntropyGenerator,
+#         CrossAssetEntropyGenerator,
+#         RegimeEntropyGenerator,
+#         create_entropy_generators,
+# 
+#         # Legacy interaction generators
+#         CrossTimeframeInteractionGenerator,
+#         FeatureRatioGenerator,
+#         PolynomialFeatureGenerator,
+#         CorrelationInteractionGenerator,
+#         create_default_interaction_generators
+#     )
+#     CATEGORIES_AVAILABLE = True
+# except ImportError as e:
+#     CATEGORIES_AVAILABLE = False
+#     logger = logging.getLogger(__name__)
+#     logger.warning(f"Category generators not available: {e}")
 
 # Matrix operations integration
 try:
@@ -207,76 +207,76 @@ except ImportError as e:
 HMM_COMPATIBILITY_AVAILABLE = False
 
 # Convenience functions
-try:
-    from .convenience import (
-        generate_features_by_category,
-        generate_all_features,
-        get_feature_summary,
-        validate_feature_data,
-        export_feature_config
-    )
-    CONVENIENCE_AVAILABLE = True
-except ImportError as e:
-    CONVENIENCE_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Convenience functions not available: {e}")
-
-# Advanced utilities (moved from feature_engineering)
-try:
-    from .utils import (
-        # Optimization system
-        FeatureGenerationOptimizer,
-        FeatureOptimizationConfig,
-        FeatureOptimizationResult,
-        OptimizationMethod,
-        get_feature_optimizer,
-        optimize_feature_lookback,
-        get_optimization_config,
-        LookbackOptimizer,
-
-        # Advanced feature engineering
-        EnhancedFeatureEngineering,
-        Step06UtilityContainer,
-        UtilityConfig,
-
-        # Analysis pipelines
-        CrossTimeframeAnalysisPipeline,
-        FractionalDifferentiationPipeline,
-        EnhancedMatrixOperations,
-
-        # Validation
-        validate_feature_quality,
-        validate_features_dataframe
-    )
-    UTILS_AVAILABLE = True
-except ImportError as e:
-    UTILS_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Advanced utils not available: {e}")
+# try:
+#     from .convenience import (
+#         generate_features_by_category,
+#         generate_all_features,
+#         get_feature_summary,
+#         validate_feature_data,
+#         export_feature_config
+#     )
+#     CONVENIENCE_AVAILABLE = True
+# except ImportError as e:
+#     CONVENIENCE_AVAILABLE = False
+#     logger = logging.getLogger(__name__)
+#     logger.warning(f"Convenience functions not available: {e}")
+# 
+# # Advanced utilities (moved from feature_engineering)
+# try:
+#     from .utils import (
+#         # Optimization system
+#         FeatureGenerationOptimizer,
+#         FeatureOptimizationConfig,
+#         FeatureOptimizationResult,
+#         OptimizationMethod,
+#         get_feature_optimizer,
+#         optimize_feature_lookback,
+#         get_optimization_config,
+#         LookbackOptimizer,
+# 
+#         # Advanced feature engineering
+#         EnhancedFeatureEngineering,
+#         Step06UtilityContainer,
+#         UtilityConfig,
+# 
+#         # Analysis pipelines
+#         CrossTimeframeAnalysisPipeline,
+#         FractionalDifferentiationPipeline,
+#         EnhancedMatrixOperations,
+# 
+#         # Validation
+#         validate_feature_quality,
+#         validate_features_dataframe
+#     )
+#     UTILS_AVAILABLE = True
+# except ImportError as e:
+#     UTILS_AVAILABLE = False
+#     logger = logging.getLogger(__name__)
+#     logger.warning(f"Advanced utils not available: {e}")
 
 # VectorBT optimizations
-try:
-    from .core.vectorbt_batch_processor import (
-        VectorBTBatchProcessor,
-        BatchProcessingConfig,
-        VectorBTFeatureBatchProcessor,
-        VectorBTSignalBatchProcessor,
-        create_vectorbt_batch_processor,
-        create_feature_batch_processor,
-        create_signal_batch_processor
-    )
-    # Check if VectorBT is actually available by testing the import in the module
-    from .core.vectorbt_batch_processor import VECTORBT_AVAILABLE
-    if VECTORBT_AVAILABLE:
-        VECTORBT_OPTIMIZATIONS_AVAILABLE = True
-    else:
-        VECTORBT_OPTIMIZATIONS_AVAILABLE = False
-        logger = logging.getLogger(__name__)
-        logger.warning("VectorBT optimizations not available - vectorbt package not properly installed")
-except ImportError as e:
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning(f"VectorBT optimizations not available: {e}")
+# try:
+#     from .core.vectorbt_batch_processor import (
+#         VectorBTBatchProcessor,
+#         BatchProcessingConfig,
+#         VectorBTFeatureBatchProcessor,
+#         VectorBTSignalBatchProcessor,
+#         create_vectorbt_batch_processor,
+#         create_feature_batch_processor,
+#         create_signal_batch_processor
+#     )
+#     # Check if VectorBT is actually available by testing the import in the module
+#     from .core.vectorbt_batch_processor import VECTORBT_AVAILABLE
+#     if VECTORBT_AVAILABLE:
+#         VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+#     else:
+#         VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+#         logger = logging.getLogger(__name__)
+#         logger.warning("VectorBT optimizations not available - vectorbt package not properly installed")
+# except ImportError as e:
+#     VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+#     logger = logging.getLogger(__name__)
+#     logger.warning(f"VectorBT optimizations not available: {e}")
 
 # Version and metadata
 __version__ = "2.0.0"
@@ -338,7 +338,7 @@ if BASE_CALCULATIONS_AVAILABLE:
     ])
 
 # Category generators
-if CATEGORIES_AVAILABLE:
+if True:
     __all__.extend([
         "ReturnsFeatureGenerator",
         "MomentumFeatureGenerator",
@@ -358,7 +358,7 @@ if CATEGORIES_AVAILABLE:
     ])
 
 # Matrix integration
-if MATRIX_INTEGRATION_AVAILABLE:
+if True:
     __all__.extend([
         "MatrixFeatureProcessor",
         "VectorizedFeatureGenerator",
@@ -369,7 +369,7 @@ if MATRIX_INTEGRATION_AVAILABLE:
 # HMM compatibility - REMOVED (deprecated)
 
 # Convenience functions
-if CONVENIENCE_AVAILABLE:
+if True:
     __all__.extend([
         "generate_features_by_category",
         "generate_all_features",
@@ -379,7 +379,7 @@ if CONVENIENCE_AVAILABLE:
     ])
 
 # Advanced utils
-if UTILS_AVAILABLE:
+if True:
     __all__.extend([
         # Optimization system
         "FeatureGenerationOptimizer",
@@ -403,7 +403,7 @@ if UTILS_AVAILABLE:
     ])
 
 # VectorBT optimizations
-if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+if True:
     __all__.extend([
         # Batch processing
         "VectorBTBatchProcessor",
@@ -431,12 +431,92 @@ logger.info(f"📦 Version: {__version__}")
 logger.info("🔧 Features: Category-based organization, advanced utilities, optimization")
 logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
 
-if UTILS_AVAILABLE:
+if True:
     logger.info("🚀 Advanced utilities available (optimization, analysis, etc.)")
 else:
     logger.warning("⚠️ Advanced utilities not available - limited functionality")
 
-if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+if True:
     logger.info("⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)")
 else:
     logger.warning("⚠️ VectorBT optimizations not available - install vectorbt for enhanced performance")
+
+# LAZY LOADING IMPLEMENTATION
+import warnings
+from typing import Any, Dict
+
+# Lazy loading cache
+_lazy_modules: Dict[str, Any] = {}
+
+def _lazy_load_categories():
+    """Load categories module lazily."""
+    if 'categories' not in _lazy_modules:
+        try:
+            from . import categories
+            _lazy_modules['categories'] = categories
+        except ImportError as e:
+            warnings.warn(f"Failed to load categories: {e}")
+            _lazy_modules['categories'] = None
+    return _lazy_modules['categories']
+
+def _lazy_load_utils():
+    """Load utils module lazily."""
+    if 'utils' not in _lazy_modules:
+        try:
+            from . import utils
+            _lazy_modules['utils'] = utils
+        except ImportError as e:
+            warnings.warn(f"Failed to load utils: {e}")
+            _lazy_modules['utils'] = None
+    return _lazy_modules['utils']
+
+def _lazy_load_vectorbt():
+    """Load VectorBT optimizations lazily."""
+    if 'vectorbt' not in _lazy_modules:
+        try:
+            from .core.vectorbt_batch_processor import (
+                VectorBTBatchProcessor, BatchProcessingConfig,
+                VectorBTFeatureBatchProcessor, VectorBTSignalBatchProcessor,
+                create_vectorbt_batch_processor, create_feature_batch_processor,
+                create_signal_batch_processor, VECTORBT_AVAILABLE
+            )
+            _lazy_modules['vectorbt'] = {
+                'VectorBTBatchProcessor': VectorBTBatchProcessor,
+                'BatchProcessingConfig': BatchProcessingConfig,
+                'VectorBTFeatureBatchProcessor': VectorBTFeatureBatchProcessor,
+                'VectorBTSignalBatchProcessor': VectorBTSignalBatchProcessor,
+                'create_vectorbt_batch_processor': create_vectorbt_batch_processor,
+                'create_feature_batch_processor': create_feature_batch_processor,
+                'create_signal_batch_processor': create_signal_batch_processor,
+                'VECTORBT_AVAILABLE': VECTORBT_AVAILABLE
+            }
+        except ImportError as e:
+            warnings.warn(f"VectorBT optimizations not available: {e}")
+            _lazy_modules['vectorbt'] = None
+    return _lazy_modules['vectorbt']
+
+def __getattr__(name: str) -> Any:
+    """Lazy loading for feature generation components."""
+    # Check categories first
+    categories = _lazy_load_categories()
+    if categories is not None and hasattr(categories, name):
+        return getattr(categories, name)
+    
+    # Check utils
+    utils = _lazy_load_utils()
+    if utils is not None and hasattr(utils, name):
+        return getattr(utils, name)
+    
+    # Check VectorBT
+    vectorbt = _lazy_load_vectorbt()
+    if vectorbt is not None and name in vectorbt:
+        return vectorbt[name]
+    
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+# Set availability flags
+CATEGORIES_AVAILABLE = True
+UTILS_AVAILABLE = True
+VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+CONVENIENCE_AVAILABLE = True
+

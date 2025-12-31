@@ -693,6 +693,9 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # PRE-PROCESSING: Volatility and Regime Generation
         # (Must happen before splitting into train_data / oos_data)
         # ---------------------------------------------------------------------
+
+        
+        # Train Layer 3 Model (Consensus)
         if ("volatility_1d" not in market_data.columns) or bool(
             pd.to_numeric(market_data.get("volatility_1d"), errors="coerce").isna().all()
         ):
@@ -1118,12 +1121,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             l2_score = l2_output.get('l2_score')
             l2_confidence = l2_output.get('l2_confidence')
             l2_labels = l2_output.get('l2_label', l2_output.get('oof_labels'))
-            l2_returns = l2_output['oof_returns']
-            l2_weights = l2_output['weights']
+            l2_returns = l2_output.get('oof_returns')
+            l2_weights = l2_output.get('weights')
             l2_quality_weights = l2_output.get('quality_weights')
-            individual_geos = l2_output['individual_geometries']
+            individual_geos = l2_output.get('individual_geometries', {})
             individual_variances = l2_output.get('individual_variances') # Unpack Variances
-            events_df = l2_output['events_df']
+            events_df = l2_output.get('events_df')
             selected_trials = l2_output.get('selected_trials')  # Production Geometries
             if not isinstance(selected_trials, list):
                 selected_trials = []
@@ -1547,8 +1550,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             tprint_info("   [Target B] Training on Binary Consensus (Layer 2)...")
             l3_input_bin = l3_input_df.copy()
             # Restore binary labels from Layer 2 and ensure proper binarization
-            l2_labels_binary = l2_labels.reindex(l3_input_bin.index)
-            l2_labels_binary = (l2_labels_binary >= 0.5).astype(float).where(l2_labels_binary.notna())
+            if l2_labels is not None:
+                l2_labels_binary = l2_labels.reindex(l3_input_bin.index)
+                l2_labels_binary = (l2_labels_binary >= 0.5).astype(float).where(l2_labels_binary.notna())
+            else:
+                l2_labels_binary = pd.Series(0, index=l3_input_bin.index)
+            
             l3_input_bin[target_col] = l2_labels_binary
 
             oof_export_bin, final_model_bin = layer3_analyst_lgbm(
@@ -1645,8 +1652,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # Calculate final composite weight for artifact saving (using Scheme 7 logic as default/reference)
             # Note: The actual model training inside layer3 uses the BEST scheme found.
             # But for 'weights_stats.csv', we save the reference composite one.
-            magnitude_factor = np.log1p(l2_returns.abs().fillna(0))
-            w_final_series = w_l2_aligned * magnitude_factor * w_l1_aligned
+            if l2_returns is not None:
+                magnitude_factor = np.log1p(l2_returns.abs().fillna(0))
+            else:
+                magnitude_factor = 0.0
+            if w_l2_aligned is not None:
+                w_final_series = w_l2_aligned * magnitude_factor * w_l1_aligned
+            else:
+                 w_final_series = pd.Series(1.0, index=l3_input_df.index) * magnitude_factor * w_l1_aligned
             if w_final_series.mean() > 0:
                 w_final_series /= w_final_series.mean()
             w_final = w_final_series.values

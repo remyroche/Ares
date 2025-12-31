@@ -61,60 +61,187 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ares.launcher")
 
-# Import step registry and base step
-from src.training.steps.base_step import step_registry, BaseStep
-from src.utils.versioned_artifacts import VersionedArtifactStore
+# Import step registry and base step - DEFERRED for lazy loading
+# step_registry and BaseStep are imported lazily in run_step() to avoid loading all packages on startup
+# from src.training.steps.base_step import step_registry, BaseStep  # DEFERRED
 
-# Import step packages to register them
-import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
-
+# Lightweight VersionedArtifactStore import (does not trigger heavy imports)
 try:
-    import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
-except Exception as e:
-    logger.warning(
-        "MARKET_ANALYSIS steps could not be imported and will be unavailable: %s",
-        e,
-    )
+    from src.utils.versioned_artifacts import VersionedArtifactStore
+except ImportError:
+    VersionedArtifactStore = None  # Will be imported lazily if needed
 
-try:
-    import src.training.steps.pre_training  # Registers PRE_TRAINING steps
-except Exception as e:
-    logger.warning(
-        "PRE_TRAINING steps could not be imported and will be unavailable: %s",
-        e,
-    )
+# Static step mapping for validation without importing packages
+STATIC_STEP_MAPPING = {
+    # Labeling steps
+    'meta_labeling_hpo_sample_weighted': 'labeling',
+    'meta_labeling_hpo_experiment': 'labeling', 
+    'sr_labeling_xgb': 'labeling',
+    'sr_labeling_xgb_weighted': 'labeling',
+    'weighted_meta_labeling': 'labeling',
+    'feature_generation_data_validation_step': 'labeling',
+    'feature_generation_labeling_integration_step': 'labeling',
+    'feature_generation_meta_labeling_step': 'labeling',
+    'triple_barrier_validator': 'labeling',
+    'lgbm_feature_selection': 'labeling',
+    'winning_feature_set_selector': 'labeling',
+    'meta_gated_backtest': 'labeling',
+    'snr_diagnostics': 'labeling',
+    'generate_weights_per_label': 'labeling',
+    'label_based_layer_0': 'labeling',
+    'label_based_layer_1': 'labeling',
+    'label_based_layer_2': 'labeling',
+    'label_based_layer_3': 'labeling',
+    'label_based_layer_4': 'labeling',
+    'label_based_layer_5': 'labeling',
+    'orthogonal_label_generation': 'labeling',
+    'multi_label_voting': 'labeling',
+    
+    # Pre-training steps
+    'feature_generation_feature_generation_step': 'pre_training',
+    'feature_generation_feature_selection_step': 'pre_training',
+    'feature_generation_period_lookback_optimization_step': 'pre_training',
+    'feature_generation_interaction_generation_step': 'pre_training',
+    'regime_aware_feature_interaction_generation_step': 'pre_training',
+    'feature_generation_gate_feature': 'pre_training',
+    'feature_generation_final_feature_selection_step': 'pre_training',
+    'feature_generation_final_validation_step': 'pre_training',
+    
+    # Data collection steps
+    'data_collection': 'data_collection',
+    'data_validation': 'data_collection',
+    
+    # Market analysis steps
+    'rolling_hmm_regime_discovery': 'market_analysis',
+    'hmm_macro_regime': 'market_analysis',
+    'xgb_meso_regime': 'market_analysis',
+    'regime_clustering': 'market_analysis',
+    'sr_clustering': 'market_analysis',
+    'sr_detection': 'market_analysis',
+    'sr_parameter_optimization': 'market_analysis',
+    
+    # Model training steps
+    'analyst_base_training': 'model_training',
+    'analyst_ensemble_training': 'model_training',
+    'tactician_base_training': 'model_training',
+    'tactician_ensemble_training': 'model_training',
+    'gate_training': 'model_training',
+    'unified_model_training': 'model_training',
+    
+    # Backtest steps
+    'analyst_base_backtest': 'analyst_base_backtest_step',
+    'backtest': 'backtesting',
+    'portfolio_backtest': 'backtesting',
+}
 
-try:
-    import src.training.steps.model_training  # Registers MODEL_TRAINING steps
-except Exception as e:
-    logger.warning(
-        "MODEL_TRAINING steps could not be imported and will be unavailable: %s",
-        e,
-    )
+def is_known_step(step_name: str) -> bool:
+    """Check if step is known without importing packages."""
+    return step_name in STATIC_STEP_MAPPING
 
-try:
-    import src.training.steps.analyst_base_backtest_step  # Registers ANALYST_BASE_BACKTEST step
-except Exception as e:
-    logger.warning(
-        "ANALYST_BASE_BACKTEST step could not be imported and will be unavailable: %s",
-        e,
-    )
+# Lazy step registration - packages imported only when needed
+def import_step_package_for_step(step_name: str) -> bool:
+    """Import the appropriate package for a given step name."""
+    try:
+        # Map step names to their packages
+        if any(step_name.startswith(prefix) for prefix in [
+            'meta_labeling', 'weighted_meta_labeling', 'feature_generation_data_validation',
+            'feature_generation_labeling_integration', 'feature_generation_meta_labeling',
+            'triple_barrier_validator', 'lgbm_feature_selection', 'winning_feature_set_selector',
+            'meta_gated_backtest', 'snr_diagnostics', 'generate_weights_per_label',
+            'label_based_layer', 'orthogonal_label_generation', 'multi_label_voting',
+            'sr_labeling_xgb'  # Aliases for meta_labeling_hpo_sample_weighted
+        ]):
+            import src.training.steps.labeling
+            return True
+            
+        elif any(step_name.startswith(prefix) for prefix in [
+            'feature_generation_feature_generation', 'feature_generation_feature_selection',
+            'feature_generation_period_lookback_optimization', 'feature_generation_interaction_generation',
+            'regime_aware_feature_interaction_generation', 'feature_generation_gate_feature',
+            'feature_generation_final_feature_selection', 'feature_generation_final_validation'
+        ]):
+            import src.training.steps.pre_training
+            return True
+            
+        elif step_name in ["data_collection", "data_validation"] or step_name == "enhanced_klines_processing_pipeline":
+            # Data collection steps do NOT need feature generation
+            import src.training.steps.data_collection
+            return True
+            
+        elif any(step_name.startswith(prefix) for prefix in [
+            'rolling_hmm_regime_discovery', 'hmm_macro_regime', 'xgb_meso_regime',
+            'regime_clustering', 'sr_clustering', 'sr_detection', 'sr_parameter_optimization'
+        ]):
+            import src.training.steps.market_analysis
+            return True
+            
+        elif any(step_name.startswith(prefix) for prefix in [
+            'analyst_base_training', 'analyst_ensemble_training', 'tactician_base_training',
+            'tactician_ensemble_training', 'gate_training', 'unified_model_training'
+        ]):
+            import src.training.steps.model_training
+            return True
+            
+        elif step_name == 'analyst_base_backtest':
+            import src.training.steps.analyst_base_backtest_step
+            return True
+            
+        elif any(step_name.startswith(prefix) for prefix in [
+            'meta_gated_backtest', 'backtest', 'portfolio_backtest'
+        ]):
+            import src.training.steps.backtesting
+            return True
+            
+        else:
+            # Fallback: try all packages
+            logger.warning(f"Unknown step '{step_name}', importing all packages as fallback")
+            import_all_step_packages()
+            return True
+            
+    except Exception as e:
+        logger.error(f"Failed to import package for step '{step_name}': {e}")
+        return False
 
-try:
-    import src.training.steps.labeling  # Registers LABELING steps (includes META_GATED_BACKTEST)
-except Exception as e:
-    logger.warning(
-        "LABELING steps could not be imported and will be unavailable: %s",
-        e,
-    )
+def import_all_step_packages():
+    """Import all step packages (legacy behavior)."""
+    try:
+        import src.training.steps.data_collection
+    except Exception as e:
+        logger.warning("DATA_COLLECTION steps could not be imported and will be unavailable: %s", e)
 
-try:
-    import src.training.steps.backtesting  # Registers BACKTESTING steps
-except Exception as e:
-    logger.warning(
-        "BACKTESTING steps could not be imported and will be unavailable: %s",
-        e,
-    )
+    try:
+        import src.training.steps.market_analysis
+    except Exception as e:
+        logger.warning("MARKET_ANALYSIS steps could not be imported and will be unavailable: %s", e)
+
+    try:
+        import src.training.steps.pre_training
+    except Exception as e:
+        logger.warning("PRE_TRAINING steps could not be imported and will be unavailable: %s", e)
+
+    try:
+        import src.training.steps.model_training
+    except Exception as e:
+        logger.warning("MODEL_TRAINING steps could not be imported and will be unavailable: %s", e)
+
+    try:
+        import src.training.steps.analyst_base_backtest_step
+    except Exception as e:
+        logger.warning("ANALYST_BASE_BACKTEST step could not be imported and will be unavailable: %s", e)
+
+    try:
+        import src.training.steps.labeling
+    except Exception as e:
+        logger.warning("LABELING steps could not be imported and will be unavailable: %s", e)
+
+    try:
+        import src.training.steps.backtesting
+    except Exception as e:
+        logger.warning("BACKTESTING steps could not be imported and will be unavailable: %s", e)
+
+# Default behavior: import all packages (can be overridden with --selective-import)
+# Note: This will be conditionally executed in main() based on --selective-import flag
+# import_all_step_packages()  # Commented out to enable lazy loading by default
 
 
 class SimplifiedAresLauncher:
@@ -128,7 +255,15 @@ class SimplifiedAresLauncher:
     def __init__(self):
         """Initialize the simplified launcher."""
         self.logger = logger
-        self.step_registry = step_registry
+        self._step_registry = None  # Lazy loaded
+    
+    @property
+    def step_registry(self):
+        """Lazy-load step registry to avoid importing all packages on startup."""
+        if self._step_registry is None:
+            from src.training.steps.base_step import step_registry
+            self._step_registry = step_registry
+        return self._step_registry
         
     def register_step(self, step_name: str, step_class: type):
         """
@@ -141,13 +276,14 @@ class SimplifiedAresLauncher:
         self.step_registry.register(step_name, step_class)
         self.logger.info(f"Registered step: {step_name}")
     
-    async def run_step(self, step_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def run_step(self, step_name: str, config: Dict[str, Any], use_lazy_loading: bool = False) -> Dict[str, Any]:
         """
         Run a single autonomous step.
         
         Args:
             step_name: Name of the step to run
             config: Configuration dictionary
+            use_lazy_loading: If True, import packages only when needed
             
         Returns:
             Execution result from the step
@@ -155,7 +291,11 @@ class SimplifiedAresLauncher:
         try:
             self.logger.info(f"Starting execution of step: {step_name}")
             
-            # Get step class from registry
+            # ALWAYS use lazy loading - import only the package needed for this step
+            self.logger.info(f"Loading step package for: {step_name}")
+            import_step_package_for_step(step_name)
+            
+            # Get step class from registry (registry accessor triggers lazy import if needed)
             step_class = self.step_registry.get_step(step_name)
             
             # Create step instance
@@ -191,13 +331,14 @@ class SimplifiedAresLauncher:
                 'metrics': {}
             }
     
-    async def run_steps(self, step_names: List[str], config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    async def run_steps(self, step_names: List[str], config: Dict[str, Any], use_lazy_loading: bool = False) -> Dict[str, Dict[str, Any]]:
         """
         Run multiple steps sequentially.
         
         Args:
             step_names: List of step names to run
             config: Configuration dictionary
+            use_lazy_loading: If True, import packages only when needed
             
         Returns:
             Dictionary mapping step names to their execution results
@@ -207,7 +348,7 @@ class SimplifiedAresLauncher:
         for step_name in step_names:
             self.logger.info(f"Running step {step_names.index(step_name) + 1}/{len(step_names)}: {step_name}")
             
-            result = await self.run_step(step_name, config)
+            result = await self.run_step(step_name, config, use_lazy_loading=use_lazy_loading)
             results[step_name] = result
             
             # Stop on first failure unless configured otherwise
@@ -370,6 +511,11 @@ Examples:
     regime_group.add_argument('--hmm-macro-regime', action='store_true', help='Run HMM macro alpha / macro regime step from Rolling HMM outputs')
     regime_group.add_argument('--xgb-meso-regime', action='store_true', help='Run XGB Meso Trend regime step')
     regime_group.add_argument('--final_parameters_optimization', action='store_true', help='Run final parameters optimization')
+    # Multi-asset global training options
+    global_group = parser.add_mutually_exclusive_group()
+    global_group.add_argument('--global', action='store_true', help='Global multi-asset training mode (full execution)')
+    global_group.add_argument('--global-dry', action='store_true', help='Global multi-asset training mode (blank execution)')
+
 
     # Feature generation step shortcuts
     feature_group = parser.add_argument_group('Feature generation step shortcuts')
@@ -383,6 +529,8 @@ Examples:
     
     # Common parameters
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
+    parser.add_argument('--assets', type=str, default='ETH,BTC,LINK,SOL,AVAX,BNB', help='Comma-separated list of assets for multi-asset training (e.g., ETH,BTC,LINK)')
+
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training / base features')
     # Default regime timeframe to 15m so regime-aware steps (HMM/alpha, regime ensemble,
@@ -487,6 +635,7 @@ Examples:
     # Utility options
     parser.add_argument('--list-steps', action='store_true', help='List all registered steps')
     parser.add_argument('--list-stages', action='store_true', help='List all available stages')
+    parser.add_argument('--selective-import', action='store_true', help='Only import modules needed for the specified step (faster initialization)')
     parser.add_argument(
         '--cleanup-only',
         action='store_true',
@@ -804,6 +953,14 @@ async def main():
     parser = create_cli_parser()
     args = parser.parse_args()
 
+    # Handle selective import mode
+    if args.selective_import:
+        logger.info("Selective import enabled: packages will be loaded only when needed")
+        # Don't import all packages upfront - they'll be loaded lazily
+    else:
+        logger.info("Loading all step packages (legacy behavior)")
+        import_all_step_packages()
+
     # Map positional command argument for utility commands
     if args.command in ("cleaner", "cleanup"):
         args.cleanup_only = True
@@ -853,10 +1010,16 @@ async def main():
     
     # Handle utility commands
     if args.list_steps:
-        steps = launcher.list_steps()
-        print("Registered steps:")
-        for step in steps:
-            print(f"  - {step}")
+        if args.selective_import:
+            print("Available steps (selective import mode):")
+            for step in sorted(STATIC_STEP_MAPPING.keys()):
+                package = STATIC_STEP_MAPPING[step]
+                print(f"  - {step} (package: {package})")
+        else:
+            steps = launcher.list_steps()
+            print("Registered steps:")
+            for step in steps:
+                print(f"  - {step}")
         return
     
     if args.list_stages:
@@ -868,14 +1031,19 @@ async def main():
     
     # Handle positional command argument
     if args.command:
-        # Check if the command matches a registered step
-        if args.command in launcher.list_steps():
+        # Check if the command matches a known step using static mapping
+        if is_known_step(args.command):
             # Treat positional argument as --step
             args.step = args.command
             logger.info(f"Detected positional command: {args.command}")
         else:
             print(f"Error: Unknown command '{args.command}'")
-            print(f"Available steps: {', '.join(launcher.list_steps())}")
+            if args.selective_import:
+                print("Available steps (selective import mode):")
+                for step in sorted(STATIC_STEP_MAPPING.keys()):
+                    print(f"  - {step}")
+            else:
+                print(f"Available steps: {', '.join(launcher.list_steps())}")
             print("Use --list-steps to see all registered steps")
             return
 
@@ -925,8 +1093,19 @@ async def main():
         return
 
     # Validate required parameters for execution modes
-    if not args.symbol and has_execution_mode:
-        parser.error("--symbol is required when running execution modes")
+    global_mode = getattr(args, 'global', False)
+    global_dry_mode = getattr(args, 'global_dry', False)
+    
+    if not args.symbol and not (global_mode or global_dry_mode) and has_execution_mode:
+        parser.error("--symbol is required when running execution modes (except for global modes)")
+    
+    # For global modes, validate assets list
+    if (global_mode or global_dry_mode) and has_execution_mode:
+        if not args.assets:
+            parser.error("--assets is required when running global modes")
+        assets_list = [asset.strip() for asset in args.assets.split(",") if asset.strip()]
+        if len(assets_list) < 2:
+            parser.error("--assets must contain at least 2 assets for global training")
     
     # Build configuration
     config = {
@@ -939,6 +1118,15 @@ async def main():
         # discovery/alpha models unless explicitly overridden on the CLI.
         'regime_timeframe': args.regime_timeframe or '15m',
     }
+    
+    # Add multi-asset configuration for global modes
+    if global_mode or global_dry_mode:
+        assets_list = [asset.strip() for asset in args.assets.split(",") if asset.strip()]
+        config['assets'] = assets_list
+        config['multi_asset_mode'] = 'global' if global_mode else 'global_dry'
+        config['symbol'] = f"{assets_list[0]}USDT"  # Use first asset for compatibility
+        # Set execution mode based on global flag
+        config['execution_mode'] = 'full' if global_mode else 'blank'
 
     # Optional: force recomputation of multi-stage labeling HPO (ignore cached params)
     if getattr(args, 'force_hpo', False):
@@ -1050,14 +1238,14 @@ async def main():
         if args.step:
             # Single step execution
             logger.info(f"Running single step: {args.step}")
-            result = await launcher.run_step(args.step, config)
+            result = await launcher.run_step(args.step, config, use_lazy_loading=args.selective_import)
             print(f"Step '{args.step}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.steps:
             # Multiple steps execution
             step_names = [s.strip() for s in args.steps.split(',')]
             logger.info(f"Running multiple steps: {step_names}")
-            results = await launcher.run_steps(step_names, config)
+            results = await launcher.run_steps(step_names, config, use_lazy_loading=args.selective_import)
             
             # Print summary
             successful = sum(1 for r in results.values() if r.get('success', False))
@@ -1121,6 +1309,13 @@ async def main():
                 logger.info("Running analyst base backtest using OOS predictions")
                 backtest_result = await launcher.run_step('analyst_base_backtest', config)
                 print(f"Analyst base backtest completed: {'✅ Success' if backtest_result.get('success') else '❌ Failed'}")
+
+        elif global_mode or global_dry_mode:
+            # Global multi-asset training execution
+            mode_name = "Global (full)" if global_mode else "Global (blank)"
+            logger.info(f"Running {mode_name} multi-asset training on: {config['assets']}")
+            result = await launcher.run_step('global_meta_labeling_hpo_sample_weighted', config)
+            print(f"Global multi-asset training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
         elif args.rolling_hmm_regime_discovery:
             # Rolling HMM regime discovery execution
@@ -1204,3 +1399,53 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+# Feature generation optimization helper
+def is_feature_generation_step(step_name: str) -> bool:
+    """Check if a step requires feature generation module loading."""
+    feature_generation_patterns = [
+        'feature_generation_',
+        'meta_labeling_',
+        'label_based_',
+        'orthogonal_label',
+        'multi_label_voting',
+        'snr_diagnostics',
+        'generate_weights_per_label',
+        'sr_labeling_xgb',
+        'meta_gated_backtest'
+    ]
+    
+    return any(step_name.startswith(pattern) for pattern in feature_generation_patterns)
+
+def get_minimal_imports_for_step(step_name: str) -> str:
+    """Get the minimal package import needed for a specific step."""
+    if step_name in ['data_collection', 'data_validation'] or step_name == 'enhanced_klines_processing_pipeline':
+        return 'src.training.steps.data_collection'
+    elif is_feature_generation_step(step_name):
+        return 'src.training.steps.labeling'
+    elif any(step_name.startswith(prefix) for prefix in [
+        'feature_generation_feature_generation', 'feature_generation_feature_selection',
+        'feature_generation_period_lookback_optimization', 'feature_generation_interaction_generation',
+        'regime_aware_feature_interaction_generation', 'feature_generation_gate_feature',
+        'feature_generation_final_feature_selection', 'feature_generation_final_validation'
+    ]):
+        return 'src.training.steps.pre_training'
+    elif any(step_name.startswith(prefix) for prefix in [
+        'rolling_hmm_regime_discovery', 'hmm_macro_regime', 'xgb_meso_regime',
+        'regime_clustering', 'sr_clustering', 'sr_detection', 'sr_parameter_optimization'
+    ]):
+        return 'src.training.steps.market_analysis'
+    elif any(step_name.startswith(prefix) for prefix in [
+        'analyst_base_training', 'analyst_ensemble_training', 'tactician_base_training',
+        'tactician_ensemble_training', 'gate_training', 'unified_model_training'
+    ]):
+        return 'src.training.steps.model_training'
+    elif step_name == 'analyst_base_backtest':
+        return 'src.training.steps.analyst_base_backtest_step'
+    elif any(step_name.startswith(prefix) for prefix in [
+        'meta_gated_backtest', 'backtest', 'portfolio_backtest'
+    ]):
+        return 'src.training.steps.backtesting'
+    else:
+        return None
+

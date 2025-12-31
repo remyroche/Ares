@@ -2035,7 +2035,7 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
         use_hierarchical_selection = config.get("use_hierarchical_selection", True)
         use_lgbm_sweep = config.get("use_lgbm_sweep", True)
         lgbm_lookahead = int(config.get("lgbm_sweep_lookahead", 4))
-        lgbm_max_features = int(config.get("lgbm_max_features", 300))
+        lgbm_max_features = int(config.get("lgbm_max_features", target_feature_count * 3))
         quality_drop_percentile = float(config.get("quality_drop_percentile", 20.0))
         use_feature_cache = config.get("use_feature_selection_cache", True)
         force_recompute_features = config.get("force_recompute_features", False)

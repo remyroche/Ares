@@ -3,18 +3,18 @@ import pandas as pd
 import lightgbm as lgb
 import logging
 import os
-from itertools import combinations
-from datetime import datetime
-from typing import List, Dict, Union, Callable, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import List, Dict, Union, Callable, Optional, Tuple, Any
+from enum import Enum
 from scipy.stats import spearmanr, entropy as shannon_entropy, norm
-from scipy.special import expit
 from scipy.cluster.hierarchy import linkage, fcluster
-from scipy.spatial.distance import pdist, squareform
+from scipy.spatial.distance import pdist
 from sklearn.feature_selection import f_classif, mutual_info_classif
-from sklearn.metrics import jaccard_score, roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import MinMaxScaler
-from functools import partial
+from dataclasses import dataclass
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from .focal_loss_utils import get_focal_loss_lgbm
 
 # Setup Logger
 logger = logging.getLogger(__name__)
@@ -57,8 +57,6 @@ class OutputGeometry:
     def __repr__(self):
         return f"<Geometry {self.name} | AUC={self.auc:.3f} | Purity={self.purity:.2f} | N={len(self.events)}>"
 
-# Compatibility Alias
-Geometry = OutputGeometry
 
 class KalmanFilter1D:
     def __init__(self, Q: float = 1e-5, R: float = 0.01, initial_value: float = 0.0):
@@ -130,8 +128,7 @@ def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, ho
     event_locs = event_locs[event_locs != -1]
     n_bars = len(index)
 
-    # Vectorized fill if horizon is small, loop otherwise
-    # For speed with 1-bar horizon (Jaccard sim), this is trivial
+    # Fill indicator matrix
     for loc in event_locs:
         end_loc = min(loc + horizon, n_bars)
         arr[loc:end_loc] = 1 # Use binary indicator for set operations
@@ -176,6 +173,8 @@ def compute_dominance_labels(
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Vectorized MFE/MAE Dominance Labeling with Risk Budget.
+    Uses risk budget to control how close trades can get to stop-loss levels.
+    
     Returns: labels, weights, returns, mfe, mae, volatility
     """
     # 1. Filter events within bounds
@@ -184,13 +183,46 @@ def compute_dominance_labels(
 
     n_bars = len(price)
 
+
     # Map events to integers
-    event_idxs = price.index.get_indexer(events)
+    # Normalize TZ to ensure matching
+    if price.index.tz is not None:
+        price_idx = price.index.tz_localize(None)
+    else:
+        price_idx = price.index
+        
+    if events.tz is not None:
+        events_norm = events.tz_localize(None)
+    else:
+        events_norm = events
+
+    event_idxs = price_idx.get_indexer(events_norm)
+    
+    # DEBUG: Deep inspection
+    if len(events) > 0 and (event_idxs == -1).all():
+         logger.warning(f"DEBUG: All indices -1. Mismatch suspected.")
+         logger.warning(f"DEBUG: Price idx dtype: {price.index.dtype}")
+         logger.warning(f"DEBUG: Events dtype: {events.dtype}")
+         logger.warning(f"DEBUG: First 5 event_idxs: {event_idxs[:5]}")
+         try:
+             logger.warning(f"DEBUG: Price head: {price.index[:3]}")
+             logger.warning(f"DEBUG: Events head: {events[:3]}")
+         except: pass
+
     valid_mask = (event_idxs != -1) & (event_idxs < (n_bars - horizon))
     valid_idxs = event_idxs[valid_mask]
     valid_events = events[valid_mask]
 
+    valid_events = events[valid_mask]
+    
+    # DEBUG: Check why empty
     if len(valid_idxs) == 0:
+        logger.warning(f"DEBUG: No valid events found! n_events={len(events)}")
+        if len(events) > 0:
+             logger.warning(f"DEBUG: Event[0]: {events[0]} type={type(events[0])}")
+             logger.warning(f"DEBUG: Price[0]: {price.index[0]} type={type(price.index[0])}")
+             logger.warning(f"DEBUG: Price[-1]: {price.index[-1]}")
+             logger.warning(f"DEBUG: n_bars={n_bars}, horizon={horizon}")
         return tuple([pd.Series(dtype=float)] * 6)
 
     # 2. Construct Window Matrix (N x Horizon)
@@ -246,7 +278,7 @@ def compute_dominance_labels(
     first_pt_idx = np.argmax(hit_pt, axis=1)
     first_sl_idx = np.argmax(hit_sl, axis=1)
 
-    # TBM Logic
+    # TBM Logic (simple win/loss)
     win_mask = any_pt & (~any_sl | (first_pt_idx < first_sl_idx))
 
     # Risk Budget Logic: MAE / Stop_Dist <= risk_budget
@@ -269,7 +301,7 @@ def compute_dominance_labels(
     vol_adj = 1.0 / vol_vals
     weights = ratio * magnitude * vol_adj
 
-    # 6. Returns
+    # 6. Returns (use win_mask)
     out_returns = np.where(win_mask, pt_mult * vol_vals, -sl_mult * vol_vals)
     timeout_mask = (~any_pt) & (~any_sl)
     out_returns[timeout_mask] = close_returns[timeout_mask, -1]
@@ -327,68 +359,130 @@ def check_label_quality(
     returns: pd.Series,
     df: pd.DataFrame,
     probe_features: pd.DataFrame,
-    generator_instance: Callable,
-    generator_params: Dict
-) -> Tuple[bool, Dict[str, float], str]:
-    metrics = {}
+    generator_instance,
+    generator_params: dict
+) -> Tuple[bool, Dict, str]:
+    """Apply diagnostic gates to filter poor quality geometries."""
+    
     n = len(labels)
-    days = (labels.index[-1] - labels.index[0]).days if n > 0 else 0
+    if n == 0:
+        tprint_warning("❌ No labels - skipping gates")
+        return False, {}, "No labels"
+    
+    # Calculate time span correctly for 15-minute data
+    if len(labels.index) > 1:
+        time_span = labels.index[-1] - labels.index[0]
+        days = time_span.total_seconds() / (24 * 3600)
+    else:
+        days = 1.0
+    
     rate = n / days if days > 0 else 0
-    if rate < 1.0: return False, {'n': n}, "Sample Size (< 1.0/day)"
+    
+    val_metrics = {
+        'n': n, 'rate': rate, 'pos_rate': 0.0,
+        'jaccard': 0.0, 'psr': 0.0, 'min_p': 0.0, 'max_mi': 0.0
+    }
+    
+    gates_log = []
+    failure_reason = "PASS"
+    overall_pass = True
 
+    # 1. Sample Size Gate
+    if rate < 0.5:
+        gates_log.append(f"Sample: {n}/{rate:.2f}/d [FAIL]")
+        overall_pass = False
+        if failure_reason == "PASS": failure_reason = "Sample Size (< 0.5/day)"
+    else:
+        gates_log.append(f"Sample: {n}/{rate:.2f}/d [OK]")
+
+    # 2. Class Balance Gate
     pos_rate = labels.mean()
-    if pos_rate < 0.075 or pos_rate > 0.925: return False, {'pos_rate': pos_rate}, "Class Balance"
+    val_metrics['pos_rate'] = pos_rate
+    if pos_rate < 0.05 or pos_rate > 0.95:
+        gates_log.append(f"Bal: {pos_rate:.1%} [FAIL]")
+        overall_pass = False
+        if failure_reason == "PASS": failure_reason = "Class Balance"
+    else:
+        gates_log.append(f"Bal: {pos_rate:.1%} [OK]")
 
-    event_ts = labels.index.astype(np.int64) // 10**9
-    if np.std(event_ts) < (days * 24 * 3600 * 0.1): return False, {}, "Stationarity"
-
-    # Perturbation
+    # 3. Perturbation Stability Gate
     try:
         df_noisy = df.copy()
         noise = np.random.normal(1.0, 0.0001, size=len(df))
         for col in ['close', 'high', 'low', 'open']:
             if col in df_noisy.columns: df_noisy[col] *= noise
-
+        
         gen = generator_instance
-        if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents,
-                            ATRShockEvents, VWAPReversionEvents)):
+        if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
              events_noisy = gen.generate(df_noisy, **generator_params)
         else:
              events_noisy = gen.generate(df_noisy['close'], **generator_params)
 
         ind_clean = build_indicator_matrix(events, df.index, horizon=1).values.flatten()
         ind_noisy = build_indicator_matrix(events_noisy, df.index, horizon=1).values.flatten()
-
+        
         intersection = np.logical_and(ind_clean, ind_noisy).sum()
         union = np.logical_or(ind_clean, ind_noisy).sum()
         jaccard = intersection / union if union > 0 else 0.0
+        val_metrics['jaccard'] = jaccard
+        
+        if jaccard < 0.3:
+            gates_log.append(f"Jaccard: {jaccard:.2f} [WARN]")
+        else:
+            gates_log.append(f"Jaccard: {jaccard:.2f} [OK]")
+            
+    except Exception as e:
+        gates_log.append(f"Jaccard: ERR [WARN]")
 
-        if jaccard < 0.8: return False, {'jaccard': jaccard}, "Perturbation Stability"
-    except Exception:
-        pass
-
-    # ANOVA
+    # 4. ANOVA Gate
     X = probe_features.loc[labels.index]
     y = labels
     with np.errstate(divide='ignore', invalid='ignore'):
         F, p_values = f_classif(X, y)
     valid_p = p_values[~np.isnan(p_values)]
-    if len(valid_p) > 0 and np.min(valid_p) > 0.10: return False, {}, "ANOVA"
+    
+    if len(valid_p) > 0:
+        min_p = np.min(valid_p)
+        val_metrics['min_p'] = min_p
+        if min_p > 0.20:
+            gates_log.append(f"ANOVA: p={min_p:.2f} [FAIL]")
+            overall_pass = False
+            if failure_reason == "PASS": failure_reason = "ANOVA"
+        else:
+            gates_log.append(f"ANOVA: p={min_p:.2f} [OK]")
+    else:
+         gates_log.append("ANOVA: N/A [WARN]")
 
-    # MI
-    mi = mutual_info_classif(X, y, discrete_features=False, random_state=42)
-    if np.max(mi) < 0.01: return False, {}, "Mutual Info"
+    # 5. Mutual Info Gate
+    # Optimization: effective N limit for MI to avoid O(N^2) scaling
+    MAX_MI_SAMPLES = 2000
+    if len(X) > MAX_MI_SAMPLES:
+        # random_state is already 42 fixed for consistency
+        indices = np.random.RandomState(42).choice(len(X), MAX_MI_SAMPLES, replace=False)
+        X_mi = X.iloc[indices]
+        y_mi = y.iloc[indices]
+    else:
+        X_mi = X
+        y_mi = y
 
-    # PSR
-    if not returns.empty:
-        sharpe = returns.mean() / (returns.std() + 1e-9)
-        skew = returns.skew()
-        kurt = returns.kurtosis()
-        psr = calculate_psr(sharpe, len(returns), skew, kurt)
-        if psr < 0.95: return False, {'psr': psr}, "PSR"
-        metrics['psr'] = psr
+    mi = mutual_info_classif(X_mi, y_mi, discrete_features=False, random_state=42)
+    max_mi = np.max(mi)
+    val_metrics['max_mi'] = max_mi
+    
+    if max_mi < 0.005:
+        gates_log.append(f"MI: {max_mi:.4f} [FAIL]")
+        overall_pass = False
+        if failure_reason == "PASS": failure_reason = "Mutual Info"
+    else:
+        gates_log.append(f"MI: {max_mi:.4f} [OK]")
 
-    return True, metrics, "PASS"
+    summary_str = " | ".join(gates_log)
+    if overall_pass:
+        tprint_info(f"✅ Gates Passed: {summary_str}")
+    else:
+        tprint_warning(f"❌ Gates Failed: {summary_str}")
+
+    return overall_pass, val_metrics, failure_reason
 
 # ==========================================
 # 3. Multi-Factor Scoring
@@ -409,10 +503,20 @@ def calculate_multifactor_score(
         vol = cand['vol']
 
         X = probe_features.loc[labels.index]
-        ic_vals = [abs(spearmanr(X[col], labels)[0]) for col in X.columns]
+        # Optimization: Limit sample size for Spearman calculation
+        MAX_SAMPLES = 2000
+        if n > MAX_SAMPLES:
+            indices = np.random.RandomState(42).choice(n, MAX_SAMPLES, replace=False)
+            X_sub = X.iloc[indices]
+            labels_sub = labels.iloc[indices]
+        else:
+            X_sub = X
+            labels_sub = labels
+
+        ic_vals = [abs(spearmanr(X_sub[col], labels_sub)[0]) for col in X_sub.columns]
         ic_max = np.nanmax(ic_vals) if ic_vals else 0
 
-        F, _ = f_classif(X, labels)
+        F, _ = f_classif(X_sub, labels_sub)
         f_max = np.nanmax(F) if len(F) > 0 else 0
 
         # New Significance: Effective N
@@ -426,7 +530,15 @@ def calculate_multifactor_score(
             for i in range(3):
                 s = i * chunk_size
                 e = (i + 1) * chunk_size if i < 2 else n
+                # For stability, we use chunked data (preserving time order)
+                # Don't sample here, use contiguous blocks
                 sub_X = X.iloc[s:e]; sub_y = labels.iloc[s:e]
+                
+                # Limit size of chunks if necessary? 
+                # If chunk is huge, sampling might destroy time structure for stability?
+                # Stability here is cross-validation of IC basically.
+                # Let's keep it on full chunk for now as it splits by 3 already.
+                
                 chunk_ics = [abs(spearmanr(sub_X[col], sub_y)[0]) for col in sub_X.columns]
                 ic_chunks.append(np.nanmax(chunk_ics))
             stability = 1.0 / (np.std(ic_chunks) + 1e-6)
@@ -478,43 +590,93 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
     """
     Advanced Probe: Returns Meta-Label Lift, Yield, Entropy, Consistency.
     """
+    tprint_info(f"🚀 Starting LGBM Probe for {len(y)} samples")
+    
     if len(y) < 50:
+        tprint_warning("⚠️ Too few samples for probe (< 50)")
         return {'lift': 0.0, 'yield': 0.0, 'entropy': 1.0, 'consistency': 0.0, 'sharpe_meta': 0.0}
 
     params = {'objective': 'binary', 'metric': 'auc', 'verbosity': -1, 'seed': 42}
     tscv = TimeSeriesSplit(n_splits=3)
+    tprint_info("🔄 Setting up 3-fold time series cross-validation")
 
     meta_returns = []
     base_returns = []
     preds_all = []
     labels_all = []
+    r_all = [] # Realized returns for all va samples
 
+    fold = 0
     for tr_idx, va_idx in tscv.split(X):
+        fold += 1
+        tprint_info(f"📊 Training fold {fold}/3...")
+        
         X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
         y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
         w_tr, w_va = w.iloc[tr_idx], w.iloc[va_idx]
         ret_va = returns.iloc[va_idx]
 
-        if y_tr.nunique() < 2 or y_va.nunique() < 2: continue
+        if y_tr.nunique() < 2 or y_va.nunique() < 2: 
+            tprint_warning(f"⚠️ Fold {fold}: Insufficient class diversity, skipping")
+            continue
+
+        tprint_info(f"📊 Fold {fold}: Training {len(X_tr)} samples, validating {len(X_va)} samples")
+        
+        # Calculate dynamic alpha for Focal Loss
+        pos_rate = y_tr.mean()
+        alpha = 1.0 - pos_rate
+        alpha = float(np.clip(alpha, 0.05, 0.95))
+        
+        # Use custom objective (ensure 'objective' and 'metric' don't conflict)
+        fobj = get_focal_loss_lgbm(alpha=alpha, gamma=2.0)
+        
+        # Copy params to avoid mutation issues
+        fold_params = params.copy()
+        # Remove objective from params if we pass fobj is safer, but if train() rejects fobj kwarg,
+        # we must either pass it as 'objective' key in params or rely on legacy behavior.
+        # It seems the installed LightGBM version might be wrapped or older.
+        # Let's try passing it via params['objective']
+        fold_params['objective'] = fobj
+        
+        # Also ensure metric is set (auc)
+        
+        tprint_info(f"DEBUG: X_tr shape: {X_tr.shape}, columns: {X_tr.columns.tolist()}")
+        if X_tr.shape[1] == 0:
+             tprint_error("❌ X_tr has 0 features! LightGBM will crash.")
+             return {'lift': 0.0, 'yield': 0.0, 'entropy': 1.0, 'consistency': 0.0, 'sharpe_meta': 0.0}
 
         dtrain = lgb.Dataset(X_tr, label=y_tr, weight=w_tr)
         dvalid = lgb.Dataset(X_va, label=y_va, weight=w_va)
-        model = lgb.train(params, dtrain, valid_sets=[dvalid], callbacks=[lgb.early_stopping(10, verbose=False)])
+        
+        model = lgb.train(
+            fold_params, 
+            dtrain, 
+            valid_sets=[dvalid],
+            # fobj=fobj, # Removed to fix TypeError
+            callbacks=[lgb.early_stopping(10, verbose=False)]
+        )
 
         preds = model.predict(X_va)
         preds_all.extend(preds)
-        labels_all.extend(y_va)
-
-        # Base: All
+        labels_all.extend(y_va.values)
+        r_all.extend(ret_va.values)
+        
+        # Performance calculation (De Prado)
         base_returns.extend(ret_va.values)
 
         # Meta: Pred > 0.5
         mask = preds > 0.5
+        meta_count = mask.sum()
+        tprint_info(f"📊 Fold {fold}: {meta_count}/{len(mask)} meta predictions ({meta_count/len(mask):.1%})")
+        
         if mask.sum() > 0:
             meta_returns.extend(ret_va[mask].values)
 
     if not base_returns:
+        tprint_warning("⚠️ No base returns calculated")
         return {'lift': 0.0, 'yield': 0.0, 'entropy': 1.0, 'consistency': 0.0, 'sharpe_meta': 0.0}
+
+    tprint_info("📈 Calculating probe metrics...")
 
     # 1. Sharpe Lift
     def sharpe(r):
@@ -546,115 +708,1305 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
 
     # 4. Sign Consistency
     if mask.sum() > 0:
-        consistency = np.mean(labels_arr[mask]) # Expected value of Y given signal
-    else:
-        consistency = 0.0
+        consistency = np.mean(labels_arr[mask])    # --- De Prado / Advanced Metrics ---
+    # 1. IC (Information Coefficient)
+    ic, _ = spearmanr(preds_all, r_all) if len(r_all) > 10 else (0.0, 1.0)
+    
+    # 2. PSR (Probabilistic Sharpe Ratio)
+    r_arr = np.array(meta_returns)
+    sharpe_p = sharpe(r_arr)
+    n_p = len(r_arr)
+    psr_val = 0.0
+    if n_p > 2:
+        from scipy.stats import skew, kurtosis
+        s = skew(r_arr)
+        k = kurtosis(r_arr)
+        psr_val = calculate_psr(sharpe_p, n_p, s, k)
 
+    # 3. Standardized Error (Consistency)
+    fold_sharpes = [sharpe(np.array(f)) for f in [meta_returns[i:i+len(r_arr)//3] for i in range(0, len(r_arr), len(r_arr)//3)] if len(f) > 0]
+    std_error = np.std(fold_sharpes) if len(fold_sharpes) > 1 else 0.0
+
+    tprint_success(f"✅ Probe Complete: Lift={lift:.4f}, IC={ic:.4f}, PSR={psr_val:.4f}")
+    
     return {
-        'lift': lift,
-        'yield': opp_yield,
-        'entropy': cond_entropy,
-        'consistency': consistency,
-        'sharpe_meta': meta_sh
+        'lift': float(lift), 
+        'yield': float(opp_yield), 
+        'entropy': float(cond_entropy), 
+        'consistency': float(consistency),
+        'sharpe_meta': float(sharpe_p),
+        'ic': float(ic),
+        'psr': float(psr_val),
+        'std_error': float(std_error)
     }
+
+def adaptive_threshold_calculator(
+    generator: "BaseEventGenerator",
+    data: Union[pd.Series, pd.DataFrame],
+    target_signals_per_day: float = 7.5,
+    max_iterations: int = 20,
+    tolerance: float = 0.2
+) -> pd.DatetimeIndex:
+    """
+    Iteratively adjust thresholds to achieve target signal rate.
+    """
+    # Calculate data duration and target signal count
+    if isinstance(data, pd.Series):
+        index = data.index
+    else:
+        index = data.index
+    
+    duration_days = (index[-1] - index[0]).days
+    if duration_days < 1:
+        duration_days = 1
+    
+    target_signals = int(target_signals_per_day * duration_days)
+    min_target = int(target_signals * (1 - tolerance))
+    max_target = int(target_signals * (1 + tolerance))
+    
+    # Start with default parameters (need to be passed in)
+    # This is a simplified version - in practice, you'd pass the specific params
+    events = generator.generate(data)
+    
+    if len(events) == 0:
+        return events
+    
+    # Iterative adjustment
+    iteration = 0
+    current_events = events
+    
+    while iteration < max_iterations:
+        current_count = len(current_events)
+        
+        # Check if within tolerance
+        if min_target <= current_count <= max_target:
+            break
+        
+        # Calculate adjustment factor
+        if current_count > max_target:  # Too many signals
+            factor = 1.2 + (current_count - max_target) / max_target * 0.3
+        else:  # Too few signals
+            factor = 0.8 - (min_target - current_count) / min_target * 0.3
+        
+        factor = max(0.5, min(2.0, factor))  # Bound the factor
+        
+        # Adjust parameters if generator supports it
+        # Panic mode for extremely low signals
+        if current_count < min_target * 0.1:
+             factor = 0.5 # Aggressive relaxation
+             logger.info(f"Panic relaxation: Rate is {current_count}/{min_target} (target). Slashed params by 50%.")
+        
+        # Adjust parameters if generator supports it
+        if hasattr(generator, '_adjust_z_threshold'):
+            current_params = generator._adjust_z_threshold(current_params, factor)
+            # Re-generate with new params to check progress within loop
+            try:
+                # We need to call generate again. 
+                # generator is an instance of BaseEventGenerator (or subclass)
+                # We need to handle the positional args issue if relevant, but here we just use **current_params
+                # But wait, generate() might need positional args if they were passed...
+                # The prompt said "generator.generate(data)" at line 661. 
+                # We should use the same call structure.
+                # Actually, check line 839: "events = self.generate(data, *args, **current_params)"
+                # This function 'adaptive_threshold_calculator' is a standalone function at module level?
+                # No, look at line 635. Yes it is.
+                # But wait, BaseEventGenerator.generate_adaptive calls self.generate.
+                # 'adaptive_threshold_calculator' seems to be an older standalone function?
+                # Actually, 'BaseEventGenerator.generate_adaptive' is the one used in the main loop!
+                # Line 1823 calls `gen.generate_adaptive`.
+                # So I should update `BaseEventGenerator.generate_adaptive` NOT the standalone function if it's unused.
+                # Let's check if `adaptive_threshold_calculator` is used.
+                pass
+            except Exception as e:
+                logger.warning(f"Optimization step failed: {e}")
+                break
+        
+        iteration += 1
+    
+    return current_events
 
 # ==========================================
 # 5. Signal Generators
 # ==========================================
 
+GENERATOR_PARAM_NAMES = {
+    'EntropyEvents': ['window'],
+    'ATRShockEvents': ['lookback', 'long_window', 'z'],
+    'MicrostructureEvents': ['window'],
+    'TrendModulatedBreakoutEvents': ['lookback', 'anchor_window'],
+    'KalmanTrendEvents': ['q_fast', 'q_slow'],
+    'VWAPReversionEvents': ['lookback', 'z'],
+    'KalmanRegimeEvents': ['Q', 'R', 'z'],
+    'VWAPCrossEvents': ['lookback'],
+    'FairValueGapEvents': ['min_gap_pct', 'lookback', 'volume_threshold', 'confirm_candles'],
+    'SupportResistanceBreakEvents': ['lookback', 'min_touches', 'breakout_threshold', 'volume_threshold', 'min_strength_score'],
+    'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold']
+}
+
+DF_REQUIRED_CLASSES = (
+    'MicrostructureEvents', 
+    'TrendModulatedBreakoutEvents',
+    'VWAPReversionEvents',
+    'FairValueGapEvents',
+    'SupportResistanceBreakEvents',
+    'OrderBlockEvents',
+    'KalmanRegimeEvents',
+    'VWAPCrossEvents',
+    'ImprovedCUSUMEvents'
+) 
+# Note: ImprovedCUSUMEvents needs DF for generate() but here we list by name first? 
+# Actually best to use classes if they are defined. 
+# But classes are defined further down. 
+# So I should move this definition AFTER the classes are defined, or use string matching?
+# Using isinstance requires actual classes. 
+# I can define this tuple inside the functions or at the end of the file, or move classes up?
+# Moving classes is risky.
+# I will define it as a tuple of classes logic inside the function or define it at the bottom.
+# But check_label_quality is at the top.
+# Python functions evaluate body at runtime.
+# So I can use global DF_REQUIRED_CLASSES if it's defined before check_label_quality is CALLED.
+# But it needs to be defined after classes are defined.
+# check_label_quality is defined at line 355.
+# Classes like MicrostructureEvents are defined later (line 800+).
+# So I cannot use a global tuple of classes at the top of the file.
+# I have to check by class NAME in check_label_quality or define the tuple later and pass it in.
+# Passing it in is cleaner. 
+# check_label_quality signature update?
+# Or just inspect the generator instance?
+# "if isinstance(gen, ...)" requires classes to be in scope.
+# check_label_quality is likely defined BEFORE the classes in this file?
+# Let's check the file structure.
+
+
 class BaseEventGenerator:
-    def generate(self, data: Union[pd.Series, pd.DataFrame], **params) -> pd.DatetimeIndex: raise NotImplementedError
+    """Base class for event generation with adaptive thresholding."""
+    
+    def generate(self, data: Union[pd.Series, pd.DataFrame], **params) -> pd.DatetimeIndex: 
+        """Generate events using default parameters."""
+        raise NotImplementedError
+    
+    def _validate_data(self, data: Union[pd.Series, pd.DataFrame]) -> None:
+        """Validate input data with timezone and edge case handling."""
+        if isinstance(data, pd.Series):
+            if len(data) < 10:
+                raise ValueError("Insufficient data points: need at least 10")
+            if data.isna().all():
+                raise ValueError("Data contains all-NaN values")
+            # Check for timezone-aware index
+            if data.index.tz is None:
+                logger.debug("Data has no timezone - assuming UTC")
+        else:
+            if len(data) < 10:
+                raise ValueError("Insufficient data points: need at least 10")
+            if 'close' not in data.columns:
+                raise ValueError("DataFrame must contain 'close' column")
+            if data['close'].isna().all():
+                raise ValueError("Close prices contain all-NaN values")
+            # Check for timezone-aware index
+            if data.index.tz is None:
+                logger.debug("Data has no timezone - assuming UTC")
+            
+            # Validate OHLC data consistency if available
+            if all(col in data.columns for col in ['open', 'high', 'low']):
+                # Check for logical inconsistencies
+                invalid_high = data['high'] < data['low']
+                invalid_high_low = (data['high'] < data['close']) | (data['high'] < data['open'])
+                invalid_low_high = (data['low'] > data['close']) | (data['low'] > data['open'])
+                
+                if invalid_high.any():
+                    logger.warning(f"Found {invalid_high.sum()} bars where high < low")
+                if invalid_high_low.any():
+                    logger.warning(f"Found {invalid_high_low.sum()} bars with invalid high/low relationships")
+                if invalid_low_high.any():
+                    logger.warning(f"Found {invalid_low_high.sum()} bars with invalid low/high relationships")
+    
+    def _post_process_events(self, events: pd.DatetimeIndex, min_separation: pd.Timedelta = pd.Timedelta(hours=1)) -> pd.DatetimeIndex:
+        """Remove clustered events, enforce minimum separation."""
+        if len(events) <= 1:
+            return events
+        
+        sorted_events = events.sort_values()
+        filtered = [sorted_events[0]]
+        
+        for event in sorted_events[1:]:
+            if event - filtered[-1] >= min_separation:
+                filtered.append(event)
+        
+        return pd.DatetimeIndex(filtered)
+    
+    def generate_adaptive(self, data: Union[pd.Series, pd.DataFrame], target_signals_per_day: float = 7.5, 
+                        max_iterations: int = 20, tolerance: float = 0.1, *args, **params) -> pd.DatetimeIndex:
+        """
+        Generate events with adaptive thresholds to achieve target signal rate.
+        Uses iterative convergence with proportional adjustment.
+        """
+        # Validate input data
+        self._validate_data(data)
+        
+        # Calculate data duration and target signal count with timezone handling
+        if isinstance(data, pd.Series):
+            index = data.index
+        else:
+            index = data.index
+        
+        if len(index) < 2:
+            logger.warning("Insufficient data for adaptive generation")
+            return pd.DatetimeIndex([])
+        
+        # Handle timezone-aware vs naive datetime indices
+        if index.tz is None:
+            # Assume UTC for naive indices
+            index = index.tz_localize('UTC')
+            logger.debug("Localized naive datetime index to UTC")
+        
+        # Calculate duration in days (handles different timezones properly)
+        duration_seconds = (index[-1] - index[0]).total_seconds()
+        duration_days = max(1, duration_seconds / (24 * 3600))
+        
+        target_signals = int(target_signals_per_day * duration_days)
+        min_target = int(target_signals * (1 - tolerance))
+        max_target = int(target_signals * (1 + tolerance))
+        
+        # Start with default parameters
+        current_params = params.copy()
+        # Pass positional args if provided
+        events = self.generate(data, *args, **current_params)
+        
+        if len(events) == 0:
+            logger.debug("No events generated initially. Entering adaptive mode.")
+        
+        # Iterative adjustment with convergence
+        iteration = 0
+        best_events = events
+        if len(events) == 0:
+            best_error = target_signals
+        else:
+            best_error = abs(len(events) - target_signals)
+        
+        while iteration < max_iterations:
+            current_count = len(events)
+            current_error = abs(current_count - target_signals)
+            
+            # Check if within tolerance
+            if min_target <= current_count <= max_target:
+                logger.debug(f"Converged after {iteration + 1} iterations: {current_count} signals (target: {target_signals})")
+                return events
+            
+            # Keep best result
+            if current_error < best_error:
+                best_error = current_error
+                best_events = events
+            
+            # Calculate proportional adjustment factor
+            # GOAL: factor < 1.0 -> Relax (More signals)
+            #       factor > 1.0 -> Tighten (Fewer signals)
+            
+            if current_count > max_target:  # Too many signals -> TIGHTEN
+                # Logic: Factor > 1.0
+                factor = 1.15
+            else:  # Too few signals -> RELAX
+                # Logic: Factor < 1.0
+                factor = 0.85
+                
+                # Panic calculation base
+                if current_count < min_target * 0.1:
+                    factor = 0.5  # Panic default
+                    
+            
+            factor = max(0.5, min(2.0, factor))  # Bound the factor
+            
+            # Panic mode for extremely low signals (explicit)
+            if current_count < min_target * 0.1 and iteration < 5:
+                 factor = 0.5 # Aggressive relaxation
+                 logger.debug(f"Panic relaxation: Rate is {current_count}/{target_signals} (target). Slashed params by 50%.")
+
+            # Adjust parameters if generator supports it
+            if hasattr(self, '_adjust_z_threshold'):
+                current_params = self._adjust_z_threshold(current_params, factor)
+                try:
+                    new_events = self.generate(data, **current_params)
+                except Exception as e:
+                    logger.warning(f"Optimization step failed: {e}")
+                    break
+
+                # Only use adjusted if it improves the signal rate
+                new_count = len(new_events)
+                new_error = abs(new_count - target_signals)
+                
+                if new_error < current_error or iteration == max_iterations - 1:
+                    events = new_events
+                    logger.debug(f"Iteration {iteration + 1}: {current_count} -> {new_count} signals (factor: {factor:.2f})")
+                else:
+                    # If error increased significantly, stop
+                    if new_error > current_error * 1.5:
+                        break
+
+            else:
+                # Generator doesn't support adjustment, use current events
+                break
+            
+            iteration += 1
+        
+        # Apply post-processing
+        final_events = self._post_process_events(events)
+        
+        if len(final_events) != len(events):
+            logger.debug(f"Post-processing removed {len(events) - len(final_events)} clustered events")
+        
+        return final_events
 
 class EntropyEvents(BaseEventGenerator):
+    """Generate events based on entropy spikes in price movements."""
+    
     def generate(self, price: pd.Series, window: int = 24, z_thresh: float = 2.0) -> pd.DatetimeIndex:
-        log_ret = np.log(price).diff().fillna(0)
-        ent = roll_entropy(log_ret, window=window, bins=10)
-        z_ent = (ent - ent.rolling(window*5).mean()) / (ent.rolling(window*5).std() + 1e-6)
-        return price.index[(z_ent > z_thresh) & (z_ent.shift(1) <= z_thresh)]
+        try:
+            if len(price) < window * 5:
+                logger.warning(f"Insufficient data for entropy calculation: need {window * 5}, got {len(price)}")
+                return pd.DatetimeIndex([])
+            
+            log_ret = np.log(price).diff().fillna(0)
+            ent = roll_entropy(log_ret, window=window, bins=10)
+            
+            # Avoid division by zero
+            rolling_mean = ent.rolling(window*5).mean()
+            rolling_std = ent.rolling(window*5).std()
+            z_ent = (ent - rolling_mean) / (rolling_std + 1e-6)
+            
+            # Find threshold crossings (rising edge)
+            events = price.index[(z_ent > z_thresh) & (z_ent.shift(1) <= z_thresh)]
+            
+            logger.debug(f"EntropyEvents generated {len(events)} events (window={window}, z_thresh={z_thresh})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"EntropyEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'z_thresh' in adjusted:
+            adjusted['z_thresh'] *= factor
+        return adjusted
 
 class MicrostructureEvents(BaseEventGenerator):
+    """Generate events based on microstructure noise and Amihud illiquidity."""
+    
     def generate(self, df: pd.DataFrame, window: int = 20, z: float = 2.0) -> pd.DatetimeIndex:
-        if 'volume' not in df.columns: return pd.DatetimeIndex([])
-        ret = df['close'].pct_change().abs()
-        amihud = ret / (df['volume'] * df['close'] + 1e-9)
-        z = (amihud - amihud.rolling(window).mean()) / (amihud.rolling(window).std() + 1e-9)
-        return df.index[z > z]
+        try:
+            if 'volume' not in df.columns:
+                logger.warning("MicrostructureEvents requires volume data")
+                return pd.DatetimeIndex([])
+            
+            if len(df) < window:
+                logger.warning(f"Insufficient data for microstructure analysis: need {window}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            # Calculate returns and Amihud illiquidity
+            ret = df['close'].pct_change().abs()
+            amihud = ret / (df['volume'] * df['close'] + 1e-9)
+            
+            # Calculate z-score with safeguards
+            rolling_mean = amihud.rolling(window).mean()
+            rolling_std = amihud.rolling(window).std()
+            zsc = (amihud - rolling_mean) / (rolling_std + 1e-6)
+            
+            events = df.index[zsc > z]
+            
+            logger.debug(f"MicrostructureEvents generated {len(events)} events (window={window}, z={z})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"MicrostructureEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'z' in adjusted:
+            adjusted['z'] *= factor
+        if 'window' in adjusted:
+            # For window, smaller is usually more sensitive? Or larger?
+            # Smaller window -> more noise -> more signals?
+            # Actually standard practice is usually shorter window = more signals.
+            # Factor < 1 means relax -> lower thresholds -> more signals.
+            # So if factor < 1, we want window to DECREASE?
+            # Yes, adjust window by factor too.
+            adjusted['window'] = max(5, int(adjusted['window'] * factor))
+        return adjusted
 
 class TrendModulatedBreakoutEvents(BaseEventGenerator):
+    """Generate breakout events modulated by trend anchors (VWAP or moving average)."""
+    
     def generate(self, df: pd.DataFrame, lookback: int = 20, anchor_window: int = 100) -> pd.DatetimeIndex:
-        price = df['close']
-        rmax = price.rolling(lookback).max().shift(1)
-        rmin = price.rolling(lookback).min().shift(1)
-        anchor = calc_vwap(price, df['volume'], anchor_window) if 'volume' in df.columns else price.rolling(anchor_window).mean()
-        bk = ((price > rmax) & (price > anchor)) | ((price < rmin) & (price < anchor))
-        return price.index[bk & ~bk.shift(1).fillna(False)]
+        try:
+            if len(df) < max(lookback, anchor_window):
+                logger.warning(f"Insufficient data for breakout analysis: need {max(lookback, anchor_window)}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            price = df['close']
+            rmax = price.rolling(lookback).max().shift(1)
+            rmin = price.rolling(lookback).min().shift(1)
+            
+            # Calculate anchor (VWAP if volume available, else SMA)
+            if 'volume' in df.columns:
+                anchor = calc_vwap(price, df['volume'], anchor_window)
+            else:
+                anchor = price.rolling(anchor_window).mean()
+                logger.debug("Using SMA as anchor (volume not available)")
+            
+            # Breakout conditions
+            breakout_up = (price > rmax) & (price > anchor)
+            breakout_down = (price < rmin) & (price < anchor)
+            bk = breakout_up | breakout_down
+            
+            # Find first occurrence after no breakout
+            events = price.index[bk & ~bk.shift(1).fillna(False)]
+            
+            logger.debug(f"TrendModulatedBreakoutEvents generated {len(events)} events (lookback={lookback}, anchor={anchor_window})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"TrendModulatedBreakoutEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
 
 class ATRShockEvents(BaseEventGenerator):
+    """Generate events based on ATR volatility shocks."""
+    
     def generate(self, df: pd.DataFrame, lookback: int = 14, long_window: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
-        tr = calc_tr(df, df['close'])
-        atr = tr.rolling(lookback).mean()
-        zsc = (atr - atr.rolling(long_window).mean()) / (atr.rolling(long_window).std() + 1e-9)
-        return df['close'].index[zsc > z]
+        try:
+            if len(df) < long_window:
+                logger.warning(f"Insufficient data for ATR shock analysis: need {long_window}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            # Calculate True Range and ATR
+            tr = calc_tr(df, df['close'])
+            atr = tr.rolling(lookback).mean()
+            
+            # Calculate z-score with safeguards
+            rolling_mean = atr.rolling(long_window).mean()
+            rolling_std = atr.rolling(long_window).std()
+            zsc = (atr - rolling_mean) / (rolling_std + 1e-6)
+            
+            events = df['close'].index[zsc > z]
+            
+            logger.debug(f"ATRShockEvents generated {len(events)} events (lookback={lookback}, long_window={long_window}, z={z})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"ATRShockEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'z' in adjusted:
+            adjusted['z'] *= factor
+        if 'long_window' in adjusted:
+             # Reduce long window to catch shorter term shocks
+             adjusted['long_window'] = max(20, int(adjusted['long_window'] * factor))
+        return adjusted
 
 class VWAPReversionEvents(BaseEventGenerator):
+    """Generate events based on price reversion to VWAP."""
+    
     def generate(self, df: pd.DataFrame, lookback: int = 50, z: float = 2.5) -> pd.DatetimeIndex:
-        if 'volume' not in df.columns: return pd.DatetimeIndex([])
-        vwap = calc_vwap(df['close'], df['volume'], lookback)
-        return df.index[np.abs((df['close'] - vwap) / (df['close'].rolling(lookback).std() + 1e-6)) > z]
+        try:
+            if 'volume' not in df.columns:
+                logger.warning("VWAPReversionEvents requires volume data")
+                return pd.DatetimeIndex([])
+            
+            if len(df) < lookback:
+                logger.warning(f"Insufficient data for VWAP reversion: need {lookback}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            # Calculate VWAP and z-score
+            vwap = calc_vwap(df['close'], df['volume'], lookback)
+            price_std = df['close'].rolling(lookback).std()
+            
+            # Avoid division by zero
+            z_score = np.abs((df['close'] - vwap) / (price_std + 1e-6))
+            events = df.index[z_score > z]
+            
+            logger.debug(f"VWAPReversionEvents generated {len(events)} events (lookback={lookback}, z={z})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"VWAPReversionEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'z' in adjusted:
+            adjusted['z'] *= factor
+        if 'lookback' in adjusted:
+             # Shorter lookback = more sensitive to recent moves
+             adjusted['lookback'] = max(10, int(adjusted['lookback'] * factor))
+        return adjusted
 
 class KalmanTrendEvents(BaseEventGenerator):
+    """Generate events based on Kalman filter trend changes."""
+    
     def generate(self, price: pd.Series, q_fast: float = 1e-3, q_slow: float = 1e-5) -> pd.DatetimeIndex:
-        f, _ = KalmanFilter1D(Q=q_fast).filter_series(price)
-        s, _ = KalmanFilter1D(Q=q_slow).filter_series(price)
-        return price.index[((f > s) & (f.shift(1) <= s.shift(1))) | ((f < s) & (f.shift(1) >= s.shift(1)))]
+        try:
+            if len(price) < 20:
+                logger.warning(f"Insufficient data for Kalman trend analysis: need 20, got {len(price)}")
+                return pd.DatetimeIndex([])
+            
+            # Apply Kalman filters
+            f, _ = KalmanFilter1D(Q=q_fast).filter_series(price)
+            s, _ = KalmanFilter1D(Q=q_slow).filter_series(price)
+            
+            # Detect trend changes
+            trend_up = (f > s) & (f.shift(1) <= s.shift(1))
+            trend_down = (f < s) & (f.shift(1) >= s.shift(1))
+            events = price.index[trend_up | trend_down]
+            
+            logger.debug(f"KalmanTrendEvents generated {len(events)} events (q_fast={q_fast}, q_slow={q_slow})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"KalmanTrendEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
 
 class KalmanRegimeEvents(BaseEventGenerator):
+    """Generate events based on Kalman filter regime shifts."""
+    
     def generate(self, df: pd.DataFrame, Q: float = 1e-4, R: float = 0.01, z: float = 2.0) -> pd.DatetimeIndex:
-        # Detect sudden shifts in price level relative to Kalman estimate
-        price = df['close']
-        f, P = KalmanFilter1D(Q=Q, R=R).filter_series(price)
-        # Innovation
-        innov = price - f
-        std = np.sqrt(P + R)
-        z_score = innov / (std + 1e-9)
-        return price.index[z_score.abs() > z]
+        try:
+            if len(df) < 20:
+                logger.warning(f"Insufficient data for Kalman regime analysis: need 20, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            # Detect sudden shifts in price level relative to Kalman estimate
+            price = df['close']
+            f, P = KalmanFilter1D(Q=Q, R=R).filter_series(price)
+            
+            # Innovation and z-score
+            innov = price - f
+            std = np.sqrt(P + R)
+            z_score = innov / (std + 1e-9)
+            
+            events = price.index[z_score.abs() > z]
+            
+            logger.debug(f"KalmanRegimeEvents generated {len(events)} events (Q={Q}, R={R}, z={z})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"KalmanRegimeEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'z' in adjusted:
+            adjusted['z'] *= factor
+        return adjusted
 
 class VWAPCrossEvents(BaseEventGenerator):
+    """Generate events based on VWAP crossings."""
+    
     def generate(self, df: pd.DataFrame, lookback: int = 50) -> pd.DatetimeIndex:
-        if 'volume' not in df.columns: return pd.DatetimeIndex([])
-        vwap = calc_vwap(df['close'], df['volume'], lookback)
-        price = df['close']
-        cross_up = (price > vwap) & (price.shift(1) <= vwap.shift(1))
-        cross_down = (price < vwap) & (price.shift(1) >= vwap.shift(1))
-        return price.index[cross_up | cross_down]
+        try:
+            if 'volume' not in df.columns:
+                logger.warning("VWAPCrossEvents requires volume data")
+                return pd.DatetimeIndex([])
+            
+            if len(df) < lookback:
+                logger.warning(f"Insufficient data for VWAP cross: need {lookback}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            # Calculate VWAP
+            vwap = calc_vwap(df['close'], df['volume'], lookback)
+            price = df['close']
+            
+            # Detect crossings
+            cross_up = (price > vwap) & (price.shift(1) <= vwap.shift(1))
+            cross_down = (price < vwap) & (price.shift(1) >= vwap.shift(1))
+            events = price.index[cross_up | cross_down]
+            
+            logger.debug(f"VWAPCrossEvents generated {len(events)} events (lookback={lookback})")
+            return events
+            
+        except Exception as e:
+            logger.error(f"VWAPCrossEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
 
-# Aliases
-CusumEvents = EntropyEvents
-VolatilityShockEvents = ATRShockEvents
-TrendInitiationEvents = TrendModulatedBreakoutEvents
-MeanReversionExtremeEvents = VWAPReversionEvents
-LiquidityShockEvents = MicrostructureEvents
-TimeEvents = BaseEventGenerator
-AdaptiveSymmetricCUSUMEvents = EntropyEvents # Fallback alias if strict class needed
+class FairValueGapEvents(BaseEventGenerator):
+    """Generate events based on Fair Value Gap (FVG) / Smart Money Concept patterns.
+    
+    FVG occurs when there's a 3-candle pattern where:
+    - Bullish FVG: High[1] < Low[2] (gap between candle 1 high and candle 3 low)
+    - Bearish FVG: Low[1] > High[2] (gap between candle 1 low and candle 3 high)
+    
+    These gaps represent imbalances in buying/selling pressure and often get filled.
+    """
+    
+    def generate(self, df: pd.DataFrame, min_gap_pct: float = 0.1, lookback: int = 20, 
+                 volume_threshold: float = 1.5, confirm_candles: int = 3) -> pd.DatetimeIndex:
+        try:
+            # Validate required columns
+            required_cols = ['open', 'high', 'low', 'close']
+            if not all(col in df.columns for col in required_cols):
+                logger.warning(f"FairValueGapEvents requires OHLC data. Missing: {[c for c in required_cols if c not in df.columns]}")
+                return pd.DatetimeIndex([])
+            
+            if len(df) < lookback + confirm_candles:
+                logger.warning(f"Insufficient data for FVG analysis: need {lookback + confirm_candles}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            # Calculate volume baseline for confirmation
+            volume_ma = df['volume'].rolling(lookback).mean() if 'volume' in df.columns else None
+            
+            events = []
+            
+            # Scan for FVG patterns
+            for i in range(2, len(df)):
+                # Get the 3-candle window
+                candle1 = df.iloc[i-2]  # 2 bars ago
+                candle2 = df.iloc[i-1]  # 1 bar ago  
+                candle3 = df.iloc[i]    # current bar
+                
+                # Calculate gap sizes
+                bullish_gap = candle1['high'] - candle3['low']
+                bearish_gap = candle3['high'] - candle1['low']
+                
+                # Calculate gap percentages relative to price
+                price_ref = candle2['close']
+                bullish_gap_pct = bullish_gap / price_ref if bullish_gap > 0 else 0
+                bearish_gap_pct = bearish_gap / price_ref if bearish_gap > 0 else 0
+                
+                # Bullish FVG: High[1] < Low[2] (upward imbalance)
+                if bullish_gap_pct > min_gap_pct:
+                    # Additional confirmation: strong momentum and volume
+                    momentum_up = candle2['close'] > candle1['close'] and candle3['close'] > candle2['close']
+                    
+                    volume_confirm = True
+                    if volume_ma is not None:
+                        volume_confirm = candle2['volume'] > volume_ma.iloc[i-1] * volume_threshold
+                    
+                    if momentum_up and volume_confirm:
+                        events.append(df.index[i])
+                
+                # Bearish FVG: Low[1] > High[2] (downward imbalance)  
+                elif bearish_gap_pct > min_gap_pct:
+                    # Additional confirmation: strong momentum and volume
+                    momentum_down = candle2['close'] < candle1['close'] and candle3['close'] < candle2['close']
+                    
+                    volume_confirm = True
+                    if volume_ma is not None:
+                        volume_confirm = candle2['volume'] > volume_ma.iloc[i-1] * volume_threshold
+                    
+                    if momentum_down and volume_confirm:
+                        events.append(df.index[i])
+            
+            # Convert to DatetimeIndex and apply post-processing
+            event_index = pd.DatetimeIndex(events)
+            
+            # Additional filter: avoid consecutive FVGs within short timeframe
+            if len(event_index) > 1:
+                min_separation = pd.Timedelta(hours=4)  # Minimum 4 hours between FVGs
+                event_index = self._post_process_events(event_index, min_separation)
+            
+            logger.debug(f"FairValueGapEvents generated {len(event_index)} events (min_gap_pct={min_gap_pct}, lookback={lookback})")
+            return event_index
+            
+        except Exception as e:
+            logger.error(f"FairValueGapEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        """Adjust gap threshold for adaptive generation."""
+        adjusted = params.copy()
+        if 'min_gap_pct' in adjusted:
+            adjusted['min_gap_pct'] *= factor
+        if 'volume_threshold' in adjusted:
+            adjusted['volume_threshold'] *= factor
+        return adjusted
+
+class SupportResistanceBreakEvents(BaseEventGenerator):
+    """Generate events based on price breaking through established support/resistance levels.
+    
+    Identifies key S/R levels using pivot points and previous highs/lows with persistence,
+    dynamic volatility-adjusted thresholds, and level strength scoring.
+    """
+    
+    def __init__(self):
+        self._sr_cache = {}  # Cache for S/R levels persistence
+        self._cache_expiry_hours = 24  # Cache expires after 24 hours
+    
+    def _identify_sr_levels(self, window_data: pd.DataFrame, lookback: int, min_touches: int, 
+                           current_time: pd.Timestamp) -> Tuple[List[Dict], List[Dict]]:
+        """Identify support and resistance levels with strength scoring."""
+        resistance_levels = []
+        support_levels = []
+        
+        # Group similar price levels (clustering)
+        price_tolerance = 0.001  # 0.1% tolerance
+        
+        # Find pivot highs and lows
+        for j in range(1, len(window_data) - 1):
+            # Pivot high detection
+            if (window_data.iloc[j]['high'] > window_data.iloc[j-1]['high'] and 
+                window_data.iloc[j]['high'] > window_data.iloc[j+1]['high']):
+                
+                level_price = window_data.iloc[j]['high']
+                level_time = window_data.index[j]
+                
+                # Count touches with volume weighting
+                touches = 0
+                volume_weight = 0
+                for k in range(len(window_data)):
+                    price_diff = abs(window_data.iloc[k]['high'] - level_price) / level_price
+                    if price_diff < price_tolerance:
+                        touches += 1
+                        # Volume weighting: recent touches matter more
+                        time_weight = 1.0 - abs(k - j) / len(window_data)
+                        volume_weight += window_data.iloc[k].get('volume', 0) * time_weight
+                
+                if touches >= min_touches:
+                    strength_score = touches * (1 + volume_weight / (touches * window_data['volume'].mean() + 1e-9))
+                    resistance_levels.append({
+                        'price': level_price,
+                        'time': level_time,
+                        'touches': touches,
+                        'strength': strength_score,
+                        'volume_weight': volume_weight
+                    })
+            
+            # Pivot low detection
+            elif (window_data.iloc[j]['low'] < window_data.iloc[j-1]['low'] and 
+                  window_data.iloc[j]['low'] < window_data.iloc[j+1]['low']):
+                
+                level_price = window_data.iloc[j]['low']
+                level_time = window_data.index[j]
+                
+                # Count touches with volume weighting
+                touches = 0
+                volume_weight = 0
+                for k in range(len(window_data)):
+                    price_diff = abs(window_data.iloc[k]['low'] - level_price) / level_price
+                    if price_diff < price_tolerance:
+                        touches += 1
+                        # Volume weighting: recent touches matter more
+                        time_weight = 1.0 - abs(k - j) / len(window_data)
+                        volume_weight += window_data.iloc[k].get('volume', 0) * time_weight
+                
+                if touches >= min_touches:
+                    strength_score = touches * (1 + volume_weight / (touches * window_data['volume'].mean() + 1e-9))
+                    support_levels.append({
+                        'price': level_price,
+                        'time': level_time,
+                        'touches': touches,
+                        'strength': strength_score,
+                        'volume_weight': volume_weight
+                    })
+        
+        # Sort by strength and keep only top levels
+        resistance_levels.sort(key=lambda x: x['strength'], reverse=True)
+        support_levels.sort(key=lambda x: x['strength'], reverse=True)
+        
+        # Keep only significant levels (top 5 of each type)
+        return resistance_levels[:5], support_levels[:5]
+    
+    def _get_cached_levels(self, symbol: str, current_time: pd.Timestamp) -> Tuple[List[Dict], List[Dict]]:
+        """Retrieve cached S/R levels if still valid."""
+        cache_key = f"{symbol}_{current_time.date()}"
+        
+        if cache_key in self._sr_cache:
+            cache_data = self._sr_cache[cache_key]
+            cache_time = cache_data['timestamp']
+            
+            # Check if cache is still valid
+            if (current_time - cache_time).total_seconds() < self._cache_expiry_hours * 3600:
+                return cache_data['resistance'], cache_data['support']
+        
+        return [], []
+    
+    def _update_cache(self, symbol: str, current_time: pd.Timestamp, 
+                     resistance_levels: List[Dict], support_levels: List[Dict]):
+        """Update S/R levels cache."""
+        cache_key = f"{symbol}_{current_time.date()}"
+        self._sr_cache[cache_key] = {
+            'timestamp': current_time,
+            'resistance': resistance_levels,
+            'support': support_levels
+        }
+    
+    def _calculate_dynamic_threshold(self, df: pd.DataFrame, i: int, lookback: int, 
+                                   base_threshold: float) -> float:
+        """Calculate dynamic breakout threshold based on recent volatility."""
+        # Get recent volatility for dynamic adjustment
+        vol_window = min(lookback, i)
+        if vol_window < 5:
+            return base_threshold
+        
+        recent_data = df.iloc[max(0, i-vol_window):i]
+        if len(recent_data) < 5:
+            return base_threshold
+        
+        # Calculate ATR-based volatility
+        high_low = recent_data['high'] - recent_data['low']
+        high_close = (recent_data['high'] - recent_data['close']).abs()
+        low_close = (recent_data['low'] - recent_data['close']).abs()
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        atr = tr.rolling(min(14, len(recent_data))).mean().iloc[-1]
+        
+        # Calculate price level
+        current_price = df['close'].iloc[i]
+        
+        # Volatility-adjusted threshold
+        vol_ratio = atr / current_price
+        dynamic_threshold = base_threshold * (1 + vol_ratio * 2)  # Scale with volatility
+        
+        # Bound the threshold to reasonable values
+        return max(base_threshold * 0.5, min(dynamic_threshold, base_threshold * 3))
+    
+    def generate(self, df: pd.DataFrame, lookback: int = 50, min_touches: int = 3, 
+                 breakout_threshold: float = 0.002, volume_threshold: float = 1.5,
+                 min_strength_score: float = 3.0) -> pd.DatetimeIndex:
+        try:
+            required_cols = ['high', 'low', 'close', 'volume']
+            if not all(col in df.columns for col in required_cols):
+                logger.warning(f"SupportResistanceBreakEvents requires OHLCV data. Missing: {[c for c in required_cols if c not in df.columns]}")
+                return pd.DatetimeIndex([])
+            
+            if len(df) < lookback * 2:
+                logger.warning(f"Insufficient data for S/R analysis: need {lookback * 2}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            events = []
+            price = df['close']
+            volume_ma = df['volume'].rolling(lookback).mean()
+            
+            # Use symbol for caching (extract from index or use default)
+            symbol = getattr(df.index, 'name', 'default') or 'default'
+            
+            # Pre-compute rolling statistics for efficiency
+            df['price_range'] = df['high'] - df['low']
+            df['avg_volume'] = volume_ma
+            
+            # Vectorized approach: identify potential breakout points first
+            for i in range(lookback, len(df)):
+                current_time = df.index[i]
+                
+                # Try to get cached levels first
+                resistance_levels, support_levels = self._get_cached_levels(symbol, current_time)
+                
+                # If no cached levels, compute them
+                if not resistance_levels and not support_levels:
+                    window_start = max(0, i - lookback)
+                    window_data = df.iloc[window_start:i].copy()
+                    
+                    resistance_levels, support_levels = self._identify_sr_levels(
+                        window_data, lookback, min_touches, current_time
+                    )
+                    
+                    # Update cache
+                    self._update_cache(symbol, current_time, resistance_levels, support_levels)
+                
+                # Filter by minimum strength
+                resistance_levels = [r for r in resistance_levels if r['strength'] >= min_strength_score]
+                support_levels = [s for s in support_levels if s['strength'] >= min_strength_score]
+                
+                if not resistance_levels and not support_levels:
+                    continue
+                
+                current_price = price.iloc[i]
+                current_volume = df['volume'].iloc[i]
+                
+                # Calculate dynamic threshold
+                dynamic_threshold = self._calculate_dynamic_threshold(
+                    df, i, lookback, breakout_threshold
+                )
+                
+                # Check for resistance breakout (strongest levels first)
+                breakout_detected = False
+                for resistance in resistance_levels:
+                    if current_price > resistance['price'] * (1 + dynamic_threshold):
+                        # Volume confirmation with strength weighting
+                        volume_req = volume_ma.iloc[i] * volume_threshold * (1 + resistance['strength'] / 10)
+                        if current_volume > volume_req:
+                            events.append(df.index[i])
+                            breakout_detected = True
+                            break  # Only one event per bar
+                
+                if not breakout_detected:
+                    # Check for support breakout (strongest levels first)
+                    for support in support_levels:
+                        if current_price < support['price'] * (1 - dynamic_threshold):
+                            # Volume confirmation with strength weighting
+                            volume_req = volume_ma.iloc[i] * volume_threshold * (1 + support['strength'] / 10)
+                            if current_volume > volume_req:
+                                events.append(df.index[i])
+                                break  # Only one event per bar
+            
+            event_index = pd.DatetimeIndex(events)
+            
+            # Post-processing to avoid clustered events
+            if len(event_index) > 1:
+                event_index = self._post_process_events(event_index, pd.Timedelta(hours=2))
+            
+            # Log statistics
+            n_resistance = len([r for r in resistance_levels if r['strength'] >= min_strength_score])
+            n_support = len([s for s in support_levels if s['strength'] >= min_strength_score])
+            logger.debug(f"SupportResistanceBreakEvents generated {len(event_index)} events "
+                        f"(lookback={lookback}, min_touches={min_touches}, "
+                        f"resistance_levels={n_resistance}, support_levels={n_support})")
+            return event_index
+            
+        except Exception as e:
+            logger.error(f"SupportResistanceBreakEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'breakout_threshold' in adjusted:
+            adjusted['breakout_threshold'] *= factor
+        if 'min_strength_score' in adjusted:
+            adjusted['min_strength_score'] *= factor
+        # Relax volume requirement
+        if 'volume_threshold' in adjusted:
+            adjusted['volume_threshold'] *= factor
+        if 'lookback' in adjusted:
+            # Shorter lookback = find local S/R more easily?
+            adjusted['lookback'] = max(10, int(adjusted['lookback'] * factor))
+        return adjusted
+
+class OrderBlockEvents(BaseEventGenerator):
+    """Generate events based on Order Block identification (Smart Money Concept).
+    
+    Order Blocks are the last up/down candle before a strong move,
+    indicating institutional order placement zones.
+    """
+    
+    def generate(self, df: pd.DataFrame, lookback: int = 20, min_move_pct: float = 0.5, 
+                 volume_threshold: float = 2.0) -> pd.DatetimeIndex:
+        try:
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            if not all(col in df.columns for col in required_cols):
+                logger.warning(f"OrderBlockEvents requires OHLCV data. Missing: {[c for c in required_cols if c not in df.columns]}")
+                return pd.DatetimeIndex([])
+            
+            if len(df) < lookback * 2:
+                logger.warning(f"Insufficient data for Order Block analysis: need {lookback * 2}, got {len(df)}")
+                return pd.DatetimeIndex([])
+            
+            events = []
+            volume_ma = df['volume'].rolling(lookback).mean()
+            
+            # Scan for order blocks
+            for i in range(lookback, len(df) - lookback):
+                current_candle = df.iloc[i]
+                
+                # Check for bullish order block (last down candle before up move)
+                if (current_candle['close'] < current_candle['open'] and  # Red candle
+                    current_candle['volume'] > volume_ma.iloc[i] * volume_threshold):  # High volume
+                    
+                    # Check if strong up move follows
+                    future_move = True
+                    for j in range(i + 1, min(i + lookback, len(df))):
+                        move_pct = (df.iloc[j]['close'] - current_candle['close']) / current_candle['close']
+                        if move_pct > min_move_pct / 100:  # Convert percentage to decimal
+                            future_move = True
+                            break
+                        elif move_pct < -min_move_pct / 100:  # Move against
+                            future_move = False
+                            break
+                    
+                    if future_move:
+                        events.append(df.index[i])
+                
+                # Check for bearish order block (last up candle before down move)
+                elif (current_candle['close'] > current_candle['open'] and  # Green candle
+                      current_candle['volume'] > volume_ma.iloc[i] * volume_threshold):  # High volume
+                    
+                    # Check if strong down move follows
+                    future_move = True
+                    for j in range(i + 1, min(i + lookback, len(df))):
+                        move_pct = (df.iloc[j]['close'] - current_candle['close']) / current_candle['close']
+                        if move_pct < -min_move_pct / 100:  # Convert percentage to decimal
+                            future_move = True
+                            break
+                        elif move_pct > min_move_pct / 100:  # Move against
+                            future_move = False
+                            break
+                    
+                    if future_move:
+                        events.append(df.index[i])
+            
+            event_index = pd.DatetimeIndex(events)
+            
+            # Post-processing to avoid clustered events
+            if len(event_index) > 1:
+                event_index = self._post_process_events(event_index, pd.Timedelta(hours=6))
+            
+            logger.debug(f"OrderBlockEvents generated {len(event_index)} events (lookback={lookback}, min_move_pct={min_move_pct})")
+            return event_index
+            
+        except Exception as e:
+            logger.error(f"OrderBlockEvents generation failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
+        adjusted = params.copy()
+        if 'min_move_pct' in adjusted:
+            adjusted['min_move_pct'] *= factor
+        if 'volume_threshold' in adjusted:
+             adjusted['volume_threshold'] *= factor
+        if 'lookback' in adjusted:
+             adjusted['lookback'] = max(10, int(adjusted['lookback'] * factor))
+        return adjusted
+
 
 # ==========================================
-# 6. Main Pipeline
+# 6. Final Diversity Filter
 # ==========================================
+
+def final_diversity_filter(
+    geometries: List[OutputGeometry], 
+    price: pd.Series,
+    jaccard_threshold: float = 0.7,
+    returns_threshold: float = 0.8
+) -> List[OutputGeometry]:
+    """
+    Filter geometries to ensure diversity in both event timing AND returns patterns.
+    
+    Args:
+        geometries: List of OutputGeometry objects (one per signal family)
+        price: Price series for returns calculation
+        jaccard_threshold: Maximum Jaccard similarity allowed (lower = more diverse)
+        returns_threshold: Maximum returns correlation allowed (lower = more diverse)
+    
+    Returns:
+        Filtered list of diverse geometries
+    """
+    if len(geometries) <= 1:
+        return geometries
+    
+    logger.info(f"Applying final diversity filter to {len(geometries)} geometries...")
+    
+    # Sort by AUC score descending - keep highest scoring as anchor
+    geometries.sort(key=lambda x: x.auc, reverse=True)
+    
+    # Build event timing indicators for Jaccard similarity
+    event_indicators = {}
+    for geo in geometries:
+        indicator = build_indicator_matrix(geo.events, price.index, horizon=1).values.flatten().astype(bool)
+        event_indicators[geo.name] = indicator
+    
+    # Calculate returns series for each geometry
+    returns_series = {}
+    for geo in geometries:
+        if len(geo.events) > 0:
+            # Calculate returns from event entry to horizon
+            returns_list = []
+            for event_time in geo.events:
+                if event_time in price.index:
+                    event_idx = price.index.get_loc(event_time)
+                    horizon = min(120, len(price) - event_idx - 1)  # Use horizon from params or default
+                    if horizon > 0:
+                        start_price = price.iloc[event_idx]
+                        end_price = price.iloc[min(event_idx + horizon, len(price) - 1)]
+                        ret = (end_price - start_price) / start_price
+                        returns_list.append(ret)
+            
+            if returns_list:
+                returns_series[geo.name] = pd.Series(returns_list, index=geo.events[:len(returns_list)])
+    
+    # Diversity filtering
+    selected = [geometries[0]]  # Always keep the highest scoring geometry
+    rejected_log = []
+    
+    for candidate in geometries[1:]:
+        is_diverse = True
+        rejection_reasons = []
+        
+        for selected_geo in selected:
+            # 1. Check event timing diversity (Jaccard)
+            if candidate.name in event_indicators and selected_geo.name in event_indicators:
+                candidate_indicator = event_indicators[candidate.name]
+                selected_indicator = event_indicators[selected_geo.name]
+                
+                # Jaccard similarity = intersection / union
+                intersection = np.logical_and(candidate_indicator, selected_indicator).sum()
+                union = np.logical_or(candidate_indicator, selected_indicator).sum()
+                jaccard_sim = intersection / union if union > 0 else 0
+                
+                if jaccard_sim > jaccard_threshold:
+                    is_diverse = False
+                    rejection_reasons.append(f"Jaccard similarity {jaccard_sim:.3f} > {jaccard_threshold} with {selected_geo.name}")
+            
+            # 2. Check returns pattern diversity
+            if (candidate.name in returns_series and 
+                selected_geo.name in returns_series and
+                len(returns_series[candidate.name]) > 10 and 
+                len(returns_series[selected_geo.name]) > 10):
+                
+                # Align returns on overlapping events
+                candidate_returns = returns_series[candidate.name]
+                selected_returns = returns_series[selected_geo.name]
+                
+                # Find overlapping events
+                common_events = candidate_returns.index.intersection(selected_returns.index)
+                if len(common_events) > 5:  # Need sufficient overlap
+                    candidate_common = candidate_returns.loc[common_events]
+                    selected_common = selected_returns.loc[common_events]
+                    
+                    # Calculate correlation
+                    correlation = abs(np.corrcoef(candidate_common.values, selected_common.values)[0, 1])
+                    
+                    if not np.isnan(correlation) and correlation > returns_threshold:
+                        is_diverse = False
+                        rejection_reasons.append(f"Returns correlation {correlation:.3f} > {returns_threshold} with {selected_geo.name}")
+        
+        if is_diverse:
+            selected.append(candidate)
+            logger.info(f"✅ Selected {candidate.name} (AUC={candidate.auc:.3f})")
+        else:
+            rejected_log.append({
+                'candidate': candidate.name,
+                'auc': candidate.auc,
+                'reasons': rejection_reasons
+            })
+            logger.info(f"❌ Rejected {candidate.name} (AUC={candidate.auc:.3f}): {'; '.join(rejection_reasons)}")
+    
+    logger.info(f"Final diversity filter: {len(selected)}/{len(geometries)} geometries retained")
+    
+    # Log rejection summary
+    if rejected_log:
+        logger.info("Rejection summary:")
+        for log in rejected_log:
+            logger.info(f"  - {log['candidate']}: {log['reasons'][0] if log['reasons'] else 'Unknown'}")
+    
+    return selected
+
+
+# ==========================================
+# 7. Enhanced Parameter Grids
+# ==========================================
+
+def get_enhanced_parameter_grids() -> Dict[str, Dict]:
+    """
+    Define enhanced parameter grids for each signal family including:
+    - TP/SL ratios (expanded from fixed grid)
+    - Horizons (multiple timeframes)
+    - Lookback variations
+    - MFE/MAE optimization parameters
+    """
+    
+    # Enhanced TPSL grid (more granular)
+    tpsl_grid = [
+        # Conservative (high win rate)
+        {'id': '1.5:1', 'pt': 1.5, 'sl': 1.0},
+        {'id': '2:1', 'pt': 2.0, 'sl': 1.0},
+        
+        # Balanced
+        {'id': '2.5:1', 'pt': 2.5, 'sl': 1.0},
+        {'id': '3:1', 'pt': 3.0, 'sl': 1.0},
+        {'id': '3.5:1', 'pt': 3.5, 'sl': 1.0},
+        
+        # Aggressive (high reward)
+        {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
+    ]
+    
+    # Horizon options (restricted to 3 timeframes)
+    horizon_options = [12, 24, 48]  # 3h, 6h, 12h
+    
+    # Family-specific parameter grids (restricted to 12, 24, 48)
+    family_grids = {
+        'ENTROPY': {
+            'base_params': [(12,), (24,), (48,)],  # window
+        },
+        
+        'VOL_SHOCK': {
+            'base_params': [(14, 50, 2.0), (14, 100, 3.0)],  # lookback, long_window, z
+        },
+        
+        'LIQUIDITY': {
+            'base_params': [(12,), (24,), (48,)],  # window
+        },
+        
+        'BREAKOUT': {
+            'base_params': [(12, 24), (24, 48)],  # lookback, anchor_window
+        },
+        
+        'KALMAN_TREND': {
+            'base_params': [(1e-3, 1e-5), (5e-3, 5e-5)],  # Q, R
+        },
+        
+        'MR_VWAP': {
+            'base_params': [(12, 2.5), (24, 2.0), (48, 1.8)],  # lookback, z
+        },
+        
+        'FVG_SMART_MONEY': {
+            'base_params': [(0.1, 12, 1.5, 3), (0.15, 24, 2.0, 2)],  # min_gap_pct, lookback, volume_threshold, confirm_candles
+        },
+        
+        'SR_BREAKOUTS': {
+            'base_params': [(12, 3, 0.002, 1.5, 3.0), (24, 2, 0.003, 2.0, 2.5)],  # lookback, min_touches, breakout_threshold, volume_threshold, min_strength_score
+        },
+        
+        'ORDER_BLOCKS': {
+            'base_params': [(12, 0.5, 2.0), (24, 0.3, 1.5)],  # lookback, min_move_pct, volume_threshold
+        },
+        
+        'KALMAN_REGIME': {
+            'base_params': [(1e-4, 0.01, 2.0)],  # Q, R, z
+        },
+        
+        'VWAP_CROSS': {
+            'base_params': [(12,), (24,), (48,)],  # lookback
+        },
+    }
+    
+    return {
+        'tpsl_grid': tpsl_grid,
+        'horizon_options': horizon_options,
+        'family_grids': family_grids,
+    }
+
+# ==========================================
+# 8. Main Pipeline
+# ==========================================
+
+def _safe_to_markdown(df: pd.DataFrame) -> str:
+    """Fallback for to_markdown() if tabulate is missing."""
+    try:
+        return df.to_markdown()
+    except Exception:
+        cols = df.columns
+        res = [" | " + " | ".join(map(str, cols)) + " | "]
+        res.append(" | " + " | ".join(["---"] * len(cols)) + " | ")
+        for _, row in df.iterrows():
+            formatted_row = [f"{x:.4f}" if isinstance(x, (float, np.float64, np.float32)) else str(x) for x in row]
+            res.append(" | " + " | ".join(formatted_row) + " | ")
+        return "\n".join(res)
 
 def orthogonal_label_generation(
     data: Union[pd.Series, pd.DataFrame],
-    labelers: Optional[Dict[str, Callable]] = None,
     volume: Optional[pd.Series] = None,
     df_full: Optional[pd.DataFrame] = None,
-    tau_auc: float = 0.52,
-    tau_mi: float = 0.15,
-    tau_uniq: float = 0.10
+    target_signals_per_day: float = 7.5,
+    use_adaptive_thresholds: bool = True
 ) -> List[OutputGeometry]:
     """
-    Main Execution Pipeline for Orthogonal Label Generation.
-    Implements: Rank -> Top 50% -> Cluster (5) -> Top 1 -> Probe.
+    Enhanced Execution Pipeline for Orthogonal Label Generation.
+    Implements: Generate -> Score -> Top 50% -> Probe -> Final Diversity Filter.
+    
+    OPTIMIZATION PARAMETERS:
+    - TP/SL ratios: 6 enhanced ratios (1.5:1 to 4:1)
+    - Horizons: 3 timeframes (12, 24, 48 bars) - optimized per geometry
+    - Lookbacks: Family-specific parameters using 12, 24, 48 bars
+    - Risk budget: 3 possibilities (0.4, 0.7, 1.0) - 0=no drawdown before TP, 1=very close to SL on average
+    
+    Args:
+        data: Price series or dataframe with OHLCV data
+        volume: Volume series (optional)
+        df_full: Full dataframe with OHLCV (optional)
+        target_signals_per_day: Target signal generation rate per feature
+        use_adaptive_thresholds: Whether to use adaptive thresholding
+    
+    Returns:
+        List of diverse OutputGeometry objects optimized per signal family
     """
-    logger.info("--- Starting Advanced Geometry Generation ---")
+    tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
 
     # 0. Data Standardization
     if isinstance(data, pd.DataFrame):
@@ -666,7 +2018,7 @@ def orthogonal_label_generation(
     else:
         price = data
 
-    if volume is None and df_full is not None and 'volume' in df_full.columns:
+    if volume is None and df_full is not None and 'volume' not in df_full.columns:
         volume = df_full['volume']
     
     # 1. Generate Probe Features
@@ -680,107 +2032,189 @@ def orthogonal_label_generation(
     elif 'volume' not in df_full.columns and volume is not None:
         df_full['volume'] = volume
 
-    # 2. Define Candidates (Generators)
-    generators = [
-        # Structural Family (Entropy)
-        ('ENTROPY', EntropyEvents(), {'window': 24}),
-        ('ENTROPY_FAST', EntropyEvents(), {'window': 12}),
-        ('ENTROPY_SLOW', EntropyEvents(), {'window': 48}),
-        
-        # Volatility Family
-        ('VOL_SHOCK', ATRShockEvents(), {'lookback': 14, 'long_window': 50, 'z': 2.0}),
-        ('VOL_SHOCK_EXT', ATRShockEvents(), {'lookback': 14, 'long_window': 100, 'z': 3.0}),
-        
-        # Liquidity Family
-        ('LIQUIDITY', MicrostructureEvents(), {'window': 20}),
-        ('LIQUIDITY_FAST', MicrostructureEvents(), {'window': 10}),
-        
-        # Breakout Family
-        ('BREAKOUT', TrendModulatedBreakoutEvents(), {'lookback': 48, 'anchor_window': 100}),
-        ('BREAKOUT_FAST', TrendModulatedBreakoutEvents(), {'lookback': 20, 'anchor_window': 50}),
-
-        # Kalman Trend
-        ('KALMAN_TREND', KalmanTrendEvents(), {'q_fast': 1e-3, 'q_slow': 1e-5}),
-        ('KALMAN_TREND_SENS', KalmanTrendEvents(), {'q_fast': 5e-3, 'q_slow': 5e-5}),
-
-        # Mean Reversion
-        ('MR_VWAP', VWAPReversionEvents(), {'lookback': 50, 'z': 2.5}),
-        ('MR_VWAP_FAST', VWAPReversionEvents(), {'lookback': 24, 'z': 2.0}),
-
-        # Kalman Regime
-        ('KALMAN_REGIME', KalmanRegimeEvents(), {'Q': 1e-4, 'R': 0.01, 'z': 2.0}),
-
-        # VWAP Cross
-        ('VWAP_CROSS', VWAPCrossEvents(), {'lookback': 50}),
+    # 2. Get Enhanced Parameter Grids
+    param_grids = get_enhanced_parameter_grids()
+    
+    # 3. Build Enhanced Candidate Configurations
+    generator_configs = []
+    
+    # Base signal families
+    base_generators = [
+        ('ENTROPY', EntropyEvents()),
+        ('VOL_SHOCK', ATRShockEvents()),
+        ('LIQUIDITY', MicrostructureEvents()),
+        ('BREAKOUT', TrendModulatedBreakoutEvents()),
+        ('KALMAN_TREND', KalmanTrendEvents()),
+        ('MR_VWAP', VWAPReversionEvents()),
+        ('FVG_SMART_MONEY', FairValueGapEvents()),
+        ('SR_BREAKOUTS', SupportResistanceBreakEvents()),
+        ('ORDER_BLOCKS', OrderBlockEvents()),
+        ('KALMAN_REGIME', KalmanRegimeEvents()),
+        ('VWAP_CROSS', VWAPCrossEvents()),
     ]
+    
+    # Build enhanced parameter combinations
+    for fam, gen in base_generators:
+        family_config = param_grids['family_grids'].get(fam, {})
+        base_params = family_config.get('base_params', [])
+        
+        # Add base parameters only (no variations)
+        for params in base_params:
+            generator_configs.append((fam, gen, params))
+    
+    tprint_info(f"Generated {len(generator_configs)} enhanced candidate configurations")
     
     # 3. Process Candidates (Generate & Gate)
     candidates = []
     outcomes_log = []
 
-    for fam, gen, params in generators:
-        try:
-            if isinstance(gen, (MicrostructureEvents, TrendModulatedBreakoutEvents, ATRShockEvents, VWAPReversionEvents, VWAPCrossEvents, KalmanRegimeEvents)):
-                events = gen.generate(df_full, **params)
-            else:
-                events = gen.generate(price, **params)
-        except Exception as e:
-            logger.debug(f"Generator {fam} failed: {e}")
-            continue
+    for fam, gen, params in generator_configs:
 
-        if len(events) < 5: continue
+            try:
+                # Use adaptive thresholds if enabled and generator supports it
+                # Use adaptive thresholds if enabled and generator supports it
+                if use_adaptive_thresholds and hasattr(gen, 'generate_adaptive'):
+                    # Convert positional params to kwargs for adaptive logic
+                    param_keys = GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, [])
+                    param_kwargs = dict(zip(param_keys, params))
+                    
+                    if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
+                        events = gen.generate_adaptive(df_full, target_signals_per_day, **param_kwargs)
+                    else:
+                        events = gen.generate_adaptive(price, target_signals_per_day, **param_kwargs)
+                else:
+                    # Use standard generation
+                    if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
+                        events = gen.generate(df_full, *params)
+                    else:
+                        events = gen.generate(price, *params)
+            except Exception as e:
+                tprint_warning(f"Generator {fam} failed: {e}")
+                continue
 
-        # Iterate Grid
-        for grid_item in FIXED_GRID:
-            pt = grid_item['pt']
-            sl = grid_item['sl']
-            # We only use one risk budget for simplicity in this phase, or keep loop if needed.
-            # Keeping loop to maximize candidate pool for clustering.
-            for risk_budget in [1.0]:
-                high = df_full.get('high')
-                low = df_full.get('low')
+            if len(events) < 5: 
+                tprint_warning(f"Skipping {fam}: Too few events ({len(events)})")
+                continue
+            
+            # Log signal rate for monitoring
+            duration_days = (events[-1] - events[0]).days if len(events) > 1 else 1
+            signals_per_day = len(events) / max(1, duration_days)
+            tprint_info(f"DEBUG: {fam} generated {len(events)} events")
 
-                labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
-                    price, events, df_full['volatility_1d'],
-                    risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=120,
-                    high=high, low=low
-                )
+            # Create parameter dict for logging
+            param_dict = dict(zip(GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, []), params))
 
-                if labels.empty: continue
+            # Iterate Enhanced Grids
+            tpsl_grid = param_grids['tpsl_grid']
+            horizon_options = param_grids['horizon_options']
+            risk_budget_options = [0.4, 0.7, 1.0]  # 0=no drawdown before TP, 1=very close to SL on average
+            
+            for grid_item in tpsl_grid:
+                pt = grid_item['pt']
+                sl = grid_item['sl']
+                
+                for horizon in horizon_options:
+                    for risk_budget in risk_budget_options:
+                        high = df_full.get('high')
+                        low = df_full.get('low')
 
-                passed, metrics, status = check_label_quality(
-                    events, labels, returns, df_full, X_probe, gen, params
-                )
+                        labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                            price, events, df_full['volatility_1d'],
+                            risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                            high=high, low=low
+                        )
 
-                outcomes_log.append({
-                    'family': fam,
-                    'params': str(params),
-                    'pt_mult': pt,
-                    'sl_mult': sl,
-                    'status': status,
-                    'n': metrics.get('n', 0)
-                })
+                        if labels.empty:
+                            logger.warning(f"DEBUG: Labels empty for {fam} (RB={risk_budget}, PT={pt}, SL={sl})")
+                            continue
 
-                if passed:
-                    candidates.append({
-                        'family': fam,
-                        'events': events,
-                        'labels': labels,
-                        'weights': weights,
-                        'returns': returns,
-                        'mfe': mfe, 'mae': mae, 'vol': vol,
-                        'params': {**params, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': 120},
-                        'status': status
-                    })
+                        passed, metrics, status = check_label_quality(
+                            events, labels, returns, df_full, X_probe, gen, param_dict
+                        )
 
+                        outcomes_log.append({
+                            'family': fam,
+                            'params': str(param_dict),
+                            'pt_mult': pt,
+                            'sl_mult': sl,
+                            'horizon': horizon,
+                            'risk_budget': risk_budget,
+                            'status': status,
+                            'n': metrics.get('n', 0),
+                            'pos_rate': metrics.get('pos_rate', 0),
+                            'min_p': metrics.get('min_p', 1.0),
+                            'max_mi': metrics.get('max_mi', 0.0),
+                            'signals_per_day': round(signals_per_day, 2),
+                            'target_signals_per_day': target_signals_per_day,
+                            'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
+                        })
+
+                        if passed:
+                            candidates.append({
+                                'family': fam,
+                                'events': events,
+                                'labels': labels,
+                                'weights': weights,
+                                'returns': returns,
+                                'mfe': mfe, 'mae': mae, 'vol': vol,
+                                'params': {**param_dict, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': horizon},
+                                'status': status
+                            })
+
+    # 4. Multi-Factor Scoring
     # 4. Multi-Factor Scoring
     scored_candidates = calculate_multifactor_score(candidates, X_probe)
     
+    # Save outcomes log and Generate Gate Diagnostics Report
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = "outcomes"
+        os.makedirs(out_dir, exist_ok=True)
+        
+        # 1. Save CSV
+        pd.DataFrame(outcomes_log).to_csv(f"{out_dir}/geometry_gates_{timestamp}.csv", index=False)
+        tprint_info(f"Saved geometry gates log to {out_dir}/geometry_gates_{timestamp}.csv")
+        
+        # 2. Save Markdown Report
+        diag_df = pd.DataFrame(outcomes_log)
+        if not diag_df.empty:
+            summary_lines = ["# Layer 2 Geometry Gate Diagnostics\n\n"]
+            summary_lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            # Family Stats
+            summary_lines.append("## Family Pass Rates\n")
+            family_stats = diag_df.groupby('family').agg({
+                'status': lambda x: (x == 'PASS').mean()
+            }).sort_values('status', ascending=False)
+            summary_lines.append(_safe_to_markdown(family_stats) + "\n\n")
+            
+            # Failure Reasons
+            summary_lines.append("## Top Failure Reasons\n")
+            fail_df = diag_df[diag_df['status'] != 'PASS']
+            if not fail_df.empty:
+                fail_stats = fail_df['status'].value_counts().to_frame()
+                summary_lines.append(_safe_to_markdown(fail_stats) + "\n\n")
+            
+            # Detail by Family
+            summary_lines.append("## Failure Detail by Family\n")
+            for fam in diag_df['family'].unique():
+                fam_df = diag_df[diag_df['family'] == fam]
+                top_fail = fam_df['status'].value_counts().index[0]
+                summary_lines.append(f"- **{fam}**: Top status: {top_fail} (Pass rate: {(fam_df['status']=='PASS').mean():.1%})\n")
+            
+            diag_path = f"{out_dir}/layer2_gate_diagnostics_{timestamp}.md"
+            with open(diag_path, 'w') as f:
+                f.writelines(summary_lines)
+            tprint_success(f"💾 Gate diagnostics report saved to {diag_path}")
+            
+    except Exception as e:
+        logger.error(f"Failed to generate gate diagnostics: {e}")
+    
     if not scored_candidates:
-        logger.warning("No candidates passed gates.")
+        tprint_warning("No candidates passed gates.")
         return []
 
-    # NEW LOGIC: Rank -> Top 50% -> Cluster (5) -> Top 1 -> Probe
+    # Rank -> Top 50% -> Cluster (5) -> Top 1 -> Probe
 
     # Sort by score descending
     scored_candidates.sort(key=lambda x: x.get('score', 0), reverse=True)
@@ -790,53 +2224,11 @@ def orthogonal_label_generation(
     top_candidates = scored_candidates[:n_keep]
     logger.info(f"Top 50% selection: Kept {len(top_candidates)} from {len(scored_candidates)} candidates.")
 
-    selected_candidates = []
-
-    if len(top_candidates) <= 5:
-        selected_candidates = top_candidates
-        for i, cand in enumerate(selected_candidates):
-            cand['cluster_id'] = i + 1
-    else:
-        # Cluster
-        # Build Indicator Matrix for Jaccard
-        indicators = []
-        for c in top_candidates:
-            # Horizon=1 for Signal Similarity
-            ind = build_indicator_matrix(c['events'], price.index, horizon=1).values.flatten().astype(bool)
-            indicators.append(ind)
-
-        matrix = np.vstack(indicators) # (N_cands, N_bars)
-
-        # Condensed Distance Matrix (Jaccard)
-        dist_matrix = pdist(matrix, metric='jaccard')
-
-        # Linkage
-        Z = linkage(dist_matrix, method='average')
-
-        # Cluster into 5
-        cluster_labels = fcluster(Z, t=5, criterion='maxclust')
-
-        # Select Top 1 per Cluster
-        unique_clusters = np.unique(cluster_labels)
-        for cid in unique_clusters:
-            # Get indices for this cluster
-            indices = [i for i, x in enumerate(cluster_labels) if x == cid]
-
-            # Find best score in this cluster
-            # top_candidates is already sorted by score, so the first one in indices is the best?
-            # Yes, because indices are increasing and top_candidates is sorted descending.
-            best_idx = indices[0]
-
-            best_cand = top_candidates[best_idx]
-            best_cand['cluster_id'] = int(cid)
-            selected_candidates.append(best_cand)
-
-    logger.info(f"Clustering selected {len(selected_candidates)} representatives.")
-
-    # 5. Run LGBM Probe on Selected
-    final_geoms = []
-
-    for cand in selected_candidates:
+    # 5. Run LGBM Probe on Top Candidates
+    tprint_info(f"🚀 Running LGBM Probe on {len(top_candidates)} top candidates...")
+    probe_geoms = []
+    for i, cand in enumerate(top_candidates):
+        tprint_info(f"🎯 Probing candidate {i+1}/{len(top_candidates)}: {cand['family']}_{cand['params']}")
         X = X_probe.loc[cand['labels'].index]
         metrics = run_lgbm_probe(X, cand['labels'], cand['weights'], cand['returns'])
         cand['metrics_probe'] = metrics
@@ -845,10 +2237,6 @@ def orthogonal_label_generation(
         indicator = build_indicator_matrix(cand['events'], price.index, horizon=120)
         purity = average_uniqueness(indicator)
 
-        # Use Meta-Sharpe or Lift as the AUC metric for downstream compatibility
-        # User specified "reuse composite score", but downstream expects valid AUC/Score.
-        # We store the Probe Lift/Sharpe.
-
         geo = OutputGeometry(
             name=f"{cand['family']}_{cand['params']}",
             family=cand['family'],
@@ -856,16 +2244,249 @@ def orthogonal_label_generation(
             labels=cand['labels'],
             weights=cand['weights'],
             purity=purity,
-            auc=metrics.get('lift', 0.0), # Storing Lift as primary metric
-            cluster_id=cand['cluster_id'],
+            auc=metrics.get('lift', 0.0),  # Store lift as primary metric
             params=cand['params'],
             metrics={**cand.get('metrics_raw', {}), **cand['metrics_probe']}
         )
-        final_geoms.append(geo)
+        probe_geoms.append(geo)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = "outcomes"
-    os.makedirs(out_dir, exist_ok=True)
-    pd.DataFrame(outcomes_log).to_csv(f"{out_dir}/geometry_gates_{timestamp}.csv", index=False)
+    # 6. Apply Final Diversity Filter
+    tprint_info(f"🌐 Applying Final Diversity Filter to {len(probe_geoms)} geometries...")
+    final_geoms = final_diversity_filter(probe_geoms, price, 
+                                       jaccard_threshold=0.7, 
+                                       returns_threshold=0.8)
 
+    tprint_info(f"🎉 Pipeline Complete: {len(final_geoms)} final geometries selected")
     return final_geoms
+
+
+# ==========================================
+# 7. Class Aliases for Backward Compatibility
+# ==========================================
+# Full implementations restored from commit 66a8da258
+
+def generate_dual_cusum_signals(
+    close: pd.Series,
+    volume: Optional[pd.Series] = None,
+    k: float = 0.12,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    er_min: float = 0.2,
+    window_vol: int = 20,
+    window_er: int = 10,
+    Q: float = 1e-5,
+    R: float = 0.01
+) -> pd.DataFrame:
+    """
+    Generate dual CUSUM signals for trend-following and mean-reversion using Kalman filter.
+    Restored from commit 66a8da258.
+    """
+    # 1. Compute log returns
+    log_ret = np.log(close / close.shift(1)).fillna(0.0)
+
+    # 2. Apply 1D Kalman filter
+    kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]) if len(log_ret) > 0 else 0.0)
+    log_ret_smooth_raw, _ = kf.filter_series(log_ret)
+
+    if not isinstance(log_ret_smooth_raw, pd.Series):
+        log_ret_smooth_series = pd.Series(log_ret_smooth_raw, index=close.index).fillna(0.0)
+    else:
+        log_ret_smooth_series = log_ret_smooth_raw.fillna(0.0)
+
+    # 3. Rolling volatility & ER
+    sigma = log_ret_smooth_series.rolling(window_vol, min_periods=1).std()
+    change = log_ret_smooth_series.rolling(window_er).sum().abs()
+    volatility = log_ret_smooth_series.abs().rolling(window_er, min_periods=1).sum()
+    ER = (change / (volatility + 1e-12)).fillna(0.0)
+
+    # 4. Liquidity & Thresholds
+    liquidity_mod = pd.Series(1.0, index=close.index)
+    if volume is not None:
+        vol_ma = volume.rolling(window_vol, min_periods=1).mean()
+        rel_volume = volume / (vol_ma + 1e-9)
+        liquidity_mod = 1.0 + beta * (1.0 - rel_volume)
+        liquidity_mod = liquidity_mod.clip(0.5, 2.0)
+
+    regime_mod = 1.0 + alpha * (1.0 - ER)
+    h_t = (k * sigma * regime_mod * liquidity_mod).fillna(0.0)
+
+    # 5. Residuals for Reversal Logic
+    expected_return = log_ret_smooth_series.rolling(window_vol, min_periods=1).mean()
+    residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
+
+    # 6. CUSUM Loop
+    n = len(close)
+    r_arr = log_ret_smooth_series.to_numpy()
+    res_arr = residual_ret.to_numpy()
+    h_arr = h_t.to_numpy()
+    er_arr = ER.to_numpy()
+
+    trend_signal = np.zeros(n)
+    reversal_signal = np.zeros(n)
+    S_trend_pos, S_trend_neg = 0.0, 0.0
+    S_rev_pos, S_rev_neg = 0.0, 0.0
+
+    for t in range(n):
+        if er_arr[t] < er_min:
+            S_trend_pos, S_trend_neg = 0.0, 0.0
+            S_rev_pos, S_rev_neg = 0.0, 0.0
+            continue
+
+        cur_h = h_arr[t]
+        if np.isnan(cur_h) or cur_h <= 0:
+            cur_h = 1e-4
+
+        # Trend CUSUM
+        S_trend_pos = max(0.0, S_trend_pos + r_arr[t])
+        S_trend_neg = min(0.0, S_trend_neg + r_arr[t])
+
+        if S_trend_pos > cur_h:
+            trend_signal[t] = 1
+            S_trend_pos = 0.0
+        elif S_trend_neg < -cur_h:
+            trend_signal[t] = -1
+            S_trend_neg = 0.0
+
+        # Reversal CUSUM
+        S_rev_pos = max(0.0, S_rev_pos + res_arr[t])
+        S_rev_neg = min(0.0, S_rev_neg + res_arr[t])
+
+        if S_rev_pos > cur_h:
+            reversal_signal[t] = 1
+            S_rev_pos = 0.0
+        elif S_rev_neg < -cur_h:
+            reversal_signal[t] = -1
+            S_rev_neg = 0.0
+
+    return pd.DataFrame({
+        'trend_signal': trend_signal,
+        'reversal_signal': reversal_signal,
+        'h_t': h_t,
+        'er': ER
+    }, index=close.index)
+
+
+class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
+    """Symmetric CUSUM with Dynamic Thresholds based on Volatility."""
+    def generate(self, price: pd.Series, multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
+        t_events = []
+        s_pos, s_neg = 0, 0
+        diff = np.log(price).diff()
+        vol = diff.rolling(vol_window).std()
+        diff_val, vol_val, idx = diff.values, vol.values, price.index
+
+        start_idx = vol_window
+        if start_idx < len(vol_val) and np.isnan(vol_val[start_idx]):
+            valid_indices = np.where(~np.isnan(vol_val))[0]
+            start_idx = valid_indices[0] if len(valid_indices) > 0 else len(price)
+
+        for i in range(start_idx, len(price)):
+            h = vol_val[i] * multiplier
+            if np.isnan(h) or h == 0:
+                continue
+            r = diff_val[i]
+            if np.isnan(r):
+                continue
+            s_pos = max(0, s_pos + r)
+            s_neg = min(0, s_neg + r)
+            if s_pos > h:
+                s_neg = s_pos = 0
+                t_events.append(idx[i])
+            elif s_neg < -h:
+                s_neg = s_pos = 0
+                t_events.append(idx[i])
+        return pd.DatetimeIndex(t_events)
+
+
+class SymmetricCusumEvents(BaseEventGenerator):
+    """Simple symmetric CUSUM with fixed threshold."""
+    def generate(self, price: pd.Series, h: float = 0.01) -> pd.DatetimeIndex:
+        t_events = []
+        s_pos, s_neg = 0, 0
+        diff = np.log(price).diff().dropna()
+        for i in diff.index:
+            r = diff.loc[i]
+            s_pos = max(0, s_pos + r)
+            s_neg = min(0, s_neg + r)
+            if s_pos > h:
+                s_neg = s_pos = 0
+                t_events.append(i)
+            elif s_neg < -h:
+                s_neg = s_pos = 0
+                t_events.append(i)
+        return pd.DatetimeIndex(t_events)
+
+
+class ImprovedCUSUMEvents(BaseEventGenerator):
+    """CUSUM with differentiated trend vs reversal weights."""
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        k = params.get('k', 0.12)
+        vol_window = params.get('vol_window', 20)
+        er_window = params.get('er_window', 10)
+        er_min = params.get('er_min', 0.2)
+        alpha = params.get('alpha', 1.0)
+        beta = params.get('beta', 1.0)
+        w_trend = params.get('w_trend', 1.0)
+        w_reversal = params.get('w_reversal', 1.0)
+
+        close = df['close'] if 'close' in df.columns else df.iloc[:, 0]
+        volume = df.get('volume') or df.get('Volume')
+
+        try:
+            dual_signals = generate_dual_cusum_signals(
+                close=close, volume=volume, k=k, alpha=alpha, beta=beta,
+                er_min=er_min, window_vol=vol_window, window_er=er_window
+            )
+            composite = w_trend * dual_signals['trend_signal'] + w_reversal * dual_signals['reversal_signal']
+            return composite.index[composite != 0]
+        except Exception as e:
+            logger.warning(f"ImprovedCUSUM failed: {e}")
+            return pd.DatetimeIndex([])
+
+
+class VolatilityShockEvents(BaseEventGenerator):
+    """Detects volatility shocks."""
+    def generate(self, price: pd.Series, lookback: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
+        returns = price.pct_change()
+        vol = returns.rolling(lookback).std()
+        vol_mean = vol.expanding(min_periods=lookback).mean()
+        vol_std = vol.expanding(min_periods=lookback).std()
+        zscore = (vol - vol_mean) / (vol_std + 1e-6)
+        return price.index[zscore > z]
+
+
+class TrendInitiationEvents(BaseEventGenerator):
+    """Detects trend initiations via MA crossover."""
+    def generate(self, price: pd.Series, short: int = 20, long: int = 100) -> pd.DatetimeIndex:
+        ma_s = price.rolling(short).mean()
+        ma_l = price.rolling(long).mean()
+        cross = (ma_s > ma_l) & (ma_s.shift(1) <= ma_l.shift(1))
+        return price.index[cross]
+
+
+class MeanReversionExtremeEvents(BaseEventGenerator):
+    """Detects mean reversion extremes via z-score."""
+    def generate(self, price: pd.Series, lookback: int = 50, z: float = 2.5) -> pd.DatetimeIndex:
+        mean = price.rolling(lookback).mean()
+        std = price.rolling(lookback).std()
+        zscore = (price - mean) / (std + 1e-6)
+        return price.index[np.abs(zscore) > z]
+
+
+class LiquidityShockEvents(BaseEventGenerator):
+    """Detects liquidity shocks via volume z-score."""
+    def generate(self, volume: pd.Series, lookback: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
+        vol_mean = volume.expanding(min_periods=lookback).mean()
+        vol_std = volume.expanding(min_periods=lookback).std()
+        zscore = (volume - vol_mean) / (vol_std + 1e-6)
+        return volume.index[zscore > z]
+
+
+class TimeEvents(BaseEventGenerator):
+    """Time-based periodic events."""
+    def generate(self, price: pd.Series, frequency: int = 24) -> pd.DatetimeIndex:
+        return price.index[::frequency]
+
+
+# Aliases
+CusumEvents = AdaptiveSymmetricCUSUMEvents

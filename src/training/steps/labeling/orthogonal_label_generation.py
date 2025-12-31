@@ -2382,11 +2382,14 @@ def get_uniqueness_weight(events: pd.DatetimeIndex, index: pd.DatetimeIndex, hor
 
     return uniqueness
 
-def get_final_de_prado_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list = None) -> pd.Series:
-    v_w = volume_cusum_weight(df, events)
-    atr_w = atr_cusum_weight(df, events)
-    sr_w = sr_cusum_weight(df, events, sr_levels)
-    t_w = tail_cusum_weight(df, events)
+def get_final_de_prado_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list = None, component_weights: Dict[str, float] = None) -> pd.Series:
+    if component_weights is None:
+        component_weights = {'vol': 1.0, 'atr': 1.0, 'sr': 1.0, 'tail': 1.0}
+
+    v_w = volume_cusum_weight(df, events) * component_weights.get('vol', 1.0)
+    atr_w = atr_cusum_weight(df, events) * component_weights.get('atr', 1.0)
+    sr_w = sr_cusum_weight(df, events, sr_levels) * component_weights.get('sr', 1.0)
+    t_w = tail_cusum_weight(df, events) * component_weights.get('tail', 1.0)
     u_w = get_uniqueness_weight(events, df.index)
 
     final_weights = (1 + v_w + atr_w + sr_w + t_w) * u_w
@@ -2410,7 +2413,8 @@ def orthogonal_label_generation(
     volume: Optional[pd.Series] = None,
     df_full: Optional[pd.DataFrame] = None,
     target_signals_per_day: float = 7.5,
-    use_adaptive_thresholds: bool = True
+    use_adaptive_thresholds: bool = True,
+    signal_weights: Optional[Dict[str, float]] = None
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -2747,7 +2751,7 @@ def orthogonal_label_generation(
         # "Combining Weights (De Prado Meta-Weighting) ... After generating all events, combine intensity with uniqueness"
         # We can calculate this here.
 
-        final_weights = get_final_de_prado_weights(df_full, cand['events'], sr_levels)
+        final_weights = get_final_de_prado_weights(df_full, cand['events'], sr_levels, component_weights=signal_weights)
         # Blend or replace? "update with this" suggests using it.
         # Use final_weights as the primary weights for the geometry.
 

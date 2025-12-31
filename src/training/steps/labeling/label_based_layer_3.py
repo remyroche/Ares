@@ -119,7 +119,7 @@ class ManualCalibratedClassifier(BaseEstimator, ClassifierMixin):
 
 def compute_cusum_signals_multi_window(
     market_data: pd.DataFrame,
-    windows: List[int] = [12, 24, 48],
+    windows: List[int] = [12, 48],
     k: float = 0.5, # Threshold factor
     alpha: float = 0.5 # Volatility/ER adjustment factor
 ) -> pd.DataFrame:
@@ -1414,22 +1414,32 @@ def layer3_analyst_lgbm(
                 "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}
             }
             
-            # Regime feature extraction moved to Layer 2
-            print(f"     Skipping redundant regime extraction (now in Layer 2)")
+            # Regime Features
+            regime_df = extract_regime_leaf_onehot_features(
+                 X=df, # Or minimal features
+                 market_data=market_data,
+                 config=base_regime_config,
+                 verbose=False
+            )
+            if not regime_df.empty:
+                 # Prefix with geometry id
+                 new_regime_cols = [f'{geometry_id}_rl_{c}' for c in regime_df.columns if c not in df.columns]
+                 if new_regime_cols:
+                     for col in regime_df.columns:
+                         df[f'{geometry_id}_rl_{col}'] = regime_df[col]
+                     candidate_features.extend(new_regime_cols)
+                     print(f"     Added {len(new_regime_cols)} regime features")
             
-            # Generate NN features with geometry-specific sequence length (DISABLED)
-            # Note: NN feature generation disabled to reduce complexity and improve performance
-            # To enable, uncomment the following block:
-            #
-            # nn_df = _generate_geometry_specific_nn_features(market_data, geometry_horizon, embed_dim=8)
-            # if nn_df is not None and not nn_df.empty:
-            #     nn_df = nn_df.reindex(df.index).fillna(0.0)
-            #     new_nn_cols = [f'{geometry_id}_nn_{c}' for c in nn_df.columns if c not in df.columns]
-            #     if new_nn_cols:
-            #         for col in nn_df.columns:
-            #             df[f'{geometry_id}_nn_{col}'] = nn_df[col]
-            #         candidate_features.extend(new_nn_cols)
-            #         print(f"     Added {len(new_nn_cols)} NN features")
+            # Generate NN features with geometry-specific sequence length
+            nn_df = _generate_geometry_specific_nn_features(market_data, geometry_horizon, embed_dim=8)
+            if nn_df is not None and not nn_df.empty:
+                nn_df = nn_df.reindex(df.index).fillna(0.0)
+                new_nn_cols = [f'{geometry_id}_nn_{c}' for c in nn_df.columns if c not in df.columns]
+                if new_nn_cols:
+                    for col in nn_df.columns:
+                        df[f'{geometry_id}_nn_{col}'] = nn_df[col]
+                    candidate_features.extend(new_nn_cols)
+                    print(f"     Added {len(new_nn_cols)} NN features")
                     
         except Exception as e:
             print(f"⚠️ Geometry {geometry_id} features failed: {e}")
@@ -1508,7 +1518,11 @@ def layer3_analyst_lgbm(
     # Look for CUSUM columns in the input dataframe
     cusum_cols = [c for c in df.columns if 'trend_signal' in c or 'reversal_signal' in c]
     
-    if not cusum_cols:
+    # Force re-generation of signals with specific horizons [12, 48]
+    if market_data is not None:
+        print("   Regenerating CUSUM signals for horizons [12, 48]...")
+        cusum_df = compute_cusum_signals_multi_window(market_data, windows=[12, 48])
+    elif not cusum_cols:
         print("⚠️ No CUSUM signals found in input. Using fallback signals.")
         # Create minimal fallback signals
         cusum_df = pd.DataFrame(index=df.index)

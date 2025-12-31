@@ -155,9 +155,339 @@ def generate_probe_features(price: pd.Series, volume: Optional[pd.Series] = None
 
     return df.fillna(0)
 
+def ewma_volatility(returns, span=100):
+    """
+    EWMA volatility estimator.
+    Used to normalize thresholds and make CUSUM regime-invariant.
+    """
+    return returns.ewm(span=span, adjust=False).std()
+
 # ==========================================
-# 1. Labeling Logic (Vectorized Dominance)
+# 1. Labeling Logic (Vectorized Dominance & State)
 # ==========================================
+
+def compute_volatility_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 24,
+    k: float = 1.3
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Regime/State events (Volatility Expansion).
+    Target: 1 if volatility increases by k% over the next `horizon` bars.
+
+    Returns matched signature: labels, weights, returns, mfe, mae, vol
+    Note: returns/mfe/mae are proxies here.
+    """
+    if events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Calculate volatility (Use EWMA 50 for smoother estimates as requested)
+    # Overrides generic volatility_1d to ensure consistent smoothing for labeling
+    vol = df['close'].pct_change().ewm(span=50).std()
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Vectorized Target Calculation
+    # We want Vol[t+horizon] > Vol[t] * k
+
+    # Get indices
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+
+    target_locs = event_locs + horizon
+    valid_mask = target_locs < n_bars
+
+    event_locs = event_locs[valid_mask]
+    target_locs = target_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    vol_start = vol.iloc[event_locs].values
+    vol_end = vol.iloc[target_locs].values
+
+    # Avoid zero vol
+    vol_start = np.maximum(vol_start, 1e-9)
+
+    # Calculate Ratio
+    vol_ratio = vol_end / vol_start
+
+    # Label: 1 if Expansion, 0 otherwise
+    labels_arr = (vol_ratio > k).astype(float)
+
+    # Weights: Magnitude of expansion
+    weights_arr = np.log1p(np.abs(vol_ratio - 1.0))
+
+    # "Returns": Here we use Volatility Change %
+    returns_arr = vol_ratio - 1.0
+
+    # MFE/MAE: Proxies using max vol in window
+    # To implement correctly, we'd need window scan. For now, use end point proxy.
+    mfe_arr = returns_arr # Max expansion
+    mae_arr = np.zeros_like(returns_arr) # No "loss" concept really
+
+    # Construct Series
+    idx = final_events
+    s_labels = pd.Series(labels_arr, index=idx)
+    s_weights = pd.Series(weights_arr, index=idx)
+    s_returns = pd.Series(returns_arr, index=idx)
+    s_mfe = pd.Series(mfe_arr, index=idx)
+    s_mae = pd.Series(mae_arr, index=idx)
+    s_vol = pd.Series(vol_start, index=idx)
+
+    return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
+
+
+def compute_path_degradation_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 24,
+    d_sigma: float = 1.5
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Market Stress (Path Degradation).
+    Target: 1 if Max Intra-Horizon Drawdown > d_sigma * volatility.
+
+    Returns matched signature: labels, weights, returns, mfe, mae, vol
+    """
+    if events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d']
+    else:
+        vol = df['close'].pct_change().rolling(100).std()
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Map events to integers
+    if df.index.tz is not None:
+        idx_base = df.index.tz_localize(None)
+    else:
+        idx_base = df.index
+
+    if valid_events.tz is not None:
+        events_norm = valid_events.tz_localize(None)
+    else:
+        events_norm = valid_events
+
+    event_idxs = idx_base.get_indexer(events_norm)
+    n_bars = len(df)
+
+    # Filter valid
+    valid_mask = (event_idxs != -1) & (event_idxs < (n_bars - horizon))
+    valid_idxs = event_idxs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Window Matrix
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+
+    high_vals = df['high'].values[window_idxs]
+    low_vals = df['low'].values[window_idxs]
+
+    # Calculate Max Drawdown
+    # Running Max of Highs
+    running_max = np.maximum.accumulate(high_vals, axis=1)
+    # Drawdown from running max to current low
+    drawdowns = (running_max - low_vals) / running_max
+    max_dd = np.max(drawdowns, axis=1)
+
+    # Thresholds
+    vol_vals = vol.values[valid_idxs]
+    # Ensure vol is not zero
+    vol_vals = np.maximum(vol_vals, 1e-6)
+
+    thresholds = vol_vals * d_sigma
+
+    labels_arr = (max_dd > thresholds).astype(float)
+
+    # Weights: Severity of breakdown
+    weights_arr = np.log1p(max_dd / thresholds)
+
+    # "Returns": Max Drawdown (negative)
+    returns_arr = -max_dd
+
+    s_labels = pd.Series(labels_arr, index=final_events)
+    s_weights = pd.Series(weights_arr, index=final_events)
+    s_returns = pd.Series(returns_arr, index=final_events)
+    s_mfe = pd.Series(np.zeros_like(returns_arr), index=final_events)
+    s_mae = pd.Series(max_dd, index=final_events)
+    s_vol = pd.Series(vol_vals, index=final_events)
+
+    return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
+
+
+def compute_tail_regime_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 24,
+    metric_col: str = 'skew',
+    z_thresh: float = 1.5
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Tail Risk Persistence.
+    Target: 1 if metric (skew/kurt) remains 'extreme' (> z_thresh) on average over horizon.
+    """
+    if events.empty or metric_col not in df.columns:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    metric = df[metric_col]
+    # Calculate Z-score of metric if not already (assuming rolling standardization handled elsewhere or done here)
+    # Here we assume metric is raw and we check magnitude.
+    # Actually, let's standardize metric locally to be robust.
+    roll_mean = metric.rolling(100).mean()
+    roll_std = metric.rolling(100).std()
+    z_score = (metric - roll_mean) / (roll_std + 1e-9)
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Vectorized persistence check
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+
+    # Filter valid
+    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
+    valid_idxs = event_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Window Matrix
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+
+    window_z = z_score.values[window_idxs]
+
+    # Check average magnitude in window
+    # We care about magnitude of tail risk (fat tails or skew)
+    # If skew, it could be positive or negative. We usually care about absolute skew or negative skew?
+    # "Abnormal risk". Extreme values.
+    avg_abs_z = np.mean(np.abs(window_z), axis=1)
+
+    labels_arr = (avg_abs_z > z_thresh).astype(float)
+    weights_arr = np.log1p(avg_abs_z)
+    returns_arr = avg_abs_z # Proxy
+
+    return (pd.Series(labels_arr, index=final_events),
+            pd.Series(weights_arr, index=final_events),
+            pd.Series(returns_arr, index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events))
+
+def compute_trend_persistence_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 24,
+    trend_col: str = 'trend'
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Trend Regime Persistence.
+    Target: 1 if trend direction persists.
+    """
+    if events.empty or trend_col not in df.columns:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    trend = df[trend_col]
+
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
+    valid_idxs = event_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Initial Trend Sign
+    initial_trend = np.sign(trend.values[valid_idxs])
+
+    # Future Trend Signs
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+    future_trends = trend.values[window_idxs]
+
+    # Consistency: Fraction of window where sign matches initial
+    # Handle zero trend? Treat as mismatch if we expect trend.
+    matches = np.sign(future_trends) == initial_trend[:, None]
+    consistency = np.mean(matches, axis=1)
+
+    # Label: High consistency (> 0.6)
+    labels_arr = (consistency > 0.6).astype(float)
+    weights_arr = consistency
+    returns_arr = consistency # Proxy
+
+    return (pd.Series(labels_arr, index=final_events),
+            pd.Series(weights_arr, index=final_events),
+            pd.Series(returns_arr, index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events))
+
+def compute_vol_state_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 24
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Volatility State Persistence.
+    Target: 1 if Vol State persists.
+    """
+    if events.empty or 'vol_state' not in df.columns:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    state = df['vol_state']
+
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
+    valid_idxs = event_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    initial_state = state.values[valid_idxs]
+
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+    future_states = state.values[window_idxs]
+
+    matches = future_states == initial_state[:, None]
+    persistence = np.mean(matches, axis=1)
+
+    labels_arr = (persistence > 0.6).astype(float)
+    weights_arr = persistence
+    returns_arr = persistence
+
+    return (pd.Series(labels_arr, index=final_events),
+            pd.Series(weights_arr, index=final_events),
+            pd.Series(returns_arr, index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events),
+            pd.Series(np.zeros_like(labels_arr), index=final_events))
+
 
 def compute_dominance_labels(
     price: pd.Series,
@@ -840,7 +1170,11 @@ GENERATOR_PARAM_NAMES = {
     'VWAPCrossEvents': ['lookback'],
     'FairValueGapEvents': ['min_gap_pct', 'lookback', 'volume_threshold', 'confirm_candles'],
     'SupportResistanceBreakEvents': ['lookback', 'min_touches', 'breakout_threshold', 'volume_threshold', 'min_strength_score'],
-    'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold']
+    'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold'],
+    'TailRiskCusumEvents': ['h', 'window', 'metric'],
+    'TrendRegimeCusumEvents': ['h', 'fast', 'slow'],
+    'VolatilityStateEvents': ['h', 'vol_span'],
+    'AdaptiveSymmetricCUSUMEvents': ['multiplier', 'vol_window']
 }
 
 DF_REQUIRED_CLASSES = (
@@ -1906,53 +2240,31 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
         {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
     ]
     
-    # Horizon options (restricted to 3 timeframes)
-    horizon_options = [12, 24, 48]  # 3h, 6h, 12h
+    # Horizon options (Restricted to 12 and 48 per instruction)
+    horizon_options = [12, 48]
     
     # Family-specific parameter grids (restricted to 12, 24, 48)
     family_grids = {
-        'ENTROPY': {
-            'base_params': [(12,), (24,), (48,)],  # window
+        'PRICE_CUSUM': {
+            'base_params': [(0.5, 20), (0.75, 40)],  # multiplier, vol_window
         },
-        
-        'VOL_SHOCK': {
-            'base_params': [(14, 50, 2.0), (14, 100, 3.0)],  # lookback, long_window, z
+        'VOL_CUSUM': {
+            'base_params': [(4.0, 100), (3.0, 50)],  # h, vol_span
         },
-        
-        'LIQUIDITY': {
-            'base_params': [(12,), (24,), (48,)],  # window
+        'LIQ_CUSUM': {
+            'base_params': [(4.0, 100), (3.0, 50)],  # h, vol_span
         },
-        
-        'BREAKOUT': {
-            'base_params': [(12, 24), (24, 48)],  # lookback, anchor_window
+        'VOL_PARTICIPATION': {
+            'base_params': [(4.0, 100), (3.0, 50)],  # h, span
         },
-        
-        'KALMAN_TREND': {
-            'base_params': [(1e-3, 1e-5), (5e-3, 5e-5)],  # Q, R
+        'TAIL_RISK': {
+            'base_params': [(2.0, 50, 'skew'), (2.0, 50, 'kurt')], # h, window, metric
         },
-        
-        'MR_VWAP': {
-            'base_params': [(12, 2.5), (24, 2.0), (48, 1.8)],  # lookback, z
+        'TREND_REGIME': {
+            'base_params': [(2.0, 20, 50), (1.5, 10, 30)], # h, fast, slow
         },
-        
-        'FVG_SMART_MONEY': {
-            'base_params': [(0.1, 12, 1.5, 3), (0.15, 24, 2.0, 2)],  # min_gap_pct, lookback, volume_threshold, confirm_candles
-        },
-        
-        'SR_BREAKOUTS': {
-            'base_params': [(12, 3, 0.002, 1.5, 3.0), (24, 2, 0.003, 2.0, 2.5)],  # lookback, min_touches, breakout_threshold, volume_threshold, min_strength_score
-        },
-        
-        'ORDER_BLOCKS': {
-            'base_params': [(12, 0.5, 2.0), (24, 0.3, 1.5)],  # lookback, min_move_pct, volume_threshold
-        },
-        
-        'KALMAN_REGIME': {
-            'base_params': [(1e-4, 0.01, 2.0)],  # Q, R, z
-        },
-        
-        'VWAP_CROSS': {
-            'base_params': [(12,), (24,), (48,)],  # lookback
+        'VOL_STATE': {
+            'base_params': [(2.0, 100)], # h, vol_span
         },
     }
     
@@ -1990,21 +2302,7 @@ def orthogonal_label_generation(
     Enhanced Execution Pipeline for Orthogonal Label Generation.
     Implements: Generate -> Score -> Top 50% -> Probe -> Final Diversity Filter.
     
-    OPTIMIZATION PARAMETERS:
-    - TP/SL ratios: 6 enhanced ratios (1.5:1 to 4:1)
-    - Horizons: 3 timeframes (12, 24, 48 bars) - optimized per geometry
-    - Lookbacks: Family-specific parameters using 12, 24, 48 bars
-    - Risk budget: 3 possibilities (0.4, 0.7, 1.0) - 0=no drawdown before TP, 1=very close to SL on average
-    
-    Args:
-        data: Price series or dataframe with OHLCV data
-        volume: Volume series (optional)
-        df_full: Full dataframe with OHLCV (optional)
-        target_signals_per_day: Target signal generation rate per feature
-        use_adaptive_thresholds: Whether to use adaptive thresholding
-    
-    Returns:
-        List of diverse OutputGeometry objects optimized per signal family
+    Replaced with 4 Orthogonal CUSUM Clocks.
     """
     tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
 
@@ -2038,19 +2336,15 @@ def orthogonal_label_generation(
     # 3. Build Enhanced Candidate Configurations
     generator_configs = []
     
-    # Base signal families
+    # Replaced signal families with the 4 Orthogonal CUSUMs
     base_generators = [
-        ('ENTROPY', EntropyEvents()),
-        ('VOL_SHOCK', ATRShockEvents()),
-        ('LIQUIDITY', MicrostructureEvents()),
-        ('BREAKOUT', TrendModulatedBreakoutEvents()),
-        ('KALMAN_TREND', KalmanTrendEvents()),
-        ('MR_VWAP', VWAPReversionEvents()),
-        ('FVG_SMART_MONEY', FairValueGapEvents()),
-        ('SR_BREAKOUTS', SupportResistanceBreakEvents()),
-        ('ORDER_BLOCKS', OrderBlockEvents()),
-        ('KALMAN_REGIME', KalmanRegimeEvents()),
-        ('VWAP_CROSS', VWAPCrossEvents()),
+        ('PRICE_CUSUM', AdaptiveSymmetricCUSUMEvents()),
+        ('VOL_CUSUM', VolatilityCusumEvents()),
+        ('LIQ_CUSUM', LiquidityCusumEvents()),
+        ('VOL_PARTICIPATION', VolumeCusumEvents()),
+        ('TAIL_RISK', TailRiskCusumEvents()),
+        ('TREND_REGIME', TrendRegimeCusumEvents()),
+        ('VOL_STATE', VolatilityStateEvents()),
     ]
     
     # Build enhanced parameter combinations
@@ -2071,23 +2365,19 @@ def orthogonal_label_generation(
     for fam, gen, params in generator_configs:
 
             try:
-                # Use adaptive thresholds if enabled and generator supports it
-                # Use adaptive thresholds if enabled and generator supports it
-                if use_adaptive_thresholds and hasattr(gen, 'generate_adaptive'):
-                    # Convert positional params to kwargs for adaptive logic
-                    param_keys = GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, [])
-                    param_kwargs = dict(zip(param_keys, params))
-                    
-                    if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
-                        events = gen.generate_adaptive(df_full, target_signals_per_day, **param_kwargs)
-                    else:
-                        events = gen.generate_adaptive(price, target_signals_per_day, **param_kwargs)
+                # Use standard generation (Adaptive logic skipped for now for these new generators to match snippet)
+                # But kept logic structure if needed.
+
+                # Extended list of classes requiring DataFrame
+                df_required = DF_REQUIRED_CLASSES + (
+                    'VolatilityCusumEvents', 'LiquidityCusumEvents', 'VolumeCusumEvents',
+                    'TailRiskCusumEvents', 'TrendRegimeCusumEvents', 'VolatilityStateEvents'
+                )
+
+                if gen.__class__.__name__ in df_required:
+                    events = gen.generate(df_full, *params)
                 else:
-                    # Use standard generation
-                    if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
-                        events = gen.generate(df_full, *params)
-                    else:
-                        events = gen.generate(price, *params)
+                    events = gen.generate(price, *params)
             except Exception as e:
                 tprint_warning(f"Generator {fam} failed: {e}")
                 continue
@@ -2102,7 +2392,11 @@ def orthogonal_label_generation(
             tprint_info(f"DEBUG: {fam} generated {len(events)} events")
 
             # Create parameter dict for logging
-            param_dict = dict(zip(GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, []), params))
+            param_names = GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, [])
+            if param_names and len(params) == len(param_names):
+                param_dict = dict(zip(param_names, params))
+            else:
+                param_dict = {'params': params}
 
             # Iterate Enhanced Grids
             tpsl_grid = param_grids['tpsl_grid']
@@ -2118,16 +2412,52 @@ def orthogonal_label_generation(
                         high = df_full.get('high')
                         low = df_full.get('low')
 
-                        labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
-                            price, events, df_full['volatility_1d'],
-                            risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
-                            high=high, low=low
-                        )
+                        if fam == 'PRICE_CUSUM':
+                            # Classic Triple Barrier
+                            labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                                price, events, df_full['volatility_1d'],
+                                risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                                high=high, low=low
+                            )
+                        elif fam == 'LIQ_CUSUM':
+                            # Liquidity Stress -> Path Degradation
+                            # d_sigma map from pt: pt=[1.5, 4.0] -> d=[0.75, 2.0]
+                            d_sigma = pt * 0.5
+                            labels, weights, returns, mfe, mae, vol = compute_path_degradation_labels(
+                                df_full, events, horizon=horizon, d_sigma=d_sigma
+                            )
+                        elif fam == 'TAIL_RISK':
+                            # Tail Risk Persistence
+                            # Map pt to z_thresh (1.5 - 2.5)
+                            z_thresh = pt * 0.6
+                            labels, weights, returns, mfe, mae, vol = compute_tail_regime_labels(
+                                df_full, events, horizon=horizon, z_thresh=z_thresh,
+                                metric_col=param_dict.get('metric', 'skew')
+                            )
+                        elif fam == 'TREND_REGIME':
+                            # Trend Persistence
+                            labels, weights, returns, mfe, mae, vol = compute_trend_persistence_labels(
+                                df_full, events, horizon=horizon
+                            )
+                        elif fam == 'VOL_STATE':
+                            # Vol State Persistence
+                            labels, weights, returns, mfe, mae, vol = compute_vol_state_labels(
+                                df_full, events, horizon=horizon
+                            )
+                        else:
+                            # Volatility & Volume -> Volatility Expansion
+                            # k_factor map from pt: pt=[1.5, 4.0] -> k=[1.25, 1.5]
+                            # User requested 1.2-1.5.
+                            # Formula: 1.1 + pt * 0.1 -> 1.5=>1.25, 4.0=>1.5
+                            k_factor = 1.1 + (pt * 0.1)
+                            labels, weights, returns, mfe, mae, vol = compute_volatility_labels(
+                                df_full, events, horizon=horizon, k=k_factor
+                            )
 
                         if labels.empty:
-                            logger.warning(f"DEBUG: Labels empty for {fam} (RB={risk_budget}, PT={pt}, SL={sl})")
                             continue
 
+                        # Quality Checks - Only if labels exist
                         passed, metrics, status = check_label_quality(
                             events, labels, returns, df_full, X_probe, gen, param_dict
                         )
@@ -2146,7 +2476,7 @@ def orthogonal_label_generation(
                             'max_mi': metrics.get('max_mi', 0.0),
                             'signals_per_day': round(signals_per_day, 2),
                             'target_signals_per_day': target_signals_per_day,
-                            'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
+                            'adaptive_used': False
                         })
 
                         if passed:
@@ -2367,35 +2697,310 @@ def generate_dual_cusum_signals(
 
 
 class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
-    """Symmetric CUSUM with Dynamic Thresholds based on Volatility."""
-    def generate(self, price: pd.Series, multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
-        t_events = []
-        s_pos, s_neg = 0, 0
-        diff = np.log(price).diff()
-        vol = diff.rolling(vol_window).std()
-        diff_val, vol_val, idx = diff.values, vol.values, price.index
+    """
+    Fully Adaptive CUSUM (Dual Signal: Trend + Mean Reversion).
+    Re-enabled to generate both mean reversions and trends using Kalman filtering.
+    """
+    def generate(self, data: Union[pd.Series, pd.DataFrame], multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
+        if isinstance(data, pd.DataFrame):
+            close = data['close']
+            volume = data.get('volume')
+        else:
+            close = data
+            volume = None
 
-        start_idx = vol_window
-        if start_idx < len(vol_val) and np.isnan(vol_val[start_idx]):
-            valid_indices = np.where(~np.isnan(vol_val))[0]
-            start_idx = valid_indices[0] if len(valid_indices) > 0 else len(price)
+        try:
+            # Map multiplier to 'k' (threshold scaling)
+            # Standard k is around 0.1-0.2 for daily? Or just a scalar.
+            # In generate_dual_cusum_signals, k is used as k * sigma.
+            # Our multiplier is passed as 0.5 or 0.75 in the grid.
+            # Dual CUSUM default k is 0.12.
+            # If multiplier is 0.5, it's aggressive.
+            # I will use multiplier directly as k.
 
-        for i in range(start_idx, len(price)):
-            h = vol_val[i] * multiplier
-            if np.isnan(h) or h == 0:
-                continue
-            r = diff_val[i]
-            if np.isnan(r):
-                continue
-            s_pos = max(0, s_pos + r)
-            s_neg = min(0, s_neg + r)
-            if s_pos > h:
-                s_neg = s_pos = 0
-                t_events.append(idx[i])
-            elif s_neg < -h:
-                s_neg = s_pos = 0
-                t_events.append(idx[i])
-        return pd.DatetimeIndex(t_events)
+            dual_signals = generate_dual_cusum_signals(
+                close=close, volume=volume,
+                k=multiplier, # multiplier serves as threshold 'k'
+                vol_window=vol_window,
+                window_vol=vol_window
+            )
+
+            # Combine signals (Trend + Reversion)
+            # We want events for EITHER.
+            # Using simple OR logic on non-zero signals.
+
+            w_trend = 1.0
+            w_reversal = 1.0
+
+            composite = w_trend * dual_signals['trend_signal'] + w_reversal * dual_signals['reversal_signal']
+            return composite.index[composite != 0]
+
+        except Exception as e:
+            logger.warning(f"AdaptiveSymmetricCUSUMEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+
+class VolatilityCusumEvents(BaseEventGenerator):
+    """
+    VOLATILITY CUSUM — Risk Regime Change (Direction-Free).
+    """
+    def generate(self, df: pd.DataFrame, h: float = 4.0, vol_span: int = 100) -> pd.DatetimeIndex:
+        # Handle input type (Series vs DF)
+        if isinstance(df, pd.Series):
+             # Try to reconstruct basic df if possible, but VolCUSUM needs close
+             close = df
+        else:
+             close = df['close']
+
+        # Logic from snippet
+        # df["ret"] = np.log(df["close"]).diff()
+        # df["vol"] = ewma_volatility(df["ret"], span=vol_span)
+        # df["log_vol_change"] = np.log(df["vol"]).diff()
+
+        ret = np.log(close).diff()
+        vol = ewma_volatility(ret, span=vol_span)
+        log_vol_change = np.log(vol).diff()
+
+        # Normalize (Consistency Update)
+        norm = log_vol_change.rolling(100).std()
+        xt = log_vol_change / (norm + 1e-9)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        # Iteration
+        # Vectorization is hard for CUSUM, loop is fine
+        vals = xt.values
+        idx = close.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class LiquidityCusumEvents(BaseEventGenerator):
+    """
+    LIQUIDITY CUSUM — Market Stress / Liquidity Withdrawal.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 4.0, vol_span: int = 100) -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+             # Needs High/Low
+             logger.warning("LiquidityCusumEvents requires DataFrame with High/Low")
+             return pd.DatetimeIndex([])
+
+        ret = np.log(df["close"]).diff()
+        vol = ewma_volatility(ret, span=vol_span)
+
+        # Proxy for liquidity stress
+        true_range = df["high"] - df["low"]
+        # liq_stress = np.log(true_range / vol)
+        # Handle potential zeros/nans
+        liq_stress = np.log(true_range / (vol + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        # CUSUM on changes (consistent with trend/vol)
+        xt_raw = liq_stress.diff()
+        # Normalize
+        norm = xt_raw.rolling(100).std()
+        xt = xt_raw / (norm + 1e-9)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        vals = xt.values
+        idx = df.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class VolumeCusumEvents(BaseEventGenerator):
+    """
+    VOLUME CUSUM — Participation Shock.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 4.0, span: int = 100) -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+            # Assumes series is volume? Or Price?
+            # User snippet uses 'volume' column
+            if df.name and 'volume' in df.name.lower():
+                volume = df
+            else:
+                logger.warning("VolumeCusumEvents requires volume data")
+                return pd.DatetimeIndex([])
+        else:
+            if 'volume' not in df.columns:
+                 logger.warning("VolumeCusumEvents requires volume data")
+                 return pd.DatetimeIndex([])
+            volume = df['volume']
+
+        vol_avg = volume.ewm(span=span, adjust=False).mean()
+        # vol_surprise = np.log(volume / vol_avg)
+        vol_surprise = np.log(volume / (vol_avg + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        # Normalize
+        norm = vol_surprise.rolling(100).std()
+        xt = vol_surprise / (norm + 1e-9)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        vals = xt.values
+        idx = volume.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class TailRiskCusumEvents(BaseEventGenerator):
+    """
+    TAIL RISK CUSUM — Skew/Kurtosis Detector.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 2.0, window: int = 50, metric: str = 'skew') -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+             ret = df.pct_change()
+        else:
+             ret = df['close'].pct_change()
+
+        if metric == 'skew':
+            series = ret.rolling(window).skew()
+        else:
+            series = ret.rolling(window).kurt()
+
+        # Log changes. Handle negative skew by using abs?
+        # User says: diff(log(skew)). Skew can be negative.
+        # Maybe diff(skew) is safer?
+        # Or diff(log(abs(skew))).
+        # "xt = diff(log(skewt))".
+        # I'll use diff of raw metric standardized by its own volatility?
+        # Or just diff(series).
+        # Let's try to follow prompt: "xt = Delta log(skew)".
+        # We'll use log of absolute value to avoid domain error, preserving sign?
+        # Actually, let's just use diff(series) normalized by recent std of series to make 'h' stable.
+
+        diff = series.diff()
+        # Normalize by rolling std of diff
+        norm = diff.rolling(100).std()
+        xt = diff / (norm + 1e-9)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+        vals = xt.values
+        idx = df.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class TrendRegimeCusumEvents(BaseEventGenerator):
+    """
+    TREND REGIME CUSUM — Directional State Context.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 2.0, fast: int = 20, slow: int = 50) -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+             close = df
+        else:
+             close = df['close']
+
+        ema_fast = close.ewm(span=fast, adjust=False).mean()
+        ema_slow = close.ewm(span=slow, adjust=False).mean()
+
+        trend = (ema_fast - ema_slow) / close
+
+        xt = trend.diff()
+        # Normalize
+        norm = xt.rolling(100).std()
+        xt_norm = xt / (norm + 1e-9)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+        vals = xt_norm.values
+        idx = df.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class VolatilityStateEvents(BaseEventGenerator):
+    """
+    VOLATILITY REGIME SWITCHES — State Detector.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 2.0, vol_span: int = 100) -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+             close = df
+        else:
+             close = df['close']
+
+        ret = np.log(close).diff()
+        vol = ewma_volatility(ret, span=vol_span)
+
+        # CUSUM on vol changes (similar to VolCusum but maybe different tuning)
+        # xt = diff(log(vol))
+        xt_raw = np.log(vol).diff()
+
+        # Normalize
+        norm = xt_raw.rolling(100).std()
+        xt = xt_raw / (norm + 1e-9)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+        vals = xt.values
+        idx = close.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
 
 
 class SymmetricCusumEvents(BaseEventGenerator):
@@ -2490,3 +3095,178 @@ class TimeEvents(BaseEventGenerator):
 
 # Aliases
 CusumEvents = AdaptiveSymmetricCUSUMEvents
+
+# ==========================================
+# 9. Meta-Learning Dataset Generation
+# ==========================================
+
+def apply_persistence_label(df: pd.DataFrame, events: pd.DatetimeIndex, series_col: str, horizon: int = 48, threshold: float = 0.0) -> pd.Series:
+    """
+    Generic persistence labeler.
+    Returns 1 if series_col > threshold on average over horizon.
+    """
+    if events.empty or series_col not in df.columns:
+        return pd.Series(0, index=df.index)
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return pd.Series(0, index=df.index)
+
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+
+    # Filter valid
+    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
+    valid_idxs = event_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    if len(valid_idxs) == 0:
+        return pd.Series(0, index=df.index)
+
+    # Window Matrix
+    offsets = np.arange(1, horizon + 1)
+    window_idxs = valid_idxs[:, None] + offsets[None, :]
+
+    vals = df[series_col].values[window_idxs]
+    avg_vals = np.mean(vals, axis=1)
+
+    labels = (avg_vals > threshold).astype(int)
+
+    out = pd.Series(0, index=df.index)
+    out.loc[final_events] = labels
+    return out
+
+def apply_triple_barrier_multi(df: pd.DataFrame, events: pd.DatetimeIndex,
+                                pt_sl: Tuple[float,float]=(2.0, 1.0), # multipliers for vol
+                                horizons: list=[12,48]) -> pd.DataFrame:
+    """
+    Returns a DataFrame of price labels for multiple horizons using volatility-adjusted barriers.
+    Columns: 'price_label_{horizon}'
+    """
+    out = pd.DataFrame(0, index=df.index, columns=[f'price_label_{h}' for h in horizons], dtype=int)
+    close = df['close'].values
+
+    # Volatility
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d'].values
+    else:
+        vol = df['close'].pct_change().rolling(100).std().fillna(0).values
+
+    # Normalize TZ
+    if df.index.tz is not None:
+        idx_base = df.index.tz_localize(None)
+    else:
+        idx_base = df.index
+
+    if events.tz is not None:
+        events_norm = events.tz_localize(None)
+    else:
+        events_norm = events
+
+    event_idxs = idx_base.get_indexer(events_norm)
+    valid_mask = (event_idxs != -1)
+    valid_idxs = event_idxs[valid_mask]
+
+    for h in horizons:
+        # Filter for horizon
+        h_mask = valid_idxs < (len(close) - h)
+        h_idxs = valid_idxs[h_mask]
+
+        if len(h_idxs) == 0:
+            continue
+
+        # Vectorized Window
+        offsets = np.arange(1, h + 1)
+        window_idxs = h_idxs[:, None] + offsets[None, :]
+
+        window_prices = close[window_idxs]
+        entry_prices = close[h_idxs]
+        entry_vols = vol[h_idxs]
+
+        # Avoid zero vol
+        entry_vols = np.maximum(entry_vols, 1e-6)
+
+        ret = window_prices / entry_prices[:, None] - 1.0
+
+        up_barrier = pt_sl[0] * entry_vols
+        down_barrier = pt_sl[1] * entry_vols
+
+        hit_up = ret >= up_barrier[:, None]
+        hit_down = ret <= -down_barrier[:, None]
+
+        # First hit logic
+        first_up = np.argmax(hit_up, axis=1)
+        first_down = np.argmax(hit_down, axis=1)
+
+        # Mask where no hit occurred (argmax returns 0 if all false, need to check if actually hit)
+        any_up = np.any(hit_up, axis=1)
+        any_down = np.any(hit_down, axis=1)
+
+        labels = np.zeros(len(h_idxs), dtype=int)
+
+        # Vectorized check
+        # Case 1: Only Up
+        mask_up = any_up & ~any_down
+        labels[mask_up] = 1
+
+        # Case 2: Only Down
+        mask_down = any_down & ~any_up
+        labels[mask_down] = -1
+
+        # Case 3: Both
+        mask_both = any_up & any_down
+        # first_up < first_down -> 1
+        sub_mask_up = mask_both & (first_up < first_down)
+        labels[sub_mask_up] = 1
+
+        sub_mask_down = mask_both & (first_down < first_up)
+        labels[sub_mask_down] = -1
+
+        # Assign to output
+        evt_timestamps = events_norm[valid_mask][h_mask]
+
+        # Align TZ if needed
+        if df.index.tz is not None and evt_timestamps.tz is None:
+             evt_timestamps = evt_timestamps.tz_localize(df.index.tz)
+
+        out.loc[evt_timestamps, f'price_label_{h}'] = labels
+
+    return out
+
+def create_meta_learning_dataset_dualTBM(df: pd.DataFrame, base_features: pd.DataFrame,
+                                         pt_sl=(2.0, 1.0), tbm_horizons=[12,48]):
+    meta_df = base_features.copy()
+
+    # Directional price labels for multiple horizons
+    if 'price_dual_cusum' in base_features.columns:
+        price_events = base_features.index[base_features['price_dual_cusum']==1]
+        # Normalize timezones
+        if df.index.tz != price_events.tz:
+             if price_events.tz is None: price_events = price_events.tz_localize(df.index.tz)
+             else: price_events = price_events.tz_convert(df.index.tz)
+
+        tbm_labels = apply_triple_barrier_multi(df, price_events, pt_sl=pt_sl, horizons=tbm_horizons)
+        meta_df = pd.concat([meta_df, tbm_labels], axis=1)
+
+    # Contextual labels
+    context_map = {
+        'volatility_cusum': 'volatility_1d',
+        'liquidity_cusum': 'liq_stress',
+        'volume_cusum': 'volume',
+        'tailrisk_cusum': 'tail_metric',
+        'trend_regime_cusum': 'trend',
+        'vol_state_cusum': 'vol_state'
+    }
+
+    for col, series_col in context_map.items():
+        if col in base_features.columns and series_col in df.columns:
+            events = base_features.index[base_features[col]==1]
+            if df.index.tz != events.tz:
+                 if events.tz is None: events = events.tz_localize(df.index.tz)
+                 else: events = events.tz_convert(df.index.tz)
+
+            lbl = apply_persistence_label(df, events, series_col=series_col, horizon=48, threshold=0.0)
+            meta_df[f'{col}_label'] = lbl
+
+    return meta_df

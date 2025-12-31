@@ -100,22 +100,20 @@ from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_sele
 from src.training.steps.labeling.orthogonal_label_generation import (
     orthogonal_label_generation,
     AdaptiveSymmetricCUSUMEvents,
-    ATRShockEvents,
-    KalmanTrendEvents,
-    VWAPReversionEvents,
-    MicrostructureEvents,
-    EntropyEvents,
-    TrendModulatedBreakoutEvents,
-    KalmanRegimeEvents,
-    VWAPCrossEvents,
+    VolatilityCusumEvents,
+    LiquidityCusumEvents,
+    VolumeCusumEvents,
+    TailRiskCusumEvents,
+    TrendRegimeCusumEvents,
+    VolatilityStateEvents,
     compute_dominance_labels,
-    CusumEvents,
-    VolatilityShockEvents,
-    TrendInitiationEvents,
-    MeanReversionExtremeEvents,
-    LiquidityShockEvents,
-    TimeEvents,
-    OutputGeometry as OrthoGeometry
+    compute_volatility_labels,
+    compute_path_degradation_labels,
+    compute_tail_regime_labels,
+    compute_trend_persistence_labels,
+    compute_vol_state_labels,
+    OutputGeometry as OrthoGeometry,
+    GENERATOR_PARAM_NAMES
 )
 
 # Configure logging
@@ -539,20 +537,13 @@ class LabelBasedLayer2:
 
         # Event generators for each family
         self.generators = {
-            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
-            "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "KALMAN_TREND": KalmanTrendEvents(),
-            "FVG_SMART_MONEY": None,  # Will be handled separately if needed
-            "MR_VWAP": VWAPReversionEvents(),
+            "PRICE_CUSUM": AdaptiveSymmetricCUSUMEvents(),
+            "VOL_CUSUM": VolatilityCusumEvents(),
+            "LIQ_CUSUM": LiquidityCusumEvents(),
+            "VOL_PARTICIPATION": VolumeCusumEvents(),
+            "TAIL_RISK": TailRiskCusumEvents(),
+            "TREND_REGIME": TrendRegimeCusumEvents(),
+            "VOL_STATE": VolatilityStateEvents(),
         }
 
         cpu_guess = max(1, (os.cpu_count() or 4) - 1)
@@ -588,27 +579,36 @@ class LabelBasedLayer2:
             return f"{data_type}_{identifier}_fold_{fold_idx}"
         return f"{data_type}_{identifier}"
     
-    def _get_events_cache_key(self, family: str, fold_idx: int, df_hash: str = None) -> str:
+    def _get_events_cache_key(self, family: str, fold_idx: int, df_hash: str = None, params_hash: str = "") -> str:
         """Generate cache key for events."""
         if df_hash:
-            return f"events_{family}_fold_{fold_idx}_{df_hash[:8]}"
-        return f"events_{family}_fold_{fold_idx}"
+            return f"events_{family}_fold_{fold_idx}_{df_hash[:8]}_{params_hash}"
+        return f"events_{family}_fold_{fold_idx}_{params_hash}"
     
     def _get_feature_cache_key(self, events_hash: str, fold_idx: int) -> str:
         """Generate cache key for features."""
         return f"features_{events_hash}_fold_{fold_idx}"
     
-    def _get_cached_events(self, df_train: pd.DataFrame, family: str, fold_idx: int) -> pd.DatetimeIndex:
+    def _get_cached_events(self, df_train: pd.DataFrame, family: str, fold_idx: int, params: Dict = None) -> pd.DatetimeIndex:
         """Get cached events or generate and cache them."""
         # Create simple hash from train data shape
         df_hash = hashlib.md5(f"{len(df_train)}_{df_train.index[0] if len(df_train) > 0 else ''}".encode()).hexdigest()[:8]
-        cache_key = self._get_events_cache_key(family, fold_idx, df_hash)
+
+        # Params hash
+        if params:
+            params_str = str(sorted(params.items()))
+            params_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
+        else:
+            params_hash = "default"
+
+        cache_key = self._get_events_cache_key(family, fold_idx, df_hash, params_hash)
         
         if cache_key not in self._events_cache:
-            tprint_info(f"🔄 Generating events for {family} (fold {fold_idx})...")
+            tprint_info(f"🔄 Generating events for {family} (fold {fold_idx}) params={params}...")
             gen = self.generators.get(family)
             if gen:
-                events = gen.generate(df_train)
+                gen_kwargs = params if params else {}
+                events = gen.generate(df_train, **gen_kwargs)
                 self._events_cache[cache_key] = events
             else:
                 return pd.DatetimeIndex([])
@@ -644,7 +644,31 @@ class LabelBasedLayer2:
         labels_dict = {}
         for gt in geometries:
             try:
-                labels, weights, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+                if family == 'PRICE_CUSUM':
+                    labels, weights, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+                elif family == 'LIQ_CUSUM':
+                    pt = gt.params.get('pt_mult', 2.0)
+                    d_sigma = pt * 0.5
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_path_degradation_labels(df_train, events, horizon=horizon, d_sigma=d_sigma)
+                elif family == 'TAIL_RISK':
+                    pt = gt.params.get('pt_mult', 2.0)
+                    z_thresh = pt * 0.6
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_tail_regime_labels(df_train, events, horizon=horizon, z_thresh=z_thresh, metric_col=gt.params.get('metric', 'skew'))
+                elif family == 'TREND_REGIME':
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_trend_persistence_labels(df_train, events, horizon=horizon)
+                elif family == 'VOL_STATE':
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
+                else:
+                    # Map params to Volatility Logic
+                    pt = gt.params.get('pt_mult', 2.0)
+                    k_factor = 1.1 + (pt * 0.1)
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+
                 labels_dict[gt.uuid] = labels
             except Exception as e:
                 tprint_warning(f"⚠️ Label computation failed for {gt.uuid}: {e}")
@@ -660,7 +684,31 @@ class LabelBasedLayer2:
         if cache_key not in self._label_cache:
             # Compute single geometry (fallback)
             events_df = pd.DataFrame(index=events)
-            labels, _, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+
+            if family == 'PRICE_CUSUM':
+                labels, _, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+            elif family == 'LIQ_CUSUM':
+                 pt = gt.params.get('pt_mult', 2.0)
+                 d_sigma = pt * 0.5
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, _, _, _, _, _ = compute_path_degradation_labels(df_train, events, horizon=horizon, d_sigma=d_sigma)
+            elif family == 'TAIL_RISK':
+                 pt = gt.params.get('pt_mult', 2.0)
+                 z_thresh = pt * 0.6
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, _, _, _, _, _ = compute_tail_regime_labels(df_train, events, horizon=horizon, z_thresh=z_thresh, metric_col=gt.params.get('metric', 'skew'))
+            elif family == 'TREND_REGIME':
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, _, _, _, _, _ = compute_trend_persistence_labels(df_train, events, horizon=horizon)
+            elif family == 'VOL_STATE':
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, _, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
+            else:
+                 pt = gt.params.get('pt_mult', 2.0)
+                 k_factor = 1.1 + (pt * 0.1)
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, _, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+
             self._label_cache[cache_key] = labels
         else:
             tprint_info(f"✅ Using cached labels for {gt.uuid} (fold {fold_idx})")
@@ -673,6 +721,13 @@ class LabelBasedLayer2:
         self._events_cache.clear()
         self._label_cache.clear()
         tprint_info("🧹 Cleared all optimization caches")
+
+    def _extract_gen_params(self, gt: GeometryTrial) -> Dict:
+        """Extract generation-specific parameters."""
+        gen = self.generators.get(gt.family)
+        if not gen: return {}
+        gen_keys = GENERATOR_PARAM_NAMES.get(type(gen).__name__, [])
+        return {k: v for k, v in gt.params.items() if k in gen_keys}
 
     def _get_labeler_menu(self) -> Dict[str, Callable]:
         """Define the menu of labelers with baked-in parameters."""
@@ -881,22 +936,7 @@ class LabelBasedLayer2:
             end = (i + 1) * fold_size if i < n_splits - 1 else len(df)
             folds.append((start, end))
 
-        generators = {
-            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
-            "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            # "TIME": EntropyEvents() # Replacing TIME with Entropy as it is structural
-        }
+        generators = self.generators
 
         # For OOF, we treat 'production_geometries' as the selected strategy.
         # We retrain the strategy on Train and predict on Test.
@@ -1042,31 +1082,36 @@ class LabelBasedLayer2:
             trained_models = {}
             tprint_info(f"🚀 Training models for {len(production_geometries)} geometries on fold {i+1}/{n_splits}...")
             
-            # Group geometries by family for batch processing
-            family_groups = defaultdict(list)
+            # Group geometries by family AND generation params for batch processing
+            # Because different generation params = different events
+            groups = defaultdict(list)
             for gt in production_geometries:
-                family_groups[gt.family].append(gt)
+                gen_params = self._extract_gen_params(gt)
+                # Params dict is not hashable, use sorted tuple
+                params_key = tuple(sorted(gen_params.items()))
+                groups[(gt.family, params_key)].append(gt)
             
-            # Process each family group
-            for family, family_geometries in family_groups.items():
-                tprint_info(f"🔄 Processing family: {family} ({len(family_geometries)} geometries)")
+            # Process each group
+            for (family, params_key), group_geometries in groups.items():
+                gen_params = dict(params_key)
+                tprint_info(f"🔄 Processing group: {family} | Params: {gen_params} ({len(group_geometries)} geometries)")
                 
-                # 1. Get cached events for this family
-                train_evts_idx = self._get_cached_events(df_train, family, i)
+                # 1. Get cached events for this family+params
+                train_evts_idx = self._get_cached_events(df_train, family, i, gen_params)
                 
                 if len(train_evts_idx) < 20: 
-                    tprint_warning(f"⚠️ Too few train events ({len(train_evts_idx)} < 20) for family {family}")
+                    tprint_warning(f"⚠️ Too few train events ({len(train_evts_idx)} < 20) for {family}")
                     continue
                 
                 # 2. Get cached features for this family
                 train_evts_df = pd.DataFrame(index=train_evts_idx)
                 X_train = self._get_cached_features(df_train, train_evts_df, i)
                 if X_train.empty: 
-                    tprint_warning(f"⚠️ No features generated for family {family}")
+                    tprint_warning(f"⚠️ No features generated for {family}")
                     continue
                 
-                # 3. Compute labels for all geometries in this family at once
-                labels_dict = self._compute_labels_batch(df_train, train_evts_idx, family_geometries, family, i)
+                # 3. Compute labels for all geometries in this group at once
+                labels_dict = self._compute_labels_batch(df_train, train_evts_idx, group_geometries, family, i)
                 
                 # 4. Process each geometry in the family
                 for gt in family_geometries:
@@ -1132,7 +1177,9 @@ class LabelBasedLayer2:
     
                 # Generate on DF up to test_end to get expanding window stats correct
                 df_context = df.iloc[:test_end]
-                full_evts = gen.generate(df_context)
+                gen_params = self._extract_gen_params(gt)
+
+                full_evts = gen.generate(df_context, **gen_params)
                 # Slice to test window
                 test_evts = full_evts[(full_evts >= df.index[test_start]) & (full_evts < df.index[test_end])]
     
@@ -1246,7 +1293,30 @@ class LabelBasedLayer2:
 
         # Compute labels
         # Note: We use the same params as optimization
-        labels, _, _, _, _, _ = self._compute_dominance_labels(df, events_df, **gt.params)
+        if gt.family == 'PRICE_CUSUM':
+             labels, _, _, _, _, _ = self._compute_dominance_labels(df, events_df, **gt.params)
+        elif gt.family == 'LIQ_CUSUM':
+             pt = gt.params.get('pt_mult', 2.0)
+             d_sigma = pt * 0.5
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_path_degradation_labels(df, gt.events, horizon=horizon, d_sigma=d_sigma)
+        elif gt.family == 'TAIL_RISK':
+             pt = gt.params.get('pt_mult', 2.0)
+             z_thresh = pt * 0.6
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_tail_regime_labels(df, gt.events, horizon=horizon, z_thresh=z_thresh, metric_col=gt.params.get('metric', 'skew'))
+        elif gt.family == 'TREND_REGIME':
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_trend_persistence_labels(df, gt.events, horizon=horizon)
+        elif gt.family == 'VOL_STATE':
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_vol_state_labels(df, gt.events, horizon=horizon)
+        else:
+             pt = gt.params.get('pt_mult', 2.0)
+             k_factor = 1.1 + (pt * 0.1)
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_volatility_labels(df, gt.events, horizon=horizon, k=k_factor)
+
         valid_mask = ~labels.isna()
         y = labels[valid_mask]
 

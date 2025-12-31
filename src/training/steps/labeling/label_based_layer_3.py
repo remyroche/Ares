@@ -119,7 +119,7 @@ class ManualCalibratedClassifier(BaseEstimator, ClassifierMixin):
 
 def compute_cusum_signals_multi_window(
     market_data: pd.DataFrame,
-    windows: List[int] = [12, 24, 48],
+    windows: List[int] = [12, 48],
     k: float = 0.5, # Threshold factor
     alpha: float = 0.5 # Volatility/ER adjustment factor
 ) -> pd.DataFrame:
@@ -1393,10 +1393,10 @@ def layer3_analyst_lgbm(
         """Generate features for a specific geometry with given alpha parameter"""
         try:
             # Horizon based on geometry alpha parameter
-            # alpha=0 (pure reversal) -> 4 bars, alpha=1 (pure trend) -> 16 bars
-            geometry_horizon = 4 + alpha * 12  # Linear mapping from 4 to 16 bars
+            # Enforce strictly 12 or 48 bar horizons based on alpha
+            geometry_horizon = 12 if alpha < 0.5 else 48
             
-            print(f"   Geometry {geometry_id}: alpha={alpha:.2f} -> horizon={geometry_horizon:.1f} bars")
+            print(f"   Geometry {geometry_id}: alpha={alpha:.2f} -> horizon={geometry_horizon} bars")
             
             # Generate regime features with geometry-specific horizons
             base_regime_config = {
@@ -1414,22 +1414,51 @@ def layer3_analyst_lgbm(
                 "walk_forward": {"mode": "cross_fit", "cross_fit": {"n_splits": 5}}
             }
             
-            # Regime feature extraction moved to Layer 2
-            print(f"     Skipping redundant regime extraction (now in Layer 2)")
+            # Update horizon in regime config
+            regime_config = copy.deepcopy(base_regime_config)
+            regime_config['targets'] = {
+                'volatility_window': geometry_horizon,
+                'macro_trend_horizon': geometry_horizon,
+                'trend_efficiency_window': geometry_horizon,
+                'memory_window': max(10, geometry_horizon),
+                'range_window': geometry_horizon,
+                'downside_horizon': geometry_horizon,
+                'vol_of_vol_window': geometry_horizon * 2
+            }
             
-            # Generate NN features with geometry-specific sequence length (DISABLED)
-            # Note: NN feature generation disabled to reduce complexity and improve performance
-            # To enable, uncomment the following block:
-            #
-            # nn_df = _generate_geometry_specific_nn_features(market_data, geometry_horizon, embed_dim=8)
-            # if nn_df is not None and not nn_df.empty:
-            #     nn_df = nn_df.reindex(df.index).fillna(0.0)
-            #     new_nn_cols = [f'{geometry_id}_nn_{c}' for c in nn_df.columns if c not in df.columns]
-            #     if new_nn_cols:
-            #         for col in nn_df.columns:
-            #             df[f'{geometry_id}_nn_{col}'] = nn_df[col]
-            #         candidate_features.extend(new_nn_cols)
-            #         print(f"     Added {len(new_nn_cols)} NN features")
+            # Run Regime Feature Extraction
+            if market_data is not None and not market_data.empty:
+                regime_df = extract_regime_leaf_onehot_features(
+                    X=df,  # Using current DF as base X
+                    market_data=market_data,
+                    config=regime_config,
+                    verbose=False
+                )
+
+                if regime_df is not None and not regime_df.empty:
+                    regime_df = regime_df.reindex(df.index).fillna(0.0)
+                    # Prefix features
+                    new_regime_cols = []
+                    for c in regime_df.columns:
+                        new_col_name = f'{geometry_id}_rl_{c}'
+                        if new_col_name not in df.columns:
+                            df[new_col_name] = regime_df[c]
+                            new_regime_cols.append(new_col_name)
+
+                    if new_regime_cols:
+                        candidate_features.extend(new_regime_cols)
+                        # print(f"     Added {len(new_regime_cols)} Regime Leaf features")
+
+            # Generate NN features with geometry-specific sequence length
+            nn_df = _generate_geometry_specific_nn_features(market_data, geometry_horizon, embed_dim=8)
+            if nn_df is not None and not nn_df.empty:
+                nn_df = nn_df.reindex(df.index).fillna(0.0)
+                new_nn_cols = [f'{geometry_id}_nn_{c}' for c in nn_df.columns if c not in df.columns]
+                if new_nn_cols:
+                    for col in nn_df.columns:
+                        df[f'{geometry_id}_nn_{col}'] = nn_df[col]
+                    candidate_features.extend(new_nn_cols)
+                    # print(f"     Added {len(new_nn_cols)} NN features")
                     
         except Exception as e:
             print(f"⚠️ Geometry {geometry_id} features failed: {e}")

@@ -1,4 +1,0 @@
-edge,mean_auc_smooth,mean_auc_raw,learnability,profitability,sharpe_pos,horizon_bars,cusum_threshold,target_signal_density,min_event_spacing,trail_distance,profit_mult_min,profit_mult_max,stop_mult_min,stop_mult_max,kalman_Q,kalman_R,label_low_q,label_high_q,econ_min_return_multiple,iso_min_prob,target_clip_high_q,signal_strength_scale_max,r_multiple_pos_threshold,transaction_cost_mult
-0.002159,0.500000,0.428832,-1.255651,67.947298,2.005953,22,0.019364,11.507143,3,0.959195,0.734516,1.609067,0.566695,1.120295,0.000467,0.001620,0.397253,0.737386,1.281447,0.057729,0.935558,1.578246,0.333965,1.032665
-0.000363,0.848927,0.601453,0.717028,12.760522,0.673674,22,0.019364,11.507143,3,0.959195,0.734516,1.609067,0.566695,1.120295,,,,,,,,,,
-0.000363,0.848927,0.601453,0.717028,23.331222,0.673674,22,0.019364,11.507143,3,0.959195,0.734516,1.609067,0.566695,1.120295,0.000467,0.001620,,,,,,,,

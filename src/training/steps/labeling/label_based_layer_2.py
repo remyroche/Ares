@@ -104,21 +104,11 @@ from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_sele
 from src.training.steps.labeling.orthogonal_label_generation import (
     orthogonal_label_generation,
     AdaptiveSymmetricCUSUMEvents,
-    ATRShockEvents,
-    KalmanTrendEvents,
-    VWAPReversionEvents,
-    MicrostructureEvents,
-    EntropyEvents,
-    TrendModulatedBreakoutEvents,
-    KalmanRegimeEvents,
-    VWAPCrossEvents,
+    VolatilityCusumEvents,
+    LiquidityCusumEvents,
+    VolumeCusumEvents,
     compute_dominance_labels,
-    CusumEvents,
-    VolatilityShockEvents,
-    TrendInitiationEvents,
-    MeanReversionExtremeEvents,
-    LiquidityShockEvents,
-    TimeEvents,
+    compute_volatility_labels,
     OutputGeometry as OrthoGeometry
 )
 
@@ -543,20 +533,10 @@ class LabelBasedLayer2:
 
         # Event generators for each family
         self.generators = {
-            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
-            "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "KALMAN_TREND": KalmanTrendEvents(),
-            "FVG_SMART_MONEY": None,  # Will be handled separately if needed
-            "MR_VWAP": VWAPReversionEvents(),
+            "PRICE_CUSUM": AdaptiveSymmetricCUSUMEvents(),
+            "VOL_CUSUM": VolatilityCusumEvents(),
+            "LIQ_CUSUM": LiquidityCusumEvents(),
+            "VOL_PARTICIPATION": VolumeCusumEvents(),
         }
 
         cpu_guess = max(1, (os.cpu_count() or 4) - 1)
@@ -648,7 +628,15 @@ class LabelBasedLayer2:
         labels_dict = {}
         for gt in geometries:
             try:
-                labels, weights, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+                if family == 'PRICE_CUSUM':
+                    labels, weights, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+                else:
+                    # Map params to Volatility Logic
+                    pt = gt.params.get('pt_mult', 2.0)
+                    k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+                    horizon = int(gt.params.get('horizon', 20))
+                    labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+
                 labels_dict[gt.uuid] = labels
             except Exception as e:
                 tprint_warning(f"⚠️ Label computation failed for {gt.uuid}: {e}")
@@ -664,7 +652,15 @@ class LabelBasedLayer2:
         if cache_key not in self._label_cache:
             # Compute single geometry (fallback)
             events_df = pd.DataFrame(index=events)
-            labels, _, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+
+            if family == 'PRICE_CUSUM':
+                labels, _, _, _, _, _ = self._compute_dominance_labels(df_train, events_df, **gt.params)
+            else:
+                 pt = gt.params.get('pt_mult', 2.0)
+                 k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+                 horizon = int(gt.params.get('horizon', 20))
+                 labels, _, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+
             self._label_cache[cache_key] = labels
         else:
             tprint_info(f"✅ Using cached labels for {gt.uuid} (fold {fold_idx})")
@@ -885,22 +881,7 @@ class LabelBasedLayer2:
             end = (i + 1) * fold_size if i < n_splits - 1 else len(df)
             folds.append((start, end))
 
-        generators = {
-            "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
-            "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            # "TIME": EntropyEvents() # Replacing TIME with Entropy as it is structural
-        }
+        generators = self.generators
 
         # For OOF, we treat 'production_geometries' as the selected strategy.
         # We retrain the strategy on Train and predict on Test.
@@ -1250,7 +1231,14 @@ class LabelBasedLayer2:
 
         # Compute labels
         # Note: We use the same params as optimization
-        labels, _, _, _, _, _ = self._compute_dominance_labels(df, events_df, **gt.params)
+        if gt.family == 'PRICE_CUSUM':
+             labels, _, _, _, _, _ = self._compute_dominance_labels(df, events_df, **gt.params)
+        else:
+             pt = gt.params.get('pt_mult', 2.0)
+             k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+             horizon = int(gt.params.get('horizon', 20))
+             labels, _, _, _, _, _ = compute_volatility_labels(df, gt.events, horizon=horizon, k=k_factor)
+
         valid_mask = ~labels.isna()
         y = labels[valid_mask]
 

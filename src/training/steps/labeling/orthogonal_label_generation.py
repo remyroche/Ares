@@ -155,9 +155,92 @@ def generate_probe_features(price: pd.Series, volume: Optional[pd.Series] = None
 
     return df.fillna(0)
 
+def ewma_volatility(returns, span=100):
+    """
+    EWMA volatility estimator.
+    Used to normalize thresholds and make CUSUM regime-invariant.
+    """
+    return returns.ewm(span=span, adjust=False).std()
+
 # ==========================================
-# 1. Labeling Logic (Vectorized Dominance)
+# 1. Labeling Logic (Vectorized Dominance & State)
 # ==========================================
+
+def compute_volatility_labels(
+    df: pd.DataFrame,
+    events: pd.DatetimeIndex,
+    horizon: int = 20,
+    k: float = 1.3
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Labeling for Regime/State events (Volatility Expansion).
+    Target: 1 if volatility increases by k% over the next `horizon` bars.
+
+    Returns matched signature: labels, weights, returns, mfe, mae, vol
+    Note: returns/mfe/mae are proxies here.
+    """
+    if events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Calculate volatility if not present
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d']
+    else:
+        vol = df['close'].pct_change().rolling(100).std()
+
+    # Align events
+    valid_events = events.intersection(df.index)
+    if valid_events.empty:
+        return tuple([pd.Series(dtype=float)] * 6)
+
+    # Vectorized Target Calculation
+    # We want Vol[t+horizon] > Vol[t] * k
+
+    # Get indices
+    event_locs = df.index.get_indexer(valid_events)
+    n_bars = len(df)
+
+    target_locs = event_locs + horizon
+    valid_mask = target_locs < n_bars
+
+    event_locs = event_locs[valid_mask]
+    target_locs = target_locs[valid_mask]
+    final_events = valid_events[valid_mask]
+
+    vol_start = vol.iloc[event_locs].values
+    vol_end = vol.iloc[target_locs].values
+
+    # Avoid zero vol
+    vol_start = np.maximum(vol_start, 1e-9)
+
+    # Calculate Ratio
+    vol_ratio = vol_end / vol_start
+
+    # Label: 1 if Expansion, 0 otherwise
+    labels_arr = (vol_ratio > k).astype(float)
+
+    # Weights: Magnitude of expansion
+    weights_arr = np.log1p(np.abs(vol_ratio - 1.0))
+
+    # "Returns": Here we use Volatility Change %
+    returns_arr = vol_ratio - 1.0
+
+    # MFE/MAE: Proxies using max vol in window
+    # To implement correctly, we'd need window scan. For now, use end point proxy.
+    mfe_arr = returns_arr # Max expansion
+    mae_arr = np.zeros_like(returns_arr) # No "loss" concept really
+
+    # Construct Series
+    idx = final_events
+    s_labels = pd.Series(labels_arr, index=idx)
+    s_weights = pd.Series(weights_arr, index=idx)
+    s_returns = pd.Series(returns_arr, index=idx)
+    s_mfe = pd.Series(mfe_arr, index=idx)
+    s_mae = pd.Series(mae_arr, index=idx)
+    s_vol = pd.Series(vol_start, index=idx)
+
+    return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
+
 
 def compute_dominance_labels(
     price: pd.Series,
@@ -1911,48 +1994,17 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
     
     # Family-specific parameter grids (restricted to 12, 24, 48)
     family_grids = {
-        'ENTROPY': {
-            'base_params': [(12,), (24,), (48,)],  # window
+        'PRICE_CUSUM': {
+            'base_params': [(0.5, 20), (0.75, 40)],  # multiplier, vol_window
         },
-        
-        'VOL_SHOCK': {
-            'base_params': [(14, 50, 2.0), (14, 100, 3.0)],  # lookback, long_window, z
+        'VOL_CUSUM': {
+            'base_params': [(4.0, 100), (3.0, 50)],  # h, vol_span
         },
-        
-        'LIQUIDITY': {
-            'base_params': [(12,), (24,), (48,)],  # window
+        'LIQ_CUSUM': {
+            'base_params': [(4.0, 100), (3.0, 50)],  # h, vol_span
         },
-        
-        'BREAKOUT': {
-            'base_params': [(12, 24), (24, 48)],  # lookback, anchor_window
-        },
-        
-        'KALMAN_TREND': {
-            'base_params': [(1e-3, 1e-5), (5e-3, 5e-5)],  # Q, R
-        },
-        
-        'MR_VWAP': {
-            'base_params': [(12, 2.5), (24, 2.0), (48, 1.8)],  # lookback, z
-        },
-        
-        'FVG_SMART_MONEY': {
-            'base_params': [(0.1, 12, 1.5, 3), (0.15, 24, 2.0, 2)],  # min_gap_pct, lookback, volume_threshold, confirm_candles
-        },
-        
-        'SR_BREAKOUTS': {
-            'base_params': [(12, 3, 0.002, 1.5, 3.0), (24, 2, 0.003, 2.0, 2.5)],  # lookback, min_touches, breakout_threshold, volume_threshold, min_strength_score
-        },
-        
-        'ORDER_BLOCKS': {
-            'base_params': [(12, 0.5, 2.0), (24, 0.3, 1.5)],  # lookback, min_move_pct, volume_threshold
-        },
-        
-        'KALMAN_REGIME': {
-            'base_params': [(1e-4, 0.01, 2.0)],  # Q, R, z
-        },
-        
-        'VWAP_CROSS': {
-            'base_params': [(12,), (24,), (48,)],  # lookback
+        'VOL_PARTICIPATION': {
+            'base_params': [(4.0, 100), (3.0, 50)],  # h, span
         },
     }
     
@@ -1990,21 +2042,7 @@ def orthogonal_label_generation(
     Enhanced Execution Pipeline for Orthogonal Label Generation.
     Implements: Generate -> Score -> Top 50% -> Probe -> Final Diversity Filter.
     
-    OPTIMIZATION PARAMETERS:
-    - TP/SL ratios: 6 enhanced ratios (1.5:1 to 4:1)
-    - Horizons: 3 timeframes (12, 24, 48 bars) - optimized per geometry
-    - Lookbacks: Family-specific parameters using 12, 24, 48 bars
-    - Risk budget: 3 possibilities (0.4, 0.7, 1.0) - 0=no drawdown before TP, 1=very close to SL on average
-    
-    Args:
-        data: Price series or dataframe with OHLCV data
-        volume: Volume series (optional)
-        df_full: Full dataframe with OHLCV (optional)
-        target_signals_per_day: Target signal generation rate per feature
-        use_adaptive_thresholds: Whether to use adaptive thresholding
-    
-    Returns:
-        List of diverse OutputGeometry objects optimized per signal family
+    Replaced with 4 Orthogonal CUSUM Clocks.
     """
     tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
 
@@ -2038,19 +2076,12 @@ def orthogonal_label_generation(
     # 3. Build Enhanced Candidate Configurations
     generator_configs = []
     
-    # Base signal families
+    # Replaced signal families with the 4 Orthogonal CUSUMs
     base_generators = [
-        ('ENTROPY', EntropyEvents()),
-        ('VOL_SHOCK', ATRShockEvents()),
-        ('LIQUIDITY', MicrostructureEvents()),
-        ('BREAKOUT', TrendModulatedBreakoutEvents()),
-        ('KALMAN_TREND', KalmanTrendEvents()),
-        ('MR_VWAP', VWAPReversionEvents()),
-        ('FVG_SMART_MONEY', FairValueGapEvents()),
-        ('SR_BREAKOUTS', SupportResistanceBreakEvents()),
-        ('ORDER_BLOCKS', OrderBlockEvents()),
-        ('KALMAN_REGIME', KalmanRegimeEvents()),
-        ('VWAP_CROSS', VWAPCrossEvents()),
+        ('PRICE_CUSUM', AdaptiveSymmetricCUSUMEvents()),
+        ('VOL_CUSUM', VolatilityCusumEvents()),
+        ('LIQ_CUSUM', LiquidityCusumEvents()),
+        ('VOL_PARTICIPATION', VolumeCusumEvents())
     ]
     
     # Build enhanced parameter combinations
@@ -2071,23 +2102,16 @@ def orthogonal_label_generation(
     for fam, gen, params in generator_configs:
 
             try:
-                # Use adaptive thresholds if enabled and generator supports it
-                # Use adaptive thresholds if enabled and generator supports it
-                if use_adaptive_thresholds and hasattr(gen, 'generate_adaptive'):
-                    # Convert positional params to kwargs for adaptive logic
-                    param_keys = GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, [])
-                    param_kwargs = dict(zip(param_keys, params))
-                    
-                    if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
-                        events = gen.generate_adaptive(df_full, target_signals_per_day, **param_kwargs)
-                    else:
-                        events = gen.generate_adaptive(price, target_signals_per_day, **param_kwargs)
+                # Use standard generation (Adaptive logic skipped for now for these new generators to match snippet)
+                # But kept logic structure if needed.
+
+                # Extended list of classes requiring DataFrame
+                df_required = DF_REQUIRED_CLASSES + ('VolatilityCusumEvents', 'LiquidityCusumEvents', 'VolumeCusumEvents')
+
+                if gen.__class__.__name__ in df_required:
+                    events = gen.generate(df_full, *params)
                 else:
-                    # Use standard generation
-                    if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
-                        events = gen.generate(df_full, *params)
-                    else:
-                        events = gen.generate(price, *params)
+                    events = gen.generate(price, *params)
             except Exception as e:
                 tprint_warning(f"Generator {fam} failed: {e}")
                 continue
@@ -2102,7 +2126,7 @@ def orthogonal_label_generation(
             tprint_info(f"DEBUG: {fam} generated {len(events)} events")
 
             # Create parameter dict for logging
-            param_dict = dict(zip(GENERATOR_PARAM_NAMES.get(gen.__class__.__name__, []), params))
+            param_dict = {'params': params}
 
             # Iterate Enhanced Grids
             tpsl_grid = param_grids['tpsl_grid']
@@ -2118,16 +2142,25 @@ def orthogonal_label_generation(
                         high = df_full.get('high')
                         low = df_full.get('low')
 
-                        labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
-                            price, events, df_full['volatility_1d'],
-                            risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
-                            high=high, low=low
-                        )
+                        if fam == 'PRICE_CUSUM':
+                            # Classic Triple Barrier
+                            labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                                price, events, df_full['volatility_1d'],
+                                risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                                high=high, low=low
+                            )
+                        else:
+                            # State/Regime Labeling
+                            # Mapping PT to Expansion Factor k
+                            k_factor = max(1.1, 1.0 + (pt - 1.0) * 0.5)
+                            labels, weights, returns, mfe, mae, vol = compute_volatility_labels(
+                                df_full, events, horizon=horizon, k=k_factor
+                            )
 
                         if labels.empty:
-                            logger.warning(f"DEBUG: Labels empty for {fam} (RB={risk_budget}, PT={pt}, SL={sl})")
                             continue
 
+                        # Quality Checks - Only if labels exist
                         passed, metrics, status = check_label_quality(
                             events, labels, returns, df_full, X_probe, gen, param_dict
                         )
@@ -2146,7 +2179,7 @@ def orthogonal_label_generation(
                             'max_mi': metrics.get('max_mi', 0.0),
                             'signals_per_day': round(signals_per_day, 2),
                             'target_signals_per_day': target_signals_per_day,
-                            'adaptive_used': use_adaptive_thresholds and hasattr(gen, 'generate_adaptive')
+                            'adaptive_used': False
                         })
 
                         if passed:
@@ -2396,6 +2429,129 @@ class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
                 s_neg = s_pos = 0
                 t_events.append(idx[i])
         return pd.DatetimeIndex(t_events)
+
+
+class VolatilityCusumEvents(BaseEventGenerator):
+    """
+    VOLATILITY CUSUM — Risk Regime Change (Direction-Free).
+    """
+    def generate(self, df: pd.DataFrame, h: float = 4.0, vol_span: int = 100) -> pd.DatetimeIndex:
+        # Handle input type (Series vs DF)
+        if isinstance(df, pd.Series):
+             # Try to reconstruct basic df if possible, but VolCUSUM needs close
+             close = df
+        else:
+             close = df['close']
+
+        # Logic from snippet
+        # df["ret"] = np.log(df["close"]).diff()
+        # df["vol"] = ewma_volatility(df["ret"], span=vol_span)
+        # df["log_vol_change"] = np.log(df["vol"]).diff()
+
+        ret = np.log(close).diff()
+        vol = ewma_volatility(ret, span=vol_span)
+        log_vol_change = np.log(vol).diff()
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        # Iteration
+        # Vectorization is hard for CUSUM, loop is fine
+        vals = log_vol_change.values
+        idx = close.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class LiquidityCusumEvents(BaseEventGenerator):
+    """
+    LIQUIDITY CUSUM — Market Stress / Liquidity Withdrawal.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 4.0, vol_span: int = 100) -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+             # Needs High/Low
+             logger.warning("LiquidityCusumEvents requires DataFrame with High/Low")
+             return pd.DatetimeIndex([])
+
+        ret = np.log(df["close"]).diff()
+        vol = ewma_volatility(ret, span=vol_span)
+
+        # Proxy for liquidity stress
+        true_range = df["high"] - df["low"]
+        # liq_stress = np.log(true_range / vol)
+        # Handle potential zeros/nans
+        liq_stress = np.log(true_range / (vol + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        vals = liq_stress.values
+        idx = df.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
+
+class VolumeCusumEvents(BaseEventGenerator):
+    """
+    VOLUME CUSUM — Participation Shock.
+    """
+    def generate(self, df: pd.DataFrame, h: float = 4.0, span: int = 100) -> pd.DatetimeIndex:
+        if isinstance(df, pd.Series):
+            # Assumes series is volume? Or Price?
+            # User snippet uses 'volume' column
+            if df.name and 'volume' in df.name.lower():
+                volume = df
+            else:
+                logger.warning("VolumeCusumEvents requires volume data")
+                return pd.DatetimeIndex([])
+        else:
+            if 'volume' not in df.columns:
+                 logger.warning("VolumeCusumEvents requires volume data")
+                 return pd.DatetimeIndex([])
+            volume = df['volume']
+
+        vol_avg = volume.ewm(span=span, adjust=False).mean()
+        # vol_surprise = np.log(volume / vol_avg)
+        vol_surprise = np.log(volume / (vol_avg + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        s_pos, s_neg = 0.0, 0.0
+        events = []
+
+        vals = vol_surprise.values
+        idx = volume.index
+
+        for t in range(1, len(vals)):
+            x = vals[t]
+            if np.isnan(x): continue
+
+            s_pos = max(0.0, s_pos + x)
+            s_neg = min(0.0, s_neg + x)
+
+            if s_pos > h or abs(s_neg) > h:
+                events.append(idx[t])
+                s_pos, s_neg = 0.0, 0.0
+
+        return pd.DatetimeIndex(events)
 
 
 class SymmetricCusumEvents(BaseEventGenerator):

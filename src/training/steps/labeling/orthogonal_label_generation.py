@@ -724,7 +724,8 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
         psr_val = calculate_psr(sharpe_p, n_p, s, k)
 
     # 3. Standardized Error (Consistency)
-    fold_sharpes = [sharpe(np.array(f)) for f in [meta_returns[i:i+len(r_arr)//3] for i in range(0, len(r_arr), len(r_arr)//3)] if len(f) > 0]
+    chunk_size = max(1, len(r_arr) // 3)
+    fold_sharpes = [sharpe(np.array(f)) for f in [meta_returns[i:i+chunk_size] for i in range(0, len(r_arr), chunk_size)] if len(f) > 0]
     std_error = np.std(fold_sharpes) if len(fold_sharpes) > 1 else 0.0
 
     tprint_success(f"✅ Probe Complete: Lift={lift:.4f}, IC={ic:.4f}, PSR={psr_val:.4f}")
@@ -840,7 +841,10 @@ GENERATOR_PARAM_NAMES = {
     'VWAPCrossEvents': ['lookback'],
     'FairValueGapEvents': ['min_gap_pct', 'lookback', 'volume_threshold', 'confirm_candles'],
     'SupportResistanceBreakEvents': ['lookback', 'min_touches', 'breakout_threshold', 'volume_threshold', 'min_strength_score'],
-    'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold']
+    'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold'],
+    'PriceCusumEvents': ['multiplier', 'vol_window'],
+    'VolatilityCusumEvents': ['multiplier', 'vol_window'],
+    'RangeCusumEvents': ['multiplier', 'vol_window']
 }
 
 DF_REQUIRED_CLASSES = (
@@ -1954,6 +1958,16 @@ def get_enhanced_parameter_grids() -> Dict[str, Dict]:
         'VWAP_CROSS': {
             'base_params': [(12,), (24,), (48,)],  # lookback
         },
+
+        'CUSUM_PRICE': {
+            'base_params': [(0.5, 20), (1.0, 20)], # multiplier, vol_window
+        },
+        'CUSUM_VOL': {
+            'base_params': [(0.5, 20), (1.0, 20)], # multiplier, vol_window
+        },
+        'CUSUM_RANGE': {
+            'base_params': [(0.5, 20), (1.0, 20)], # multiplier, vol_window
+        }
     }
     
     return {
@@ -2040,17 +2054,20 @@ def orthogonal_label_generation(
     
     # Base signal families
     base_generators = [
-        ('ENTROPY', EntropyEvents()),
-        ('VOL_SHOCK', ATRShockEvents()),
-        ('LIQUIDITY', MicrostructureEvents()),
-        ('BREAKOUT', TrendModulatedBreakoutEvents()),
-        ('KALMAN_TREND', KalmanTrendEvents()),
-        ('MR_VWAP', VWAPReversionEvents()),
-        ('FVG_SMART_MONEY', FairValueGapEvents()),
-        ('SR_BREAKOUTS', SupportResistanceBreakEvents()),
-        ('ORDER_BLOCKS', OrderBlockEvents()),
-        ('KALMAN_REGIME', KalmanRegimeEvents()),
-        ('VWAP_CROSS', VWAPCrossEvents()),
+        ('CUSUM_PRICE', PriceCusumEvents()),
+        ('CUSUM_VOL', VolatilityCusumEvents()),
+        ('CUSUM_RANGE', RangeCusumEvents()),
+        # ('ENTROPY', EntropyEvents()),
+        # ('VOL_SHOCK', ATRShockEvents()),
+        # ('LIQUIDITY', MicrostructureEvents()),
+        # ('BREAKOUT', TrendModulatedBreakoutEvents()),
+        # ('KALMAN_TREND', KalmanTrendEvents()),
+        # ('MR_VWAP', VWAPReversionEvents()),
+        # ('FVG_SMART_MONEY', FairValueGapEvents()),
+        # ('SR_BREAKOUTS', SupportResistanceBreakEvents()),
+        # ('ORDER_BLOCKS', OrderBlockEvents()),
+        # ('KALMAN_REGIME', KalmanRegimeEvents()),
+        # ('VWAP_CROSS', VWAPCrossEvents()),
     ]
     
     # Build enhanced parameter combinations
@@ -2486,6 +2503,64 @@ class TimeEvents(BaseEventGenerator):
     """Time-based periodic events."""
     def generate(self, price: pd.Series, frequency: int = 24) -> pd.DatetimeIndex:
         return price.index[::frequency]
+
+
+class PriceCusumEvents(BaseEventGenerator):
+    """
+    Price CUSUM (Directional dislocation).
+    Answers: "Did price move?"
+    """
+    def generate(self, data: Union[pd.Series, pd.DataFrame], multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
+        if isinstance(data, pd.DataFrame):
+            price = data['close'] if 'close' in data.columns else data.iloc[:, 0]
+        else:
+            price = data
+        return AdaptiveSymmetricCUSUMEvents().generate(price, multiplier, vol_window)
+
+
+class VolatilityCusumEvents(BaseEventGenerator):
+    """
+    Volatility CUSUM (Regime change, direction-free).
+    Answers: "Did risk change?"
+    """
+    def generate(self, data: Union[pd.Series, pd.DataFrame], multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
+        if isinstance(data, pd.DataFrame):
+            price = data['close'] if 'close' in data.columns else data.iloc[:, 0]
+        else:
+            price = data
+
+        # Calculate volatility
+        log_ret = np.log(price).diff()
+        vol = log_ret.rolling(vol_window).std()
+
+        # Use AdaptiveSymmetricCUSUM logic on Volatility series
+        vol_safe = vol.replace(0, np.nan).dropna()
+        if vol_safe.empty: return pd.DatetimeIndex([])
+
+        return AdaptiveSymmetricCUSUMEvents().generate(vol_safe, multiplier, vol_window)
+
+
+class RangeCusumEvents(BaseEventGenerator):
+    """
+    Range / Imbalance CUSUM (Microstructure stress).
+    Answers: "Did market structure shift?"
+    """
+    def generate(self, data: Union[pd.Series, pd.DataFrame], multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
+        if isinstance(data, pd.DataFrame) and 'high' in data.columns and 'low' in data.columns and 'close' in data.columns:
+            # Normalized Range
+            rng = (data['high'] - data['low']) / data['close']
+        else:
+            # Fallback
+            if isinstance(data, pd.DataFrame):
+                 price = data['close'] if 'close' in data.columns else data.iloc[:, 0]
+            else:
+                 price = data
+            rng = price.pct_change().abs()
+
+        rng_safe = rng.replace(0, np.nan).dropna()
+        if rng_safe.empty: return pd.DatetimeIndex([])
+
+        return AdaptiveSymmetricCUSUMEvents().generate(rng_safe, multiplier, vol_window)
 
 
 # Aliases

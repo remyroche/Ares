@@ -182,11 +182,9 @@ def compute_volatility_labels(
     if events.empty:
         return tuple([pd.Series(dtype=float)] * 6)
 
-    # Calculate volatility if not present
-    if 'volatility_1d' in df.columns:
-        vol = df['volatility_1d']
-    else:
-        vol = df['close'].pct_change().rolling(100).std()
+    # Calculate volatility (Use EWMA 50 for smoother estimates as requested)
+    # Overrides generic volatility_1d to ensure consistent smoothing for labeling
+    vol = df['close'].pct_change().ewm(span=50).std()
 
     # Align events
     valid_events = events.intersection(df.index)

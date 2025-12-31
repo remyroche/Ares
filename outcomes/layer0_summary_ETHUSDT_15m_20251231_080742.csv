@@ -1,2 +1,0 @@
-timestamp,symbol,timeframe,run_optimization,loaded_from,bundle_path,n_bars,start,end,kalman_Q,kalman_R,vwap_lookback,vwap_lambda
-20251231_080742,ETHUSDT,15m,False,outcomes/layer0_kalman_bundle.joblib,outcomes/layer0_kalman_bundle.joblib,34561,2024-12-15 14:45:00,2025-12-10 14:45:00,1.0002958380221248e-05,0.0001,10,0.0

@@ -103,6 +103,8 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     VolatilityCusumEvents,
     LiquidityCusumEvents,
     VolumeCusumEvents,
+    RangeATRcusumEvents,
+    SRCusumEvents,
     TailRiskCusumEvents,
     TrendRegimeCusumEvents,
     VolatilityStateEvents,
@@ -541,6 +543,8 @@ class LabelBasedLayer2:
             "VOL_CUSUM": VolatilityCusumEvents(),
             "LIQ_CUSUM": LiquidityCusumEvents(),
             "VOL_PARTICIPATION": VolumeCusumEvents(),
+            "RANGE_ATR": RangeATRcusumEvents(),
+            "SR_CUSUM": SRCusumEvents(),
             "TAIL_RISK": TailRiskCusumEvents(),
             "TREND_REGIME": TrendRegimeCusumEvents(),
             "VOL_STATE": VolatilityStateEvents(),
@@ -662,8 +666,16 @@ class LabelBasedLayer2:
                 elif family == 'VOL_STATE':
                     horizon = int(gt.params.get('horizon', 24))
                     labels, weights, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
+                elif family == 'RANGE_ATR' or family == 'SR_CUSUM':
+                    # Use Volatility Expansion Logic as proxy for now, or implement specific logic
+                    # Usually ATR bursts (RangeATR) imply vol expansion.
+                    # SR Breakouts (SR_CUSUM) imply regime change/expansion.
+                    pt = gt.params.get('pt_mult', 2.0)
+                    k_factor = 1.1 + (pt * 0.1)
+                    horizon = int(gt.params.get('horizon', 24))
+                    labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
                 else:
-                    # Map params to Volatility Logic
+                    # Map params to Volatility Logic (VOL_CUSUM, VOL_PARTICIPATION)
                     pt = gt.params.get('pt_mult', 2.0)
                     k_factor = 1.1 + (pt * 0.1)
                     horizon = int(gt.params.get('horizon', 24))
@@ -703,6 +715,11 @@ class LabelBasedLayer2:
             elif family == 'VOL_STATE':
                  horizon = int(gt.params.get('horizon', 24))
                  labels, _, _, _, _, _ = compute_vol_state_labels(df_train, events, horizon=horizon)
+            elif family == 'RANGE_ATR' or family == 'SR_CUSUM':
+                 pt = gt.params.get('pt_mult', 2.0)
+                 k_factor = 1.1 + (pt * 0.1)
+                 horizon = int(gt.params.get('horizon', 24))
+                 labels, _, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
             else:
                  pt = gt.params.get('pt_mult', 2.0)
                  k_factor = 1.1 + (pt * 0.1)
@@ -1311,6 +1328,11 @@ class LabelBasedLayer2:
         elif gt.family == 'VOL_STATE':
              horizon = int(gt.params.get('horizon', 24))
              labels, _, _, _, _, _ = compute_vol_state_labels(df, gt.events, horizon=horizon)
+        elif gt.family == 'RANGE_ATR' or gt.family == 'SR_CUSUM':
+             pt = gt.params.get('pt_mult', 2.0)
+             k_factor = 1.1 + (pt * 0.1)
+             horizon = int(gt.params.get('horizon', 24))
+             labels, _, _, _, _, _ = compute_volatility_labels(df, gt.events, horizon=horizon, k=k_factor)
         else:
              pt = gt.params.get('pt_mult', 2.0)
              k_factor = 1.1 + (pt * 0.1)

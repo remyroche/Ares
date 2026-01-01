@@ -11,7 +11,32 @@ It performs:
 4. MFE/MAE Dominance Labeling: Label = 1 if MFE > Kappa * MAE.
 5. Stability checks (Time-Flip) and Learnability probes.
 6. Bagged output generation with family-level cap checks.
-7. Enhanced LGBM training with Robust Focal Loss and Tree Variance calculation.
+7. Enhanced model training with optional multi-algorithm comparison (LGBM, XGB, CatBoost, RF, LogReg).
+
+Advanced Model Comparison & HPO Features:
+- enable_model_race: Enable/disable automatic model selection with RobustFocalLoss
+- enable_focal_hpo: Enable/disable HPO for ALL winning models (not just LGBM)
+- focal_hpo_n_trials: Number of HPO trials per winning model
+
+Model Race Candidates (all use adaptive alpha):
+- LGBM_Focal: LGBM with RobustFocalLoss (γ₊=1.0, γ₋=2.5, adaptive α)
+- XGB_Tree: XGBoost with focal loss
+- CatBoost: CatBoost classifier
+- LGBM_Focal_Linear: Linear tree LGBM with RobustFocalLoss
+- XGB_Linear: Linear XGBoost with focal loss
+
+HPO Optimization (runs on ANY winning model):
+- **LGBM_Focal**: RobustFocalLoss (γ₊, γ₋, α, mix, smoothing) + tree params
+- **LGBM_BCE**: Tree parameters (depth, leaves, learning_rate, regularization)
+- **XGB**: Tree/ensemble params (depth, estimators, learning_rate, regularization)
+- **CatBoost**: Tree params (depth, iterations, regularization)
+
+Feature Selection (Titan RFE):
+- Ensures minimum 10 features per geometry
+- Adaptive selection based on predictive power
+- Cached for efficiency
+
+Adaptive Alpha: Automatically adjusts class balance even without HPO
 """
 
 import numpy as np
@@ -29,14 +54,27 @@ import os
 import time
 from pathlib import Path
 import hashlib
+from sklearn.linear_model import RidgeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+try:
+    from xgboost import XGBClassifier
+except ImportError:
+    XGBClassifier = None
 from collections import defaultdict
 from joblib import Parallel, delayed
+from src.training.steps.labeling.focal_loss_utils import get_focal_loss_lgbm, get_focal_loss_xgb, RobustFocalLoss
+from src.training.steps.labeling.layer2_advanced_logic import (
+    vectorized_pct_change_jit,
+    rolling_mean_jit,
+    rolling_std_jit,
+    rolling_max_min_jit,
+)
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import roc_auc_score, log_loss, average_precision_score
+from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
@@ -47,6 +85,7 @@ from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
 from scipy.cluster.hierarchy import linkage, fcluster
 from joblib import Parallel, delayed
+from numba import njit, prange
 from typing import Dict, List, Tuple, Optional, Any, Union, Callable
 from dataclasses import dataclass, asdict, field
 import logging
@@ -69,6 +108,103 @@ from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_s
 # Suppress LightGBM verbose warnings for clean output
 warnings.filterwarnings("ignore")
 
+@njit
+def vectorized_prediction_aggregation(predictions: np.ndarray, existing_scores: np.ndarray) -> np.ndarray:
+    """
+    JIT-compiled vectorized prediction aggregation using maximum scoring.
+
+    Args:
+        predictions: New predictions to aggregate
+        existing_scores: Current aggregated scores
+
+    Returns:
+        Updated aggregated scores
+    """
+    return np.maximum(existing_scores, predictions)
+
+@njit
+def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0.5) -> np.ndarray:
+    """
+    JIT-compiled vectorized threshold-based classification.
+
+    Args:
+        scores: Prediction scores
+        threshold: Classification threshold
+
+    Returns:
+        Binary classification results
+    """
+    return (scores >= threshold).astype(np.float64)
+
+@njit
+def vectorized_weight_assignment(n_samples: int, weight_value: float = 1.0) -> np.ndarray:
+    """
+    JIT-compiled vectorized weight assignment.
+
+    Args:
+        n_samples: Number of samples
+        weight_value: Weight value to assign
+
+    Returns:
+        Weight array
+    """
+    return np.full(n_samples, weight_value, dtype=np.float64)
+
+
+def precision_at_recall_threshold(y_true, y_probs, target_recall: float = 0.40) -> float:
+    """
+    Calculate Precision at a fixed Recall threshold.
+    
+    In trading: "What is our precision when we capture X% of the moves?"
+    We don't need high recall (catch every move), we need high precision 
+    (be right about the moves we do predict).
+    
+    Args:
+        y_true: Binary labels (0/1)
+        y_probs: Predicted probabilities
+        target_recall: Target recall level (e.g., 0.40 = 40% of positives)
+        
+    Returns:
+        Precision when capturing target_recall of positive samples
+    """
+    y_true = np.asarray(y_true)
+    y_probs = np.asarray(y_probs)
+    
+    total_positives = y_true.sum()
+    
+    # Edge cases
+    if total_positives == 0:
+        return 0.0
+    if len(y_true) == 0:
+        return 0.0
+    
+    # Sort by probability descending
+    sorted_indices = np.argsort(y_probs)[::-1]
+    sorted_labels = y_true[sorted_indices]
+    
+    # Find how many samples to take to achieve target recall
+    # We need to capture (target_recall * total_positives) true positives
+    target_tp = int(np.ceil(total_positives * target_recall))
+    target_tp = max(1, target_tp)  # At least 1
+    
+    # Walk through sorted predictions until we hit target TPs
+    cumsum_tp = np.cumsum(sorted_labels)
+    
+    # Find index where we first reach target_tp true positives
+    cutoff_indices = np.where(cumsum_tp >= target_tp)[0]
+    
+    if len(cutoff_indices) == 0:
+        # Can't reach target recall, use all samples
+        cutoff_idx = len(y_true)
+    else:
+        cutoff_idx = cutoff_indices[0] + 1  # +1 because we need inclusive
+    
+    # Precision = TP / (TP + FP) = TP / n_predicted
+    tp_at_cutoff = sorted_labels[:cutoff_idx].sum()
+    precision = tp_at_cutoff / cutoff_idx
+    
+    return precision
+
 # Import compute_realized_returns from the existing module
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     compute_realized_returns,
@@ -81,7 +217,9 @@ from src.training.steps.labeling.generate_weights_per_label import finalize_samp
 
 from src.utils.purged_kfold import PurgedKFoldTime
 
-# Import selection logic
+# Import Layer0 unified price generation for denoised features
+from src.training.steps.labeling.unified_price_layer2 import load_layer0_params, generate_unified_layer2_price
+
 # Import selection logic
 # Import selection logic
 from src.training.steps.labeling.orthogonal_label_generation import (
@@ -95,6 +233,9 @@ from src.training.steps.labeling.label_geometry_selection import (
 )
 
 from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_selection_pipeline
+
+# Import BaseStep for step registration
+from src.training.steps.base_step import BaseStep
 
 # Import Orthogonal Generation
 from src.training.steps.labeling.orthogonal_label_generation import (
@@ -114,17 +255,20 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     compute_tail_regime_labels,
     compute_trend_persistence_labels,
     compute_vol_state_labels,
+    compute_volume_participation_labels,
     OutputGeometry as OrthoGeometry,
     GENERATOR_PARAM_NAMES,
     get_signal_specific_weights,
-    SupportResistanceBreakEvents,
-    ATRShockEvents,
-    TrendModulatedBreakoutEvents,
-    VWAPReversionEvents,
-    MicrostructureEvents,
-    EntropyEvents,
     KalmanTrendEvents,
-    VWAPCrossEvents
+    KalmanRegimeEvents,
+    OrderBlockEvents,
+    SymmetricCusumEvents,
+    ImprovedCUSUMEvents,
+    VolatilityShockEvents,
+    TrendInitiationEvents,
+    MeanReversionExtremeEvents,
+    LiquidityShockEvents,
+    TimeEvents
 )
 
 # Configure logging
@@ -135,26 +279,52 @@ _lgb_logger.propagate = False
 
 # Constants for Layer 2 Model Training (defaults/fixed) - Less Regularized
 LAYER2_MODEL_CONSTANTS = {
-    'boosting_type': 'gbdt',
+    'boosting_type': 'goss', # Optimized for speed
     'objective': 'binary',
     'metric': 'binary_logloss',
-    'max_depth': -1,
-    'learning_rate': 0.03,  # Reduced from 0.05 for better convergence
+    'max_depth': 6,       # Constrain depth for speed
+    'learning_rate': 0.05, # Higher LR for faster convergence with GOSS
     'lambda_l1': 0.01,
-    'lambda_l2': 0.05,       # Reduced from 0.1 to allow more learning  
+    'lambda_l2': 0.05,
     'num_leaves': 31,
-    'min_data_in_leaf': 5, # Reduced to 5 (Hunter Mode)
+    'min_data_in_leaf': 20, # Higher for Goss safety
     'min_sum_hessian_in_leaf': 1e-3,
-    'feature_fraction': 0.95, # Increased from 0.9 to use more features
-    'bagging_fraction': 0.95,  # Increased from 0.9 to use more data
-    'bagging_freq': 1,       # Reduced from 3 for more frequent updates
+    'feature_fraction': 0.8, # Sample features to speed up split finding
+    'bagging_fraction': 1.0, # Must be 1.0 for GOSS
+    'bagging_freq': 0,       # Must be 0 for GOSS
     'verbose': -1,
     'random_state': 42,
-    'n_jobs': 1,
+    'n_jobs': -1,
     'is_unbalance': False,
     'scale_pos_weight': 1,
-    'min_gain_to_split': 0.001, # Reduced from 0.003 to allow more splits
-    'min_child_weight': 0.0001, # Reduced from 0.0005 to allow more growth
+    'min_gain_to_split': 0.001,
+    'min_child_weight': 0.0001,
+    'early_stopping_rounds': 50,  # Add early stopping for production models
+}
+
+# Optimized constants for probe training - faster execution
+LAYER2_PROBE_CONSTANTS = {
+    'boosting_type': 'goss', # Optimized for speed
+    'objective': 'binary',
+    'metric': 'binary_logloss',
+    'max_depth': 4,       # Shallower trees for speed
+    'learning_rate': 0.1, # Higher LR for faster convergence
+    'lambda_l1': 0.005,   # Lighter regularization
+    'lambda_l2': 0.01,    # Lighter regularization
+    'num_leaves': 16,     # Fewer leaves
+    'min_data_in_leaf': 20, # Keep as specified
+    'min_sum_hessian_in_leaf': 1e-3,
+    'feature_fraction': 0.6, # More aggressive feature sampling
+    'bagging_fraction': 1.0, # Must be 1.0 for GOSS
+    'bagging_freq': 0,       # Must be 0 for GOSS
+    'verbose': -1,
+    'random_state': 42,
+    'n_jobs': -1,
+    'is_unbalance': False,
+    'scale_pos_weight': 1,
+    'min_gain_to_split': 0.01,  # Higher threshold for faster splits
+    'min_child_weight': 0.001,  # Lower for speed
+    'early_stopping_rounds': 30,  # Earlier stopping
 }
 
 class RobustFocalLoss:
@@ -166,10 +336,10 @@ class RobustFocalLoss:
         self,
         gamma_pos=1.0, # gamma_fn: Preference for Opportunity (Missed Upside)
         gamma_neg=2.5, # gamma_fp: Preference for Safety (Traps)
-        alpha=None,
+        alpha=None,    # Auto-computed from class balance if None
         grad_clip=5.0,
         w_cap=3.0,
-        mix=0.25,
+        mix=0.25,      # Mix between focal loss and BCE (0.0 = pure focal, 1.0 = pure BCE)
         label_smoothing=0.02,
         verbose=True
     ):
@@ -184,21 +354,40 @@ class RobustFocalLoss:
         self._is_init = False
 
     def _init_alpha(self, labels):
-        """Auto-compute alpha based on prevalence if not provided."""
-        if self.alpha is None:
-            n_pos = np.sum(labels > 0.5)
-            n_total = len(labels)
-            if n_total > 0:
-                # Standard inverse frequency: High alpha for rare positives
-                self.alpha = 1.0 - (n_pos / n_total)
-            else:
-                self.alpha = 0.5
+        """Auto-compute alpha based on prevalence if not provided, or adapt provided alpha."""
+        n_pos = np.sum(labels > 0.5)
+        n_total = len(labels)
 
-        # Clamp alpha for safety
+        if n_total == 0:
+            self.alpha = 0.5
+        else:
+            pos_ratio = n_pos / n_total
+
+            if self.alpha is None:
+                # Auto-compute: inverse frequency weighting for imbalanced classes
+                # For rare positives (pos_ratio < 0.5), alpha > 0.5 to upweight them
+                # For rare negatives (pos_ratio > 0.5), alpha < 0.5 to upweight them
+                if pos_ratio < 0.5:
+                    # Rare positives: higher alpha to focus on them
+                    self.alpha = 0.5 + (0.5 - pos_ratio) * 0.8  # Scale up to 0.9 max
+                else:
+                    # Rare negatives: lower alpha to focus on them
+                    self.alpha = 0.5 - (pos_ratio - 0.5) * 0.8  # Scale down to 0.1 min
+            else:
+                # If alpha provided, adapt it slightly based on class balance
+                # This ensures the provided alpha still considers the actual data distribution
+                balance_factor = abs(pos_ratio - 0.5) * 0.3  # Max adjustment of 0.15
+                if pos_ratio < 0.5:  # Imbalanced toward negatives
+                    self.alpha = min(self.alpha + balance_factor, 0.95)
+                else:  # Imbalanced toward positives
+                    self.alpha = max(self.alpha - balance_factor, 0.05)
+
+        # Final clamping for safety
         self.alpha = np.clip(self.alpha, 0.05, 0.95)
 
         if self.verbose:
-            logger.info(f"[LGBM Focal] Gamma(+):{self.gamma_pos} Gamma(-):{self.gamma_neg} | Alpha:{self.alpha:.4f}")
+            pos_pct = n_pos / n_total * 100 if n_total > 0 else 0
+            logger.info(f"[LGBM Focal] Gamma(+):{self.gamma_pos} Gamma(-):{self.gamma_neg} | Alpha:{self.alpha:.4f} | Class Balance:{pos_pct:.1f}% positive")
 
         self._is_init = True
 
@@ -506,72 +695,278 @@ def generate_market_state_probe(price: pd.Series, volume: pd.Series) -> pd.DataF
     return df.replace([np.inf, -np.inf], np.nan).fillna(0)
 
 
-class LabelBasedLayer2:
+class LabelBasedLayer2(BaseStep):
     """
     Layer 2: Regime-Conditional Geometry Optimization & Meta-Labeling.
     """
-
-    def __init__(
-        self,
-        transaction_cost: Optional[float] = None,  # round-trip cost
-        n_trials: int = 60,
-        n_splits: int = 3,
-        random_state: int = 42,
-        verbose: bool = True,
-        force_hpo: bool = False
-    ):
-        if transaction_cost is None:
-             try:
-                 from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
-                 transaction_cost = DEFAULT_TRANSACTION_COST
-             except ImportError:
-                 transaction_cost = 0.003
-
-        self.transaction_cost = float(transaction_cost)
-        self.n_trials = n_trials
-        self.n_splits = n_splits
-        self.random_state = random_state
-        self.verbose = verbose
-        self.force_hpo = force_hpo
-        self.signal_weights = None
-
-        self.selected_geometries: List[GeometryTrial] = []
-        self._labels_cache = {}
-        self._signals_cache = {}
-        self._geometry_label_cache = {}
-        self._feature_selection_cache = {}
-        self._all_tree_stats = []
+    
+    def __init__(self, step_name: str = 'label_based_layer_2', **kwargs):
+        # Initialize BaseStep with step name
+        super().__init__(step_name)
         
-        # Performance optimization caches
-        self._feature_cache = {}  # Cache features per fold
-        self._events_cache = {}   # Cache events per family per fold
-        self._label_cache = {}    # Cache labels per family per fold
-        self._weight_cache = {}   # Cache weights per family per fold
+        # Initialize LabelBasedLayer2 specific parameters
+        transaction_cost = kwargs.get('transaction_cost', None)
+        self.n_trials = kwargs.get('n_trials', 60)
+        self.n_splits = kwargs.get('n_splits', 2)
+        self.random_state = kwargs.get('random_state', 42)
+        self.verbose = kwargs.get('verbose', True)
+        self.force_hpo = kwargs.get('force_hpo', False)
+        
+        # Set transaction cost if not provided
+        if transaction_cost is None:
+            try:
+                from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
+                transaction_cost = DEFAULT_TRANSACTION_COST
+            except Exception:
+                transaction_cost = 0.003  # Default fallback
+        
+        self.transaction_cost = float(transaction_cost)
+        
+        # Denoised price configuration
+        self.use_denoised_prices = kwargs.get('use_denoised_prices', True)
+        self.layer0_params = None
 
-        # Event generators for each family
-        self.generators = {
-            "PRICE_CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL_CUSUM": VolatilityCusumEvents(),
-            "LIQ_CUSUM": LiquidityCusumEvents(),
-            "VOL_PARTICIPATION": VolumeCusumEvents(),
-            "RANGE_ATR": RangeATRcusumEvents(),
-            "SR_CUSUM": SRCusumEvents(),
-            "TAIL_RISK": TailRiskCusumEvents(),
-            "TREND_REGIME": TrendRegimeCusumEvents(),
-            "VOL_STATE": VolatilityStateEvents(),
-        }
+        # Model comparison configuration
+        self.enable_model_race = kwargs.get('enable_model_race', False)
+        self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost', 'LGBM_Focal_Linear', 'XGB_Linear'])
 
-        cpu_guess = max(1, (os.cpu_count() or 4) - 1)
-        self._parallel_n_jobs = max(1, min(cpu_guess, 4))
-        self._parallel_prefer = "threads"
+        # RobustFocalLoss HPO configuration
+        self.enable_focal_hpo = kwargs.get('enable_focal_hpo', False)
+        self.focal_hpo_n_trials = kwargs.get('focal_hpo_n_trials', 20)
+        
+        # Initialize config
+        self._current_config = {}
+        self.signal_weights = None
+        
+        # Initialize caches
+        self._events_cache = {}
+        self._feature_cache = {}
+        self._global_probe_features = {}
+        self._label_cache = {}
+        self._signals_cache = {}
+        self._global_feature_cache = {}  # Global feature cache for entire dataset
+        self._global_event_cache = {}    # Global event cache
+        self._model_cache = {}           # Cache trained models
+        self._feature_selection_cache = {}  # Cache feature selections
+        self._label_computation_cache = {}  # Cache label computations
+        
+        # Initialize diagnostics
+        self._all_tree_stats = []
 
-        if not self.verbose:
-            optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-    def execute(self, df: pd.DataFrame, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        self._current_config = dict(config or {})
-        self.signal_weights = self._current_config.get('signal_weights', None)
-        return self.run(df)
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the Layer 2 labeling pipeline with 1.5-3% range optimization.
+        
+        Args:
+            config: Configuration dictionary containing symbol, exchange, timeframes, etc.
+            
+        Returns:
+            Dict with success status, artifacts, metrics, and execution info.
+        """
+        import time
+        import asyncio
+        start_time = time.time()
+        
+        try:
+            # Extract required parameters from config
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            
+            self.logger.info(f"🚀 Starting Layer 2 labeling for {symbol}/{exchange}/{timeframe} ({direction})")
+            
+            # Load data using artifact manager
+            try:
+                # Try to load the latest price data artifact
+                df = await self._load_price_data(symbol, exchange, timeframe)
+                if df is None or len(df) == 0:
+                    raise ValueError(f"No data available for {symbol}/{exchange}/{timeframe}")
+                
+                self.logger.info(f"✅ Loaded {len(df)} rows of price data")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load data: {e}")
+                return {
+                    'success': False,
+                    'error': f"Data loading failed: {e}",
+                    'execution_time': time.time() - start_time,
+                    'artifacts': [],
+                    'metrics': {}
+                }
+            
+            # Set signal weights from config if provided
+            self._current_config = dict(config)
+            self.signal_weights = self._current_config.get('signal_weights', None)
+            
+            # Run the Layer 2 pipeline (this will use MEDIUM_TERM_GRID if enabled)
+            self.logger.info("🔄 Running Layer 2 pipeline with range-specific optimization...")
+            results = self.run(df)
+            
+            # Save artifacts
+            artifacts = await self._save_artifacts(results, symbol, exchange, timeframe, direction)
+            
+            # Prepare metrics
+            metrics = {
+                'data_rows': len(df),
+                'events_generated': len(results.get('events_df', pd.DataFrame())),
+                'geometries_optimized': len(results.get('selected_trials', [])),
+                'range_optimization_enabled': _should_use_range_specific_optimization(),
+                'target_range': '1.5-3%' if _should_use_range_specific_optimization() else 'default'
+            }
+            
+            execution_time = time.time() - start_time
+            self.logger.info(f"✅ Layer 2 labeling completed in {execution_time:.2f}s")
+            self.logger.info(f"📊 Generated {metrics['events_generated']} events with {metrics['geometries_optimized']} geometries")
+            
+            return {
+                'success': True,
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'execution_time': execution_time,
+                'results': results
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Layer 2 labeling failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {
+                'success': False,
+                'error': str(e),
+                'execution_time': time.time() - start_time,
+                'artifacts': [],
+                'metrics': {}
+            }
+    
+    async def _load_price_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
+        """Load price data using BaseStep's data loading infrastructure."""
+        try:
+            self.logger.info(f"🔄 Loading real market data for {symbol}/{exchange}/{timeframe}")
+            
+            # Create config for data loading
+            config = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'execution_mode': 'light'  # Use light mode for reasonable data loading window
+            }
+            
+            # Use BaseStep's data loading method
+            market_data, source = self.load_market_data_or_fail(config)
+            
+            if market_data is None:
+                raise ValueError(f"Failed to load market data for {symbol}/{exchange}/{timeframe}")
+            
+            # Handle different return types from BaseStep
+            if isinstance(market_data, dict):
+                self.logger.info(f"🔍 Dict keys: {list(market_data.keys())}")
+                for key, value in market_data.items():
+                    self.logger.info(f"🔍 {key}: {type(value)} - {str(value)[:100] if hasattr(value, '__str__') else 'no str'}")
+                
+                # BaseStep sometimes returns a dict with 'data' key
+                if 'data' in market_data and isinstance(market_data['data'], pd.DataFrame):
+                    market_data = market_data['data']
+                    self.logger.info(f"🔍 Extracted DataFrame from dict response")
+                elif 'df' in market_data and isinstance(market_data['df'], pd.DataFrame):
+                    market_data = market_data['df']
+                    self.logger.info(f"🔍 Extracted DataFrame from 'df' key")
+                else:
+                    # Try to find any DataFrame in the dict
+                    for key, value in market_data.items():
+                        if isinstance(value, pd.DataFrame):
+                            market_data = value
+                            self.logger.info(f"🔍 Extracted DataFrame from '{key}' key")
+                            break
+                    else:
+                        raise ValueError(f"Expected DataFrame or dict with DataFrame, got {type(market_data)}: {list(market_data.keys())}")
+            elif not isinstance(market_data, pd.DataFrame):
+                raise ValueError(f"Expected DataFrame, got {type(market_data)}")
+            
+            # Check required columns
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in market_data.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
+            
+            self.logger.info(f"✅ Loaded {len(market_data)} rows of real market data from {source}")
+            
+            # Log data range
+            if len(market_data) > 0:
+                start_date = market_data.index[0]
+                end_date = market_data.index[-1]
+                self.logger.info(f"📊 Data range: {start_date} to {end_date}")
+            
+            return market_data
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load price data: {e}")
+            raise
+    
+    def _process_raw_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Basic processing for raw price data."""
+        # Ensure we have the required columns
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+        
+        # Basic cleaning
+        df = df.copy()
+        df = df.dropna()
+        df = df[~df.index.duplicated(keep='first')]
+        
+        # Sort by index
+        df = df.sort_index()
+        
+        return df
+    
+    async def _save_artifacts(self, results: Dict[str, Any], symbol: str, exchange: str, timeframe: str, direction: str) -> List[str]:
+        """Save results as artifacts."""
+        artifacts = []
+        
+        try:
+            if self._artifact_manager is None:
+                from src.training.steps.base_step import ArtifactManager
+                self._artifact_manager = ArtifactManager()
+            
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Save events_df if available
+            if 'events_df' in results and results['events_df'] is not None:
+                events_artifact_name = f"layer2_events_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
+                self._artifact_manager.save_artifact(results['events_df'], events_artifact_name)
+                artifacts.append(events_artifact_name)
+                self.logger.info(f"💾 Saved events artifact: {events_artifact_name}")
+            
+            # Save selected trials if available
+            if 'selected_trials' in results and results['selected_trials']:
+                trials_artifact_name = f"layer2_trials_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
+                self._artifact_manager.save_artifact(results['selected_trials'], trials_artifact_name)
+                artifacts.append(trials_artifact_name)
+                self.logger.info(f"💾 Saved trials artifact: {trials_artifact_name}")
+            
+            # Save selected features if available
+            if 'production_selected_features' in results and results['production_selected_features']:
+                features_artifact_name = f"layer2_features_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
+                self._artifact_manager.save_artifact(results['production_selected_features'], features_artifact_name)
+                artifacts.append(features_artifact_name)
+                self.logger.info(f"💾 Saved features artifact: {features_artifact_name}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save artifacts: {e}")
+        
+        return artifacts
+    
+    def _should_use_range_specific_optimization(self) -> bool:
+        """Check if 1.5-3% range optimization is enabled in configuration."""
+        try:
+            import yaml
+            config_path = "config/labeling/layer2_coverage_relax_config.yaml"
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+            return config.get("target_range_optimization", {}).get("enabled", False)
+        except Exception:
+            return False
 
 
     def _dominance_label_wrapper(self, df: pd.DataFrame, events: pd.DatetimeIndex, **params) -> pd.Series:
@@ -605,6 +1000,87 @@ class LabelBasedLayer2:
         """Generate cache key for features."""
         return f"features_{events_hash}_fold_{fold_idx}"
     
+    def _get_global_events(self, df: pd.DataFrame, family: str, params: Dict = None) -> pd.DatetimeIndex:
+        """Generate events once for the full dataset and cache them."""
+        # Create cache key
+        params_str = str(sorted(params.items())) if params else "default"
+        cache_key = f"global_events_{family}_{hashlib.md5(params_str.encode()).hexdigest()[:8]}_{hash(str(df.shape)) % 10000}"
+
+        if cache_key not in self._global_event_cache:
+            tprint_info(f"🔄 Generating global events for {family}...")
+            start_time = time.time()
+
+            gen = self.generators.get(family)
+            if gen is None:
+                self._global_event_cache[cache_key] = pd.DatetimeIndex([])
+            else:
+                gen_params = params if params else {}
+                events = gen.generate(df, **gen_params)
+                self._global_event_cache[cache_key] = events
+                tprint_success(f"✅ Global events cached for {family}: {len(events)} events in {time.time() - start_time:.2f}s")
+
+        return self._global_event_cache[cache_key]
+
+    def _get_global_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Cache features for entire dataset once."""
+        # Create cache key based on data shape and key columns
+        key_cols = ['close', 'volume', 'high', 'low']
+        available_cols = [col for col in key_cols if col in df.columns]
+        cache_key = hashlib.md5(
+            f"{df.shape}_{df.index[0] if len(df) > 0 else ''}_{df.index[-1] if len(df) > 0 else ''}_{'_'.join(available_cols)}".encode()
+        ).hexdigest()[:16]
+
+        if cache_key not in self._global_feature_cache:
+            tprint_info("🔄 Generating global features for entire dataset...")
+            start_time = time.time()
+
+            # Check cache for global features
+            df_hash = str(hash(df.values.tobytes()))
+            cache_key_global = f"global_features_{df_hash}"
+            
+            if not hasattr(self, '_cached_global_features') or cache_key_global not in self._cached_global_features:
+                # Get denoised prices for feature generation
+                denoised_close = self._get_denoised_prices(df)
+                
+                # Create a copy of df with denoised close for feature generation
+                df_features = df.copy()
+                df_features['close'] = denoised_close
+                
+                # Use MTF feature generation with denoised prices
+                signals = pd.DataFrame({'consensus': 1.0}, index=df_features.index)
+                try:
+                    # Fix: create_meta_features 3rd arg is volume_available (bool), not events.
+                    # We generate features for the whole DF then reindex to events.
+                    volume_available = 'volume' in df_features.columns and not df_features['volume'].isna().all()
+                    X_all = create_meta_features(df_features, signals, volume_available=volume_available)
+                    
+                    # Cache the full feature set
+                    if not hasattr(self, '_cached_global_features'):
+                        self._cached_global_features = {}
+                    self._cached_global_features[cache_key_global] = X_all
+                except Exception as e:
+                    tprint_warning(f"⚠️ Global feature generation failed: {e}, using empty cache")
+                    self._global_feature_cache[cache_key] = pd.DataFrame(index=df.index)
+            else:
+                X_all = self._cached_global_features[cache_key_global]
+            
+            # Reindex to original index
+            features = X_all.reindex(df.index)
+            
+            # Optimize memory usage
+            features = self._optimize_dataframe_memory(features)
+            self._global_feature_cache[cache_key] = features
+            tprint_success(f"✅ Global features cached in {time.time() - start_time:.2f}s")
+
+            # Cleanup
+            if 'df_features' in locals():
+                del df_features
+            if 'signals' in locals():
+                del signals
+            self._cleanup_memory()
+
+        return self._global_feature_cache[cache_key]
+
     def _get_cached_events(self, df_train: pd.DataFrame, family: str, fold_idx: int, params: Dict = None) -> pd.DatetimeIndex:
         """Get cached events or generate and cache them."""
         # Create simple hash from train data shape
@@ -633,10 +1109,31 @@ class LabelBasedLayer2:
         
         return self._events_cache[cache_key]
     
+    def _get_denoised_prices(self, df: pd.DataFrame) -> pd.Series:
+        """Get denoised prices for feature generation."""
+        if not self.use_denoised_prices:
+            return df['close']
+        
+        if self.layer0_params is None:
+            try:
+                self.layer0_params = load_layer0_params()
+                tprint_info(f"✅ Loaded Layer0 params for denoised features")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load Layer0 params: {e}, using raw prices")
+                self.use_denoised_prices = False
+                return df['close']
+        
+        try:
+            denoised_price = generate_unified_layer2_price(df, self.layer0_params)
+            return denoised_price
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate denoised prices: {e}, using raw prices")
+            return df['close']
+    
     def _get_cached_features(self, df: pd.DataFrame, events_df: pd.DataFrame, fold_idx: int) -> pd.DataFrame:
         """Get cached features or generate and cache them."""
         # Create hash from events index
-        events_hash = hashlib.md5(str(events_df.index.tobytes()).encode()).hexdigest()[:8]
+        events_hash = hashlib.md5(str(events_df.index.values.tobytes()).encode()).hexdigest()[:8]
         cache_key = self._get_feature_cache_key(events_hash, fold_idx)
         
         if cache_key not in self._feature_cache:
@@ -694,8 +1191,12 @@ class LabelBasedLayer2:
                     k_factor = 1.1 + (pt * 0.1)
                     horizon = int(gt.params.get('horizon', 24))
                     labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+                elif family == 'VOL_PARTICIPATION':
+                    horizon = int(gt.params.get('horizon', 24))
+                    h_threshold = gt.params.get('h', 5.0)
+                    labels, weights, _, _, _, _ = compute_volume_participation_labels(df_train, events, horizon=horizon, volume_threshold=h_threshold)
                 else:
-                    # Map params to Volatility Logic (VOL_CUSUM, VOL_PARTICIPATION)
+                    # Map params to Volatility Logic (VOL_CUSUM)
                     pt = gt.params.get('pt_mult', 2.0)
                     k_factor = 1.1 + (pt * 0.1)
                     horizon = int(gt.params.get('horizon', 24))
@@ -755,7 +1256,12 @@ class LabelBasedLayer2:
                  k_factor = 1.1 + (pt * 0.1)
                  horizon = int(gt.params.get('horizon', 24))
                  labels, weights, _, _, _, _ = compute_volatility_labels(df_train, events, horizon=horizon, k=k_factor)
+            elif family == 'VOL_PARTICIPATION':
+                 horizon = int(gt.params.get('horizon', 24))
+                 h_threshold = gt.params.get('h', 5.0)
+                 labels, weights, _, _, _, _ = compute_volume_participation_labels(df_train, events, horizon=horizon, volume_threshold=h_threshold)
             else:
+                 # Map params to Volatility Logic (VOL_CUSUM)
                  pt = gt.params.get('pt_mult', 2.0)
                  k_factor = 1.1 + (pt * 0.1)
                  horizon = int(gt.params.get('horizon', 24))
@@ -776,11 +1282,45 @@ class LabelBasedLayer2:
         
         return self._label_cache[cache_key_lbl], self._weight_cache[cache_key_wgt]
 
+    def _get_cached_model(self, geometry_uuid: str, fold_idx: int):
+        """Get cached trained model if available."""
+        cache_key = f"model_{geometry_uuid}_fold_{fold_idx}"
+        return self._model_cache.get(cache_key)
+
+    def _cache_model(self, geometry_uuid: str, fold_idx: int, model):
+        """Cache trained model."""
+        cache_key = f"model_{geometry_uuid}_fold_{fold_idx}"
+        self._model_cache[cache_key] = model
+
+    def _get_cached_feature_selection(self, geometry_uuid: str):
+        """Get cached feature selection if available."""
+        return self._feature_selection_cache.get(geometry_uuid)
+
+    def _cache_feature_selection(self, geometry_uuid: str, selected_features: List[str]):
+        """Cache feature selection results."""
+        self._feature_selection_cache[geometry_uuid] = selected_features
+
+    def _get_cached_labels(self, geometry_uuid: str, fold_idx: int):
+        """Get cached labels and weights if available."""
+        cache_key = f"labels_{geometry_uuid}_fold_{fold_idx}"
+        return self._label_computation_cache.get(cache_key)
+
+    def _cache_labels(self, geometry_uuid: str, fold_idx: int, labels, weights):
+        """Cache computed labels and weights."""
+        cache_key = f"labels_{geometry_uuid}_fold_{fold_idx}"
+        self._label_computation_cache[cache_key] = (labels, weights)
+
     def clear_caches(self):
         """Clear all performance optimization caches."""
         self._feature_cache.clear()
         self._events_cache.clear()
         self._label_cache.clear()
+        self._global_feature_cache.clear()
+        self._global_event_cache.clear()
+        self._model_cache.clear()
+        self._feature_selection_cache.clear()
+        self._label_computation_cache.clear()
+        self._global_probe_features.clear()
         tprint_info("🧹 Cleared all optimization caches")
 
     def _extract_gen_params(self, gt: GeometryTrial) -> Dict:
@@ -804,6 +1344,8 @@ class LabelBasedLayer2:
         """
         tprint_info("Starting Layer 2 Pipeline...")
         
+        # Debug: Check what type of data we received
+        
         # Clear caches for fresh run
         self.clear_caches()
 
@@ -813,9 +1355,9 @@ class LabelBasedLayer2:
         df, _, _, global_probe_features = self.prepare_data_and_events(df)
 
         # Calculate SR Levels globally once
-        sr_gen = SupportResistanceBreakEvents()
-        res, sup = sr_gen._identify_sr_levels(df, lookback=50, min_touches=3, current_time=df.index[-1])
-        self.sr_levels = [r['price'] for r in res] + [s['price'] for s in sup]
+        # Calculate SR Levels globally once
+        # Calculate SR Levels globally once - REMOVED (Handled inside orthogonal generation if needed)
+        self.sr_levels = [] 
 
         # 2. Optimize (Orthogonal Selection)
         # This returns GeometryTrial objects which contain their own events.
@@ -901,7 +1443,635 @@ class LabelBasedLayer2:
         events_df = df.loc[unique_indices, ['trend_regime', 'vol_regime', 'volatility_1d']].copy()
         # Add default family/consensus cols if needed
         events_df['family'] = 'Unified'
+
+        # Optimize memory usage
+        events_df = self._optimize_dataframe_memory(events_df)
+
         return events_df
+
+    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train):
+        """
+        Run a 5-model race to find the best base model for this geometry.
+        Candidates:
+          1. LGBM (Tree) + RobustFocalLoss
+          2. LGBM (Linear) + RobustFocalLoss
+          3. XGB (Tree) + RobustFocalLoss
+          4. XGB (Linear) + RobustFocalLoss
+          5. CatBoost
+        Metric: P@R40% (primary), AUC (tie-breaker).
+        
+        OPTIMIZED: Simpler models with class balancing for sparse-event geometries.
+        """
+        # Compute dynamic scale_pos_weight based on class balance
+        pos_count = np.sum(y_train == 1)
+        neg_count = np.sum(y_train == 0)
+        if pos_count > 0:
+            scale_pos_weight = neg_count / pos_count  # (1-balance)/balance
+        else:
+            scale_pos_weight = 1.0
+        
+        candidates = []
+
+        # 1. LGBM with RobustFocalLoss (Tree) - OPTIMIZED: simpler + class balanced
+        candidates.append({
+            'name': 'LGBM_Focal',
+            'model': lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.05, 
+                num_leaves=15, max_depth=5,  # REDUCED for sparse events
+                scale_pos_weight=scale_pos_weight,  # ADDED: dynamic class balancing
+                objective=RobustFocalLoss(gamma_pos=1.0, gamma_neg=2.5, alpha=None, verbose=False),
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        # 2. LGBM with BCE (Tree) - OPTIMIZED: simpler + class balanced
+        candidates.append({
+            'name': 'LGBM_BCE',
+            'model': lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.05, 
+                num_leaves=15, max_depth=5,  # REDUCED
+                scale_pos_weight=scale_pos_weight,  # ADDED
+                objective='binary',
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        # 3. LGBM with RobustFocalLoss (Linear Tree) - OPTIMIZED
+        candidates.append({
+            'name': 'LGBM_Focal_Linear',
+            'model': lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.05, 
+                num_leaves=15, max_depth=5,  # REDUCED
+                linear_tree=True,
+                scale_pos_weight=scale_pos_weight,  # ADDED
+                objective=RobustFocalLoss(gamma_pos=1.0, gamma_neg=2.0, alpha=None, verbose=False),
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        if XGBClassifier is not None:
+            # 3. XGB (Tree)
+            candidates.append({
+                'name': 'XGB_Tree', 
+                'model': XGBClassifier(
+                    n_estimators=100, learning_rate=0.05, max_depth=5, 
+                    objective=get_focal_loss_xgb(ALPHA, GAMMA),
+                    random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
+                    eval_metric='logloss' 
+                )
+            })
+            # 4. XGB (Linear)
+            candidates.append({
+                'name': 'XGB_Linear', 
+                'model': XGBClassifier(
+                    n_estimators=100, learning_rate=0.05, max_depth=5, 
+                    booster='gblinear',
+                    objective=get_focal_loss_xgb(ALPHA, GAMMA),
+                    random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
+                    eval_metric='logloss'
+                )
+            })
+
+        # 5. CatBoost
+        if CATBOOST_AVAILABLE and catboost is not None:
+            from catboost import CatBoostClassifier
+            candidates.append({
+                'name': 'CatBoost',
+                'model': CatBoostClassifier(
+                    iterations=100, learning_rate=0.05, depth=5,
+                    verbose=0, random_seed=42, thread_count=1,
+                    allow_writing_files=False
+                )
+            })
+
+        best_score = 0.0  # PR-AUC: Higher is better
+        best_model = None
+        best_name = "LGBM_Tree" # Default
+        best_auc = 0.0
+        race_results = {}
+        
+        tprint_info(f"   🏁 Race Started: 5 Models...")
+
+        for cand in candidates:
+            try:
+                name = cand['name']
+                model = cand['model']
+                
+                # Fit
+                if 'LGBM' in name:
+                     # Note: Custom objective in LGBM requires special eval_metric handling 
+                     model.fit(
+                         X_train, y_train, sample_weight=w_train, 
+                         eval_set=[(X_val, y_val)], 
+                         eval_metric='binary_logloss', 
+                         callbacks=[lgb.early_stopping(10, verbose=False)]
+                     )
+                elif 'XGB' in name:
+                     model.fit(
+                         X_train, y_train, sample_weight=w_train, 
+                         eval_set=[(X_val, y_val)], 
+                         verbose=False
+                     )
+                elif 'CatBoost' in name:
+                     model.fit(
+                         X_train, y_train, sample_weight=w_train,
+                         eval_set=(X_val, y_val),
+                         early_stopping_rounds=10,
+                         verbose=False
+                     )
+
+                # Predict (Probs)
+                if hasattr(model, "predict_proba"):
+                    preds = model.predict_proba(X_val)
+                    if preds.ndim == 2:
+                        preds = preds[:, 1]
+                else: 
+                     preds = model.predict(X_val) # Shouldn't reach here for these models but safer
+
+                # Score - Use Precision@Recall=40% as primary for trading
+                ll = log_loss(y_val, preds)
+                try:
+                    auc = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
+                    ap = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
+                    p_at_r = precision_at_recall_threshold(y_val, preds, target_recall=0.40)
+                except ValueError:
+                    auc = 0.5
+                    ap = 0.0
+                    p_at_r = 0.0
+                    
+                # Recall (Threshold 0.5)
+                preds_binary = (preds > 0.5).astype(int)
+                rec = recall_score(y_val, preds_binary, zero_division=0)
+                
+                race_results[name] = {'log_loss': ll, 'auc': auc, 'pr_auc': ap, 'p@r40': p_at_r, 'recall': rec}
+                
+                tprint_info(f"      🏃 {name}: P@R40={p_at_r:.4f}, PR-AUC={ap:.4f}, AUC={auc:.4f}")
+
+                # Winner by Precision@Recall=40% (Higher is better)
+                if p_at_r > best_score:
+                    best_score = p_at_r
+                    best_model = model  
+                    best_name = name
+                    best_auc = auc
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Race candidate {cand['name']} failed: {e}")
+
+        # Fallback if all failed
+        if best_model is None:
+             tprint_warning("   ⚠️ All race models failed. Falling back to simple LGBM.")
+             best_model = lgb.LGBMClassifier()
+             best_model.fit(X_train, y_train)
+             
+        tprint_success(f"   🏆 Race Winner: {best_name} (P@R40={best_score:.4f})")
+
+        # ADDED: Wrap winner with probability calibration for better threshold selection
+        try:
+            from sklearn.calibration import CalibratedClassifierCV
+            # Use isotonic calibration (better for large datasets, sigmoid for small)
+            calibration_method = 'isotonic' if len(y_train) > 1000 else 'sigmoid'
+            calibrated_model = CalibratedClassifierCV(
+                best_model, 
+                method=calibration_method, 
+                cv='prefit'  # Model already fitted
+            )
+            calibrated_model.fit(X_val, y_val)  # Calibrate on validation set
+            tprint_info(f"   🎯 Applied {calibration_method} probability calibration")
+            return calibrated_model, best_name + '_Cal', race_results
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Calibration failed: {e}. Using uncalibrated model.")
+            return best_model, best_name, race_results
+
+    def _run_multi_horizon_model_race(self, X_train, y_train_dict, returns_dict, X_val, y_val_dict, returns_val_dict, w_train, horizons=[12, 48]):
+        """
+        Multi-timeframe classifier + regressor for PRICE_CUSUM.
+        
+        For each horizon, trains:
+          - Classifier: P(TP before SL)
+          - Regressor: E[return | features]
+          
+        Combined expected value: EV = P(profitable) * E[return]
+        
+        Args:
+            X_train, X_val: Feature matrices
+            y_train_dict, y_val_dict: {horizon: binary_labels}
+            returns_dict, returns_val_dict: {horizon: continuous_returns}
+            w_train: Sample weights
+            horizons: List of horizons to evaluate
+            
+        Returns:
+            dict with best results per horizon and ensemble decision
+        """
+        tprint_info(f"   🕐 Multi-Horizon Race for horizons {horizons}...")
+        
+        # Compute dynamic scale_pos_weight
+        pos_count = np.sum(y_train_dict.get(horizons[0], []) == 1)
+        neg_count = np.sum(y_train_dict.get(horizons[0], []) == 0)
+        scale_pos_weight = neg_count / pos_count if pos_count > 0 else 1.0
+        
+        horizon_results = {}
+        
+        for h in horizons:
+            y_train_h = y_train_dict.get(h)
+            returns_train_h = returns_dict.get(h)
+            y_val_h = y_val_dict.get(h)
+            returns_val_h = returns_val_dict.get(h)
+            
+            if y_train_h is None or len(y_train_h) == 0:
+                tprint_warning(f"      ⚠️ No labels for horizon {h}, skipping")
+                continue
+                
+            try:
+                # 1. Train Classifier - P(profitable)
+                clf = lgb.LGBMClassifier(
+                    n_estimators=100, learning_rate=0.05,
+                    num_leaves=15, max_depth=5,
+                    scale_pos_weight=scale_pos_weight,
+                    objective='binary',
+                    random_state=42, verbose=-1, n_jobs=1
+                )
+                clf.fit(X_train, y_train_h, sample_weight=w_train)
+                clf_probs = clf.predict_proba(X_val)[:, 1]
+                
+                # 2. Train Regressor - E[return | features]
+                reg = lgb.LGBMRegressor(
+                    n_estimators=100, learning_rate=0.05,
+                    num_leaves=15, max_depth=5,
+                    objective='huber',  # Robust to outliers
+                    random_state=42, verbose=-1, n_jobs=1
+                )
+                reg.fit(X_train, returns_train_h, sample_weight=w_train)
+                reg_preds = reg.predict(X_val)
+                
+                # 3. Compute Expected Value
+                # EV = P(profitable) * E[return | features]
+                ev_predictions = clf_probs * reg_preds
+                ev_score = np.mean(ev_predictions[ev_predictions > 0]) if np.any(ev_predictions > 0) else 0.0
+                
+                # 4. Compute metrics
+                from sklearn.metrics import roc_auc_score, mean_squared_error
+                clf_auc = roc_auc_score(y_val_h, clf_probs) if len(np.unique(y_val_h)) > 1 else 0.5
+                reg_rmse = np.sqrt(mean_squared_error(returns_val_h, reg_preds))
+                
+                tprint_info(f"      🕐 H={h}: Clf AUC={clf_auc:.4f}, Reg RMSE={reg_rmse:.6f}, EV={ev_score:.6f}")
+                
+                horizon_results[h] = {
+                    'classifier': clf,
+                    'regressor': reg,
+                    'clf_probs': clf_probs,
+                    'reg_preds': reg_preds,
+                    'ev_predictions': ev_predictions,
+                    'clf_auc': clf_auc,
+                    'reg_rmse': reg_rmse,
+                    'ev_score': ev_score
+                }
+                
+            except Exception as e:
+                tprint_warning(f"      ⚠️ Horizon {h} failed: {e}")
+        
+        if not horizon_results:
+            tprint_warning("   ⚠️ All horizons failed. Returning empty results.")
+            return {}
+        
+        # 5. Select best horizon by EV score
+        best_h = max(horizon_results, key=lambda h: horizon_results[h]['ev_score'])
+        best_result = horizon_results[best_h]
+        
+        tprint_success(f"   🏆 Best Horizon: H={best_h} (EV={best_result['ev_score']:.6f})")
+        
+        return {
+            'horizon_results': horizon_results,
+            'best_horizon': best_h,
+            'best_classifier': best_result['classifier'],
+            'best_regressor': best_result['regressor'],
+            'best_ev_score': best_result['ev_score']
+        }
+
+    def _optimize_focal_loss_params(self, X_train, y_train, X_val, y_val, w_train):
+        """
+        Use Optuna to optimize RobustFocalLoss parameters.
+
+        Optimizes:
+        - gamma_pos: Focal loss gamma for positive class (missed opportunities)
+        - gamma_neg: Focal loss gamma for negative class (false positives)
+        - alpha: Class balance parameter
+        - mix: Mixing ratio between focal and BCE loss
+        - label_smoothing: Label smoothing parameter
+        """
+        def objective(trial):
+            # Suggest hyperparameters for RobustFocalLoss + Tree parameters
+            gamma_pos = trial.suggest_float('gamma_pos', 0.5, 3.0, step=0.1)
+            gamma_neg = trial.suggest_float('gamma_neg', 1.0, 4.0, step=0.1)
+            alpha = trial.suggest_float('alpha', 0.1, 0.9, step=0.05)
+            mix = trial.suggest_float('mix', 0.1, 0.5, step=0.05)
+            label_smoothing = trial.suggest_float('label_smoothing', 0.0, 0.1, step=0.01)
+
+            # Tree depth optimization
+            max_depth = trial.suggest_int('max_depth', 3, 8)
+            num_leaves = trial.suggest_int('num_leaves', 15, 63, step=8)  # Powers of 2-ish
+
+            # Create focal loss with optimized parameters
+            focal_loss = RobustFocalLoss(
+                gamma_pos=gamma_pos,
+                gamma_neg=gamma_neg,
+                alpha=alpha,
+                mix=mix,
+                label_smoothing=label_smoothing,
+                verbose=False
+            )
+
+            # Train model with optimized parameters
+            params = LAYER2_PROBE_CONSTANTS.copy()
+            params.pop('early_stopping_rounds', None)
+            params['objective'] = focal_loss
+            params['metric'] = 'auc'
+            params['n_estimators'] = 100  # Smaller for HPO speed
+
+            # Override with optimized tree parameters
+            params['max_depth'] = max_depth
+            params['num_leaves'] = num_leaves
+
+            clf = lgb.LGBMClassifier(**params)
+            clf.fit(
+                X_train, y_train, sample_weight=w_train,
+                eval_set=[(X_val, y_val)], eval_metric='auc',
+                callbacks=[lgb.early_stopping(20, verbose=False)]
+            )
+
+            # Evaluate - Use Precision@Recall=40% for trading
+            preds = clf.predict_proba(X_val)[:, 1]
+            p_at_r = precision_at_recall_threshold(y_val, preds, target_recall=0.40)
+
+            # Return negative P@R (Optuna minimizes, so -P@R = maximize P@R)
+            return -p_at_r
+
+        # Run optimization (minimize negative P@R = maximize P@R)
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=self.focal_hpo_n_trials)
+
+        # Get best parameters
+        best_params = study.best_params
+        best_score = -study.best_value  # Convert back to positive P@R
+
+        tprint_success(f"🎯 RobustFocalLoss HPO completed!")
+        tprint_info(f"   📊 Best P@R40: {best_score:.4f}")
+        tprint_info(f"   🔧 Best params: γ₊={best_params['gamma_pos']:.2f}, γ₋={best_params['gamma_neg']:.2f}, α={best_params['alpha']:.2f}")
+
+        return best_params, best_score
+
+    def _optimize_lgbm_bce_params(self, X_train, y_train, X_val, y_val, w_train):
+        """Optimize standard LGBM parameters (BCE objective)."""
+        def objective(trial):
+            # LGBM BCE parameters
+            max_depth = trial.suggest_int('max_depth', 4, 7)
+            num_leaves = trial.suggest_int('num_leaves', 15, 63, step=8)
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.1, log=True)
+            min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 20, 50)
+            lambda_l1 = trial.suggest_float('lambda_l1', 0.1, 0.9)
+            lambda_l2 = trial.suggest_float('lambda_l2', 0.1, 0.9)
+            subsample = trial.suggest_float('subsample', 0.6, 0.9)
+
+            params = {
+                'n_estimators': 200,
+                'max_depth': max_depth,
+                'num_leaves': num_leaves,
+                'learning_rate': learning_rate,
+                'min_data_in_leaf': min_data_in_leaf,
+                'lambda_l1': lambda_l1,
+                'lambda_l2': lambda_l2,
+                'subsample': subsample,
+                'objective': 'binary',
+                'random_state': 42,
+                'verbose': -1
+            }
+
+            clf = lgb.LGBMClassifier(**params)
+            clf.fit(X_train, y_train, sample_weight=w_train,
+                   eval_set=[(X_val, y_val)], eval_metric='binary_logloss',
+                   callbacks=[lgb.early_stopping(20, verbose=False)])
+
+            preds = clf.predict_proba(X_val)[:, 1]
+            return log_loss(y_val, preds)
+
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=self.focal_hpo_n_trials)
+
+        return study.best_params, study.best_value
+
+    def _optimize_xgb_params(self, X_train, y_train, X_val, y_val, w_train):
+        """Optimize XGBoost parameters."""
+        def objective(trial):
+            max_depth = trial.suggest_int('max_depth', 4, 7)
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
+            n_estimators = trial.suggest_int('n_estimators', 100, 500)
+            min_child_weight = trial.suggest_int('min_child_weight', 1, 10)
+            gamma = trial.suggest_float('gamma', 0.1, 1.0)
+            subsample = trial.suggest_float('subsample', 0.6, 0.9)
+            colsample_bytree = trial.suggest_float('colsample_bytree', 0.6, 0.9)
+            reg_alpha = trial.suggest_float('reg_alpha', 0.1, 0.9)
+            reg_lambda = trial.suggest_float('reg_lambda', 0.1, 0.9)
+
+            if XGBClassifier is not None:
+                clf = XGBClassifier(
+                    max_depth=max_depth,
+                    learning_rate=learning_rate,
+                    n_estimators=n_estimators,
+                    min_child_weight=min_child_weight,
+                    gamma=gamma,
+                    subsample=subsample,
+                    colsample_bytree=colsample_bytree,
+                    reg_alpha=reg_alpha,
+                    reg_lambda=reg_lambda,
+                    random_state=42,
+                    verbosity=0,
+                    use_label_encoder=False
+                )
+
+                clf.fit(X_train, y_train, sample_weight=w_train,
+                       eval_set=[(X_val, y_val)], verbose=False)
+
+                preds = clf.predict_proba(X_val)[:, 1]
+                return log_loss(y_val, preds)
+            else:
+                return float('inf')
+
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=self.focal_hpo_n_trials)
+
+        return study.best_params, study.best_value
+
+    def _optimize_catboost_params(self, X_train, y_train, X_val, y_val, w_train):
+        """Optimize CatBoost parameters."""
+        def objective(trial):
+            depth = trial.suggest_int('depth', 4, 7)
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
+            iterations = trial.suggest_int('iterations', 100, 500)
+            l2_leaf_reg = trial.suggest_float('l2_leaf_reg', 1.0, 10.0)
+            border_count = trial.suggest_int('border_count', 32, 255)
+            random_strength = trial.suggest_float('random_strength', 0.1, 1.0)
+
+            if CATBOOST_AVAILABLE:
+                clf = CatBoostClassifier(
+                    depth=depth,
+                    learning_rate=learning_rate,
+                    iterations=iterations,
+                    l2_leaf_reg=l2_leaf_reg,
+                    border_count=border_count,
+                    random_strength=random_strength,
+                    random_seed=42,
+                    verbose=False,
+                    allow_writing_files=False
+                )
+
+                clf.fit(X_train, y_train, sample_weight=w_train,
+                       eval_set=(X_val, y_val), early_stopping_rounds=20, verbose=False)
+
+                preds = clf.predict_proba(X_val)[:, 1]
+                return log_loss(y_val, preds)
+            else:
+                return float('inf')
+
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=self.focal_hpo_n_trials)
+
+        return study.best_params, study.best_value
+
+    def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 5) -> List[GeometryTrial]:
+        """
+        Selects the best geometry per family using a REAL LGBM Probe.
+        1. Filter Top K by purity/score.
+        2. Train fast LGBM on each.
+        3. Select winner based on LogLoss.
+        Special Logic for PRICE_CUSUM: Selects 2-3 orthogonal ones.
+        """
+        if not candidates: return []
+        
+        family = candidates[0].family
+        
+        # 1. Sort by initial score (purity) and take Top K
+        sorted_cands = sorted(candidates, key=lambda x: x.final_score, reverse=True)[:top_k]
+        
+        tprint_info(f"   🔎 Probing top {len(sorted_cands)} candidates for {family}...")
+
+        # 2. Probe each candidate (Quick LGBM on global features)
+        scored_candidates = []
+        
+        for cand in sorted_cands:
+            try:
+                # 2.1 Prepare Data
+                if not hasattr(cand, 'labels') or cand.labels is None:
+                    # Should have been attached in optimize_production_geometries
+                    tprint_warning(f"⚠️ Candidate {cand.uuid} missing labels, skipping probe.")
+                    continue
+
+                events_df = pd.DataFrame(index=cand.events)
+                X_cand = self._build_geometry_independent_event_features(df, events_df)
+                
+                # Ensure labels is a Series with proper index
+                if isinstance(cand.labels, pd.Series):
+                    y_cand = cand.labels.astype(int)
+                else:
+                    # Convert list/array to Series with events as index
+                    y_cand = pd.Series(cand.labels, index=cand.events).astype(int)
+                
+                # CRITICAL: Align y to X's index (feature generation may drop some events)
+                common_idx = X_cand.index.intersection(y_cand.index)
+                if len(common_idx) == 0:
+                    tprint_warning(f"⚠️ Candidate {cand.uuid}: No common indices between X and y, skipping.")
+                    continue
+                    
+                X_cand = X_cand.loc[common_idx]
+                y_cand = y_cand.loc[common_idx]
+                
+                # Check Min Length
+                if len(X_cand) < 50:
+                    tprint_warning(f"⚠️ Candidate {cand.uuid}: Too few events ({len(X_cand)}), skipping.")
+                    continue
+
+                # 2.2 Train/Val Split (Simple TimeSeries split - last 30% for validation)
+                split_idx = int(len(X_cand) * 0.7)
+                X_tr, X_val = X_cand.iloc[:split_idx], X_cand.iloc[split_idx:]
+                y_tr, y_val = y_cand.iloc[:split_idx], y_cand.iloc[split_idx:]
+                
+                # 2.3 Train Probe
+                # Use fast constants
+                model = lgb.LGBMClassifier(**LAYER2_PROBE_CONSTANTS)
+                model.fit(
+                    X_tr, y_tr, 
+                    eval_set=[(X_val, y_val)], 
+                    eval_metric='binary_logloss',
+                    callbacks=[lgb.early_stopping(10, verbose=False)]
+                )
+                
+                # 2.4 Evaluate - Use PR-AUC (Average Precision) for imbalanced data
+                preds = model.predict_proba(X_val)[:, 1]
+                ap = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
+                auc = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
+                
+                # Recall for logging
+                preds_binary = (preds > 0.5).astype(int)
+                rec = recall_score(y_val, preds_binary, zero_division=0)
+                
+                cand.probe_score = ap  # PR-AUC: Higher is better
+                cand.race_score = auc  # For info
+                
+                # Store metrics for tprint
+                cand.metrics_log = f"PR-AUC={ap:.4f}, AUC={auc:.4f}, Rec={rec:.4f}"
+                
+                scored_candidates.append(cand)
+                
+                # Cleanup labels to free memory
+                cand.labels = None
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Probe failed for {cand.uuid}: {e}")
+        
+        if not scored_candidates: 
+            tprint_warning(f"⚠️ No candidates survived probe for {family}.")
+            return []
+        
+        # Sort by Probe PR-AUC (Higher is better)
+        scored_candidates.sort(key=lambda x: x.probe_score, reverse=True)
+        
+        selected = []
+        
+        # 3. Selection Logic
+        if family == 'PRICE_CUSUM':
+            # ENHANCED: Always select one H=12 and one H=48 geometry
+            # Group candidates by horizon
+            h12_cands = [c for c in scored_candidates if c.params.get('horizon') == 12]
+            h48_cands = [c for c in scored_candidates if c.params.get('horizon') == 48]
+            
+            # Sort each group by probe score
+            h12_cands.sort(key=lambda x: x.probe_score, reverse=True)
+            h48_cands.sort(key=lambda x: x.probe_score, reverse=True)
+            
+            # Select best from each horizon
+            if h12_cands:
+                winner_h12 = h12_cands[0]
+                selected.append(winner_h12)
+                tprint_info(f"      🥇 H12: {winner_h12.uuid}: {winner_h12.metrics_log}")
+            else:
+                tprint_warning(f"      ⚠️ No H=12 candidates for PRICE_CUSUM")
+                
+            if h48_cands:
+                winner_h48 = h48_cands[0]
+                selected.append(winner_h48)
+                tprint_info(f"      🥈 H48: {winner_h48.uuid}: {winner_h48.metrics_log}")
+            else:
+                tprint_warning(f"      ⚠️ No H=48 candidates for PRICE_CUSUM")
+            
+            # Fallback: if no horizon-specific, take overall best
+            if not selected and scored_candidates:
+                winner = scored_candidates[0]
+                selected.append(winner)
+                tprint_info(f"      🥇 {winner.uuid}: {winner.metrics_log} (Fallback)")
+        else:
+            # Winner takes all
+            winner = scored_candidates[0]
+            selected.append(winner)
+            tprint_info(f"      🥇 {winner.uuid}: {winner.metrics_log}")
+            
+        return selected
 
     def optimize_production_geometries(
         self,
@@ -911,156 +2081,60 @@ class LabelBasedLayer2:
     ) -> Tuple[List[GeometryTrial], List[str]]:
         """Step 2: Orthogonal Label Generation & Selection."""
         tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization...")
-
+    
         # 1. Generate & Filter
-        # Note: orthogonal_label_generation now handles labeling/looping internally
-        ortho_geoms = orthogonal_label_generation(df, signal_weights=self.signal_weights)
-
+        ortho_geoms = orthogonal_label_generation(df, signal_weights=self.signal_weights, return_raw_candidates=True)
+    
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
             return [], []
-
-        # 2. Convert to GeometryTrial
-        production_geometries = []
+    
+        # 2. Group by Family
+        family_map = defaultdict(list)
         for i, og in enumerate(ortho_geoms):
-            # Note: og is now an OutputGeometry with .purity, .auc, .params
-            
             # Score
             score = og.purity if og.purity is not None else 1.0
-
             # Params
             params = og.params.copy()
-            # Ensure horizon is present
-            if 'horizon' not in params:
-                params['horizon'] = 120 # Fallback
-
+            if 'horizon' not in params: params['horizon'] = 120
+            
             gt = GeometryTrial(
                 family=og.family,
                 params=params,
-                final_score=score * 100.0, # Scale up
-                learnability=og.auc, # Use the actual Probe AUC
+                final_score=score * 100.0,
+                learnability=og.auc,
                 robust_magnitude=0.0,
                 stability=1.0,
                 balance=1.0,
                 raw_metrics=og.metrics,
                 uuid=f"{og.name}_{i}",
-                events=og.events, # Store events!
-                selected_features=None # Initialize explicitly
+                events=og.events,
+                selected_features=None
             )
-            production_geometries.append(gt)
+            # Attach labels for probe training (Deleted before return to save memory)
+            gt.labels = og.labels
+            family_map[og.family].append(gt)
 
-        self.selected_geometries = production_geometries
-
-        # 3. Feature Selection (Optional) on Union
-        # We need a union events_df to run global feature selection
-        union_events = self._construct_union_events_df(df, production_geometries)
-        X_events_full = self._build_geometry_independent_event_features(df, union_events)
-
-        # Select global probe features based on Union
-        self._global_probe_features = self._select_global_probe_features(X_events_full)
-
-        # 4. Per-Geometry Titan RFE (Adaptive)
-        tprint_info(">>> Layer 2: Running Titan RFE per geometry...")
-        for gt in production_geometries:
-            try:
-                selected_feats = self._run_titan_rfe_for_geometry(df, gt)
-                if selected_feats:
-                    gt.selected_features = selected_feats
-                    tprint_success(f"   ✅ {gt.uuid}: Selected {len(selected_feats)} features")
-                else:
-                    tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set.")
-            except Exception as e:
-                tprint_error(f"   ❌ {gt.uuid}: Feature selection failed: {e}")
-
-        return production_geometries, self._global_probe_features
-
-    def run_oof_analytics(
-        self,
-        df: pd.DataFrame,
-        events_df: pd.DataFrame, # This is the UNION events_df
-        production_geometries: Optional[List[GeometryTrial]] = None,
-        global_probe_features: Optional[List[str]] = None,
-        production_selected_features: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
-        """Step 3: OOF Analytics."""
-        tprint_info(">>> Layer 2: Step 3 - OOF Analytics...")
-
-        if not production_geometries:
-            return {}
-
-        # Initialize global containers
-        idx = events_df.index
-        oof_scores = pd.Series(np.nan, index=idx)
-        oof_labels = pd.Series(np.nan, index=idx)
-        oof_weights = pd.Series(np.nan, index=idx)
-
-        # K-Fold Cross-Validation
-        n_splits = 3
-        fold_size = len(df) // n_splits
-        folds = []
-        for i in range(n_splits):
-            start = i * fold_size
-            end = (i + 1) * fold_size if i < n_splits - 1 else len(df)
-            folds.append((start, end))
-
-        generators = self.generators
-
-        # For OOF, we treat 'production_geometries' as the selected strategy.
-        # We retrain the strategy on Train and predict on Test.
+        # 3. Select Best via Race/Probe
+        production_geometries = []
+        tprint_info("🏆 Running Geometry Selection Race...")
         
-        for i, (test_start, test_end) in enumerate(folds):
-            tprint_info(f"OOF Fold {i+1}/{n_splits}...")
-            
-            # Setup Train/Test split (Walk-Forward / Purged K-Fold simplified)
-            train_mask = np.ones(len(df), dtype=bool)
-            train_mask[test_start:test_end] = False
-            # Purge 100 bars
-            p_start = max(0, test_start - 100)
-            p_end = min(len(df), test_end + 100)
-            train_mask[p_start:p_end] = False
-            
-            df_train = df[train_mask]
-            
-            # We predict on ALL events that fall into the test window
-            # First, reconstruct events for each geometry on the full timeline (or test slice)
-            # Actually, we should regenerate events on test slice to avoid lookahead?
-            # Or use global events and mask?
-            # Generators use expanding window. If we generate on full DF, it's safe (expanding).
-            # If we slice df_test, expanding window resets, which is inconsistent.
-            # So generate on full, slice events.
-
-        # Params
-        params = og.params.copy()
-        # Ensure horizon is present
-        if 'horizon' not in params:
-            params['horizon'] = 120 # Fallback
-
-        gt = GeometryTrial(
-            family=og.family,
-            params=params,
-            final_score=score * 100.0, # Scale up
-            learnability=og.auc, # Use the actual Probe AUC
-            robust_magnitude=0.0,
-            stability=1.0,
-            balance=1.0,
-            raw_metrics=og.metrics,
-            uuid=f"{og.name}_{i}",
-            events=og.events, # Store events!
-            selected_features=None # Initialize explicitly
-        )
-        production_geometries.append(gt)
+        for family, cands in family_map.items():
+            tprint_info(f"   {family}: {len(cands)} candidates -> Selection...")
+            winners = self._select_best_geometry_via_race(cands, df)
+            production_geometries.extend(winners)
 
         self.selected_geometries = production_geometries
-
-        # 3. Feature Selection (Optional) on Union
+    
+        # 4. Feature Selection (Optional) on Union
         # We need a union events_df to run global feature selection
         union_events = self._construct_union_events_df(df, production_geometries)
         X_events_full = self._build_geometry_independent_event_features(df, union_events)
-
+    
         # Select global probe features based on Union
         self._global_probe_features = self._select_global_probe_features(X_events_full)
-
-        # 4. Per-Geometry Titan RFE (Adaptive)
+    
+        # 5. Per-Geometry Titan RFE (Adaptive)
         tprint_info(">>> Layer 2: Running Titan RFE per geometry...")
         for gt in production_geometries:
             try:
@@ -1072,8 +2146,9 @@ class LabelBasedLayer2:
                     tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set.")
             except Exception as e:
                 tprint_error(f"   ❌ {gt.uuid}: Feature selection failed: {e}")
-
+    
         return production_geometries, self._global_probe_features
+
 
     def run_oof_analytics(
         self,
@@ -1094,6 +2169,9 @@ class LabelBasedLayer2:
         oof_scores = pd.Series(np.nan, index=idx)
         oof_labels = pd.Series(np.nan, index=idx)
         oof_weights = pd.Series(np.nan, index=idx)
+        
+        # Individual geometry predictions for Layer 3
+        individual_geos = {}
     
         # K-Fold Cross-Validation
         n_splits = 3
@@ -1104,21 +2182,30 @@ class LabelBasedLayer2:
             end = (i + 1) * fold_size if i < n_splits - 1 else len(df)
             folds.append((start, end))
     
-        generators = {
+        self.generators = {
+            # Legacy mappings
             "CUSUM": AdaptiveSymmetricCUSUMEvents(),
-            "VOL": ATRShockEvents(),
-            "TREND": TrendModulatedBreakoutEvents(),
-            "MEAN": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            "BREAKOUT": TrendModulatedBreakoutEvents(),
+            "VOL": RangeATRcusumEvents(),
+            "TREND": TrendRegimeCusumEvents(),
+            "MEAN": MeanReversionExtremeEvents(),
+            "LIQUIDITY": LiquidityShockEvents(),
+            "ENTROPY": VolatilityStateEvents(),
+            "BREAKOUT": TrendInitiationEvents(),
             "KALMAN": KalmanTrendEvents(),
-            "MR": VWAPReversionEvents(),
-            "VWAP": VWAPCrossEvents(),
-            "MEAN_REV": VWAPReversionEvents(),
-            "LIQUIDITY": MicrostructureEvents(),
-            "ENTROPY": EntropyEvents(),
-            # "TIME": EntropyEvents() # Replacing TIME with Entropy as it is structural
+            "MR": MeanReversionExtremeEvents(),
+            "VWAP": SymmetricCusumEvents(),
+            "MEAN_REV": MeanReversionExtremeEvents(),
+            "VOLATILITY": VolatilityShockEvents(),
+            "TIME": TimeEvents(),
+            # Layer 1 output family names (CRITICAL: These must match orthogonal_label_generation families)
+            "PRICE_CUSUM": ImprovedCUSUMEvents(),
+            "VOL_CUSUM": VolatilityCusumEvents(),
+            "LIQ_CUSUM": LiquidityCusumEvents(),
+            "TAIL_RISK": TailRiskCusumEvents(),
+            "TREND_REGIME": TrendRegimeCusumEvents(),
+            "VOL_STATE": VolatilityStateEvents(),
+            "RANGE_ATR": RangeATRcusumEvents(),
+            "SR_CUSUM": SRCusumEvents(),
         }
     
         # For OOF, we treat 'production_geometries' as the selected strategy.
@@ -1158,22 +2245,36 @@ class LabelBasedLayer2:
                 params_key = tuple(sorted(gen_params.items()))
                 groups[(gt.family, params_key)].append(gt)
             
+            tprint_info(f"📊 DIAGNOSTIC: {len(groups)} family groups to process")
+            
             # Process each group
             for (family, params_key), group_geometries in groups.items():
                 gen_params = dict(params_key)
                 tprint_info(f"🔄 Processing group: {family} | Params: {gen_params} ({len(group_geometries)} geometries)")
                 
-                # 1. Get cached events for this family+params
-                train_evts_idx = self._get_cached_events(df_train, family, i, gen_params)
+                # Check if generator exists
+                gen = self.generators.get(family)
+                if gen is None:
+                    tprint_error(f"❌ DIAGNOSTIC: No generator found for family '{family}'. Available: {list(self.generators.keys())}")
+                    continue
+                else:
+                    tprint_success(f"✅ DIAGNOSTIC: Generator found for '{family}': {type(gen).__name__}")
+                
+                # 1. Get global events and slice for training fold
+                full_events = self._get_global_events(df, family, gen_params)
+                train_mask = (full_events >= df.index[0]) & (full_events < df.index[test_start])
+                train_evts_idx = full_events[train_mask]
+                tprint_info(f"📊 DIAGNOSTIC: {family} has {len(train_evts_idx)} training events (min required: 20)")
                 
                 if len(train_evts_idx) < 20: 
                     tprint_warning(f"⚠️ Too few train events ({len(train_evts_idx)} < 20) for {family}")
                     continue
                 
-                # 2. Get cached features for this family
+                # 2. Get features using global cache
                 train_evts_df = pd.DataFrame(index=train_evts_idx)
-                X_train = self._get_cached_features(df_train, train_evts_df, i)
-                if X_train.empty: 
+                X_train = self._build_geometry_independent_event_features(df, train_evts_df)
+                tprint_info(f"📊 DIAGNOSTIC: {family} X_train shape: {X_train.shape}")
+                if X_train.empty:
                     tprint_warning(f"⚠️ No features generated for {family}")
                     continue
                 
@@ -1181,81 +2282,37 @@ class LabelBasedLayer2:
                 labels_dict, weights_dict = self._compute_labels_batch(
                     df_train, train_evts_idx, group_geometries, family, i, sr_levels=self.sr_levels
                 )
+                tprint_info(f"📊 DIAGNOSTIC: {family} computed labels for {len(labels_dict)} geometries")
                 
-                # 4. Process each geometry in the family
-                for gt in group_geometries: # Fixed: family_geometries -> group_geometries
-                    tprint_info(f"🚀 Training {gt.uuid} (family: {family})")
-                    
-                    # Get labels and weights for this geometry
-                    labels = labels_dict.get(gt.uuid)
-                    weights = weights_dict.get(gt.uuid)
+                # 4. Train geometries in batch with parallelization (max 2 concurrent)
+                tprint_info(f"🚀 Training {len(group_geometries)} geometries in batch for {family}...")
+                batch_models, batch_diagnostics = self._train_geometry_batch(
+                    group_geometries, df_train, X_train, labels_dict, weights_dict, family, i
+                )
 
-                    if labels is None or len(labels) < 20:
-                        tprint_warning(f"⚠️ Too few valid labels for {gt.uuid}")
-                        continue
-                    
-                    # Get geometry-specific features
-                    geo_feats = self._compute_specific_geometry_features(df_train, X_train.index, gt.params)
-                    X_train_geo = pd.concat([X_train, geo_feats], axis=1).fillna(0.0)
-                    
-                    # Feature Selection Application
-                    selected_cols = None
-                    gt_selected = getattr(gt, 'selected_features', None)
-                    
-                    if gt_selected:
-                        selected_cols = [c for c in gt_selected if c in X_train_geo.columns]
-                    
-                    if selected_cols:
-                        X_train_final = X_train_geo[selected_cols]
-                        tprint_info(f"   🎯 Using {len(selected_cols)} selected features for {gt.uuid}")
-                    else:
-                        X_train_final = X_train_geo
-                        tprint_info(f"   📊 Using all {len(X_train_geo.columns)} features for {gt.uuid}")
-                    
-                    # Align labels and weights with features
-                    y_train = labels.loc[X_train_final.index]
-                    if weights is not None:
-                        w_train = weights.reindex(y_train.index).fillna(0.0)
-                    else:
-                        w_train = None
-    
-                    # Train Model
-                    try:
-                        tprint_info(f"   🚀 Training LGBM model for {gt.uuid} ({len(X_train_final)} samples)...")
-                        focal_lgbm = RobustFocalLoss(verbose=False)
-                        params = LAYER2_MODEL_CONSTANTS.copy()
-                        params['objective'] = focal_lgbm
-                        params['metric'] = 'auc'
-    
-                        clf = lgb.LGBMClassifier(**params)
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
-                        trained_models[gt.uuid] = clf
-                        tprint_success(f"   ✅ Trained model for {gt.uuid}")
-                        
-                        # Extract tree diagnostics after training
-                        tree_diagnostics = self._extract_tree_diagnostics(clf)
-                        self._all_tree_stats.append({
-                            'geometry_uuid': gt.uuid,
-                            'fold': i,
-                            **tree_diagnostics
-                        })
-                    except Exception as e:
-                        tprint_error(f"   ❌ Training failed for {gt.uuid} on fold {i}: {e}")
+                # Store trained models and diagnostics
+                trained_models.update(batch_models)
+                for gt_uuid, diagnostics in batch_diagnostics.items():
+                    self._all_tree_stats.append({
+                        'geometry_uuid': gt_uuid,
+                        'fold': i,
+                        **diagnostics
+                    })
     
             # Predict on Test
             # We predict on events that occur in the Test window
             test_evts_map = {}
+
+            # Slice to test window - clamp test_end index to avoid bounds error on last fold
+            test_start_time = df.index[test_start]
+            test_end_time = df.index[min(test_end, len(df) - 1)]
+
             for gt in production_geometries:
-                gen = generators.get(gt.family)
-                if not gen: continue
-    
-                # Generate on DF up to test_end to get expanding window stats correct
-                df_context = df.iloc[:test_end]
                 gen_params = self._extract_gen_params(gt)
 
-                full_evts = gen.generate(df_context, **gen_params)
-                # Slice to test window
-                test_evts = full_evts[(full_evts >= df.index[test_start]) & (full_evts < df.index[test_end])]
+                # Use global events and slice to test window
+                full_events = self._get_global_events(df, gt.family, gen_params)
+                test_evts = full_events[(full_events >= test_start_time) & (full_events < test_end_time)]
     
                 if len(test_evts) > 0:
                     test_evts_map[gt.uuid] = test_evts
@@ -1268,14 +2325,14 @@ class LabelBasedLayer2:
                     model = trained_models.get(gt_uuid)
                     if model is None: continue
     
-                    # Build Features for Test Events (using cached features)
+                    # Build Features for Test Events (using global features)
                     test_evts_df = pd.DataFrame(index=evts)
-                    X_test = self._get_cached_features(df_context, test_evts_df, i)
+                    X_test = self._build_geometry_independent_event_features(df, test_evts_df)
                     if X_test.empty: continue
     
                     # Geo features using params from production geometry object
                     gt = next(g for g in production_geometries if g.uuid == gt_uuid)
-                    geo_feats = self._compute_specific_geometry_features(df_context, X_test.index, gt.params)
+                    geo_feats = self._compute_specific_geometry_features(df, X_test.index, gt.params)
                     X_test = pd.concat([X_test, geo_feats], axis=1).fillna(0.0)
     
                     # Feature Selection Application (Test)
@@ -1293,70 +2350,213 @@ class LabelBasedLayer2:
                         X_test = X_test[selected_cols]
     
                     # Predict
-                    preds = model.predict_proba(X_test)[:, 1]
-    
-                    # Bagging: Max probability aggregation
+                    prob = model.predict_proba(X_test)
+                    if prob.ndim == 2:
+                        preds = prob[:, 1]
+                    else:
+                        preds = prob
+                    
+                    # Align evts to oof_scores index TZ to ensure valid lookups
+                    evts_aligned = evts
+                    try:
+                        if oof_scores.index.tz is not None and evts.tz is None:
+                             evts_aligned = evts.tz_localize(oof_scores.index.tz)
+                        elif oof_scores.index.tz is None and evts.tz is not None:
+                             evts_aligned = evts.tz_localize(None)
+                    except Exception:
+                        pass
+                    
+                    # Store individual geometry predictions for Layer 3
+                    # Use a temporary list to accumulate across folds
+                    if not hasattr(self, '_individual_geos_accum'):
+                        self._individual_geos_accum = defaultdict(list)
+                    
+                    self._individual_geos_accum[gt_uuid].append(pd.Series(preds, index=evts_aligned))
+                    tprint_info(f"   Stored {len(preds)} preds for {gt_uuid} (Fold {i+1})")
+
+
+                    # Bagging: Max probability aggregation - using JIT-compiled function
                     # If multiple geometries predict on the same timestamp, take max
-                    current_vals = oof_scores.loc[evts].fillna(0.0)
-                    new_vals = np.maximum(current_vals, preds)
-                    oof_scores.loc[evts] = new_vals
+                    current_vals = oof_scores.loc[evts_aligned].fillna(0.0).values
+                    oof_scores.loc[evts_aligned] = vectorized_prediction_aggregation(preds, current_vals)
+
+                    # Weights: 1.0 for now - using JIT-compiled function
+                    n_events = len(evts_aligned)
+                    oof_weights.loc[evts_aligned] = vectorized_weight_assignment(n_events, 1.0)
+
+            # Construct oof_labels (0.5 threshold) - using JIT-compiled function
+            oof_labels = vectorized_threshold_classification(oof_scores.values, 0.5)
+            oof_labels = pd.Series(oof_labels, index=oof_scores.index)
     
-                    # Weights: 1.0 for now
-                    oof_weights.loc[evts] = 1.0
-    
-            # Construct oof_labels (0.5 threshold)
-            oof_labels = (oof_scores >= 0.5).astype(float)
-    
-            # Calculate Returns for OOF events (Consensus)
-            # We need returns for the union of events generated in Test folds
-            # oof_scores index contains all predicted events.
-            # We need realized returns for these events.
-            # Since we don't know WHICH geometry "won" the max, we use a generic return (e.g. at fixed horizon 120)
-            # or we try to reconstruct weighted return.
-            # Simplification: Calculate return at horizon=120 for all events
-            oof_returns = pd.Series(np.nan, index=oof_scores.index)
-            valid_idx = oof_scores.dropna().index
-    
-            if not valid_idx.empty:
-                # Stub return calculation
-                # Use compute_realized_returns with default params
-                ret, _, _, _, _, _, _, _ = compute_realized_returns(
-                    df, pd.DataFrame({'consensus': 1}, index=df.index),
-                    profit_threshold=None, stop_threshold=None, horizon=120,
-                    transaction_cost=self.transaction_cost
-                )
-                oof_returns.loc[valid_idx] = ret.loc[valid_idx]
-    
-            return {
-                "l2_score": oof_scores,
-                "oof_labels": oof_labels,
-                "oof_returns": oof_returns,
-                "weights": oof_weights,
-                "tree_diagnostics": self._all_tree_stats
-            }
+        # Concatenate accumulated predictions from all folds
+        if hasattr(self, '_individual_geos_accum'):
+            tprint_info(f"🔄 Concatenating OOF predictions for {len(self._individual_geos_accum)} geometries...")
+            for gt_uuid, preds_list in self._individual_geos_accum.items():
+                if preds_list:
+                    try:
+                        combined_preds = pd.concat(preds_list)
+                        # Deduplicate in case of overlaps
+                        combined_preds = combined_preds[~combined_preds.index.duplicated(keep='last')]
+                        individual_geos[gt_uuid] = combined_preds
+                    except Exception as e:
+                        tprint_error(f"❌ Failed to concat preds for {gt_uuid}: {e}")
+            # Cleanup
+            del self._individual_geos_accum
+
+        # Calculate Returns for OOF events (Consensus)
+        # We need returns for the union of events generated in Test folds
+        # oof_scores index contains all predicted events.
+        # We need realized returns for these events.
+        # Since we don't know WHICH geometry "won" the max, we use a generic return (e.g. at fixed horizon 120)
+        # or we try to reconstruct weighted return.
+        # Simplification: Calculate return at horizon=120 for all events
+        oof_returns = pd.Series(np.nan, index=oof_scores.index)
+        valid_idx = oof_scores.dropna().index
+ 
+        if not valid_idx.empty:
+            # Stub return calculation
+            # Use compute_realized_returns with default params
+            ret, _, _, _, _, _, _, _ = compute_realized_returns(
+                df, pd.DataFrame({'consensus': 1}, index=df.index),
+                profit_threshold=None, stop_threshold=None, horizon=120,
+                transaction_cost=self.transaction_cost
+            )
+            
+            # Align ret index to oof_returns (valid_idx)
+            # Handle TZ mismatch
+            try:
+                if valid_idx.tz is not None and ret.index.tz is None:
+                    ret.index = ret.index.tz_localize(valid_idx.tz)
+                elif valid_idx.tz is None and ret.index.tz is not None:
+                    ret.index = ret.index.tz_localize(None)
+            except Exception:
+                pass
+                
+            # Use reindex for safety
+            oof_returns.loc[valid_idx] = ret.reindex(valid_idx).values
+
+        # Memory cleanup before returning
+        self._cleanup_memory()
+
+        return {
+            "l2_score": oof_scores,
+            "oof_labels": oof_labels,
+            "oof_returns": oof_returns,
+            "weights": oof_weights,
+            "tree_diagnostics": self._all_tree_stats,
+            "individual_geos": individual_geos
+        }
     
         # ... (Keep existing helpers like _extract_tree_diagnostics, _precompute_geometry_base_features, _validate_inputs) ...
     
 
 
     def _compute_specific_geometry_features(self, df, events_index, params):
-        """Re-implement basic ratio features."""
+        """Generate family-specific features for geometry assessment using vectorized operations."""
         if events_index.empty: return pd.DataFrame()
 
+        # Vectorized data extraction
         subset = df.reindex(events_index)
         vol = subset['volatility_1d'].fillna(0.0)
+        price = subset['close'].fillna(method='ffill')
+        volume = subset.get('volume', pd.Series(0, index=events_index))
 
+        # Pre-compute common rolling statistics using JIT-compiled functions for better performance
+        price_values = price.values
+        price_pct_values = vectorized_pct_change_jit(price_values)
+        price_abs_pct_values = np.abs(price_pct_values)
+
+        # JIT-compiled rolling calculations
+        roll5_sum_values = rolling_mean_jit(price_pct_values, 5) * 5  # Approximate rolling sum
+        roll10_sum_values = rolling_mean_jit(price_pct_values, 10) * 10
+        roll10_sum_abs_values = rolling_mean_jit(price_abs_pct_values, 10) * 10
+        roll20_mean_values = rolling_mean_jit(price_pct_values, 20)
+        roll20_std_values = rolling_std_jit(price_pct_values, 20)
+        roll100_std_values = rolling_std_jit(price_pct_values, 100)
+        roll10_std_values = rolling_std_jit(price_abs_pct_values, 10)
+        roll5_std_values = rolling_std_jit(roll10_std_values, 5)
+
+        # Convert back to pandas series for compatibility
+        roll5_sum = pd.Series(roll5_sum_values, index=price.index)
+        roll10_sum = pd.Series(roll10_sum_values, index=price.index)
+        roll10_sum_abs = pd.Series(roll10_sum_abs_values, index=price.index)
+        roll20_mean = pd.Series(roll20_mean_values, index=price.index)
+        roll20_std = pd.Series(roll20_std_values, index=price.index)
+        roll100_std = pd.Series(roll100_std_values, index=price.index)
+        roll10_std = pd.Series(roll10_std_values, index=price.index)
+        roll5_std = pd.Series(roll5_std_values, index=price.index)
+        
+        feats = pd.DataFrame(index=events_index)
+        family = params.get('family', 'UNKNOWN')
+
+        # Base geometry feature (vectorized)
         sl_mult = params.get('sl_mult', 1.0)
         stop_size = (vol * sl_mult).replace(0.0, np.nan)
-
-        feats = pd.DataFrame(index=events_index)
         feats['geo_vol_to_stop'] = vol / stop_size
-        return feats.fillna(0.0)
 
+        # Vectorized family-specific features
+        price_pct = pd.Series(price_pct_values, index=price.index)  # Create Series for all families
+        
+        if family == 'PRICE_CUSUM':
+            # CUSUM signal strength and price momentum
+            feats['cusum_strength'] = roll5_sum.abs()
+            feats['price_efficiency'] = (roll10_sum / (roll10_sum_abs + 1e-9)).abs()
+            feats['price_momentum'] = price_pct.shift(-5)
+            
+        elif family == 'LIQ_CUSUM':
+            # Volume spike and liquidity drought (vectorized)
+            vol_avg = volume.rolling(20).mean()
+            vol_avg_safe = vol_avg + 1e-9
+            feats['volume_spike'] = volume / vol_avg_safe
+            feats['liquidity_drought'] = (volume < vol_avg * 0.5).astype(int)
+            feats['volume_trend'] = volume.rolling(10).mean() / vol_avg_safe
+            
+        elif family == 'TAIL_RISK':
+            # Tail risk proxies (vectorized)
+            feats['skewness'] = price_pct.rolling(20).skew()
+            feats['vol_of_vol'] = roll5_std
+            feats['kurtosis'] = price_pct.rolling(20).kurtosis()
+            
+        elif family == 'TREND_REGIME':
+            # Trend strength and consistency (vectorized)
+            feats['trend_strength'] = roll20_mean.abs()
+            feats['directional_consistency'] = (price_pct > 0).rolling(10).mean()
+            feats['trend_persistence'] = (price_pct > 0).rolling(20).mean()
+            
+        elif family == 'VOL_STATE':
+            # Volatility regime indicators (vectorized)
+            vol_z = roll20_std / (roll100_std + 1e-9)
+            feats['vol_regime_zscore'] = vol_z.fillna(0)
+            feats['vol_clustering'] = price_abs_pct.rolling(5).autocorr()
+            feats['vol_mean_reversion'] = -price_pct.rolling(20).autocorr()
+            
+        elif family in ['RANGE_ATR', 'SR_CUSUM']:
+            # Range expansion and breakout momentum (vectorized)
+            roll20_max = price.rolling(20).max()
+            roll20_min = price.rolling(20).min()
+            roll5_max = price.rolling(5).max()
+            roll5_min = price.rolling(5).min()
+            
+            range_avg = roll20_max - roll20_min
+            current_range = roll5_max - roll5_min
+            range_avg_safe = range_avg + 1e-9
+            range_avg_shift = range_avg.shift(1)
+            
+            feats['range_expansion'] = current_range / range_avg_safe
+            feats['breakout_momentum'] = (current_range - range_avg_shift) / (range_avg_shift + 1e-9)
+            feats['range_position'] = (price - roll20_min) / range_avg_safe
+
+        return feats.fillna(0.0)
     def _run_titan_rfe_for_geometry(self, df: pd.DataFrame, gt: GeometryTrial) -> List[str]:
         """
         Run adaptive Titan RFE for a specific geometry.
         """
+        # Check cache first
+        cached_selection = self._get_cached_feature_selection(gt.uuid)
+        if cached_selection is not None:
+            tprint_info(f"   ✅ Using cached feature selection for {gt.uuid}: {len(cached_selection)} features")
+            return cached_selection
+
         # 1. Regenerate events/labels for this geometry on the full df (or relevant slice)
 
         # Re-generate events if not present or need full context
@@ -1426,15 +2626,31 @@ class LabelBasedLayer2:
         )
 
         if not feature_sets:
-            # Fallback: respect adaptive limit
-            # max_allowed was calculated inside pipeline, but we can approximate it or be safe
+            # Fallback: ensure minimum 10 features
             n_samples = len(y)
-            limit = max(1, n_samples // 100)
-            return list(X.columns)[:limit]
+            limit = max(10, n_samples // 100)  # Minimum 10 features
+            selected_features = list(X.columns)[:limit]
+            self._cache_feature_selection(gt.uuid, selected_features)
+            return selected_features
 
-        # Return the largest available set (keys are ints)
+        # Return the largest available set, but ensure minimum 10 features
         best_k = max(feature_sets.keys())
-        return feature_sets[best_k]
+        selected_features = feature_sets[best_k]
+
+        # Guarantee minimum 10 features
+        if len(selected_features) < 10:
+            # Add more features from the original set if available
+            all_features = list(X.columns)
+            available_additional = [f for f in all_features if f not in selected_features]
+            needed = 10 - len(selected_features)
+            if len(available_additional) >= needed:
+                selected_features.extend(available_additional[:needed])
+            else:
+                # If we don't have enough, just take the first 10 features
+                selected_features = all_features[:10]
+
+        self._cache_feature_selection(gt.uuid, selected_features)
+        return selected_features
 
     def _select_global_probe_features(self, X_events: pd.DataFrame) -> List[str]:
         """
@@ -1446,44 +2662,28 @@ class LabelBasedLayer2:
         
         # Curated market state probe features from existing MTF feature generation
         probe_features = [
-            # Market Microstructure & Regime
-            'rv_z_short',                    # Realized volatility z-score (vol regime)
-            'volatility_trend_slope',        # Volatility expansion/contraction
-            'volatility_w20',                # Base 20-bar volatility
-            
-            # Information Theory & Market State  
-            'rolling_efficiency_ratio',      # Market efficiency
-            'kaufman_efficiency_ratio',      # Kaufman efficiency ratio
-            
-            # Price Action & Momentum
-            'log_ret',                       # Log returns (base momentum)
-            'momentum_30',                   # 30-bar momentum
-            'rsi',                          # RSI (momentum oscillator)
-            'rsi_kalman',                   # Kalman-smoothed RSI
-            
-            # Trend & Direction
-            'kalman_trend',                 # Kalman-filtered trend
-            'adx_w20',                      # ADX trend strength
-            'trend_efficiency_ratio_w20',   # Trend efficiency
-            
-            # Volume-Price Features (if available)
+            # Market Microstructure & Liquidity (unique from family/market state)
             'price_impact_w20',             # Price impact (Amihud illiquidity)
             'cmf_w20',                      # Chaikin Money Flow
             'force_index_w20',              # Force Index
-            
-            # Volatility Regime Features
-            'volatility_zscore_w20',         # Volatility z-score
+
+            # Trend & Direction (unique from family features)
+            'adx_w20',                      # ADX trend strength
+            'trend_efficiency_ratio_w20',   # Trend efficiency
+
+            # Volatility Regime (unique from family VOL_STATE)
             'vol_compression_duration_w20',  # Vol compression duration
             'breakout_after_compression_flag_w20',  # Breakout after compression
-            
+
             # Drawdown & Risk
             'drawdown_w20',                 # Rolling drawdown
             'max_adverse_excursion_w20',     # MAE proxy
-            
+
             # Market Microstructure
             'body_to_range_w20',            # Candle body to range ratio
             'close_location_value_w20',     # Close location in range
         ]
+
         
         # Select only features that actually exist in the data
         selected = [f for f in probe_features if f in X_events.columns]
@@ -1497,24 +2697,472 @@ class LabelBasedLayer2:
         tprint_info(f"Global probe features selected: {selected}")
         return selected
 
-    def _build_geometry_independent_event_features(self, df: pd.DataFrame, events_df: pd.DataFrame) -> pd.DataFrame:
-        if events_df.empty: return pd.DataFrame()
-        # Use MTF feature generation
-        signals = pd.DataFrame({'consensus': 1.0}, index=df.index)
+    def _train_geometry_batch(self, geometry_batch: List, df_train: pd.DataFrame, X_train: pd.DataFrame,
+                            labels_dict: Dict, weights_dict: Dict, family: str, fold_idx: int) -> Dict[str, Any]:
+        """Train a batch of geometries in parallel (max 2 concurrent)."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        trained_models = {}
+        results = {}
+
+        def train_single_geometry(gt):
+            """Train a single geometry."""
+            try:
+                # Check cache first
+                cached_model = self._get_cached_model(gt.uuid, fold_idx)
+                if cached_model is not None:
+                    tprint_info(f"   ✅ Using cached model for {gt.uuid}")
+                    return gt.uuid, cached_model, self._extract_tree_diagnostics(cached_model)
+
+                # Get labels and weights for this geometry
+                labels = labels_dict.get(gt.uuid)
+                weights = weights_dict.get(gt.uuid)
+
+                if labels is None or len(labels) < 20:
+                    return gt.uuid, None, f"Too few valid labels: {len(labels) if labels is not None else 0}"
+
+                # Get geometry-specific features
+                geo_feats = self._compute_specific_geometry_features(df_train, X_train.index, gt.params)
+                X_train_geo = pd.concat([X_train, geo_feats], axis=1, copy=False).fillna(0.0)
+
+                # Feature Selection Application
+                selected_cols = None
+                gt_selected = getattr(gt, 'selected_features', None)
+
+                if gt_selected:
+                    selected_cols = [c for c in gt_selected if c in X_train_geo.columns]
+
+                if selected_cols:
+                    X_train_final = X_train_geo[selected_cols]
+                else:
+                    X_train_final = X_train_geo
+
+                # Align labels and weights with features
+                common_idx = X_train_final.index.intersection(labels.index)
+                if len(common_idx) < 20:
+                    return gt.uuid, None, f"Too few samples after alignment: {len(common_idx)}"
+
+                X_train_final = X_train_final.loc[common_idx]
+                y_train = labels.loc[common_idx]
+
+                if weights is not None:
+                    w_train = weights.reindex(common_idx).fillna(0.0)
+                else:
+                    w_train = None
+
+                # Train Model - with optional model race
+                focal_params = None
+                best_name = "LGBM_Focal"  # Default winner
+
+                if self.enable_model_race and len(X_train_final) > 100:  # Only race if enough data
+                    tprint_info(f"🏁 Running model race for geometry {gt.uuid}...")
+
+                    # Split training data for model race (use portion for validation)
+                    race_train_size = int(0.7 * len(X_train_final))
+                    X_race_train = X_train_final.iloc[:race_train_size]
+                    X_race_val = X_train_final.iloc[race_train_size:]
+                    y_race_train = y_train.iloc[:race_train_size]
+                    y_race_val = y_train.iloc[race_train_size:]
+                    w_race_train = w_train[:race_train_size] if w_train is not None else None
+
+                    # Run model race
+                    best_model, best_name, race_results = self._run_model_race(
+                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train
+                    )
+
+                    tprint_success(f"🏆 Model race winner: {best_name} (log_loss: {race_results[best_name]['log_loss']:.4f})")
+
+                    # HPO - run on the winning model (different HPO strategies per model type)
+                    if self.enable_focal_hpo and len(X_train_final) > 200:
+                        tprint_info(f"🎯 Running HPO for winning model: {best_name}...")
+
+                        # Split data for HPO (fresh split from full training data)
+                        hpo_train_size = int(0.7 * len(X_train_final))
+                        X_hpo_train = X_train_final.iloc[:hpo_train_size]
+                        X_hpo_val = X_train_final.iloc[hpo_train_size:]
+                        y_hpo_train = y_train.iloc[:hpo_train_size]
+                        y_hpo_val = y_train.iloc[hpo_train_size:]
+                        w_hpo_train = w_train[:hpo_train_size] if w_train is not None else None
+
+                        # Run appropriate HPO based on winner type
+                        if 'LGBM_Focal' in best_name:
+                            # RobustFocalLoss + Tree HPO
+                            focal_params, hpo_score = self._optimize_focal_loss_params(
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                            )
+                        elif 'LGBM_BCE' in best_name:
+                            # Standard LGBM HPO (tree parameters only)
+                            focal_params, hpo_score = self._optimize_lgbm_bce_params(
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                            )
+                        elif 'XGB' in best_name:
+                            # XGBoost HPO
+                            focal_params, hpo_score = self._optimize_xgb_params(
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                            )
+                        elif 'CatBoost' in best_name:
+                            # CatBoost HPO
+                            focal_params, hpo_score = self._optimize_catboost_params(
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                            )
+                        else:
+                            # No HPO for other model types
+                            focal_params = None
+                            tprint_info(f"   ⏭️ Skipping HPO for {best_name} (using defaults)")
+
+                    # Retrain best model on full training data with HPO parameters
+                    if 'LGBM_Focal' in best_name:
+                        # Use HPO-optimized parameters if available
+                        if focal_params:
+                            focal_lgbm = RobustFocalLoss(
+                                gamma_pos=focal_params['gamma_pos'],
+                                gamma_neg=focal_params['gamma_neg'],
+                                alpha=focal_params['alpha'],
+                                mix=focal_params['mix'],
+                                label_smoothing=focal_params['label_smoothing'],
+                                verbose=False
+                            )
+                            params = LAYER2_PROBE_CONSTANTS.copy()
+                            params.pop('early_stopping_rounds', None)
+                            params['objective'] = focal_lgbm
+                            params['metric'] = 'auc'
+                            # Apply HPO tree parameters
+                            params['max_depth'] = focal_params['max_depth']
+                            params['num_leaves'] = focal_params['num_leaves']
+                            tprint_info(f"   ✅ Using HPO-optimized focal loss + tree params")
+                        else:
+                            focal_lgbm = RobustFocalLoss(verbose=False)
+                            params = LAYER2_PROBE_CONSTANTS.copy()
+                            params.pop('early_stopping_rounds', None)
+                            params['objective'] = focal_lgbm
+                            params['metric'] = 'auc'
+
+                        clf = lgb.LGBMClassifier(**params)
+                        clf.fit(
+                            X_train_final, y_train, sample_weight=w_train,
+                            eval_set=[(X_train_final, y_train)], eval_metric='auc',
+                            callbacks=[lgb.early_stopping(30, verbose=False)]
+                        )
+
+                    elif 'LGBM_BCE' in best_name:
+                        # Standard LGBM with BCE - use HPO params if available
+                        if focal_params:
+                            clf = lgb.LGBMClassifier(
+                                n_estimators=200,
+                                max_depth=focal_params['max_depth'],
+                                num_leaves=focal_params['num_leaves'],
+                                learning_rate=focal_params['learning_rate'],
+                                min_data_in_leaf=focal_params['min_data_in_leaf'],
+                                lambda_l1=focal_params['lambda_l1'],
+                                lambda_l2=focal_params['lambda_l2'],
+                                subsample=focal_params['subsample'],
+                                objective='binary',
+                                random_state=42,
+                                verbose=-1
+                            )
+                            tprint_info(f"   ✅ Using HPO-optimized LGBM BCE params")
+                        else:
+                            clf = lgb.LGBMClassifier(
+                                n_estimators=200, learning_rate=0.05, num_leaves=31, max_depth=6,
+                                objective='binary', random_state=42, verbose=-1
+                            )
+                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+
+                    elif 'LGBM_Focal_Linear' in best_name:
+                        # Linear tree with focal loss - use HPO if available
+                        if focal_params:
+                            focal_lgbm = RobustFocalLoss(
+                                gamma_pos=focal_params['gamma_pos'],
+                                gamma_neg=focal_params['gamma_neg'],
+                                alpha=focal_params['alpha'],
+                                mix=focal_params['mix'],
+                                label_smoothing=focal_params['label_smoothing'],
+                                verbose=False
+                            )
+                            params = LAYER2_PROBE_CONSTANTS.copy()
+                            params.pop('early_stopping_rounds', None)
+                            params['objective'] = focal_lgbm
+                            params['metric'] = 'auc'
+                            params['linear_tree'] = True
+                            params['max_depth'] = focal_params['max_depth']
+                            params['num_leaves'] = focal_params['num_leaves']
+                        else:
+                            focal_lgbm = RobustFocalLoss(verbose=False)
+                            params = LAYER2_PROBE_CONSTANTS.copy()
+                            params.pop('early_stopping_rounds', None)
+                            params['objective'] = focal_lgbm
+                            params['metric'] = 'auc'
+                            params['linear_tree'] = True
+
+                        clf = lgb.LGBMClassifier(**params)
+                        clf.fit(
+                            X_train_final, y_train, sample_weight=w_train,
+                            eval_set=[(X_train_final, y_train)], eval_metric='auc',
+                            callbacks=[lgb.early_stopping(30, verbose=False)]
+                        )
+
+                    elif 'XGB' in best_name and XGBClassifier is not None:
+                        # Use HPO-optimized parameters if available
+                        if focal_params:
+                            clf = XGBClassifier(
+                                max_depth=focal_params['max_depth'],
+                                learning_rate=focal_params['learning_rate'],
+                                n_estimators=focal_params['n_estimators'],
+                                min_child_weight=focal_params['min_child_weight'],
+                                gamma=focal_params['gamma'],
+                                subsample=focal_params['subsample'],
+                                colsample_bytree=focal_params['colsample_bytree'],
+                                reg_alpha=focal_params['reg_alpha'],
+                                reg_lambda=focal_params['reg_lambda'],
+                                random_state=42,
+                                verbosity=0,
+                                use_label_encoder=False
+                            )
+                            tprint_info(f"   ✅ Using HPO-optimized XGB params")
+                        else:
+                            clf = XGBClassifier(
+                                n_estimators=200, learning_rate=0.05, max_depth=5,
+                                random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False
+                            )
+                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+
+                    elif best_name == 'CatBoost' and CATBOOST_AVAILABLE:
+                        # Use HPO-optimized parameters if available
+                        if focal_params:
+                            from catboost import CatBoostClassifier
+                            clf = CatBoostClassifier(
+                                depth=focal_params['depth'],
+                                learning_rate=focal_params['learning_rate'],
+                                iterations=focal_params['iterations'],
+                                l2_leaf_reg=focal_params['l2_leaf_reg'],
+                                border_count=focal_params['border_count'],
+                                random_strength=focal_params['random_strength'],
+                                random_seed=42,
+                                verbose=False,
+                                allow_writing_files=False
+                            )
+                            tprint_info(f"   ✅ Using HPO-optimized CatBoost params")
+                        else:
+                            from catboost import CatBoostClassifier
+                            clf = CatBoostClassifier(
+                                iterations=200, learning_rate=0.05, depth=5,
+                                random_state=42, verbose=False
+                            )
+                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                    else:
+                        # Fallback to LGBM
+                        focal_lgbm = RobustFocalLoss(verbose=False)
+                        params = LAYER2_PROBE_CONSTANTS.copy()
+                        params.pop('early_stopping_rounds', None)
+                        params['objective'] = focal_lgbm
+                        params['metric'] = 'auc'
+                        clf = lgb.LGBMClassifier(**params)
+                        clf.fit(
+                            X_train_final, y_train, sample_weight=w_train,
+                            eval_set=[(X_train_final, y_train)], eval_metric='auc',
+                            callbacks=[lgb.early_stopping(30, verbose=False)]
+                        )
+                else:
+                    # Default: LGBM with Robust Focal Loss (using HPO params if available)
+                    # Only run HPO if no model race was performed
+                    if self.enable_focal_hpo and len(X_train_final) > 200 and not self.enable_model_race:
+                        tprint_info(f"🎯 Running RobustFocalLoss HPO (no model race)...")
+
+                        # Split data for HPO
+                        hpo_train_size = int(0.7 * len(X_train_final))
+                        X_hpo_train = X_train_final.iloc[:hpo_train_size]
+                        X_hpo_val = X_train_final.iloc[hpo_train_size:]
+                        y_hpo_train = y_train.iloc[:hpo_train_size]
+                        y_hpo_val = y_train.iloc[hpo_train_size:]
+                        w_hpo_train = w_train[:hpo_train_size] if w_train is not None else None
+
+                        # Run HPO
+                        focal_params, hpo_score = self._optimize_focal_loss_params(
+                            X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                        )
+
+                    # Train with RobustFocalLoss (HPO params if available)
+                    if focal_params:
+                        focal_lgbm = RobustFocalLoss(
+                            gamma_pos=focal_params['gamma_pos'],
+                            gamma_neg=focal_params['gamma_neg'],
+                            alpha=focal_params['alpha'],
+                            mix=focal_params['mix'],
+                            label_smoothing=focal_params['label_smoothing'],
+                            verbose=False
+                        )
+                        params = LAYER2_PROBE_CONSTANTS.copy()
+                        params.pop('early_stopping_rounds', None)
+                        params['objective'] = focal_lgbm
+                        params['metric'] = 'auc'
+                        params['max_depth'] = focal_params['max_depth']
+                        params['num_leaves'] = focal_params['num_leaves']
+                        tprint_info(f"   ✅ Using HPO-optimized focal loss: γ₊={focal_params['gamma_pos']:.2f}, γ₋={focal_params['gamma_neg']:.2f}")
+                    else:
+                        focal_lgbm = RobustFocalLoss(verbose=False)
+                        params = LAYER2_PROBE_CONSTANTS.copy()
+                        params.pop('early_stopping_rounds', None)
+                        params['objective'] = focal_lgbm
+                        params['metric'] = 'auc'
+
+                    clf = lgb.LGBMClassifier(**params)
+                    clf.fit(
+                        X_train_final,
+                        y_train,
+                        sample_weight=w_train,
+                        eval_set=[(X_train_final, y_train)],
+                        eval_metric='auc',
+                        callbacks=[lgb.early_stopping(30, verbose=False)]
+                    )
+
+                # Extract tree diagnostics
+                tree_diagnostics = self._extract_tree_diagnostics(clf)
+
+                # Cache the trained model
+                self._cache_model(gt.uuid, fold_idx, clf)
+
+                return gt.uuid, clf, tree_diagnostics
+
+            except Exception as e:
+                return gt.uuid, None, str(e)
+
+        # Train geometries with max 2 concurrent
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_to_gt = {executor.submit(train_single_geometry, gt): gt for gt in geometry_batch}
+
+            for future in as_completed(future_to_gt):
+                gt_uuid, model, diagnostics_or_error = future.result()
+                gt = future_to_gt[future]
+
+                if model is not None:
+                    trained_models[gt_uuid] = model
+                    results[gt_uuid] = diagnostics_or_error
+                    tprint_success(f"   ✅ Trained model for {gt_uuid}")
+                else:
+                    tprint_error(f"   ❌ Training failed for {gt_uuid}: {diagnostics_or_error}")
+
+        return trained_models, results
+
+    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame memory usage with categorical dtypes and downcasting."""
+        if df.empty:
+            return df
+
+        df_opt = df.copy()
+
+        # Convert object columns to categorical where appropriate
+        for col in df_opt.select_dtypes(include=['object']).columns:
+            if df_opt[col].nunique() / len(df_opt) < 0.5:  # Less than 50% unique values
+                df_opt[col] = df_opt[col].astype('category')
+
+        # Downcast numeric types
+        for col in df_opt.select_dtypes(include=['int64']).columns:
+            df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+
+        for col in df_opt.select_dtypes(include=['float64']).columns:
+            df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
+
+        return df_opt
+
+    def _cleanup_memory(self):
+        """Force garbage collection to free memory."""
+        import gc
+        gc.collect()
+
+    def _align_features_efficiently(self, X_all: pd.DataFrame, events_idx: pd.DatetimeIndex) -> pd.DataFrame:
+        """Fast feature alignment using pandas merge_asof."""
+        if len(events_idx) == 0:
+            return pd.DataFrame()
+
         try:
-            X = create_meta_features(df, signals, events_df.index)
+            # Create events DataFrame with timestamp index
+            events_df = pd.DataFrame(index=events_idx)
+
+            # Ensure both indices are datetime and handle timezones
+            events_naive = pd.to_datetime(events_idx)
+            features_naive = pd.to_datetime(X_all.index)
+
+            if events_naive.tz is not None:
+                events_naive = events_naive.tz_localize(None)
+            if features_naive.tz is not None:
+                features_naive = features_naive.tz_localize(None)
+
+            # Create temporary DataFrames for merge_asof
+            events_temp = pd.DataFrame({'event_marker': 1}, index=events_naive)
+            features_temp = X_all.copy()
+            features_temp.index = features_naive
+
+            # Use merge_asof for fast alignment (assumes sorted indices)
+            merged = pd.merge_asof(
+                events_temp.sort_index(),
+                features_temp.sort_index(),
+                left_index=True,
+                right_index=True,
+                direction='nearest',
+                tolerance=pd.Timedelta('1min')
+            )
+
+            # Remove the event_marker column and restore original event index
+            result = merged.drop(columns=['event_marker'], errors='ignore')
+            result.index = events_idx
+
+            # Optimize memory and cleanup
+            result = self._optimize_dataframe_memory(result.fillna(0.0))
+
+            # Cleanup temporary variables
+            del events_temp, features_temp, merged
+            self._cleanup_memory()
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Vectorized alignment failed: {e}, falling back to simple reindex")
+            try:
+                # Fallback to simple reindex with tolerance
+                return X_all.reindex(events_idx, method='nearest', tolerance=pd.Timedelta('1min')).fillna(0.0)
+            except Exception as e2:
+                logger.error(f"Fallback alignment also failed: {e2}")
+                return pd.DataFrame(index=events_idx)
+
+    def _build_geometry_independent_event_features(self, df: pd.DataFrame, events_df: pd.DataFrame) -> pd.DataFrame:
+        if len(events_df) == 0:
+            return pd.DataFrame()
+
+        try:
+            # Use global feature cache instead of regenerating
+            X_all = self._get_global_features(df)
+
+            if X_all.empty:
+                return pd.DataFrame(index=events_df.index)
+
+            # Vectorized alignment instead of complex logic
+            X = self._align_features_efficiently(X_all, events_df.index)
 
             # --- Enhanced Probe Features ---
             if 'close' in df.columns and 'volume' in df.columns:
-                probe_feats = generate_market_state_probe(df['close'], df['volume'])
-                # Reindex to events
-                probe_feats_events = probe_feats.reindex(events_df.index).fillna(0.0)
-                X = pd.concat([X, probe_feats_events], axis=1)
+                try:
+                    # Generate probe features for the full dataset once
+                    probe_cache_key = f"probe_{hash(str(df.shape)) % 10000}"
+                    if probe_cache_key not in self._global_probe_features:
+                        self._global_probe_features[probe_cache_key] = generate_market_state_probe(df['close'], df['volume'])
+
+                    probe_feats_all = self._global_probe_features[probe_cache_key]
+
+                    # Align probe features using the same efficient method
+                    probe_feats = self._align_features_efficiently(probe_feats_all, events_df.index)
+
+                    if not probe_feats.empty:
+                        X = pd.concat([X, probe_feats], axis=1, copy=False)
+                except Exception as e:
+                    logger.warning(f"Probe feature alignment failed: {e}")
             # -------------------------------
 
-            return X
+            return X.fillna(0.0)
+
         except Exception as e:
             logger.warning(f"Feature generation failed: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
             return pd.DataFrame(index=events_df.index)
 
     def _compute_dominance_labels(self, df, events_df, **kwargs):
@@ -1594,3 +3242,9 @@ class LabelBasedLayer2:
         except Exception as e:
             logger.warning(f"Failed to extract tree diagnostics: {e}")
             return {'n_features_used': 0.0, 'avg_depth': 0.0, 'max_depth': 0.0}
+
+
+def register_label_based_layer_2_step() -> None:
+    """Register the label-based layer 2 step in the registry."""
+    from src.training.steps.base_step import step_registry
+    step_registry.register("label_based_layer_2", LabelBasedLayer2)

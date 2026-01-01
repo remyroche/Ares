@@ -2844,7 +2844,20 @@ class MLPathRegimeStep(BaseStep):
             metrics['xgb_quality_metrics'] = xgb_metrics
         else:
             # Fallback to hardcoded weights
-            regime_quality_scores, quality_scores = self._calculate_data_driven_risk_scores(
+            # Use directional bias scoring if enabled (Phase 1+2)
+            use_directional_bias = config.get('use_directional_bias_scoring', True)
+            
+            if use_directional_bias:
+                regime_quality_scores, quality_scores = self._calculate_directional_aware_quality_scores(
+                    labels=final_labels,
+                    features_df=risk_features_clean,
+                    posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
+                    n_regimes=n_regimes,
+                    ohlcv_df=risk_df,
+                    config=config
+                )
+                tprint_info("  ✓ Using directional bias quality scoring")
+            else:
                 labels=final_labels,
                 features_df=risk_features_clean,
                 posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
@@ -3378,6 +3391,238 @@ class MLPathRegimeStep(BaseStep):
 
         tprint_success(f"✅ Calculated quality scores for {n_regimes} regimes (range: [{min(regime_quality_scores.values()):.3f}, {max(regime_quality_scores.values()):.3f}])")
 
+
+    
+    def _calculate_directional_aware_quality_scores(
+        self,
+        labels: np.ndarray,
+        features_df: pd.DataFrame,
+        posteriors: Optional[np.ndarray],
+        n_regimes: int,
+        ohlcv_df: Optional[pd.DataFrame] = None,
+        config: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Dict[int, float], np.ndarray]:
+        """
+        Calculate direction-aware regime quality scores.
+        
+        Replaces direction-agnostic scoring with directional bias assessment:
+        - Trend alignment quality
+        - Breakout potential assessment  
+        - Momentum persistence scoring
+        - Volatility regime appropriateness
+        - Market efficiency evaluation
+        
+        Args:
+            labels: Regime assignments
+            features_df: DataFrame with path features
+            posteriors: HMM posterior probabilities
+            n_regimes: Number of regimes
+            ohlcv_df: OHLCV data for trend analysis
+            config: Configuration dictionary
+            
+        Returns:
+            Tuple of (regime_quality_scores, directional_risk_scores)
+        """
+        tprint_info("🎯 Calculating direction-aware regime quality scores...")
+        
+        if config is None:
+            config = {}
+        
+        regime_quality_scores = {}
+        
+        # Direction-aware quality components with adaptive weights
+        quality_components = {
+            'trend_alignment': float(config.get('trend_alignment_weight', 0.25)),
+            'breakout_potential': float(config.get('breakout_potential_weight', 0.20)),
+            'momentum_persistence': float(config.get('momentum_persistence_weight', 0.20)),
+            'volatility_regime': float(config.get('volatility_regime_weight', 0.15)),
+            'market_efficiency': float(config.get('market_efficiency_weight', 0.20)),
+        }
+        
+        # Calculate trend direction if OHLCV available
+        trend_direction = None
+        if ohlcv_df is not None and 'close' in ohlcv_df.columns:
+            trend_direction = self._calculate_trend_direction(ohlcv_df)
+        
+        # For each regime, calculate direction-aware quality metrics
+        for regime_id in range(n_regimes):
+            regime_mask = (labels == regime_id)
+            regime_samples = np.sum(regime_mask)
+            
+            if regime_samples < 10:
+                regime_quality_scores[regime_id] = 0.0
+                tprint_warning(f"  Regime {regime_id}: Insufficient samples ({regime_samples}), quality = 0.0")
+                continue
+            
+            regime_data = features_df.iloc[regime_mask]
+            component_scores = []
+            
+            # 1. Trend Alignment Quality
+            if trend_direction is not None:
+                alignment_score = self._calculate_trend_alignment_score(
+                    regime_data, trend_direction[regime_mask]
+                )
+                component_scores.append(('trend_alignment', alignment_score, quality_components['trend_alignment']))
+            
+            # 2. Breakout Potential
+            breakout_score = self._calculate_breakout_potential_score(regime_data)
+            component_scores.append(('breakout_potential', breakout_score, quality_components['breakout_potential']))
+            
+            # 3. Momentum Persistence  
+            momentum_score = self._calculate_momentum_persistence_score(regime_data)
+            component_scores.append(('momentum_persistence', momentum_score, quality_components['momentum_persistence']))
+            
+            # 4. Volatility Regime Appropriateness
+            vol_score = self._calculate_volatility_regime_score(regime_data)
+            component_scores.append(('volatility_regime', vol_score, quality_components['volatility_regime']))
+            
+            # 5. Market Efficiency
+            efficiency_score = self._calculate_market_efficiency_score(regime_data)
+            component_scores.append(('market_efficiency', efficiency_score, quality_components['market_efficiency']))
+            
+            # Calculate weighted quality score
+            if component_scores:
+                total_weight = sum(w for _, _, w in component_scores)
+                quality_score = sum(val * w for _, val, w in component_scores) / total_weight
+                quality_score = np.clip(quality_score, 0, 1)
+                regime_quality_scores[regime_id] = float(quality_score)
+                
+                components_str = ", ".join([f"{name}={val:.3f}" for name, val, _ in component_scores])
+                tprint_info(f"  Regime {regime_id}: Directional Quality={quality_score:.4f} ({components_str})")
+            else:
+                regime_quality_scores[regime_id] = 0.5
+                tprint_warning(f"  Regime {regime_id}: No directional features available, using neutral score 0.5")
+        
+        # Generate continuous risk scores with directional bias
+        if posteriors is not None:
+            risk_scores = np.zeros(len(posteriors))
+            for regime_id in range(n_regimes):
+                regime_quality = regime_quality_scores.get(regime_id, 0.5)
+                risk_scores += posteriors[:, regime_id] * regime_quality
+        else:
+            risk_scores = np.array([regime_quality_scores.get(label, 0.5) for label in labels])
+        
+        # Apply exponential smoothing (Phase 1 enhancement)
+        smoothing_span = int(config.get('path_risk_smoothing_span', 8))
+        if smoothing_span > 0:
+            risk_scores = pd.Series(risk_scores).ewm(span=smoothing_span, adjust=False).mean().values
+            risk_scores = np.clip(risk_scores, 0, 1)
+            tprint_info(f"  ✓ Applied directional risk smoothing (span={smoothing_span})")
+        
+        # Convert quality to risk (inverse relationship with directional adjustment)
+        directional_risk_scores = 1.0 - risk_scores
+        
+        tprint_success(f"✅ Direction-aware quality scores calculated for {n_regimes} regimes")
+        tprint_info(f"  Quality range: [{min(regime_quality_scores.values()):.3f}, {max(regime_quality_scores.values()):.3f}]")
+        tprint_info(f"  Risk range: [{np.nanmin(directional_risk_scores):.3f}, {np.nanmax(directional_risk_scores):.3f}]")
+        
+        return regime_quality_scores, directional_risk_scores
+
+    def _calculate_trend_direction(self, ohlcv_df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
+        """Calculate trend direction using price momentum."""
+        close_prices = ohlcv_df['close'].values
+        trend_direction = np.full(len(close_prices), 0.0)
+        
+        for i in range(lookback, len(close_prices)):
+            recent_prices = close_prices[i-lookback+1:i+1]
+            price_change = (close_prices[i] - close_prices[i-lookback]) / close_prices[i-lookback]
+            
+            # Simple trend classification
+            if price_change > 0.01:  # 1% threshold
+                trend_direction[i] = 1.0  # Uptrend
+            elif price_change < -0.01:
+                trend_direction[i] = -1.0  # Downtrend
+            else:
+                trend_direction[i] = 0.0  # Neutral
+        
+        return trend_direction
+
+    def _calculate_trend_alignment_score(self, regime_data: pd.DataFrame, trend_direction: np.ndarray) -> float:
+        """Calculate how well regime features align with trend direction."""
+        alignment_score = 0.5  # Default neutral
+        
+        # Use path features that indicate trend alignment
+        alignment_features = ['path_trend_r2', 'efficiency_ratio', 'impulse_quality']
+        available_features = [f for f in alignment_features if f in regime_data.columns]
+        
+        if len(available_features) > 0:
+            feature_values = regime_data[available_features].mean()
+            
+            # Higher trend R² and efficiency = better alignment
+            if 'path_trend_r2' in feature_values:
+                trend_strength = feature_values['path_trend_r2']
+                alignment_score = 0.3 + trend_strength * 0.7  # Scale to [0.3, 1.0]
+            
+            # Adjust based on actual trend direction consistency
+            trend_consistency = np.mean(np.abs(trend_direction))
+            alignment_score = alignment_score * (0.5 + trend_consistency * 0.5)
+        
+        return np.clip(alignment_score, 0, 1)
+
+    def _calculate_breakout_potential_score(self, regime_data: pd.DataFrame) -> float:
+        """Calculate breakout potential based on congestion and support/resistance."""
+        breakout_score = 0.5
+        
+        # Low congestion = higher breakout potential
+        if 'traffic_overlap_3h' in regime_data.columns:
+            congestion = regime_data['traffic_overlap_3h'].mean()
+            breakout_score = 1.0 - congestion  # Inverse relationship
+        
+        # High conviction = better breakout quality
+        if 'body_range_ratio' in regime_data.columns:
+            conviction = regime_data['body_range_ratio'].mean()
+            breakout_score = breakout_score * (0.5 + conviction * 0.5)
+        
+        return np.clip(breakout_score, 0, 1)
+
+    def _calculate_momentum_persistence_score(self, regime_data: pd.DataFrame) -> float:
+        """Calculate momentum persistence quality."""
+        momentum_score = 0.5
+        
+        momentum_features = ['impulse_quality', 'path_trend_r2']
+        available_features = [f for f in momentum_features if f in regime_data.columns]
+        
+        if len(available_features) > 0:
+            feature_values = regime_data[available_features].abs().mean()  # Use absolute values
+            
+            # Higher absolute momentum = better persistence
+            momentum_score = 0.3 + feature_values * 0.4
+            momentum_score = min(momentum_score, 1.0)
+        
+        return np.clip(momentum_score, 0, 1)
+
+    def _calculate_volatility_regime_score(self, regime_data: pd.DataFrame) -> float:
+        """Calculate volatility regime appropriateness."""
+        vol_score = 0.5
+        
+        if 'returns_1h' in regime_data.columns:
+            volatility = regime_data['returns_1h'].std()
+            
+            # Moderate volatility is optimal (not too low, not too high)
+            optimal_vol = 0.02  # 2% hourly volatility
+            vol_deviation = np.abs(volatility - optimal_vol)
+            vol_score = 1.0 - min(vol_deviation / optimal_vol, 1.0)
+        
+        return np.clip(vol_score, 0, 1)
+
+    def _calculate_market_efficiency_score(self, regime_data: pd.DataFrame) -> float:
+        """Calculate market efficiency (price discovery quality)."""
+        efficiency_score = 0.5
+        
+        # Use path straightness and linearity as efficiency proxies
+        efficiency_features = ['efficiency_ratio', 'path_trend_r2']
+        available_features = [f for f in efficiency_features if f in regime_data.columns]
+        
+        if len(available_features) > 0:
+            feature_values = regime_data[available_features].mean()
+            
+            # Higher efficiency = better price discovery
+            if 'efficiency_ratio' in feature_values:
+                efficiency_score = 0.3 + feature_values['efficiency_ratio'] * 0.7
+            elif 'path_trend_r2' in feature_values:
+                efficiency_score = 0.3 + feature_values['path_trend_r2'] * 0.7
+        
+        return np.clip(efficiency_score, 0, 1)
         return regime_quality_scores, risk_scores_smooth
 
     def _calculate_xgboost_driven_quality_scores(

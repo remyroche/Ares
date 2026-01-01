@@ -532,7 +532,11 @@ def create_meta_features(
         if len_sig > target_len: signals = signals.iloc[-target_len:, :]
 
     # Reset index to avoid duplicate index issues
-    if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
+    index_mismatch = not df.index.equals(signals.index)
+    df_duplicates = bool(df.index.has_duplicates)
+    signals_duplicates = bool(signals.index.has_duplicates)
+    
+    if index_mismatch or df_duplicates or signals_duplicates:
         df = df.reset_index(drop=True)
         signals = signals.reset_index(drop=True)
 
@@ -600,7 +604,17 @@ def create_meta_features(
     elif 'Volume' in df.columns:
         vol_col = 'Volume'
 
-    if volume_available and vol_col is not None:
+    # Robust check for volume_available to avoid ambiguity errors
+    vol_avail_check = False
+    try:
+        if isinstance(volume_available, (bool, np.bool_)):
+            vol_avail_check = bool(volume_available)
+        else:
+            vol_avail_check = True # Default if passed something else
+    except Exception:
+        vol_avail_check = True
+
+    if vol_avail_check and vol_col is not None:
         volume = pd.to_numeric(df[vol_col], errors='coerce').fillna(method='ffill').fillna(method='bfill').fillna(0.0)
         volume_available = volume.notna().any()
     else:

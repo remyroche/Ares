@@ -41,13 +41,13 @@ logger = logging.getLogger(__name__)
 
 # Default LGBM parameters for feature selection
 DEFAULT_LGBM_PARAMS = {
-    "boosting_type": "gbdt",
-    "n_estimators": 300,
+    "boosting_type": "goss", # Speedup
+    "n_estimators": 100,     # Reduced for faster ranking
     "learning_rate": 0.05,
     "max_depth": 4,
-    "num_leaves": 16,  # ≤ 2^max_depth
-    "min_data_in_leaf": 30,  # 20-50 range
-    "subsample": 1.0,  # Handled externally
+    "num_leaves": 16,
+    "min_data_in_leaf": 30,
+    "subsample": 1.0,        # Required for GOSS
     "colsample_bytree": 0.8,
     "reg_alpha": 0.1,
     "reg_lambda": 1.0,
@@ -55,6 +55,7 @@ DEFAULT_LGBM_PARAMS = {
     "objective": "binary",
     "metric": "auc",
     "n_jobs": -1,
+    "bagging_freq": 0,       # Required for GOSS
 }
 
 # Feature selection configuration
@@ -62,9 +63,9 @@ ITERATIVE_SELECTION_BUFFER_RATIO = 1.5
 
 FEATURE_SELECTION_CONFIG = {
     "subsample_fraction": 0.65,  # 65% subsampling
-    "n_iterations": 5,  # Number of LGBM runs (reduced from 10)
-    "bottom_percentile": 0.30,  # Bottom 30% of importance
-    "discard_threshold": 0.70,  # Discard if in bottom 70% of the time
+    "n_iterations": 3,  # Reduced from 5 for speed
+    "bottom_percentile": 0.50,  # Bottom 50% of importance
+    "discard_threshold": 0.60,  # Discard if in bottom 60% of the time
     "target_features_initial": 80,  # Initial target after iteration
     "rfe_features_per_step": 10,  # Remove 10 features per RFE step
     "permutation_sample_fraction": 0.50,  # 50% sample for permutation importance
@@ -238,11 +239,21 @@ def iterative_lgbm_importance_selection(
                 model.fit(X_sample, y_sample, **fit_kwargs)
 
                 
-                # Get feature importance
-                importances = model.feature_importances_
+                # Get enhanced feature importance (gain + split)
+                gain_importance = model.feature_importances_
                 
-                # Rank features (0 = most important)
-                sorted_indices = np.argsort(importances)[::-1]
+                # Get split importance from booster
+                booster = model.booster_
+                split_importance = np.array([booster.feature_importance(importance_type='split')[i] 
+                                            for i in range(len(current_features))])
+                
+                # Composite importance: 70% gain + 30% split
+                gain_norm = gain_importance / (gain_importance.max() + 1e-8)
+                split_norm = split_importance / (split_importance.max() + 1e-8)
+                composite_importance = 0.7 * gain_norm + 0.3 * split_norm
+                
+                # Rank features by composite importance (0 = most important)
+                sorted_indices = np.argsort(composite_importance)[::-1]
                 for rank, idx in enumerate(sorted_indices):
                     feature_name = current_features[idx]
                     importance_rankings[feature_name].append(rank)

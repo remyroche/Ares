@@ -1,0 +1,30 @@
+{
+  "EnhancedMLRiskRegimeStep": {
+    "n_samples": 10000,
+    "n_features": 53,
+    "positive_labels": 3573,
+    "negative_labels": 6427,
+    "label_balance": 0.3573,
+    "mi_score": 0.01099208453119773,
+    "mi_max": 0.12170042934374159,
+    "mi_above_02": 11,
+    "r2_score": 0.19159092398397448,
+    "auc_score": 0.5,
+    "processing_time": 3.207288980484009,
+    "status": "\u26a0\ufe0f Moderate"
+  },
+  "EnhancedMLPathRegimeStep": {
+    "n_samples": 10000,
+    "n_features": 53,
+    "positive_labels": 6179,
+    "negative_labels": 3821,
+    "label_balance": 0.6179,
+    "mi_score": 0.005965325949405389,
+    "mi_max": 0.04503256447296877,
+    "mi_above_02": 3,
+    "r2_score": 0.09177886214476771,
+    "auc_score": 0.6725850307491004,
+    "processing_time": 11.711444854736328,
+    "status": "\u26a0\ufe0f Low"
+  }
+}

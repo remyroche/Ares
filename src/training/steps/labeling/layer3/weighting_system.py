@@ -1,0 +1,248 @@
+"""
+Layer 3 Enhanced Weighting System
+
+Handles sample weight management with Layer 1 integration and market adaptation.
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, Any, Optional
+import logging
+
+# Import tprint functions
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    # Fallback print functions
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+
+logger = logging.getLogger(__name__)
+
+def create_enhanced_weighting_schemes(
+    layer1_weight: Optional[np.ndarray],
+    layer2_weight: Optional[np.ndarray], 
+    layer2_quality: Optional[np.ndarray],
+    market_data: Optional[pd.DataFrame],
+    df: pd.DataFrame
+) -> Dict[str, np.ndarray]:
+    """
+    Enhanced weighting with Layer 1 integration and market adaptation.
+    """
+    tprint_info("⚖️  Creating Enhanced Weighting Schemes...")
+    tprint_info(f"📊 Data: {len(df)} samples")
+    
+    # Base layer weights
+    w_l1 = finalize_sample_weights(layer1_weight) if layer1_weight is not None else np.ones(len(df))
+    w_l2 = finalize_sample_weights(layer2_weight) if layer2_weight is not None else np.ones(len(df))
+    w_l2_quality = finalize_sample_weights(layer2_quality) if layer2_quality is not None else np.ones(len(df))
+    
+    # Show base weight statistics
+    if layer1_weight is not None:
+        l1_stats = f"mean={w_l1.mean():.3f}, std={w_l1.std():.3f}"
+        tprint_info(f"📊 Layer 1 weights: {l1_stats}")
+    else:
+        tprint_info("📊 Layer 1 weights: Not provided, using uniform")
+    
+    if layer2_weight is not None:
+        l2_stats = f"mean={w_l2.mean():.3f}, std={w_l2.std():.3f}"
+        tprint_info(f"📊 Layer 2 weights: {l2_stats}")
+    else:
+        tprint_info("📊 Layer 2 weights: Not provided, using uniform")
+    
+    if layer2_quality is not None:
+        l2q_stats = f"mean={w_l2_quality.mean():.3f}, std={w_l2_quality.std():.3f}"
+        tprint_info(f"📊 Layer 2 quality: {l2q_stats}")
+    else:
+        tprint_info("📊 Layer 2 quality: Not provided, using uniform")
+    
+    # Market-adaptive weights
+    tprint_info("🌍 Computing Market Regime Weights...")
+    market_weights = compute_market_regime_weights(market_data, df)
+    
+    market_stats = f"mean={market_weights.mean():.3f}, std={market_weights.std():.3f}"
+    tprint_success(f"✅ Market regime weights: {market_stats}")
+    
+    # Enhanced schemes
+    schemes = {
+        'S1_L1': w_l1,
+        'S2_L1_L2': w_l1 * w_l2,
+        'S3_L2': w_l2,
+        'S4_L1_L2_Quality': w_l1 * w_l2 * w_l2_quality,  # NEW
+        'S5_Market_Adaptive': w_l2 * market_weights,     # NEW
+        'S6_Ensemble_All': w_l1 * w_l2 * w_l2_quality * market_weights  # NEW
+    }
+    
+    tprint_success(f"✅ Created {len(schemes)} enhanced weighting schemes:")
+    
+    for scheme_name, weights in schemes.items():
+        weight_stats = f"mean={weights.mean():.3f}, std={weights.std():.3f}, min={weights.min():.3f}, max={weights.max():.3f}"
+        tprint_info(f"   - {scheme_name}: {weight_stats}")
+    
+    return schemes
+
+def compute_market_regime_weights(market_data: Optional[pd.DataFrame], df: pd.DataFrame) -> np.ndarray:
+    """
+    Compute market regime-based weights for adaptive sample weighting.
+    """
+    if market_data is None or 'close' not in market_data.columns:
+        tprint_warning("⚠️ No market data provided, using uniform weights")
+        return np.ones(len(df))
+    
+    try:
+        tprint_info("📈 Computing volatility regime weights...")
+        vol_regime = compute_volatility_regime(market_data)
+        
+        tprint_info("📈 Computing trend regime weights...")
+        trend_regime = compute_trend_regime(market_data)
+        
+        if 'volume' in market_data.columns:
+            tprint_info("📈 Computing volume regime weights...")
+            volume_regime = compute_volume_regime(market_data)
+        else:
+            tprint_info("📊 No volume data, skipping volume regime")
+            volume_regime = np.ones(len(market_data))
+        
+        # Combine regimes
+        combined_weights = vol_regime * trend_regime * volume_regime
+        
+        # Align with main dataframe
+        aligned_weights = pd.Series(combined_weights, index=market_data.index).reindex(df.index).fillna(1.0)
+        
+        regime_stats = f"vol={vol_regime.mean():.3f}, trend={trend_regime.mean():.3f}, vol={volume_regime.mean():.3f}"
+        tprint_success(f"✅ Regime weights: {regime_stats}")
+        
+        return aligned_weights.values
+        
+    except Exception as e:
+        tprint_warning(f"⚠️ Market regime weight computation failed: {e}")
+        return np.ones(len(df))
+
+def compute_volatility_regime(market_data: pd.DataFrame, lookback: int = 100) -> np.ndarray:
+    """
+    Compute volatility regime weights.
+    """
+    if 'close' not in market_data.columns:
+        return np.ones(len(market_data))
+    
+    # Calculate rolling volatility
+    returns = market_data['close'].pct_change()
+    rolling_vol = returns.rolling(lookback).std()
+    
+    # Calculate volatility quantiles
+    vol_low = rolling_vol.rolling(lookback).quantile(0.25)
+    vol_high = rolling_vol.rolling(lookback).quantile(0.75)
+    
+    # Create regime weights
+    regime_weights = np.ones(len(market_data))
+    
+    # Low volatility regime: increase weights
+    low_vol_mask = rolling_vol < vol_low
+    regime_weights[low_vol_mask] = 1.2
+    
+    # High volatility regime: decrease weights  
+    high_vol_mask = rolling_vol > vol_high
+    regime_weights[high_vol_mask] = 0.8
+    
+    # Show regime distribution
+    low_vol_pct = low_vol_mask.mean() * 100
+    high_vol_pct = high_vol_mask.mean() * 100
+    normal_vol_pct = 100 - low_vol_pct - high_vol_pct
+    
+    tprint_info(f"📊 Volatility regimes: {low_vol_pct:.1f}% low, {normal_vol_pct:.1f}% normal, {high_vol_pct:.1f}% high")
+    
+    return regime_weights
+
+def compute_trend_regime(market_data: pd.DataFrame, lookback: int = 50) -> np.ndarray:
+    """
+    Compute trend regime weights.
+    """
+    if 'close' not in market_data.columns:
+        return np.ones(len(market_data))
+    
+    # Calculate trend strength
+    price = market_data['close']
+    trend_strength = price.rolling(lookback).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+    
+    # Calculate trend consistency
+    trend_consistency = (trend_strength > 0).rolling(lookback).mean()
+    
+    # Create regime weights
+    regime_weights = np.ones(len(market_data))
+    
+    # Strong trend regime: increase weights
+    strong_trend_mask = (np.abs(trend_strength) > trend_strength.rolling(lookback).std()) & (trend_consistency > 0.7)
+    regime_weights[strong_trend_mask] = 1.3
+    
+    # Range-bound regime: decrease weights
+    range_bound_mask = (np.abs(trend_strength) < 0.5 * trend_strength.rolling(lookback).std()) & (trend_consistency < 0.5)
+    regime_weights[range_bound_mask] = 0.7
+    
+    # Show regime distribution
+    strong_trend_pct = strong_trend_mask.mean() * 100
+    range_bound_pct = range_bound_mask.mean() * 100
+    normal_trend_pct = 100 - strong_trend_pct - range_bound_pct
+    
+    tprint_info(f"📊 Trend regimes: {strong_trend_pct:.1f}% strong, {normal_trend_pct:.1f}% normal, {range_bound_pct:.1f}% range-bound")
+    
+    return regime_weights
+
+def compute_volume_regime(market_data: pd.DataFrame, lookback: int = 50) -> np.ndarray:
+    """
+    Compute volume regime weights.
+    """
+    if 'volume' not in market_data.columns:
+        return np.ones(len(market_data))
+    
+    # Calculate volume metrics
+    volume = market_data['volume']
+    volume_ma = volume.rolling(lookback).mean()
+    volume_std = volume.rolling(lookback).std()
+    
+    # Create regime weights
+    regime_weights = np.ones(len(market_data))
+    
+    # High volume regime: increase weights
+    high_vol_mask = volume > (volume_ma + volume_std)
+    regime_weights[high_vol_mask] = 1.2
+    
+    # Low volume regime: decrease weights
+    low_vol_mask = volume < (volume_ma - volume_std)
+    regime_weights[low_vol_mask] = 0.8
+    
+    # Show regime distribution
+    high_vol_pct = high_vol_mask.mean() * 100
+    low_vol_pct = low_vol_mask.mean() * 100
+    normal_vol_pct = 100 - high_vol_pct - low_vol_pct
+    
+    tprint_info(f"📊 Volume regimes: {high_vol_pct:.1f}% high, {normal_vol_pct:.1f}% normal, {low_vol_pct:.1f}% low")
+    
+    return regime_weights
+
+def finalize_sample_weights(weights: np.ndarray) -> np.ndarray:
+    """
+    Finalize sample weights using MAD scaling and centering at 1.0.
+    """
+    original_stats = f"mean={weights.mean():.3f}, std={weights.std():.3f}"
+    
+    # MAD scaling
+    weights_median = np.median(weights)
+    weights_mad = np.median(np.abs(weights - weights_median))
+    
+    if weights_mad > 0:
+        scaled_weights = (weights - weights_median) / weights_mad
+    else:
+        scaled_weights = weights - weights_median
+    
+    # Center at 1.0 (add 1 to make mean around 1)
+    final_weights = scaled_weights + 1.0
+    
+    # Ensure positive weights
+    final_weights = np.maximum(final_weights, 0.1)
+    
+    final_stats = f"mean={final_weights.mean():.3f}, std={final_weights.std():.3f}"
+    tprint_info(f"📊 Weight finalization: {original_stats} → {final_stats}")
+    
+    return final_weights

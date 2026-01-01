@@ -48,6 +48,7 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
+from sklearn.feature_selection import mutual_info_regression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -61,6 +62,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.utils.logger import system_logger  # type: ignore
 from src.utils.ml_common.get_specialist_models_outputs import (  # type: ignore
     get_specialist_models_outputs,
+    get_enhanced_specialist_models_outputs,
 )
 from src.utils.ml_common.feature_selection import get_feature_selection_utils  # type: ignore
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (  # type: ignore
@@ -74,6 +76,7 @@ from src.training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionComponent,
 )
 from src.training.steps.market_analysis import step_registry  # type: ignore
+from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
 
 
 logger = system_logger.getChild("specialist_feature_diagnostics")
@@ -95,18 +98,138 @@ async def _run_specialist_training(
 
     # Order matters: some steps might depend on artifacts from others,
     # though ideally they should be independent or use shared feature generation.
-    default_specialist_steps = [
-        "ml_volume_force_step",
-        "ml_breakout_bounce_regime_step",
-        "ml_mean_reversion_step",
-        "xgb_macro_regime",
-        "ml_smc_regime_step",
-        "ml_liquidity_regime_step",
-        "ml_risk_regime_step",
-        "ml_path_regime_step",
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    
+    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps_enhanced
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
+    ]
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_ml_reversion_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_candlestick_step",
+        "enhanced_ml_spectral_step",
     ]
 
-    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps
+    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps_enhanced
 
     config_base = {
         "symbol": symbol,
@@ -458,10 +581,29 @@ def _load_specialist_features(
         # and collapse to scalars locally via _select_specialist_scalars,
         # so that we can choose alternative MR scalars when dense series are
         # effectively constant over the evaluation window.
-        "use_canonical_specialist_scalars": False,
+        # Canonical scalar projection enabled to reflect simplified feature set
+        # (merged Liquidity and selected Volume Force)
+        "use_canonical_specialist_scalars": True,
     }
 
-    specialist_df = get_specialist_models_outputs(
+    # Try enhanced specialists first
+    enhanced_specialist_df = get_enhanced_specialist_models_outputs(
+        symbol=specialist_config.get("symbol", "ETHUSDT"),
+        exchange=specialist_config.get("exchange", "binance"),
+        timeframe=specialist_config.get("timeframe", "15m"),
+        direction=specialist_config.get("direction", "long"),
+        model=specialist_config.get("model", "analyst"),
+        training_index=training_index,
+        config=specialist_config,
+        strict=False,
+    )
+
+    # Fall back to original specialists if enhanced not available
+    if enhanced_specialist_df is not None and not enhanced_specialist_df.empty:
+        specialist_df = enhanced_specialist_df
+        step.logger.info("Using enhanced specialist outputs")
+    else:
+        specialist_df = get_specialist_models_outputs(
         artifact_router=step.artifact_router,
         training_index=training_index,
         config=specialist_config,
@@ -540,13 +682,23 @@ def _compute_feature_metrics(
     # Debug: log alignment statistics and class distribution actually
     # entering the MI / R^2 computation.
     try:
+        y_var = np.var(y_arr)
         logger.info(
-            "📊 Feature metrics alignment: n_samples=%d, n_features=%d, is_binary=%s, unique_vals=%s",
+            "📊 Feature metrics alignment: n_samples=%d, n_features=%d, target_var=%.6f, is_binary=%s, unique_vals=%s",
             len(y),
             X.shape[1],
+            y_var,
             is_binary_target,
             uniq[:10].tolist() if len(uniq) > 10 else uniq.tolist(),
         )
+        
+        # Log feature variances to catch constant artifacts
+        feat_vars = X.var()
+        constant_feats = feat_vars[feat_vars < 1e-12].index.tolist()
+        if constant_feats:
+            logger.warning("⚠️ Found %d constant features: %s", len(constant_feats), constant_feats[:10])
+        logger.info("📊 Mean feature variance: %.6f", feat_vars.mean())
+
         if is_binary_target:
             class_counts = {
                 int(c): int((y_arr == c).sum()) for c in uniq
@@ -634,18 +786,49 @@ def _compute_feature_metrics(
                 mi_mean[col] = 0.0
                 mi_cv[col] = float("nan")
     else:
-        # Continuous/real-valued target: use event-aware MI proxy and stability utilities
-        mi_full = component._event_aware_feature_scores(X, y).fillna(0.0)
+        # Continuous/real-valued target: use standard mutual_info_regression
+        try:
+            mi_full = pd.Series(
+                mutual_info_regression(X, y_arr, n_neighbors=3, random_state=42),
+                index=X.columns
+            )
+        except Exception as mi_exc:
+            logger.warning("Failed to compute MI scores; defaulting to 0.0: %s", mi_exc)
+            mi_full = pd.Series({col: 0.0 for col in X.columns})
 
-        mi_stab = component.calculate_mi_stability(
-            X=X,
-            y=y,
-            selected_features=list(X.columns),
-            cv_folds=cv_folds,
-        )
-
-        mi_mean: Dict[str, float] = mi_stab.get("mi_mean", {}) if isinstance(mi_stab, dict) else {}
-        mi_cv: Dict[str, float] = mi_stab.get("mi_cv", {}) if isinstance(mi_stab, dict) else {}
+        mi_mean: Dict[str, float] = {}
+        mi_cv: Dict[str, float] = {}
+        tscv = TimeSeriesSplit(n_splits=cv_folds)
+        
+        for col in X.columns:
+            fold_scores = []
+            for train_idx, _ in tscv.split(X):
+                y_tr = y_arr[train_idx]
+                x_tr = X.iloc[train_idx][col].to_numpy(dtype=float).reshape(-1, 1)
+                
+                mask_tr = ~np.isnan(y_tr)
+                if not np.any(mask_tr):
+                    continue
+                y_tr_clean = y_tr[mask_tr]
+                x_tr_clean = x_tr[mask_tr]
+                
+                if len(np.unique(y_tr_clean)) < 2:
+                    continue
+                
+                try:
+                    score = mutual_info_regression(x_tr_clean, y_tr_clean, n_neighbors=3, random_state=42)[0]
+                    fold_scores.append(score)
+                except:
+                    continue
+            
+            if fold_scores:
+                m = float(np.mean(fold_scores))
+                s = float(np.std(fold_scores))
+                mi_mean[col] = m
+                mi_cv[col] = float(s / max(abs(m), 1e-12))
+            else:
+                mi_mean[col] = 0.0
+                mi_cv[col] = float("nan")
 
     # Simple Pearson correlation and R^2 per feature
     # (uses the same cleaned y_arr computed above)
@@ -679,6 +862,142 @@ def _compute_feature_metrics(
         }
 
     return metrics
+
+
+
+def _compute_range_specific_metrics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    min_target: float = 0.015,
+    max_target: float = 0.03,
+    cv_folds: int = 5,
+) -> Dict[str, Dict[str, float]]:
+    """Compute range-specific metrics for 1.5-3% trading range."""
+    from sklearn.metrics import roc_auc_score, precision_recall_curve, average_precision_score
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    # Align and clean
+    common_index = X.index.intersection(y.index)
+    X = X.loc[common_index].copy()
+    y = y.loc[common_index].astype(float)
+    
+    mask = ~y.isna()
+    X = X.loc[mask]
+    y = y.loc[mask]
+    
+    # Replace infinities and fill remaining NaNs
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    
+    # Create range-specific labels (1.5-3% returns)
+    if 'realized_return' in X.columns:
+        returns = X['realized_return']
+        range_labels = ((returns >= min_target) & (returns <= max_target)).astype(int)
+    else:
+        # Fallback: use binary target as proxy
+        range_labels = (y > 0.5).astype(int)
+    
+    metrics = {}
+    
+    # Time series cross-validation for range-specific performance
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
+    
+    for col in X.columns:
+        x = X[col].to_numpy(dtype=float)
+        
+        if np.all(np.isnan(x)):
+            continue
+            
+        fold_metrics = []
+        
+        for train_idx, val_idx in tscv.split(X):
+            if len(train_idx) < 50 or len(val_idx) < 20:
+                continue
+                
+            x_train, x_val = x[train_idx], x[val_idx]
+            y_train, y_val = range_labels.iloc[train_idx], range_labels.iloc[val_idx]
+            
+            # Skip if no positive examples
+            if y_train.sum() == 0 or y_val.sum() == 0:
+                continue
+            
+            try:
+                # Simple threshold-based prediction for range
+                threshold = np.percentile(x_train, 70)  # Top 30% as signals
+                pred = (x_val >= threshold).astype(int)
+                
+                if len(np.unique(pred)) < 2:
+                    continue
+                
+                # Range-specific AUC
+                auc = roc_auc_score(y_val, x_val)
+                
+                # Precision-Recall AUC (better for imbalanced data)
+                pr_auc = average_precision_score(y_val, x_val)
+                
+                # Range hit rate (precision for range targets)
+                precision = precision_recall_curve(y_val, x_val)[0][:2].mean()
+                
+                fold_metrics.append({
+                    'auc': auc,
+                    'pr_auc': pr_auc,
+                    'precision': precision
+                })
+                
+            except Exception:
+                continue
+        
+        if fold_metrics:
+            avg_metrics = {
+                'range_auc': np.mean([m['auc'] for m in fold_metrics]),
+                'range_auc_std': np.std([m['auc'] for m in fold_metrics]),
+                'range_pr_auc': np.mean([m['pr_auc'] for m in fold_metrics]),
+                'range_precision': np.mean([m['precision'] for m in fold_metrics]),
+                'range_coverage': len(fold_metrics) / cv_folds
+            }
+            metrics[col] = avg_metrics
+    
+    return metrics
+
+
+def _compute_model_quality_diagnostics(
+    feature_metrics: Dict[str, Dict[str, float]],
+    X: pd.DataFrame,
+    y: pd.Series,
+) -> Dict[str, Any]:
+    """Compute model quality diagnostics following de Prado framework."""
+    diagnostics = {}
+    
+    # Feature importance stability
+    mi_values = [feat_met.get('mi_mean_cv', 0) for feat_met in feature_metrics.values()]
+    r2_values = [feat_met.get('r2', 0) for feat_met in feature_metrics.values()]
+    
+    if mi_values:
+        diagnostics['feature_importance_stability'] = {
+            'mi_mean': np.mean(mi_values),
+            'mi_std': np.std(mi_values),
+            'mi_cv': np.std(mi_values) / (np.mean(mi_values) + 1e-8),
+            'r2_mean': np.mean(r2_values),
+            'r2_std': np.std(r2_values),
+            'n_features': len(mi_values)
+        }
+    
+    # Prediction correlation matrix (if we have predictions)
+    # This is a placeholder - would need actual model predictions
+    diagnostics['diversity_metrics'] = {
+        'avg_feature_correlation': 0.0,  # Would compute from predictions
+        'max_pairwise_correlation': 0.0,
+        'effective_n_features': len(feature_metrics),
+        'redundancy_ratio': 0.0
+    }
+    
+    # Calibration diagnostics
+    diagnostics['calibration_quality'] = {
+        'reliability_score': 0.0,  # Would compute from calibration curves
+        'brier_score': 0.0,
+        'expected_calibration_error': 0.0
+    }
+    
+    return diagnostics
 
 
 def _infer_model_group(feature_name: str) -> str:
@@ -1078,15 +1397,11 @@ def _compute_model_pairwise_relationships(
             df_j = pd.DataFrame({gj: matrix[gj]})
 
             try:
-                mi_forward_scores = component._event_aware_feature_scores(df_i, matrix[gj])
-                mi_forward = float(mi_forward_scores.get(gi, 0.0))
+                # Use absolute correlation as a cheap symmetric MI proxy
+                mi_forward = abs(corr) if np.isfinite(corr) else 0.0
+                mi_backward = mi_forward
             except Exception:
                 mi_forward = 0.0
-
-            try:
-                mi_backward_scores = component._event_aware_feature_scores(df_j, matrix[gi])
-                mi_backward = float(mi_backward_scores.get(gj, 0.0))
-            except Exception:
                 mi_backward = 0.0
 
             mi_sym = 0.5 * (mi_forward + mi_backward)
@@ -1515,8 +1830,8 @@ def _compute_trading_simulation_pnl(
     confidence_scores: pd.Series,
     realized_returns: pd.Series,
     thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
-    tp_pct: float = 0.02,  # 2% take profit
-    sl_pct: float = 0.007,  # 0.7% stop loss
+    tp_pct: float = 0.02,  # 2% take profit (User requested standard)
+    sl_pct: float = 0.007,  # 0.7% stop loss (User requested standard)
     fee_per_trade: float = 0.0015,  # 0.15% per trade (0.3% round trip)
 ) -> Dict[str, Any]:
     """Compute trading simulation PnL for specialist/probe models at various confidence thresholds.
@@ -1971,7 +2286,103 @@ def run_diagnostics(
         enable_risk_hmm_specialist=enable_risk_hmm_specialist,
     )
 
-    # Optionally collapse raw specialist outputs to canonical scalars. When
+    
+    # ---------------------------------------------------------
+    # Specialist Category Orthogonalization (ENHANCED)
+    # ---------------------------------------------------------
+    if args.enable_orthogonalization or args.run_optimized_orthogonalization:
+        from src.utils.ml_common.specialist_orthogonalizer import OptimizedSpecialistOrthogonalizer
+        
+        # Initialize orthogonalizer with optimization features
+        orthogonalizer = OptimizedSpecialistOrthogonalizer(
+            anchor_specialist=args.anchor_specialist,
+            enable_cache=args.enable_cache,
+            enable_feature_optimization=args.feature_optimization,
+            enable_orthogonal_hpo=args.orthogonal_hpo,
+            enable_conservative_pruning=args.conservative_pruning
+        )
+        
+        # Validate specialist coverage
+        coverage = orthogonalizer.validate_specialist_coverage(specialist_df)
+        available_specialists = [s for s, has in coverage.items() if has]
+        
+        tprint_info(f"🎯 Found {len(available_specialists)} available specialists for orthogonalization")
+        for specialist, has_features in coverage.items():
+            status = "✅" if has_features else "❌"
+            tprint_info(f"  {status} {specialist}")
+        
+        if len(available_specialists) < 2:
+            tprint_warning("⚠️ Need at least 2 specialists for orthogonalization")
+        else:
+            # Get sample weights
+            sample_weights = None
+            if 'target_sample_weight' in specialist_df.columns:
+                sample_weights = specialist_df['target_sample_weight']
+            
+            # Run optimized orthogonalization if requested
+            if args.run_optimized_orthogonalization:
+                tprint_info("🚀 Running optimized orthogonalization pipeline...")
+                
+                optimization_results = orthogonalizer.run_optimized_orthogonalization(
+                    specialist_df=specialist_df,
+                    target_series=y,
+                    sample_weights=sample_weights,
+                    run_hpo=args.orthogonal_hpo,
+                    run_pruning=args.conservative_pruning,
+                    optimize_features=args.feature_optimization
+                )
+                
+                # Store results for reporting
+                orthogonal_targets = optimization_results['orthogonal_targets']
+                auc_weights = optimization_results.get('hpo_results', {}).get('ensemble_config', {}).get('weights', {})
+                
+                # Log optimization summary
+                perf_summary = optimization_results.get('performance_summary', {})
+                tprint_success(f"✅ Optimized orthogonalization completed:")
+                tprint_info(f"  Specialists: {len(optimization_results.get('pruned_specialists', []))}")
+                tprint_info(f"  Mean AUC: {perf_summary.get('mean_auc', 0.5):.4f}")
+                tprint_info(f"  Total time: {optimization_results.get('optimization_time', 0):.1f}s")
+                
+            else:
+                # Run standard orthogonalization
+                orthogonal_targets, auc_weights = orthogonalizer.generate_auc_weighted_orthogonal_targets(
+                    specialist_df=specialist_df,
+                        target_series=y,
+                        sample_weights=sample_weights
+                    )
+                
+                # Run LGBM comparison if requested
+                if args.run_lgbm_comparison:
+                    tprint_info("🔬 Running LGBM comparison analysis...")
+                    
+                    if args.run_optimized_orthogonalization and 'optimization_results' in locals():
+                        # Use optimized results
+                        comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
+                            specialist_df, y, sample_weights
+                        )
+                        comparison_results['optimization_results'] = optimization_results
+                    else:
+                        # Standard comparison
+                        comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
+                            specialist_df, y, sample_weights
+                        )
+                    
+                    # Generate comprehensive comparison report
+                    if args.orthogonal_comparison_report:
+                        from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
+                        generate_orthogonal_comparison_report(comparison_results, args)
+                    
+                    # Store comparison results
+                    orthogonalization_results = {
+                        'comparison_results': comparison_results,
+                        'orthogonal_targets': orthogonal_targets,
+                        'auc_weights': auc_weights,
+                        'specialist_coverage': coverage
+                    }
+                    
+                    tprint_success("✅ Orthogonalization and LGBM comparison completed")
+
+# Optionally collapse raw specialist outputs to canonical scalars. When
     # projection_mode == "raw", use the specialist block exactly as training
     # sees it (same get_specialist_models_outputs output).
     if projection_mode == "canonical_scalars":
@@ -2440,6 +2851,18 @@ def run_diagnostics(
     )
 
 
+def _check_range_specific_config() -> bool:
+    """Check if 1.5-3% range optimization is enabled."""
+    try:
+        import yaml
+        config_path = "config/labeling/layer2_coverage_relax_config.yaml"
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        return config.get("target_range_optimization", {}).get("enabled", False)
+    except Exception:
+        return False
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Diagnostics for specialist model outputs vs meta-label targets",
@@ -2452,78 +2875,123 @@ def main() -> None:
     ap.add_argument("--regime-timeframe", type=str, default="1h")
     # Default target column is now direction-aware: binary_label_long for longs, binary_label_short for shorts
     # Falls back to unified binary_label if directional labels not available
-    ap.add_argument("--target-col", type=str, default=None,
-                    help="Target column for diagnostics. If not specified, uses direction-aware default: "
-                         "binary_label_long (for long), binary_label_short (for short), or binary_label (for both)")
-    ap.add_argument("--cv-folds", type=int, default=5)
+    
+        # Orthogonalization arguments
     ap.add_argument(
-        "--lookback-days",
-        type=float,
-        default=None,
-        help=(
-            "Optional calendar-day lookback window. When set, diagnostics "
-            "are restricted to the last N days of labeled data and "
-            "specialist outputs (default: full history)."
-        ),
-    )
-    ap.add_argument(
-        "--projection-mode",
-        type=str,
-        choices=["canonical_scalars", "raw"],
-        default="canonical_scalars",
-        help=(
-            "How to project specialist outputs before diagnostics. "
-            "'canonical_scalars' (default) collapses each specialist to a "
-            "single scalar; 'raw' uses the full specialist feature block "
-            "exactly as training sees it from get_specialist_models_outputs."
-        ),
-    )
-    ap.add_argument(
-        "--disable-hmm-risk-specialist",
-        dest="enable_hmm_risk_specialist",
-        action="store_false",
-        help=(
-            "When set, disable the optional HMM risk specialist block "
-            "(enable_risk_hmm_specialist=False in get_specialist_models_outputs). "
-            "By default this is enabled so diagnostics and training include "
-            "the HMM risk specialist."
-        ),
-    )
-    ap.add_argument(
-        "--train-specialists",
-        nargs="*",
-        default=None,
-        help="Run training for specialist models before diagnostics. Specify list of models or leave empty for all.",
-    )
-    ap.add_argument(
-        "--compare-targets",
+        "--enable-orthogonalization",
         action="store_true",
-        help="If set, also runs diagnostics on dense target_long/target_short for comparison."
+        help="Enable specialist category orthogonalization using XGB Macro Trend as anchor"
+    )
+    ap.add_argument(
+        "--anchor-specialist",
+        type=str,
+        default="xgb_macro",
+        help="Anchor specialist for orthogonalization (default: xgb_macro)"
+    )
+    ap.add_argument(
+        "--run-lgbm-comparison",
+        action="store_true",
+        help="Run LGBM comparison between baseline and orthogonal features"
+    )
+    ap.add_argument(
+        "--weighting-metric",
+        type=str,
+        default="auc",
+        choices=["auc", "mi", "hybrid"],
+        help="Weighting metric for orthogonal targets (default: auc)"
+    )
+    ap.add_argument(
+        "--orthogonal-comparison-report",
+        action="store_true",
+        help="Generate comprehensive orthogonal comparison report"
+    )
+    
+    # Target denoising arguments
+    ap.add_argument(
+        "--target-denoising",
+        action="store_true",
+        help="Enable target denoising before orthogonalization"
+    )
+    ap.add_argument(
+        "--denoising-method",
+        type=str,
+        default="kalman",
+        choices=["kalman", "hampel", "savgol", "volume", "ensemble"],
+        help="Target denoising method (default: kalman)"
+    )
+    ap.add_argument(
+        "--denoising-confidence-threshold",
+        type=float,
+        default=0.7,
+        help="Confidence threshold for denoising (default: 0.7)"
+    )
+    ap.add_argument(
+        "--volume-column",
+        type=str,
+        default="volume",
+        help="Volume column name for volume-weighted denoising (default: volume)"
+    )
+    
+    # New optimization arguments    # New optimization arguments
+    ap.add_argument(
+        "--orthogonal-hpo",
+        action="store_true",
+        help="Enable orthogonalization-aware HPO with narrow search spaces"
+    )
+    ap.add_argument(
+        "--conservative-pruning",
+        action="store_true",
+        help="Enable conservative ensemble pruning (8-12 specialists)"
+    )
+    ap.add_argument(
+        "--feature-optimization",
+        action="store_true",
+        help="Enable feature deduplication and optimization"
+    )
+    ap.add_argument(
+        "--enable-cache",
+        action="store_true",
+        help="Enable specialist model caching for faster execution"
+    )
+    ap.add_argument(
+        "--narrow-hpo",
+        action="store_true",
+        help="Use narrow HPO search spaces for faster convergence (30 trials max)"
+    )
+    ap.add_argument(
+        "--min-ensemble-size",
+        type=int,
+        default=8,
+        help="Minimum ensemble size after pruning (default: 8)"
+    )
+    ap.add_argument(
+        "--max-ensemble-size",
+        type=int,
+        default=12,
+        help="Maximum ensemble size after pruning (default: 12)"
+    )
+    ap.add_argument(
+        "--run-optimized-orthogonalization",
+        action="store_true",
+        help="Run complete optimized orthogonalization pipeline"
     )
 
     args = ap.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
 
-    # Optional: Run training first if requested
-    if args.train_specialists is not None:
-        import asyncio
-        asyncio.run(_run_specialist_training(
-            symbol=args.symbol,
-            exchange=args.exchange,
-            timeframe=args.timeframe,
-            direction=args.direction,
-            regime_timeframe=args.regime_timeframe,
-            lookback_days=args.lookback_days,
-            selected_specialists=args.train_specialists,
-        ))
+    # Optional: Compare targets if requested
+    if hasattr(args, 'compare_targets') and args.compare_targets:
+        targets_to_run = [args.target_col]
+        # Additional comparison logic would go here
+        pass
 
     # Determine default target column based on direction if not explicitly provided
-    if args.target_col is None:
+    if not hasattr(args, 'target_col') or args.target_col is None:
         if args.direction == "long":
-            args.target_col = "target_long"
+            args.target_col = "binary_label_long"
         elif args.direction == "short":
-            args.target_col = "target_short"
+            args.target_col = "binary_label_short"
         else:
             args.target_col = "binary_label"  # Fallback for 'both' direction
         print(f"Using direction-aware default target: {args.target_col}")
@@ -2541,21 +3009,21 @@ def main() -> None:
     if args.compare_targets:
         # Add regression targets for comparison
         if args.direction == "long":
-            if "target_long" not in targets_to_run:
-                targets_to_run.append("target_long")
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
             # Also compare with unified binary_label for reference
             if "binary_label" not in targets_to_run:
                 targets_to_run.append("binary_label")
         elif args.direction == "short":
-            if "target_short" not in targets_to_run:
-                targets_to_run.append("target_short")
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
             if "binary_label" not in targets_to_run:
                 targets_to_run.append("binary_label")
         elif args.direction == "both":
-            if "target_long" not in targets_to_run:
-                targets_to_run.append("target_long")
-            if "target_short" not in targets_to_run:
-                targets_to_run.append("target_short")
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
             if "binary_label_long" not in targets_to_run:
                 targets_to_run.append("binary_label_long")
             if "binary_label_short" not in targets_to_run:

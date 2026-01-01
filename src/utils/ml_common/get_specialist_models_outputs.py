@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
+log_warning = tprint_warning
 from src.utils.versioned_artifacts import VersionedArtifactStore
 
 
@@ -115,6 +116,16 @@ def _project_specialists_to_canonical_scalars(df: pd.DataFrame) -> pd.DataFrame:
             cols = list(X.columns)
 
     # ------------------------------------------------------------------
+    # Liquidity: collapse to attractiveness scalar (Regime 3 - Regime 0)
+    # ------------------------------------------------------------------
+    liq_cols = [c for c in cols if c.startswith("liquidity_regime_")]
+    if "liquidity_regime_3_prob" in X.columns and "liquidity_regime_0_prob" in X.columns:
+        X["liquidity_score"] = X["liquidity_regime_3_prob"] - X["liquidity_regime_0_prob"]
+        if liq_cols:
+            X = X.drop(columns=liq_cols, errors="ignore")
+            cols = list(X.columns)
+
+    # ------------------------------------------------------------------
     # Breakout/Bounce: keep S/R scalars (+ success prob/high-confidence flag)
     # ------------------------------------------------------------------
     breakout_keep = set()
@@ -138,6 +149,17 @@ def _project_specialists_to_canonical_scalars(df: pd.DataFrame) -> pd.DataFrame:
     if breakout_drop:
         X = X.drop(columns=breakout_drop, errors="ignore")
         cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Volume Force: select only breakout (highly correlated set)
+    # ------------------------------------------------------------------
+    vol_force_cols = [c for c in cols if c.startswith("vol_force_")]
+    if "vol_force_breakout" in X.columns:
+        vol_force_keep = {"vol_force_breakout"}
+        vol_force_drop = [c for c in vol_force_cols if c not in vol_force_keep]
+        if vol_force_drop:
+            X = X.drop(columns=vol_force_drop, errors="ignore")
+            cols = list(X.columns)
 
     # ------------------------------------------------------------------
     # Path: prefer dedicated risk-style scalar if present
@@ -1670,4 +1692,115 @@ def get_specialist_models_outputs(
                     "all regime features."
                 )
 
+    return combined
+
+def get_enhanced_specialist_models_outputs(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    model: str = "analyst",
+    training_index: Optional[pd.DatetimeIndex] = None,
+    config: Optional[Dict[str, Any]] = None,
+    strict: bool = False,
+) -> Optional[pd.DataFrame]:
+    """Load enhanced specialist model outputs from versioned artifacts.
+    
+    This function extends the original specialist loader to include all 14 enhanced specialists.
+    """
+    from src.utils.versioned_artifacts import VersionedArtifactStore
+    
+    if config is None:
+        config = {}
+    
+    artifact_router = VersionedArtifactStore(Path("versioned_artifacts") / f"{symbol}_{exchange}_{timeframe}_{direction}_{model}")
+    blocks = []
+    
+    # Enhanced specialist mappings
+    enhanced_specialists = {
+        "enhanced_ml_momentum_persistence_step": "ml_momentum_persistence_step_enhanced",
+        "enhanced_ml_smc_regime_step": "ml_smc_regime_step_enhanced",
+        "enhanced_ml_volatility_burst_step": "ml_volatility_burst_step_enhanced",
+        "enhanced_ml_volume_force_step": "ml_volume_force_step_enhanced",
+        "enhanced_ml_breakout_bounce_regime_step": "ml_breakout_bounce_regime_step_enhanced",
+        "enhanced_ml_reversion_regime_step": "ml_reversion_regime_step_enhanced",
+        "enhanced_xgb_macro_regime_step": "xgb_macro_regime_step_enhanced",
+        "enhanced_ml_liquidity_regime_step": "ml_liquidity_regime_step_enhanced",
+        "enhanced_ml_path_regime_step": "ml_path_regime_step_enhanced",
+        "enhanced_ml_risk_regime_step": "ml_risk_regime_step_enhanced",
+        "enhanced_xgb_meso_regime_step": "xgb_meso_regime_step_enhanced",
+        "enhanced_ml_microstructure_step": "ml_microstructure_step_enhanced",
+        "enhanced_ml_candlestick_step": "ml_candlestick_step_enhanced",
+        "enhanced_ml_spectral_step": "ml_spectral_step_enhanced",
+    }
+    
+    for step_name, module_name in enhanced_specialists.items():
+        try:
+            context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "direction": direction,
+                "model": model,
+                "step_name": step_name,
+            }
+            
+            # Try to load enhanced specialist predictions
+            specialist_data = artifact_router.load(
+                artifact_name="enhanced_predictions_with_confidence",
+                artifact_type="data",
+                data_category="predictions",
+                context=context,
+            )
+            
+            if specialist_data is not None and not getattr(specialist_data, "empty", True):
+                if not isinstance(specialist_data, pd.DataFrame):
+                    specialist_data = pd.DataFrame(specialist_data)
+                specialist_data = _standardize_index(specialist_data)
+                
+                # Extract prediction columns
+                pred_cols = [c for c in specialist_data.columns if c.startswith("predicted_")]
+                prob_cols = [c for c in specialist_data.columns if c.startswith("prob_")]
+                conf_cols = [c for c in specialist_data.columns if c.startswith("confidence_")]
+                
+                all_cols = pred_cols + prob_cols + conf_cols
+                
+                if all_cols:
+                    before_block = specialist_data[all_cols].copy()
+                    nnz_before = int(before_block.notna().sum().sum())
+                    
+                    if training_index is not None:
+                        block = before_block.reindex(training_index, method="ffill")
+                    else:
+                        block = before_block
+                    
+                    nnz_after = int(block.notna().sum().sum())
+                    
+                    # Add specialist prefix
+                    specialist_prefix = step_name.replace("enhanced_", "").replace("_step", "")
+                    block = block.add_prefix(f"{specialist_prefix}_")
+                    blocks.append(block)
+                    
+                    if nnz_after == 0:
+                        log_warning(f" {step_name} block is all-NaN after alignment")
+                    else:
+                        log_info(f" {step_name}: {nnz_after}/{nnz_before} values preserved")
+            else:
+                log_info(f" No enhanced data found for {step_name}")
+                
+        except Exception as e:
+            log_warning(f" Failed to load enhanced {step_name}: {e}")
+    
+    if not blocks:
+        log_warning(" No enhanced specialist outputs found")
+        if strict:
+            raise ValueError("No enhanced specialist outputs available")
+        return None
+    
+    # Combine all enhanced specialist blocks
+    combined = pd.concat(blocks, axis=1)
+    
+    if training_index is not None:
+        combined = combined.reindex(training_index, method="ffill")
+    
     return combined

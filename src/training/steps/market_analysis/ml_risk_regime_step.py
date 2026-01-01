@@ -62,6 +62,7 @@ from hmmlearn.hmm import GaussianHMM
 from src.utils.ml_common.hmm_warm_start import HMMWarmStarter
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.market_analysis.specialist_diagnostics_mixin import SpecialistDiagnosticsMixin
 from src.utils.tprint import (
     tprint,
     tprint_info,
@@ -277,7 +278,7 @@ class LiveHMM:
         self.state_probs = self.startprob.copy()
 
 
-class MLRiskRegimeStepHMM(BaseStep):
+class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
     """Pipeline step to construct risk-based regime labels using HMM with Mahalanobis scoring."""
 
     def __init__(self, step_name: str = "ml_risk_regime_step_hmm"):
@@ -345,7 +346,18 @@ class MLRiskRegimeStepHMM(BaseStep):
             )
 
             # Calculate normalized Mahalanobis distances [0, 1]
-            mahal_distances, mahal_scaler_params = self._calculate_mahalanobis_distances(
+            # Use enhanced risk calculation if enabled (Phase 1+2)
+            use_enhanced_risk = config.get('use_enhanced_risk_calculation', True)
+            
+            if use_enhanced_risk:
+                enhanced_distances, enhanced_metadata = self._calculate_enhanced_risk_scores(
+                    risk_df, hmm, safe_state_id, split_config, config
+                )
+                mahal_distances = enhanced_distances
+                mahal_scaler_params = enhanced_metadata
+                tprint_info("  ✓ Using enhanced multi-dimensional risk scores")
+            else:
+                mahal_distances, mahal_scaler_params = self._calculate_mahalanobis_distances(
                 risk_df, hmm_model, safe_state_id, split_config
             )
 
@@ -566,11 +578,35 @@ class MLRiskRegimeStepHMM(BaseStep):
         tprint_info("=" * 80)
 
         # Select risk features for HMM (keeping core 5 for stability)
+        # Enhanced feature set with volatility term structure and market microstructure
         feature_cols = [
+            # Core volatility features
             'parkinson_volatility',
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
+            
+            # Volatility term structure (Phase 1 enhancement)
+            'volatility_1h',
+            'volatility_4h',
+            'volatility_24h',
+            'volatility_term_spread_1h_4h',
+            'volatility_term_spread_4h_24h',
+            
+            # Momentum and decay features
+            'momentum_decay_1h',
+            'momentum_decay_4h',
+            'price_momentum_1h',
+            'price_momentum_4h',
+            
+            # Market microstructure (Phase 2 preview)
+            'volume_weighted_spread',
+            'order_flow_imbalance',
+            'volume_profile_slope',
+            
+            # Correlation risk
+            'btc_dominance_change',
+            'eth_btc_correlation_change',
         ]
 
         # Filter to available features
@@ -859,11 +895,35 @@ class MLRiskRegimeStepHMM(BaseStep):
         """
         tprint_info(f"📐 Calculating Mahalanobis distances from safe state (regime {safe_state_id})...")
 
+        # Enhanced feature set with volatility term structure and market microstructure
         feature_cols = [
+            # Core volatility features
             'parkinson_volatility',
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
+            
+            # Volatility term structure (Phase 1 enhancement)
+            'volatility_1h',
+            'volatility_4h',
+            'volatility_24h',
+            'volatility_term_spread_1h_4h',
+            'volatility_term_spread_4h_24h',
+            
+            # Momentum and decay features
+            'momentum_decay_1h',
+            'momentum_decay_4h',
+            'price_momentum_1h',
+            'price_momentum_4h',
+            
+            # Market microstructure (Phase 2 preview)
+            'volume_weighted_spread',
+            'order_flow_imbalance',
+            'volume_profile_slope',
+            
+            # Correlation risk
+            'btc_dominance_change',
+            'eth_btc_correlation_change',
         ]
 
         available_features = [c for c in feature_cols if c in risk_df.columns]
@@ -973,6 +1033,173 @@ class MLRiskRegimeStepHMM(BaseStep):
             f"  Interpretation: 0.0 = At safe regime center, 1.0 = Maximum risk/distance"
         )
 
+
+    
+    def _calculate_enhanced_risk_scores(
+        self,
+        risk_df: pd.DataFrame,
+        hmm_model: GaussianHMM,
+        safe_state_id: int,
+        split_config: Optional[TemporalSplitConfig] = None,
+        config: Optional[Dict[str, Any]] = None
+    ) -> Tuple[np.ndarray, Dict[str, float]]:
+        """
+        Calculate enhanced multi-dimensional risk scores.
+        
+        Phase 1+2 implementation combining:
+        - Mahalanobis distance (baseline)
+        - Volatility term structure risk
+        - Momentum decay risk  
+        - Market microstructure risk
+        - Exponential smoothing
+        
+        Args:
+            risk_df: DataFrame with enhanced risk features
+            hmm_model: Trained HMM model
+            safe_state_id: ID of the "safe" state
+            split_config: Temporal split config
+            config: Configuration dictionary
+            
+        Returns:
+            Tuple of (enhanced_risk_scores, metadata)
+        """
+        tprint_info("🚀 Calculating enhanced multi-dimensional risk scores...")
+        
+        if config is None:
+            config = {}
+        
+        # Get baseline Mahalanobis distances
+        baseline_distances, _ = self._calculate_mahalanobis_distances(
+            risk_df, hmm_model, safe_state_id, split_config
+        )
+        
+        # Initialize enhanced scores with baseline
+        enhanced_scores = baseline_distances.copy()
+        
+        # Phase 1: Volatility term structure risk
+        vol_weight = float(config.get('volatility_term_weight', 0.25))
+        if vol_weight > 0:
+            vol_risk = self._calculate_volatility_term_risk(risk_df)
+            enhanced_scores = enhanced_scores * (1 - vol_weight) + vol_risk * vol_weight
+            tprint_info(f"  ✓ Added volatility term structure risk (weight={vol_weight:.2f})")
+        
+        # Phase 1: Momentum decay risk
+        momentum_weight = float(config.get('momentum_decay_weight', 0.20))
+        if momentum_weight > 0:
+            momentum_risk = self._calculate_momentum_decay_risk(risk_df)
+            enhanced_scores = enhanced_scores * (1 - momentum_weight) + momentum_risk * momentum_weight
+            tprint_info(f"  ✓ Added momentum decay risk (weight={momentum_weight:.2f})")
+        
+        # Phase 2: Market microstructure risk
+        micro_weight = float(config.get('microstructure_weight', 0.15))
+        if micro_weight > 0:
+            micro_risk = self._calculate_microstructure_risk(risk_df)
+            enhanced_scores = enhanced_scores * (1 - micro_weight) + micro_risk * micro_weight
+            tprint_info(f"  ✓ Added market microstructure risk (weight={micro_weight:.2f})")
+        
+        # Phase 1: Exponential smoothing
+        smoothing_span = int(config.get('risk_smoothing_span', 10))
+        if smoothing_span > 0:
+            enhanced_scores = pd.Series(enhanced_scores).ewm(span=smoothing_span, adjust=False).mean().values
+            enhanced_scores = np.clip(enhanced_scores, 0, 1)
+            tprint_info(f"  ✓ Applied exponential smoothing (span={smoothing_span})")
+        
+        # Metadata
+        metadata = {
+            'baseline_mahalanobis_mean': np.nanmean(baseline_distances),
+            'enhanced_risk_mean': np.nanmean(enhanced_scores),
+            'volatility_weight': vol_weight,
+            'momentum_weight': momentum_weight,
+            'microstructure_weight': micro_weight,
+            'smoothing_span': smoothing_span,
+        }
+        
+        tprint_success(f"✅ Enhanced risk scores calculated: mean={np.nanmean(enhanced_scores):.4f}")
+        
+        return enhanced_scores, metadata
+
+    def _calculate_volatility_term_risk(self, risk_df: pd.DataFrame) -> np.ndarray:
+        """Calculate volatility term structure risk component."""
+        vol_risk = np.full(len(risk_df), 0.5)  # Default neutral
+        
+        # Use available volatility term features
+        vol_features = ['volatility_1h', 'volatility_4h', 'volatility_24h', 
+                       'volatility_term_spread_1h_4h', 'volatility_term_spread_4h_24h']
+        available_vol_features = [f for f in vol_features if f in risk_df.columns]
+        
+        if len(available_vol_features) >= 2:
+            vol_data = risk_df[available_vol_features].fillna(0.5)
+            
+            # Calculate term structure stress: steep term structure = higher risk
+            if 'volatility_term_spread_1h_4h' in vol_data.columns:
+                term_stress = np.abs(vol_data['volatility_term_spread_1h_4h'])
+                vol_risk = 0.5 + term_stress * 2.0  # Scale to [0, 1.5] then clip
+            else:
+                # Fallback: use volatility level ratios
+                if 'volatility_1h' in vol_data.columns and 'volatility_24h' in vol_data.columns:
+                    vol_ratio = vol_data['volatility_1h'] / (vol_data['volatility_24h'] + 1e-8)
+                    vol_risk = 0.5 + np.abs(np.log(vol_ratio)) * 0.3
+            
+            vol_risk = np.clip(vol_risk, 0, 1)
+        
+        return vol_risk
+
+    def _calculate_momentum_decay_risk(self, risk_df: pd.DataFrame) -> np.ndarray:
+        """Calculate momentum decay risk component."""
+        momentum_risk = np.full(len(risk_df), 0.5)
+        
+        momentum_features = ['momentum_decay_1h', 'momentum_decay_4h', 
+                           'price_momentum_1h', 'price_momentum_4h']
+        available_momentum_features = [f for f in momentum_features if f in risk_df.columns]
+        
+        if len(available_momentum_features) >= 2:
+            momentum_data = risk_df[available_momentum_features].fillna(0)
+            
+            # High momentum decay = higher risk
+            if 'momentum_decay_1h' in momentum_data.columns:
+                decay_stress = np.abs(momentum_data['momentum_decay_1h'])
+                momentum_risk = 0.5 + decay_stress * 0.5
+            elif 'price_momentum_1h' in momentum_data.columns:
+                # Use price momentum divergence as risk signal
+                momentum_change = np.abs(momentum_data['price_momentum_1h'].diff())
+                momentum_risk = 0.5 + momentum_change * 2.0
+            
+            momentum_risk = np.clip(momentum_risk, 0, 1)
+        
+        return momentum_risk
+
+    def _calculate_microstructure_risk(self, risk_df: pd.DataFrame) -> np.ndarray:
+        """Calculate market microstructure risk component."""
+        micro_risk = np.full(len(risk_df), 0.5)
+        
+        micro_features = ['volume_weighted_spread', 'order_flow_imbalance', 
+                         'volume_profile_slope', 'btc_dominance_change', 'eth_btc_correlation_change']
+        available_micro_features = [f for f in micro_features if f in risk_df.columns]
+        
+        if len(available_micro_features) >= 1:
+            micro_data = risk_df[available_micro_features].fillna(0)
+            
+            # Combine microstructure stress signals
+            stress_signals = []
+            
+            if 'volume_weighted_spread' in micro_data.columns:
+                stress_signals.append(np.abs(micro_data['volume_weighted_spread']) * 0.3)
+            
+            if 'order_flow_imbalance' in micro_data.columns:
+                stress_signals.append(np.abs(micro_data['order_flow_imbalance']) * 0.3)
+            
+            if 'btc_dominance_change' in micro_data.columns:
+                stress_signals.append(np.abs(micro_data['btc_dominance_change']) * 0.2)
+            
+            if 'eth_btc_correlation_change' in micro_data.columns:
+                stress_signals.append(np.abs(micro_data['eth_btc_correlation_change']) * 0.2)
+            
+            if stress_signals:
+                combined_stress = np.sum(stress_signals, axis=0)
+                micro_risk = 0.5 + combined_stress
+                micro_risk = np.clip(micro_risk, 0, 1)
+        
+        return micro_risk
         return mahal_distances_normalized, scaler_params
 
     def _calculate_forward_returns_and_sharpe(
@@ -1562,3 +1789,9 @@ class MLRiskRegimeStepHMM(BaseStep):
             "live_hmm_path": live_hmm_path,
             "artifact_path": artifact_path,
         }
+    
+    def run_diagnostics(self, symbol: str = 'ETHUSDT', exchange: str = 'binance', 
+                       timeframe: str = '15m', direction: str = 'long') -> Dict[str, Any]:
+        """Run independent diagnostics for riskregimehmm specialist."""
+        return self.run_self_diagnostics(symbol, exchange, timeframe, direction)
+

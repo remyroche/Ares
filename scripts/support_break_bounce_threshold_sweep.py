@@ -39,7 +39,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.training.steps.market_analysis.ml_xgb_support_regime import MLBreakoutBounceRegimeStep
+from src.training.steps.market_analysis.ml_breakout_bounce_regime_step import MLBreakoutBounceRegimeStep
 
 
 def parse_args() -> argparse.Namespace:

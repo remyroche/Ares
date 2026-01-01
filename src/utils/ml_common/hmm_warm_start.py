@@ -89,6 +89,18 @@ class HMMWarmStarter:
             params='stmc'  # Learn startprob, transmat, means, covars
         )
 
+        def _expected_covars_shape(cov_type: str) -> Optional[Tuple[int, ...]]:
+            cov_type_norm = str(cov_type).lower()
+            if cov_type_norm == "full":
+                return (n_components, n_features, n_features)
+            if cov_type_norm == "diag":
+                return (n_components, n_features)
+            if cov_type_norm == "tied":
+                return (n_features, n_features)
+            if cov_type_norm == "spherical":
+                return (n_components,)
+            return None
+
         # Initialize from previous model if available and compatible
         if previous_hmm is not None:
             if (previous_hmm.n_components == n_components and
@@ -109,12 +121,37 @@ class HMMWarmStarter:
                 # Copy covariances (if same type)
                 if (hasattr(previous_hmm, 'covars_') and
                         previous_hmm.covariance_type == covariance_type):
-                    hmm.covars_ = previous_hmm.covars_.copy()
+                    expected_shape = _expected_covars_shape(covariance_type)
+                    covars = getattr(previous_hmm, 'covars_', None)
+                    covars_shape = getattr(covars, 'shape', None)
+                    if expected_shape is None:
+                        logger.warning(
+                            "Unknown covariance_type '%s' for warm-start; skipping covars copy",
+                            covariance_type,
+                        )
+                        hmm.init_params = 'c'
+                    elif covars_shape != expected_shape:
+                        logger.warning(
+                            "Warm-start covars shape mismatch for covariance_type='%s': expected=%s got=%s. "
+                            "Skipping covars warm-start and allowing hmmlearn to initialize covariances.",
+                            covariance_type,
+                            expected_shape,
+                            covars_shape,
+                        )
+                        hmm.init_params = 'c'
+                    else:
+                        hmm.covars_ = covars.copy()
 
                 logger.info(
                     f"HMM warm-started from previous model "
                     f"({n_components} states, {n_features} features)"
                 )
+
+                # If any parameters were not supplied, ensure hmmlearn initializes them.
+                # NOTE: init_params controls which parameters are re-initialized before fitting.
+                # We keep it empty unless we explicitly detected missing/mismatched covariances.
+                if hmm.init_params == '':
+                    hmm.init_params = ''
             else:
                 logger.warning(
                     f"Previous HMM incompatible "

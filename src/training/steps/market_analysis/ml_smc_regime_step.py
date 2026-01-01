@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import SpecialistDiagnosticsMixinEnhancedV2
 from src.utils.tprint import (
     tprint,
     tprint_info,
@@ -47,7 +48,7 @@ from src.utils.ml_common.standardized_xgb_trainer import (
 logger = logging.getLogger(__name__)
 
 
-class MLSMCRegimeStep(BaseStep):
+class MLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
     def __init__(self, step_name: str = "ml_smc_regime_step"):
         super().__init__(step_name, use_versioned_artifacts=True)
         self.logger = logger.getChild("MLSMCRegimeStep") if hasattr(logger, "getChild") else logger

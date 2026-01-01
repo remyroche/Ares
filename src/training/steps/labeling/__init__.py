@@ -192,6 +192,9 @@ __all__ = [
 ]
 
 # Register steps with Ares registry
+import logging
+logger = logging.getLogger(__name__)
+
 try:
     from src.training.steps.base_step import step_registry
     
@@ -215,6 +218,13 @@ try:
     if GlobalMetaLabelingHPOSampleWeightedStep is not None:
         step_registry.register('global_meta_labeling_hpo_sample_weighted', GlobalMetaLabelingHPOSampleWeightedStep)
     
+    
+    # Register label-based layer 2 step
+    try:
+        from .label_based_layer_2 import LabelBasedLayer2
+        step_registry.register("label_based_layer_2", LabelBasedLayer2)
+    except Exception as e:
+        logger.warning(f"Failed to register label_based_layer_2: {e}")
 except ImportError:
     # Registry not available, skip registration
     pass

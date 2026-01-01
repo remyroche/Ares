@@ -377,9 +377,11 @@ def generate_layer3_features(
             q33 = float(vol1d.quantile(0.33)) if vol1d.notna().any() else float('nan')
             q67 = float(vol1d.quantile(0.67)) if vol1d.notna().any() else float('nan')
             if np.isfinite(q33) and np.isfinite(q67) and q67 > q33:
-                df_out['vol_bucket_low'] = (vol1d <= q33).astype(float)
-                df_out['vol_bucket_mid'] = ((vol1d > q33) & (vol1d <= q67)).astype(float)
-                df_out['vol_bucket_high'] = (vol1d > q67).astype(float)
+                # DISABLED: Volatility buckets
+                # df_out['vol_bucket_low'] = (vol1d <= q33).astype(float)
+                # df_out['vol_bucket_mid'] = ((vol1d > q33) & (vol1d <= q67)).astype(float)
+                # df_out['vol_bucket_high'] = (vol1d > q67).astype(float)
+                pass
     except Exception:
         pass
 
@@ -387,200 +389,212 @@ def generate_layer3_features(
     # Use existing if provided (e.g. from ensemble_disagreement), else calculate fallback
     valid_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
 
-    if 'ensemble_prob' not in df_out.columns:
-        if valid_cols:
-            df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
-        else:
-            df_out['ensemble_prob'] = 0.5
+    # DISABLED: Ensemble probability and related features
+    # if 'ensemble_prob' not in df_out.columns:
+    #     if valid_cols:
+    #         df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
+    #     else:
+    #         df_out['ensemble_prob'] = 0.5
     
-    # 1a. Explicitly add Base Model Predictions & Confidence Extremes
-    if valid_cols:
-        # Root Cause 2: "Excluding base model confidence"
-        # We add Max/Min probabilities to capture if *any* model is highly confident.
-        df_out['max_base_prob'] = df_out[valid_cols].max(axis=1)
-        df_out['min_base_prob'] = df_out[valid_cols].min(axis=1)
-        df_out['base_prob_range'] = df_out['max_base_prob'] - df_out['min_base_prob']
-    else:
-        df_out['max_base_prob'] = 0.5
-        df_out['min_base_prob'] = 0.5
-        df_out['base_prob_range'] = 0.0
+    # DISABLED: Base model confidence extremes
+    # if valid_cols:
+    #     df_out['max_base_prob'] = df_out[valid_cols].max(axis=1)
+    #     df_out['min_base_prob'] = df_out[valid_cols].min(axis=1)
+    #     df_out['base_prob_range'] = df_out['max_base_prob'] - df_out['min_base_prob']
+    # else:
+    #     df_out['max_base_prob'] = 0.5
+    #     df_out['min_base_prob'] = 0.5
+    #     df_out['base_prob_range'] = 0.0
 
-    # 1a. Explicitly add Base Model Predictions as numerical features
-    for col in base_model_cols:
-        if col in df_out.columns and col != 'ensemble_prob':
-            df_out[f"base_pred_{col}"] = pd.to_numeric(df_out[col], errors='coerce').fillna(0.5)
+    # DISABLED: Base model predictions as numerical features
+    # for col in base_model_cols:
+    #     if col in df_out.columns and col != 'ensemble_prob':
+    #         df_out[f"base_pred_{col}"] = pd.to_numeric(df_out[col], errors='coerce').fillna(0.5)
 
-    # 1b. Ensemble Disagreement Features (ens_*)
+    # DISABLED: Ensemble Disagreement Features (ens_*)
     # Enhanced disagreement features for meta model following de Prado principles
-    disagree_feature_names = [
-        "prediction_dispersion",      # Variance of predictions across models
-        "confidence_gap",            # Margin between top predictions  
-        "uncertainty",               # Normalized entropy (uncertainty measure)
-        "prediction_range",         # Range of predictions (max - min)
-        "avg_divergence",           # Average pairwise model divergence
-        "max_confidence",           # Highest confidence among models
-        "disagreement_rate",        # Proportion of models disagreeing on direction
-        "snr_internal",             # Mean Probability / Mean Internal Variance
-        "snr_consensus",            # Ensemble Mean Probability / StdDev of Model Predictions
-        "ensemble_prob",           # Arithmetic mean of probabilities
-    ]
-    disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
-    for col in disagree_cols:
-        if col not in df_out.columns:
-            df_out[col] = 0.0
+    # disagree_feature_names = [
+    #     "prediction_dispersion",      # Variance of predictions across models
+    #     "confidence_gap",            # Margin between top predictions  
+    #     "uncertainty",               # Normalized entropy (uncertainty measure)
+    #     "prediction_range",         # Range of predictions (max - min)
+    #     "avg_divergence",           # Average pairwise model divergence
+    #     "max_confidence",           # Highest confidence among models
+    #     "disagreement_rate",        # Proportion of models disagreeing on direction
+    #     "snr_internal",             # Mean Probability / Mean Internal Variance
+    #     "snr_consensus",            # Ensemble Mean Probability / StdDev of Model Predictions
+    #     "ensemble_prob",           # Arithmetic mean of probabilities
+    # ]
+    # disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
+    # for col in disagree_cols:
+    #     if col not in df_out.columns:
+    #         df_out[col] = 0.0
 
+    # DISABLED: Disagreement calculation
+    # try:
+    #     valid_base_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
+    #     if valid_base_cols:
+    #         df_out[valid_base_cols] = df_out[valid_base_cols].astype(float).fillna(0.5)
+
+    #         prob_dict = {str(c): df_out[c].astype(float).values for c in valid_base_cols}
+    #         pred_dict = {str(c): (df_out[c].astype(float).values - 0.5) for c in valid_base_cols}
+
+    #         var_dict = {}
+    #         for c in valid_base_cols:
+    #             var_col = f"{c}_var"
+    #             if var_col in df_out.columns:
+    #                 try:
+    #                     var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(float).values
+    #                 except Exception:
+    #                     pass
+
+    #         # Enhanced disagreement calculation with proper error handling
+    #         disagree = calculate_ensemble_disagreement_features(
+    #             model_predictions=pred_dict,
+    #             model_probabilities=prob_dict,
+    #             model_confidences=None,
+    #             model_variances=var_dict if var_dict else None,
+    #             feature_names=disagree_feature_names,  # Explicitly request all features
+    #             logger=None,
+    #         )
+
+    #         # Apply disagreement features with proper validation
+    #         for k, col in zip(disagree_feature_names, disagree_cols):
+    #             v = disagree.get(k)
+    #             if isinstance(v, pd.Series) and len(v) == len(df_out):
+    #                 # Apply de Prado-inspired transformations
+    #                 if k == "disagreement_rate":
+    #                     # Transform disagreement rate to agreement strength (inverse)
+    #                     df_out[col] = 1.0 - pd.to_numeric(v.values, errors="coerce")
+    #                 elif k in ["snr_internal", "snr_consensus"]:
+    #                     # Apply log transform to SNR ratios for better scaling
+    #                     snr_vals = pd.to_numeric(v.values, errors="coerce")
+    #                     df_out[col] = np.log1p(np.clip(snr_vals, 0, 100))  # Clip extreme values
+    #                 elif k == "uncertainty":
+    #                     # Keep uncertainty as-is (already normalized)
+    #                     df_out[col] = pd.to_numeric(v.values, errors="coerce")
+    #                 else:
+    #                     df_out[col] = pd.to_numeric(v.values, errors="coerce")
+    #             else:
+    #                 df_out[col] = 0.0
+    # except Exception:
+    #     pass
+
+    # df_out[disagree_cols] = df_out[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # DISABLED: Logit Probability & Momentum
+    # eps = 0.005
+    # clipped_prob = df_out['ensemble_prob'].clip(eps, 1.0 - eps)
+    # df_out['logit_prob'] = np.log(clipped_prob / (1.0 - clipped_prob))
+    # df_out['logit_momentum_5'] = df_out['logit_prob'] - df_out['logit_prob'].shift(5)
+    # df_out['logit_momentum_1'] = df_out['logit_prob'] - df_out['logit_prob'].shift(1)
+
+    # DISABLED: Volume at Signal
+    # if 'volume' in df_out.columns:
+    #     vol = df_out['volume'].replace(0, np.nan)
+    #     avg_vol = vol.rolling(window=50, min_periods=1).mean()
+    #     # Ratio: volume / avg_vol
+    #     df_out['vol_at_signal'] = vol / (avg_vol + 1e-8)
+    #     # Fill NaNs/Infs
+    #     df_out['vol_at_signal'] = df_out['vol_at_signal'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    # else:
+    #     df_out['vol_at_signal'] = 1.0
+
+    # 3b. Payoff Asymmetry (Volatility vs Cost) - REMOVED
+    # volatility_risk_ratio feature has been removed as requested
+    # if 'volatility_1d' in df_out.columns:
+    #     vol_1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(float)
+    #     df_out['volatility_risk_ratio'] = vol_1d / 0.003
+    #     df_out['volatility_risk_ratio'] = df_out['volatility_risk_ratio'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    # else:
+    #     df_out['volatility_risk_ratio'] = 1.0
+
+    # DISABLED: Candle Shape
+    # required_price_cols = ['high', 'low', 'close']
+    # if all(c in df_out.columns for c in required_price_cols):
+    #     high = df_out['high']
+    #     low = df_out['low']
+    #     close = df_out['close'].replace(0, np.nan)
+    #     df_out['candle_shape'] = (high - low) / close
+    #     roll_high = high.rolling(window=4, min_periods=1).max()
+    #     roll_low = low.rolling(window=4, min_periods=1).min()
+    #     df_out['candle_shape_4'] = (roll_high - roll_low) / close
+    #     for c in ['candle_shape', 'candle_shape_4']:
+    #         df_out[c] = df_out[c].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    # else:
+    #     df_out['candle_shape'] = 0.0
+    #     df_out['candle_shape_4'] = 0.0
+
+    # DISABLED: Regime Features (from GateModel logic)
+    # regime_feats = _compute_gate_regime_features(df_out)
+    # for col in regime_feats.columns:
+    #     df_out[col] = regime_feats[col]
+
+    # DISABLED: Cross-Timeframe Momentum Agreement
+    # try:
+    #     if all(c in df_out.columns for c in ['close']):
+    #         mom_feats = _compute_cross_tf_momentum_agreement(df_out)
+    #         for col in mom_feats.columns:
+    #             df_out[col] = mom_feats[col]
+    # except Exception:
+    #     pass
+
+    # 4. Price-Denoised Features (from Layer0)
     try:
-        valid_base_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
-        if valid_base_cols:
-            df_out[valid_base_cols] = df_out[valid_base_cols].astype(float).fillna(0.5)
-
-            prob_dict = {str(c): df_out[c].astype(float).values for c in valid_base_cols}
-            pred_dict = {str(c): (df_out[c].astype(float).values - 0.5) for c in valid_base_cols}
-
-            var_dict = {}
-            for c in valid_base_cols:
-                var_col = f"{c}_var"
-                if var_col in df_out.columns:
-                    try:
-                        var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(float).values
-                    except Exception:
-                        pass
-
-            # Enhanced disagreement calculation with proper error handling
-            disagree = calculate_ensemble_disagreement_features(
-                model_predictions=pred_dict,
-                model_probabilities=prob_dict,
-                model_confidences=None,
-                model_variances=var_dict if var_dict else None,
-                feature_names=disagree_feature_names,  # Explicitly request all features
-                logger=None,
-            )
-
-            # Apply disagreement features with proper validation
-            for k, col in zip(disagree_feature_names, disagree_cols):
-                v = disagree.get(k)
-                if isinstance(v, pd.Series) and len(v) == len(df_out):
-                    # Apply de Prado-inspired transformations
-                    if k == "disagreement_rate":
-                        # Transform disagreement rate to agreement strength (inverse)
-                        df_out[col] = 1.0 - pd.to_numeric(v.values, errors="coerce")
-                    elif k in ["snr_internal", "snr_consensus"]:
-                        # Apply log transform to SNR ratios for better scaling
-                        snr_vals = pd.to_numeric(v.values, errors="coerce")
-                        df_out[col] = np.log1p(np.clip(snr_vals, 0, 100))  # Clip extreme values
-                    elif k == "uncertainty":
-                        # Keep uncertainty as-is (already normalized)
-                        df_out[col] = pd.to_numeric(v.values, errors="coerce")
-                    else:
-                        df_out[col] = pd.to_numeric(v.values, errors="coerce")
-                else:
-                    df_out[col] = 0.0
-    except Exception:
-        pass
-
-    df_out[disagree_cols] = df_out[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-    # 2. Logit Probability & Momentum
-    # Clip to avoid inf/nan in logit: [0.005, 0.995]
-    eps = 0.005
-    clipped_prob = df_out['ensemble_prob'].clip(eps, 1.0 - eps)
-    df_out['logit_prob'] = np.log(clipped_prob / (1.0 - clipped_prob))
-
-    df_out['logit_momentum_5'] = df_out['logit_prob'] - df_out['logit_prob'].shift(5)
-    df_out['logit_momentum_1'] = df_out['logit_prob'] - df_out['logit_prob'].shift(1)
-
-    # 3. Volume at Signal (Ratio vs 50-bar average)
-    if 'volume' in df_out.columns:
-        vol = df_out['volume'].replace(0, np.nan)
-        avg_vol = vol.rolling(window=50, min_periods=1).mean()
-        # Ratio: volume / avg_vol
-        df_out['vol_at_signal'] = vol / (avg_vol + 1e-8)
-        # Fill NaNs/Infs
-        df_out['vol_at_signal'] = df_out['vol_at_signal'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
-    else:
-        df_out['vol_at_signal'] = 1.0
-
-    # 3b. Payoff Asymmetry (Volatility vs Cost)
-    # Root Cause 2: "Ignoring volatility / payoff asymmetry"
-    # We estimate risk/reward capacity by comparing volatility to an assumed cost.
-    # Hardcoded cost proxy (0.003) is used as it's not passed here, but relative magnitude matters most.
-    if 'volatility_1d' in df_out.columns:
-        vol_1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(float)
-        df_out['volatility_risk_ratio'] = vol_1d / 0.003
-        df_out['volatility_risk_ratio'] = df_out['volatility_risk_ratio'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
-    else:
-        df_out['volatility_risk_ratio'] = 1.0
-
-    # 4. Candle Shape: (High - Low) / Close
-    required_price_cols = ['high', 'low', 'close']
-    if all(c in df_out.columns for c in required_price_cols):
-        high = df_out['high']
-        low = df_out['low']
-        close = df_out['close'].replace(0, np.nan)
-
-        # Current bar shape
-        df_out['candle_shape'] = (high - low) / close
-
-        # 4-bar aggregated shape (as if it were a single longer bar)
-        # Rolling max high, rolling min low over last 4 bars
-        roll_high = high.rolling(window=4, min_periods=1).max()
-        roll_low = low.rolling(window=4, min_periods=1).min()
-
-        # Normalized by current close
-        df_out['candle_shape_4'] = (roll_high - roll_low) / close
-
-        # Cleanup
-        for c in ['candle_shape', 'candle_shape_4']:
-            df_out[c] = df_out[c].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    else:
-        df_out['candle_shape'] = 0.0
-        df_out['candle_shape_4'] = 0.0
-
-    # 5. Regime Features (from GateModel logic)
-    regime_feats = _compute_gate_regime_features(df_out)
-    for col in regime_feats.columns:
-        df_out[col] = regime_feats[col]
-
-    # 6. Cross-Timeframe Momentum Agreement
-    try:
-        if all(c in df_out.columns for c in ['close']):
-            mom_feats = _compute_cross_tf_momentum_agreement(df_out)
-            for col in mom_feats.columns:
-                df_out[col] = mom_feats[col]
-    except Exception:
-        pass
-
-    # 7. Geometry Features
-    try:
-        geo_feats = compute_geometry_features(df_out)
-        for col in geo_feats.columns:
-            df_out[col] = geo_feats[col]
-    except Exception:
-        pass
-
-    # 9. Regime Interaction Terms (Synergy)
-    try:
-        if 'ensemble_prob' in df_out.columns:
-            ep = df_out['ensemble_prob']
-            # Interaction with Trend Regimes
-            if 'trend_regime_is_high' in df_out.columns:
-                df_out['inter_ep_trend_high'] = ep * df_out['trend_regime_is_high']
-            if 'trend_regime_is_low' in df_out.columns:
-                df_out['inter_ep_trend_low'] = ep * df_out['trend_regime_is_low']
+        if 'kalman_price' in df_out.columns and 'close' in df_out.columns:
+            close = df_out['close']
+            kalman_price = df_out['kalman_price']
             
-            # Interaction with Volatility Regimes
-            if 'vol_regime_is_high' in df_out.columns:
-                df_out['inter_ep_vol_high'] = ep * df_out['vol_regime_is_high']
-            if 'vol_regime_is_low' in df_out.columns:
-                df_out['inter_ep_vol_low'] = ep * df_out['vol_regime_is_low']
+            # Market stretch: deviation from denoised price
+            df_out['market_stretch'] = np.log((close + 1e-9) / (kalman_price + 1e-9))
             
-            # Interaction with Volatility Buckets
-            if 'vol_bucket_high' in df_out.columns:
-                df_out['inter_ep_vol_bucket_high'] = ep * df_out['vol_bucket_high']
-            if 'vol_bucket_low' in df_out.columns:
-                df_out['inter_ep_vol_bucket_low'] = ep * df_out['vol_bucket_low']
+            # Price deviation metrics
+            df_out['price_deviation_abs'] = np.abs(close - kalman_price)
+            df_out['price_deviation_pct'] = (close - kalman_price) / kalman_price
+            
+            # Raw vs denoised price ratio
+            df_out['raw_denoised_ratio'] = close / (kalman_price + 1e-8)
+            
+            # Clean up infinities and NaNs
+            price_denoised_cols = ['market_stretch', 'price_deviation_abs', 'price_deviation_pct', 'raw_denoised_ratio']
+            df_out[price_denoised_cols] = df_out[price_denoised_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
     except Exception:
         pass
+
+    # 5. Kalman Information Features
+    try:
+        if 'kalman_price' in df_out.columns and 'close' in df_out.columns:
+            close = df_out['close']
+            kalman_price = df_out['kalman_price']
+            
+            # Kalman velocity (rate of change)
+            df_out['kalman_velocity'] = kalman_price.diff()
+            df_out['kalman_acceleration'] = kalman_price.diff().diff()
+            
+            # Kalman deviation from price
+            df_out['kalman_deviation'] = kalman_price - close
+            df_out['kalman_deviation_pct'] = (kalman_price - close) / close
+            
+            # Kalman trend strength (persistent direction)
+            df_out['kalman_trend_strength'] = np.sign(kalman_price.diff()).rolling(20).mean().abs()
+            
+            # Kalman volatility ratio
+            if 'kalman_volatility' in df_out.columns:
+                kalman_vol = df_out['kalman_volatility']
+                price_vol = close.rolling(20).std()
+                df_out['kalman_vol_ratio'] = kalman_vol / (price_vol + 1e-8)
+            
+            # Clean up infinities and NaNs
+            kalman_cols = [c for c in df_out.columns if c.startswith('kalman_')]
+            df_out[kalman_cols] = df_out[kalman_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    except Exception:
+        pass
+
+    # DISABLED: Regime Interaction Terms
+    # try:
+    #     pass  # Regime interaction terms disabled
+    # except Exception:
+    #     pass
 
     # 10. Price Position in Range
     try:

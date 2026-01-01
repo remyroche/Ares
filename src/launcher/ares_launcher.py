@@ -545,12 +545,6 @@ Examples:
         help='Minimum MI lift required for interaction selection; overrides default when provided'
     )
 
-    # Alpha/HPO options (used by hmm_ml_alpha_step and other alpha-related steps)
-    parser.add_argument(
-        '--alpha-enable-hpo',
-        action='store_true',
-        help='Enable hierarchical HPO for alpha model training (e.g., in hmm_ml_alpha_step)'
-    )
 
     # Global HPO toggle (used by ml_risk_regime_step and unified model training)
     parser.add_argument(
@@ -1165,20 +1159,45 @@ async def main():
         config['alpha_enable_hpo'] = True
 
     # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
-    if getattr(args, 'enable_labeling_hpo_params', False) or getattr(args, 'labeling_hpo_use_best_params', False):
-        config['enable_labeling_hpo_params'] = True
+    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
+    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
+        config["enable_labeling_hpo_params"] = True
     
-    # Optional global HPO configuration (used by ml_risk_regime_step, ml_map_regime_step and unified training)
-    if getattr(args, 'enable_hpo', False):
-        config['enable_hpo'] = True
-        config['risk_enable_hpo'] = True
+    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+    if getattr(args, "enable_hpo", False):
+        config["enable_hpo"] = True
+        config["risk_enable_hpo"] = True
+    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
+    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
+        config["enable_labeling_hpo_params"] = True
+    
+    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+    if getattr(args, "enable_hpo", False):
+        config["enable_hpo"] = True
+        config["risk_enable_hpo"] = True
+    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
+    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
+        config["enable_labeling_hpo_params"] = True
+    
+    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+    if getattr(args, "enable_hpo", False):
+        config["enable_hpo"] = True
+        config["risk_enable_hpo"] = True
+    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
+    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
+        config["enable_labeling_hpo_params"] = True
+    
+    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+    if getattr(args, "enable_hpo", False):
+        config["enable_hpo"] = True
+        config["risk_enable_hpo"] = True
 
     # Map XGB/HPO behaviour for specific steps when --enable-hpo is provided.
     if getattr(args, 'enable_hpo', False):
         target_steps: List[str] = []
         if args.step:
             target_steps = [args.step]
-        elif args.steps:
+        # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
             target_steps = [s.strip() for s in args.steps.split(',') if s.strip()]
         elif args.command:
             target_steps = [args.command]
@@ -1192,12 +1211,6 @@ async def main():
 
         # When running the sr_labeling_xgb (meta-labeling HPO) step with
         # --enable-hpo, automatically enable XGB model HPO inside the step.
-        # Keep compatibility with the legacy step name
-        # 'meta_labeling_hpo_experiment'.
-        if 'sr_labeling_xgb' in target_steps or 'meta_labeling_hpo_experiment' in target_steps:
-            config['enable_xgb_model_hpo'] = True
-
-    # Optional meta-gated backtest diagnostics configuration
     # These flags are no-ops for other steps; MetaGatedBacktestStep will
     # consume them when present.
     if getattr(args, 'meta_permutation_test', False):

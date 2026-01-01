@@ -503,8 +503,8 @@ def create_optimized_triple_barrier_labeling(
         return labeler, {}, False
 
 # Production TPSL Parameters (overridable via config)
-DEFAULT_PROFIT_THRESHOLD = 0.005  # 0.5% (reduced for better balance)
-DEFAULT_STOP_THRESHOLD = 0.0075  # 0.75% (increased for better balance)
+DEFAULT_PROFIT_THRESHOLD = 0.004  # 0.4% (relaxed to increase win rate density)
+DEFAULT_STOP_THRESHOLD = 0.0125  # 1.25% (widened to reduce premature stop outs)
 
 # Transaction cost: import from centralized module for consistency
 from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
@@ -701,7 +701,7 @@ def generate_primary_signals(
     target_trades_per_day: float = 20.0,
     enable_dynamic_tuning: bool = True,
     use_cusum_filter: bool = True,
-    cusum_threshold: float = 0.003,  # Aggressive base model: high recall (~25-35% coverage), meta-model provides precision
+    cusum_threshold: float = 0.005,  # Tightened: focus on higher quality structural breaks to reduce noise
     bb_window: int = 20,
     bb_std: float = 2.0,
     atr_period: int = 14,
@@ -919,7 +919,9 @@ def compute_realized_returns(
     else:
         profit_thresholds = profit_threshold.reindex(df.index).astype(float).values if len(profit_threshold) != len(df) else profit_threshold.astype(float).values
 
-    if isinstance(stop_threshold, (int, float)):
+    if stop_threshold is None:
+        stop_thresholds = np.full(len(df), 0.0)
+    elif isinstance(stop_threshold, (int, float)):
         stop_thresholds = np.full(len(df), stop_threshold)
     elif isinstance(stop_threshold, np.ndarray):
         stop_thresholds = np.asarray(stop_threshold, dtype=float)

@@ -261,7 +261,7 @@ def register_global_meta_labeling_hpo_sample_weighted_step() -> None:
     
     step_registry.register("global_meta_labeling_hpo_sample_weighted", GlobalMetaLabelingHPOSampleWeightedStep)
     
-    tprint("✅ Global meta-labeling HPO sample weighted step registered", "SUCCESS")
+    tprint_success("✅ Global meta-labeling HPO sample weighted step registered")
 
 
 # Auto-register the step

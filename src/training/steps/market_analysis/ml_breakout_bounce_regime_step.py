@@ -37,6 +37,7 @@ from sklearn.utils.class_weight import compute_sample_weight
 from src.utils.ml_common.labeling.meta_labeling import triple_barrier_labels
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import SpecialistDiagnosticsMixinEnhancedV2
 from src.utils.tprint import (
     tprint,
     tprint_info,
@@ -4577,7 +4578,7 @@ class MLPathRegimeStep(BaseStep):
         return metrics, quality_path
 
 
-class MLBreakoutBounceRegimeStep(BaseStep):
+class MLBreakoutBounceRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
     def __init__(self, step_name: str = "ml_breakout_bounce_regime_step") -> None:
         super().__init__(step_name, use_versioned_artifacts=True)
         self.logger = logger.getChild("MLBreakoutBounceRegimeStep") if hasattr(logger, "getChild") else logger
@@ -8734,7 +8735,15 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         # stage1_oof may contain duplicate indices if multiple windows emit
         # OOF predictions for the same timestamp. Aggregate to a unique index
         # before reindexing to avoid pandas duplicate-label reindex errors.
-        prob_series = stage1_oof["probability"].copy()
+        if "probability" in stage1_oof.columns:
+            prob_series = stage1_oof["probability"].copy()
+        elif "prob_class_1" in stage1_oof.columns:
+            prob_series = stage1_oof["prob_class_1"].copy()
+        else:
+            raise KeyError(
+                f"Stage1 OOF predictions missing expected probability column. "
+                f"Available columns: {list(stage1_oof.columns)}"
+            )
         if prob_series.index.has_duplicates:
             try:
                 prob_series = prob_series.groupby(prob_series.index).mean()

@@ -35,6 +35,7 @@ from sklearn.metrics import (
 from sklearn.isotonic import IsotonicRegression
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import SpecialistDiagnosticsMixinEnhancedV2
 from src.utils.tprint import (
     tprint,
     tprint_info,
@@ -62,7 +63,7 @@ from src.utils.ml_common.evaluation.hsic import calculate_hsic
 logger = logging.getLogger(__name__)
 
 
-class MLVolumeForceStep(BaseStep):
+class MLVolumeForceStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
     """Pipeline step for Volume Force multi-task prediction."""
 
     def __init__(self, step_name: str = "ml_volume_force_step"):

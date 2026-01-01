@@ -51,13 +51,13 @@ class RetrainingSchedule:
 
     @classmethod
     def for_xgb(cls) -> 'RetrainingSchedule':
-        """Standard schedule for XGB models."""
+        """Standard schedule for XGB models with warm start, 6-month burn-in, and 28-day windows."""
         return cls(
             model_type='xgb',
-            retrain_interval_days=5,
-            burnin_pct=1/12,  # 3 months
+            retrain_interval_days=28,  # 28 days (4 weeks) - INCREASED FOR EFFICIENCY
+            burnin_pct=1/6,  # 6 months - INCREASED FOR ROBUSTNESS
             min_samples_for_training=1000,
-            enable_warm_start=False  # XGB doesn't use warm start
+            enable_warm_start=True  # ENABLE warm start for incremental training
         )
 
     @classmethod

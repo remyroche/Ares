@@ -1116,22 +1116,37 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             else:
                 # Standard Monolithic Run
                 l2_output = layer2.run(train_data)
+                tprint_info(f"DEBUG: l2_output keys: {list(l2_output.keys()) if isinstance(l2_output, dict) else 'NOT_A_DICT'}")
+
+                # SAFETY CHECK: Ensure Layer 2 produced valid output
+                if not isinstance(l2_output, dict) or not l2_output:
+                    tprint_error("❌ Layer 2 run returned invalid output (None or empty). Halting pipeline.")
+                    return {"success": False, "error": "Layer 2 failed to produce output"}
+
 
             # Unpack Layer 2 Artifacts (OOF for Training/Analytics)
             l2_score = l2_output.get('l2_score')
             l2_confidence = l2_output.get('l2_confidence')
             l2_labels = l2_output.get('l2_label', l2_output.get('oof_labels'))
             l2_returns = l2_output.get('oof_returns')
+            tprint_info(f"DEBUG: l2_returns type: {type(l2_returns)}, is None: {l2_returns is None}")
             l2_weights = l2_output.get('weights')
             l2_quality_weights = l2_output.get('quality_weights')
-            individual_geos = l2_output.get('individual_geometries', {})
+            individual_geos_raw = l2_output.get('individual_geos', {})
+            # Sanitize keys for LightGBM (no JSON chars)
+            individual_geos = {}
+            for k, v in individual_geos_raw.items():
+                clean_k = k.replace('{', '').replace('}', '').replace("'", "").replace(':', '_').replace(',', '_').replace(' ', '')
+                individual_geos[clean_k] = v
+            tprint_info(f"   Sanitized {len(individual_geos)} geometry keys for LGBM.")
             individual_variances = l2_output.get('individual_variances') # Unpack Variances
             events_df = l2_output.get('events_df')
             selected_trials = l2_output.get('selected_trials')  # Production Geometries
             if not isinstance(selected_trials, list):
                 selected_trials = []
             if len(selected_trials) == 0:
-                tprint_warning("Layer2 produced zero production geometries (no trials passed gates).")
+                tprint_error("❌ Layer 2: ZERO geometries passed gates. Pipeline cannot continue.")
+                return {"success": False, "error": "Zero Layer 2 geometries"}
 
             if events_df is not None and hasattr(events_df, "index"):
                 evt_index = events_df.index
@@ -1285,10 +1300,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 w_l1_aligned = pd.Series(1.0, index=events_df.index)
         
         # Layer 2 Weights (Composite from Geometry Bagging)
-        w_l2_aligned = l2_weights # Already aligned to events_df
+        w_l2_aligned = l2_weights.fillna(1.0) if l2_weights is not None else pd.Series(1.0, index=events_df.index)
         
         # Net Returns (for Magnitude)
-        l2_returns_aligned = l2_returns # Already aligned to events_df
+        l2_returns_aligned = l2_returns.fillna(0.0) if l2_returns is not None else pd.Series(0.0, index=events_df.index)
         
         # ---------------------------------------------------------
         # Data Assembly for Layer 3
@@ -1298,12 +1313,23 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # Assemble OOF predictions from individual geometries
         geo_preds_df = pd.DataFrame(index=events_df.index)
         if not individual_geos or len(individual_geos) == 0:
-            tprint_warning("   Layer 2 'individual_geos' is empty! Layer 3 will have no base models.")
+            tprint_error("   Layer 2 'individual_geos' is empty! Layer 3 will have no base models. Fast failing.")
+            raise ValueError("Layer 2 produced no valid geometries/predictions. Check Layer 2 feature generation logs.")
         else:
             tprint_info(f"   Integrating {len(individual_geos)} base model geometries for Layer 3.")
             for uuid, preds in individual_geos.items():
                 # preds are already Series on the correct index (or reindex safe)
-                geo_preds_df[uuid] = preds.reindex(events_df.index)
+                # Align evts to oof_scores index TZ to ensure valid lookups
+                preds_aligned = preds
+                try:
+                    # Robust alignment logic
+                    if events_df.index.tz is not None and preds.index.tz is None:
+                        preds_aligned = preds.tz_localize(events_df.index.tz)
+                    elif events_df.index.tz is None and preds.index.tz is not None:
+                        preds_aligned = preds.tz_localize(None)
+                except Exception:
+                    pass
+                geo_preds_df[uuid] = preds_aligned.reindex(events_df.index)
             
         geo_cols = list(geo_preds_df.columns)
         
@@ -1316,12 +1342,36 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if isinstance(variances, pd.Series):
                      l3_input_df[var_col] = variances.reindex(events_df.index)
 
-        context_cols = ['volatility_1d', 'trend_regime', 'vol_regime']
+        context_cols = ['volatility_1d', 'trend_regime', 'vol_regime', 'close']
+        
+        # Robust Index Alignment: Ensure consistent timezone handling
+        # Convert both to timezone-naive if one is naive and other is aware
+        try:
+            if l3_input_df.index.tz is not None and market_data.index.tz is None:
+                l3_input_df.index = l3_input_df.index.tz_localize(None)
+            elif l3_input_df.index.tz is None and market_data.index.tz is not None:
+                # We work on a copy or modify l3_input_df index to match market_data
+                # But market_data is the source of truth for context.
+                # Easiest is to strip TZ from market_data lookup temporarily if needed, 
+                # but better to strip from l3_input_df if market_data is naive.
+                # If market_data is aware, we should localize l3_input_df.
+                l3_input_df.index = l3_input_df.index.tz_localize(market_data.index.tz)
+        except Exception:
+            # If conversion fails, try naive fallback for both
+            try:
+                if l3_input_df.index.tz is not None: l3_input_df.index = l3_input_df.index.tz_localize(None)
+                if market_data.index.tz is not None: 
+                    market_data = market_data.copy()
+                    market_data.index = market_data.index.tz_localize(None)
+            except Exception:
+                pass
+
         for c in context_cols:
             if c in events_df.columns:
                 l3_input_df[c] = events_df[c]
             elif c in market_data.columns:
-                 l3_input_df[c] = market_data.loc[l3_input_df.index, c]
+                 # Use reindex instead of loc for safety against missing keys (KeyError)
+                 l3_input_df[c] = market_data[c].reindex(l3_input_df.index).values
         
         target_col = 'l2_consensus_target'
         l3_target = l2_labels

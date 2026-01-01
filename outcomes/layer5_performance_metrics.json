@@ -1,0 +1,14 @@
+{
+  "Total PnL": 0.0,
+  "Avg Trade PnL": 0.0,
+  "Trade Count": 0,
+  "Turnover Estimate": 0.0,
+  "Net Sortino": 0.0,
+  "Maximum Drawdown": 1.000088900582341e-12,
+  "Total Return": 0.0,
+  "AUC": NaN,
+  "Runtime": {
+    "n_rows": 30585,
+    "total_ms": 4.909665993181989
+  }
+}

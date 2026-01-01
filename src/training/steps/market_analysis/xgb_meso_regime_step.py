@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import SpecialistDiagnosticsMixinEnhancedV2
 from src.utils.tprint import (
     tprint,
     tprint_info,
@@ -58,7 +59,7 @@ from src.training.steps.market_analysis.rolling_hmm_clustering.feature_engineeri
 logger = logging.getLogger(__name__)
 
 
-class XGBMesoTrendStep(BaseStep):
+class XGBMesoTrendStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
     """Pipeline step to train XGBoost meso-trend model using StandardizedXGBTrainer."""
 
     def __init__(self, step_name: str = "xgb_meso_regime"):

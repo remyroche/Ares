@@ -657,13 +657,123 @@ def _numba_kalman_filter(
     return filtered_state_means, filtered_state_covariances
 
 
+def compute_volume_weighted_kalman_smoothed_price_and_volatility(
+    prices: pd.Series,
+    volume: Optional[pd.Series] = None,
+    process_noise: float = 1e-5,
+    measurement_noise: float = 1e-3,
+    vol_window: int = 20,
+    volume_weight: float = 1.0,
+    volume_adaptive: bool = True,
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Compute Kalman-smoothed price with volume-based observation weighting.
+    
+    Args:
+        prices: Price series to smooth (Close)
+        volume: Volume series for adaptive noise scaling
+        process_noise: Kalman process noise parameter (Q)
+        measurement_noise: Kalman measurement noise parameter (R_base)
+        vol_window: Rolling window for volatility estimation
+        volume_weight: Base weight for volume influence (0.0=ignore, 1.0=moderate, 2.0=strong)
+        volume_adaptive: If True, adapt weight based on volume anomalies
+    
+    Returns:
+        Tuple of (kalman_smoothed_price, kalman_volatility)
+    """
+    # Align inputs
+    df_in = pd.DataFrame({'close': prices})
+    if volume is not None:
+        df_in['volume'] = volume
+        
+    # Clean NaN
+    df_clean = df_in.dropna()
+    if len(df_clean) < 10:
+        return prices, pd.Series(0.0, index=prices.index)
+        
+    n_timesteps = len(df_clean)
+    
+    # 1. Calculate Adaptive Measurement Noise (R_t) based on volume
+    R_t_values = np.full(n_timesteps, measurement_noise)
+    
+    if 'volume' in df_clean.columns:
+        vol_arr = df_clean['volume'].values
+        
+        if volume_adaptive:
+            # Adaptive volume weighting: high volume = lower noise (more confidence)
+            vol_median = np.nanmedian(vol_arr)
+            if vol_median > 0:
+                # Volume anomaly detection
+                vol_zscore = (vol_arr - vol_median) / (np.nanstd(vol_arr) + 1e-12)
+                
+                # High volume (positive zscore) = lower noise, low volume = higher noise
+                volume_scale = 1.0 / (1.0 + np.exp(-vol_zscore))  # Sigmoid scaling
+                volume_scale = np.clip(volume_scale, 0.1, 3.0)  # Limit extremes
+                
+                # Apply volume_weight parameter
+                volume_scale = 1.0 + volume_weight * (volume_scale - 1.0)
+                R_t_values = measurement_noise / volume_scale
+        else:
+            # Simple volume scaling
+            vol_safe = np.where(vol_arr < 1e-8, 1e-8, vol_arr)
+            vol_median = np.nanmedian(vol_safe)
+            if vol_median > 0:
+                vol_ratio = vol_safe / vol_median
+                vol_ratio = np.clip(vol_ratio, 0.1, 10.0)
+                volume_scale = 1.0 + volume_weight * np.log1p(vol_ratio - 1.0)
+                R_t_values = measurement_noise / volume_scale
+            
+    # 2. Setup Kalman Matrices
+    # State: [price, velocity]
+    initial_state_mean = np.array([df_clean['close'].iloc[0], 0.0], dtype=float)
+    initial_state_covariance = np.eye(2) * 1e-3
+    transition_matrix = np.array([[1.0, 1.0], [0.0, 1.0]])
+    transition_covariance = np.eye(2) * process_noise
+    
+    # 3. Single Measurement: [Close] with volume-adaptive noise
+    observation_matrices = np.array([[[1.0, 0.0]] for _ in range(n_timesteps)])
+    observations = df_clean['close'].values[:, np.newaxis].astype(float)
+    observation_covariances = np.zeros((n_timesteps, 1, 1))
+    observation_covariances[:, 0, 0] = R_t_values
+
+    # 4. Run Kalman Filter
+    filtered_means, _ = _numba_kalman_filter(
+        observations,
+        transition_matrix,
+        transition_covariance,
+        observation_matrices,
+        observation_covariances,
+        initial_state_mean,
+        initial_state_covariance
+    )
+    
+    # 5. Extract smoothed price
+    smoothed_price = pd.Series(
+        filtered_means[:, 0],
+        index=df_clean.index,
+        name='kalman_price'
+    )
+    
+    # 6. Compute Kalman volatility
+    smoothed_price_full = smoothed_price.reindex(prices.index).ffill()
+    
+    residuals = np.log(smoothed_price_full.astype(float).abs() + 1e-12).diff()
+    kalman_volatility = (
+        residuals.rolling(vol_window).std().abs() * smoothed_price_full.astype(float).abs()
+    ).bfill()
+    kalman_volatility = kalman_volatility.reindex(prices.index).ffill()
+    
+    return smoothed_price_full, kalman_volatility
+
+
 def compute_kalman_smoothed_price_and_volatility(
     prices: pd.Series,
     volume: Optional[pd.Series] = None,
     vwap: Optional[pd.Series] = None,
     process_noise: float = 1e-5,
     measurement_noise: float = 1e-3,
-    vol_window: int = 20
+    vol_window: int = 20,
+    vwap_weight: float = 1.0
 ) -> Tuple[pd.Series, pd.Series]:
     """
     Compute Kalman-smoothed price and volatility using Numba optimization.
@@ -675,6 +785,7 @@ def compute_kalman_smoothed_price_and_volatility(
         process_noise: Kalman process noise parameter (Q)
         measurement_noise: Kalman measurement noise parameter (R_base)
         vol_window: Rolling window for volatility estimation
+        vwap_weight: Weight for VWAP observation (0.1=mostly ignore, 1.0=equal to close, 2.0=trust VWAP more)
     
     Returns:
         Tuple of (kalman_smoothed_price, kalman_volatility)
@@ -719,8 +830,11 @@ def compute_kalman_smoothed_price_and_volatility(
         observations = np.column_stack((df_clean['close'].values, df_clean['vwap'].values)).astype(float)
         
         observation_covariances = np.zeros((n_timesteps, 2, 2))
-        observation_covariances[:, 0, 0] = R_t_values
-        observation_covariances[:, 1, 1] = R_t_values
+        observation_covariances[:, 0, 0] = R_t_values  # Close observation noise
+        # VWAP observation noise: lower vwap_weight = higher noise = trust VWAP less
+        # vwap_weight=1.0 means equal trust, vwap_weight=2.0 means trust VWAP 2x more
+        vwap_noise_scale = 1.0 / max(vwap_weight, 0.1)  # Inverse relationship: higher weight = lower noise
+        observation_covariances[:, 1, 1] = R_t_values * vwap_noise_scale
     else:
         # Single Measurement: [Close]
         observation_matrices = np.array([[[1.0, 0.0]] for _ in range(n_timesteps)])
@@ -1214,6 +1328,26 @@ def kalman_multi_triple_barrier_labels(
                         horizon=horizon,
                     )
                     configs.append(config)
+
+    # Bayesian optimization for hyperparameter tuning
+    optimizer = BayesianTPEOptimizer(
+        config=OptimizationConfig(
+            n_trials=int(config.get("layer0_n_trials", config.get("stage0_n_trials", 50))),
+            execution_mode=exec_mode,
+            direction="minimize",  # Minimize loss, not maximize
+            seed=int(config.get("random_state", 42)),
+            coarse_grid_points=grid_points,
+            fine_grid_points=grid_points,
+        )
+    )
+
+    # Expanded search space with volume-weighted Kalman filter
+    search_space = {
+        "kalman_Q": {"type": "float", "low": 1e-8, "high": 1e-1, "log": True},      # Expanded range
+        "kalman_R": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},      # Expanded range
+        "volume_weight": {"type": "float", "low": 0.0, "high": 3.0, "log": False}, # Volume-based weighting
+        "volume_adaptive": {"type": "categorical", "choices": [True, False]},       # Adaptive vs simple
+    }
 
     # Step 3: Compute triple-barrier outcomes for each configuration
     tb_results = compute_multi_triple_barrier_outcomes(

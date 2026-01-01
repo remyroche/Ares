@@ -30,6 +30,7 @@ import pandas as pd
 from scipy.stats import spearmanr, pearsonr
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import SpecialistDiagnosticsMixinEnhancedV2
 from src.utils.tprint import (
     tprint,
     tprint_info,
@@ -108,7 +109,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class XGBMacroTrendStep(BaseStep):
+class XGBMacroTrendStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
     """Pipeline step to construct macro-trend alpha labels from 1h Rolling HMM regimes."""
 
     def __init__(self, step_name: str = "xgb_macro_regime"):

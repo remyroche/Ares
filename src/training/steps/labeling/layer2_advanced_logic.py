@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 from typing import Optional, Dict, List, Tuple, Union, Any
+from numba import njit, prange
 
 def calc_prob_touch_sl(
     mu: float,
@@ -72,6 +73,7 @@ def calc_prob_touch_sl(
     return float(np.clip(p_hit_sl_first, 0.0, 1.0))
 
 
+@njit(parallel=True)
 def calc_prob_touch_sl_vec(
     mu: np.ndarray,
     sigma: np.ndarray,
@@ -148,6 +150,94 @@ def calc_prob_touch_sl_vec(
 
     out = np.where(np.isfinite(out), out, 1.0)
     return out
+
+@njit
+def rolling_max_min_jit(arr: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    JIT-compiled rolling max and min calculation.
+
+    Args:
+        arr: Input array
+        window: Rolling window size
+
+    Returns:
+        Tuple of (rolling_max, rolling_min) arrays
+    """
+    n = len(arr)
+    rolling_max = np.full(n, np.nan, dtype=arr.dtype)
+    rolling_min = np.full(n, np.nan, dtype=arr.dtype)
+
+    for i in range(window - 1, n):
+        start_idx = i - window + 1
+        window_slice = arr[start_idx:i + 1]
+        rolling_max[i] = np.max(window_slice)
+        rolling_min[i] = np.min(window_slice)
+
+    return rolling_max, rolling_min
+
+@njit
+def rolling_std_jit(arr: np.ndarray, window: int) -> np.ndarray:
+    """
+    JIT-compiled rolling standard deviation.
+
+    Args:
+        arr: Input array
+        window: Rolling window size
+
+    Returns:
+        Rolling standard deviation array
+    """
+    n = len(arr)
+    rolling_std = np.full(n, np.nan, dtype=np.float64)
+
+    for i in range(window - 1, n):
+        start_idx = i - window + 1
+        window_slice = arr[start_idx:i + 1]
+        rolling_std[i] = np.std(window_slice)
+
+    return rolling_std
+
+@njit
+def rolling_mean_jit(arr: np.ndarray, window: int) -> np.ndarray:
+    """
+    JIT-compiled rolling mean.
+
+    Args:
+        arr: Input array
+        window: Rolling window size
+
+    Returns:
+        Rolling mean array
+    """
+    n = len(arr)
+    rolling_mean = np.full(n, np.nan, dtype=np.float64)
+
+    for i in range(window - 1, n):
+        start_idx = i - window + 1
+        window_slice = arr[start_idx:i + 1]
+        rolling_mean[i] = np.mean(window_slice)
+
+    return rolling_mean
+
+@njit
+def vectorized_pct_change_jit(arr: np.ndarray) -> np.ndarray:
+    """
+    JIT-compiled percentage change calculation.
+
+    Args:
+        arr: Input array
+
+    Returns:
+        Percentage change array
+    """
+    n = len(arr)
+    pct_change = np.full(n, np.nan, dtype=np.float64)
+
+    for i in range(1, n):
+        if arr[i-1] != 0:
+            pct_change[i] = (arr[i] - arr[i-1]) / arr[i-1]
+
+    return pct_change
 
 def compute_moe_weights(
     regime_params: Dict[str, float],
@@ -235,18 +325,17 @@ def compute_moe_weights(
     # FUTURE: ["Breakout_L", "VWAP_Rev_L", "VolShock_S", ...]
     
     # 1. Trend Regime Logic
-    # Group Experts
-    trend_experts = []
-    scalp_experts = []
-    swing_experts = []
-    # future_breakout_experts = []
-    # future_vwap_experts = []
-    
-    for i, name in enumerate(expert_names):
-        name_lower = name.lower()
-        if 'trend' in name_lower: trend_experts.append(i)
-        elif 'scalp' in name_lower: scalp_experts.append(i)
-        elif 'swing' in name_lower: swing_experts.append(i)
+    # Group Experts - Vectorized approach
+    expert_names_lower = np.array([name.lower() for name in expert_names])
+
+    # Vectorized boolean indexing
+    trend_mask = np.char.find(expert_names_lower, 'trend') >= 0
+    scalp_mask = np.char.find(expert_names_lower, 'scalp') >= 0
+    swing_mask = np.char.find(expert_names_lower, 'swing') >= 0
+
+    trend_experts = np.where(trend_mask)[0].tolist()
+    scalp_experts = np.where(scalp_mask)[0].tolist()
+    swing_experts = np.where(swing_mask)[0].tolist()
         # elif 'breakout' in name_lower: future_breakout_experts.append(i)
         # elif 'vwap' in name_lower: future_vwap_experts.append(i)
         
@@ -336,18 +425,18 @@ def compute_breakout_expansion_expert(
         return scores, confidences
     
     try:
-        high = market_data['high'].astype(float)
-        low = market_data['low'].astype(float)
-        close = market_data['close'].astype(float)
+        high = market_data['high'].values.astype(np.float64)
+        low = market_data['low'].values.astype(np.float64)
+        close = market_data['close'].values.astype(np.float64)
         
-        # Donchian Channel
-        donchian_high = high.rolling(lookback).max()
-        donchian_low = low.rolling(lookback).min()
+        # Donchian Channel - using JIT-compiled functions
+        donchian_high, _ = rolling_max_min_jit(high, lookback)
+        _, donchian_low = rolling_max_min_jit(low, lookback)
         donchian_mid = (donchian_high + donchian_low) / 2.0
         donchian_width = donchian_high - donchian_low
         
-        # Bollinger Band width (proxy for squeeze)
-        bb_std = close.rolling(squeeze_lookback).std()
+        # Bollinger Band width (proxy for squeeze) - using JIT-compiled function
+        bb_std = rolling_std_jit(close, squeeze_lookback)
         bb_width = 2.0 * bb_std
         
         # Range percentile: where is close within recent range?

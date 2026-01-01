@@ -97,6 +97,7 @@ from .retraining_scheduler import (
     RetrainingSchedule,
     RetrainingManager,
 )
+from pathlib import Path
 from .optimization.hierarchical_parameter_optimizer import (
     HierarchicalParameterOptimizer,
     ParameterGroup,
@@ -161,10 +162,17 @@ class XGBTrainingConfig:
     model_id: str  # Unique ID for the model (e.g., "ETHUSDT_binance_15m_mean_reversion")
 
     # Historical data retraining schedule (for OOF windows)
-    retrain_interval_days: int = 21  # Create OOF window every 21 days of historical data
+    retrain_interval_days: int = 28  # Create OOF window every 28 days of historical data (4 weeks)
     hpo_interval_days: int = 30  # Run HPO every 30 days of historical data
-    burnin_pct: float = 1/12  # 3 months burn-in (1/12 of year)
+    burnin_pct: float = 1/6  # 6 months burn-in (1/6 of year) - INCREASED FOR ROBUSTNESS
     min_samples_for_training: int = 1000
+    verbose: bool = True  # Enable verbose logging for incremental training
+
+    # Incremental training configuration
+    enable_incremental_training: bool = True  # Enable incremental/warm start training
+    incremental_strategy: str = "warm_start"  # "warm_start" or "continue_training"
+    model_persistence_dir: str = "cache/xgb_models"  # Directory for model persistence
+    warm_start_learning_rate_factor: float = 0.5  # Reduce learning rate for warm start
 
     # XGBoost base parameters (used when not doing HPO)
     tree_method: str = "hist"
@@ -190,6 +198,7 @@ class XGBTrainingConfig:
     hpo_n_trials: int = 50  # Number of HPO trials
     hpo_stratified_sampling_pct: Tuple[float, float] = (0.1, 0.5)  # 10-50% sampling
     enable_warm_start: bool = True  # Use previous best params as starting point
+    enable_incremental_warm_start: bool = True  # Enable warm start for incremental training
 
     # Fast-mode switches (used by sweeps / diagnostics)
     enable_hpo: bool = True  # Master switch to allow or disable HPO entirely
@@ -326,7 +335,7 @@ class StandardizedXGBTrainer:
             retrain_interval_days=self.config.retrain_interval_days,
             burnin_pct=self.config.burnin_pct,
             min_samples_for_training=self.config.min_samples_for_training,
-            enable_warm_start=False
+            enable_warm_start=self.config.enable_incremental_training  # Enable based on config
         )
 
         # Create OOF prediction generator
@@ -348,16 +357,27 @@ class StandardizedXGBTrainer:
         if sample_weight is not None:
             aligned_data['__weight__'] = sample_weight
 
-        # Training function (with HPO scheduling)
+        # Training function (with HPO scheduling and incremental training)
         def training_func(train_data: pd.DataFrame, window_id: int, window_start: datetime) -> Any:
-            """Train XGBoost model for a specific window."""
-            return self._train_single_window(
-                train_data=train_data,
-                window_id=window_id,
-                window_start=window_start,
-                eval_metric=eval_metric,
-                verbose=verbose
-            )
+            """Train XGBoost model for a specific window with incremental training support."""
+            if self.config.enable_incremental_training and window_id > 0:
+                # Use incremental training for subsequent windows
+                return self._train_incremental_window(
+                    train_data=train_data,
+                    window_id=window_id,
+                    window_start=window_start,
+                    eval_metric=eval_metric,
+                    verbose=verbose
+                )
+            else:
+                # First window or incremental training disabled - use regular training
+                return self._train_single_window(
+                    train_data=train_data,
+                    window_id=window_id,
+                    window_start=window_start,
+                    eval_metric=eval_metric,
+                    verbose=verbose
+                )
 
         # Prediction function
         def prediction_func(model: Any, pred_data: pd.DataFrame) -> pd.DataFrame:
@@ -448,6 +468,136 @@ class StandardizedXGBTrainer:
             hpo_history=hpo_history if hpo_history else None,
             training_windows=[w.to_dict() for w in oof_generator.windows]
         )
+
+
+    def _save_model_state(self, model: xgb.Booster, window_id: int) -> None:
+        """Save XGBoost model state for incremental training."""
+        if not self.config.enable_incremental_training:
+            return
+        
+        model_dir = Path(self.config.model_persistence_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        
+        model_path = model_dir / f"{self.model_id}_window_{window_id}.json"
+        try:
+            model.save_model(str(model_path))
+            if self.config.verbose:
+                logger.info(f"💾 Saved model state for window {window_id} to {model_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save model state for window {window_id}: {e}")
+
+    def _load_model_state(self, window_id: int) -> Optional[xgb.Booster]:
+        """Load XGBoost model state for incremental training."""
+        if not self.config.enable_incremental_training:
+            return None
+        
+        model_dir = Path(self.config.model_persistence_dir)
+        model_path = model_dir / f"{self.model_id}_window_{window_id}.json"
+        
+        if not model_path.exists():
+            if self.config.verbose:
+                logger.info(f"No model state found for window {window_id}")
+            return None
+        
+        try:
+            model = xgb.Booster()
+            model.load_model(str(model_path))
+            if self.config.verbose:
+                logger.info(f"📂 Loaded model state for window {window_id} from {model_path}")
+            return model
+        except Exception as e:
+            logger.warning(f"Failed to load model state for window {window_id}: {e}")
+            return None
+
+    def _train_with_warm_start(
+        self,
+        dtrain: xgb.DMatrix,
+        dval: xgb.DMatrix,
+        eval_metric: str,
+        verbose: bool,
+        base_params: Optional[Dict[str, Any]] = None,
+        previous_model: Optional[xgb.Booster] = None
+    ) -> xgb.Booster:
+        """Train XGBoost with warm start from previous model."""
+        if previous_model is None:
+            # No previous model, train from scratch
+            return self._train_with_fixed_params(dtrain, dval, eval_metric, verbose)
+        
+        # Use warm start with previous model
+        params = base_params.copy() if base_params else {}
+        
+        # Adjust learning rate for warm start
+        if 'learning_rate' in params:
+            params['learning_rate'] *= self.config.warm_start_learning_rate_factor
+        
+        # Add warm start parameters
+        params['process_type'] = 'update'
+        params['xgb_model'] = previous_model
+        
+        evals = [(dtrain, 'train'), (dval, 'val')]
+        
+        train_kwargs = dict(
+            params=params,
+            dtrain=dtrain,
+            num_boost_round=self.config.n_estimators // 2,  # Fewer rounds for warm start
+            evals=evals,
+            early_stopping_rounds=self.config.early_stopping_rounds,
+            verbose_eval=False,
+        )
+        
+        if verbose:
+            logger.info(f"🔥 Training with warm start (learning_rate: {params.get('learning_rate', 'default')})")
+        
+        model = xgb.train(**train_kwargs)
+        return model
+
+    def _train_incremental_window(
+        self,
+        train_data: pd.DataFrame,
+        window_id: int,
+        window_start: datetime,
+        eval_metric: str,
+        verbose: bool = True
+    ) -> xgb.Booster:
+        """Train XGBoost incrementally using warm start."""
+        
+        # Load previous model state if available
+        previous_model = self._load_model_state(window_id - 1)
+        
+        # Create DMatrices
+        X_train = train_data.drop(['__target__', '__weight__'], axis=1, errors='ignore')
+        y_train = train_data['__target__']
+        weight_train = train_data.get('__weight__')
+        
+        # Create validation split (80/20 within training data)
+        val_size = min(0.2, len(X_train) / 1000)  # At least 1000 samples for validation
+        val_split = int(len(X_train) * val_size)
+        
+        X_val = X_train.iloc[-val_split:]
+        y_val = y_train.iloc[-val_split:]
+        weight_val = weight_train.iloc[-val_split:] if weight_train is not None else None
+        
+        X_train = X_train.iloc[:-val_split]
+        y_train = y_train[:-val_split]
+        weight_train = weight_train[:-val_split] if weight_train is not None else None
+        
+        dtrain = self._create_dmatrix(X_train, y_train, weight_train)
+        dval = self._create_dmatrix(X_val, y_val, weight_val)
+        
+        # Load warm start parameters if available
+        warm_start_params = self._load_warm_start_params()
+        
+        # Train with warm start
+        if self.config.incremental_strategy == "warm_start" and previous_model is not None:
+            model = self._train_with_warm_start(
+                dtrain, dval, eval_metric, verbose, warm_start_params, previous_model
+            )
+        else:
+            # Fallback to regular training
+            model = self._train_with_fixed_params(dtrain, dval, eval_metric, verbose)
+        
+        return model
+
 
     def _train_single_window(
         self,

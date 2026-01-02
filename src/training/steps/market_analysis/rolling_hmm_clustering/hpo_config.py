@@ -274,9 +274,15 @@ class RollingHMMOptimizer:
                 params={
                     "min_covar": {
                         "type": "float",
-                        "low": 1e-3,  # 0.001
-                        "high": 1e-2,  # 0.01
+                        "low": 1e-2,  # 0.01 (increased from 0.001)
+                        "high": 1e-1,  # 0.1 (increased from 0.01)
                         "log": True  # Log-scale sampling
+                    },
+                    "feature_subsample": {
+                        "type": "float",
+                        "low": 0.5,  # Use 50-100% of features
+                        "high": 1.0,
+                        "log": False
                     },
                     "kappa": {
                         "type": "float",
@@ -1020,7 +1026,8 @@ class RollingHMMOptimizer:
         coarse_grid = {
             'ewma_config_idx': [0, 1, 2],
             'n_components': [4, 5],  # Restrict regimes to 4–5 states
-            'min_covar': [1e-3, 5e-3, 1e-2],
+            'min_covar': [1e-2, 5e-2, 1e-1],  # Increased from 1e-3 to prevent startprob issues
+            'feature_subsample': [0.5, 0.7, 1.0],  # Feature subsampling for speed
             'kappa': [0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 20.0]  # Cap kappa at 20
         }
 

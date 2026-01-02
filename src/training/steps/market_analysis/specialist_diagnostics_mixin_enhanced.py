@@ -56,6 +56,13 @@ class SpecialistDiagnosticsMixinEnhanced:
             view = artifact_store.get_view()
             predictions_data = view.data
             tprint_success(f"✅ Loaded specialist predictions: {artifact_name}")
+        except ValueError as e:
+            if "No versions available" in str(e):
+                tprint_warning(f"⚠️ No artifacts available for {artifact_name}")
+                return {}
+            else:
+                tprint_error(f"❌ Failed to load predictions {artifact_name}: {e}")
+                return {}
         except Exception as e:
             tprint_error(f"❌ Failed to load predictions {artifact_name}: {e}")
             return {}

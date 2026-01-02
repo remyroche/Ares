@@ -41,9 +41,11 @@ Adaptive Alpha: Automatically adjusts class balance even without HPO
 
 import numpy as np
 import pandas as pd
+import json
 import optuna
 import lightgbm as lgb
 import xgboost as xgb
+import torch
 try:
     import catboost
     CATBOOST_AVAILABLE = True
@@ -92,6 +94,7 @@ import logging
 import copy
 import warnings
 import sys
+from pandas.util import hash_pandas_object
 
 try:
     from joblib.externals.loky.process_executor import BrokenProcessPool, TimeoutError as LokyTimeoutError
@@ -104,6 +107,22 @@ except Exception:  # pragma: no cover - older joblib versions
 
 # Import tprint for enhanced logging
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+
+# Import causal framework modules
+try:
+    from src.training.steps.labeling.causal_discovery import CausalDiscovery, quick_causal_discovery
+    from src.training.steps.labeling.causal_feature_engineering import CausalFeatureEngineering, quick_causal_engineering
+    from src.training.steps.labeling.invariant_risk_minimization_v2 import EnhancedIRM, quick_enhanced_irm
+    from src.training.steps.labeling.causal_surprise_events import CausalSurpriseDetector, quick_causal_surprise
+    from src.training.steps.labeling.interventionist_sampling import CausalInterventionSampler, quick_interventionist_sampling
+    from src.training.steps.labeling.causal_targets import CausalTargetComputer, quick_causal_targets
+    from src.training.steps.labeling.causal_specialists import CausalSpecialistManager, create_causal_specialists
+    from src.training.steps.labeling.causal_uncertainty_quantification import quick_bayesian_causal_discovery
+    CAUSAL_MODULES_AVAILABLE = True
+    tprint_info("✅ Causal framework modules loaded successfully")
+except ImportError as e:
+    CAUSAL_MODULES_AVAILABLE = False
+    tprint_warning(f"⚠️ Causal framework modules not available: {e}")
 
 # Suppress LightGBM verbose warnings for clean output
 warnings.filterwarnings("ignore")
@@ -122,6 +141,15 @@ def vectorized_prediction_aggregation(predictions: np.ndarray, existing_scores: 
     """
     return np.maximum(existing_scores, predictions)
 
+from src.training.steps.labeling.orthogonal_label_generation import (
+    CausalSurpriseEvents,
+    VolumeSpecialistEvents,
+    VolatilitySpecialistEvents,
+    LiquiditySpecialistEvents,
+    InformationSpecialistEvents,
+    InventorySpecialistEvents
+)
+
 @njit
 def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0.5) -> np.ndarray:
     """
@@ -135,6 +163,142 @@ def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0
         Binary classification results
     """
     return (scores >= threshold).astype(np.float64)
+
+
+class ProbabilityCalibratedModel:
+    """
+    Wraps a base classifier and applies logistic calibration to its probability outputs.
+    """
+
+    def __init__(self, base_model, coef: float, intercept: float):
+        self.base_model = base_model
+        self.coef_ = coef
+        self.intercept_ = intercept
+        self.classes_ = getattr(base_model, "classes_", np.array([0, 1]))
+
+    def _apply_calibration(self, raw_probs: np.ndarray) -> np.ndarray:
+        if raw_probs.ndim == 1:
+            pos = raw_probs
+        else:
+            pos = raw_probs[:, -1]
+        calibrated_pos = expit(self.coef_ * pos + self.intercept_)
+        neg = 1.0 - calibrated_pos
+        return np.column_stack([neg, calibrated_pos])
+
+    def predict_proba(self, X):
+        raw = self.base_model.predict_proba(X)
+        return self._apply_calibration(raw)
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, -1] >= 0.5).astype(int)
+
+    def __getattr__(self, item):
+        return getattr(self.base_model, item)
+
+class IRM_LGBMClassifier(lgb.LGBMClassifier):
+    """LightGBM Classifier with Invariant Risk Minimization."""
+
+    def __init__(self, irm_system=None, environment_masks=None, **kwargs):
+        super().__init__(**kwargs)
+        self.irm_system = irm_system
+        self.environment_masks = environment_masks or {}
+
+    def fit(self, X, y, sample_weight=None, **kwargs):
+        """Fit with IRM objective."""
+        if self.irm_system is None or not self.environment_masks:
+            # Fallback to standard training
+            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+        try:
+            # Create IRM training function
+            train_step = self.irm_system.create_enhanced_irm_trainer(
+                model=self,
+                optimizer=None,  # LightGBM handles optimization internally
+                environment_masks=self.environment_masks
+            )
+
+            # Convert to tensors for IRM
+            X_tensor = torch.FloatTensor(X.values if hasattr(X, 'values') else X)
+            y_tensor = torch.FloatTensor(y)
+
+            if sample_weight is not None:
+                w_tensor = torch.FloatTensor(sample_weight)
+            else:
+                w_tensor = None
+
+            # Run IRM training (simplified - would need proper integration)
+            # For now, use standard training with IRM-aware objective
+            self.objective = self._irm_focal_objective
+
+            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+        except Exception as e:
+            tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
+            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+    def _irm_focal_objective(self, preds, train_data):
+        """IRM-aware focal loss objective."""
+        labels = train_data.get_label()
+
+        # Compute focal loss
+        focal_loss = RobustFocalLoss(
+            gamma_pos=self.irm_system.focal_gamma if self.irm_system else 1.0,
+            gamma_neg=self.irm_system.focal_gamma if self.irm_system else 2.5,
+            alpha=self.irm_system.focal_alpha if self.irm_system else 1.0,
+            verbose=False
+        )
+
+        # Convert to gradient/hessian for LightGBM
+        grad, hess = focal_loss.compute_grad_hess(preds, labels)
+
+        # Add IRM penalty (simplified)
+        if self.irm_system and self.environment_masks:
+            irm_penalty = self._compute_irm_penalty(preds, labels)
+            grad += self.irm_system.lambda_irm * irm_penalty
+
+        return grad, hess
+
+    def _compute_irm_penalty(self, preds, labels):
+        """Compute simplified IRM penalty."""
+        # Simplified IRM penalty - would need full implementation
+        return np.zeros_like(preds)
+
+class IRM_XGBClassifier(XGBClassifier):
+    """XGBoost Classifier with Invariant Risk Minimization."""
+
+    def __init__(self, irm_system=None, environment_masks=None, **kwargs):
+        super().__init__(**kwargs)
+        self.irm_system = irm_system
+        self.environment_masks = environment_masks or {}
+
+    def fit(self, X, y, sample_weight=None, **kwargs):
+        """Fit with IRM objective."""
+        if self.irm_system is None or not self.environment_masks:
+            # Fallback to standard training
+            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+        try:
+            # Use IRM-aware objective
+            self.objective = self._irm_focal_objective
+            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+        except Exception as e:
+            tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
+            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+    def _irm_focal_objective(self, preds, dtrain):
+        """IRM-aware focal loss objective for XGBoost."""
+        labels = dtrain.get_label()
+
+        # Compute focal loss gradient/hessian
+        focal_obj = get_focal_loss_xgb(
+            alpha=self.irm_system.focal_alpha if self.irm_system else 1.0,
+            gamma=self.irm_system.focal_gamma if self.irm_system else 2.0
+        )
+
+        # This would need proper XGBoost objective function integration
+        # For now, return standard focal loss
+        return focal_obj(preds, dtrain)
 
 @njit
 def vectorized_weight_assignment(n_samples: int, weight_value: float = 1.0) -> np.ndarray:
@@ -270,6 +434,11 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     LiquidityShockEvents,
     TimeEvents
 )
+# Layer 2.5 Chaser Integration
+from .layer2_5_integration import Layer25Integration, quick_layer25_setup
+from .causal_residual_computation import compute_causal_residuals
+from .non_causal_feature_selector import NonCausalFeatureSelector
+from .conflict_detection import ConflictDetector
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -699,11 +868,18 @@ class LabelBasedLayer2(BaseStep):
     """
     Layer 2: Regime-Conditional Geometry Optimization & Meta-Labeling.
     """
-    
+
+    _component_singletons: Dict[str, Any] = {}
+    _specialist_registration_cache: Dict[str, Tuple[str, int]] = {}
+    _model_race_seed_models: Dict[str, Dict[str, Any]] = {}
+
     def __init__(self, step_name: str = 'label_based_layer_2', **kwargs):
         # Initialize BaseStep with step name
         super().__init__(step_name)
-        
+        self._dataset_fingerprint: Optional[str] = None
+        self._label_batch_cache: Dict[str, Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]] = {}
+        self._confounder_cache: Dict[str, pd.DataFrame] = {}
+
         # Initialize LabelBasedLayer2 specific parameters
         transaction_cost = kwargs.get('transaction_cost', None)
         self.n_trials = kwargs.get('n_trials', 60)
@@ -730,6 +906,34 @@ class LabelBasedLayer2(BaseStep):
         self.enable_model_race = kwargs.get('enable_model_race', False)
         self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost', 'LGBM_Focal_Linear', 'XGB_Linear'])
 
+        # AEDL Framework Parameters
+        self.enable_aedl = kwargs.get("enable_aedl", True)
+        self.aedl_spectral_vision = kwargs.get("aedl_spectral_vision", True)
+        self.aedl_causal_compression = kwargs.get("aedl_causal_compression", True)
+        self.aedl_resonance_detection = kwargs.get("aedl_resonance_detection", True)
+        
+        # Spectral Chaser Parameters
+        self.spectral_chaser_enabled = kwargs.get("spectral_chaser_enabled", True)
+        self.spectral_chaser_models = kwargs.get("spectral_chaser_models", ['xgb', 'catboost', 'rf', 'linear'])
+        self.spectral_chaser_cv_folds = kwargs.get("spectral_chaser_cv_folds", 5)
+        
+        # RSV Integration Parameters
+        self.rsv_integration_enabled = kwargs.get("rsv_integration_enabled", True)
+        self.rsv_position_sizing = kwargs.get("rsv_position_sizing", True)
+        # RSV Integration Parameters
+        self.rsv_integration_enabled = kwargs.get("rsv_integration_enabled", True)
+        self.rsv_position_sizing = kwargs.get("rsv_position_sizing", True)
+        self.rsv_regime_aware = kwargs.get("rsv_regime_aware", True)
+        
+        # Causal Surprise Parameters
+        self.causal_surprise_enabled = kwargs.get("causal_surprise_enabled", True)
+        self.zone3_specialist_boost = kwargs.get("zone3_specialist_boost", 3.0)
+        self.zone2_specialist_boost = kwargs.get("zone2_specialist_boost", 2.0)
+        self.zone_score_exposure = float(kwargs.get("zone_score_exposure", 1.0))
+        
+        # OOF Analytics Parameter
+        self.sr_levels = []
+
         # RobustFocalLoss HPO configuration
         self.enable_focal_hpo = kwargs.get('enable_focal_hpo', False)
         self.focal_hpo_n_trials = kwargs.get('focal_hpo_n_trials', 20)
@@ -742,6 +946,7 @@ class LabelBasedLayer2(BaseStep):
         self._events_cache = {}
         self._feature_cache = {}
         self._global_probe_features = {}
+        self._probe_data_cache = {}
         self._label_cache = {}
         self._signals_cache = {}
         self._global_feature_cache = {}  # Global feature cache for entire dataset
@@ -749,9 +954,1002 @@ class LabelBasedLayer2(BaseStep):
         self._model_cache = {}           # Cache trained models
         self._feature_selection_cache = {}  # Cache feature selections
         self._label_computation_cache = {}  # Cache label computations
-        
+
         # Initialize diagnostics
         self._all_tree_stats = []
+        
+        # Comprehensive Modern De Prado Framework Configuration
+        self.enable_causal_framework = kwargs.get('enable_causal_framework', True)
+        self.causal_discovery_enabled = kwargs.get('causal_discovery_enabled', True)
+        self.causal_engineering_enabled = kwargs.get('causal_engineering_enabled', True)
+        self.irm_enabled = kwargs.get('irm_enabled', True)
+        self.causal_surprise_enabled = kwargs.get('causal_surprise_enabled', True)
+        self.interventionist_sampling_enabled = kwargs.get('interventionist_sampling_enabled', True)
+        self.causal_targets_enabled = kwargs.get('causal_targets_enabled', True)
+        self.causal_specialists_enabled = kwargs.get('causal_specialists_enabled', True)
+        
+        # IRM Parameters
+        self.lambda_irm = kwargs.get('lambda_irm', 1.0)
+        self.lambda_variance = kwargs.get('lambda_variance', 1.0)
+        self.focal_alpha = kwargs.get('focal_alpha', 1.0)
+        self.focal_gamma = kwargs.get('focal_gamma', 2.0)
+        self.focal_gamma_pos = kwargs.get('focal_gamma_pos', 1.0)
+        self.focal_gamma_neg = kwargs.get('focal_gamma_neg', 2.5)
+        
+        # Causal Discovery Parameters
+        self.significance_level = kwargs.get('significance_level', 0.05)
+        self.max_conditioning_set = kwargs.get('max_conditioning_set', 3)
+        self.use_lingam = kwargs.get('use_lingam', True)
+        
+        # Causal Surprise Parameters
+        self.surprise_threshold = kwargs.get('surprise_threshold', 1.8)
+        self.rolling_window = kwargs.get('rolling_window', 20)
+        self.min_specialists = kwargs.get('min_specialists', 2)
+        self.discovery_max_features = kwargs.get('discovery_max_features', 60)
+        self.discovery_sample_size = kwargs.get('discovery_sample_size', 10000)
+        self.discovery_bootstrap_samples = kwargs.get('discovery_bootstrap_samples', 25)
+        self.specialist_train_workers = kwargs.get('specialist_train_workers', 4)
+        self.specialist_max_models = kwargs.get('specialist_max_models')
+        self.specialist_debug_logging = kwargs.get('specialist_debug_logging', False)
+        self.specialist_registration_workers = kwargs.get('specialist_registration_workers', 4)
+        self.treatment_max_features = kwargs.get('treatment_max_features', 25)
+        self.treatment_min_coverage = kwargs.get('treatment_min_coverage', 0.3)
+        self.treatment_allow_sparse = kwargs.get('treatment_allow_sparse', True)
+        self.treatment_sparse_min_events = kwargs.get('treatment_sparse_min_events', 25)
+        self.treatment_fill_value = kwargs.get('treatment_fill_value', 0.0)
+        self.model_race_target_precision = kwargs.get('model_race_target_precision', 0.65)
+        self.model_race_plateau_patience = kwargs.get('model_race_plateau_patience', 2)
+        self.model_race_max_candidates = kwargs.get('model_race_max_candidates', None)
+        
+        # Interventionist Sampling Parameters
+        self.shock_threshold = kwargs.get('shock_threshold', 2.0)
+        self.intervention_strength = kwargs.get('intervention_strength', 1.0)
+        self.n_interventions = kwargs.get('n_interventions', 100)
+        
+        # Initialize causal components
+        self._causal_discovery = None
+        self._causal_engineering = None
+        self._irm_system = None
+        self._surprise_detector = None
+        self._intervention_sampler = None
+        self._target_computer = None
+        self._specialist_manager = None
+        self._aedl_framework = None
+        
+        # Check availability of causal modules
+        try:
+            from .causal_discovery import CausalDiscovery
+            from .causal_feature_engineering import CausalFeatureEngineering
+            from .invariant_risk_minimization_v2 import EnhancedIRM
+            from .causal_surprise_events import CausalSurpriseDetector
+            from .interventionist_sampling import CausalInterventionSampler
+            from .causal_targets import CausalTargetComputer
+            from .causal_specialists import CausalSpecialistManager
+            CAUSAL_MODULES_AVAILABLE = True
+        except ImportError as e:
+            tprint_warning(f"⚠️ Causal modules not available: {e}")
+            CAUSAL_MODULES_AVAILABLE = False
+        
+        # Store availability flag
+        self.CAUSAL_MODULES_AVAILABLE = CAUSAL_MODULES_AVAILABLE
+
+    def _validate_framework_separation(self) -> None:
+        """
+        Validate that AFML and Causal frameworks are properly separated.
+        """
+        if self.enable_causal_framework:
+            tprint_info("🔍 Validating Framework Separation...")
+
+            # When causal framework is enabled, ensure AFML components are disabled
+            afml_warnings = []
+
+            if self.focal_alpha != 1.0 or self.focal_gamma_pos != 1.0:
+                afml_warnings.append("Focal loss parameters should be default (1.0) in causal mode")
+
+            # Check for mixed objectives
+            if hasattr(self, '_current_config') and self._current_config:
+                if self._current_config.get('enable_focal_hpo', False):
+                    afml_warnings.append("Focal HPO should be disabled in causal framework")
+
+            if afml_warnings:
+                for warning in afml_warnings:
+                    tprint_warning(f"⚠️ Framework Separation: {warning}")
+
+            tprint_success("✅ Framework separation validated")
+        else:
+            tprint_info("📊 Using traditional AFML framework")
+
+    def _initialize_causal_components(self, df: pd.DataFrame) -> None:
+        """
+        Initialize causal framework components.
+        """
+        tprint_info("🔧 Layer 2: Checking Causal Module Availability...")
+        if not CAUSAL_MODULES_AVAILABLE:
+            tprint_warning("⚠️ Layer 2: Causal modules not available - skipping causal initialization")
+            return
+
+        tprint_info("✅ Layer 2: Causal modules available")
+
+        # Validate framework separation first
+        tprint_info("🔍 Layer 2: Validating framework separation...")
+        self._validate_framework_separation()
+        tprint_info("✅ Layer 2: Framework separation validated")
+
+        try:
+            tprint_info("🔧 Layer 2: Initializing Causal Framework Components...")
+
+            dataset_tag = self._dataset_fingerprint or "adhoc"
+
+            if self.causal_discovery_enabled:
+                tprint_info("   📊 Layer 2: Initializing Causal Discovery...")
+                discovery_config = {
+                    "max_conditioning_set": self.max_conditioning_set,
+                    "significance_level": self.significance_level,
+                    "use_lingam": self.use_lingam,
+                    "verbose": self.verbose
+                }
+                self._causal_discovery = self._get_component_singleton(
+                    "causal_discovery",
+                    discovery_config,
+                    lambda: CausalDiscovery(
+                        max_conditioning_set=self.max_conditioning_set,
+                        significance_level=self.significance_level,
+                        use_lingam=self.use_lingam,
+                        verbose=self.verbose
+                    )
+                )
+                tprint_success("   ✅ Layer 2: Causal Discovery initialized")
+            else:
+                tprint_info("   ⏭️ Layer 2: Causal Discovery disabled")
+
+            tprint_info("   🔧 Layer 2: Initializing Causal Feature Engineering...")
+            engineering_config = {"verbose": self.verbose}
+            self._causal_engineering = self._get_component_singleton(
+                "causal_feature_engineering",
+                engineering_config,
+                lambda: CausalFeatureEngineering(verbose=self.verbose)
+            )
+            tprint_success("   ✅ Layer 2: Causal Feature Engineering initialized")
+
+            if self.irm_enabled:
+                tprint_info("   🎯 Layer 2: Initializing Invariant Risk Minimization...")
+                irm_config = {
+                    "lambda_irm": self.lambda_irm,
+                    "lambda_variance": self.lambda_variance,
+                    "focal_alpha": self.focal_alpha,
+                    "focal_gamma": self.focal_gamma_pos,
+                    "verbose": self.verbose
+                }
+                self._irm_system = self._get_component_singleton(
+                    "invariant_risk_minimization",
+                    irm_config,
+                    lambda: EnhancedIRM(
+                        lambda_irm=self.lambda_irm,
+                        lambda_variance=self.lambda_variance,
+                        focal_alpha=self.focal_alpha,
+                        focal_gamma=self.focal_gamma_pos,
+                        verbose=self.verbose
+                    )
+                )
+                tprint_success("   ✅ Layer 2: Invariant Risk Minimization initialized")
+            else:
+                tprint_info("   ⏭️ Layer 2: IRM disabled")
+
+            if self.causal_targets_enabled:
+                tprint_info("   🎯 Layer 2: Initializing Causal Target Computer...")
+                target_config = {"verbose": self.verbose}
+                self._causal_targets = self._get_component_singleton(
+                    "causal_target_computer",
+                    target_config,
+                    lambda: CausalTargetComputer(verbose=self.verbose)
+                )
+                tprint_success("   ✅ Layer 2: Causal Target Computer initialized")
+            else:
+                tprint_info("   ⏭️ Layer 2: Causal targets disabled")
+
+            if self.causal_surprise_enabled:
+                tprint_info("   🚨 Layer 2: Initializing Causal Surprise Detector...")
+                detector_config = {
+                    "surprise_threshold": self.surprise_threshold,
+                    "rolling_window": self.rolling_window,
+                    "dataset_tag": dataset_tag
+                }
+                self._surprise_detector = self._get_component_singleton(
+                    "causal_surprise_detector",
+                    detector_config,
+                    lambda: CausalSurpriseDetector(
+                        surprise_threshold=self.surprise_threshold,
+                        rolling_window=self.rolling_window,
+                        verbose=self.verbose
+                    )
+                )
+                # Reset detector state for new dataset
+                if hasattr(self._surprise_detector, "specialist_errors_"):
+                    self._surprise_detector.specialist_errors_.clear()
+                if hasattr(self._surprise_detector, "surprise_events_"):
+                    if isinstance(self._surprise_detector.surprise_events_, dict):
+                        self._surprise_detector.surprise_events_.clear()
+                    else:
+                        self._surprise_detector.surprise_events_ = None
+                self._specialist_registration_cache.clear()
+                tprint_success("   ✅ Layer 2: Causal Surprise Detector ready")
+            else:
+                tprint_info("   ⏭️ Layer 2: Causal surprise events disabled")
+
+            tprint_success("🎯 Layer 2: All Causal Components Initialized Successfully")
+
+        except Exception as e:
+            tprint_error(f"❌ Layer 2: Failed to initialize causal components: {e}")
+            import traceback
+            tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
+            raise
+
+    def _get_causal_anchor_predictions(self) -> np.ndarray:
+        """Get causal anchor predictions for Spectral Chaser."""
+        try:
+            if hasattr(self, 'causal_anchor_predictions'):
+                return self.causal_anchor_predictions
+            
+            # Fallback: use trained model predictions as anchor
+            if hasattr(self, 'trained_models') and len(self.trained_models) > 0:
+                # Use the best model as anchor
+                best_model_name = max(self.trained_models.keys(), 
+                                   key=lambda x: self.trained_models[x].get('auc', 0))
+                best_model = self.trained_models[best_model_name].model
+                
+                if hasattr(self, 'X_full') and best_model is not None:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Using model '{best_model_name}' as causal anchor - verify lookahead safety!")
+                    return best_model.predict(self.X_full)
+            
+            # Final fallback: zeros
+            if self.verbose:
+                tprint_info("   ℹ️ No anchor available, using neutral (zero) anchor")
+                
+            if hasattr(self, 'y_full'):
+                return np.zeros_like(self.y_full)
+            
+            return np.zeros(1000)  # Default fallback
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ Could not get causal anchor predictions: {e}")
+            return np.zeros(1000)
+
+    def _run_aedl_pipeline(
+        self,
+        df: pd.DataFrame,
+        target_col: str,
+        causal_graph: Optional[Dict[str, List[str]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Run Adaptive Event-Driven Labeling (AEDL) pipeline.
+        
+        Args:
+            df: Input data
+            target_col: Target column name
+            causal_graph: Causal graph for parent filtering
+            
+        Returns:
+            Dictionary with AEDL results
+        """
+        try:
+            from .adaptive_event_driven_labeling import AdaptiveEventDrivenLabeling
+            
+            if self.verbose:
+                tprint_info("🚀 AEDL Pipeline: Starting frequency-dependent analysis...")
+            
+            aedl_start_time = time.time()
+            
+            # Get causal anchor predictions
+            causal_anchor_predictions = self._get_causal_anchor_predictions()
+            
+            # Ensure alignment with DataFrame
+            if len(causal_anchor_predictions) != len(df):
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ Aligning causal anchor to df: {len(causal_anchor_predictions)} -> {len(df)}")
+                
+                # If valid prediction available but size mismatch (e.g. valid has fewer due to dropna), 
+                # we might need smart alignment. But here we assume naive fallback is better than crash.
+                if len(causal_anchor_predictions) == 1000: # Common fallback
+                    causal_anchor_predictions = np.zeros(len(df))
+                else:
+                    # Resize with zeros
+                    new_anchor = np.zeros(len(df))
+                    min_len = min(len(causal_anchor_predictions), len(df))
+                    new_anchor[:min_len] = causal_anchor_predictions[:min_len]
+                    causal_anchor_predictions = new_anchor
+            
+            # Initialize AEDL framework with passed causal graph or fallback to attribute
+            graph_to_use = causal_graph if causal_graph is not None else getattr(self, 'causal_graph', {})
+            
+            aedl = AdaptiveEventDrivenLabeling(
+                causal_graph=graph_to_use,
+                verbose=self.verbose
+            )
+            self._aedl_framework = aedl
+            
+            # Process market data
+            aedl_results = aedl.process_market_data(df, causal_anchor_predictions)
+            
+            if 'error' in aedl_results:
+                if self.verbose:
+                    tprint_error(f"   ❌ AEDL processing failed: {aedl_results['error']}")
+                return aedl_results
+            
+            # Compile results
+            aedl_time = time.time() - aedl_start_time
+            
+            results = {
+                'aedl_enabled': True,
+                'specialist_signals': aedl_results.get('specialist_signals', {}),
+                'spectral_components': aedl_results.get('spectral_components', {}),
+                'resonance_scores': aedl_results.get('resonance_scores', {}),
+                'rsv_eigenvalue': aedl_results.get('rsv_eigenvalue', 0.0),
+                'rsv_info': aedl_results.get('rsv_info', {}),
+                'alpha_features': aedl_results.get('alpha_features', {}),
+                'position_sizing_guidance': aedl_results.get('position_sizing_guidance', {}),
+                'harmonic_entries': aedl.get_harmonic_entries(),
+                'structural_breakouts': aedl.get_structural_breakouts(),
+                'aedl_time': aedl_time,
+                'compression_metrics': aedl_results.get('compression_metrics', {}),
+                'aedl_report': aedl.generate_aedl_report()
+            }
+            
+            if self.verbose:
+                tprint_success("✅ AEDL Pipeline Complete:")
+                tprint_info(f"   - Spectral components: {len(results['spectral_components'])}")
+                tprint_info(f"   - Resonance scores: {len(results['resonance_scores'])}")
+                tprint_info(f"   - RSV eigenvalue: {results['rsv_eigenvalue']:.3f}")
+                tprint_info(f"   - Alpha features: {len(results['alpha_features'])}")
+                tprint_info(f"   - Position regime: {results['position_sizing_guidance'].get('resonance_regime', 'UNKNOWN')}")
+                tprint_info(f"   - AEDL time: {aedl_time:.3f}s")
+            
+            return results
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ AEDL pipeline failed: {e}")
+            return {'error': str(e)}
+    
+    def _run_spectral_chaser(
+        self,
+        df: pd.DataFrame,
+        y_residuals: pd.Series,
+        causal_anchor_predictions: np.ndarray = None,
+        sample_weight: pd.Series = None
+    ) -> Dict[str, Any]:
+        """
+        Run Spectral Chaser with AEDL features.
+        
+        Args:
+            df: Input data
+            y_residuals: Target residuals
+            causal_anchor_predictions: Causal anchor predictions
+            
+        Returns:
+            Dictionary with Spectral Chaser results
+        """
+        try:
+            from .spectral_chaser import SpectralChaser
+            
+            if self.verbose:
+                tprint_info("🔬 Spectral Chaser: Starting training with spectral vision...")
+            
+            chaser_start_time = time.time()
+            
+            # Initialize Spectral Chaser
+            spectral_chaser = SpectralChaser(
+                causal_graph=getattr(self, 'causal_graph', None),
+                model_types=self.spectral_chaser_models,
+                verbose=self.verbose
+            )
+            
+            # Train Spectral Chaser
+            training_metrics = spectral_chaser.fit(
+                df=df,
+                y_residuals=y_residuals,
+                causal_anchor_predictions=causal_anchor_predictions,
+                sample_weight=sample_weight
+            )
+            
+            if 'error' in training_metrics:
+                if self.verbose:
+                    tprint_error(f"   ❌ Spectral Chaser training failed: {training_metrics['error']}")
+                return training_metrics
+            
+            # Generate predictions
+            prediction_results = spectral_chaser.predict(
+                df=df,
+                causal_anchor_predictions=causal_anchor_predictions
+            )
+            
+            # Get spectral insights
+            spectral_insights = spectral_chaser.get_spectral_insights()
+            
+            # Compile results
+            chaser_time = time.time() - chaser_start_time
+            
+            results = {
+                'spectral_chaser_enabled': True,
+                'training_metrics': training_metrics,
+                'prediction_results': prediction_results,
+                'spectral_insights': spectral_insights,
+                'chaser_time': chaser_time,
+                'model_count': len(spectral_chaser.models),
+                'feature_importance': spectral_chaser.get_feature_importance()
+            }
+            
+            # Store Spectral Chaser for downstream use
+            self.spectral_chaser = spectral_chaser
+            
+            if self.verbose:
+                tprint_success("✅ Spectral Chaser Complete:")
+                tprint_info(f"   - Models trained: {results['model_count']}")
+                tprint_info(f"   - Training time: {training_metrics.get('training_time', 0):.3f}s")
+                tprint_info(f"   - Prediction time: {prediction_results.get('prediction_time', 0):.3f}s")
+                tprint_info(f"   - Resonance regime: {spectral_insights.get('resonance_regime', 'UNKNOWN')}")
+            
+            # Save Report
+            self._save_spectral_chaser_report(results)
+
+            return results
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Spectral Chaser failed: {e}")
+            return {'error': str(e)}
+
+    def _save_spectral_chaser_report(self, chaser_results: Dict[str, Any]):
+        """Save Spectral Chaser report to outcomes."""
+        try:
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = outcomes_dir / f"spectral_chaser_report_{ts}.md"
+            
+            insights = chaser_results.get('spectral_insights', {})
+            training = chaser_results.get('training_metrics', {})
+            
+            report = [
+                "# Spectral Chaser Report",
+                f"- Date: {ts}",
+                f"- Models: {chaser_results.get('model_count', 0)}",
+                "",
+                "## Spectral Insights",
+                f"- Resonance Regime: **{insights.get('resonance_regime', 'UNKNOWN')}**",
+                f"- RSV Eigenvalue: {insights.get('rsv_eigenvalue', 0.0):.4f}",
+                f"- Compression Ratio: {insights.get('compression_ratio', 1.0):.2f}x",
+                "",
+                "## Component Analysis"
+            ]
+            
+            if 'harmonic_entries' in insights:
+                entries = insights['harmonic_entries']
+                report.append(f"- Harmonic Entry Signal: {entries.get('entry_signal', False)}")
+                report.append(f"- Entry Quality: {entries.get('entry_quality', 0.0):.4f}")
+            
+            if 'structural_breakouts' in insights:
+                breakouts = insights['structural_breakouts']
+                report.append(f"- Structural Breakouts: {breakouts.get('breakout_periods', 0)}")
+                report.append(f"- Dominant Specialist: {breakouts.get('dominant_breakout_specialist', 'None')}")
+            
+            feature_importance = chaser_results.get('feature_importance', {})
+            if feature_importance:
+                report.append("")
+                report.append("## Feature Importance (Top 10)")
+                sorted_feats = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
+                for f, imp in sorted_feats:
+                    report.append(f"- `{f}`: {imp:.4f}")
+            
+            report_path.write_text("\n".join(report))
+            if self.verbose:
+                tprint_success(f"✅ Saved Spectral Chaser report to {report_path}")
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save Spectral Chaser report: {e}")
+
+
+    def _run_causal_discovery(self, df: pd.DataFrame) -> Dict[str, List[str]]:
+        """
+        Run enhanced causal discovery with Bayesian uncertainty quantification.
+        """
+        try:
+            if self.verbose:
+                tprint_info("🔍 Enhanced Causal Discovery: Starting Bayesian discovery with uncertainty...")
+            
+            # Check if Bayesian discovery is enabled
+            use_bayesian = getattr(self, 'use_bayesian_discovery', True)
+            
+            if use_bayesian and self.CAUSAL_MODULES_AVAILABLE:
+                numeric_df = self._filter_discovery_input(df)
+                if numeric_df.empty:
+                    tprint_warning("   ⚠️ No numeric data available for causal discovery")
+                    return {}
+                if self.verbose:
+                    tprint_info(f"   📊 Using {len(numeric_df.columns)} filtered columns x {len(numeric_df)} samples")
+                
+                discovery_results = quick_bayesian_causal_discovery(
+                    numeric_df,
+                    n_bootstrap=self.discovery_bootstrap_samples,
+                    significance_level=0.8,
+                    verbose=self.verbose
+                )
+                
+                if 'error' in discovery_results:
+                    if self.verbose:
+                        tprint_warning("   ⚠️ Bayesian discovery failed, falling back to deterministic...")
+                    return self._fallback_causal_discovery(df)
+                
+                # Extract causal graph and uncertainty metrics
+                causal_graph = discovery_results.get('consensus_graph', {})
+                uncertainty_metrics = discovery_results.get('uncertainty_metrics', {})
+                
+                # Normalize confidence metrics to [0, 1] for safety
+                if 'avg_confidence' in uncertainty_metrics:
+                    raw_conf = uncertainty_metrics['avg_confidence']
+                    uncertainty_metrics['avg_confidence'] = 1.0 if raw_conf > 1.0 else raw_conf
+                    
+                if 'graph_stability' in uncertainty_metrics:
+                    raw_stab = uncertainty_metrics['graph_stability']
+                    uncertainty_metrics['graph_stability'] = 1.0 if raw_stab > 1.0 else raw_stab
+                
+                # Store uncertainty metrics for reporting
+                self.causal_discovery_uncertainty_ = uncertainty_metrics
+                
+                if self.verbose:
+                    tprint_success(f"   ✅ Bayesian discovery complete:")
+                    tprint_info(f"      - Graph edges: {len(causal_graph)}")
+                    tprint_info(f"      - Graph stability: {uncertainty_metrics.get('graph_stability', 0):.3f}")
+                    tprint_info(f"      - Avg confidence: {uncertainty_metrics.get('avg_confidence', 0):.3f}")
+                
+                return causal_graph
+            else:
+                if self.verbose:
+                    tprint_info("   📊 Using deterministic Causal Discovery...")
+                return self._fallback_causal_discovery(df)
+                
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"   ❌ Enhanced causal discovery failed: {e}")
+            return self._fallback_causal_discovery(df)
+    
+    def _fallback_causal_discovery(self, df: pd.DataFrame) -> Dict[str, List[str]]:
+        """Fallback to deterministic causal discovery."""
+        try:
+            if self.verbose:
+                tprint_info("   🔄 Using fallback deterministic causal discovery...")
+            
+            causal_discovery = CausalDiscovery(verbose=self.verbose)
+            discovery_results = causal_discovery.discover_causal_structure(df)
+            
+            if 'error' in discovery_results:
+                if self.verbose:
+                    tprint_error("   ❌ Fallback discovery also failed")
+                return {}
+            
+            causal_graph = discovery_results.get('causal_graph', {})
+            
+            if self.verbose:
+                tprint_success(f"   ✅ Fallback discovery complete: {len(causal_graph)} edges")
+            
+            return causal_graph
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"   ❌ Fallback discovery failed: {e}")
+            return {}
+
+        try:
+            tprint_info("   🔬 Layer 2: Running PC Algorithm + LiNGAM...")
+
+            # Select numeric features for causal discovery
+            tprint_info("   📊 Layer 2: Selecting numeric features...")
+            numeric_df = df.select_dtypes(include=[np.number]).dropna()
+            tprint_info(f"      - Original features: {len(df.columns)}")
+            tprint_info(f"      - Numeric features: {len(numeric_df.columns)}")
+            tprint_info(f"      - Samples after dropna: {len(numeric_df)}")
+
+            if len(numeric_df.columns) < 3:
+                tprint_warning("   ⚠️ Layer 2: Insufficient numeric features for causal discovery (< 3)")
+                return {}
+
+            if len(numeric_df) < 10:
+                tprint_warning("   ⚠️ Layer 2: Insufficient samples for causal discovery (< 10)")
+                return {}
+
+            # Run causal discovery
+            tprint_info("   🚀 Layer 2: Executing causal discovery pipeline...")
+            discovery_results = self._causal_discovery.discover_causal_structure(numeric_df)
+
+            if 'error' in discovery_results:
+                tprint_error(f"   ❌ Layer 2: Causal discovery error: {discovery_results['error']}")
+                return {}
+
+            causal_graph = discovery_results.get('causal_graph', {})
+            tprint_success("   ✅ Layer 2: Causal Discovery Complete:")
+            tprint_info(f"      - Variables analyzed: {discovery_results.get('n_variables', 0)}")
+            tprint_info(f"      - Edges discovered: {discovery_results.get('n_edges', 0)}")
+            tprint_info(f"      - Samples used: {discovery_results.get('n_samples', 0)}")
+            tprint_info(f"      - Significance level: {discovery_results.get('significance_level', 'N/A')}")
+
+            if causal_graph:
+                total_parents = sum(len(parents) for parents in causal_graph.values())
+                tprint_info(f"      - Total parent-child relationships: {total_parents}")
+            else:
+                tprint_warning("   ⚠️ Layer 2: No causal graph generated")
+
+            return causal_graph
+
+        except Exception as e:
+            tprint_error(f"   ❌ Layer 2: Causal discovery failed: {e}")
+            import traceback
+            tprint_error(f"   ❌ Layer 2: Traceback: {traceback.format_exc()}")
+            return {}
+
+    def _initialize_causal_specialists(self, df: pd.DataFrame, causal_graph: Dict[str, List[str]]) -> Dict[str, pd.Series]:
+        """
+        Initialize and train causal specialists as causal parents.
+        """
+        tprint_info("🧠 Layer 2: Initializing Causal Specialists...")
+
+        if not self.causal_specialists_enabled:
+            tprint_info("   ⏭️ Layer 2: Causal specialists disabled")
+            return {}
+
+        # Manager is created in this method, so no need to check for existence pre-creation
+        # if self._specialist_manager is None:
+        #    tprint_warning("   ⚠️ Layer 2: Specialist manager not initialized") 
+        #    return {}
+
+        try:
+            tprint_info("   📊 Layer 2: Analyzing causal graph...")
+            if not causal_graph:
+                tprint_warning("   ⚠️ Layer 2: No causal graph available for specialist initialization")
+                return {}
+
+            total_relationships = sum(len(parents) for parents in causal_graph.values())
+            tprint_info(f"      - Causal relationships: {total_relationships}")
+            tprint_info(f"      - Variables in graph: {len(causal_graph)}")
+
+            # Create specialists from causal graph
+            tprint_info("   🏗️ Layer 2: Creating specialists from causal graph...")
+            self._specialist_manager = create_causal_specialists(causal_graph)
+            if self.specialist_max_models and len(self._specialist_manager.specialists) > self.specialist_max_models:
+                limit = self.specialist_max_models
+                tprint_info(f"      - Limiting specialists to top {limit} relationships")
+                self._specialist_manager.specialists = self._specialist_manager.specialists[:limit]
+                self._specialist_manager.specialist_dict_ = {
+                    spec.name: spec for spec in self._specialist_manager.specialists
+                }
+
+            if len(self._specialist_manager.specialists) == 0:
+                tprint_warning("   ⚠️ Layer 2: No specialists could be created from causal graph")
+                return {}
+
+            tprint_info(f"      - Specialists created: {len(self._specialist_manager.specialists)}")
+            for specialist in self._specialist_manager.specialists[:3]:  # Show first 3
+                tprint_info(f"         • {specialist.name}: {specialist.causal_parent} → {specialist.causal_child}")
+
+            # Prepare target data for specialists
+            tprint_info("   🎯 Layer 2: Preparing target data for specialists...")
+            y_dict = {}
+            available_targets = 0
+            for specialist in self._specialist_manager.specialists:
+                if specialist.causal_child in df.columns:
+                    y_dict[specialist.name] = df[specialist.causal_child]
+                    available_targets += 1
+
+            tprint_info(f"      - Target variables available: {available_targets}/{len(self._specialist_manager.specialists)}")
+
+            if not y_dict:
+                tprint_warning("   ⚠️ Layer 2: No target data available for specialists")
+                return {}
+
+            # Train specialists in parallel
+            tprint_info("   🎓 Layer 2: Training specialists in parallel...")
+            specialists = self._specialist_manager.specialists
+            training_metrics = self._train_specialists_parallel(specialists, df, y_dict)
+            self._specialist_manager.manager_metrics_["training_metrics"] = training_metrics
+
+            successful_training = sum(1 for m in training_metrics.values() if "error" not in m)
+            failed_training = len(training_metrics) - successful_training
+
+            tprint_info(f"      - Training results: {successful_training} successful, {failed_training} failed")
+
+            if training_metrics:
+                # Show sample metrics for first specialist
+                first_spec = list(training_metrics.keys())[0]
+                if "error" not in training_metrics[first_spec]:
+                    metrics = training_metrics[first_spec]
+                    tprint_info(f"      - Sample metrics ({first_spec}):")
+                    tprint_info(f"         • R²: {metrics.get('r2', 'N/A'):.4f}")
+                    tprint_info(f"         • MSE: {metrics.get('mse', 'N/A'):.6f}")
+                    tprint_info(f"         • Samples: {metrics.get('n_samples', 'N/A')}")
+
+            # Generate predictions from all specialists
+            tprint_info("   🔮 Layer 2: Generating predictions from specialists in parallel...")
+            predictions = self._predict_specialists_parallel(specialists, df)
+            tprint_info(f"      - Raw predictions returned: {len(predictions)} entries")
+
+            # Extract prediction series (handle tuple format)
+            prediction_series = {}
+            names_to_skip = []
+            for name, pred in predictions.items():
+                if isinstance(pred, tuple):
+                    prediction_series[name] = pred[0]  # Predictions
+                else:
+                    prediction_series[name] = pred
+                # Log if prediction is actually usable
+                if isinstance(prediction_series[name], pd.Series):
+                    non_nan = prediction_series[name].notna().sum()
+                    if non_nan > 0:
+                        tprint_info(f"      - {name}: {non_nan} valid predictions")
+                    else:
+                        tprint_warning(f"      - {name}: all NaN predictions")
+                        names_to_skip.append(name)  # Mark for removal later
+
+            # Remove empty predictions (fix: don't modify dict during iteration)
+            for name in names_to_skip:
+                del prediction_series[name]
+
+            tprint_success(f"✅ Layer 2: Specialists trained and predictions generated: {len(prediction_series)} specialists")
+            return prediction_series
+
+        except Exception as e:
+            tprint_error(f"❌ Layer 2: Specialist initialization failed: {e}")
+            import traceback
+            tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
+            return {}
+
+    def _generate_causal_surprise_events(self, df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series]) -> pd.DataFrame:
+        """
+        Generate events from causal surprise detection.
+        """
+        tprint_info("🎯 Layer 2: Generating Causal Surprise Events...")
+
+        if not self.causal_surprise_enabled:
+            tprint_info("   ⏭️ Layer 2: Causal surprise events disabled")
+            return pd.DataFrame()
+
+        if self._surprise_detector is None:
+            tprint_warning("   ⚠️ Layer 2: Surprise detector not initialized")
+            return pd.DataFrame()
+
+        try:
+            tprint_info("   📝 Layer 2: Registering specialists with surprise detector...")
+
+            payloads = self._prepare_registration_batch(specialist_predictions, df)
+            if not payloads:
+                tprint_warning("   ⚠️ No registration payloads available")
+                return self._generate_fallback_events(df)
+
+            registered_count = self._register_specialists_batch(payloads)
+            tprint_info(f"      - Specialists registered: {registered_count}/{len(payloads)} payloads")
+
+            if len(self._surprise_detector.specialist_errors_) == 0:
+                tprint_warning("   ⚠️ Layer 2: No specialists successfully registered")
+                return self._generate_fallback_events(df)
+
+            # Aggregate surprise scores
+            tprint_info("   🔍 Layer 2: Computing surprise scores across specialists...")
+            spectral_reliability = None
+            if getattr(self, "_aedl_framework", None):
+                try:
+                    spectral_reliability = self._aedl_framework.spectral_specialists.get_reliability_report()
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Failed to retrieve spectral reliability: {e}")
+            self._surprise_detector.set_zone_score_weights(
+                zone3_boost=self.zone3_specialist_boost,
+                zone2_boost=self.zone2_specialist_boost,
+                exposure_scalar=self.zone_score_exposure
+            )
+            surprise_df = self._surprise_detector.aggregate_specialist_surprise(
+                spectral_reliability=spectral_reliability,
+                exposure_scalar=self.zone_score_exposure
+            )
+
+            if surprise_df.empty:
+                tprint_warning("   ⚠️ Layer 2: No surprise scores computed")
+                return self._generate_fallback_events(df)
+
+            tprint_info(f"      - Surprise features computed: {len(surprise_df.columns)}")
+            tprint_info(f"      - Samples with surprise data: {len(surprise_df)}")
+
+            # Generate events
+            tprint_info("   🎯 Layer 2: Generating causal events from surprise scores...")
+            causal_events = self._surprise_detector.generate_causal_events()
+            
+            events_df = pd.DataFrame()
+
+            # Create events DataFrame
+            if causal_events:
+                event_indices = list(causal_events.keys())
+                tprint_info(f"      - Raw events found: {len(event_indices)}")
+
+                if len(event_indices) > 0:
+                    events_df = df.loc[event_indices].copy()
+
+                    # Add causal event metadata
+                    events_df['causal_surprise'] = 1
+                    events_df['surprise_strength'] = [causal_events[idx]['strength'] for idx in event_indices]
+                    events_df['surprise_zone'] = [causal_events[idx]['zone'] for idx in event_indices]
+                    events_df['zone_score'] = [causal_events[idx].get('zone_score', 0.0) for idx in event_indices]
+                    events_df['surprise_consensus'] = [causal_events[idx]['consensus'] for idx in event_indices]
+
+                    # Inject Continuous Features (for Spectral Chaser & Meta-Learner)
+                    if hasattr(self._surprise_detector, 'specialist_soft_surprise_'):
+                        soft_surprises = self._surprise_detector.specialist_soft_surprise_
+                        # Inject per-specialist soft surprise
+                        for col in soft_surprises.columns:
+                            events_df[f"surprise_{col}"] = soft_surprises[col].reindex(event_indices).values
+                        
+                        # Inject global state derivatives
+                        z_score = pd.Series([causal_events[idx].get('zone_score', 0.0) for idx in event_indices], index=event_indices)
+                        events_df['zone_score_sq'] = (z_score ** 2).values
+                        events_df['zone_score_change'] = z_score.diff().fillna(0).values
+
+                    # Show statistics
+                    avg_strength = events_df['surprise_strength'].mean()
+                    avg_consensus = events_df['surprise_consensus'].mean()
+                    max_strength = events_df['surprise_strength'].max()
+                    
+                    # Zone distribution
+                    zone_counts = events_df['surprise_zone'].value_counts().to_dict()
+
+                    tprint_success("   ✅ Layer 2: Causal surprise events generated:")
+                    tprint_info(f"      - Events: {len(causal_events)}")
+                    tprint_info(f"      - Avg strength: {avg_strength:.4f}")
+                    tprint_info(f"      - Max strength: {max_strength:.4f}")
+                    tprint_info(f"      - Zone distribution: {zone_counts}")
+                    
+                    if hasattr(self._surprise_detector, 'surprise_density_'):
+                        tprint_info(f"      - Global surprise density: {self._surprise_detector.surprise_density_:.2%}")
+                    
+                    tprint_info(f"      - Events per day: {len(causal_events) / max(1, (df.index[-1] - df.index[0]).days):.22n}")
+                else:
+                    events_df = pd.DataFrame()
+                    tprint_warning("   ⚠️ Layer 2: No valid event indices found")
+            
+            # Compute Reliability Metrics
+            try:
+                # Use close prices for continuous outcome evaluation
+                # Calculate forward returns for ground truth
+                forward_returns = df['close'].shift(-48) / df['close'] - 1.0 # 12h returns
+                
+                # If we have labels (e.g. from OOF or previous run), use them
+                binary_labels = None
+                if 'target_class' in df.columns:
+                    binary_labels = df['target_class']
+                elif forward_returns is not None:
+                     # Create proxy labels for reliability estimation if missing
+                     # Label 1 if return > 1.0 * volatility (significant move)
+                     vol_proxy = df['close'].pct_change().rolling(20).std().shift(-1) * np.sqrt(48)
+                     binary_labels = (forward_returns > vol_proxy.fillna(0)).astype(int)
+                
+                reliability_metrics = self._surprise_detector.compute_reliability_metrics(
+                    realized_outcomes=forward_returns.fillna(0),
+                    binary_labels=binary_labels
+                )
+                
+                if reliability_metrics:
+                    # Log Specialist Reliability
+                    spec_metrics = reliability_metrics.get('specialists', {})
+                    if spec_metrics:
+                        tprint_info("\n   📊 Specialist Reliability (Composite Score):")
+                        sorted_specs = sorted(spec_metrics.items(), key=lambda x: x[1]['composite_reliability'], reverse=True)
+                        for name, m in sorted_specs:
+                            tprint_info(f"      • {name}: {m['composite_reliability']:.3f} (PrecZ2: {m['z2_precision']:.2f}, Resp: {m['responsiveness']:.2f})")
+                    
+                    # Log Detector Reliability
+                    det_metrics = reliability_metrics.get('detector', {})
+                    if det_metrics:
+                        tprint_info("\n   🛡️ Detector Reliability:")
+                        tprint_info(f"      • F1 Score: {det_metrics.get('f1', 0.0):.3f}")
+                        tprint_info(f"      • Recall: {det_metrics.get('recall', 0.0):.3f}")
+                        tprint_info(f"      • Precision: {det_metrics.get('precision', 0.0):.3f}")
+                        tprint_info(f"      • Stability: {det_metrics.get('stability_index', 0.0):.3f}")
+                        
+                    if spec_metrics and det_metrics:
+                        try:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            outcomes_dir = Path("outcomes")
+                            outcomes_dir.mkdir(exist_ok=True)
+                            
+                            # 1. Save Markdown Report
+                            report_path = outcomes_dir / f"causal_reliability_report_{timestamp}.md"
+                            with open(report_path, "w") as f:
+                                f.write(f"# Causal Reliability Report ({timestamp})\n\n")
+                                
+                                f.write("## 🛡️ Detector Reliability\n")
+                                f.write(f"- **F1 Score**: {det_metrics.get('f1', 0.0):.3f}\n")
+                                f.write(f"- **Recall**: {det_metrics.get('recall', 0.0):.3f}\n")
+                                f.write(f"- **Precision**: {det_metrics.get('precision', 0.0):.3f}\n")
+                                f.write(f"- **Stability Index**: {det_metrics.get('stability_index', 0.0):.3f}\n")
+                                f.write(f"- **Surprise Density**: {det_metrics.get('filtered_event_density', 0.0):.2%}\n\n")
+                                
+                                f.write("## 📊 Specialist Reliability\n")
+                                f.write("| Specialist | Reliability Score | Responsiveness | Precision (Zone 2) | Marginal Value |\n")
+                                f.write("|:---|---:|---:|---:|---:|\n")
+                                for name, m in sorted_specs:
+                                    f.write(f"| {name} | {m['composite_reliability']:.3f} | {m['responsiveness']:.3f} | {m['z2_precision']:.3f} | {m.get('marginal_value', 0):.4f} |\n")
+                            
+                            tprint_success(f"   📝 Saved reliability report to: {report_path}")
+
+                            # 2. Save CSV Data for Analysis
+                            csv_path = outcomes_dir / f"specialist_reliability_{timestamp}.csv"
+                            spec_df = pd.DataFrame.from_dict(spec_metrics, orient='index')
+                            spec_df.index.name = 'specialist'
+                            spec_df.to_csv(csv_path)
+                            tprint_success(f"   💾 Saved specialist metrics to: {csv_path}")
+                            
+                        except Exception as e:
+                            tprint_error(f"   ❌ Failed to save reliability reports: {e}")
+
+            except Exception as e:
+                tprint_error(f"   ❌ Reliability computation wrapper failed: {e}")
+            
+            # Final fallback check - only if truly empty
+            if events_df.empty:
+                tprint_warning("   ⚠️ Layer 2: No causal events generated, using fallback")
+                events_df = self._generate_fallback_events(df)
+
+            return events_df
+
+        except Exception as e:
+            tprint_error(f"❌ Layer 2: Causal surprise event generation failed: {e}")
+            import traceback
+            tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
+            return self._generate_fallback_events(df)
+
+    def _generate_fallback_events(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate fallback events when causal methods fail.
+        """
+        try:
+            # Simple volatility-based events as fallback
+            volatility = df['close'].pct_change().rolling(20).std()
+            threshold = volatility.quantile(0.8)
+            event_mask = volatility > threshold
+
+            if event_mask.sum() > 0:
+                events_df = df[event_mask].copy()
+                events_df['fallback_event'] = 1
+                events_df['volatility_threshold'] = threshold
+                tprint_info(f"📊 Generated {len(events_df)} fallback events using volatility threshold")
+            else:
+                events_df = pd.DataFrame()
+
+            return events_df
+
+        except Exception as e:
+            tprint_error(f"❌ Fallback event generation failed: {e}")
+            return pd.DataFrame()
+
+
+        # Causal framework configuration
+        self.enable_causal_framework = kwargs.get('enable_causal_framework', True)
+        self.causal_discovery_enabled = kwargs.get('causal_discovery_enabled', True)
+        self.irm_enabled = kwargs.get('irm_enabled', True)
+        self.causal_targets_enabled = kwargs.get('causal_targets_enabled', True)
+        self.causal_specialists_enabled = kwargs.get('causal_specialists_enabled', True)
+        self.causal_surprise_events = kwargs.get('causal_surprise_events', True)
+
+        # IRM configuration
+        self.lambda_irm = kwargs.get('lambda_irm', 1.0)
+        self.lambda_variance = kwargs.get('lambda_variance', 1.0)
+        self.focal_alpha = kwargs.get('focal_alpha', 1.0)
+        self.focal_gamma_pos = kwargs.get('focal_gamma_pos', 1.0)
+        self.focal_gamma_neg = kwargs.get('focal_gamma_neg', 2.5)
+
+        # Initialize causal components
+        self._causal_discovery = None
+        self._causal_engineering = None
+        self._irm_system = None
+        self._causal_targets = None
+        self._specialist_manager = None
+        self._surprise_detector = None
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1015,7 +2213,12 @@ class LabelBasedLayer2(BaseStep):
                 self._global_event_cache[cache_key] = pd.DatetimeIndex([])
             else:
                 gen_params = params if params else {}
-                events = gen.generate(df, **gen_params)
+                # For causal generators, inject stored specialist predictions
+                if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
+                    specialist_preds = getattr(self, '_oof_specialist_predictions', None)
+                    events = gen.generate(df, specialist_predictions=specialist_preds, **gen_params)
+                else:
+                    events = gen.generate(df, **gen_params)
                 self._global_event_cache[cache_key] = events
                 tprint_success(f"✅ Global events cached for {family}: {len(events)} events in {time.time() - start_time:.2f}s")
 
@@ -1149,6 +2352,12 @@ class LabelBasedLayer2(BaseStep):
                             geometries: List, family: str, fold_idx: int,
                             sr_levels: List = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """Compute labels and weights for multiple geometries of the same family at once."""
+        cache_key = self._get_label_batch_cache_key(family, geometries, events)
+        if cache_key in self._label_batch_cache:
+            cached_labels, cached_weights = self._label_batch_cache[cache_key]
+            tprint_info(f"✅ Using cached batch labels for {len(geometries)} {family} geometries (fold {fold_idx})")
+            return cached_labels, cached_weights
+
         tprint_info(f"🔄 Computing batch labels/weights for {len(geometries)} {family} geometries (fold {fold_idx})...")
         
         # Create events df once
@@ -1195,6 +2404,36 @@ class LabelBasedLayer2(BaseStep):
                     horizon = int(gt.params.get('horizon', 24))
                     h_threshold = gt.params.get('h', 5.0)
                     labels, weights, _, _, _, _ = compute_volume_participation_labels(df_train, events, horizon=horizon, volume_threshold=h_threshold)
+                elif family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
+                    # Causal families: use simple binary barrier labeling
+                    # Returns: 1 for positive barrier hit (profit), 0 for negative hit (loss)
+                    # Shorten outcome horizon by 50% (User requested)
+                    horizon_raw = int(gt.params.get('horizon', 24))
+                    horizon = max(1, horizon_raw // 2)
+                    
+                    pt_mult = gt.params.get('pt_mult', 1.5)
+                    sl_mult = gt.params.get('sl_mult', 0.75)
+                    labels, weights, _, _, _, _ = self._compute_dominance_labels(
+                        df_train, events_df,
+                        pt_mult=pt_mult,
+                        sl_mult=sl_mult,
+                        horizon=horizon
+                    )
+                    # Ensure binary: dominance_labels should already be binary, but force it
+                    labels = (labels > 0.5).astype(int)
+                    
+                    # For CAUSAL_SURPRISE: use soft sample weights (Continuous Framework)
+                    if family == 'CAUSAL_SURPRISE':
+                        gen = self.generators.get('CAUSAL_SURPRISE')
+                        if gen and hasattr(gen, 'surprise_detector') and gen.surprise_detector:
+                            # Extract ZoneScore for events
+                            event_data = gen.surprise_detector.surprise_events_
+                            zone_scores = pd.Series({t: d.get('zone_score', 0.0) for t, d in event_data.items()})
+                            zone_scores = zone_scores.reindex(weights.index).fillna(0.0)
+                            
+                            # Apply Continuous chaos boost: 1.0 + 3.0 * zone_score
+                            weights = weights * (1.0 + 3.0 * zone_scores)
+                            tprint_info(f"   ⚖️ Applied Continuous ZoneScore weighting to {family} (avg: {zone_scores.mean():.4f}, max: {zone_scores.max():.4f})")
                 else:
                     # Map params to Volatility Logic (VOL_CUSUM)
                     pt = gt.params.get('pt_mult', 2.0)
@@ -1217,10 +2456,14 @@ class LabelBasedLayer2(BaseStep):
                     weights_dict[gt.uuid] = weights
 
             except Exception as e:
+                tprint_error(f"❌ Error computing labels for {gt.uuid}: {e}")
+                import traceback
+                traceback.print_exc()
                 tprint_warning(f"⚠️ Label computation failed for {gt.uuid}: {e}")
                 labels_dict[gt.uuid] = pd.Series([], dtype=float)
                 weights_dict[gt.uuid] = pd.Series([], dtype=float)
         
+        self._label_batch_cache[cache_key] = (labels_dict, weights_dict)
         return labels_dict, weights_dict
 
     def _get_cached_labels(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
@@ -1300,12 +2543,12 @@ class LabelBasedLayer2(BaseStep):
         """Cache feature selection results."""
         self._feature_selection_cache[geometry_uuid] = selected_features
 
-    def _get_cached_labels(self, geometry_uuid: str, fold_idx: int):
+    def _get_cached_labels_metadata(self, geometry_uuid: str, fold_idx: int):
         """Get cached labels and weights if available."""
         cache_key = f"labels_{geometry_uuid}_fold_{fold_idx}"
         return self._label_computation_cache.get(cache_key)
 
-    def _cache_labels(self, geometry_uuid: str, fold_idx: int, labels, weights):
+    def _cache_labels_metadata(self, geometry_uuid: str, fold_idx: int, labels, weights):
         """Cache computed labels and weights."""
         cache_key = f"labels_{geometry_uuid}_fold_{fold_idx}"
         self._label_computation_cache[cache_key] = (labels, weights)
@@ -1338,14 +2581,591 @@ class LabelBasedLayer2(BaseStep):
             "TREND": partial(self._dominance_label_wrapper, kappa=3.0, sl_mult=1.5, horizon=48)
         }
 
+    def _filter_discovery_input(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Select high-variance numeric columns and downsample rows for discovery."""
+        numeric_df = df.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).dropna(axis=1, how='all')
+        if numeric_df.empty:
+            return numeric_df
+
+        variances = numeric_df.var(skipna=True).sort_values(ascending=False)
+        top_cols = variances.dropna().index.tolist()
+        if self.discovery_max_features:
+            top_cols = top_cols[:self.discovery_max_features]
+        filtered = numeric_df[top_cols]
+
+        if self.discovery_sample_size and len(filtered) > self.discovery_sample_size:
+            filtered = filtered.tail(self.discovery_sample_size)
+
+        return filtered.dropna(how='all')
+
+    def _component_config_key(self, name: str, config: Dict[str, Any]) -> str:
+        serialized = json.dumps(config, sort_keys=True, default=str)
+        digest = hashlib.md5(serialized.encode()).hexdigest()
+        return f"{name}_{digest}"
+
+    def _get_component_singleton(self, name: str, config: Dict[str, Any], factory: Callable[[], Any]) -> Any:
+        cache_key = self._component_config_key(name, config)
+        component = self._component_singletons.get(cache_key)
+        if component is None:
+            component = factory()
+            self._component_singletons[cache_key] = component
+        return component
+
+    def _series_fingerprint(self, series: pd.Series) -> str:
+        if series is None or len(series) == 0:
+            return "empty"
+        hashed = hash_pandas_object(series, index=True)
+        return hashlib.md5(hashed.values.tobytes()).hexdigest()
+
+    def _hash_datetime_index(self, index: pd.DatetimeIndex) -> str:
+        if index is None or len(index) == 0:
+            return "empty"
+        values = index.view('i8')
+        return hashlib.md5(values.tobytes()).hexdigest()
+
+    def _get_label_batch_cache_key(
+        self,
+        family: str,
+        geometries: List[GeometryTrial],
+        events: pd.DatetimeIndex
+    ) -> str:
+        geo_parts = []
+        for gt in geometries:
+            params_repr = json.dumps(gt.params, sort_keys=True, default=str)
+            geo_parts.append(f"{gt.uuid}:{params_repr}")
+        geo_digest = hashlib.md5("|".join(sorted(geo_parts)).encode()).hexdigest()
+        events_digest = self._hash_datetime_index(events)
+        dataset_key = self._dataset_fingerprint or "adhoc"
+        return f"{dataset_key}_{family}_{geo_digest}_{events_digest}"
+
+    def _filter_treatment_matrix(self, treatment_df: pd.DataFrame) -> pd.DataFrame:
+        if treatment_df.empty:
+            return treatment_df
+        coverage = treatment_df.notna().mean()
+        filtered_cols = coverage[coverage >= self.treatment_min_coverage].index.tolist()
+        if not filtered_cols:
+            return pd.DataFrame(index=treatment_df.index)
+        filtered = treatment_df[filtered_cols]
+        if self.treatment_max_features and len(filtered_cols) > self.treatment_max_features:
+            std_rank = filtered.std(skipna=True).abs().sort_values(ascending=False)
+            top_cols = std_rank.index[:self.treatment_max_features]
+            filtered = filtered[top_cols]
+        return filtered
+
+    def _get_confounder_matrix(self, df: pd.DataFrame, columns: List[str]) -> Optional[pd.DataFrame]:
+        if not columns:
+            return None
+        cache_key = f"{self._dataset_fingerprint or 'adhoc'}_{hash(tuple(sorted(columns)))}"
+        if cache_key in self._confounder_cache:
+            return self._confounder_cache[cache_key]
+        confounder_df = df[columns].copy()
+        self._confounder_cache[cache_key] = confounder_df
+        return confounder_df
+
+    def _train_specialists_parallel(
+        self,
+        specialists: List[Any],
+        feature_df: pd.DataFrame,
+        y_dict: Dict[str, pd.Series]
+    ) -> Dict[str, Dict[str, Any]]:
+        if not specialists:
+            return {}
+
+        workers = max(1, self.specialist_train_workers)
+        metrics: Dict[str, Dict[str, Any]] = {}
+
+        def _train(spec):
+            target = y_dict.get(spec.name)
+            if target is None:
+                return spec.name, {"error": "missing_target"}
+            try:
+                result = spec.fit(feature_df, target)
+            except Exception as err:
+                result = {"error": str(err)}
+            return spec.name, result
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(_train, spec) for spec in specialists]
+            for future in futures:
+                name, result = future.result()
+                metrics[name] = result
+
+        return metrics
+
+    def _predict_specialists_parallel(
+        self,
+        specialists: List[Any],
+        feature_df: pd.DataFrame
+    ) -> Dict[str, pd.Series]:
+        if not specialists:
+            return {}
+
+        workers = max(1, self.specialist_train_workers)
+        predictions: Dict[str, pd.Series] = {}
+
+        def _predict(spec):
+            try:
+                result = spec.predict(feature_df, return_confidence=False)
+            except Exception as err:
+                if self.specialist_debug_logging:
+                    tprint_warning(f"⚠️ Prediction failed for {spec.name}: {err}")
+                result = pd.Series(dtype=float)
+            return spec.name, result
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(_predict, spec) for spec in specialists]
+            for future in futures:
+                name, series = future.result()
+                predictions[name] = series
+
+        return predictions
+
+    def _prepare_registration_payload(
+        self,
+        spec_name: str,
+        predictions: pd.Series,
+        df: pd.DataFrame
+    ) -> Optional[Tuple[str, pd.Series, pd.Series, str]]:
+        if predictions is None or predictions.empty:
+            return None
+
+        predictions = predictions.dropna()
+        if predictions.empty:
+            return None
+
+        # Determine target
+        target_series = None
+        
+        # Case 1: Causal edge specialist (Parent -> Child)
+        if '_to_' in spec_name:
+            target_col = spec_name.split('_to_')[1]
+            target_series = df.get(target_col)
+        # Case 2: AEDL Specialist (Signal based, target is 0/Mean)
+        elif 'specialist' in spec_name.lower():
+            # For signals (z-scores), the "target" is 0 (mean)
+            # The signal itself is the deviation/surprise
+            target_series = pd.Series(0, index=df.index)
+        # Case 3: Direct column target
+        else:
+            target_series = df.get(spec_name)
+
+        # Fallback to close price if finding target failed but not for AEDL
+        if target_series is None and 'specialist' not in spec_name.lower():
+            target_series = df.get('close')
+            
+        if target_series is None:
+            return None
+
+        common_idx = predictions.index.intersection(target_series.index)
+        if len(common_idx) < 10:
+            return None
+
+        pred_aligned = predictions.loc[common_idx]
+        target_aligned = target_series.loc[common_idx]
+
+        fingerprint = self._series_fingerprint(pred_aligned) + self._series_fingerprint(target_aligned)
+        return spec_name, pred_aligned, target_aligned, fingerprint
+
+    def _prepare_registration_batch(
+        self,
+        specialist_predictions: Dict[str, pd.Series],
+        df: pd.DataFrame
+    ) -> List[Tuple[str, pd.Series, pd.Series, str]]:
+        workers = max(1, self.specialist_registration_workers)
+        payloads = []
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = []
+            for spec_name, preds in specialist_predictions.items():
+                futures.append(executor.submit(self._prepare_registration_payload, spec_name, preds, df))
+            for future in futures:
+                payload = future.result()
+                if payload is not None:
+                    payloads.append(payload)
+
+        return payloads
+
+    def _register_specialists_batch(
+        self,
+        payloads: List[Tuple[str, pd.Series, pd.Series, str]]
+    ) -> int:
+        if not payloads:
+            return 0
+
+        workers = max(1, self.specialist_registration_workers)
+
+        def _register(payload):
+            spec_name, preds, targets, fingerprint = payload
+            last_entry = self._specialist_registration_cache.get(spec_name)
+            if last_entry and last_entry[0] == fingerprint and last_entry[1] == len(preds):
+                return 0
+            self._surprise_detector.register_specialist(spec_name, preds, targets)
+            self._specialist_registration_cache[spec_name] = (fingerprint, len(preds))
+            return 1
+
+        registered = 0
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(_register, payload) for payload in payloads]
+            for future in futures:
+                registered += future.result()
+
+        return registered
+
+    def _maybe_apply_model_seed(self, model, candidate_name: str):
+        seed_entry = self._model_race_seed_models.get(candidate_name)
+        if seed_entry is None:
+            return
+        try:
+            if isinstance(model, lgb.LGBMClassifier) and hasattr(seed_entry, 'booster_'):
+                model.set_params(init_model=seed_entry.booster_)
+            elif isinstance(model, XGBClassifier) and hasattr(seed_entry, 'get_booster'):
+                model._Booster = seed_entry.get_booster()
+            # CatBoost does not expose init_model easily; skip.
+        except Exception:
+            pass
+
+    def _store_model_seed(self, candidate_name: str, model):
+        try:
+            self._model_race_seed_models[candidate_name] = copy.deepcopy(model)
+        except Exception:
+            self._model_race_seed_models[candidate_name] = model
+
+    def _compute_dataset_fingerprint(self, df: pd.DataFrame) -> str:
+        """Create a deterministic fingerprint for caching across runs."""
+        if df is None or df.empty:
+            return "empty"
+        hash_series = hash_pandas_object(df[['close']] if 'close' in df.columns else df, index=True)
+        digest = hashlib.md5(hash_series.values.tobytes()).hexdigest()
+        return f"{len(df)}_{df.index.min()}_{df.index.max()}_{digest}"
+
     def run(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Execute the Layer 2 pipeline.
+        Execute the Layer 2 pipeline (causal framework only).
         """
         tprint_info("Starting Layer 2 Pipeline...")
-        
-        # Debug: Check what type of data we received
-        
+        self._dataset_fingerprint = self._compute_dataset_fingerprint(df)
+
+        if not self.enable_causal_framework:
+            tprint_warning("⚠️ AFML path deprecated; enabling causal framework automatically")
+            self.enable_causal_framework = True
+
+        if not CAUSAL_MODULES_AVAILABLE:
+            raise RuntimeError("Causal framework modules unavailable; cannot run Layer 2 pipeline.")
+
+        tprint_info("🔬 Causal Framework Enabled - Using Modern De Prado Approach")
+        return self._run_causal_pipeline(df)
+
+    def _run_causal_pipeline(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Execute the modern causal Layer 2 pipeline.
+        """
+        try:
+            tprint_info("🚀 Causal Layer 2 Pipeline: Starting modern De Prado framework...")
+            
+            # Initialize causal components
+            tprint_info("🔧 Step 0: Initializing causal components...")
+            self._initialize_causal_components(df)
+            tprint_success("   ✅ Causal components initialized")
+
+            # 1. Causal Discovery: Build DAG for causal relationships
+            tprint_info("🔍 Step 1: Running causal discovery...")
+            causal_graph = self._run_causal_discovery(df)
+            if not causal_graph:
+                error_msg = "   ❌ Causal discovery failed; aborting Layer 2 causal pipeline"
+                tprint_error(error_msg)
+                raise RuntimeError(error_msg.strip())
+            tprint_success(f"   ✅ Causal discovery complete: {len(causal_graph)} variables")
+
+            # 2. Causal Specialists: Create and train specialists
+            tprint_info("🧠 Step 2: Initializing causal specialists...")
+            
+            # Use AEDL if enabled (Domain Specialists)
+            if self.enable_aedl:
+                tprint_info("   🧠 Using Spectral AEDL for specialist initialization...")
+                specialist_predictions = {}
+                try:
+                    aedl_results = self._run_aedl_pipeline(df, "close", causal_graph=causal_graph)
+                    if not isinstance(aedl_results, dict):
+                        raise RuntimeError("AEDL pipeline returned an invalid payload")
+                    if 'error' in aedl_results:
+                        raise RuntimeError(aedl_results['error'])
+                    specialist_predictions = aedl_results.get('specialist_signals') or {}
+                    if not specialist_predictions:
+                        raise RuntimeError("AEDL pipeline produced zero specialist signals")
+                    # Store AEDL results for later only when signals exist
+                    self._aedl_results_cache = aedl_results
+                    tprint_success(f"   ✅ AEDL specialists extracted: {len(specialist_predictions)}")
+                except Exception as e:
+                    tprint_error(f"   ❌ AEDL initialization failed: {e}")
+                    tprint_info("   🔄 Falling back to traditional causal specialists...")
+                    specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+            else:
+                # Use Graph Edge Specialists
+                specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                
+            # Store for OOF analytics phase
+            self._causal_specialist_predictions = specialist_predictions
+            if not specialist_predictions:
+                tprint_warning("   ⚠️ No specialist predictions available")
+            else:
+                tprint_success(f"   ✅ Specialists trained: {len(specialist_predictions)} predictions")
+
+            # 3. Causal Surprise Events: Generate events from specialist prediction errors
+            tprint_info("🎯 Step 3: Generating causal surprise events...")
+            causal_events_df = self._generate_causal_surprise_events(df, specialist_predictions)
+            if causal_events_df is None or len(causal_events_df) == 0:
+                tprint_warning("   ⚠️ No causal events generated")
+            else:
+                tprint_success(f"   ✅ Causal events generated: {len(causal_events_df)} events")
+
+            # 4. Causal Feature Engineering: Denoise and adjust features using causal relationships
+            tprint_info("🔧 Step 4: Applying causal feature engineering...")
+            
+            # 4a. Augment Dataframe with Spectral/Specialist Features for Denoising
+            tprint_info("   ➕ Augmenting data for denoising (OHLCV + Specialists)...")
+            enriched_df = df.copy()
+            
+            # Add specialist predictions (high-level signals)
+            spec_cols = []
+            if specialist_predictions:
+                 for name, series in specialist_predictions.items():
+                     col_name = f"spec_{name}"
+                     enriched_df[col_name] = series
+                     spec_cols.append(col_name)
+            
+            # Add spectral components (finer-grained) if available from AEDL
+            spectral_cols = []
+            if hasattr(self, '_aedl_results_cache') and self._aedl_results_cache:
+                components = self._aedl_results_cache.get('spectral_components', {})
+                # Filter for high variance to avoid noise
+                for name, comp in components.items():
+                    if isinstance(comp, (pd.Series, np.ndarray)):
+                        var = np.var(comp)
+                        if var > 1e-4: # Low variance filter
+                            col_name = f"spectral_{name}"
+                            # Ensure length match
+                            if len(comp) == len(enriched_df):
+                                enriched_df[col_name] = comp
+                                spectral_cols.append(col_name)
+            
+            tprint_info(f"   📊 Enriched Matrix: {len(df.columns)} base + {len(spec_cols)} spec + {len(spectral_cols)} spectral")
+
+            # 4b. Augment Causal Graph
+            # Assume OHLCV (Market State) are parents of Specialists/Spectral (Derived State)
+            # This allows specialists to be denoised conditional on Market State
+            augmented_graph = causal_graph.copy()
+            market_nodes = [c for c in df.columns if c in augmented_graph]
+            
+            # --- USER REQUEST: FORCE OHLCV DENOISING (Time-Flow Logic) ---
+            # Enforce: Open, High, Low -> Close (Time flow)
+            # Enforce: Close, Open -> Volume (Information flow)
+            
+            # 1. Enforce Close parents
+            ohl_parents = [c for c in ['open', 'high', 'low'] if c in df.columns]
+            if 'close' in df.columns and ohl_parents:
+                # Remove any existing edges starting FROM close to these parents (avoid cycle)
+                # And remove any existing parents of close that might conflict or be redundant
+                # Actually, simply setting the parents overrides previous discovery for 'close' node
+                augmented_graph['close'] = ohl_parents
+                
+                # Check for reverse edges in other parts of the graph
+                for node, parents in list(augmented_graph.items()):
+                    if node == 'close': continue
+                    # If close was a parent of open/high/low, remove it to break cycle
+                    if 'close' in parents and node in ohl_parents:
+                        augmented_graph[node] = [p for p in parents if p != 'close']
+
+            # 2. Enforce Volume parents
+            vol_parents = [c for c in ['close', 'open'] if c in df.columns]
+            if 'volume' in df.columns and vol_parents:
+                augmented_graph['volume'] = vol_parents
+                # Remove reverse
+                for node, parents in list(augmented_graph.items()):
+                    if node == 'volume': continue
+                    if 'volume' in parents and node in vol_parents:
+                         augmented_graph[node] = [p for p in parents if p != 'volume']
+
+            # -------------------------------------------------------------
+
+            for target_col in spec_cols + spectral_cols:
+                # Naive Causal Assumption: Market State (Close/Vol) -> Specialist
+                # We add 'close' and 'volatility' (if present) as parents
+                parents = [p for p in ['close', 'volatility_1d', 'volume'] if p in df.columns] # Use df.columns to be sure
+                # Fallback to any root node if specific parents missing
+                if not parents and market_nodes:
+                    parents = [market_nodes[0]]
+                
+                if parents:
+                    augmented_graph[target_col] = parents
+
+            tprint_info(f"   🔗 Augmented Graph: {len(causal_graph)} -> {len(augmented_graph)} nodes")
+            if 'close' in augmented_graph:
+                tprint_info(f"      • Close parents: {augmented_graph['close']}")
+            if 'volume' in augmented_graph:
+                tprint_info(f"      • Volume parents: {augmented_graph['volume']}")
+
+            # 4c. Run Engineering on Enriched Data
+            engineered_df, causal_metadata = self._apply_causal_feature_engineering(enriched_df, augmented_graph)
+            
+            if engineered_df is None:
+                error_msg = "   ❌ Causal feature engineering failed; aborting Layer 2 causal pipeline"
+                tprint_error(error_msg)
+                raise RuntimeError(error_msg.strip())
+            tprint_success(f"   ✅ Causal engineering complete: {len(engineered_df.columns)} features")
+
+            # 5. Causal Targets: Compute treatment effects and causal residuals
+            tprint_info("🎯 Step 5: Computing causal targets...")
+            causal_targets_df = self._compute_causal_targets(engineered_df, causal_events_df, specialist_predictions)
+            if causal_targets_df is None or len(causal_targets_df.columns) == 0:
+                tprint_warning("   ⚠️ No causal targets computed")
+            else:
+                tprint_success(f"   ✅ Causal targets computed: {len(causal_targets_df.columns)} target types")
+
+            # 6. IRM Training: Train base models with invariance penalty
+            tprint_info("🧠 Step 6: Training causal models with IRM...")
+            causal_geometries, causal_selected_features = self._train_causal_models(
+                engineered_df, causal_targets_df, causal_events_df, 
+                causal_graph=causal_graph, specialist_predictions=specialist_predictions
+            )
+            if not causal_geometries:
+                error_msg = "   ❌ Causal model training failed; aborting Layer 2 causal pipeline"
+                tprint_error(error_msg)
+                raise RuntimeError(error_msg.strip())
+            tprint_success(f"   ✅ Causal models trained: {len(causal_geometries)} geometries")
+
+            # 7. Causal Validation: Run causal-aware OOF analytics
+            tprint_info("📊 Step 7: Running causal OOF analytics...")
+            causal_oof_results = self._run_causal_oof_analytics(
+                engineered_df, causal_events_df, causal_geometries, causal_targets_df
+            )
+            if not causal_oof_results:
+                tprint_error("   ❌ Causal OOF analytics failed")
+            else:
+                tprint_success("   ✅ Causal OOF analytics complete")
+
+            # 8. Report
+            tprint_info("📋 Step 8: Generating causal framework reports...")
+            self._generate_causal_reports(engineered_df, causal_events_df, causal_geometries, causal_oof_results)
+
+            results = {
+                **causal_oof_results,
+                "events_df": causal_events_df,
+                "selected_trials": [asdict(t) for t in causal_geometries],
+                "causal_graph": causal_graph,
+                "causal_metadata": causal_metadata,
+                "specialist_predictions": specialist_predictions,
+                "causal_targets": causal_targets_df,
+                "framework_type": "modern_de_prado_causal"
+            }
+
+            tprint_success("🎉 Causal Layer 2 Pipeline: Complete modern De Prado framework executed!")
+
+            # Step 9: AEDL Framework (Use cached if available)
+            if self.enable_aedl:
+                try:
+                    if self.verbose:
+                        tprint_info(">>> Step 9: Finalizing AEDL Framework...")
+                    
+                    if hasattr(self, '_aedl_results_cache'):
+                         results['aedl_framework'] = self._aedl_results_cache
+                         aedl_results = self._aedl_results_cache
+                    else:
+                         aedl_results = self._run_aedl_pipeline(df, "close")
+                         results['aedl_framework'] = aedl_results
+                    
+                    if 'rsv_info' in aedl_results:
+                        self.layer3_rsv_data = aedl_results['rsv_info']
+                    
+                    if self.verbose:
+                        tprint_success("✅ AEDL Framework complete")
+                except Exception as e:
+                    if self.verbose:
+                        tprint_error(f"❌ AEDL Framework failed: {e}")
+                    results['aedl_framework'] = {'error': str(e)}
+
+            # Step 10: Spectral Chaser (REPLACE existing Layer 2.5)
+            if hasattr(self, 'spectral_chaser_enabled') and self.spectral_chaser_enabled:
+                try:
+                    if self.verbose:
+                        tprint_info(">>> Step 10: Running Spectral Chaser...")
+                    
+                    # Retrieve causal anchor and residuals from computed targets
+                    y_residuals = pd.Series()
+                    causal_anchor_predictions = None
+
+                    if causal_targets_df is not None and not causal_targets_df.empty:
+                        # Extract residuals
+                        # We must align residuals to the main DataFrame 'df' for Spectral Chaser
+                        if 'residual_targets' in causal_targets_df.columns:
+                            y_res = causal_targets_df['residual_targets']
+                            # Align to df index, fill missing with 0 (since they are residuals)
+                            y_residuals = y_res.reindex(df.index).fillna(0)
+                        
+                        # Extract anchor predictions
+                        if 'causal_anchor_predictions' in causal_targets_df.columns:
+                            c_anch = causal_targets_df['causal_anchor_predictions']
+                            # Align
+                            c_anch_aligned = c_anch.reindex(df.index).fillna(0)
+                            causal_anchor_predictions = c_anch_aligned.values
+                            
+                    # Fallback or check validity
+                    if y_residuals.empty or causal_anchor_predictions is None:
+                        tprint_warning("   ⚠️ Spectral Chaser: Missing input targets, attempting partial fallback...")
+                        if causal_anchor_predictions is None:
+                            causal_anchor_predictions = self._get_causal_anchor_predictions() if hasattr(self, '_get_causal_anchor_predictions') else np.zeros(len(df))
+                        
+                        if y_residuals.empty:
+                            y_residuals = pd.Series(0.0, index=df.index)
+                    
+                    if len(causal_anchor_predictions) != len(df):
+                        # Final alignment check for anchor
+                        tprint_warning(f"   ⚠️ Re-aligning anchor for Spectral Chaser: {len(causal_anchor_predictions)} -> {len(df)}")
+                        new_anchor = np.zeros(len(df))
+                        min_len = min(len(causal_anchor_predictions), len(df))
+                        new_anchor[:min_len] = causal_anchor_predictions[:min_len]
+                        causal_anchor_predictions = new_anchor
+                    
+                    if self.verbose:
+                        tprint_info(f"   🔍 Spectral Chaser Debug: df={len(df)}, y_residuals={len(y_residuals)}, anchor={len(causal_anchor_predictions) if causal_anchor_predictions is not None else 'None'}")
+                        
+                    # Retrieve causal sample weights (ZoneScore weighted) if available
+                    sample_weight = None
+                    if causal_targets_df is not None and 'sample_weight' in causal_targets_df.columns:
+                        sample_weight = causal_targets_df['sample_weight'].reindex(df.index).fillna(1.0)
+
+                    # Inject continuous features (Continuous Framework)
+                    if causal_targets_df is not None:
+                        continuous_cols = [c for c in causal_targets_df.columns if c.startswith('surprise_') or 'zone_score' in c]
+                        if continuous_cols:
+                            df = df.copy()
+                            for col in continuous_cols:
+                                df[col] = causal_targets_df[col].reindex(df.index).fillna(0)
+
+                    chaser_results = self._run_spectral_chaser(
+                        df, y_residuals, causal_anchor_predictions, sample_weight=sample_weight
+                    ) if hasattr(self, '_run_spectral_chaser') else {}
+                    results['spectral_chaser'] = chaser_results
+                    if self.verbose:
+                        tprint_success("✅ Spectral Chaser complete")
+                except Exception as e:
+                    if self.verbose:
+                        tprint_error(f"❌ Spectral Chaser failed: {e}")
+                    results['spectral_chaser'] = {'error': str(e)}
+
+            return results
+
+        except Exception as e:
+            tprint_error(f"❌ Causal Layer 2 Pipeline failed: {e}")
+            import traceback
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+            raise
+
+    def _run_afml_pipeline(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Execute the traditional AFML Layer 2 pipeline.
+        """
+        tprint_info("📊 Starting Traditional AFML Layer 2 Pipeline...")
+
         # Clear caches for fresh run
         self.clear_caches()
 
@@ -1357,7 +3177,7 @@ class LabelBasedLayer2(BaseStep):
         # Calculate SR Levels globally once
         # Calculate SR Levels globally once
         # Calculate SR Levels globally once - REMOVED (Handled inside orthogonal generation if needed)
-        self.sr_levels = [] 
+        self.sr_levels = []
 
         # 2. Optimize (Orthogonal Selection)
         # This returns GeometryTrial objects which contain their own events.
@@ -1385,6 +3205,194 @@ class LabelBasedLayer2(BaseStep):
             "selected_trials": [asdict(t) for t in production_geometries],
             "production_selected_features": list(getattr(self, '_production_selected_features', []) or []),
         }
+
+
+    def _apply_causal_feature_engineering(self, df: pd.DataFrame, causal_graph: Dict[str, List[str]]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Apply causal feature engineering to denoise and adjust features.
+        """
+        try:
+            tprint_info("🔧 Applying Causal Feature Engineering...")
+            
+            # Apply causal engineering
+            # Pass the discovered causal_graph to avoid correlation fallback
+            self._causal_engineering.causal_graph = causal_graph
+            engineered_df, metadata = self._causal_engineering.apply_causal_engineering(
+                df,
+                apply_denoising=True,
+                apply_adjustment=True,
+                apply_imputation=True,
+                apply_transformation=True
+            )
+            
+            tprint_success(f"✅ Causal Feature Engineering Complete:")
+            feature_counts = metadata.get('feature_counts', {'original': 0, 'final': 0, 'added': 0})
+            tprint_info(f"   - Original features: {feature_counts.get('original', 0)}")
+            tprint_info(f"   - Final features: {feature_counts.get('final', 0)}")
+            tprint_info(f"   - Added features: {feature_counts.get('added', 0)}")
+            
+            return engineered_df, metadata
+            
+        except Exception as e:
+            tprint_error(f"❌ Causal feature engineering failed: {e}")
+            return df, {'error': str(e)}
+    
+    def _compute_causal_targets(self, df: pd.DataFrame, events_df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series]) -> pd.DataFrame:
+        """
+        Compute causal targets using DML and CATE.
+        """
+        try:
+            tprint_info("🎯 Computing Causal Targets...")
+            
+            # Initialize causal target computer
+            target_computer = CausalTargetComputer(verbose=self.verbose)
+            
+            # Create treatment and outcome variables
+            # Use specialist predictions as treatments
+            if specialist_predictions:
+                treatment_data = pd.DataFrame(
+                    {f"treatment_{spec}": preds for spec, preds in specialist_predictions.items()},
+                    index=df.index
+                ).replace([np.inf, -np.inf], np.nan)
+                treatment_data = self._filter_treatment_matrix(treatment_data)
+                if treatment_data.empty or len(treatment_data.columns) == 0:
+                    tprint_warning("   - No treatments available after filtering (coverage/feature cap)")
+                    treatments_df = pd.DataFrame(index=df.index)
+                else:
+                    # Fill NaNs with 0 instead of dropping to preserve alignment with outcomes
+                    treatments_df = treatment_data.fillna(0.0)
+                    tprint_info(f"   - Treatments: {len(treatments_df.columns)} specialists, {len(treatments_df)} samples")
+            else:
+                treatments_df = pd.DataFrame(index=df.index)
+                tprint_warning("   - No specialist predictions for treatments")
+            
+            # Use price returns as outcomes
+            outcomes = df['close'].pct_change().fillna(0)
+            
+            # Compute causal targets - check columns, not rows
+            if len(treatments_df.columns) > 0 and len(outcomes) > 0:
+                causal_targets = target_computer.create_chaser_targets(
+                    df, treatments_df, outcomes, include_cate=True
+                )
+                
+                tprint_success(f"✅ Causal Targets Computed: {len(causal_targets)} target types")
+                return pd.DataFrame(causal_targets)
+            else:
+                tprint_warning("⚠️ Insufficient data for causal targets")
+                tprint_info(f"   - Treatments columns: {len(treatments_df.columns)}")
+                tprint_info(f"   - Outcomes samples: {len(outcomes)}")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_error(f"❌ Causal target computation failed: {e}")
+            return pd.DataFrame()
+    
+    def _train_causal_models(self, df: pd.DataFrame, targets_df: pd.DataFrame, events_df: pd.DataFrame, 
+                           causal_graph: Dict = None, specialist_predictions: Dict = None) -> Tuple[List[GeometryTrial], Dict[str, List[str]]]:
+        """
+        Train causal-aware base models with IRM loss.
+        """
+        try:
+            tprint_info("🧠 Training Causal Models with IRM...")
+            
+            # Create custom features for IRM environments
+            custom_features = self._create_irm_environments(df)
+            
+            # Debug: Log specialist predictions being passed
+            tprint_info(f"   - Specialist predictions: {len(specialist_predictions) if specialist_predictions else 0} specialists")
+            if specialist_predictions:
+                tprint_info(f"   - Prediction keys: {list(specialist_predictions.keys())[:5]}...")
+            
+            # Train models with enhanced IRM loss
+            # This is a simplified version - in practice, you'd integrate IRM into actual model training
+            production_geometries, production_selected_features = self.optimize_production_geometries(
+                df, None, global_probe_features=list(custom_features.columns),
+                causal_graph=causal_graph, specialist_predictions=specialist_predictions
+            )
+            
+            tprint_success(f"✅ Causal Models Trained: {len(production_geometries)} geometries")
+            
+            return production_geometries, production_selected_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Causal model training failed: {e}")
+            return [], {}
+    
+    def _create_irm_environments(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create environments for IRM training.
+        """
+        try:
+            # Create environment features based on volatility and trend
+            custom_features = pd.DataFrame(index=df.index)
+            
+            # Volatility regimes
+            if 'volatility_1d' in df.columns:
+                vol = df['volatility_1d']
+                custom_features['vol_regime_low'] = (vol < vol.quantile(0.33)).astype(int)
+                custom_features['vol_regime_med'] = ((vol >= vol.quantile(0.33)) & (vol < vol.quantile(0.67))).astype(int)
+                custom_features['vol_regime_high'] = (vol >= vol.quantile(0.67)).astype(int)
+            
+            # Trend regimes
+            if 'close' in df.columns:
+                price_trend = df['close'].rolling(20).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+                custom_features['trend_regime_down'] = (price_trend < -0.01).astype(int)
+                custom_features['trend_regime_flat'] = ((price_trend >= -0.01) & (price_trend <= 0.01)).astype(int)
+                custom_features['trend_regime_up'] = (price_trend > 0.01).astype(int)
+            
+            return custom_features.fillna(0)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ IRM environment creation failed: {e}")
+            return pd.DataFrame(index=df.index)
+    
+    def _run_causal_oof_analytics(self, df: pd.DataFrame, events_df: pd.DataFrame, geometries: List[GeometryTrial], targets_df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Run causal-aware OOF analytics.
+        """
+        try:
+            tprint_info("📊 Running Causal OOF Analytics...")
+            
+            # Run standard OOF analytics with causal enhancements
+            oof_results = self.run_oof_analytics(
+                df, events_df, geometries,
+                global_probe_features=list(targets_df.columns) if len(targets_df) > 0 else None,
+                production_selected_features=None
+            )
+            
+            # Add causal-specific metrics
+            oof_results['causal_targets_available'] = len(targets_df) > 0
+            oof_results['causal_framework_used'] = True
+            
+            tprint_success(f"✅ Causal OOF Analytics Complete")
+            
+            return oof_results
+            
+        except Exception as e:
+            tprint_error(f"❌ Causal OOF analytics failed: {e}")
+            return {'error': str(e)}
+    
+    def _generate_causal_reports(self, df: pd.DataFrame, events_df: pd.DataFrame, geometries: List[GeometryTrial], oof_results: Dict[str, Any]) -> None:
+        """
+        Generate comprehensive causal framework reports.
+        """
+        try:
+            tprint_info("📋 Generating Causal Framework Reports...")
+            
+            # Summary statistics
+            n_events = len(events_df) if events_df is not None else 0
+            n_geometries = len(geometries)
+            n_oof_samples = oof_results.get('oof_returns', pd.Series()).shape[0]
+            
+            tprint_success("🎯 Causal Framework Summary:")
+            tprint_info(f"   - Events generated: {n_events}")
+            tprint_info(f"   - Geometries optimized: {n_geometries}")
+            tprint_info(f"   - OOF samples: {n_oof_samples}")
+            tprint_info(f"   - Framework: Modern De Prado Causal")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Causal report generation failed: {e}")
+
 
     def _validate_inputs(self, df: pd.DataFrame) -> pd.DataFrame:
         # Basic validation ensuring volatility exists
@@ -1449,17 +3457,25 @@ class LabelBasedLayer2(BaseStep):
 
         return events_df
 
-    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train):
+    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None):
         """
-        Run a 5-model race to find the best base model for this geometry.
-        Candidates:
+        Run a model race to find the best base model for this geometry.
+
+        Traditional AFML Candidates:
           1. LGBM (Tree) + RobustFocalLoss
           2. LGBM (Linear) + RobustFocalLoss
           3. XGB (Tree) + RobustFocalLoss
           4. XGB (Linear) + RobustFocalLoss
           5. CatBoost
+
+        Causal Framework Candidates (when enable_causal_framework=True):
+          1. LGBM (Tree) + IRM (Invariant Risk Minimization)
+          2. LGBM (Linear) + IRM
+          3. XGB (Tree) + IRM
+          4. XGB (Linear) + IRM
+
         Metric: P@R40% (primary), AUC (tie-breaker).
-        
+
         OPTIMIZED: Simpler models with class balancing for sparse-event geometries.
         """
         # Compute dynamic scale_pos_weight based on class balance
@@ -1472,42 +3488,19 @@ class LabelBasedLayer2(BaseStep):
         
         candidates = []
 
-        # 1. LGBM with RobustFocalLoss (Tree) - OPTIMIZED: simpler + class balanced
-        candidates.append({
-            'name': 'LGBM_Focal',
-            'model': lgb.LGBMClassifier(
-                n_estimators=100, learning_rate=0.05, 
-                num_leaves=15, max_depth=5,  # REDUCED for sparse events
-                scale_pos_weight=scale_pos_weight,  # ADDED: dynamic class balancing
-                objective=RobustFocalLoss(gamma_pos=1.0, gamma_neg=2.5, alpha=None, verbose=False),
-                random_state=42, verbose=-1, n_jobs=1
-            )
-        })
+        # Check if using causal framework with IRM
+        use_irm = self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled
 
-        # 2. LGBM with BCE (Tree) - OPTIMIZED: simpler + class balanced
-        candidates.append({
-            'name': 'LGBM_BCE',
-            'model': lgb.LGBMClassifier(
-                n_estimators=100, learning_rate=0.05, 
-                num_leaves=15, max_depth=5,  # REDUCED
-                scale_pos_weight=scale_pos_weight,  # ADDED
-                objective='binary',
-                random_state=42, verbose=-1, n_jobs=1
-            )
-        })
-
-        # 3. LGBM with RobustFocalLoss (Linear Tree) - OPTIMIZED
-        candidates.append({
-            'name': 'LGBM_Focal_Linear',
-            'model': lgb.LGBMClassifier(
-                n_estimators=100, learning_rate=0.05, 
-                num_leaves=15, max_depth=5,  # REDUCED
-                linear_tree=True,
-                scale_pos_weight=scale_pos_weight,  # ADDED
-                objective=RobustFocalLoss(gamma_pos=1.0, gamma_neg=2.0, alpha=None, verbose=False),
-                random_state=42, verbose=-1, n_jobs=1
-            )
-        })
+        if use_irm:
+            tprint_info("   🔬 Using Causal IRM Framework for model training")
+            # Create IRM-based models
+            irm_candidates = self._create_irm_candidates(scale_pos_weight, environment_masks)
+            candidates.extend(irm_candidates)
+        else:
+            tprint_info("   📊 Using Traditional AFML Framework")
+            # Create traditional focal loss models
+            afml_candidates = self._create_afml_candidates(scale_pos_weight)
+            candidates.extend(afml_candidates)
 
         if XGBClassifier is not None:
             # 3. XGB (Tree)
@@ -1641,6 +3634,190 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning(f"   ⚠️ Calibration failed: {e}. Using uncalibrated model.")
             return best_model, best_name, race_results
 
+    def _create_afml_candidates(self, scale_pos_weight):
+        """Create traditional AFML model candidates with focal loss."""
+        candidates = []
+
+        # 1. LGBM with RobustFocalLoss (Tree) - OPTIMIZED: simpler + class balanced
+        candidates.append({
+            'name': 'LGBM_Focal',
+            'model': lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.05,
+                num_leaves=15, max_depth=5,  # REDUCED for sparse events
+                scale_pos_weight=scale_pos_weight,  # ADDED: dynamic class balancing
+                objective=RobustFocalLoss(gamma_pos=self.focal_gamma_pos, gamma_neg=self.focal_gamma_neg,
+                                        alpha=None, verbose=False),
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        # 2. LGBM with BCE (Tree) - OPTIMIZED: simpler + class balanced
+        candidates.append({
+            'name': 'LGBM_BCE',
+            'model': lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.05,
+                num_leaves=15, max_depth=5,  # REDUCED
+                scale_pos_weight=scale_pos_weight,  # ADDED
+                objective='binary',
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        # 3. LGBM with RobustFocalLoss (Linear Tree) - OPTIMIZED
+        candidates.append({
+            'name': 'LGBM_Focal_Linear',
+            'model': lgb.LGBMClassifier(
+                n_estimators=100, learning_rate=0.05,
+                num_leaves=15, max_depth=5,  # REDUCED
+                linear_tree=True,
+                scale_pos_weight=scale_pos_weight,  # ADDED
+                objective=RobustFocalLoss(gamma_pos=self.focal_gamma_pos, gamma_neg=self.focal_gamma_neg,
+                                        alpha=None, verbose=False),
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        if XGBClassifier is not None:
+            # 4. XGB (Tree)
+            candidates.append({
+                'name': 'XGB_Tree',
+                'model': XGBClassifier(
+                    n_estimators=100, learning_rate=0.05, max_depth=5,
+                    objective=get_focal_loss_xgb(self.focal_alpha, self.focal_gamma_pos),
+                    random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
+                    eval_metric='logloss'
+                )
+            })
+            # 5. XGB (Linear)
+            candidates.append({
+                'name': 'XGB_Linear',
+                'model': XGBClassifier(
+                    n_estimators=100, learning_rate=0.05, max_depth=5,
+                    booster='gblinear',
+                    objective=get_focal_loss_xgb(self.focal_alpha, self.focal_gamma_pos),
+                    random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
+                    eval_metric='logloss'
+                )
+            })
+
+        # 6. CatBoost
+        if CATBOOST_AVAILABLE and catboost is not None:
+            from catboost import CatBoostClassifier
+            candidates.append({
+                'name': 'CatBoost',
+                'model': CatBoostClassifier(
+                    iterations=100, learning_rate=0.05, depth=5,
+                    verbose=0, random_seed=42, thread_count=1,
+                    allow_writing_files=False
+                )
+            })
+
+        return candidates
+
+    def _create_irm_candidates(self, scale_pos_weight, environment_masks=None):
+        """Create causal IRM-based model candidates."""
+        candidates = []
+
+        # Create environment masks if not provided (simplified)
+        if environment_masks is None:
+            environment_masks = self._create_default_environment_masks(X_train, y_train)
+
+        # 1. LGBM with IRM (Tree) - Causal Framework
+        candidates.append({
+            'name': 'LGBM_IRM',
+            'model': IRM_LGBMClassifier(
+                irm_system=self._irm_system,
+                environment_masks=environment_masks,
+                n_estimators=100, learning_rate=0.05,
+                num_leaves=15, max_depth=5,
+                scale_pos_weight=scale_pos_weight,
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        # 2. LGBM with IRM (Linear Tree) - Causal Framework
+        candidates.append({
+            'name': 'LGBM_IRM_Linear',
+            'model': IRM_LGBMClassifier(
+                irm_system=self._irm_system,
+                environment_masks=environment_masks,
+                n_estimators=100, learning_rate=0.05,
+                num_leaves=15, max_depth=5,
+                linear_tree=True,
+                scale_pos_weight=scale_pos_weight,
+                random_state=42, verbose=-1, n_jobs=1
+            )
+        })
+
+        if XGBClassifier is not None:
+            # 3. XGB with IRM (Tree) - Causal Framework
+            candidates.append({
+                'name': 'XGB_IRM_Tree',
+                'model': IRM_XGBClassifier(
+                    irm_system=self._irm_system,
+                    environment_masks=environment_masks,
+                    n_estimators=100, learning_rate=0.05, max_depth=5,
+                    random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
+                    eval_metric='logloss'
+                )
+            })
+
+            # 4. XGB with IRM (Linear) - Causal Framework
+            candidates.append({
+                'name': 'XGB_IRM_Linear',
+                'model': IRM_XGBClassifier(
+                    irm_system=self._irm_system,
+                    environment_masks=environment_masks,
+                    n_estimators=100, learning_rate=0.05, max_depth=5,
+                    booster='gblinear',
+                    random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
+                    eval_metric='logloss'
+                )
+            })
+
+        return candidates
+
+    def _create_default_environment_masks(self, X_train, y_train):
+        """Create default environment masks for IRM training."""
+        try:
+            # Create simple environment masks based on data characteristics
+            # This is a simplified version - in practice, would use more sophisticated regime detection
+
+            # Environment 1: High volatility periods
+            if 'volatility_1d' in X_train.columns:
+                vol_median = X_train['volatility_1d'].median()
+                env_high_vol = (X_train['volatility_1d'] > vol_median).values
+                env_low_vol = (X_train['volatility_1d'] <= vol_median).values
+            else:
+                # Fallback: split by index
+                mid_point = len(X_train) // 2
+                env_high_vol = np.arange(len(X_train)) >= mid_point
+                env_low_vol = np.arange(len(X_train)) < mid_point
+
+            # Environment 2: Positive vs negative targets (if applicable)
+            if len(np.unique(y_train)) > 1:
+                env_positive = y_train == 1
+                env_negative = y_train == 0
+            else:
+                env_positive = np.arange(len(X_train)) < len(X_train) // 2
+                env_negative = np.arange(len(X_train)) >= len(X_train) // 2
+
+            return {
+                'high_volatility': env_high_vol,
+                'low_volatility': env_low_vol,
+                'positive_targets': env_positive,
+                'negative_targets': env_negative
+            }
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to create environment masks: {e}")
+            # Return simple fallback masks
+            n_samples = len(X_train)
+            return {
+                'environment_1': np.arange(n_samples) < n_samples // 2,
+                'environment_2': np.arange(n_samples) >= n_samples // 2
+            }
+
     def _run_multi_horizon_model_race(self, X_train, y_train_dict, returns_dict, X_val, y_val_dict, returns_val_dict, w_train, horizons=[12, 48]):
         """
         Multi-timeframe classifier + regressor for PRICE_CUSUM.
@@ -1690,7 +3867,9 @@ class LabelBasedLayer2(BaseStep):
                     random_state=42, verbose=-1, n_jobs=1
                 )
                 clf.fit(X_train, y_train_h, sample_weight=w_train)
-                clf_probs = clf.predict_proba(X_val)[:, 1]
+                clf_probs = clf.predict_proba(X_val)
+                if clf_probs.ndim == 2:
+                    clf_probs = clf_probs[:, 1]
                 
                 # 2. Train Regressor - E[return | features]
                 reg = lgb.LGBMRegressor(
@@ -1966,12 +4145,15 @@ class LabelBasedLayer2(BaseStep):
                 events_df = pd.DataFrame(index=cand.events)
                 X_cand = self._build_geometry_independent_event_features(df, events_df)
                 
-                # Ensure labels is a Series with proper index
+                # Ensure labels is a Series with proper index and is BINARY
                 if isinstance(cand.labels, pd.Series):
-                    y_cand = cand.labels.astype(int)
+                    # Convert to binary for Probe (1=Profit, 0=Loss/Noise)
+                    y_cand = (cand.labels > 0).astype(int)
                 else:
                     # Convert list/array to Series with events as index
-                    y_cand = pd.Series(cand.labels, index=cand.events).astype(int)
+                    y_cand_raw = pd.Series(cand.labels, index=cand.events)
+                    # Convert to binary for Probe (1=Profit, 0=Loss/Noise)
+                    y_cand = (y_cand_raw > 0).astype(int)
                 
                 # CRITICAL: Align y to X's index (feature generation may drop some events)
                 common_idx = X_cand.index.intersection(y_cand.index)
@@ -2077,13 +4259,22 @@ class LabelBasedLayer2(BaseStep):
         self,
         df: pd.DataFrame,
         events_df: Optional[pd.DataFrame], # Ignored/None
-        global_probe_features: Optional[List[str]] = None
+        global_probe_features: Optional[List[str]] = None,
+        causal_graph: Optional[Dict] = None,
+        specialist_predictions: Optional[Dict] = None
     ) -> Tuple[List[GeometryTrial], List[str]]:
         """Step 2: Orthogonal Label Generation & Selection."""
         tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization...")
     
         # 1. Generate & Filter
-        ortho_geoms = orthogonal_label_generation(df, signal_weights=self.signal_weights, return_raw_candidates=True)
+        ortho_geoms = orthogonal_label_generation(
+            df, 
+            signal_weights=self.signal_weights, 
+            return_raw_candidates=True,
+            enable_causal_events=self.enable_causal_framework,
+            specialist_predictions=specialist_predictions,
+            causal_graph=causal_graph
+        )
     
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
@@ -2163,6 +4354,9 @@ class LabelBasedLayer2(BaseStep):
     
         if not production_geometries:
             return {}
+
+        # Store specialist predictions for use by causal generators in _get_global_events
+        self._oof_specialist_predictions = getattr(self, '_causal_specialist_predictions', None)
     
         # Initialize global containers
         idx = events_df.index
@@ -2206,23 +4400,74 @@ class LabelBasedLayer2(BaseStep):
             "VOL_STATE": VolatilityStateEvents(),
             "RANGE_ATR": RangeATRcusumEvents(),
             "SR_CUSUM": SRCusumEvents(),
+            
+            # Causal Specialist Generators
+            "CAUSAL_SURPRISE": CausalSurpriseEvents(),
+            "VOLUME_SPECIALIST": VolumeSpecialistEvents(),
+            "VOLATILITY_SPECIALIST": VolatilitySpecialistEvents(),
+            "LIQUIDITY_SPECIALIST": LiquiditySpecialistEvents(),
+            "INFORMATION_SPECIALIST": InformationSpecialistEvents(),
+            "INVENTORY_SPECIALIST": InventorySpecialistEvents(),
         }
     
         # For OOF, we treat 'production_geometries' as the selected strategy.
         # We retrain the strategy on Train and predict on Test.
         
+        # 1. Pre-detect sparse families to bypass CV as requested by user
+        family_total_events = {}
+        for gt in production_geometries:
+            if gt.family not in family_total_events:
+                gen_params = self._extract_gen_params(gt)
+                full_events = self._get_global_events(df, gt.family, gen_params)
+                family_total_events[gt.family] = len(full_events)
+        
+        sparse_families = {f for f, count in family_total_events.items() if count < 50}
+        global_sparse_models = {}  # Cache for global models of sparse families
+        
+        if sparse_families:
+            tprint_warning(f"⚠️ Sparse Families detected (bypassing CV): {sparse_families}")
+            for family in sparse_families:
+                tprint_info(f"🚀 Pre-training GLOBAL model for sparse family: {family}")
+                # 1. Get ALL events for this family
+                # We pick the first geometry in the family to get gen_params
+                first_gt = next(gt for gt in production_geometries if gt.family == family)
+                gen_params = self._extract_gen_params(first_gt)
+                full_events = self._get_global_events(df, family, gen_params)
+                
+                if len(full_events) < 5:
+                    tprint_warning(f"⚠️ Still too few events total ({len(full_events)}) for {family}. Skipping.")
+                    continue
+                
+                # 2. Build full features
+                X_full = self._build_geometry_independent_event_features(df, pd.DataFrame(index=full_events))
+                
+                # 3. Get labels for all geometries in this family on the full timeline
+                family_geos = [gt for gt in production_geometries if gt.family == family]
+                labels_dict_full, weights_dict_full = self._compute_labels_batch(
+                    df, full_events, family_geos, family, fold_idx=-1, sr_levels=self.sr_levels
+                )
+                
+                # 4. Train batch
+                batch_models, batch_diagnostics = self._train_geometry_batch(
+                    family_geos, df, X_full, labels_dict_full, weights_dict_full, family, fold_idx=-1
+                )
+                if batch_models:
+                    global_sparse_models[family] = (batch_models, batch_diagnostics)
+                    tprint_success(f"✅ Global model trained for {family} with {len(full_events)} events.")
+
         for i, (test_start, test_end) in enumerate(folds):
             tprint_info(f"OOF Fold {i+1}/{n_splits}...")
             
             # Setup Train/Test split (Walk-Forward / Purged K-Fold simplified)
             train_mask = np.ones(len(df), dtype=bool)
             train_mask[test_start:test_end] = False
-            # Purge 100 bars
-            p_start = max(0, test_start - 100)
-            p_end = min(len(df), test_end + 100)
+            # Purge 0 bars (User requested: Disable purging and embargo)
+            p_start = max(0, test_start - 0)
+            p_end = min(len(df), test_end + 0)
             train_mask[p_start:p_end] = False
             
             df_train = df[train_mask]
+            df_test = df[test_start:test_end]
             
             # We predict on ALL events that fall into the test window
             # First, reconstruct events for each geometry on the full timeline (or test slice)
@@ -2260,35 +4505,63 @@ class LabelBasedLayer2(BaseStep):
                 else:
                     tprint_success(f"✅ DIAGNOSTIC: Generator found for '{family}': {type(gen).__name__}")
                 
-                # 1. Get global events and slice for training fold
-                full_events = self._get_global_events(df, family, gen_params)
-                train_mask = (full_events >= df.index[0]) & (full_events < df.index[test_start])
-                train_evts_idx = full_events[train_mask]
-                tprint_info(f"📊 DIAGNOSTIC: {family} has {len(train_evts_idx)} training events (min required: 20)")
+                # 1. Generate events per split for strict OOF (User advice)
+                # Instead of global events + mask, we generate ON df_train
+                tprint_info(f"   🔄 Generating {family} events on df_train ({len(df_train)} bars)...")
+                fold_train_events = self._get_global_events(df_train, family, gen_params)
                 
-                if len(train_evts_idx) < 20: 
-                    tprint_warning(f"⚠️ Too few train events ({len(train_evts_idx)} < 20) for {family}")
-                    continue
+                is_sparse = family in sparse_families
+                has_global = is_sparse and family in global_sparse_models
                 
-                # 2. Get features using global cache
-                train_evts_df = pd.DataFrame(index=train_evts_idx)
-                X_train = self._build_geometry_independent_event_features(df, train_evts_df)
-                tprint_info(f"📊 DIAGNOSTIC: {family} X_train shape: {X_train.shape}")
-                if X_train.empty:
-                    tprint_warning(f"⚠️ No features generated for {family}")
-                    continue
+                # Diagnostics requested by user
+                total_fold_events = len(fold_train_events)
+                tprint_info(f"   📊 Total events on df_train: {total_fold_events}")
+                
+                # 2. Build features for training
+                X_train = None
+                if not has_global:
+                    if total_fold_events < 5:
+                        tprint_warning(f"   ⚠️ Too few train events ({total_fold_events} < 5) for {family}")
+                        continue
+                        
+                    train_evts_df = pd.DataFrame(index=fold_train_events)
+                    X_train = self._build_geometry_independent_event_features(df_train, train_evts_df)
+                    if X_train.empty:
+                        tprint_warning(f"   ⚠️ No features generated for {family}")
+                        continue
                 
                 # 3. Compute labels and weights for all geometries in this group at once
-                labels_dict, weights_dict = self._compute_labels_batch(
-                    df_train, train_evts_idx, group_geometries, family, i, sr_levels=self.sr_levels
-                )
-                tprint_info(f"📊 DIAGNOSTIC: {family} computed labels for {len(labels_dict)} geometries")
+                labels_dict = {}
+                weights_dict = {}
+                if not has_global:
+                    labels_dict, weights_dict = self._compute_labels_batch(
+                        df_train, fold_train_events, group_geometries, family, i, sr_levels=self.sr_levels
+                    )
+                    
+                    # Log label stats for first geometry as proxy
+                    if labels_dict:
+                        first_geo_uuid = next(iter(labels_dict))
+                        n_valid_labels = labels_dict[first_geo_uuid].dropna().shape[0]
+                        tprint_info(f"   📊 Events with valid outcomes: {n_valid_labels} (proxy for group)")
+                
+                tprint_info(f"📊 DIAGNOSTIC: {family} training preparation complete.")
                 
                 # 4. Train geometries in batch with parallelization (max 2 concurrent)
-                tprint_info(f"🚀 Training {len(group_geometries)} geometries in batch for {family}...")
-                batch_models, batch_diagnostics = self._train_geometry_batch(
-                    group_geometries, df_train, X_train, labels_dict, weights_dict, family, i
-                )
+                is_sparse = family in sparse_families
+                
+                if is_sparse and family in global_sparse_models:
+                    tprint_info(f"   ♻️ Using cached GLOBAL model for sparse family {family}")
+                    batch_models, batch_diagnostics = global_sparse_models[family]
+                else:
+                    tprint_info(f"🚀 Training {len(group_geometries)} geometries in batch for {family} (Sparse={is_sparse})...")
+                    # For sparse, we could technically train on FULL data here, 
+                    # but let's stick to current fold's train set unless it's too small.
+                    # Or if sparse, we train on the LARGEST possible train set (e.g. all data except current test window).
+                    batch_models, batch_diagnostics = self._train_geometry_batch(
+                        group_geometries, df_train, X_train, labels_dict, weights_dict, family, i
+                    )
+                    if is_sparse and batch_models:
+                        global_sparse_models[family] = (batch_models, batch_diagnostics)
 
                 # Store trained models and diagnostics
                 trained_models.update(batch_models)
@@ -2317,72 +4590,75 @@ class LabelBasedLayer2(BaseStep):
                 if len(test_evts) > 0:
                     test_evts_map[gt.uuid] = test_evts
     
-                # Aggregate Predictions
-                # We iterate test_evts_map, predict, and fill global OOF series
-                tprint_info(f"🔮 Making predictions on test set for fold {i+1}...")
+            # Aggregate Predictions (OUTSIDE geometry loop)
+            # We iterate test_evts_map, predict, and fill global OOF series
+            tprint_info(f"🔮 Making predictions on test set for fold {i+1} ({len(test_evts_map)} geometries)...")
+            tprint_info(f"   DEBUG: trained_models has {len(trained_models)} models, test_evts_map has {len(test_evts_map)} entries")
     
-                for gt_uuid, evts in test_evts_map.items():
-                    model = trained_models.get(gt_uuid)
-                    if model is None: continue
+            for gt_uuid, evts in test_evts_map.items():
+                model = trained_models.get(gt_uuid)
+                if model is None:
+                    tprint_warning(f"   ⚠️ No model for {gt_uuid[:8]}...")
+                    continue
     
-                    # Build Features for Test Events (using global features)
-                    test_evts_df = pd.DataFrame(index=evts)
-                    X_test = self._build_geometry_independent_event_features(df, test_evts_df)
-                    if X_test.empty: continue
+                # Build Features for Test Events (using global features)
+                test_evts_df = pd.DataFrame(index=evts)
+                X_test = self._build_geometry_independent_event_features(df, test_evts_df)
+                if X_test.empty: continue
     
-                    # Geo features using params from production geometry object
-                    gt = next(g for g in production_geometries if g.uuid == gt_uuid)
-                    geo_feats = self._compute_specific_geometry_features(df, X_test.index, gt.params)
-                    X_test = pd.concat([X_test, geo_feats], axis=1).fillna(0.0)
+                # Geo features using params from production geometry object
+                gt = next(g for g in production_geometries if g.uuid == gt_uuid)
+                geo_feats = self._compute_specific_geometry_features(df, X_test.index, gt.params)
+                X_test = pd.concat([X_test, geo_feats], axis=1).fillna(0.0)
     
-                    # Feature Selection Application (Test)
-                    selected_cols = None
+                # Feature Selection Application (Test)
+                selected_cols = None
     
-                    # Check for selected_features safely
-                    gt_selected = getattr(gt, 'selected_features', None)
+                # Check for selected_features safely
+                gt_selected = getattr(gt, 'selected_features', None)
     
-                    if gt_selected:
-                        selected_cols = [c for c in gt_selected if c in X_test.columns]
-                    elif global_probe_features:
-                        selected_cols = [c for c in global_probe_features if c in X_test.columns]
+                if gt_selected:
+                    selected_cols = [c for c in gt_selected if c in X_test.columns]
+                elif global_probe_features:
+                    selected_cols = [c for c in global_probe_features if c in X_test.columns]
     
-                    if selected_cols:
-                        X_test = X_test[selected_cols]
+                if selected_cols:
+                    X_test = X_test[selected_cols]
     
-                    # Predict
-                    prob = model.predict_proba(X_test)
-                    if prob.ndim == 2:
-                        preds = prob[:, 1]
-                    else:
-                        preds = prob
-                    
-                    # Align evts to oof_scores index TZ to ensure valid lookups
-                    evts_aligned = evts
-                    try:
-                        if oof_scores.index.tz is not None and evts.tz is None:
-                             evts_aligned = evts.tz_localize(oof_scores.index.tz)
-                        elif oof_scores.index.tz is None and evts.tz is not None:
-                             evts_aligned = evts.tz_localize(None)
-                    except Exception:
-                        pass
-                    
-                    # Store individual geometry predictions for Layer 3
-                    # Use a temporary list to accumulate across folds
-                    if not hasattr(self, '_individual_geos_accum'):
-                        self._individual_geos_accum = defaultdict(list)
-                    
-                    self._individual_geos_accum[gt_uuid].append(pd.Series(preds, index=evts_aligned))
-                    tprint_info(f"   Stored {len(preds)} preds for {gt_uuid} (Fold {i+1})")
+                # Predict
+                prob = model.predict_proba(X_test)
+                if prob.ndim == 2:
+                    preds = prob[:, 1]
+                else:
+                    preds = prob
+                
+                # Align evts to oof_scores index TZ to ensure valid lookups
+                evts_aligned = evts
+                try:
+                    if oof_scores.index.tz is not None and evts.tz is None:
+                         evts_aligned = evts.tz_localize(oof_scores.index.tz)
+                    elif oof_scores.index.tz is None and evts.tz is not None:
+                         evts_aligned = evts.tz_localize(None)
+                except Exception:
+                    pass
+                
+                # Store individual geometry predictions for Layer 3
+                # Use a temporary list to accumulate across folds
+                if not hasattr(self, '_individual_geos_accum'):
+                    self._individual_geos_accum = defaultdict(list)
+                
+                self._individual_geos_accum[gt_uuid].append(pd.Series(preds, index=evts_aligned))
+                tprint_info(f"   Stored {len(preds)} preds for {gt_uuid} (Fold {i+1})")
 
 
-                    # Bagging: Max probability aggregation - using JIT-compiled function
-                    # If multiple geometries predict on the same timestamp, take max
-                    current_vals = oof_scores.loc[evts_aligned].fillna(0.0).values
-                    oof_scores.loc[evts_aligned] = vectorized_prediction_aggregation(preds, current_vals)
+                # Bagging: Max probability aggregation - using JIT-compiled function
+                # If multiple geometries predict on the same timestamp, take max
+                current_vals = oof_scores.loc[evts_aligned].fillna(0.0).values
+                oof_scores.loc[evts_aligned] = vectorized_prediction_aggregation(preds, current_vals)
 
-                    # Weights: 1.0 for now - using JIT-compiled function
-                    n_events = len(evts_aligned)
-                    oof_weights.loc[evts_aligned] = vectorized_weight_assignment(n_events, 1.0)
+                # Weights: 1.0 for now - using JIT-compiled function
+                n_events = len(evts_aligned)
+                oof_weights.loc[evts_aligned] = vectorized_weight_assignment(n_events, 1.0)
 
             # Construct oof_labels (0.5 threshold) - using JIT-compiled function
             oof_labels = vectorized_threshold_classification(oof_scores.values, 0.5)
@@ -2426,9 +4702,9 @@ class LabelBasedLayer2(BaseStep):
             # Handle TZ mismatch
             try:
                 if valid_idx.tz is not None and ret.index.tz is None:
-                    ret.index = ret.index.tz_localize(valid_idx.tz)
+                     ret.index = ret.index.tz_localize(valid_idx.tz)
                 elif valid_idx.tz is None and ret.index.tz is not None:
-                    ret.index = ret.index.tz_localize(None)
+                     ret.index = ret.index.tz_localize(None)
             except Exception:
                 pass
                 
@@ -2449,7 +4725,6 @@ class LabelBasedLayer2(BaseStep):
     
         # ... (Keep existing helpers like _extract_tree_diagnostics, _precompute_geometry_base_features, _validate_inputs) ...
     
-
 
     def _compute_specific_geometry_features(self, df, events_index, params):
         """Generate family-specific features for geometry assessment using vectorized operations."""
@@ -2473,8 +4748,8 @@ class LabelBasedLayer2(BaseStep):
         roll20_mean_values = rolling_mean_jit(price_pct_values, 20)
         roll20_std_values = rolling_std_jit(price_pct_values, 20)
         roll100_std_values = rolling_std_jit(price_pct_values, 100)
-        roll10_std_values = rolling_std_jit(price_abs_pct_values, 10)
-        roll5_std_values = rolling_std_jit(roll10_std_values, 5)
+        # Fix: Calculate roll10_std_values from price data, not itself (unbound)
+        roll10_std_values = rolling_std_jit(price_pct_values, 10)
 
         # Convert back to pandas series for compatibility
         roll5_sum = pd.Series(roll5_sum_values, index=price.index)
@@ -2484,7 +4759,6 @@ class LabelBasedLayer2(BaseStep):
         roll20_std = pd.Series(roll20_std_values, index=price.index)
         roll100_std = pd.Series(roll100_std_values, index=price.index)
         roll10_std = pd.Series(roll10_std_values, index=price.index)
-        roll5_std = pd.Series(roll5_std_values, index=price.index)
         
         feats = pd.DataFrame(index=events_index)
         family = params.get('family', 'UNKNOWN')
@@ -2591,6 +4865,7 @@ class LabelBasedLayer2(BaseStep):
              horizon = int(gt.params.get('horizon', 24))
              labels, _, _, _, _, _ = compute_volatility_labels(df, gt.events, horizon=horizon, k=k_factor)
         else:
+             # Map params to Volatility Logic (VOL_CUSUM)
              pt = gt.params.get('pt_mult', 2.0)
              k_factor = 1.1 + (pt * 0.1)
              horizon = int(gt.params.get('horizon', 24))
@@ -2718,7 +4993,7 @@ class LabelBasedLayer2(BaseStep):
                 labels = labels_dict.get(gt.uuid)
                 weights = weights_dict.get(gt.uuid)
 
-                if labels is None or len(labels) < 20:
+                if labels is None or len(labels) < 5:
                     return gt.uuid, None, f"Too few valid labels: {len(labels) if labels is not None else 0}"
 
                 # Get geometry-specific features
@@ -2727,6 +5002,8 @@ class LabelBasedLayer2(BaseStep):
 
                 # Feature Selection Application
                 selected_cols = None
+
+                # Check for selected_features safely
                 gt_selected = getattr(gt, 'selected_features', None)
 
                 if gt_selected:
@@ -2739,7 +5016,7 @@ class LabelBasedLayer2(BaseStep):
 
                 # Align labels and weights with features
                 common_idx = X_train_final.index.intersection(labels.index)
-                if len(common_idx) < 20:
+                if len(common_idx) < 5:  # Insufficient data
                     return gt.uuid, None, f"Too few samples after alignment: {len(common_idx)}"
 
                 X_train_final = X_train_final.loc[common_idx]
@@ -2765,9 +5042,13 @@ class LabelBasedLayer2(BaseStep):
                     y_race_val = y_train.iloc[race_train_size:]
                     w_race_train = w_train[:race_train_size] if w_train is not None else None
 
-                    # Run model race
+                    # Run model race with environment masks for IRM (if causal framework enabled)
+                    environment_masks = None
+                    if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
+                        environment_masks = self._create_default_environment_masks(X_race_train, y_race_train)
+
                     best_model, best_name, race_results = self._run_model_race(
-                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train
+                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks
                     )
 
                     tprint_success(f"🏆 Model race winner: {best_name} (log_loss: {race_results[best_name]['log_loss']:.4f})")
@@ -3006,6 +5287,14 @@ class LabelBasedLayer2(BaseStep):
                         params['metric'] = 'auc'
 
                     clf = lgb.LGBMClassifier(**params)
+                    
+                    # Adaptive min_data_in_leaf for small datasets
+                    if len(X_train_final) < 50:
+                        clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
+                                       min_sum_hessian_in_leaf=0.0,
+                                       min_child_weight=0.0)
+                        tprint_info(f"   ⚙️ Using adaptive params for small dataset ({len(X_train_final)} samples)")
+                    
                     clf.fit(
                         X_train_final,
                         y_train,
@@ -3042,6 +5331,97 @@ class LabelBasedLayer2(BaseStep):
                     tprint_error(f"   ❌ Training failed for {gt_uuid}: {diagnostics_or_error}")
 
         return trained_models, results
+
+        
+        # Layer 2.5 Chaser Integration
+        layer25_chaser_enabled = self.config.get("layer25_chaser_enabled", False)
+        if layer25_chaser_enabled and len(trained_models) > 0:
+            tprint_info(">>> Layer 2.5: Running Chaser System...")
+            try:
+                # Initialize Chaser system
+                chaser_system = quick_layer25_setup(
+                    enable_conflict_detection=True,
+                    verbose=True
+                )
+                
+                # Process each trained model
+                chaser_results = {}
+                for gt_uuid, model_info in trained_models.items():
+                    try:
+                        if hasattr(model_info, "model") and model_info.model is not None:
+                            # Get causal anchor predictions (using the trained model as proxy)
+                            # In practice, this would be your actual causal anchor model
+                            X_full = self.X_full if hasattr(self, "X_full") else None
+                            y_full = self.y_full if hasattr(self, "y_full") else None
+                            
+                            if X_full is not None and y_full is not None:
+                                # Get model predictions as causal anchor proxy
+                                anchor_predictions = model_info.model.predict(X_full)
+                                
+                                # Setup feature selector with available features
+                                all_features = list(X_full.columns)
+                                chaser_system.setup_feature_selector(
+                                    causal_graph=None,  # Would use actual causal graph
+                                    max_features=50
+                                )
+                                
+                                # Prepare training data
+                                X_train, y_residuals = chaser_system.prepare_training_data(
+                                    df=pd.concat([X_full, y_full], axis=1),
+                                    target_col=y_full.name if hasattr(y_full, "name") else "target",
+                                    causal_anchor_prediction=anchor_predictions,
+                                    all_feature_cols=all_features
+                                )
+                                
+                                # Train Chaser
+                                if len(X_train) > 100:  # Minimum samples
+                                    chaser_metrics = chaser_system.train_chaser(X_train, y_residuals)
+                                    
+                                    # Generate predictions
+                                    chaser_prediction_results = chaser_system.predict_with_conflict_detection(
+                                        X_train, anchor_predictions[:len(X_train)]
+                                    )
+                                    
+                                    # Prepare meta-learner features
+                                    meta_features = chaser_system.get_meta_learner_features(chaser_prediction_results)
+                                    
+                                    # Store results
+                                    chaser_results[gt_uuid] = {
+                                        "chaser_metrics": chaser_metrics,
+                                        "meta_features": meta_features,
+                                        "chaser_predictions": chaser_prediction_results["chaser_prediction"],
+                                        "conflict_intensity": chaser_prediction_results.get("conflict_intensity", np.zeros(len(chaser_prediction_results["chaser_prediction"]))),
+                                        "feature_importance": chaser_system.chaser.get_feature_importance() if chaser_system.chaser else {}
+                                    }
+                                    
+                                    tprint_success(f"   ✅ Chaser trained for {gt_uuid}")
+                                    tprint_info(f"      - Chaser RMSE: {chaser_metrics['training_metrics']['rmse']:.6f}")
+                                    tprint_info(f"      - Meta features: {len(meta_features.columns)}")
+                                else:
+                                    tprint_warning(f"   ⚠️ Insufficient data for Chaser training: {gt_uuid}")
+                            else:
+                                tprint_warning(f"   ⚠️ Missing data for Chaser: {gt_uuid}")
+                                
+                    except Exception as e:
+                        tprint_error(f"   ❌ Chaser failed for {gt_uuid}: {e}")
+                        continue
+                
+                # Add Chaser results to main results
+                results["layer25_chaser"] = chaser_results
+                
+                # Store Chaser system for downstream use
+                self.layer25_chaser_system = chaser_system
+                
+                tprint_success(f"✅ Layer 2.5 Chaser complete: {len(chaser_results)} models processed")
+                
+            except Exception as e:
+                tprint_error(f"❌ Layer 2.5 Chaser system failed: {e}")
+                results["layer25_chaser_error"] = str(e)
+                self.layer25_chaser_system = None
+        else:
+            tprint_info("⏭️ Skipping Layer 2.5 Chaser (disabled)")
+            self.layer25_chaser_system = None
+        
 
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage with categorical dtypes and downcasting."""
@@ -3143,10 +5523,10 @@ class LabelBasedLayer2(BaseStep):
                 try:
                     # Generate probe features for the full dataset once
                     probe_cache_key = f"probe_{hash(str(df.shape)) % 10000}"
-                    if probe_cache_key not in self._global_probe_features:
-                        self._global_probe_features[probe_cache_key] = generate_market_state_probe(df['close'], df['volume'])
+                    if probe_cache_key not in self._probe_data_cache:
+                        self._probe_data_cache[probe_cache_key] = generate_market_state_probe(df['close'], df['volume'])
 
-                    probe_feats_all = self._global_probe_features[probe_cache_key]
+                    probe_feats_all = self._probe_data_cache[probe_cache_key]
 
                     # Align probe features using the same efficient method
                     probe_feats = self._align_features_efficiently(probe_feats_all, events_df.index)

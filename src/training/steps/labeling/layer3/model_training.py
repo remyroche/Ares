@@ -15,6 +15,7 @@ from sklearn.metrics import roc_auc_score, log_loss
 from scipy.stats import spearmanr
 import logging
 from numba import njit
+from joblib import Parallel, delayed
 
 # Import tprint functions
 try:
@@ -113,21 +114,28 @@ def train_alpha_head(
     for cand in alpha_candidates:
         tprint_info(f"   🏃 Racing {cand['name']}...")
         fold_ics = []
-        fold_preds = []
+        # Use proper OOF array with NaN for missing predictions
+        model_oof = np.full(len(X), np.nan)
         
-        # Process folds in parallel for better performance
-        def train_single_fold(fold_idx, train_idx, val_idx):
+        # Process folds sequentially to ensure correct index ordering
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
             X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr, y_val = y[train_idx], y[val_idx]
             w_tr = w[train_idx]
             
             try:
                 if cand['type'] == 'alpha_ridge':
-                    model = Ridge(alpha=1.0)
-                    model.fit(X_tr, y_tr, sample_weight=w_tr)
-                    preds = model.predict(X_val)
+                    # StandardScaler for Ridge (de Prado recommendation)
+                    from sklearn.preprocessing import StandardScaler
+                    scaler = StandardScaler()
+                    X_tr_scaled = scaler.fit_transform(X_tr)
+                    X_val_scaled = scaler.transform(X_val)
+                    
+                    model = Ridge(alpha=10.0)  # Higher alpha for event-driven training
+                    model.fit(X_tr_scaled, y_tr, sample_weight=w_tr)
+                    preds = model.predict(X_val_scaled)
                 else:
-                    # LGBM with De Prado compliant parameters - reduced for fast mode
+                    # LGBM with De Prado compliant parameters
                     n_estimators = 50 if fast_mode else 200
                     params = {
                         'n_estimators': n_estimators,
@@ -135,52 +143,43 @@ def train_alpha_head(
                         'learning_rate': 0.1 if fast_mode else 0.05,
                         'verbose': -1,
                         'n_jobs': 1,
-                        'min_child_samples': 20,  # De Prado recommendation
-                        'subsample': 0.8,        # De Prado recommendation
-                        'colsample_bytree': 0.8  # De Prado recommendation
+                        'min_child_samples': 20,
+                        'subsample': 0.8,
+                        'colsample_bytree': 0.8
                     }
                     
                     if cand['obj'] == 'huber':
                         params['objective'] = 'huber'
                         params['alpha'] = 0.9
+                    elif cand['obj'] == 'tweedie':
+                        params['objective'] = 'tweedie'
+                        params['tweedie_variance_power'] = 1.2  # Between 1.1-1.5
                     elif cand['obj'] == 'asymmetric_mse':
                         params['objective'] = _asymmetric_mse_objective
                     else:
                         params['objective'] = 'mse'
                     
-                    # Add early stopping for better performance
                     model = lgb.LGBMRegressor(**params)
                     model.fit(
                         X_tr, y_tr,
                         sample_weight=w_tr,
-                        eval_set=[(X_tr, y_tr)],
-                        eval_metric='l2' if cand['obj'] == 'mse' else 'l1',
+                        eval_set=[(X_val, y_val)],  # Use val set for early stopping
                         callbacks=[lgb.early_stopping(10, verbose=False)]
                     )
                     preds = model.predict(X_val)
                 
+                # Store predictions at correct indices
+                model_oof[val_idx] = preds
+                
                 # Evaluate IC (Information Coefficient)
                 ic, _ = spearmanr(y_val, preds)
                 if np.isfinite(ic):
-                    return fold_idx, ic, preds
-                else:
-                    return fold_idx, None, None
+                    fold_ics.append(ic)
                     
             except Exception as e:
                 tprint_warning(f"     Fold {fold_idx+1} failed: {e}")
-                return fold_idx, None, None
-
-        # Process folds in parallel
-        fold_results = Parallel(n_jobs=min(len(cv_splits), 4), backend='threading')(
-            delayed(train_single_fold)(fold_idx, train_idx, val_idx)
-            for fold_idx, (train_idx, val_idx) in enumerate(cv_splits)
-        )
-
-        # Collect results
-        for fold_idx, ic, preds in fold_results:
-            if ic is not None and preds is not None:
-                fold_ics.append(ic)
-                fold_preds.extend(preds)
+                # Fill with median prediction for failed folds
+                model_oof[val_idx] = 0.0
         
         # Compute ScoreIC (De Prado metric)
         if fold_ics:
@@ -188,13 +187,14 @@ def train_alpha_head(
             std_ic = np.std(fold_ics) + 1e-6
             score_ic = 100 * mean_ic + 50 * (mean_ic / std_ic)
         else:
+            mean_ic = 0.0
             score_ic = -999.0
         
         alpha_scores[cand['name']] = score_ic
-        if len(fold_preds) == len(X):
-            alpha_oof_predictions[cand['name']] = np.array(fold_preds)
+        # Always store OOF predictions (NaN for missing)
+        alpha_oof_predictions[cand['name']] = model_oof
         
-        ic_stats = f"mean={mean_ic:.4f}, std={std_ic:.4f}" if fold_ics else "N/A"
+        ic_stats = f"mean={mean_ic:.4f}" if fold_ics else "N/A"
         tprint_info(f"     ScoreIC: {score_ic:.4f} (IC: {ic_stats})")
     
     # Select top uncorrelated models (De Prado ensemble selection)
@@ -307,18 +307,30 @@ def train_probability_head(
     for cand in prob_candidates:
         tprint_info(f"   🏃 Racing {cand['name']}...")
         fold_scores = []
-        fold_probs = []
+        # Use proper OOF array with NaN for missing predictions
+        model_oof = np.full(len(X), np.nan)
         
         for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
             X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr, y_val = y[train_idx], y[val_idx]
             w_tr = w[train_idx]
             
+            # Skip fold if single-class
+            if len(np.unique(y_tr)) < 2:
+                tprint_warning(f"     Fold {fold_idx+1}: Single class in train, skipping")
+                model_oof[val_idx] = 0.5
+                continue
+            if len(np.unique(y_val)) < 2:
+                tprint_warning(f"     Fold {fold_idx+1}: Single class in val, skipping")
+                model_oof[val_idx] = 0.5
+                continue
+            
             try:
                 if cand['type'] == 'logistic_regression':
                     model = LogisticRegression(C=1.0, solver='lbfgs', max_iter=1000)
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
                 else:
-                    # LGBM with De Prado compliant parameters - reduced for fast mode
+                    # LGBM with De Prado compliant parameters
                     n_estimators = 50 if fast_mode else 200
                     params = {
                         'n_estimators': n_estimators,
@@ -336,36 +348,70 @@ def train_probability_head(
                     else:
                         params['objective'] = 'binary'
                     
-                    # Add early stopping for better performance
                     model = lgb.LGBMClassifier(**params)
-                
-                if hasattr(model, 'fit'):
-                    # LGBM classifier
                     model.fit(
                         X_tr, y_tr,
                         sample_weight=w_tr,
-                        eval_set=[(X_tr, y_tr)],
-                        eval_metric='binary_logloss',
+                        eval_set=[(X_val, y_val)],
                         callbacks=[lgb.early_stopping(10, verbose=False)]
                     )
+                
+                # Handle predict_proba output shape
+                prob_output = model.predict_proba(X_val)
+                if prob_output.ndim == 2 and prob_output.shape[1] >= 2:
+                    probs = prob_output[:, 1]
+                elif prob_output.ndim == 2 and prob_output.shape[1] == 1:
+                    probs = prob_output[:, 0]
                 else:
-                    # Other classifiers
-                    model.fit(X_tr, y_tr, sample_weight=w_tr)
-                    probs = model.predict_proba(X_val)[:, 1]
+                    probs = prob_output
+                
+                # For custom objectives (focal), apply sigmoid and clip to [0, 1]
+                if cand['obj'] == 'focal':
+                    # Custom objectives return raw logits, convert to probabilities
+                    probs = 1 / (1 + np.exp(-probs))  # Sigmoid
+                probs = np.clip(probs, 0.0, 1.0)  # Ensure valid probability range
+                
+                # Store predictions at correct indices
+                model_oof[val_idx] = probs
                 
                 # ScoreL3 (De Prado metric)
                 auc = roc_auc_score(y_val, probs)
-                ll = log_loss(y_val, probs)
+                # Standard log lossll = log_loss(y_val, probs, labels=[0, 1])
+                
+                # Enhanced weighted log loss with absolute return weighting
+                try:
+
+                    if len(returns_val) == len(probs):
+
+                        weighted_ll = enhanced_weighted_logloss(
+
+                            y_val, probs, returns_val,
+
+                            sample_weights=w_val,
+
+                            alpha=0.5, beta=0.3
+
+                        )
+
+                        tprint_info(f"   📊 Weighted LogLoss: {weighted_ll:.4f} (vs {ll:.4f} standard)")
+
+                    else:
+
+                        tprint_warning("   ⚠️ Mismatched lengths, skipping weighted loss")
+
+                except Exception as e:
+
+                    tprint_warning(f"   ⚠️ Weighted loss calculation failed: {e}")
                 score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
                 fold_scores.append(score)
-                fold_probs.extend(probs)
                 
             except Exception as e:
                 tprint_warning(f"     Fold {fold_idx+1} failed: {e}")
+                model_oof[val_idx] = 0.5
         
         prob_scores[cand['name']] = np.mean(fold_scores) if fold_scores else -999.0
-        if len(fold_probs) == len(X):
-            prob_oof_predictions[cand['name']] = np.array(fold_probs)
+        # Always store OOF predictions
+        prob_oof_predictions[cand['name']] = model_oof
         
         score_stats = f"mean={np.mean(fold_scores):.4f}" if fold_scores else "N/A"
         tprint_info(f"     ScoreL3: {prob_scores[cand['name']]:.4f} ({score_stats})")
@@ -405,20 +451,36 @@ def train_probability_head(
             y_tr, y_val = y[train_idx], y[val_idx]
             w_tr = w[train_idx]
             
-            if cand['type'] == 'logistic_regression':
-                base_model = LogisticRegression(**best_params, solver='lbfgs', max_iter=1000)
-            else:
-                base_model = lgb.LGBMClassifier(**best_params)
+            # Skip fold if single-class in train or val
+            if len(np.unique(y_tr)) < 2:
+                tprint_warning(f"⚠️ Skipping fold: Single class in training set")
+                model_oof[val_idx] = 0.5  # Neutral prediction
+                continue
+            if len(np.unique(y_val)) < 2:
+                tprint_warning(f"⚠️ Skipping fold: Single class in validation set")
+                model_oof[val_idx] = 0.5  # Neutral prediction
+                continue
             
-            # Apply calibration
-            cal_model = CalibratedClassifierCV(base_model, method='isotonic', cv=3)
-            cal_model.fit(X_tr, y_tr, sample_weight=w_tr)
-            # predict_proba might return 1D array if only 1 class in training
-            prob = cal_model.predict_proba(X_val)
-            if prob.ndim == 2:
-                model_oof[val_idx] = prob[:, 1]
-            else:
-                model_oof[val_idx] = prob
+            try:
+                if cand['type'] == 'logistic_regression':
+                    base_model = LogisticRegression(**best_params, solver='lbfgs', max_iter=1000)
+                else:
+                    base_model = lgb.LGBMClassifier(**best_params)
+                
+                # Apply calibration
+                cal_model = CalibratedClassifierCV(base_model, method='isotonic', cv=3)
+                cal_model.fit(X_tr, y_tr, sample_weight=w_tr)
+                # predict_proba might return 1D array if only 1 class in training
+                prob = cal_model.predict_proba(X_val)
+                if prob.ndim == 2 and prob.shape[1] >= 2:
+                    model_oof[val_idx] = prob[:, 1]
+                elif prob.ndim == 2 and prob.shape[1] == 1:
+                    model_oof[val_idx] = prob[:, 0]  # Single class, use that probability
+                else:
+                    model_oof[val_idx] = prob
+            except Exception as e:
+                tprint_warning(f"⚠️ Fold training failed: {e}")
+                model_oof[val_idx] = 0.5  # Neutral prediction
         
         # Final calibrated model
         if cand['type'] == 'logistic_regression':
@@ -437,9 +499,17 @@ def train_probability_head(
         else:
             ensemble_oof = np.mean([ensemble_oof, model_oof], axis=0)
     
-    # Calculate metrics
-    final_auc = roc_auc_score(y, ensemble_oof)
-    final_ll = log_loss(y, ensemble_oof)
+    # Calculate metrics (handle single-class case)
+    try:
+        final_auc = roc_auc_score(y, ensemble_oof)
+    except ValueError:
+        tprint_warning("⚠️ Could not compute AUC (single class in y_true)")
+        final_auc = 0.5
+    try:
+        final_ll = log_loss(y, ensemble_oof, labels=[0, 1])
+    except ValueError:
+        tprint_warning("⚠️ Could not compute log_loss (single class in y_true)")
+        final_ll = 1.0
     
     tprint_success(f"✅ Probability Head Training Complete!")
     tprint_info(f"🎯 Final AUC: {final_auc:.4f}")

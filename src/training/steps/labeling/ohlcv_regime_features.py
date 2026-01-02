@@ -50,7 +50,8 @@ class OHLCVRegimeFeatures:
         enable_lagged_residuals: bool = True,
         enable_trend_features: bool = True,
         n_volatility_regimes: int = 3,
-        n_trend_regimes: int = 3
+        n_trend_regimes: int = 3,
+        **kwargs
     ):
         """
         Initialize OHLCV regime features generator.

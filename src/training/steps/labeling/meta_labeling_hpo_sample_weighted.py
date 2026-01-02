@@ -678,6 +678,21 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         except Exception:
             config["run_timestamp"] = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        # ---------------------------------------------------------------------
+        # CAUSAL FRAMEWORK INTEGRATION (FORCE ENABLE)
+        # ---------------------------------------------------------------------
+        tprint_info(">>> FORCE ENABLING CAUSAL FRAMEWORK & IRM")
+        config["enable_causal_framework"] = True
+        config["causal_discovery_enabled"] = True
+        config["irm_enabled"] = True
+        config["causal_surprise_enabled"] = True
+        config["interventionist_sampling_enabled"] = True
+        config["causal_specialists_enabled"] = True
+        config["layer3_enable_causal_mechanism_breaks"] = True
+        
+        # Disable Legacy AFML components explicitly if needed (though new framework should handle precedence)
+        # config["use_legacy_afml"] = False 
+
         start_at_raw = config.get("labeling_hpo_start_at")
         start_at = _normalize_labeling_start_at(start_at_raw)
         explicit_start = start_at is not None
@@ -1008,13 +1023,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # LAYER 2: Geometry Optimization & Bagged Labeling
             # ---------------------------------------------------------
             tprint_info(">>> Executing Layer 2: Geometry Optimization (OOF & Full)...")
-
+            
+            # Enable Spectral Chaser
+            config['spectral_chaser_enabled'] = True
+            
             layer2 = LabelBasedLayer2(
-                transaction_cost=get_transaction_cost(config),
-                n_trials=int(config.get('layer2_n_trials', 30)),
-                n_splits=int(config.get('layer2_n_splits', 3)),
-                verbose=True,
-                force_hpo=bool(config.get('force_hpo', False))
+                **config
             )
 
             # Granular Execution Paths
@@ -1102,7 +1116,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
                 # Reconstruct oof_results dict from flat output for generate_reports signature
                 oof_res_reconstructed = {
-                    'l2_score': l2_output.get('l2_score'),
+                    'l2_score': l2_output.get('l2_signed_score', l2_output.get('l2_score')) ,
                     'l2_label': l2_output.get('l2_labels'), # Fixed key from l2_label to l2_labels
                     'weights': l2_output.get('l2_weights'),
                     'individual_geometries': l2_output.get('individual_geos'),
@@ -1125,13 +1139,16 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
 
             # Unpack Layer 2 Artifacts (OOF for Training/Analytics)
-            l2_score = l2_output.get('l2_score')
+            l2_score = l2_output.get('l2_signed_score', l2_output.get('l2_score'))
             l2_confidence = l2_output.get('l2_confidence')
             l2_labels = l2_output.get('l2_label', l2_output.get('oof_labels'))
             l2_returns = l2_output.get('oof_returns')
             tprint_info(f"DEBUG: l2_returns type: {type(l2_returns)}, is None: {l2_returns is None}")
             l2_weights = l2_output.get('weights')
             l2_quality_weights = l2_output.get('quality_weights')
+            # Extract Spectral Chaser
+            spectral_chaser = l2_output.get('spectral_chaser', {})
+            
             individual_geos_raw = l2_output.get('individual_geos', {})
             # Sanitize keys for LightGBM (no JSON chars)
             individual_geos = {}
@@ -1224,6 +1241,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 {
                     "l2_labels": l2_labels,
                     "l2_score": l2_score,
+                    "l2_signed_score": l2_score,
                     "l2_confidence": l2_confidence,
                     "l2_returns": l2_returns,
                     "l2_weights": l2_weights,
@@ -1342,7 +1360,37 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 if isinstance(variances, pd.Series):
                      l3_input_df[var_col] = variances.reindex(events_df.index)
 
+        # Inject Spectral Chaser Features
+        if spectral_chaser and 'prediction_results' in spectral_chaser:
+            try:
+                chaser_preds = spectral_chaser['prediction_results'].get('predictions', {})
+                chaser_metrics = spectral_chaser['prediction_results'].get('prediction_metrics', {})
+                
+                # Ensemble Prediction
+                if 'ensemble' in chaser_preds:
+                    ens_pred = chaser_preds['ensemble']
+                    # Align using market_data index if available
+                    if len(ens_pred) == len(market_data):
+                        s_ens = pd.Series(ens_pred, index=market_data.index)
+                        l3_input_df['spectral_chaser_ensemble'] = s_ens.reindex(l3_input_df.index)
+                        tprint_info(f"   🧬 Added Spectral Chaser ensemble signal")
+                
+                # Ensemble Confidence
+                if 'ensemble_confidence' in chaser_metrics:
+                    ens_conf = chaser_metrics['ensemble_confidence']
+                    if len(ens_conf) == len(market_data):
+                        s_conf = pd.Series(ens_conf, index=market_data.index)
+                        l3_input_df['spectral_chaser_confidence'] = s_conf.reindex(l3_input_df.index)
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Failed to inject Spectral Chaser features: {e}")
+
         context_cols = ['volatility_1d', 'trend_regime', 'vol_regime', 'close']
+        # Inject Continuous framework features if available
+        if events_df is not None:
+             continuous_cols = [c for c in events_df.columns if c.startswith('surprise_') or 'zone_score' in c]
+             if continuous_cols:
+                 context_cols.extend(continuous_cols)
+                 tprint_info(f"   🧬 Discovered {len(continuous_cols)} continuous ZoneScore features for Layer 3")
         
         # Robust Index Alignment: Ensure consistent timezone handling
         # Convert both to timezone-naive if one is naive and other is aware
@@ -1591,6 +1639,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 layer1_weight=w_l1_aligned,
                 layer2_weight=w_l2_aligned,
                 layer2_weight_quality=l2_quality_weights,
+                causal_sample_weight=l2_weights, # Contains ZoneScore
                 net_returns=l2_returns_aligned,
                 market_data=market_data,
                 config=config,
@@ -1616,6 +1665,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 layer1_weight=w_l1_aligned,
                 layer2_weight=w_l2_aligned,
                 layer2_weight_quality=l2_quality_weights,
+                causal_sample_weight=l2_weights, # Contains ZoneScore
                 net_returns=l2_returns_aligned,
                 market_data=market_data,
                 config=config,
@@ -1837,17 +1887,33 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ---------------------------------------------------------
         # LAYER 5: Position Sizing & Portfolio Diagnostics
         # ---------------------------------------------------------
-        tprint_info(">>> Executing Layer 5: Position Sizing & Portfolio Diagnostics...")
+        # Skip Layer 5 if Layer 4 is disabled (per de Prado pipeline requirements)
+        if isinstance(l4_risk_metrics, dict) and not l4_risk_metrics.get('layer4_enabled', True):
+            tprint_warning(f"⚠️ Skipping Layer 5: Layer 4 is disabled ({l4_risk_metrics.get('reason', 'unknown')})")
+            
+            # Save minimal Layer 5 metrics
+            l5_metrics = {'skipped': True, 'reason': 'layer4_disabled'}
+            with open(outcomes_dir / "layer5_performance_metrics.json", "w") as f:
+                json.dump(l5_metrics, f, indent=2, default=str)
+            
+            # Still generate unified report with what we have
+            l5_metrics = {'skipped': True, 'reason': 'layer4_disabled'}
+            l4_metrics = {}  # Initialize empty for reporting
+            layer5_skipped = True
+        else:
+            tprint_info(">>> Executing Layer 5: Position Sizing & Portfolio Diagnostics...")
+            layer5_skipped = False
 
         # Use final_score (Layer4 OOF) if available, otherwise meta_prob
-        if 'final_score' in l4_input.columns:
+        if not layer5_skipped and 'final_score' in l4_input.columns:
             p_col_for_sizing = 'final_score'
 
-        # Initialize Sizer
-        try:
-            l4_tx_cost = float(config.get('layer4_transaction_cost', 0.0))
-        except Exception:
-            l4_tx_cost = 0.0
+        # Initialize Sizer (only if Layer 5 not skipped)
+        if not layer5_skipped:
+            try:
+                l4_tx_cost = float(config.get('layer4_transaction_cost', 0.0))
+            except Exception:
+                l4_tx_cost = 0.0
 
         try:
             # 1. Start with config default

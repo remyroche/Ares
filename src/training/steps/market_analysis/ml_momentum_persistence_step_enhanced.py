@@ -9,6 +9,7 @@ This enhanced version implements:
 - Binary output enforcement
 """
 
+import os
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -61,17 +62,43 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, ML
     
     def __init__(self, step_name: str = "enhanced_ml_momentum_persistence_step"):
         """Initialize the enhanced momentum persistence step."""
-        super().__init__()
-        self._current_context = {}
-        self._artifact_manager = None
-        self._versioned_store = None
-        self._artifact_router = None
-        self.use_versioned_artifacts = True
+        super().__init__(step_name=step_name, use_versioned_artifacts=True)
         self.step_name = step_name
         self.logger = logger.getChild("EnhancedMLMomentumPersistenceStep")
         self.feature_pipeline = MIOptimizedFeaturePipeline()
         self.mi_history = []
         self.training_metrics = []
+    
+    @property
+    def versioned_store(self):
+        """Use a specialist-specific versioned store path."""
+        if self._versioned_store is None and self.use_versioned_artifacts:
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            timeframe = self._current_context.get('timeframe', '15m')
+            direction = self._current_context.get('direction', 'long')
+            model = 'enhanced_ml_momentum_persistence_step'
+
+            store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+            store_path = os.path.join("versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+
+            if hasattr(self._versioned_store, '_metadata'):
+                self._versioned_store._metadata['context'] = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'model': model
+                }
+                self._versioned_store._save_metadata()
+
+        return self._versioned_store
         
     def _compute_enhanced_momentum_optimized_horizon_optimized_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute enhanced momentum features with MI improvements."""
@@ -389,32 +416,6 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, ML
         return best_params, best_mi
     
 
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
-
     def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
         """Generate parameter combinations for optimization."""
         import itertools
@@ -472,5 +473,106 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, ML
             dummy_model = DummyClassifier(strategy="most_frequent", random_state=42)
             dummy_model.fit(features, labels)
             return dummy_model, {'auc': 0.5, 'accuracy': 0.5, 'model_type': 'imbalance_fallback'}
+
+    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute enhanced momentum persistence specialist training."""
+        try:
+            from datetime import datetime
+            
+            # Extract configuration
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+
+            # Ensure context is set for artifact routing/versioned store
+            self._current_context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': 'enhanced_ml_momentum_persistence_step'
+            }
+            
+            # Load market data
+            df = self._load_market_data(symbol, exchange, timeframe)
+            if df is None or len(df) < 1000:
+                tprint_error("❌ Insufficient data for enhanced momentum persistence training")
+                return {"success": False, "error": "Insufficient data"}
+            
+            # Generate enhanced features
+            tprint_info("🛠️ Generating enhanced momentum features...")
+            features = self._generate_enhanced_features(df, SpecialistType.MOMENTUM)
+            
+            # Create labels
+            tprint_info("🎯 Creating momentum labels...")
+            labels = self._create_momentum_labels(df)
+            
+            # Align features and labels
+            valid_idx = features.index.intersection(labels.index)
+            features = features.loc[valid_idx]
+            labels = labels.loc[valid_idx]
+            
+            # Remove NaN values
+            mask = ~(features.isna().any(axis=1) | labels.isna())
+            features = features[mask]
+            labels = labels[mask]
+            
+            if len(features) < 500:
+                tprint_error("❌ Insufficient valid samples after cleaning")
+                return {"success": False, "error": "Insufficient valid samples"}
+            
+            # Train enhanced model
+            tprint_info("🤖 Training enhanced momentum model with MI optimization...")
+            model, metrics = self._train_enhanced_momentum_model(features, labels)
+            
+            # Generate predictions
+            predictions = model.predict(features)
+            probabilities = model.predict_proba(features)[:, 1]
+            
+            # Create output DataFrame
+            output_df = features.copy()
+            output_df['enhanced_momentum_prediction'] = predictions
+            output_df['enhanced_momentum_probability'] = probabilities
+            output_df['enhanced_momentum_label'] = labels
+            
+            # Save artifacts
+            artifact_name = f"enhanced_momentum_persistence_prediction_{timeframe}"
+            metadata = SpecialistDataInterface.create_standard_metadata(
+                specialist_name="EnhancedMLMomentumPersistenceStep",
+                config=config,
+                metrics=metrics,
+                mi_score=metrics.get('mi_score', 0.0),
+                hsic_score=0.0
+            )
+            
+            self._save_artifact(
+                data=output_df,
+                artifact_name=artifact_name,
+                artifact_type="data",
+                data_category="predictions",
+            )
+            
+            # Save model
+            model_name = f"enhanced_momentum_model_{timeframe}"
+            self._save_artifact(
+                data=model,
+                artifact_name=model_name,
+                artifact_type="model",
+                data_category="models",
+                metadata=metadata
+            )
+            
+            tprint_success(f"✅ Enhanced momentum persistence training completed")
+            return {
+                "success": True,
+                "metrics": metrics,
+                "n_samples": len(output_df),
+                "artifact_name": artifact_name
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced momentum persistence training failed: {e}")
+            return {"success": False, "error": str(e)}
         
  

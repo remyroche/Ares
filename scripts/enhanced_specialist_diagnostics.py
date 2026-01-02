@@ -63,15 +63,17 @@ OUTCOMES_DIR = Path("outcomes")
 
 # Independent specialist steps
 INDEPENDENT_SPECIALISTS = [
-    'ml_momentum_persistence_step',
-    'ml_volatility_burst_step',
-    'ml_risk_regime_step', 
-    'ml_liquidity_regime_step',
-    'ml_breakout_bounce_regime_step',
-    'ml_path_regime_step',
-    'ml_reversion_regime_step',
-    'ml_smc_regime_step',
-    'ml_volume_force_step',
+    'enhanced_ml_momentum_persistence_step',
+    'enhanced_ml_volatility_burst_step',
+    'enhanced_ml_risk_regime_step',
+    'enhanced_ml_liquidity_regime_step',
+    'enhanced_ml_path_regime_step',
+    'enhanced_ml_reversion_regime_step',
+    'enhanced_ml_smc_regime_step',
+    'enhanced_ml_volume_force_step',
+    'enhanced_ml_microstructure_step',
+    'enhanced_ml_candlestick_step',
+    'enhanced_ml_spectral_step',
 ]
 
 async def train_all_specialists(
@@ -116,7 +118,17 @@ async def train_all_specialists(
                 logger.info(f"✅ {step_name} trained successfully")
                 if 'metrics' in result:
                     metrics = result['metrics']
-                    logger.info(f"   Metrics: AUC={metrics.get('auc', 'N/A'):.3f}, R²={metrics.get('r2', 'N/A'):.3f}")
+                    auc_val = metrics.get('auc', 'N/A')
+                    r2_val = metrics.get('r2', 'N/A')
+                    if isinstance(auc_val, (int, float)):
+                        auc_str = f"{auc_val:.3f}"
+                    else:
+                        auc_str = str(auc_val)
+                    if isinstance(r2_val, (int, float)):
+                        r2_str = f"{r2_val:.3f}"
+                    else:
+                        r2_str = str(r2_val)
+                    logger.info(f"   Metrics: AUC={auc_str}, R²={r2_str}")
             else:
                 logger.error(f"❌ {step_name} training failed: {result.get('error')}")
                 
@@ -155,22 +167,25 @@ def compare_all_specialist_artifacts(
             specialist = StepClass()
             
             # Check if specialist has independent diagnostics
-            if hasattr(specialist, 'run_diagnostics'):
+            if hasattr(specialist, 'run_enhanced_diagnostics'):
+                result = specialist.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
+            elif hasattr(specialist, 'run_diagnostics'):
                 result = specialist.run_diagnostics(symbol, exchange, timeframe, direction)
-                
-                if result.get('success'):
-                    comparison_data[specialist_name] = {
-                        'metrics': result.get('metrics', {}),
-                        'feature_importance': result.get('feature_importance', {}),
-                        'stability': result.get('stability', {}),
-                        'report_path': result.get('report_path'),
-                        'csv_path': result.get('csv_path')
-                    }
-                    logger.info(f"✅ {specialist_name} diagnostics completed")
-                else:
-                    logger.warning(f"⚠️ {specialist_name} diagnostics failed: {result.get('error')}")
             else:
                 logger.warning(f"⚠️ {specialist_name} does not have independent diagnostics")
+                continue
+                
+            if result.get('success'):
+                comparison_data[specialist_name] = {
+                    'metrics': result.get('metrics', {}),
+                    'feature_importance': result.get('feature_importance', {}),
+                    'stability': result.get('stability', {}),
+                    'report_path': result.get('report_path'),
+                    'csv_path': result.get('csv_path')
+                }
+                logger.info(f"✅ {specialist_name} diagnostics completed")
+            else:
+                logger.warning(f"⚠️ {specialist_name} diagnostics failed: {result.get('error')}")
                 
         except Exception as e:
             logger.error(f"❌ Error analyzing {specialist_name}: {e}")

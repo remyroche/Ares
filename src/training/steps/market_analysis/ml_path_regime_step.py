@@ -2459,6 +2459,7 @@ class MLPathRegimeStep(BaseStep):
         hmm_n_iter = int(config.get("hmm_n_iter", 100))  # Reduced from 200
         hmm_tol = float(config.get("hmm_tol", 1e-3))
         hmm_min_covar = float(config.get("hmm_min_covar", 0.001))
+        hmm_feature_subsample = float(config.get("hmm_feature_subsample", 0.7))  # Use 70% of features for speed
 
         hmm: GaussianHMM
 
@@ -2508,6 +2509,21 @@ class MLPathRegimeStep(BaseStep):
 
         # Convert to numpy array for HMM (requires shape: [n_samples, n_features])
         hmm_features_strided_array = hmm_features_strided.values
+        
+        # Apply feature subsampling for speed optimization
+        if hmm_feature_subsample < 1.0:
+            n_features = hmm_features_strided_array.shape[1]
+            n_selected = int(n_features * hmm_feature_subsample)
+            selected_features = np.random.choice(
+                n_features, size=n_selected, replace=False
+            )
+            hmm_features_strided_array = hmm_features_strided_array[:, selected_features]
+            tprint_info(f"  🎯 Feature subsampling: {n_selected}/{n_features} features ({hmm_feature_subsample:.1%})")
+        
+        # Also subsample the full data for prediction consistency
+        hmm_full_array = gmm_sa_features.values
+        if hmm_feature_subsample < 1.0:
+            hmm_full_array = hmm_full_array[:, selected_features]
 
         # Reshape for HMM: needs [n_samples, n_features] and lengths array
         hmm_start = time.time()
@@ -2517,8 +2533,7 @@ class MLPathRegimeStep(BaseStep):
                 lengths=[len(hmm_features_strided_array)]  # Single sequence
             )
 
-            # Get initial labels using trained HMM on full data
-            hmm_full_array = gmm_sa_features.values
+            # Get initial labels using trained HMM (use the already subsampled hmm_full_array)
             initial_labels = hmm.predict(
                 hmm_full_array,
                 lengths=[len(hmm_full_array)]
@@ -2544,6 +2559,11 @@ class MLPathRegimeStep(BaseStep):
 
             hmm_features_strided_retry = hmm_features_strided.astype("float64").values
             hmm_full_retry = gmm_sa_features.astype("float64").values
+            
+            # Apply same feature subsampling for retry consistency
+            if hmm_feature_subsample < 1.0:
+                hmm_features_strided_retry = hmm_features_strided_retry[:, selected_features]
+                hmm_full_retry = hmm_full_retry[:, selected_features]
 
             hmm.fit(
                 hmm_features_strided_retry,

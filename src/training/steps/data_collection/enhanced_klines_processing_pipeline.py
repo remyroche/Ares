@@ -202,6 +202,19 @@ def get_tprint_functions():
 # Initialize lazy imports
 system_logger = get_system_logger()
 tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_functions()
+try:
+    print(
+        f"[tprint-debug] Loaded tprint_info from {getattr(tprint_info, '__module__', 'unknown')} "
+        f"(func={tprint_info})",
+        flush=True,
+    )
+    print(
+        f"[tprint-debug] Env TPRINT_MINIMAL={os.environ.get('TPRINT_MINIMAL')} "
+        f"TPRINT_DISABLED={os.environ.get('TPRINT_DISABLED')}",
+        flush=True,
+    )
+except Exception:
+    pass
 # Import comprehensive data quality utilities from src/utils/data/quality/
 # Use lazy imports to avoid circular import issues
 
@@ -517,6 +530,7 @@ class LazyExchangeImports:
     
     @property
     def UnifiedOHLCVStandardizer(self):
+        global _UnifiedOHLCVStandardizer
         if _UnifiedOHLCVStandardizer is None:
             _lazy_import_exchange_modules()
             if _UnifiedOHLCVStandardizer is None:
@@ -524,7 +538,8 @@ class LazyExchangeImports:
                 class UnifiedOHLCVStandardizer:
                     def standardize(self, df, *args, **kwargs):
                         return df
-            return _UnifiedOHLCVStandardizer
+                _UnifiedOHLCVStandardizer = UnifiedOHLCVStandardizer
+        return _UnifiedOHLCVStandardizer
 
 lazy_exchange_imports = LazyExchangeImports()
 
@@ -1651,11 +1666,33 @@ class EnhancedKlinesProcessingPipeline:
 
         try:
             if self.enable_logging:
-                tprint_info(f"📥 Processing {years} years of {symbol} {interval} data")
+                tprint_info(f"📥 STARTING DOWNLOAD PROCESS for {symbol} {interval}")
+                tprint_info(f"   📅 Requested: {years} years of data")
+                tprint_info(f"   🗂️ Data directory: {self.config.data_dir}")
+                tprint_info(f"   🌐 Exchange: {self.exchange}")
+                tprint_info(f"   💾 Has exchange interface: {exchange_interface is not None}")
 
             # Check if we have existing data first
             data_dir = Path(self.config.data_dir) / self.exchange / symbol.lower() / "raw"
+            if self.enable_logging:
+                tprint_info(f"🔍 CHECKING FOR EXISTING DATA in {data_dir}")
+            
             parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
+            
+            if self.enable_logging:
+                if parquet_files:
+                    tprint_info(f"📁 FOUND {len(parquet_files)} existing parquet files:")
+                    for pf in parquet_files[:5]:  # Show first 5 files
+                        tprint_info(f"   📄 {pf.name}")
+                    if len(parquet_files) > 5:
+                        tprint_info(f"   ... and {len(parquet_files)-5} more files")
+                else:
+                    tprint_info(f"📁 NO existing parquet files found - will download fresh data")
+
+            # Prefer existing klines; only download gaps or fresh when forced or empty
+            if parquet_files and not getattr(self.config, "force_download", False):
+                if self.enable_logging:
+                    tprint_info(f"✅ USING existing data ({len(parquet_files)} files) - no download needed")
 
             # Prefer existing klines; only download gaps or fresh when forced or empty
             if parquet_files and not getattr(self.config, "force_download", False):
@@ -1683,6 +1720,10 @@ class EnhancedKlinesProcessingPipeline:
                     desired_end = datetime.now()
                     desired_start = desired_end - timedelta(days=365 * years)
 
+                    if self.enable_logging:
+                        tprint_success(f"📊 LOADED existing data: {len(klines_data):,} records from {earliest_data_time} to {latest_data_time}")
+                        tprint_info(f"   Requested range: {desired_start} to {desired_end}")
+
                     gaps_to_fill: List[Tuple[str, datetime, datetime]] = []
                     gap_dfs: List[pd.DataFrame] = []
                     expected_frequency = pd.Timedelta(minutes=self._interval_to_minutes(interval))
@@ -1706,10 +1747,11 @@ class EnhancedKlinesProcessingPipeline:
 
                     if gaps_to_fill and exchange_interface is not None:
                         if self.enable_logging:
-                            tprint_info(f"📥 Filling {len(gaps_to_fill)} gap(s); download only missing ranges")
+                            tprint_info(f"📥 FOUND {len(gaps_to_fill)} gaps to fill:")
+                            for gap_type, gap_start, gap_end in gaps_to_fill:
+                                gap_size = (gap_end - gap_start).total_seconds() / 3600
+                                tprint_info(f"   • {gap_type}: {gap_start} to {gap_end} ({gap_size:.1f} hours)")
 
-                        # Use the unified ExchangeInterface.get_klines API for gap fills so we
-                        # benefit from dispatcher wiring and the Binance public klines fallback.
                         interval_minutes = self._interval_to_minutes(interval) or 1
                         interval_delta = timedelta(minutes=interval_minutes)
                         batch_size = 1000
@@ -1718,6 +1760,9 @@ class EnhancedKlinesProcessingPipeline:
                         for gap_type, gap_start, gap_end in gaps_to_fill:
                             if gap_end <= gap_start:
                                 continue
+
+                            if self.enable_logging:
+                                tprint_info(f"🔄 FILLING {gap_type} gap: {gap_start} to {gap_end}")
 
                             current_start = gap_start
                             gap_klines: List[Any] = []
@@ -1737,23 +1782,19 @@ class EnhancedKlinesProcessingPipeline:
                                         tprint_warning(f"⚠️ Gap download failed ({gap_type}): {e}")
                                     break
 
-                                if not batch:
+                                if batch is None or (hasattr(batch, 'empty') and batch.empty):
                                     break
 
                                 gap_klines.extend(batch)
 
-                                # Derive the timestamp of the last candle in the batch to
-                                # advance the window. Support both KlineData objects and
-                                # raw list/tuple formats for robustness.
                                 last_ts = None
                                 try:
                                     last_kline = batch[-1]
                                     if hasattr(last_kline, "timestamp"):
                                         last_ts = getattr(last_kline, "timestamp")
                                     else:
-                                        raw_ts = last_kline[0]
+                                        raw_ts = batch[-1][0]
                                         if isinstance(raw_ts, (int, float)):
-                                            # Assume milliseconds when values are large
                                             unit = "ms" if raw_ts > 1e12 else "s"
                                             last_ts = pd.to_datetime(raw_ts, unit=unit).to_pydatetime()
                                         else:
@@ -1771,12 +1812,15 @@ class EnhancedKlinesProcessingPipeline:
                             if gap_klines:
                                 gap_df = self._klines_to_dataframe(gap_klines, symbol, interval)
                                 gap_dfs.append(gap_df)
+
                         if gap_dfs:
                             klines_data = pd.concat([klines_data] + gap_dfs).drop_duplicates().sort_index()
                     elif gaps_to_fill and exchange_interface is None and self.enable_logging:
                         tprint_warning("⚠️ Skipping gap download because exchange interface is unavailable; using existing data only")
+                    else:
+                        if self.enable_logging:
+                            tprint_success("✅ No gaps found - data is complete")
 
-                    # Finalize using existing data (+ gaps if any)
                     total_gap_records = sum(len(df) for df in gap_dfs) if gap_dfs else 0
                     result.success = True
                     result.data = klines_data
@@ -1794,16 +1838,26 @@ class EnhancedKlinesProcessingPipeline:
                         tprint_info(f"📅 Full range: {klines_data.index.min()} to {klines_data.index.max()}")
                     return result
                 else:
-                    # No readable parquet data; fall through to fresh download
                     if self.enable_logging:
-                        tprint_warning("⚠️ No valid data found in existing parquet files; downloading fresh data")
+                        if not parquet_files:
+                            tprint_info(f"🌐 NO existing data found - starting FRESH DOWNLOAD for {symbol} {interval}")
+                        else:
+                            tprint_info(f"🔄 FORCE DOWNLOAD enabled - downloading fresh data despite existing files")
+                
+                if self.enable_logging:
+                    tprint_info(f"🚀 STARTING FRESH DOWNLOAD for {symbol} {interval} ({years} years)")
+                    tprint_info(f"   📅 Date range: {datetime.now() - timedelta(days=365*years)} to {datetime.now()}")
 
             # If no data and no exchange interface available, fail fast
             if not parquet_files and exchange_interface is None:
                 raise RuntimeError("No existing raw klines found and exchange interface unavailable; cannot download.")
 
             # Ensure dispatcher is wired for live download
-            if exchange_interface is not None and getattr(exchange_interface, "dispatcher", None) is None:
+            if (
+                exchange_interface is not None
+                and getattr(exchange_interface, "dispatcher", None) is None
+                and getattr(exchange_interface, "supports_dispatcher", True)
+            ):
                 if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
                     try:
                         ex_type = lazy_exchange_imports.ExchangeType(self.exchange) if isinstance(self.exchange, str) else self.exchange
@@ -1832,173 +1886,265 @@ class EnhancedKlinesProcessingPipeline:
                             tprint_warning(f"⚠️ Failed to wire dispatcher: {e}")
 
             if self.enable_logging:
-                tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
-                
-                # Calculate date range
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=years * 365)
-                
+                message = f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange"
+                tprint_info(message)
+                print(message, flush=True)
+            
+            # Calculate date range
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=years * 365)
+            
+            if self.enable_logging:
+                message = f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                tprint_info(message)
+                print(message, flush=True)
+                estimated_candles = years * 365 * 24 * 60  # Rough estimate for 1m data
+                message = f"📊 Estimated candles: ~{estimated_candles:,}"
+                tprint_info(message)
+                print(message, flush=True)
+            
+            # Download data in batches (API limit is 1000 candles per request)
+            all_batches = []
+            current_start = start_date
+            batch_size = 1000
+
+            # For 1m interval, 1000 candles = ~16.67 hours
+            interval_minutes = self._interval_to_minutes(interval) or 1
+
+            # Shorten per-request span for dense 1m downloads so each HTTP call
+            # only covers ~4 hours (~250 candles). This keeps progress prints
+            # responsive and prevents the public ccxt path from hanging on massive
+            # 16h windows.
+            if interval_minutes == 1:
+                batch_size = min(batch_size, 250)
+
+            batch_duration = timedelta(minutes=batch_size * interval_minutes)
+
+            # Detect whether the underlying exchange exposes a dedicated
+            # historical klines API. When available (e.g. BingX), we
+            # prefer that path so start/end windows are honored instead of
+            # repeatedly fetching just the most recent window.
+            dispatcher = getattr(exchange_interface, "dispatcher", None)
+            underlying_exchange = getattr(dispatcher, "exchange", None) if dispatcher is not None else None
+            has_historical_klines = bool(
+                underlying_exchange is not None
+                and hasattr(underlying_exchange, "get_historical_klines")
+            )
+
+            batch_num = 1
+
+            while current_start < end_date:
+                batch_end = min(current_start + batch_duration, end_date)
+
+                # Log every 50th batch to show progress without spamming
+                if self.enable_logging and (batch_num == 1 or batch_num % 25 == 0):
+                    elapsed = current_start - start_date
+                    progress_pct = max(0.0, min(100.0, (elapsed.total_seconds() / ((end_date - start_date).total_seconds() or 1)) * 100))
+                    message = (
+                        f"📦 [{symbol}] Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} → "
+                        f"{batch_end.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}% of lookback)"
+                    )
+                    tprint_info(message)
+                    print(message, flush=True)
+
                 if self.enable_logging:
-                    tprint_info(f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-                    estimated_candles = years * 365 * 24 * 60  # Rough estimate for 1m data
-                    tprint_info(f"📊 Estimated candles: ~{estimated_candles:,}")
-                
-                # Download data in batches (API limit is 1000 candles per request)
-                all_batches = []
-                current_start = start_date
-                batch_size = 1000
-                batch_num = 1
+                    message = (
+                        f"⏳ [{symbol}] Requesting batch {batch_num}: "
+                        f"{current_start.strftime('%Y-%m-%d %H:%M')} → "
+                        f"{batch_end.strftime('%Y-%m-%d %H:%M')} (limit {batch_size})"
+                    )
+                    tprint_info(message)
+                    print(message, flush=True)
 
-                # For 1m interval, 1000 candles = ~16.67 hours
-                interval_minutes = 1  # TODO: Parse from interval string
-                batch_duration = timedelta(minutes=batch_size * interval_minutes)
-
-                # Detect whether the underlying exchange exposes a dedicated
-                # historical klines API. When available (e.g. BingX), we
-                # prefer that path so start/end windows are honored instead of
-                # repeatedly fetching just the most recent window.
-                dispatcher = getattr(exchange_interface, "dispatcher", None)
-                underlying_exchange = getattr(dispatcher, "exchange", None) if dispatcher is not None else None
-                has_historical_klines = bool(
-                    underlying_exchange is not None
-                    and hasattr(underlying_exchange, "get_historical_klines")
-                )
-
-                while current_start < end_date:
-                    batch_end = min(current_start + batch_duration, end_date)
-
-                    # Log every 50th batch to show progress without spamming
-                    if self.enable_logging and (batch_num == 1 or batch_num % 50 == 0):
-                        progress_pct = ((current_start - start_date).days / (years * 365)) * 100
-                        tprint_info(
-                            f"📦 Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)"
+                try:
+                    if self.enable_logging:
+                        if has_historical_klines and hasattr(exchange_interface, "get_historical_klines"):
+                            message = (
+                                f"🔥 [{symbol}] Calling get_historical_klines for batch {batch_num} "
+                                f"{current_start.strftime('%Y-%m-%d %H:%M')} → {batch_end.strftime('%Y-%m-%d %H:%M')} "
+                                f"(limit {batch_size})"
+                            )
+                            tprint_info(message)
+                            print(message, flush=True)
+                        else:
+                            message = (
+                                f"🔥 [{symbol}] Calling get_klines for batch {batch_num} "
+                                f"{current_start.strftime('%Y-%m-%d %H:%M')} → {batch_end.strftime('%Y-%m-%d %H:%M')} "
+                                f"(limit {batch_size})"
+                            )
+                            tprint_info(message)
+                            print(message, flush=True)
+                    if has_historical_klines and hasattr(
+                        exchange_interface, "get_historical_klines"
+                    ):
+                        # Prefer true historical path when available
+                        batch_data = await exchange_interface.get_historical_klines(
+                            symbol=symbol,
+                            interval=interval,
+                            start_time=current_start,
+                            end_time=batch_end,
+                            limit=batch_size,
+                        )
+                    else:
+                        # Fallback to generic recent klines
+                        batch_data = await exchange_interface.get_klines(
+                            symbol=symbol,
+                            interval=interval,
+                            start_time=current_start,
+                            end_time=batch_end,
+                            limit=batch_size,
                         )
 
-                    try:
-                        if has_historical_klines and hasattr(
-                            exchange_interface, "get_historical_klines"
-                        ):
-                            # Prefer true historical path when available
-                            batch_data = await exchange_interface.get_historical_klines(
-                                symbol=symbol,
-                                interval=interval,
-                                start_time=current_start,
-                                end_time=batch_end,
-                                limit=batch_size,
+                    is_df_batch = hasattr(batch_data, "empty")
+                    batch_has_rows = (
+                        (not batch_data.empty) if is_df_batch
+                        else (batch_data is not None and len(batch_data) > 0)
+                    )
+
+                    if batch_data and len(batch_data) > 0:
+                        all_batches.append(batch_data)
+
+                        # Persist the freshly downloaded batch immediately so interruptions
+                        # do not force a full re-download on the next run.
+                        batch_df = self._klines_to_dataframe(batch_data, symbol, interval)
+                        if not batch_df.empty:
+                            # Ensure millisecond timestamps and datetime index even if _klines_to_dataframe
+                            # returned integer timestamps (e.g., due to retries).
+                            if not isinstance(batch_df.index, pd.DatetimeIndex):
+                                batch_df.index = pd.to_datetime(batch_df.index, unit="ms", utc=True).tz_localize(None)
+                            if batch_df.index.max() < datetime(2009, 1, 1):
+                                batch_df.index = pd.to_datetime(batch_df.index, utc=True).tz_localize(None)
+                            stored = self.klines_manager.write_data(
+                                batch_df,
+                                symbol,
+                                interval,
+                                data_type="raw",
+                                overwrite=False,
                             )
-                        else:
-                            # Fallback to generic recent klines
-                            batch_data = await exchange_interface.get_klines(
-                                symbol=symbol,
-                                interval=interval,
-                                start_time=current_start,
-                                end_time=batch_end,
-                                limit=batch_size,
+                            if stored and self.enable_logging:
+                                tprint_info(
+                                    f"   💾 [{symbol}] Persisted batch {batch_num} "
+                                    f"({batch_df.index.min()} → {batch_df.index.max()}, {len(batch_df)} rows)"
+                                )
+
+                        # Log progress every 20 batches
+                        if self.enable_logging and batch_num % 20 == 0:
+                            total_candles = sum(len(b) for b in all_batches)
+                            elapsed = current_start - start_date
+                            total_span = end_date - start_date
+                            progress_pct = max(0.0, min(100.0, (elapsed.total_seconds() / (total_span.total_seconds() or 1)) * 100))
+                            tprint_info(
+                                f"   📊 [{symbol}] Progress: {len(all_batches)} batches, {total_candles:,} candles "
+                                f"({progress_pct:.1f}% complete)"
                             )
-
-                        if batch_data and len(batch_data) > 0:
-                            all_batches.append(batch_data)
-                            # Log progress every 100 batches
-                            if self.enable_logging and batch_num % 100 == 0:
-                                total_candles = sum(len(b) for b in all_batches)
-                                progress_pct = ((current_start - start_date).days / (years * 365)) * 100
-                                tprint_info(
-                                    f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles ({progress_pct:.1f}%)"
-                                )
-                        else:
-                            # No data returned, might have reached the end of available data
-                            if self.enable_logging:
-                                tprint_info(
-                                    f"   ℹ️ No data returned for batch {batch_num}, stopping download"
-                                )
-                            break
-
-                        # Move to next batch
-                        current_start = batch_end
-                        batch_num += 1
-
-                        # Small delay to respect rate limits (50ms = 20 requests/sec max)
-                        await asyncio.sleep(0.05)
-
-                    except Exception as e:
+                    else:
+                        # No data returned, might have reached the end of available data
                         if self.enable_logging:
-                            tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
-                        current_start = batch_end
-                        batch_num += 1
-                        # Longer delay after error
-                        await asyncio.sleep(1.0)
-                
-                if not all_batches:
-                    raise ValueError("No data received from exchange")
-                
-                if self.enable_logging:
-                    total_candles = sum(len(b) for b in all_batches)
-                    tprint_success(f"✅ Downloaded {total_candles:,} candles in {len(all_batches)} batches")
-                
-                # Combine all batches
-                klines_data = []
-                for batch in all_batches:
-                    klines_data.extend(batch)
-                
-                if self.enable_logging:
-                    tprint_info(f"🔍 Total klines collected: {len(klines_data)}")
-                    tprint_info(f"🔍 klines_data type: {type(klines_data)}")
+                            tprint_info(
+                                f"   ℹ️ [{symbol}] No data returned for batch {batch_num}, stopping download window "
+                                f"{current_start.strftime('%Y-%m-%d %H:%M')} → {batch_end.strftime('%Y-%m-%d %H:%M')}"
+                            )
+                        break
+
+                    # Move to next batch
+                    current_start = batch_end
+                    batch_num += 1
+
+                    # Small delay to respect rate limits (50ms = 20 requests/sec max)
+                    await asyncio.sleep(0.05)
+
+                except Exception as e:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
+                    current_start = batch_end
+                    batch_num += 1
+                    # Longer delay after error
+                    await asyncio.sleep(1.0)
+            
+            if not all_batches:
+                raise ValueError("No data received from exchange")
+            
+            if self.enable_logging:
+                total_candles = sum(len(b) for b in all_batches)
+                tprint_success(f"✅ Downloaded {total_candles:,} candles in {len(all_batches)} batches")
+            
+            # Combine all batches
+            klines_data = []
+            for batch in all_batches:
+                klines_data.extend(batch)
+            
+            if self.enable_logging:
+                tprint_info(f"🔍 Total klines collected: {len(klines_data)}")
+                tprint_info(f"🔍 klines_data type: {type(klines_data)}")
                 
                 # Convert KlineData objects to DataFrame format if not already a DataFrame
                 # Convert KlineData objects to list format
                 raw_data = []
+                interval_ms = int((self._interval_to_minutes(interval) or 1) * 60_000)
+
                 for i, kline in enumerate(klines_data):
-                    # Debug first kline
+                    is_sequence = isinstance(kline, (list, tuple))
                     if i == 0 and self.enable_logging:
                         tprint_info(f"🔍 First kline type: {type(kline)}")
-                        tprint_info(f"🔍 First kline timestamp: {kline.timestamp}")
-                        tprint_info(f"🔍 First kline timestamp type: {type(kline.timestamp)}")
+                        if is_sequence and kline:
+                            tprint_info(f"🔍 First kline raw head: {kline[:6]}")
+                        elif hasattr(kline, 'timestamp'):
+                            tprint_info(f"🔍 First kline timestamp: {kline.timestamp}")
+                            tprint_info(f"🔍 First kline timestamp type: {type(kline.timestamp)}")
                     
-                    # Handle both datetime and int timestamps
-                    if isinstance(kline.timestamp, datetime):
-                        ts = int(kline.timestamp.timestamp() * 1000)
-                    elif isinstance(kline.timestamp, (int, float)):
-                        # Binance returns milliseconds timestamps (13 digits)
-                        # If timestamp is too small (< 1e10), it's likely in seconds or invalid
-                        if kline.timestamp < 1e10:
-                            # Likely seconds, convert to milliseconds
-                            ts = int(kline.timestamp * 1000)
-                        else:
-                            ts = int(kline.timestamp)
+                    if is_sequence:
+                        ts_source = kline[0] if len(kline) > 0 else None
+                        open_price = kline[1] if len(kline) > 1 else None
+                        high_price = kline[2] if len(kline) > 2 else None
+                        low_price = kline[3] if len(kline) > 3 else None
+                        close_price = kline[4] if len(kline) > 4 else None
+                        volume = kline[5] if len(kline) > 5 else None
+                        close_source = kline[6] if len(kline) > 6 else None
+                        quote_volume = kline[7] if len(kline) > 7 else None
+                        num_trades = kline[8] if len(kline) > 8 else None
+                        taker_buy_base = kline[9] if len(kline) > 9 else None
+                        taker_buy_quote = kline[10] if len(kline) > 10 else None
                     else:
-                        ts_val = float(kline.timestamp)
-                        if ts_val < 1e10:
-                            ts = int(ts_val * 1000)
-                        else:
-                            ts = int(ts_val)
-                    
-                    if isinstance(kline.close_time, datetime):
-                        ct = int(kline.close_time.timestamp() * 1000)
-                    elif isinstance(kline.close_time, (int, float)):
-                        # Same logic for close_time
-                        if kline.close_time < 1e10:
-                            ct = int(kline.close_time * 1000)
-                        else:
-                            ct = int(kline.close_time)
-                    else:
-                        ct_val = float(kline.close_time)
-                        if ct_val < 1e10:
-                            ct = int(ct_val * 1000)
-                        else:
-                            ct = int(ct_val)
-                    
+                        ts_source = getattr(kline, "timestamp", None)
+                        close_source = getattr(kline, "close_time", None)
+                        open_price = getattr(kline, "open_price", None)
+                        high_price = getattr(kline, "high_price", None)
+                        low_price = getattr(kline, "low_price", None)
+                        close_price = getattr(kline, "close_price", None)
+                        volume = getattr(kline, "volume", None)
+                        quote_volume = getattr(kline, "quote_asset_volume", None)
+                        num_trades = getattr(kline, "number_of_trades", None)
+                        taker_buy_base = getattr(kline, "taker_buy_base_asset_volume", None)
+                        taker_buy_quote = getattr(kline, "taker_buy_quote_asset_volume", None)
+
+                    def _normalize_ts(value, fallback=None):
+                        if value is None:
+                            return fallback
+                        if isinstance(value, datetime):
+                            return int(value.timestamp() * 1000)
+                        if isinstance(value, (int, float)):
+                            return int(value if value >= 1e10 else value * 1000)
+                        try:
+                            numeric = float(value)
+                            return int(numeric if numeric >= 1e10 else numeric * 1000)
+                        except Exception:
+                            return fallback
+
+                    ts = _normalize_ts(ts_source)
+                    ct = _normalize_ts(close_source, fallback=(ts + interval_ms) if ts is not None else None)
+
                     raw_data.append([
-                        ts,  # timestamp
-                        kline.open_price,  # open
-                        kline.high_price,  # high
-                        kline.low_price,   # low
-                        kline.close_price, # close
-                        kline.volume,      # volume
-                        ct,  # close_time
-                        kline.quote_asset_volume,  # quote_volume
-                        kline.number_of_trades,     # trades
-                        kline.taker_buy_base_asset_volume,  # taker_buy_base
-                        kline.taker_buy_quote_asset_volume   # taker_buy_quote
+                        ts,
+                        open_price,
+                        high_price,
+                        low_price,
+                        close_price,
+                        volume,
+                        ct,
+                        quote_volume,
+                        num_trades,
+                        taker_buy_base,
+                        taker_buy_quote,
                     ])
                 
                 if not raw_data:
@@ -2794,7 +2940,7 @@ class EnhancedKlinesProcessingPipeline:
                         tprint_warning(f"⚠️ Missing-range batch download failed: {e}")
                     break
 
-                if not batch_klines:
+                if batch_klines is None or (hasattr(batch_klines, 'empty') and batch_klines.empty):
                     break
 
                 gap_base_klines.extend(batch_klines)
@@ -3261,8 +3407,24 @@ class EnhancedKlinesProcessingPipeline:
                             tprint_warning(f"   ⚠️ Forward batch request failed: {e}")
                         break
 
-                    if not batch_klines:
-                        break
+                    if batch_klines is None or (hasattr(batch_klines, 'empty') and batch_klines.empty):
+                        # Check for existing parquet data first
+                        if self.enable_logging:
+                            tprint_info(f"🔍 Checking for existing {symbol} {interval} data in {self.data_dir}")
+                        
+                        parquet_files = self._find_existing_parquet_files(self.data_dir, symbol, interval)
+                        
+                        if self.enable_logging:
+                            if parquet_files:
+                                tprint_info(f"📁 Found {len(parquet_files)} existing parquet files for {symbol}")
+                                for pf in parquet_files[:3]:  # Show first 3 files
+                                    tprint_info(f"   - {pf}")
+                                if len(parquet_files) > 3:
+                                    tprint_info(f"   ... and {len(parquet_files)-3} more files")
+                            else:
+                                tprint_info(f"📁 No existing parquet files found for {symbol} - will download fresh data")
+                        if batch_df.empty:
+                            break
 
                     batch_df = self._klines_to_dataframe(batch_klines, symbol, interval)
                     if batch_df.empty:
@@ -4103,156 +4265,33 @@ if __name__ == "__main__":
             print("🚀 ENHANCED KLINES PROCESSING PIPELINE")
             print("=" * 80)
             print()
-            print(f"📊 Configuration:")
-            print(f"   - Exchange: {args.exchange}")
-            print(f"   - Symbol: {args.symbol}")
-            print(f"   - Interval: {args.interval}")
-            print(f"   - Lookback: {args.years} years")
-            print(f"   - Data Directory: {args.data_dir}")
-            print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled'}")
-            print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
-            print(f"   - Quality Validation: {'❌ Disabled' if args.no_quality_validation else '✅ Enabled'}")
-            print(f"   - Authenticated: {'✅ Yes' if args.api_key and args.api_secret else '❌ No'}")
-            print()
             
-            # Configure pipeline
-            pipeline_config = PipelineConfig(
-                data_dir=args.data_dir,
-                exchange=args.exchange,
-                enable_logging=True,
-                enable_gap_filling=not args.no_gap_filling,
-                enable_resampling=not args.no_resampling,
-                enable_duplicate_handling=True,
-                enable_quality_validation=not args.no_quality_validation,
-                batch_compatible=True,
-                max_gap_minutes=1
-            )
-            
-            # Configure resampling
-            # Use resample_older_than_days=0 to always resample, letting the
-            # age-based skip logic be controlled explicitly by the config.
-            resampling_config = ResamplingConfig(
-                target_intervals=['5m', '15m', '30m', '1h'],
-                method='ohlc',
-                preserve_volume=True,
-                resample_older_than_days=0,
-                enable_auto_resampling=True
-            ) if not args.no_resampling else None
-            
-            # Create pipeline
-            print(f"🔧 Initializing pipeline...")
-            pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
-            print(f"✅ Pipeline initialized")
-            print()
-            
-            # Create exchange interface (prefer factory + dispatcher)
-            print(f"🔗 Connecting to {args.exchange.upper()}...")
-            exchange_interface = None
-            if lazy_exchange_interface.EXCHANGE_INTERFACE_AVAILABLE and lazy_exchange_interface.ExchangeInterface is not None:
-                dispatcher = None
-                if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
-                    try:
-                        ex_type = lazy_exchange_imports.ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
-                    except Exception:
-                        ex_type = lazy_exchange_imports.ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else lazy_exchange_imports.ExchangeType.BINANCE
-                    try:
-                        dispatcher_cfg = lazy_exchange_imports.ExchangeConfig(
-                            exchange_type=ex_type,
-                            api_key=args.api_key or None,
-                            api_secret=args.api_secret or None,
-                            password=args.api_password or None,
-                            subaccount_id=None,
-                            use_testnet=args.use_testnet,
-                            trade_symbol=args.symbol,
-                            mode=lazy_exchange_imports.TradingMode.TRADE,  # allow live data pulls
-                        )
-                        dispatcher = lazy_exchange_imports.create_exchange_dispatcher(dispatcher_cfg)
-                        # Initialize dispatcher if supported
-                        try:
-                            init_ret = dispatcher.initialize()
-                            # If initialize is coroutine, await it and check success
-                            if hasattr(init_ret, "__await__"):
-                                init_ret = await init_ret
-                            if init_ret is False:
-                                tprint_warning("⚠️ Dispatcher initialize returned False; live download may fail")
-                                dispatcher = None
-                        except Exception as e:
-                            tprint_warning(f"⚠️ Dispatcher initialize failed: {e}")
-                        if dispatcher is not None:
-                            exchange_interface.dispatcher = dispatcher
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to create dispatcher: {e}")
-                        dispatcher = None
-
-                exchange_config = {
-                    'exchange_type': args.exchange,
-                    'api_key': args.api_key or None,
-                    'api_secret': args.api_secret or None,
-                    'password': args.api_password or None,
-                    'testnet': args.use_testnet,
-                    'rate_limits': {},
-                }
-                try:
-                    if lazy_exchange_interface.create_exchange_interface is not None:
-                        exchange_interface = lazy_exchange_interface.create_exchange_interface(exchange_config)
-                    else:
-                        exchange_interface = lazy_exchange_interface.ExchangeInterface(exchange_config)
-                    if dispatcher is not None:
-                        exchange_interface.dispatcher = dispatcher
-                    await exchange_interface.connect()
-                    print(f"✅ Connected to {args.exchange.upper()}")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Connection warning: {e}")
-                    tprint_info("📝 Continuing with existing/local data only...")
-                    exchange_interface = None
+            # Check if global multi-asset processing is enabled
+            if getattr(args, 'global', False) or getattr(args, 'global_dry', False):
+                assets = [asset.strip() for asset in args.assets.split(',')]
+                print(f"🌍 Global multi-asset processing mode: {'DRY RUN' if getattr(args, 'global_dry', False) else 'FULL EXECUTION'}")
+                print(f"📊 Assets to process: {', '.join(assets)}")
+                print()
+                
+                # Process each asset
+                for asset in assets:
+                    symbol = f"{asset}USDT"
+                    print(f"🔄 Processing {symbol}...")
+                    print()
+                    
+                    await process_single_asset(symbol, asset)
+                    
+                    if asset != assets[-1]:  # Not the last asset
+                        print("\n" + "=" * 80)
+                        print()
+                
+                print("\n" + "=" * 80)
+                print("✅ GLOBAL MULTI-ASSET PROCESSING COMPLETED")
+                print("=" * 80)
             else:
-                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
-            print()
-            
-            # Process data
-            print(f"🚀 Starting data collection and processing...")
-            print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print()
-            
-            results = await pipeline.process_klines_data(
-                symbol=args.symbol,
-                interval=args.interval,
-                years=args.years,
-                exchange_interface=exchange_interface,
-                resampling_config=resampling_config,
-                max_gap_minutes=1,
-                create_consolidated=True,
-                batch_id=f"{args.exchange}_{args.symbol.lower()}_{args.years}y_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            )
-            
-            print()
-            print("=" * 80)
-            print("✅ PROCESSING COMPLETED")
-            print("=" * 80)
-            print()
-            print(f"📊 Results:")
-            print(f"   - Pipeline Success: {results['pipeline_success']}")
-            print(f"   - Data Quality: {results['data_quality']}")
-            print(f"   - Final Data Shape: {results['final_data_shape']}")
-            print()
-            
-            if 'stored_files' in results and results['stored_files']:
-                print(f"💾 Stored Files:")
-                for file_path in results['stored_files']:
-                    print(f"   - {file_path}")
-                print()
-            
-            if 'resampled_intervals' in results and results['resampled_intervals']:
-                print(f"🔄 Resampled Intervals:")
-                for interval in results['resampled_intervals']:
-                    print(f"   - {interval}")
-                print()
-            
-            print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            if exchange_interface is not None:
-                await exchange_interface.disconnect()
-            
+                # Single asset processing
+                await process_single_asset(args.symbol, args.symbol.replace('USDT', ''))
+                
         except Exception as e:
             print()
             print("=" * 80)
@@ -4262,6 +4301,354 @@ if __name__ == "__main__":
             print()
             import traceback
             traceback.print_exc()
+    
+    async def process_single_asset(symbol: str, asset_name: str):
+        """Process a single asset."""
+        print(f"📊 Configuration:")
+        print(f"   - Exchange: {args.exchange}")
+        print(f"   - Symbol: {symbol}")
+        print(f"   - Interval: {args.interval}")
+        print(f"   - Lookback: {args.years} years")
+        print(f"   - Data Directory: {args.data_dir}")
+        print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled'}")
+        print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
+        print(f"   - Quality Validation: {'❌ Disabled' if args.no_quality_validation else '✅ Enabled'}")
+        print(f"   - Authenticated: {'✅ Yes' if args.api_key and args.api_secret else '❌ No'}")
+        print(f"   - Mode: {'DRY RUN' if getattr(args, 'global_dry', False) else 'FULL EXECUTION'}")
+        print()
+        if args.enable_logging if hasattr(args, "enable_logging") else True:
+            tprint_info(f"🛰️ Preparing download pipeline for {symbol} ({args.interval} / {args.years}y lookback)")
+            tprint_info(f"📁 Data directory: {args.data_dir}")
+            tprint_info(f"🌐 Exchange: {args.exchange}")
+            tprint_info(f"📊 Symbol: {symbol}")
+            tprint_info(f"⏰ Timeframe: {args.years} years of {args.interval} data")
+        
+        
+        # Configure pipeline
+        pipeline_config = PipelineConfig(
+            data_dir=args.data_dir,
+            exchange=args.exchange,
+            enable_logging=True,
+            enable_gap_filling=not args.no_gap_filling,
+            enable_resampling=not args.no_resampling,
+            enable_duplicate_handling=True,
+            enable_quality_validation=not args.no_quality_validation,
+            batch_compatible=True,
+            max_gap_minutes=1
+        )
+        
+        # Configure resampling
+        # Use resample_older_than_days=0 to always resample, letting the
+        # age-based skip logic be controlled explicitly by the config.
+        resampling_config = ResamplingConfig(
+            target_intervals=['5m', '15m', '30m', '1h'],
+            method='ohlc',
+            preserve_volume=True,
+            resample_older_than_days=0,
+            enable_auto_resampling=True
+        ) if not args.no_resampling else None
+        
+        # Create pipeline
+        print(f"🔧 Initializing pipeline...")
+        pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
+        print(f"✅ Pipeline initialized")
+        print()
+        
+        # Create exchange interface (prefer factory + dispatcher)
+        print(f"🔗 Connecting to {args.exchange.upper()}...")
+        exchange_interface = None
+        
+        # When no API credentials are supplied (single-asset or global), force the public ccxt path
+        no_api_keys = not args.api_key and not args.api_secret
+        selection_message = (
+            f"🛰️ Exchange selection inputs -> no_api_keys={no_api_keys}, "
+            f"global_dry={getattr(args, 'global_dry', False)}, "
+            f"enable_logging={getattr(args, 'enable_logging', True)}"
+        )
+        if 'tprint_info' in globals():
+            tprint_info(selection_message)
+        print(selection_message, flush=True)
+        if no_api_keys and not getattr(args, 'global_dry', False):
+            if 'tprint_info' in globals():
+                tprint_info("🛣️ Taking PUBLIC ccxt fallback path (no API keys supplied)")
+            print("🛣️ Taking PUBLIC ccxt fallback path (no API keys supplied)", flush=True)
+            try:
+                import ccxt
+                # Create a simple public data exchange interface
+                class PublicDataExchangeInterface:
+                    def __init__(self, exchange_name):
+                        self.exchange_name = exchange_name.lower()
+                        self.exchange_type = exchange_name.lower()  # Add missing attribute
+                        self.ccxt_exchange = ccxt.binance({'apiKey': '', 'secret': '', 'enableRateLimit': True})
+                        self.connected = True
+                        self.supports_dispatcher = False  # signal to skip heavy dispatcher wiring
+                        
+                    async def connect(self):
+                        # Test the connection with a simple call
+                        try:
+                            markets = self.ccxt_exchange.load_markets()
+                            print(f"✅ Connected to {self.exchange_name.upper()} (public API)")
+                            return True
+                        except Exception as e:
+                            print(f"⚠️ Public API connection test failed: {e}")
+                            return False
+                    
+                    async def disconnect(self):
+                        pass
+                    
+                    @staticmethod
+                    def _to_millis(ts_value):
+                        if ts_value is None:
+                            return None
+                        if hasattr(ts_value, "timestamp"):
+                            return int(ts_value.timestamp() * 1000)
+                        if isinstance(ts_value, str):
+                            import pandas as pd  # localized import to avoid global pandas dependency here
+                            parsed = pd.to_datetime(ts_value)
+                            return int(parsed.value / 1_000_000)  # ns -> ms
+                        if isinstance(ts_value, (int, float)):
+                            return int(ts_value if ts_value > 1e12 else ts_value * 1000)
+                        raise TypeError(f"Unsupported timestamp value: {ts_value}")
+
+                    async def get_klines(self, symbol, interval, limit=1000, since=None, start_time=None, end_time=None):
+                        """Download klines using public API."""
+                        try:
+                            message = (
+                                f"🌐 [ccxt] get_klines invoked: symbol={symbol}, interval={interval}, "
+                                f"start_time={start_time}, end_time={end_time}, since={since}, limit={limit}"
+                            )
+                            if 'tprint_info' in globals():
+                                tprint_info(message)
+                            print(message, flush=True)
+                            # Convert interval format if needed
+                            timeframe = interval
+                            if interval == '1m':
+                                timeframe = '1m'
+                            elif interval == '5m':
+                                timeframe = '5m'
+                            elif interval == '15m':
+                                timeframe = '15m'
+                            elif interval == '30m':
+                                timeframe = '30m'
+                            elif interval == '1h':
+                                timeframe = '1h'
+                            
+                            # Use start_time if provided (preferred), otherwise use since
+                            if start_time is not None:
+                                since_ms = self._to_millis(start_time)
+                                limit = min(limit, 2000)  # ccxt allows up to 2000, but large windows only when start supplied
+                            elif since is not None:
+                                since_ms = self._to_millis(since)
+                            else:
+                                since_ms = None
+                            max_retries = 5
+                            timeout_seconds = 30
+                            base_delay = 1.0
+                            last_error = None
+
+                            for attempt in range(1, max_retries + 1):
+                                request_window = ""
+                                if start_time is not None and end_time is not None:
+                                    request_window = (
+                                        f" ({start_time} → {end_time})"
+                                    )
+                                try:
+                                    attempt_message = (
+                                        f"⏳ [ccxt] Fetch attempt {attempt}/{max_retries} "
+                                        f"for {symbol} {timeframe}{request_window or ''} "
+                                        f"(limit {limit}, since={since_ms})"
+                                    )
+                                    if 'tprint_info' in globals():
+                                        tprint_info(attempt_message)
+                                    print(attempt_message, flush=True)
+
+                                    def _fetch():
+                                        if since_ms is not None:
+                                            return self.ccxt_exchange.fetch_ohlcv(
+                                                symbol,
+                                                timeframe=timeframe,
+                                                since=since_ms,
+                                                limit=limit,
+                                            )
+                                        return self.ccxt_exchange.fetch_ohlcv(
+                                            symbol,
+                                            timeframe=timeframe,
+                                            limit=limit,
+                                        )
+
+                                    klines = await asyncio.wait_for(
+                                        asyncio.to_thread(_fetch),
+                                        timeout=timeout_seconds,
+                                    )
+                                    return klines
+                                except asyncio.TimeoutError as e:
+                                    last_error = e
+                                    timeout_message = (
+                                        f"⌛ [ccxt] Fetch attempt {attempt} timed out after "
+                                        f"{timeout_seconds}s for {symbol} {timeframe}"
+                                    )
+                                    if 'tprint_warning' in globals():
+                                        tprint_warning(timeout_message)
+                                    print(timeout_message, flush=True)
+                                except Exception as e:
+                                    last_error = e
+                                    error_message = f"⚠️ [ccxt] Fetch attempt {attempt} failed: {e}"
+                                    if 'tprint_warning' in globals():
+                                        tprint_warning(error_message)
+                                    print(error_message, flush=True)
+
+                                if attempt < max_retries:
+                                    delay = base_delay * (2 ** (attempt - 1))
+                                    await asyncio.sleep(delay)
+                            
+                            exhaustion_message = (
+                                f"❌ [ccxt] Exhausted retries fetching {symbol} {timeframe}: {last_error}"
+                            )
+                            if 'tprint_warning' in globals():
+                                tprint_warning(exhaustion_message)
+                            print(exhaustion_message, flush=True)
+                            return []
+                            
+                        except Exception as e:
+                            print(f"❌ Failed to download klines: {e}")
+                            return []
+                
+                if args.exchange:
+                    tprint_info(f"🌐 Using public ccxt downloader for {args.exchange.upper()} (no API keys provided)")
+                exchange_interface = PublicDataExchangeInterface(args.exchange)
+                connected = await exchange_interface.connect()
+                if not connected:
+                    exchange_interface = None
+                    tprint_warning("⚠️ Public ccxt downloader failed to connect; will rely on local data only")
+                    
+            except ImportError:
+                tprint_warning("⚠️ ccxt not available for public data access")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to create public data interface: {e}")
+        
+        # Fall back to the original ExchangeInterface logic
+        # Only attempt the heavy ExchangeInterface path when API credentials are supplied.
+        # Without keys we rely entirely on the public ccxt fallback defined above.
+        if (
+            exchange_interface is None
+            and not getattr(args, 'global_dry', False)
+            and bool(args.api_key and args.api_secret)
+            and lazy_exchange_interface.EXCHANGE_INTERFACE_AVAILABLE
+            and lazy_exchange_interface.ExchangeInterface is not None
+        ):
+            if 'tprint_info' in globals():
+                tprint_info("🛣️ Taking authenticated ExchangeInterface path (API keys supplied)")
+            print("🛣️ Taking authenticated ExchangeInterface path (API keys supplied)", flush=True)
+            dispatcher = None
+            if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
+                try:
+                    ex_type = lazy_exchange_imports.ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
+                except Exception:
+                    ex_type = lazy_exchange_imports.ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else lazy_exchange_imports.ExchangeType.BINANCE
+                try:
+                    dispatcher_cfg = lazy_exchange_imports.ExchangeConfig(
+                        exchange_type=ex_type,
+                        api_key=args.api_key or None,
+                        api_secret=args.api_secret or None,
+                        password=args.api_password or None,
+                        subaccount_id=None,
+                        use_testnet=args.use_testnet,
+                        trade_symbol=symbol,
+                        mode=lazy_exchange_imports.TradingMode.TRADE,  # allow live data pulls
+                    )
+                    dispatcher = lazy_exchange_imports.create_exchange_dispatcher(dispatcher_cfg)
+                    # Initialize dispatcher if supported
+                    try:
+                        init_ret = dispatcher.initialize()
+                        # If initialize is coroutine, await it and check success
+                        if hasattr(init_ret, "__await__"):
+                            init_ret = await init_ret
+                        if init_ret is False:
+                            tprint_warning("⚠️ Dispatcher initialize returned False; live download may fail")
+                            dispatcher = None
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Dispatcher initialize failed: {e}")
+                        dispatcher = None
+                    if dispatcher is not None:
+                        exchange_interface.dispatcher = dispatcher
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to create dispatcher: {e}")
+                    dispatcher = None
+
+            exchange_config = {
+                'exchange_type': args.exchange,
+                'api_key': args.api_key or None,
+                'api_secret': args.api_secret or None,
+                'password': args.api_password or None,
+                'testnet': args.use_testnet,
+                'rate_limits': {},
+            }
+            try:
+                if lazy_exchange_interface.create_exchange_interface is not None:
+                    exchange_interface = lazy_exchange_interface.create_exchange_interface(exchange_config)
+                else:
+                    exchange_interface = lazy_exchange_interface.ExchangeInterface(exchange_config)
+                if dispatcher is not None:
+                    exchange_interface.dispatcher = dispatcher
+                await exchange_interface.connect()
+                print(f"✅ Connected to {args.exchange.upper()}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Connection warning: {e}")
+                tprint_info("📝 Continuing with existing/local data only...")
+                exchange_interface = None
+        if exchange_interface is None:
+            if getattr(args, 'global_dry', False):
+                tprint_info("🔍 DRY RUN MODE: Skipping exchange connection")
+            else:
+                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
+        else:
+            tprint_success(f"🤝 Data download will use {getattr(exchange_interface, 'exchange_type', args.exchange)} (public API)")
+        print()
+        
+        # Process data
+        print(f"🚀 Starting data collection and processing...")
+        print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📡 Download mode: {'PUBLIC API (ccxt)' if exchange_interface and hasattr(exchange_interface, 'ccxt_exchange') else 'LOCAL ONLY'}")
+        print()
+        
+        results = await pipeline.process_klines_data(
+            symbol=symbol,
+            interval=args.interval,
+            years=args.years,
+            exchange_interface=exchange_interface,
+            resampling_config=resampling_config,
+            max_gap_minutes=1,
+            create_consolidated=True,
+            batch_id=f"{args.exchange}_{symbol.lower()}_{args.years}y_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        
+        print()
+        print("=" * 80)
+        print(f"✅ PROCESSING COMPLETED for {symbol}")
+        print("=" * 80)
+        print()
+        print(f"📊 Results:")
+        print(f"   - Pipeline Success: {results['pipeline_success']}")
+        print(f"   - Data Quality: {results['data_quality']}")
+        print(f"   - Final Data Shape: {results['final_data_shape']}")
+        print()
+        
+        if 'stored_files' in results and results['stored_files']:
+            print(f"💾 Stored Files:")
+            for file_path in results['stored_files']:
+                print(f"   - {file_path}")
+            print()
+        
+        if 'resampled_intervals' in results and results['resampled_intervals']:
+            print(f"🔄 Resampled Intervals:")
+            for interval in results['resampled_intervals']:
+                print(f"   - {interval}")
+            print()
+        
+        print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        if exchange_interface is not None:
+            await exchange_interface.disconnect()
 
     # Example usage - for reference only
     async def main_example():

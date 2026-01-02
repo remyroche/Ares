@@ -9,6 +9,8 @@ import pandas as pd
 from typing import Dict, Any, Optional
 import logging
 
+from .utils import finalize_sample_weights
+
 # Import tprint functions
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -23,10 +25,12 @@ logger = logging.getLogger(__name__)
 
 def create_enhanced_weighting_schemes(
     layer1_weight: Optional[np.ndarray],
-    layer2_weight: Optional[np.ndarray], 
+    layer2_weight: Optional[np.ndarray],
     layer2_quality: Optional[np.ndarray],
     market_data: Optional[pd.DataFrame],
-    df: pd.DataFrame
+    df: pd.DataFrame,
+    causal_events: Optional[pd.DataFrame] = None,
+    causal_summary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, np.ndarray]:
     """
     Enhanced weighting with Layer 1 integration and market adaptation.
@@ -66,13 +70,16 @@ def create_enhanced_weighting_schemes(
     tprint_success(f"✅ Market regime weights: {market_stats}")
     
     # Enhanced schemes
+    causal_weights = compute_causal_weight_boost(df, causal_events, causal_summary)
+
     schemes = {
         'S1_L1': w_l1,
         'S2_L1_L2': w_l1 * w_l2,
         'S3_L2': w_l2,
-        'S4_L1_L2_Quality': w_l1 * w_l2 * w_l2_quality,  # NEW
-        'S5_Market_Adaptive': w_l2 * market_weights,     # NEW
-        'S6_Ensemble_All': w_l1 * w_l2 * w_l2_quality * market_weights  # NEW
+        'S4_L1_L2_Quality': w_l1 * w_l2 * w_l2_quality,
+        'S5_Market_Adaptive': w_l2 * market_weights,
+        'S6_Ensemble_All': w_l1 * w_l2 * w_l2_quality * market_weights,
+        'S7_Causal_Adaptive': w_l2 * causal_weights,
     }
     
     tprint_success(f"✅ Created {len(schemes)} enhanced weighting schemes:")
@@ -82,6 +89,44 @@ def create_enhanced_weighting_schemes(
         tprint_info(f"   - {scheme_name}: {weight_stats}")
     
     return schemes
+
+
+def compute_causal_weight_boost(
+    df: pd.DataFrame,
+    causal_events: Optional[pd.DataFrame],
+    causal_summary: Optional[Dict[str, Any]] = None
+) -> np.ndarray:
+    """
+    Create a causal-aware weighting vector that boosts samples around
+    surprise events or mechanism breaks.
+    """
+    boost = pd.Series(1.0, index=df.index, dtype=float)
+
+    if isinstance(causal_events, pd.DataFrame) and not causal_events.empty:
+        event_flag = pd.Series(0, index=df.index, dtype=float)
+        event_flag.loc[causal_events.index] = 1.0
+        boost += event_flag * 0.2  # small bonus around event timestamps
+
+        if 'surprise_strength' in causal_events.columns:
+            strength = (
+                causal_events['surprise_strength']
+                .reindex(df.index)
+                .fillna(0.0)
+                .clip(lower=0.0, upper=5.0)
+            )
+            boost += 0.1 * (strength / max(strength.max(), 1.0))
+
+    density = None
+    if isinstance(causal_summary, dict):
+        density = causal_summary.get('surprise_density')
+    if density is not None:
+        try:
+            density = float(density)
+            boost *= 1.0 + np.clip(density, 0.0, 1.0) * 0.2
+        except (TypeError, ValueError):
+            pass
+
+    return boost.clip(lower=0.5, upper=2.0).values
 
 def compute_market_regime_weights(market_data: Optional[pd.DataFrame], df: pd.DataFrame) -> np.ndarray:
     """
@@ -221,26 +266,6 @@ def compute_volume_regime(market_data: pd.DataFrame, lookback: int = 50) -> np.n
     
     return regime_weights
 
-def finalize_sample_weights(weights: np.ndarray) -> np.ndarray:
-    """
-    Finalize sample weights using MAD scaling and centering at 1.0.
-    """
-    original_stats = f"mean={weights.mean():.3f}, std={weights.std():.3f}"
-    
-    # MAD scaling
-    weights_median = np.median(weights)
-    weights_mad = np.median(np.abs(weights - weights_median))
-    
-    if weights_mad > 0:
-        scaled_weights = (weights - weights_median) / weights_mad
-    else:
-        scaled_weights = weights - weights_median
-    
-    # Center at 1.0 (add 1 to make mean around 1)
-    final_weights = scaled_weights + 1.0
-    
-    # Ensure positive weights
-    final_weights = np.maximum(final_weights, 0.1)
     
     final_stats = f"mean={final_weights.mean():.3f}, std={final_weights.std():.3f}"
     tprint_info(f"📊 Weight finalization: {original_stats} → {final_stats}")

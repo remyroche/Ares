@@ -105,7 +105,7 @@ class AnalystBaseBacktestStep(BaseStep):
         exchange = config.get("exchange", "binance")
         timeframe = config.get("timeframe", "15m")
         direction = config.get("direction", "long")
-        execution_mode = config.get("execution_mode", "light")
+        execution_mode = config.get("execution_mode", "full")
 
         tprint(
             f"🧪 Starting analyst base backtest for {symbol} {timeframe} {direction} (mode={execution_mode})",

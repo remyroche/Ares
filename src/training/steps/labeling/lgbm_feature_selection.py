@@ -131,6 +131,8 @@ def iterative_lgbm_importance_selection(
     log_dir: Optional[Path] = None,
     returns: Optional[pd.Series] = None,
     sample_weight: Optional[np.ndarray] = None,
+    force_include: Optional[List[str]] = None,
+    **kwargs
 ) -> Tuple[List[str], Dict[str, Any]]:
     """
     Iterative LGBM-based feature selection with external subsampling.
@@ -152,6 +154,7 @@ def iterative_lgbm_importance_selection(
         log_dir: Optional directory to save iteration logs
         returns: Optional realized returns - if provided, uses sign(returns) as target
         sample_weight: Optional sample weights (e.g., return-magnitude weighted)
+        force_include: Optional list of features to force include/protect from discard
         
     Returns:
         Tuple of (selected_features, selection_log)
@@ -279,7 +282,11 @@ def iterative_lgbm_importance_selection(
             fraction_in_bottom = n_in_bottom / len(rankings)
             
             if fraction_in_bottom >= discard_threshold:
-                features_to_discard.append(feature)
+                # Check if protected
+                if force_include and feature in force_include:
+                    features_to_keep.append(feature)
+                else:
+                    features_to_discard.append(feature)
             else:
                 features_to_keep.append(feature)
         
@@ -535,6 +542,7 @@ def lgbm_feature_selection_pipeline(
     returns: Optional[pd.Series] = None,
     sample_weight: Optional[np.ndarray] = None,
     samples_per_feature_ratio: int = 100,
+    force_include: Optional[List[str]] = None,
 ) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
     """
     Complete LGBM-based feature selection pipeline.
@@ -638,6 +646,7 @@ def lgbm_feature_selection_pipeline(
         log_dir=log_dir,
         returns=returns,
         sample_weight=sample_weight,
+        force_include=force_include
     )
     pipeline_log["stages"]["iterative_importance"] = importance_log
     

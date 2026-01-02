@@ -52,7 +52,7 @@
       "trend_ema_slow",
       "trend_price_slope"
     ],
-    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x347e42390>",
+    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x384fd7bd0>",
     "normalizer_config": {
       "default_strategy": "robust",
       "auto_select": false,
@@ -118,5 +118,5 @@
       "trend_price_slope"
     ]
   },
-  "saved_at": "2026-01-01T21:52:26.595562"
+  "saved_at": "2026-01-02T15:23:28.017649"
 }

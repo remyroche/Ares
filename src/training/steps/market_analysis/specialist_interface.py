@@ -59,12 +59,11 @@ class SpecialistDataInterface:
         Returns:
             Standardized DataFrame with consistent column names
         """
-        standardized = pd.DataFrame(index=df.index)
+        # Start with all original columns to preserve features
+        standardized = df.copy()
         
-        # Standard timestamp
-        if 'timestamp' in df.columns:
-            standardized['timestamp'] = df['timestamp']
-        else:
+        # Ensure timestamp column exists
+        if 'timestamp' not in df.columns:
             standardized['timestamp'] = df.index
             
         # Identify prediction columns with priority order

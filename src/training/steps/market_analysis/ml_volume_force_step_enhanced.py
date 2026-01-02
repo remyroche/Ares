@@ -340,7 +340,6 @@ class EnhancedMLVolumeForceStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
                 # Standardize output structure
                 standardized_output = self._create_standardized_output(predictions, y, symbol, exchange, timeframe, direction)
                 
-                # Save standardized artifacts
                 artifact_name = f"enhanced_ml_volume_force_predictions_{timeframe}"
                 metadata = SpecialistDataInterface.create_standard_metadata(
                     specialist_name="EnhancedMLVolumeForceStep",
@@ -349,22 +348,15 @@ class EnhancedMLVolumeForceStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
                     mi_score=metrics.get("breakout_mi_score", 0.0),
                     hsic_score=metrics.get("breakout_hsic", 0.0)
                 )
-                
-                
-            # DEBUG: Check artifact saving setup
-            print(f"🐛 DEBUG: About to save artifact: {artifact_name}")
-            print(f"🐛 DEBUG: Output df shape: {output_df.shape}")
-            print(f"🐛 DEBUG: Artifact router type: {type(self.artifact_router)}")
-            print(f"🐛 DEBUG: Versioned store available: {hasattr(self, '_versioned_store') and self._versioned_store is not None}")
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
-            
-            self.artifact_router.save(
-                artifact_name=artifact_name,
-                data=standardized_output,
-                metadata=metadata
-            )
-            artifacts.append(artifact_name)
+
+                artifact_path = self._save_artifact(
+                    data=standardized_output,
+                    artifact_name=artifact_name,
+                    artifact_type="data",
+                    data_category="predictions",
+                    metadata=metadata
+                )
+                artifacts.append(artifact_path)
 
             # Calculate aggregate metrics
             if "breakout_log_loss" in metrics and "volatility_rmse" in metrics and "trend_rmse" in metrics:
@@ -422,32 +414,6 @@ class EnhancedMLVolumeForceStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep):
             self.logger.exception(f"❌ Enhanced Volume Force step failed: {e}")
             return {"success": False, "error": str(e)}
 
-
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
 
     def _create_standardized_output(self, predictions: pd.DataFrame, targets: pd.DataFrame,
                                   symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:

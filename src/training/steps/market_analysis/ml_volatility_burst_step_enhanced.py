@@ -9,6 +9,7 @@ This enhanced version implements:
 - Binary output enforcement
 """
 
+import os
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -61,15 +62,43 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, MLRisk
     
     def __init__(self, step_name: str = "enhanced_ml_volatility_burst_step"):
         """Initialize the enhanced volatility burst step."""
-        super().__init__()
-        self._current_context = {}
-        self._artifact_manager = None
-        self._versioned_store = None
+        super().__init__(step_name=step_name, use_versioned_artifacts=True)
         self.step_name = step_name
         self.logger = logger.getChild("EnhancedMLVolatilityBurstStep")
         self.feature_pipeline = MIOptimizedFeaturePipeline()
         self.mi_history = []
         self.training_metrics = []
+    
+    @property
+    def versioned_store(self):
+        """Use a specialist-specific versioned store path."""
+        if self._versioned_store is None and self.use_versioned_artifacts:
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            timeframe = self._current_context.get('timeframe', '15m')
+            direction = self._current_context.get('direction', 'long')
+            model = 'enhanced_ml_volatility_burst_step'
+
+            store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+            store_path = os.path.join("versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+
+            if hasattr(self._versioned_store, '_metadata'):
+                self._versioned_store._metadata['context'] = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'model': model
+                }
+                self._versioned_store._save_metadata()
+
+        return self._versioned_store
         
     def _compute_enhanced_volatility_optimized_horizon_optimized_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute enhanced momentum features with MI improvements."""
@@ -407,32 +436,6 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, MLRisk
         return best_params, best_mi
     
 
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
-
     def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
         """Generate parameter combinations for optimization."""
         import itertools
@@ -538,6 +541,15 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, MLRisk
             timeframe = str(config.get("timeframe", "15m"))
             direction = str(config.get("direction", "long"))
 
+            # Ensure context is set for artifact routing/versioned store
+            self._current_context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': 'enhanced_ml_volatility_burst_step'
+            }
+
             tprint_info(f"🚀 Starting Enhanced Momentum Persistence for {symbol}")
 
             # Load market data
@@ -579,7 +591,7 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, MLRisk
             )
             
             # Save artifacts
-            artifact_name = f"enhanced_volatility_burst_{timeframe}"
+            artifact_name = f"enhanced_volatility_burst_prediction_{timeframe}"
             metadata = SpecialistDataInterface.create_standard_metadata(
                 specialist_name="EnhancedMLVolatilityBurstStep",
                 config=config,
@@ -589,21 +601,24 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, MLRisk
             )
             
             
-            # DEBUG: Check artifact saving setup
-            print(f"🐛 DEBUG: About to save artifact: {artifact_name}")
-            print(f"🐛 DEBUG: Output df shape: {output_df.shape}")
-            print(f"🐛 DEBUG: Artifact router type: {type(self.artifact_router)}")
-            print(f"🐛 DEBUG: Versioned store available: {hasattr(self, '_versioned_store') and self._versioned_store is not None}")
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
-            
-            self.artifact_router.save(
+            prediction_artifact_path = self._save_artifact(
                 data=output_df,
                 artifact_name=artifact_name,
                 artifact_type="data",
                 data_category="predictions",
                 metadata=metadata
             )
+            artifacts.append(prediction_artifact_path)
+
+            model_name = f"enhanced_volatility_burst_model_{timeframe}"
+            model_artifact_path = self._save_artifact(
+                data=model,
+                artifact_name=model_name,
+                artifact_type="model",
+                data_category="models",
+                metadata=metadata
+            )
+            artifacts.append(model_artifact_path)
             
             # Run enhanced diagnostics
             diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)

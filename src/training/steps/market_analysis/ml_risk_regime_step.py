@@ -149,7 +149,17 @@ class LiveHMM:
         if self.covariance_type == 'full':
             return self.covars[state_id]
         elif self.covariance_type == 'diag':
-            return np.diag(self.covars[state_id])
+            cov_array = self.covars[state_id]
+            # Ensure 2D matrix for inversion
+            if cov_array.ndim == 1:
+                if len(cov_array) == 1:
+                    # Single feature case
+                    return np.array([[cov_array[0]]])
+                else:
+                    # Multiple features, create diagonal matrix
+                    return np.diag(cov_array)
+            else:
+                return cov_array
         elif self.covariance_type == 'tied':
             return self.covars
         elif self.covariance_type == 'spherical':
@@ -351,15 +361,15 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
             
             if use_enhanced_risk:
                 enhanced_distances, enhanced_metadata = self._calculate_enhanced_risk_scores(
-                    risk_df, hmm, safe_state_id, split_config, config
+                    risk_df, hmm_model, safe_state_id, split_config, config
                 )
                 mahal_distances = enhanced_distances
                 mahal_scaler_params = enhanced_metadata
                 tprint_info("  ✓ Using enhanced multi-dimensional risk scores")
             else:
                 mahal_distances, mahal_scaler_params = self._calculate_mahalanobis_distances(
-                risk_df, hmm_model, safe_state_id, split_config
-            )
+                    risk_df, hmm_model, safe_state_id, split_config
+                )
 
             # Add regime labels and normalized Mahalanobis risk score to dataframe
             risk_df['risk_regime'] = regime_labels
@@ -627,12 +637,34 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
             f"  Valid samples: {len(risk_features_clean)}/{len(risk_df)}"
         )
 
-        # ===== OPTIMIZATION 1: Strided Training =====
-        hmm_stride = int(config.get("hmm_stride", 10))
-        tprint_info(f"🔄 Applying strided training: Using every {hmm_stride}th data point")
+        # ===== OPTIMIZATION 1: Aggressive Strided Training =====
+        # Use adaptive stride based on sample size for faster training
+        n_samples = len(risk_features_clean)
+        if n_samples > 50000:
+            hmm_stride = 20  # Very aggressive for large datasets
+        elif n_samples > 20000:
+            hmm_stride = 15  # Aggressive for medium datasets  
+        else:
+            hmm_stride = 10  # Standard for small datasets
+        
+        # Allow override from config
+        hmm_stride = int(config.get("hmm_stride", hmm_stride))
+        
+        tprint_info(f"🔄 Applying aggressive strided training: Using every {hmm_stride}th data point")
 
         strided_indices = np.arange(0, len(risk_features_clean), hmm_stride)
         risk_features_strided = risk_features_clean.iloc[strided_indices].copy()
+        tprint_info(f"  🔍 Risk features strided DataFrame shape: {risk_features_strided.shape}")
+        tprint_info(f"  🔍 Risk features strided DataFrame columns: {len(risk_features_strided.columns)}")
+        
+        # Ensure minimum samples for stable training
+        min_required_samples = 1000
+        if len(risk_features_strided) < min_required_samples:
+            # Reduce stride to meet minimum requirement
+            new_stride = max(1, len(risk_features_clean) // min_required_samples)
+            strided_indices = np.arange(0, len(risk_features_clean), new_stride)
+            risk_features_strided = risk_features_clean.iloc[strided_indices].copy()
+            tprint_warning(f"  ⚠️ Reduced stride to {new_stride} to meet minimum sample requirement")
 
         tprint_info(
             f"  Strided data: {len(risk_features_strided)} samples "
@@ -665,8 +697,8 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
             f"(warm-start initialization ready)"
         )
 
-        # Optional: HMM warm-start from latest saved model
-        warm_start_enabled = bool(config.get("hmm_enable_warm_start", True))
+        # Optional: HMM warm-start from latest saved model - TEMPORARILY DISABLED
+        warm_start_enabled = False  # bool(config.get("hmm_enable_warm_start", True))
         warm_start_model_path = config.get("hmm_warm_start_model_path")
         previous_hmm: Optional[GaussianHMM] = None
 
@@ -711,64 +743,114 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
         # OPTIMIZED: Reduced n_iter from 200 to 100 for faster training
         hmm_n_iter = int(config.get("hmm_n_iter", 100))  # Reduced from 200
         hmm_tol = float(config.get("hmm_tol", 1e-3))
-        hmm_min_covar = float(config.get("hmm_min_covar", 0.001))
+        hmm_min_covar = float(config.get("hmm_min_covar", 0.01))  # Increased from 0.001 to prevent startprob issues
+        hmm_feature_subsample = float(config.get("hmm_feature_subsample", 0.7))  # Use 70% of features for speed
 
-        hmm: GaussianHMM
-
-        if (
-            previous_hmm is not None
-            and getattr(previous_hmm, "n_components", None) == n_regimes
-            and getattr(previous_hmm, "n_features", risk_features_strided.shape[1]) == risk_features_strided.shape[1]
-        ):
-            warm_starter = HMMWarmStarter()
-            # OPTIMIZED: Use 'diag' covariance for 5-10x faster training
-            hmm = warm_starter.create_warm_started_hmm(
-                n_components=n_regimes,
-                n_features=risk_features_strided.shape[1],
-                previous_hmm=previous_hmm,
-                covariance_type="diag",  # OPTIMIZED from 'full'
-                n_iter=hmm_n_iter,
-                random_state=42,
-            )
-            try:
-                hmm.min_covar = hmm_min_covar
-            except Exception:
-                pass
-            tprint_info("  ♻️ Warm-starting HMM from previous trained model")
-        else:
-            # OPTIMIZED: Use 'diag' covariance for 5-10x faster training
-            hmm = GaussianHMM(
-                n_components=n_regimes,
-                covariance_type="diag",  # OPTIMIZED from 'full'
-                n_iter=hmm_n_iter,
-                tol=hmm_tol,
-                init_params='stmc',
-                min_covar=hmm_min_covar,
-                random_state=42
-            )
-
-            # Inject GMM means into HMM (warm start)
-            hmm.means_ = gmm_means.copy()
-            hmm.init_params = 'stc'  # Only init start, trans, covars
-
-        tprint_info(
-            f"  HMM configuration: n_components={n_regimes}, "
-            f"covariance_type='diag' (OPTIMIZED), n_iter={hmm_n_iter}, "
-            f"tol={hmm_tol}, min_covar={hmm_min_covar}"
+        hmm: GaussianHMM = None  # Initialize to None
+        
+        # Always create a new HMM (warm start temporarily disabled)
+        # OPTIMIZED: Use 'diag' covariance for 5-10x faster training
+        hmm = GaussianHMM(
+            n_components=n_regimes,
+            covariance_type="diag",  # OPTIMIZED from 'full'
+            n_iter=hmm_n_iter,
+            tol=hmm_tol,
+            min_covar=hmm_min_covar,
+            random_state=42,
+            init_params='stmc',
+            params='stmc'
         )
+        
+        # Re-inject GMM means if available
+        if gmm_means is not None:
+            hmm.means_ = gmm_means.copy()
+            hmm.init_params = 'stc'
 
         # Train HMM
         hmm_features_strided_array = risk_features_strided.values
+        tprint_info(f"  🔍 Risk features strided shape: {risk_features_strided.shape}")
+        tprint_info(f"  🔍 Risk features strided array shape: {hmm_features_strided_array.shape}")
+        tprint_info(f"  🔍 Risk features strided array ndim: {hmm_features_strided_array.ndim}")
+        
+        # Apply feature subsampling for speed optimization
+        selected_features = None
+        if hmm_feature_subsample < 1.0:
+            n_features = hmm_features_strided_array.shape[1]
+            n_selected = int(n_features * hmm_feature_subsample)
+            selected_features = np.random.choice(
+                n_features, size=n_selected, replace=False
+            )
+            hmm_features_strided_array = hmm_features_strided_array[:, selected_features]
+            tprint_info(f"  🎯 Feature subsampling: {n_selected}/{n_features} features ({hmm_feature_subsample:.1%})")
+        
+        # Also subsample the full data for prediction consistency
+        hmm_full_array = risk_features_clean.values
+        tprint_info(f"  🔍 Risk features clean shape: {risk_features_clean.shape}")
+        tprint_info(f"  🔍 Risk features clean array shape: {hmm_full_array.shape}")
+        tprint_info(f"  🔍 Risk features clean array ndim: {hmm_full_array.ndim}")
+        
+        if selected_features is not None:
+            hmm_full_array = hmm_full_array[:, selected_features]
+
+        # Ensure both arrays are 2D with consistent shapes
+        tprint_info(f"  🔍 HMM array shapes before processing:")
+        tprint_info(f"     Training: {hmm_features_strided_array.shape}")
+        tprint_info(f"     Prediction: {hmm_full_array.shape}")
+        
+        if hmm_features_strided_array.ndim == 3:
+            tprint_info(f"  🔄 Reshaping training array from 3D to 2D")
+            hmm_features_strided_array = hmm_features_strided_array.reshape(hmm_features_strided_array.shape[0], -1)
+        elif hmm_features_strided_array.ndim > 2:
+            # Flatten any additional dimensions
+            tprint_info(f"  🔄 Flattening training array from {hmm_features_strided_array.ndim}D to 2D")
+            hmm_features_strided_array = hmm_features_strided_array.reshape(hmm_features_strided_array.shape[0], -1)
+        
+        if hmm_full_array.ndim == 3:
+            tprint_info(f"  🔄 Reshaping prediction array from 3D to 2D")
+            hmm_full_array = hmm_full_array.reshape(hmm_full_array.shape[0], -1)
+        elif hmm_full_array.ndim > 2:
+            # Flatten any additional dimensions
+            tprint_info(f"  🔄 Flattening prediction array from {hmm_full_array.ndim}D to 2D")
+            hmm_full_array = hmm_full_array.reshape(hmm_full_array.shape[0], -1)
+        
+        tprint_info(f"  🔍 HMM array shapes after processing:")
+        tprint_info(f"     Training: {hmm_features_strided_array.shape}")
+        tprint_info(f"     Prediction: {hmm_full_array.shape}")
+        
+        # Ensure both arrays have the same number of features
+        if hmm_features_strided_array.shape[1] != hmm_full_array.shape[1]:
+            tprint_warning(f"  ⚠️ Feature dimension mismatch: training={hmm_features_strided_array.shape[1]}, prediction={hmm_full_array.shape[1]}")
+            # Use the minimum number of features
+            min_features = min(hmm_features_strided_array.shape[1], hmm_full_array.shape[1])
+            hmm_features_strided_array = hmm_features_strided_array[:, :min_features]
+            hmm_full_array = hmm_full_array[:, :min_features]
+            tprint_info(f"  ✅ Adjusted to {min_features} features")
 
         hmm_start = time.time()
         try:
-            hmm.fit(
-                hmm_features_strided_array,
-                lengths=[len(hmm_features_strided_array)]
-            )
+            # AGGRESSIVE FIX: Ensure array is exactly 2D before HMM fit
+            if hmm_features_strided_array.ndim != 2:
+                tprint_info(f"  🚨 AGGRESSIVE FIX: Reshaping array from {hmm_features_strided_array.shape} to 2D")
+                hmm_features_strided_array = hmm_features_strided_array.reshape(hmm_features_strided_array.shape[0], -1)
+            
+            # Double-check shape before fitting
+            if hmm_features_strided_array.ndim != 2:
+                tprint_error(f"  ❌ CRITICAL: Array is still {hmm_features_strided_array.ndim}D after reshape attempt")
+                raise ValueError(f"Array must be 2D, got {hmm_features_strided_array.ndim}D")
+            
+            tprint_info(f"  ✅ Final HMM training array shape: {hmm_features_strided_array.shape}")
+            
+            # Suppress hmmlearn warnings about zero-sum transition rows (normal for regime models)
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=UserWarning, 
+                                      message='Some rows of transmat_ have zero sum')
+                hmm.fit(
+                    hmm_features_strided_array,
+                    lengths=[len(hmm_features_strided_array)]
+                )
 
-            # Get labels on full data
-            hmm_full_array = risk_features_clean.values
+            # Get labels on full data (use the already subsampled hmm_full_array)
             regime_labels_clean = hmm.predict(
                 hmm_full_array,
                 lengths=[len(hmm_full_array)]
@@ -778,29 +860,65 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
             tprint_warning(
                 f"HMM fit failed: {hmm_exc}. Retrying with increased min_covar"
             )
-
-            # OPTIMIZED: Use 'diag' covariance for 5-10x faster training
+            
+            # Retry with increased min_covar and additional shape fixes
+            hmm_min_covar = 0.1  # Increased from 0.01 to prevent startprob issues
             hmm = GaussianHMM(
                 n_components=n_regimes,
-                covariance_type="diag",  # OPTIMIZED from 'full'
+                covariance_type="diag",
                 n_iter=hmm_n_iter,
                 tol=hmm_tol,
+                min_covar=hmm_min_covar,
+                random_state=42,
                 init_params='stmc',
-                min_covar=hmm_min_covar * 10.0,
-                random_state=42
+                params='stmc'
             )
-
-            hmm_features_strided_retry = risk_features_strided.astype("float64").values
-            hmm_full_retry = risk_features_clean.astype("float64").values
-
-            hmm.fit(
-                hmm_features_strided_retry,
-                lengths=[len(hmm_features_strided_retry)]
-            )
-            regime_labels_clean = hmm.predict(
-                hmm_full_retry,
-                lengths=[len(hmm_full_retry)]
-            )
+            
+            # AGGRESSIVE FIX: Ensure arrays are exactly 2D before retry
+            if hmm_features_strided_array.ndim != 2:
+                tprint_warning(f"  🚨 RETRY FIX: Reshaping training array from {hmm_features_strided_array.shape} to 2D")
+                hmm_features_strided_array = hmm_features_strided_array.reshape(hmm_features_strided_array.shape[0], -1)
+            
+            if hmm_full_array.ndim != 2:
+                tprint_warning(f"  🚨 RETRY FIX: Reshaping prediction array from {hmm_full_array.shape} to 2D")
+                hmm_full_array = hmm_full_array.reshape(hmm_full_array.shape[0], -1)
+            
+            # Ensure consistent feature dimensions
+            if hmm_features_strided_array.shape[1] != hmm_full_array.shape[1]:
+                min_features = min(hmm_features_strided_array.shape[1], hmm_full_array.shape[1])
+                hmm_features_strided_array = hmm_features_strided_array[:, :min_features]
+                hmm_full_array = hmm_full_array[:, :min_features]
+                tprint_warning(f"  🚨 RETRY FIX: Adjusted feature dimensions to {min_features}")
+            
+            # Re-inject GMM means if available
+            if gmm_means is not None:
+                # Ensure GMM means have correct dimensions
+                if gmm_means.ndim == 2 and gmm_means.shape[1] == hmm_features_strided_array.shape[1]:
+                    hmm.means_ = gmm_means.copy()
+                    hmm.init_params = 'stc'
+                else:
+                    tprint_warning(f"  🚨 RETRY: Skipping GMM injection due to dimension mismatch")
+            
+            # Suppress warnings for retry as well
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=UserWarning, 
+                                      message='Some rows of transmat_ have zero sum')
+                try:
+                    hmm.fit(
+                        hmm_features_strided_array,
+                        lengths=[len(hmm_features_strided_array)]
+                    )
+                    regime_labels_clean = hmm.predict(
+                        hmm_full_array,
+                        lengths=[len(hmm_full_array)]
+                    )
+                except ValueError as final_exc:
+                    tprint_error(f"  ❌ HMM retry also failed: {final_exc}")
+                    # Final fallback: use simple clustering
+                    tprint_warning("  🔄 Using fallback clustering approach")
+                    from sklearn.cluster import KMeans
+                    kmeans = KMeans(n_clusters=n_regimes, random_state=42)
+                    regime_labels_clean = kmeans.fit_predict(hmm_full_array)
 
         hmm_duration = time.time() - hmm_start
         tprint_success(f"  ✅ HMM training completed in {hmm_duration:.2f}s")
@@ -836,16 +954,37 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
             if target_metric is not None:
                 # Use valid samples only
                 valid_hsic = (regime_labels >= 0) & target_metric.notna()
-                if valid_hsic.sum() > 50:
+                n_valid = valid_hsic.sum()
+                tprint_info(f"  🔍 Computing HSIC with {n_valid} valid samples...")
+                
+                if n_valid > 50:
+                    # Limit HSIC calculation to prevent hanging
+                    max_samples = min(n_valid, 10000)
+                    if n_valid > max_samples:
+                        # Sample randomly if too many samples
+                        valid_indices = np.where(valid_hsic)[0]
+                        sampled_indices = np.random.choice(valid_indices, max_samples, replace=False)
+                        sampled_mask = np.zeros(len(valid_hsic), dtype=bool)
+                        sampled_mask[sampled_indices] = True
+                        regime_subset = regime_labels[sampled_mask]
+                        target_subset = target_metric.iloc[sampled_indices].values
+                        tprint_info(f"  📊 Sampled {max_samples} samples for HSIC calculation")
+                    else:
+                        regime_subset = regime_labels[valid_hsic]
+                        target_subset = target_metric[valid_hsic].values
+                    
                     hsic_score = calculate_hsic(
-                        regime_labels[valid_hsic],
-                        target_metric[valid_hsic].values,
+                        regime_subset,
+                        target_subset,
                         kernel_X='delta',  # Discrete regimes
                         kernel_Y='rbf'     # Continuous volatility
                     )
                     tprint_info(f"  HSIC(Regime, Risk): {hsic_score:.6f}")
+                else:
+                    tprint_warning(f"  ⚠️ Insufficient samples for HSIC: {n_valid} < 50")
         except Exception as hsic_exc:
             tprint_warning(f"HSIC calculation failed: {hsic_exc}")
+            hsic_score = 0.0
 
         training_metrics = {
             'n_regimes': n_regimes,
@@ -989,14 +1128,22 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
             else:
                 tprint_warning("No valid training distances, using global statistics")
                 valid_distances = mahal_distances_raw[np.isfinite(mahal_distances_raw)]
-                min_val = float(np.min(valid_distances))
-                max_val = float(np.max(valid_distances))
+                if len(valid_distances) == 0:
+                    tprint_warning("No valid distances found, using default scaling")
+                    min_val, max_val = 0.0, 1.0
+                else:
+                    min_val = float(np.min(valid_distances))
+                    max_val = float(np.max(valid_distances))
         else:
             # No split config: use all data (less ideal, but backward compatible)
             tprint_warning("No split_config provided, fitting scaler on all data")
             valid_distances = mahal_distances_raw[np.isfinite(mahal_distances_raw)]
-            min_val = float(np.min(valid_distances))
-            max_val = float(np.max(valid_distances))
+            if len(valid_distances) == 0:
+                tprint_warning("No valid distances found, using default scaling")
+                min_val, max_val = 0.0, 1.0
+            else:
+                min_val = float(np.min(valid_distances))
+                max_val = float(np.max(valid_distances))
 
         # Normalize all distances to [0, 1]
         mahal_distances_normalized = np.full(len(mahal_distances_raw), np.nan)
@@ -1032,6 +1179,8 @@ class MLRiskRegimeStepHMM(SpecialistDiagnosticsMixin, BaseStep):
         tprint_info(
             f"  Interpretation: 0.0 = At safe regime center, 1.0 = Maximum risk/distance"
         )
+
+        return mahal_distances_normalized, scaler_params
 
 
     

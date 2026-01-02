@@ -147,6 +147,10 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseSt
                 reversion_velocity = reversion_signal.diff()
                 manual_features[f'reversion_velocity_{window}'] = reversion_velocity
             
+            # Precompute commonly reused signals
+            reversion_signal_20 = (close - close.rolling(20).mean()) / close.rolling(20).mean()
+            reversion_signal_50 = (close - close.rolling(50).mean()) / close.rolling(50).mean()
+            
             # 2. Bollinger Band-based reversion features
             for window in [20, 50]:
                 bb_mean = close.rolling(window).mean()
@@ -242,7 +246,6 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseSt
             
             # 9. Reversion momentum features
             # Reversion acceleration (second derivative of reversion signal)
-            reversion_signal_20 = (close - close.rolling(20).mean()) / close.rolling(20).mean()
             reversion_acceleration = reversion_signal_20.diff().diff()
             manual_features['reversion_acceleration'] = reversion_acceleration
             
@@ -261,11 +264,17 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseSt
             
             # 11. Composite reversion indicators
             # Reversion strength index (combines multiple reversion signals)
+            zero_series = pd.Series(0, index=df.index)
+            rsi_overbought_14 = manual_features.get('rsi_overbought_14', zero_series)
+            rsi_oversold_14 = manual_features.get('rsi_oversold_14', zero_series)
+            stoch_overbought_14 = manual_features.get('stoch_overbought_14', zero_series)
+            stoch_oversold_14 = manual_features.get('stoch_oversold_14', zero_series)
+            
             reversion_strength_index = (
                 0.3 * (abs(reversion_signal_20) > 0.02).astype(int) +
                 0.3 * (abs(reversion_signal_50) > 0.03).astype(int) +
-                0.2 * (rsi_overbought_14 | rsi_oversold_14).astype(int) +
-                0.2 * (stoch_overbought_14 | stoch_oversold_14).astype(int)
+                0.2 * ((rsi_overbought_14.astype(bool) | rsi_oversold_14.astype(bool))).astype(int) +
+                0.2 * ((stoch_overbought_14.astype(bool) | stoch_oversold_14.astype(bool))).astype(int)
             )
             manual_features['reversion_strength_index'] = reversion_strength_index
             
@@ -480,32 +489,6 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseSt
             labels = (future_returns < -returns.rolling(25).mean()).astype(int)
             return labels
     
-
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
 
     def _optimize_xgb_hyperparameters_for_mi(self, X: pd.DataFrame, y: pd.Series) -> Tuple[Dict[str, Any], float]:
         """Optimize XGBoost hyperparameters specifically for MI improvement."""
@@ -745,12 +728,14 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseSt
             if hasattr(self, '_versioned_store') and self._versioned_store is not None:
                 print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
             
-            self.artifact_router.save(
-                artifact_name=artifact_name,
+            artifact_path = self._save_artifact(
                 data=standardized_output,
+                artifact_name=artifact_name,
+                artifact_type="data",
+                data_category="predictions",
                 metadata=metadata
             )
-            artifacts.append(artifact_name)
+            artifacts.append(artifact_path)
 
             # 8. Run Enhanced Diagnostics
             tprint_info("🔍 Running Enhanced Diagnostics...")

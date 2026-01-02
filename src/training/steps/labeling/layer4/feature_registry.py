@@ -42,6 +42,11 @@ LAYER4_FEATURE_PATTERNS = {
     ],
     'contextual': [
         'residual_', 'contextual_', 'harmonized_'
+    ],
+    'causal': [
+        'causal_effect_estimate', 'causal_effect_ci_low', 'causal_effect_ci_high',
+        'causal_refutation_score', 'causal_residuals', 'cate_estimates',
+        'heterogeneity_score', 'treatment_residuals'
     ]
 }
 

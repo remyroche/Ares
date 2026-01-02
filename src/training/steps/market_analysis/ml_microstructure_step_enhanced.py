@@ -9,6 +9,7 @@ This enhanced version implements:
 - Binary output enforcement
 """
 
+import os
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -49,6 +50,39 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
             )
         return self._artifact_router
 
+    @property
+    def versioned_store(self):
+        """Override versioned_store property for enhanced specialists to use correct model name."""
+        if self._versioned_store is None and self.use_versioned_artifacts:
+            # Use enhanced specialist model name instead of default 'analyst'
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            timeframe = self._current_context.get('timeframe', '15m')
+            direction = self._current_context.get('direction', 'long')
+            model = 'enhanced_ml_microstructure_step'  # Use the correct model name
+
+            # Create store path with full context separation
+            store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+            store_path = os.path.join("versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+
+            # Store context in store metadata
+            if hasattr(self._versioned_store, '_metadata'):
+                self._versioned_store._metadata['context'] = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'model': model
+                }
+
+        return self._versioned_store
+
     """
     Enhanced Microstructure Specialist with MI optimization.
     
@@ -62,7 +96,7 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
     
     def __init__(self, step_name: str = "enhanced_ml_microstructure_step"):
         """Initialize the enhanced microstructure step."""
-        super().__init__(step_name=step_name)
+        super().__init__(step_name=step_name)  # Parent class already enables versioned artifacts
         self._current_context = {}
         self._artifact_manager = None
         self._versioned_store = None
@@ -109,39 +143,31 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
         
         return features
     
-    def _generate_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Generate enhanced microstructure features with manual feature engineering."""
-        # Basic momentum features
-        momentum_features = self._compute_enhanced_microstructure_features(df)
+    def _generate_enhanced_features(self, df: pd.DataFrame, specialist_type=None) -> pd.DataFrame:
+        """Generate enhanced microstructure features with optimized performance."""
+        # Basic microstructure features
+        micro_features = self._compute_enhanced_structural_optimized_horizon_optimized_microstructure_features(df)
         
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'microstructure', {'enhanced_features': True}
-        )
+        # Skip heavy enhanced feature pipeline for performance
+        enhanced_features = pd.DataFrame(index=df.index)
         
-        # Manual feature engineering for microstructure analysis
+        # Manual feature engineering (limited)
         manual_features = self._create_manual_microstructure_enhanced_features(df, enhanced_features)
         
-        # Combine all features
-        all_features = [momentum_features, enhanced_features, manual_features]
+        # Combine features
+        all_features = pd.concat([micro_features, enhanced_features, manual_features], axis=1)
         
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_microstructure_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
+        # Remove duplicate columns
+        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
         
-        return pd.DataFrame(index=df.index)
+        # Limit to top 50 features for performance
+        if len(all_features.columns) > 50:
+            all_features = all_features.iloc[:, :50]
+        
+        return all_features
     
     def _create_manual_microstructure_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
-        """Create manual enhanced features for microstructure analysis."""
+        """Create manual enhanced features for microstructure analysis (optimized)."""
         manual_features = pd.DataFrame(index=df.index)
         
         if all(col in df.columns for col in ['close', 'high', 'low', 'volume']):
@@ -151,144 +177,37 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
             volume = df.get('volume', pd.Series(1, index=df.index))
             returns = close.pct_change()
             
-            # 1. Enhanced bid-ask spread proxies
-            # Range-based spread
-            range_spread = (high - low) / close
-            manual_features['range_spread'] = range_spread
+            # Simplified microstructure features (avoid heavy computations)
+            # Basic momentum features
+            for window in [5, 10, 20, 50]:
+                manual_features[f'returns_{window}'] = returns.rolling(window).mean()
+                manual_features[f'returns_std_{window}'] = returns.rolling(window).std()
+                manual_features[f'volume_{window}'] = volume.pct_change().rolling(window).mean()
             
-            # Spread volatility
-            spread_volatility = range_spread.rolling(20).std()
-            manual_features['spread_volatility'] = spread_volatility
+            # Price-based features
+            manual_features['high_low_ratio'] = high / low
+            manual_features['close_to_high'] = close / high
+            manual_features['close_to_low'] = close / low
             
-            # Spread persistence
-            spread_persistence = (range_spread > range_spread.rolling(50).mean()).rolling(10).sum()
-            manual_features['spread_persistence'] = spread_persistence
+            # Simple volatility features
+            manual_features['volatility_5'] = returns.rolling(5).std()
+            manual_features['volatility_20'] = returns.rolling(20).std()
             
-            # 2. Order flow imbalance features
-            # Volume-weighted price impact
-            price_impact = returns * volume
-            order_flow_imbalance = price_impact.rolling(10).sum()
-            manual_features['order_flow_imbalance'] = order_flow_imbalance
+            # Trend features
+            manual_features['trend_5'] = close > close.rolling(5).mean()
+            manual_features['trend_20'] = close > close.rolling(20).mean()
             
-            # Order flow direction
-            order_flow_direction = np.sign(order_flow_imbalance)
-            manual_features['order_flow_direction'] = order_flow_direction
+            # Microstructure-specific features
+            # Price efficiency
+            manual_features['price_efficiency'] = abs(returns.rolling(10).sum())
             
-            # Order flow intensity
-            order_flow_intensity = abs(order_flow_imbalance) / (volume.rolling(10).mean() + 1e-8)
-            manual_features['order_flow_intensity'] = order_flow_intensity
+            # Volume efficiency
+            manual_features['volume_efficiency'] = abs(volume.pct_change().rolling(10).sum())
             
-            # 3. Market depth proxies
-            # Volume-depth ratio
-            volume_depth = volume / (range_spread + 1e-8)
-            manual_features['volume_depth'] = volume_depth
-            
-            # Depth volatility
-            depth_volatility = volume_depth.rolling(20).std()
-            manual_features['depth_volatility'] = depth_volatility
-            
-            # Depth persistence
-            depth_persistence = (volume_depth > volume_depth.rolling(50).mean()).rolling(10).sum()
-            manual_features['depth_persistence'] = depth_persistence
-            
-            # 4. Price efficiency measures
-            # Price efficiency (how efficiently price incorporates information)
-            price_efficiency = abs(returns.rolling(10).mean()) / (returns.rolling(10).std() + 1e-8)
-            manual_features['price_efficiency'] = price_efficiency
-            
-            # Market efficiency (inverse of noise)
-            market_noise = returns.rolling(20).std() / abs(returns.rolling(20).mean() + 1e-8)
-            market_efficiency = 1 / (market_noise + 1e-8)
-            manual_features['market_efficiency'] = market_efficiency
-            
-            # Information ratio
-            info_ratio = returns.rolling(20).mean() / (returns.rolling(20).std() + 1e-8)
-            manual_features['information_ratio'] = info_ratio
-            
-            # 5. Microstructure regime features
-            # Microstructure stress (high spread + low depth)
-            spread_stress = (range_spread > range_spread.rolling(100).mean()).astype(int)
-            depth_stress = (volume_depth < volume_depth.rolling(100).mean()).astype(int)
-            microstructure_stress = spread_stress + depth_stress
-            manual_features['microstructure_stress'] = microstructure_stress
-            
-            # Microstructure quality (low spread + high depth)
-            spread_quality = (range_spread < range_spread.rolling(100).mean()).astype(int)
-            depth_quality = (volume_depth > volume_depth.rolling(100).mean()).astype(int)
-            microstructure_quality = spread_quality + depth_quality
-            manual_features['microstructure_quality'] = microstructure_quality
-            
-            # 6. Tick-like features (simulated)
-            # Simulated tick frequency (based on volume changes)
-            volume_change = volume.diff().abs()
-            tick_frequency = (volume_change > volume_change.rolling(20).mean()).astype(int)
-            manual_features['tick_frequency'] = tick_frequency
-            
-            # Tick intensity
-            tick_intensity = volume_change / (volume_change.rolling(20).mean() + 1e-8)
-            manual_features['tick_intensity'] = tick_intensity
-            
-            # 7. Liquidity measures
-            # Liquidity ratio (volume / price movement)
-            liquidity_ratio = volume / (abs(returns) + 1e-8)
-            manual_features['liquidity_ratio'] = liquidity_ratio
-            
-            # Liquidity volatility
-            liquidity_volatility = liquidity_ratio.rolling(20).std()
-            manual_features['liquidity_volatility'] = liquidity_volatility
-            
-            # Liquidity stress
-            liquidity_stress = (liquidity_ratio < liquidity_ratio.rolling(100).mean()).astype(int)
-            manual_features['liquidity_stress'] = liquidity_stress
-            
-            # 8. Market impact features
-            # Price impact coefficient
-            impact_coefficient = returns.rolling(20).corr(volume)
-            manual_features['impact_coefficient'] = impact_coefficient
-            
-            # Impact asymmetry (up vs down moves)
-            up_moves = returns[returns > 0]
-            down_moves = returns[returns < 0]
-            up_volume = volume[returns > 0]
-            down_volume = volume[returns < 0]
-            
-            up_impact = up_moves.rolling(20).corr(up_volume) if len(up_moves) > 20 else 0
-            down_impact = down_moves.rolling(20).corr(down_volume) if len(down_moves) > 20 else 0
-            impact_asymmetry = up_impact - down_impact
-            manual_features['impact_asymmetry'] = impact_asymmetry
-            
-            # 9. Microstructure momentum features
-            # Spread momentum
-            spread_momentum = range_spread.rolling(10).mean()
-            manual_features['spread_momentum'] = spread_momentum
-            
-            # Depth momentum
-            depth_momentum = volume_depth.rolling(10).mean()
-            manual_features['depth_momentum'] = depth_momentum
-            
-            # Efficiency momentum
-            efficiency_momentum = price_efficiency.rolling(10).mean()
-            manual_features['efficiency_momentum'] = efficiency_momentum
-            
-            # 10. Composite microstructure indicators
-            # Microstructure health index
-            health_index = (
-                0.3 * (range_spread < range_spread.rolling(100).mean()).astype(int) +
-                0.3 * (volume_depth > volume_depth.rolling(100).mean()).astype(int) +
-                0.2 * (price_efficiency > price_efficiency.rolling(100).mean()).astype(int) +
-                0.2 * (liquidity_ratio > liquidity_ratio.rolling(100).mean()).astype(int)
-            )
-            manual_features['microstructure_health'] = health_index
-            
-            # Microstructure stability index
-            stability_index = (
-                0.25 * (spread_volatility < spread_volatility.rolling(100).mean()).astype(int) +
-                0.25 * (depth_volatility < depth_volatility.rolling(100).mean()).astype(int) +
-                0.25 * (abs(impact_coefficient) < abs(impact_coefficient).rolling(100).mean()).astype(int) +
-                0.25 * (liquidity_volatility < liquidity_volatility.rolling(100).mean()).astype(int)
-            )
-            manual_features['microstructure_stability'] = stability_index
-            
+            # Spread features
+            manual_features['spread'] = (high - low) / close
+            manual_features['spread_ma'] = manual_features['spread'].rolling(20).mean()
+        
         return manual_features
     
     def _apply_manual_microstructure_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
@@ -437,32 +356,6 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
         return best_params, best_mi
     
 
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
-
     def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
         """Generate parameter combinations for optimization."""
         import itertools
@@ -568,6 +461,15 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
             timeframe = str(config.get("timeframe", "15m"))
             direction = str(config.get("direction", "long"))
 
+            # Set context for artifact saving - MUST BE DONE FIRST
+            self._current_context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': 'enhanced_ml_microstructure_step'
+            }
+
             tprint_info(f"🚀 Starting Enhanced Microstructure for {symbol}")
 
             # Load market data
@@ -608,8 +510,7 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
                 features, labels, predictions, probabilities, symbol, exchange, timeframe, direction
             )
             
-            # Save artifacts
-            artifact_name = f"enhanced_microstructure_persistence_{timeframe}"
+            artifact_name = f"enhanced_ml_microstructure_prediction_{timeframe}"
             metadata = SpecialistDataInterface.create_standard_metadata(
                 specialist_name="EnhancedMLMicrostructureStep",
                 config=config,
@@ -617,17 +518,8 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
                 mi_score=metrics['mi_score'],
                 hsic_score=0.0  # Not computed for this implementation
             )
-            
-            
-            # DEBUG: Check artifact saving setup
-            print(f"🐛 DEBUG: About to save artifact: {artifact_name}")
-            print(f"🐛 DEBUG: Output df shape: {output_df.shape}")
-            print(f"🐛 DEBUG: Artifact router type: {type(self.artifact_router)}")
-            print(f"🐛 DEBUG: Versioned store available: {hasattr(self, '_versioned_store') and self._versioned_store is not None}")
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
-            
-            self.artifact_router.save(
+
+            artifact_path = self._save_artifact(
                 data=output_df,
                 artifact_name=artifact_name,
                 artifact_type="data",
@@ -676,8 +568,10 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
         return output_df
     
     def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
-        """Load market data - placeholder implementation."""
-        # This would be implemented based on the actual data loading mechanism
-        # Using alternative data loading approach
-            # market_data = self._load_alternative_market_data(config, timeframe)
-        return load_market_data(config['symbol'], config['exchange'], timeframe)
+        """Load market data using BaseStep method."""
+        market_data, _market_source = self.load_market_data_or_fail(
+            {**config, "timeframe": timeframe},
+            pipeline_state={},
+            allow_config_override=True,
+        )
+        return market_data

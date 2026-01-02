@@ -743,6 +743,56 @@ class ClusterQualityAssessor:
             tprint_warning("⚠️ Empty inputs - cannot assess quality")
             return metrics
         
+        # Apply sampling for large datasets to improve performance
+        max_samples = 10000  # Maximum samples for quality assessment
+        if len(regime_labels) > max_samples:
+            tprint_info(f"📊 Sampling {len(regime_labels):,} samples down to {max_samples:,} for quality assessment")
+            
+            # Create stratified sampling indices to preserve regime distribution
+            np.random.seed(42)  # For reproducible results
+            
+            # Get unique regimes (excluding noise)
+            unique_regimes = np.unique(regime_labels[regime_labels != -1])
+            sampled_indices = []
+            
+            for regime in unique_regimes:
+                regime_mask = regime_labels == regime
+                regime_indices = np.where(regime_mask)[0]
+                
+                # Sample proportionally from each regime
+                n_regime_samples = min(len(regime_indices), max(50, max_samples // len(unique_regimes)))
+                if len(regime_indices) > n_regime_samples:
+                    sampled_regime_indices = np.random.choice(regime_indices, n_regime_samples, replace=False)
+                else:
+                    sampled_regime_indices = regime_indices
+                
+                sampled_indices.extend(sampled_regime_indices)
+            
+            # Add some noise points if present
+            noise_mask = regime_labels == -1
+            if np.any(noise_mask):
+                noise_indices = np.where(noise_mask)[0]
+                n_noise_samples = min(len(noise_indices), max(100, max_samples // 20))
+                if len(noise_indices) > n_noise_samples:
+                    sampled_noise_indices = np.random.choice(noise_indices, n_noise_samples, replace=False)
+                else:
+                    sampled_noise_indices = noise_indices
+                sampled_indices.extend(sampled_noise_indices)
+            
+            # Convert to numpy array and sort to maintain temporal order
+            sampled_indices = np.array(sampled_indices)
+            sampled_indices = np.sort(sampled_indices)
+            
+            # Apply sampling
+            regime_labels = regime_labels[sampled_indices]
+            feature_data = feature_data.iloc[sampled_indices].copy()
+            if forward_returns is not None:
+                forward_returns = forward_returns.iloc[sampled_indices].copy()
+            if timestamps is not None:
+                timestamps = timestamps[sampled_indices]
+            
+            tprint_success(f"✅ Sampled dataset: {len(regime_labels):,} samples ({len(set(regime_labels[regime_labels != -1]))} regimes)")
+        
         # Filter out noise points for core metrics
         non_noise_mask = regime_labels != -1
         
@@ -1484,8 +1534,9 @@ class ClusterQualityAssessor:
         features_valid = features_clean.loc[mask_valid]
         labels_valid = labels_clean[mask_valid.to_numpy()]
 
-        # Need at least 2 samples and 2 distinct labels for a meaningful CH score
-        if len(features_valid) < 2 or len(set(labels_valid)) < 2:
+        # Need at least 2 samples and MORE than 2 distinct labels for a meaningful CH score
+        # CH score is undefined for binary classification (2 labels)
+        if len(features_valid) < 2 or len(set(labels_valid)) <= 2:
             return 0.0
 
         try:

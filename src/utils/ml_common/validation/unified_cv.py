@@ -75,7 +75,7 @@ class UnifiedCrossValidator:
         y: np.ndarray,
         *,
         strategy: str = "standard",  # "standard" | "temporal"
-        cv_folds: int = 5,
+        cv_folds: int = 3,  # Reduced from 5 for faster training
         scoring: Union[str, List[str], None] = None,
         random_state: Optional[int] = 42,
         stratified: Optional[bool] = None,

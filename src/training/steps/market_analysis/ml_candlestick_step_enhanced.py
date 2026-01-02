@@ -4,16 +4,15 @@ Enhanced ML Candlestick Pattern Step with MI Improvements
 This enhanced version implements:
 - Enhanced feature generation for MI improvement
 - Real-time MI monitoring during training
-- Hyperparameter optimization for MI > 0.02 target
-- Data structure standardization
-- Binary output enforcement
 """
 
+import os
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
-from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+import logging
+from datetime import datetime
 import logging
 from datetime import datetime, timedelta
 from sklearn.feature_selection import mutual_info_regression
@@ -34,7 +33,7 @@ from src.training.steps.market_analysis.specialist_data_standard import Speciali
 logger = logging.getLogger(__name__)
 
 
-class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, SpecialistDiagnosticsMixin, MLRiskRegimeStepHMM):
+class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnhancedV2, SpecialistDiagnosticsMixin):
 
     @property
     def artifact_router(self):
@@ -49,6 +48,39 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
             )
         return self._artifact_router
 
+    @property
+    def versioned_store(self):
+        """Override versioned_store property for enhanced specialists to use correct model name."""
+        if self._versioned_store is None and self.use_versioned_artifacts:
+            # Use enhanced specialist model name instead of default 'analyst'
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            timeframe = self._current_context.get('timeframe', '15m')
+            direction = self._current_context.get('direction', 'long')
+            model = 'enhanced_ml_candlestick_step'  # Use the correct model name
+
+            # Create store path with full context separation
+            store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+            store_path = os.path.join("versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+
+            # Store context in store metadata
+            if hasattr(self._versioned_store, '_metadata'):
+                self._versioned_store._metadata['context'] = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'model': model
+                }
+
+        return self._versioned_store
+
     """
     Enhanced Candlestick Pattern Specialist with MI optimization.
     
@@ -61,13 +93,11 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
     """
     
     def __init__(self, step_name: str = "enhanced_ml_candlestick_step"):
-        """Initialize the enhanced momentum persistence step."""
-        super().__init__()
+        """Initialize the enhanced candlestick step."""
+        super().__init__(step_name=step_name)  # Parent class already enables versioned artifacts
         self._current_context = {}
         self._artifact_manager = None
         self._versioned_store = None
-        self.step_name = step_name
-        self.step_name = step_name
         self.step_name = step_name
         self.logger = logger.getChild("EnhancedMLCandlestickStep")
         self.feature_pipeline = MIOptimizedFeaturePipeline()
@@ -112,35 +142,27 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
         return features
     
     def _generate_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Generate enhanced candlestick features with manual feature engineering."""
-        # Basic momentum features
-        momentum_features = self._compute_enhanced_candlestick_features(df)
+        """Generate enhanced candlestick features with optimized performance."""
+        # Basic candlestick features
+        candlestick_features = self._compute_enhanced_structural_optimized_horizon_optimized_candlestick_features(df)
         
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'candlestick', {'enhanced_features': True}
-        )
+        # Skip heavy enhanced feature pipeline for performance
+        enhanced_features = pd.DataFrame(index=df.index)
         
-        # Manual feature engineering for candlestick analysis
+        # Manual feature engineering (limited)
         manual_features = self._create_manual_candlestick_enhanced_features(df, enhanced_features)
         
-        # Combine all features
-        all_features = [momentum_features, enhanced_features, manual_features]
+        # Combine features
+        all_features = pd.concat([candlestick_features, enhanced_features, manual_features], axis=1)
         
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_candlestick_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
+        # Remove duplicate columns
+        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
         
-        return pd.DataFrame(index=df.index)
+        # Limit to top 50 features for performance
+        if len(all_features.columns) > 50:
+            all_features = all_features.iloc[:, :50]
+        
+        return all_features
     
     def _create_manual_candlestick_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create manual enhanced features for candlestick pattern analysis."""
@@ -308,13 +330,15 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
             
             # 9. Multi-timeframe candlestick features
             # 3-candle trend
-            three_candle_trend = (close > close.shift(1) > close.shift(2)).astype(int) - \
-                               (close < close.shift(1) < close.shift(2)).astype(int)
+            three_candle_trend = ((close > close.shift(1)) & (close.shift(1) > close.shift(2))).astype(int) - \
+                               ((close < close.shift(1)) & (close.shift(1) < close.shift(2))).astype(int)
             manual_features['three_candle_trend'] = three_candle_trend
             
             # 5-candle trend
-            five_candle_trend = (close > close.shift(1) > close.shift(2) > close.shift(3) > close.shift(4)).astype(int) - \
-                              (close < close.shift(1) < close.shift(2) < close.shift(3) < close.shift(4)).astype(int)
+            five_candle_trend = ((close > close.shift(1)) & (close.shift(1) > close.shift(2)) & 
+                                (close.shift(2) > close.shift(3)) & (close.shift(3) > close.shift(4))).astype(int) - \
+                              ((close < close.shift(1)) & (close.shift(1) < close.shift(2)) & 
+                               (close.shift(2) < close.shift(3)) & (close.shift(3) < close.shift(4))).astype(int)
             manual_features['five_candle_trend'] = five_candle_trend
             
             # 10. Composite candlestick indicators
@@ -483,32 +507,6 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
         return best_params, best_mi
     
 
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
-
     def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
         """Generate parameter combinations for optimization."""
         import itertools
@@ -614,6 +612,15 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
             timeframe = str(config.get("timeframe", "15m"))
             direction = str(config.get("direction", "long"))
 
+            # Set context for artifact saving - MUST BE DONE FIRST
+            self._current_context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': 'enhanced_ml_candlestick_step'
+            }
+
             tprint_info(f"🚀 Starting Enhanced Candlestick Pattern for {symbol}")
 
             # Load market data
@@ -655,7 +662,7 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
             )
             
             # Save artifacts
-            artifact_name = f"enhanced_candlestick_persistence_{timeframe}"
+            artifact_name = f"enhanced_ml_candlestick_prediction_{timeframe}"
             metadata = SpecialistDataInterface.create_standard_metadata(
                 specialist_name="EnhancedMLCandlestickStep",
                 config=config,
@@ -664,16 +671,7 @@ class EnhancedMLCandlestickStep(SpecialistDiagnosticsMixinEnhancedV2, Specialist
                 hsic_score=0.0  # Not computed for this implementation
             )
             
-            
-            # DEBUG: Check artifact saving setup
-            print(f"🐛 DEBUG: About to save artifact: {artifact_name}")
-            print(f"🐛 DEBUG: Output df shape: {output_df.shape}")
-            print(f"🐛 DEBUG: Artifact router type: {type(self.artifact_router)}")
-            print(f"🐛 DEBUG: Versioned store available: {hasattr(self, '_versioned_store') and self._versioned_store is not None}")
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
-            
-            self.artifact_router.save(
+            artifact_path = self._save_artifact(
                 data=output_df,
                 artifact_name=artifact_name,
                 artifact_type="data",

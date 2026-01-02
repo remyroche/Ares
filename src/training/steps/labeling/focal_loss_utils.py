@@ -193,3 +193,249 @@ class RobustFocalLoss:
             
         return grad, hess
 
+
+# ==========================================
+# REGRESSION LOSS FUNCTIONS (NEW)
+# ==========================================
+
+def get_focal_regression_loss_lgbm(alpha=1.0, gamma=2.0):
+    '''
+    Focal loss adapted for regression - focuses on large prediction errors.
+    
+    Args:
+        alpha (float): Base weighting factor
+        gamma (float): Focusing parameter (higher = more focus on hard examples)
+    '''
+    def focal_regression_objective(y_pred, train_data):
+        y_true = train_data.get_label()
+        residual = y_pred - y_true
+        abs_residual = np.abs(residual)
+        
+        # Normalize residuals for weighting (0-1 range)
+        max_residual = np.max(abs_residual)
+        if max_residual > 0:
+            normalized_residual = abs_residual / max_residual
+        else:
+            normalized_residual = abs_residual
+        
+        # Focal weighting: emphasize hard examples (large residuals)
+        # (1 - normalized_residual)^gamma where normalized_residual is close to 1 for large errors
+        focal_weight = np.power(1.0 - normalized_residual, gamma)
+        
+        # Weighted MSE gradient and hessian
+        grad = 2.0 * residual * focal_weight * alpha
+        hess = 2.0 * focal_weight * alpha
+        
+        return grad, hess
+    
+    return focal_regression_objective
+
+def get_quantile_loss_lgbm(quantile=0.5):
+    '''
+    Quantile loss (Pinball loss) for regression.
+    
+    Args:
+        quantile (float): Quantile to predict (0.0-1.0)
+                        0.5 = median, 0.9 = 90th percentile, etc.
+    '''
+    def quantile_loss_objective(y_pred, train_data):
+        y_true = train_data.get_label()
+        residual = y_pred - y_true
+        
+        # Pinball loss gradient
+        grad = np.where(residual > 0, quantile, quantile - 1.0)
+        hess = np.ones_like(y_pred)  # Constant hessian for quantile loss
+        
+        return grad, hess
+    
+    return quantile_loss_objective
+
+def get_huber_loss_lgbm(delta=1.0):
+    '''
+    Huber loss for regression - quadratic near zero, linear far from zero.
+    
+    Args:
+        delta (float): Transition point between quadratic and linear regions
+    '''
+    def huber_loss_objective(y_pred, train_data):
+        y_true = train_data.get_label()
+        residual = y_pred - y_true
+        abs_residual = np.abs(residual)
+        
+        # Quadratic for small errors, linear for large errors
+        grad = np.where(abs_residual <= delta, residual, delta * np.sign(residual))
+        hess = np.where(abs_residual <= delta, np.ones_like(y_true), np.zeros_like(y_true))
+        
+        return grad, hess
+    
+    return huber_loss_objective
+
+def get_adaptive_mse_loss_lgbm(focusing_factor=2.0):
+    '''
+    MSE with adaptive weighting based on error magnitude.
+    
+    Args:
+        focusing_factor (float): How much to focus on hard examples
+    '''
+    def adaptive_mse_objective(y_pred, train_data):
+        y_true = train_data.get_label()
+        residual = y_pred - y_true
+        abs_residual = np.abs(residual)
+        
+        # Focus on hard examples (large residuals)
+        median_abs_residual = np.median(abs_residual)
+        if median_abs_residual > 0:
+            weights = np.power(abs_residual / median_abs_residual, focusing_factor)
+        else:
+            weights = np.ones_like(abs_residual)
+        
+        # Weighted MSE
+        grad = 2.0 * residual * weights
+        hess = 2.0 * weights
+        
+        return grad, hess
+    
+    return adaptive_mse_objective
+
+
+def get_asymmetric_regression_loss_lgbm(alpha_pos=0.7, alpha_neg=0.3, huber_delta=0.1):
+    """
+    Factory to return an asymmetric regression loss function for LightGBM.
+    Penalizes underestimation and overestimation differently.
+    
+    Args:
+        alpha_pos (float): Weight for positive errors (underestimation)
+        alpha_neg (float): Weight for negative errors (overestimation)  
+        huber_delta (float): Delta parameter for Huber loss transition
+    """
+    def asymmetric_regression_objective(y_pred, train_data):
+        y_true = train_data.get_label()
+        
+        # Calculate residuals
+        residuals = y_true - y_pred
+        
+        # Asymmetric Huber-like loss
+        grad = np.zeros_like(residuals)
+        hess = np.zeros_like(residuals)
+        
+        # Positive residuals (underestimation) - penalize more
+        pos_mask = residuals > 0
+        if pos_mask.any():
+            r_pos = residuals[pos_mask]
+            if r_pos.any() > huber_delta:
+                # Quadratic region
+                grad[pos_mask] = alpha_pos * r_pos
+                hess[pos_mask] = alpha_pos
+            else:
+                # Linear region  
+                grad[pos_mask] = alpha_pos * huber_delta * np.sign(r_pos)
+                hess[pos_mask] = alpha_pos * huber_delta * 0.1  # Small hessian in linear region
+        
+        # Negative residuals (overestimation) - penalize less
+        neg_mask = residuals <= 0
+        if neg_mask.any():
+            r_neg = residuals[neg_mask]
+            if np.abs(r_neg) > huber_delta:
+                # Quadratic region
+                grad[neg_mask] = alpha_neg * r_neg
+                hess[neg_mask] = alpha_neg
+            else:
+                # Linear region
+                grad[neg_mask] = alpha_neg * huber_delta * np.sign(r_neg)
+                hess[neg_mask] = alpha_neg * huber_delta * 0.1
+
+        return grad, hess
+        
+    return asymmetric_regression_objective
+
+def get_asymmetric_regression_loss_xgb(alpha_pos=0.7, alpha_neg=0.3, huber_delta=0.1):
+    """
+    Factory to return an asymmetric regression loss function for XGBoost.
+    """
+    def asymmetric_regression_objective(y_pred, y_true):
+        y_true = y_true.ravel()
+        
+        # Calculate residuals
+        residuals = y_true - y_pred
+        
+        # Asymmetric Huber-like loss
+        grad = np.zeros_like(residuals)
+        hess = np.zeros_like(residuals)
+        
+        # Positive residuals (underestimation) - penalize more
+        pos_mask = residuals > 0
+        if pos_mask.any():
+            r_pos = residuals[pos_mask]
+            if np.abs(r_pos) > huber_delta:
+                grad[pos_mask] = alpha_pos * r_pos
+                hess[pos_mask] = alpha_pos
+            else:
+                grad[pos_mask] = alpha_pos * huber_delta * np.sign(r_pos)
+                hess[pos_mask] = alpha_pos * huber_delta * 0.1
+        
+        # Negative residuals (overestimation) - penalize less
+        neg_mask = residuals <= 0
+        if neg_mask.any():
+            r_neg = residuals[neg_mask]
+            if np.abs(r_neg) > huber_delta:
+                grad[neg_mask] = alpha_neg * r_neg
+                hess[neg_mask] = alpha_neg
+            else:
+                grad[neg_mask] = alpha_neg * huber_delta * np.sign(r_neg)
+                hess[neg_mask] = alpha_neg * huber_delta * 0.1
+
+        return grad, hess
+        
+    return asymmetric_regression_objective
+
+class AsymmetricRegressionLoss:
+    """
+    Production-grade Asymmetric Regression Loss for LightGBM in Financial ML.
+    """
+    
+    def __init__(self, alpha_pos=0.7, alpha_neg=0.3, huber_delta=0.1, verbose=True):
+        self.alpha_pos = alpha_pos
+        self.alpha_neg = alpha_neg  
+        self.huber_delta = huber_delta
+        self.verbose = verbose
+        self._is_init = False
+
+    def __call__(self, preds, train_data):
+        if hasattr(train_data, 'get_label'):
+            y_true = train_data.get_label()
+        else:
+            y_true = train_data
+
+        # Calculate residuals
+        residuals = y_true - preds
+        
+        # Asymmetric Huber-like loss
+        grad = np.zeros_like(residuals)
+        hess = np.zeros_like(residuals)
+        
+        # Positive residuals (underestimation) - penalize more
+        pos_mask = residuals > 0
+        if pos_mask.any():
+            r_pos = residuals[pos_mask]
+            if np.abs(r_pos) > self.huber_delta:
+                grad[pos_mask] = self.alpha_pos * r_pos
+                hess[pos_mask] = self.alpha_pos
+            else:
+                grad[pos_mask] = self.alpha_pos * self.huber_delta * np.sign(r_pos)
+                hess[pos_mask] = self.alpha_pos * self.huber_delta * 0.1
+        
+        # Negative residuals (overestimation) - penalize less
+        neg_mask = residuals <= 0
+        if neg_mask.any():
+            r_neg = residuals[neg_mask]
+            if np.abs(r_neg) > self.huber_delta:
+                grad[neg_mask] = self.alpha_neg * r_neg
+                hess[neg_mask] = self.alpha_neg
+            else:
+                grad[neg_mask] = self.alpha_neg * self.huber_delta * np.sign(r_neg)
+                hess[neg_mask] = self.alpha_neg * self.huber_delta * 0.1
+
+        # Ensure positive hessian for numerical stability
+        hess = np.maximum(hess, 1e-6)
+
+        return grad, hess

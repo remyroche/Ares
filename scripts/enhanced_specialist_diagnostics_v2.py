@@ -67,7 +67,6 @@ INDEPENDENT_SPECIALISTS = [
     'ml_volatility_burst_step',
     'ml_risk_regime_step',
     'ml_liquidity_regime_step',
-    'ml_breakout_bounce_regime_step',
     'ml_smc_regime_step',
     'ml_volume_force_step',
     
@@ -479,7 +478,12 @@ async def train_all_specialists(
                 if 'metrics' in result:
                     metrics = result['metrics']
                     mi_score = metrics.get('prediction_mi_to_target', 0)
-                    logger.info(f"   Metrics: AUC={metrics.get('auc', 'N/A'):.3f}, MI={mi_score:.4f}")
+                    auc_val = metrics.get('auc', 'N/A')
+                    # Handle both numeric and string values
+                    if isinstance(auc_val, (int, float)):
+                        logger.info(f"   Metrics: AUC={auc_val:.3f}, MI={mi_score:.4f}")
+                    else:
+                        logger.info(f"   Metrics: AUC={auc_val}, MI={mi_score:.4f}")
             else:
                 logger.error(f"❌ {step_name} training failed: {result.get('error')}")
                 

@@ -28,7 +28,7 @@ from src.training.steps.market_analysis.specialist_diagnostics_mixin import Spec
 
 logger = logging.getLogger(__name__)
 
-class MLVolatilityBurstStep(SpecialistDiagnosticsMixin, MLRiskRegimeStepHMM):
+class MLVolatilityBurstStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixin):
     """
     Volatility Burst Specialist for 1.5-3% Range Trading.
     

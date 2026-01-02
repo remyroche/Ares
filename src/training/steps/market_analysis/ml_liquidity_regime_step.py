@@ -3118,11 +3118,25 @@ class MLLiquidityRegimeStep(BaseStep):
         fast_mode = bool(config.get("liquidity_quality_fast_mode", False))
 
         try:
+            # Use subsampling for performance on large datasets
+            max_samples = 10000
+            if len(feature_data) > max_samples:
+                import random
+                indices = random.sample(range(len(feature_data)), max_samples)
+                feature_data_sampled = feature_data.iloc[indices]
+                regime_labels_sampled = regime_labels[indices]
+                timestamps_sampled = timestamps[indices]
+                tprint_info(f"📊 Subsampling {len(feature_data)} samples down to {max_samples} for quality assessment")
+            else:
+                feature_data_sampled = feature_data
+                regime_labels_sampled = regime_labels
+                timestamps_sampled = timestamps
+            
             metrics = self.quality_assessor.assess_quality(
-                regime_labels=regime_labels,
-                feature_data=feature_data,
+                regime_labels=regime_labels_sampled,
+                feature_data=feature_data_sampled,
                 forward_returns=None,
-                timestamps=timestamps,
+                timestamps=timestamps_sampled,
                 min_regime_size=min_regime_size,
                 temporal_sensitivity_mode=temporal_mode,
                 fast_mode=fast_mode,

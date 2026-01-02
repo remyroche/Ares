@@ -485,8 +485,8 @@ class ImprovedHPOConfig:
                 logger.warning(f"Failed to use TemporalCrossValidator: {e}, falling back to standard CV")
                 # Fallback to standard CV
                 if stats["n_samples"] > 1000:
-                    cv_strategy = TimeSeriesSplit(n_splits=5)
-                    cv_description = "TimeSeriesSplit(n_splits=5)"
+                    cv_strategy = TimeSeriesSplit(n_splits=3)  # Reduced from 5 for speed
+                    cv_description = "TimeSeriesSplit(n_splits=3)"
                 else:
                     # ⚠️ Using TimeSeriesSplit to prevent data leakage in time series data
                     cv_strategy = TimeSeriesSplit(n_splits=3)
@@ -494,8 +494,8 @@ class ImprovedHPOConfig:
         else:
             # Recommend CV strategy without ml_common
             if stats["n_samples"] > 1000:
-                cv_strategy = TimeSeriesSplit(n_splits=5)
-                cv_description = "TimeSeriesSplit(n_splits=5)"
+                cv_strategy = TimeSeriesSplit(n_splits=3)  # Reduced from 5 for speed
+                cv_description = "TimeSeriesSplit(n_splits=3)"
             else:
                 # ⚠️ Using TimeSeriesSplit to prevent data leakage in time series data
                 cv_strategy = TimeSeriesSplit(n_splits=3)

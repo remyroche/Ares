@@ -371,32 +371,6 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep)
             return labels
     
 
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
-
     def _optimize_xgb_hyperparameters_for_mi(self, X: pd.DataFrame, y: pd.Series) -> Tuple[Dict[str, Any], float]:
         """Optimize XGBoost hyperparameters specifically for MI improvement."""
         best_params = {}
@@ -627,20 +601,14 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, BaseStep)
             )
             
             
-            # DEBUG: Check artifact saving setup
-            print(f"🐛 DEBUG: About to save artifact: {artifact_name}")
-            print(f"🐛 DEBUG: Output df shape: {output_df.shape}")
-            print(f"🐛 DEBUG: Artifact router type: {type(self.artifact_router)}")
-            print(f"🐛 DEBUG: Versioned store available: {hasattr(self, '_versioned_store') and self._versioned_store is not None}")
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
-            
-            self.artifact_router.save(
-                artifact_name=artifact_name,
+            artifact_path = self._save_artifact(
                 data=standardized_output,
+                artifact_name=artifact_name,
+                artifact_type="data",
+                data_category="predictions",
                 metadata=metadata
             )
-            artifacts.append(artifact_name)
+            artifacts.append(artifact_path)
 
             # 8. Run Enhanced Diagnostics
             tprint_info("🔍 Running Enhanced Diagnostics...")

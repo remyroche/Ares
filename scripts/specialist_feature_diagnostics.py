@@ -573,6 +573,7 @@ def _load_specialist_features(
         "timeframe": base_timeframe,
         "regime_timeframe": regime_timeframe,
         "direction": direction,
+        "execution_mode": "full",  # Ensure full dataset usage
         # Mirror training behavior: include the optional HMM risk specialist
         # only when explicitly enabled so diagnostics can match the exact
         # specialist feature block used for training.

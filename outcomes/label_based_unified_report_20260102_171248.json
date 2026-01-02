@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-01-02T17:12:48.723241",
+  "context": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "outcomes_dir": "outcomes"
+  },
+  "layer2": {
+    "n_total": 4971,
+    "n_labeled": 4971,
+    "coverage": 1.0,
+    "pos_rate": 0.0,
+    "mean_return": -0.0029999999999999996,
+    "median_return": -0.003,
+    "std_return": 4.336808689942018e-19,
+    "mean_weight": 1.0,
+    "median_weight": 1.0,
+    "std_weight": 0.0,
+    "weight_entropy_norm": 0.9999999995938677
+  },
+  "layer3": {
+    "n_eval": 4971,
+    "auc": NaN,
+    "log_loss": 1.522508379729459,
+    "brier": 0.32626664685879564,
+    "ece": 0.5364450564197437,
+    "target_is_binary_like": false,
+    "prob_mean": 0.5364450564197436,
+    "prob_std": 0.19619721787429528,
+    "meta_prob_nan": 0,
+    "meta_prob_nan_pct": 0.0,
+    "size_trade_n": 1997,
+    "size_trade_n_eval": 1997,
+    "size_trade_auc": NaN,
+    "size_trade_log_loss": 2.963292559441721,
+    "size_trade_brier": 0.5401807264164707,
+    "size_trade_ece": 0.7066068823951459,
+    "size_trade_target_is_binary_like": false,
+    "size_trade_prob_mean": 0.7066068823951459,
+    "size_trade_prob_std": 0.20220642959184817
+  },
+  "layer4": {
+    "layer4_enabled": false,
+    "reason": "SimpleMultiModelRiskEngine.__init__() got an unexpected keyword argument 'n_estimators'"
+  },
+  "layer5": {
+    "Total PnL": -0.19182315558366633,
+    "Avg Trade PnL": -9.60556612837588e-05,
+    "Trade Count": 1997,
+    "Turnover Estimate": 1543.415232570768,
+    "Net Sortino": -4.199713472543378,
+    "Maximum Drawdown": 0.17461044945135196,
+    "Total Return": -0.1746104494505265,
+    "AUC": NaN,
+    "Runtime": {
+      "n_rows": 4971,
+      "total_ms": 3.243916988139972
+    },
+    "pmin_sweep_csv": "outcomes/layer5_pmin_sweep_20260102_171248.csv"
+  },
+  "csv_path": "outcomes/label_based_unified_report_20260102_171248.csv"
+}

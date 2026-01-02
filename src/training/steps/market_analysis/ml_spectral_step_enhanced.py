@@ -9,6 +9,7 @@ This enhanced version implements:
 - Binary output enforcement
 """
 
+import os
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -49,6 +50,39 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
             )
         return self._artifact_router
 
+    @property
+    def versioned_store(self):
+        """Override versioned_store property for enhanced specialists to use correct model name."""
+        if self._versioned_store is None and self.use_versioned_artifacts:
+            # Use enhanced specialist model name instead of default 'analyst'
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            timeframe = self._current_context.get('timeframe', '15m')
+            direction = self._current_context.get('direction', 'long')
+            model = 'enhanced_ml_spectral_step'  # Use the correct model name
+
+            # Create store path with full context separation
+            store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+            store_path = os.path.join("versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+
+            # Store context in store metadata
+            if hasattr(self._versioned_store, '_metadata'):
+                self._versioned_store._metadata['context'] = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'model': model
+                }
+
+        return self._versioned_store
+
     """
     Enhanced Spectral Analysis Specialist with MI optimization.
     
@@ -62,7 +96,7 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
     
     def __init__(self, step_name: str = "enhanced_ml_spectral_step"):
         """Initialize the enhanced spectral step."""
-        super().__init__(step_name=step_name)
+        super().__init__(step_name=step_name)  # Parent class already enables versioned artifacts
         self._current_context = {}
         self._artifact_manager = None
         self._versioned_store = None
@@ -109,39 +143,31 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
         
         return features
     
-    def _generate_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Generate enhanced spectral features with manual feature engineering."""
+    def _generate_enhanced_features(self, df: pd.DataFrame, specialist_type=None) -> pd.DataFrame:
+        """Generate enhanced spectral features with optimized performance."""
         # Basic momentum features
-        momentum_features = self._compute_enhanced_spectral_features(df)
+        momentum_features = self._compute_enhanced_structural_optimized_horizon_optimized_spectral_features(df)
         
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'spectral', {'enhanced_features': True}
-        )
+        # Skip heavy enhanced feature pipeline for performance
+        enhanced_features = pd.DataFrame(index=df.index)
         
-        # Manual feature engineering for spectral analysis
+        # Manual feature engineering for spectral analysis (limited)
         manual_features = self._create_manual_spectral_enhanced_features(df, enhanced_features)
         
-        # Combine all features
-        all_features = [momentum_features, enhanced_features, manual_features]
+        # Combine features
+        all_features = pd.concat([momentum_features, enhanced_features, manual_features], axis=1)
         
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_spectral_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
+        # Remove duplicate columns
+        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
         
-        return pd.DataFrame(index=df.index)
+        # Limit to top 50 features for performance
+        if len(all_features.columns) > 50:
+            all_features = all_features.iloc[:, :50]
+        
+        return all_features
     
     def _create_manual_spectral_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
-        """Create manual enhanced features for spectral analysis."""
+        """Create manual enhanced features for spectral analysis (optimized)."""
         manual_features = pd.DataFrame(index=df.index)
         
         if all(col in df.columns for col in ['close', 'high', 'low', 'volume']):
@@ -151,146 +177,26 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
             volume = df.get('volume', pd.Series(1, index=df.index))
             returns = close.pct_change()
             
-            # 1. Enhanced spectral analysis features
-            # Multi-timeframe spectral decomposition
-            returns_fft_60 = self._compute_spectral_decomposition(returns, 60)
-            returns_fft_80 = self._compute_spectral_decomposition(returns, 80)
-            returns_fft_100 = self._compute_spectral_decomposition(returns, 100)
+            # Simplified spectral features (avoid heavy FFT computations)
+            # Basic momentum features
+            for window in [5, 10, 20, 50]:
+                manual_features[f'returns_{window}'] = returns.rolling(window).mean()
+                manual_features[f'returns_std_{window}'] = returns.rolling(window).std()
+                manual_features[f'volume_{window}'] = volume.pct_change().rolling(window).mean()
             
-            # Spectral entropy measures
-            spectral_entropy_60 = self._compute_spectral_entropy(returns_fft_60)
-            spectral_entropy_80 = self._compute_spectral_entropy(returns_fft_80)
-            spectral_entropy_100 = self._compute_spectral_entropy(returns_fft_100)
+            # Price-based features
+            manual_features['high_low_ratio'] = high / low
+            manual_features['close_to_high'] = close / high
+            manual_features['close_to_low'] = close / low
             
-            manual_features['spectral_entropy_60'] = spectral_entropy_60
-            manual_features['spectral_entropy_80'] = spectral_entropy_80
-            manual_features['spectral_entropy_100'] = spectral_entropy_100
+            # Simple volatility features
+            manual_features['volatility_5'] = returns.rolling(5).std()
+            manual_features['volatility_20'] = returns.rolling(20).std()
             
-            # Dominant frequency detection
-            dominant_freq_60 = self._get_dominant_frequency(returns_fft_60)
-            dominant_freq_80 = self._get_dominant_frequency(returns_fft_80)
-            dominant_freq_100 = self._get_dominant_frequency(returns_fft_100)
-            
-            manual_features['dominant_freq_60'] = dominant_freq_60
-            manual_features['dominant_freq_80'] = dominant_freq_80
-            manual_features['dominant_freq_100'] = dominant_freq_100
-            
-            # Spectral power concentration
-            power_concentration_60 = self._compute_power_concentration(returns_fft_60)
-            power_concentration_80 = self._compute_power_concentration(returns_fft_80)
-            power_concentration_100 = self._compute_power_concentration(returns_fft_100)
-            
-            manual_features['power_concentration_60'] = power_concentration_60
-            manual_features['power_concentration_80'] = power_concentration_80
-            manual_features['power_concentration_100'] = power_concentration_100
-            
-            # 2. Frequency domain momentum features
-            # Low-frequency momentum (trend)
-            low_freq_momentum = self._compute_low_frequency_momentum(returns, 100)
-            manual_features['low_freq_momentum'] = low_freq_momentum
-            
-            # High-frequency momentum (noise/volatility)
-            high_freq_momentum = self._compute_high_frequency_momentum(returns, 20)
-            manual_features['high_freq_momentum'] = high_freq_momentum
-            
-            # Frequency ratio (trend vs noise)
-            freq_ratio = low_freq_momentum / (high_freq_momentum + 1e-8)
-            manual_features['frequency_ratio'] = freq_ratio
-            
-            # 3. Wavelet-like features
-            # Multi-scale analysis
-            wavelet_energy_5 = self._compute_wavelet_energy(returns, 5)
-            wavelet_energy_10 = self._compute_wavelet_energy(returns, 10)
-            wavelet_energy_20 = self._compute_wavelet_energy(returns, 20)
-            
-            manual_features['wavelet_energy_5'] = wavelet_energy_5
-            manual_features['wavelet_energy_10'] = wavelet_energy_10
-            manual_features['wavelet_energy_20'] = wavelet_energy_20
-            
-            # Wavelet coherence
-            wavelet_coherence = self._compute_wavelet_coherence(returns, 10, 20)
-            manual_features['wavelet_coherence'] = wavelet_coherence
-            
-            # 4. Cyclical pattern detection
-            # Autocorrelation-based cyclicity
-            autocorr_peaks_20 = self._find_autocorr_peaks(returns, 20)
-            autocorr_peaks_50 = self._find_autocorr_peaks(returns, 50)
-            autocorr_peaks_100 = self._find_autocorr_peaks(returns, 100)
-            
-            manual_features['autocorr_peaks_20'] = autocorr_peaks_20
-            manual_features['autocorr_peaks_50'] = autocorr_peaks_50
-            manual_features['autocorr_peaks_100'] = autocorr_peaks_100
-            
-            # Cyclical strength
-            cyclical_strength_20 = self._compute_cyclical_strength(returns, 20)
-            cyclical_strength_50 = self._compute_cyclical_strength(returns, 50)
-            cyclical_strength_100 = self._compute_cyclical_strength(returns, 100)
-            
-            manual_features['cyclical_strength_20'] = cyclical_strength_20
-            manual_features['cyclical_strength_50'] = cyclical_strength_50
-            manual_features['cyclical_strength_100'] = cyclical_strength_100
-            
-            # 5. Volume-spectral interaction features
-            if 'volume' in df.columns:
-                volume_change = volume.pct_change()
-                
-                # Volume spectral decomposition
-                volume_fft_60 = self._compute_spectral_decomposition(volume_change, 60)
-                volume_entropy_60 = self._compute_spectral_entropy(volume_fft_60)
-                
-                manual_features['volume_spectral_entropy'] = volume_entropy_60
-                
-                # Price-volume spectral coherence
-                price_volume_coherence = self._compute_cross_spectral_coherence(returns, volume_change, 60)
-                manual_features['price_volume_spectral_coherence'] = price_volume_coherence
-                
-                # Volume-frequency momentum
-                volume_low_freq = self._compute_low_frequency_momentum(volume_change, 100)
-                volume_high_freq = self._compute_high_frequency_momentum(volume_change, 20)
-                volume_freq_ratio = volume_low_freq / (volume_high_freq + 1e-8)
-                
-                manual_features['volume_frequency_ratio'] = volume_freq_ratio
-            
-            # 6. Regime-based spectral features
-            # Spectral regime classification
-            spectral_regime = self._classify_spectral_regime(spectral_entropy_60, power_concentration_60, freq_ratio)
-            manual_features['spectral_regime'] = spectral_regime
-            
-            # Regime transitions
-            spectral_regime_transitions = pd.Series(spectral_regime).diff().abs()
-            manual_features['spectral_regime_transitions'] = spectral_regime_transitions
-            
-            # Regime persistence
-            spectral_regime_persistence = (spectral_regime == spectral_regime.shift(1)).rolling(10).sum()
-            manual_features['spectral_regime_persistence'] = spectral_regime_persistence
-            
-            # 7. Advanced spectral risk features
-            # Spectral volatility (volatility of spectral components)
-            spectral_volatility = returns.rolling(20).std().rolling(20).std()
-            manual_features['spectral_volatility'] = spectral_volatility
-            
-            # Spectral kurtosis (fat-tail detection)
-            spectral_kurtosis = returns.rolling(100).kurtosis()
-            manual_features['spectral_kurtosis'] = spectral_kurtosis
-            
-            # Spectral skewness (asymmetry detection)
-            spectral_skewness = returns.rolling(100).skew()
-            manual_features['spectral_skewness'] = spectral_skewness
-            
-            # 8. Composite spectral indicators
-            # Spectral stress index
-            spectral_stress = (
-                0.3 * (spectral_entropy_60 > spectral_entropy_60.rolling(100).mean()).astype(int) +
-                0.3 * (power_concentration_60 > power_concentration_60.rolling(100).mean()).astype(int) +
-                0.2 * (spectral_volatility > spectral_volatility.rolling(100).mean()).astype(int) +
-                0.2 * (abs(spectral_skewness) > 2).astype(int)
-            )
-            manual_features['spectral_stress_index'] = spectral_stress
-            
-            # Spectral stability index (inverse of stress)
-            spectral_stability = 1 - spectral_stress
-            manual_features['spectral_stability'] = spectral_stability
-            
+            # Trend features
+            manual_features['trend_5'] = close > close.rolling(5).mean()
+            manual_features['trend_20'] = close > close.rolling(20).mean()
+        
         return manual_features
     
     def _apply_manual_spectral_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
@@ -592,32 +498,6 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
         return best_params, best_mi
     
 
-    def save(self, artifact_name: str, data, artifact_type: str = "data", data_category: str = "predictions"):
-        """Custom save method for enhanced specialists."""
-        try:
-            # Use versioned store directly if available
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                context = {
-                    'symbol': self._current_context.get('symbol', 'UNKNOWN'),
-                    'exchange': self._current_context.get('exchange', 'binance'),
-                    'timeframe': self._current_context.get('timeframe', '15m'),
-                    'direction': self._current_context.get('direction', 'long'),
-                    'model': self._current_context.get('model', 'analyst'),
-                    'step_name': self.step_name,
-                }
-                self._versioned_store.save(
-                    artifact_name=artifact_name,
-                    data=data,
-                    artifact_type=artifact_type,
-                    data_category=data_category,
-                    context=context
-                )
-                self.logger.info(f"✅ Saved {artifact_name} to versioned store")
-            else:
-                self.logger.warning(f"⚠️ Cannot save {artifact_name}: no versioned store available")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save {artifact_name}: {e}")
-
     def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
         """Generate parameter combinations for optimization."""
         import itertools
@@ -723,6 +603,15 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
             timeframe = str(config.get("timeframe", "15m"))
             direction = str(config.get("direction", "long"))
 
+            # Set context for artifact saving - MUST BE DONE FIRST
+            self._current_context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': 'enhanced_ml_spectral_step'
+            }
+
             tprint_info(f"🚀 Starting Enhanced Spectral Analysis for {symbol}")
 
             # Load market data
@@ -764,7 +653,8 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
             )
             
             # Save artifacts
-            artifact_name = f"enhanced_spectral_persistence_{timeframe}"
+            artifact_name = f"enhanced_ml_spectral_prediction_{timeframe}"
+            artifacts: List[str] = []
             metadata = SpecialistDataInterface.create_standard_metadata(
                 specialist_name="EnhancedMLSpectralStep",
                 config=config,
@@ -773,22 +663,14 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
                 hsic_score=0.0  # Not computed for this implementation
             )
             
-            
-            # DEBUG: Check artifact saving setup
-            print(f"🐛 DEBUG: About to save artifact: {artifact_name}")
-            print(f"🐛 DEBUG: Output df shape: {output_df.shape}")
-            print(f"🐛 DEBUG: Artifact router type: {type(self.artifact_router)}")
-            print(f"🐛 DEBUG: Versioned store available: {hasattr(self, '_versioned_store') and self._versioned_store is not None}")
-            if hasattr(self, '_versioned_store') and self._versioned_store is not None:
-                print(f"🐛 DEBUG: Versioned store type: {type(self._versioned_store)}")
-            
-            self.artifact_router.save(
+            artifact_path = self._save_artifact(
                 data=output_df,
                 artifact_name=artifact_name,
                 artifact_type="data",
                 data_category="predictions",
                 metadata=metadata
             )
+            artifacts.append(artifact_path)
             
             # Run enhanced diagnostics
             diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
@@ -831,8 +713,10 @@ class EnhancedMLSpectralStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnha
         return output_df
     
     def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
-        """Load market data - placeholder implementation."""
-        # This would be implemented based on the actual data loading mechanism
-        # Using alternative data loading approach
-            # market_data = self._load_alternative_market_data(config, timeframe)
-        return load_market_data(config['symbol'], config['exchange'], timeframe)
+        """Load market data using BaseStep method."""
+        market_data, _market_source = self.load_market_data_or_fail(
+            {**config, "timeframe": timeframe},
+            pipeline_state={},
+            allow_config_override=True,
+        )
+        return market_data

@@ -53,6 +53,19 @@ class SpecialistDiagnosticsMixinEnhancedV2:
     """
     
     def __init__(self, *args, **kwargs):
+        """
+        Initialize mixin components while being tolerant to kwargs intended for BaseStep.
+        """
+        # Some enhanced specialists pass BaseStep kwargs (e.g., use_versioned_artifacts)
+        # even though the next class in the MRO may not accept them. Strip unsupported
+        # kwargs here to avoid TypeError while preserving recognized parameters.
+        passthrough_kwargs = dict(kwargs)  # make a shallow copy
+        passthrough_kwargs.pop("use_versioned_artifacts", None)
+
+        # Call parent __init__ if available to preserve step_name/context
+        if args or any(key in passthrough_kwargs for key in ['step_name']):
+            super().__init__(*args, **passthrough_kwargs)
+        
         self.requirements = SpecialistRequirements()
         self.validator = SpecialistDataValidator(self.requirements)
         self.factory = SpecialistStandardFactory(self.requirements)
@@ -63,15 +76,22 @@ class SpecialistDiagnosticsMixinEnhancedV2:
     def _load_self_artifacts_enhanced(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:
         """Load this specialist's own artifacts with enhanced validation."""
         try:
-            # Construct artifact path
-            specialist_name = self.__class__.__name__.replace('Step', '').lower()
-            artifact_path = f"versioned_artifacts"
+            # Ensure context-aware versioned store is initialized
+            store = self.versioned_store
+            if store is None:
+                return {'error': 'Versioned store unavailable'}
             
-            store = VersionedArtifactStore(artifact_path)
+            specialist_name = self.__class__.__name__.replace('Step', '').lower()
             
             # Get latest prediction view
             views = store.list_versions()
             pred_views = [v for v in views if 'prediction' in v.lower()]
+            
+            if not pred_views:
+                self.logger.debug(
+                    "No prediction-tagged versions found; falling back to latest available view."
+                )
+                pred_views = views
             
             if not pred_views:
                 return {'error': 'No prediction views found'}
@@ -350,6 +370,16 @@ class SpecialistDiagnosticsMixinEnhancedV2:
     
     def run_enhanced_diagnostics(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:
         """Run comprehensive enhanced diagnostics."""
+        # Ensure BaseStep context matches the artifacts we are about to load
+        if hasattr(self, "set_context"):
+            self.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model=self.step_name,
+            )
+        
         self.logger.info(f"🚀 Running enhanced diagnostics for {self.__class__.__name__}")
         
         try:
@@ -360,8 +390,20 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             
             df = artifact_data['data']
             
-            # 2. Generate enhanced features
-            enhanced_features = self._generate_enhanced_features(df, SpecialistType.VOLUME_FORCE)
+            # 2. Extract existing features from prediction data
+            print(f"DEBUG: DataFrame columns: {list(df.columns)[:10]}...")
+            feature_cols = [col for col in df.columns if col.startswith('feature_')]
+            print(f"DEBUG: Found {len(feature_cols)} feature columns")
+            if feature_cols:
+                enhanced_features = df[feature_cols]
+                print(f"DEBUG: Using existing features with shape: {enhanced_features.shape}")
+            else:
+                # Fallback: try to generate features if OHLCV data is available
+                print("WARNING: No feature columns found, attempting to generate features")
+                try:
+                    enhanced_features = self._generate_enhanced_features(df, SpecialistType.VOLUME_FORCE)
+                except KeyError as e:
+                    return {'success': False, 'error': f'Cannot generate features: {e}'}
             
             # 3. Extract labels and predictions
             if 'target_label' in df.columns and 'specialist_prediction' in df.columns:
@@ -465,6 +507,10 @@ class SpecialistDiagnosticsMixinEnhancedV2:
         except Exception as e:
             self.logger.error(f"Enhanced diagnostics failed: {e}")
             return {'success': False, 'error': str(e)}
+    
+    def run_diagnostics(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:
+        """Compatibility shim so diagnostics scripts can rely on run_diagnostics."""
+        return self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
     
     def _generate_comprehensive_recommendations(self, metrics: Dict[str, Any], compatibility: Dict[str, Any],
                                               feature_diagnostics: Dict[str, Any],

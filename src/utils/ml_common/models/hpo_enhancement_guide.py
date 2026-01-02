@@ -262,13 +262,13 @@ class AdaptiveHPOStrategy:
         """Create regime-aware cross-validation strategy."""
         if regime_char.persistence > 0.7:
             # High persistence: Use longer time series splits
-            return TimeSeriesSplit(n_splits=5, test_size=50)
+            return TimeSeriesSplit(n_splits=3, test_size=50)  # Reduced from 5 for speed
         elif regime_char.volatility_level > 0.7:
             # High volatility: More splits for robustness
-            return TimeSeriesSplit(n_splits=10, test_size=20)
+            return TimeSeriesSplit(n_splits=5, test_size=20)  # Keep 5 for high volatility
         else:
             # Normal regime: Standard CV
-            return TimeSeriesSplit(n_splits=5, test_size=30)
+            return TimeSeriesSplit(n_splits=3, test_size=30)  # Reduced from 5 for speed
 
     def _run_adaptive_hpo(self, X: np.ndarray, y: np.ndarray,
                          mask: np.ndarray, model_factory,

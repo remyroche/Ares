@@ -401,7 +401,7 @@ def generate_layer4_features(
         
     except Exception as e:
         tprint_error(f"Error generating Layer4 features: {e}")
-        return df.join(layer3_predictions, how='inner')
+        return df.join(layer3_predictions, how='inner', rsuffix='_l3')
 
 
 def train_layer4_extratrees(
@@ -483,13 +483,24 @@ def train_layer4_extratrees(
         'vwap_distance', 'vwap_ratio', 'relative_strength_ma', 'relative_strength_short',
         'drawdown_from_peak', 'distance_from_trough', 'is_near_peak', 'is_near_trough',
         'drawdown_regime_severe', 'drawdown_regime_moderate', 'drawdown_regime_mild', 'drawdown_regime_none',
-        'volatility_zscore', 'volatility_regime'
+        'volatility_zscore', 'volatility_regime', 'zone_score', 'zone3_ratio', 'zone2_ratio'
     ]
     feature_candidates.extend([f for f in core_features if f in df_aligned.columns])
     
     # Time features
     time_features = ['hour_of_day', 'day_of_week', 'is_session_start', 'is_session_end']
     feature_candidates.extend([f for f in time_features if f in df_aligned.columns])
+    
+    # Causal features (from Layer 2 causal targets)
+    causal_features = [
+        'causal_effect_estimate', 'causal_effect_ci_low', 'causal_effect_ci_high',
+        'causal_refutation_score', 'causal_residuals', 'cate_estimates',
+        'heterogeneity_score', 'treatment_residuals', 'causal_bet_size',
+        'causal_confidence', 'causal_residual_zscore', 'causal_residual_momentum',
+        'causal_reliability', 'causal_validity', 'cate_strength', 'cate_direction',
+        'cate_volatility', 'heterogeneity_magnitude', 'heterogeneity_regime'
+    ]
+    feature_candidates.extend([f for f in causal_features if f in df_aligned.columns])
     
     # Remove any remaining non-numeric or target columns
     available_features = []

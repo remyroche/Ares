@@ -177,7 +177,7 @@ class BaseStep(ABC):
             # Create store path with full context separation
             # Format: {symbol}_{exchange}_{timeframe}_{direction}_{model}
             store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
-            store_path = os.path.join("src/utils/versioned_artifacts", store_name)
+            store_path = os.path.join("versioned_artifacts", store_name)
 
             self._versioned_store = VersionedArtifactStore(
                 store_path=store_path,
@@ -1176,7 +1176,7 @@ class BaseStep(ABC):
             Filtered data if light mode, original data otherwise
         """
         try:
-            execution_mode = config.get('execution_mode', 'light')
+            execution_mode = config.get('execution_mode', 'full')
             
             if str(execution_mode).lower() != 'light':
                 tprint(

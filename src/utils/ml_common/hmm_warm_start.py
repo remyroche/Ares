@@ -89,7 +89,7 @@ class HMMWarmStarter:
             params='stmc'  # Learn startprob, transmat, means, covars
         )
 
-        def _expected_covars_shape(cov_type: str) -> Optional[Tuple[int, ...]]:
+        def _expected_covars_shape(cov_type: str):
             cov_type_norm = str(cov_type).lower()
             if cov_type_norm == "full":
                 return (n_components, n_features, n_features)
@@ -131,14 +131,25 @@ class HMMWarmStarter:
                         )
                         hmm.init_params = 'c'
                     elif covars_shape != expected_shape:
-                        logger.warning(
-                            "Warm-start covars shape mismatch for covariance_type='%s': expected=%s got=%s. "
-                            "Skipping covars warm-start and allowing hmmlearn to initialize covariances.",
-                            covariance_type,
-                            expected_shape,
-                            covars_shape,
-                        )
-                        hmm.init_params = 'c'
+                        # Try to reshape covariance matrix if possible
+                        if (covariance_type == 'diag' and len(covars_shape) == 3 and 
+                            covars_shape[1:] == (n_features, n_features)):
+                            # Convert full covariance to diagonal by taking diagonal elements
+                            logger.info(
+                                f"Converting full covariance to diagonal for warm-start: "
+                                f"reshaping {covars_shape} to {expected_shape}"
+                            )
+                            diagonal_covars = np.array([np.diag(covars[i]) for i in range(n_components)])
+                            hmm.covars_ = diagonal_covars
+                        else:
+                            logger.warning(
+                                "Warm-start covars shape mismatch for covariance_type='%s': expected=%s got=%s. "
+                                "Skipping covars warm-start and allowing hmmlearn to initialize covariances.",
+                                covariance_type,
+                                expected_shape,
+                                covars_shape,
+                            )
+                            hmm.init_params = 'c'
                     else:
                         hmm.covars_ = covars.copy()
 

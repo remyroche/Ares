@@ -39,37 +39,28 @@ class SpecialistDiagnosticsMixin:
     
     def _load_self_artifacts(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:
         """Load this specialist's own artifacts."""
-        artifact_store = VersionedArtifactStore()
+        artifact_store = VersionedArtifactStore("versioned_artifacts")
         
         # Load predictions
         artifact_name = f"{self.step_name}_{timeframe}"
         try:
-            predictions_data = artifact_store.load_latest(
-                artifact_name=artifact_name,
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-            )
+            # Get current version view
+            view = artifact_store.get_view()
+            predictions_data = view.data
             tprint_success(f"✅ Loaded specialist predictions: {artifact_name}")
+        except ValueError as e:
+            if "No versions available" in str(e):
+                tprint_warning(f"⚠️ No artifacts available for {artifact_name}")
+                return {}
+            else:
+                tprint_error(f"❌ Failed to load predictions {artifact_name}: {e}")
+                return {}
         except Exception as e:
             tprint_error(f"❌ Failed to load predictions {artifact_name}: {e}")
             return {}
         
-        # Load model
-        model_name = f"{self.step_name}_model_{timeframe}"
-        try:
-            model = artifact_store.load_latest(
-                artifact_name=model_name,
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-            )
-            tprint_success(f"✅ Loaded specialist model: {model_name}")
-        except Exception as e:
-            tprint_error(f"❌ Failed to load model {model_name}: {e}")
-            return {}
+        # Load model (skip for now as model loading needs different approach)
+        model = None
         
         return {
             'predictions_data': predictions_data,

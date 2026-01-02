@@ -188,17 +188,26 @@ class OptimizedTripleBarrierLabeling:
     """
     @log_important_calls
 
-    def __init__(self, profit_take_multiplier: float = 0.004, stop_loss_multiplier: float = 0.003, time_barrier_minutes: int = 30, max_lookahead: int = 100, binary_classification: bool = True, transaction_cost: float = DEFAULT_TRANSACTION_COST) -> None:
-        """Initialize the optimized triple barrier labeling."
+    def __init__(
+        self,
+        profit_take_multiplier: float = 0.006,  # Widen PT to 0.6% for positive expectancy (with 0.3% cost)
+        stop_loss_multiplier: float = 0.0025,
+        time_barrier_minutes: int = 90,
+        max_lookahead: int = 96,
+        binary_classification: bool = True,
+        transaction_cost: float = 0.003,       # Keeping conservative 0.3% cost per user request
+        verbose: bool = True
+    ):
+        """Initialize the optimized triple barrier labeling.
 
         Args:
-            profit_take_multiplier: Multiplier for profit take barrier (default: 0.4%)
-            stop_loss_multiplier: Multiplier for stop loss barrier (default: 0.3%)
-            time_barrier_minutes: Time barrier in minutes (default: 30)
+            profit_take_multiplier: Multiplier for profit take barrier (default: 0.6%)
+            stop_loss_multiplier: Multiplier for stop loss barrier (default: 0.25%)
+            time_barrier_minutes: Time barrier in minutes (default: 90)
             max_lookahead: Maximum number of points to look ahead (default: 100)
             binary_classification: If True, only generate buy (1) and sell (-1) labels
             no hold (0) labels. If False, include hold labels (default: True)
-            transaction_cost: Transaction cost as percentage (default: 0.08%)
+            transaction_cost: Transaction cost as percentage (default: 0.3%)
 
         Note:
             binary_classification = True is now the default to address label imbalance issues.

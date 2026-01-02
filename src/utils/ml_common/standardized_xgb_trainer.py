@@ -176,6 +176,9 @@ class XGBTrainingConfig:
 
     # XGBoost base parameters (used when not doing HPO)
     tree_method: str = "hist"
+    grow_policy: str = "lossguide"  # Faster than depthwise (like GOSS)
+    max_leaves: int = 255          # Limit leaves for speed
+    single_precision_histogram: bool = True  # Faster on M1/M2
     n_estimators: int = 500
     learning_rate: float = 0.05
     max_depth: int = 6
@@ -220,7 +223,7 @@ class XGBTrainingConfig:
     # IC-SNR HPO configuration for regularization parameters
     # When True, uses IC×SNR − volatility_penalty objective for regularization HPO
     use_ic_snr_for_regularization: bool = True
-    ic_snr_n_folds: int = 5  # Folds for purged CV IC computation
+    ic_snr_n_folds: int = 3  # Folds for purged CV IC computation (reduced from 5 for speed)
     ic_snr_purge_minutes: int = 30  # Purge window before validation
     ic_snr_embargo_minutes: int = 15  # Embargo window after validation
     ic_snr_weight: float = 1.0  # Weight for SNR factor
@@ -531,8 +534,8 @@ class StandardizedXGBTrainer:
             params['learning_rate'] *= self.config.warm_start_learning_rate_factor
         
         # Add warm start parameters
-        params['process_type'] = 'update'
-        params['xgb_model'] = previous_model
+        params['process_type'] = 'default'  # Use default to build new trees
+        params['xgb_model'] = previous_model  # Warm start from previous model
         
         evals = [(dtrain, 'train'), (dval, 'val')]
         
@@ -596,6 +599,9 @@ class StandardizedXGBTrainer:
             # Fallback to regular training
             model = self._train_with_fixed_params(dtrain, dval, eval_metric, verbose)
         
+        # Save model state for next window
+        self._save_model_state(model, window_id)
+        
         return model
 
 
@@ -646,6 +652,9 @@ class StandardizedXGBTrainer:
                 logger.info(f"   🤖 Training with fixed parameters for window {window_id}")
             model = self._train_with_fixed_params(dtrain, dval, eval_metric, verbose, base_score=base_score)
             model.__used_hpo__ = False
+
+        # Save model state for incremental training
+        self._save_model_state(model, window_id)
 
         return model
 
@@ -794,7 +803,10 @@ class StandardizedXGBTrainer:
                 return None
             y_array = y.values
             if self.config.task_type == "regression":
-                return float(np.nanmean(y_array))
+                mean_val = np.nanmean(y_array)
+                if np.isnan(mean_val):
+                    return 0.0  # Default base score for regression with NaN data
+                return float(mean_val)
             if self.config.task_type == "classification":
                 pos_rate = float(np.mean(y_array == 1))
                 eps = 1e-6

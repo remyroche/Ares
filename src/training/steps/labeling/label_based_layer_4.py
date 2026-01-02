@@ -33,11 +33,9 @@ from sklearn.calibration import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.model_selection import KFold, cross_val_predict
 from sklearn.base import clone
-try:
-    import xgboost as xgb
-    XGB_AVAILABLE = True
-except ImportError:
-    XGB_AVAILABLE = False
+# XGBoost removed as per Causal Framework
+XGB_AVAILABLE = False
+from .covariance_denoising import CovarianceDenoiser, quick_denoise
 
 # Import the new PnL-optimized ExtraTrees implementation
 from .layer4_extratrees_pnl import train_layer4_oof as _train_layer4_oof_extratrees_pnl
@@ -67,11 +65,10 @@ class SimpleMultiModelRiskEngine:
                  max_features: str = 'log2',
                  consensus_weights: Optional[Dict[str, float]] = None):
         
-        # Default consensus weights
+        # Default consensus weights (Causal Framework: 66% ET, 34% Ridge)
         self.consensus_weights = consensus_weights or {
-            'extratrees': 0.4,
-            'ridge': 0.3,
-            'xgboost': 0.3
+            'extratrees': 0.66,
+            'ridge': 0.34
         }
         
         # Initialize base models
@@ -85,18 +82,7 @@ class SimpleMultiModelRiskEngine:
         
         self.ridge = Ridge(alpha=1.0, random_state=42)
         
-        if XGB_AVAILABLE:
-            self.xgboost = xgb.XGBRegressor(
-                n_estimators=n_estimators,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                n_jobs=-1
-            )
-        else:
-            self.xgboost = None
+        self.xgboost = None
         
         # Individual calibrators
         self.calibrators = {
@@ -176,11 +162,34 @@ class SimpleMultiModelRiskEngine:
                 'std_prediction': xgb_calibrated.std()
             }
         
-        # Create Weighted Consensus
+        # Create Weighted Consensus with Marcenko-Pastur Denoising
         consensus_raw = np.zeros(len(y_true))
+        
+        # Calculate model correlation matrix for denoising
+        model_preds_matrix = np.column_stack([base_predictions[name] for name in self.consensus_weights.keys() if name in base_predictions])
+        
+        if model_preds_matrix.shape[1] > 1:
+            model_corr = pd.DataFrame(model_preds_matrix).corr()
+            try:
+                denoiser = CovarianceDenoiser(method="shrink", verbose=False)
+                denoised_corr = denoiser.fit_transform(model_corr)
+                # Adjust consensus weights based on denoised correlations
+                # Reduce weights for highly correlated models
+                avg_correlation = denoised_corr.values[np.triu_indices_from(denoised_corr.values, k=1)].mean()
+                correlation_adjustment = 1.0 / (1.0 + avg_correlation)
+                tprint_info(f"🔧 MP Denoising: avg_corr={avg_correlation:.3f}, adjustment={correlation_adjustment:.3f}")
+            except Exception as e:
+                tprint_warning(f"⚠️ MP denoising failed: {e}, using original weights")
+                correlation_adjustment = 1.0
+        else:
+            correlation_adjustment = 1.0
+        
+        # Apply correlation-adjusted consensus weights
         for name, weight in self.consensus_weights.items():
             if name in base_predictions:
-                consensus_raw += weight * base_predictions[name]
+                # Apply correlation adjustment
+                adjusted_weight = weight * correlation_adjustment
+                consensus_raw += adjusted_weight * base_predictions[name]
         
         # Calibrate Consensus
         self.consensus_calibrator.fit(consensus_raw, y_true)
@@ -300,97 +309,6 @@ class SimpleMultiModelRiskEngine:
         }
 
 
-# Keep the original EnhancedDePradoRiskEngine for comparison
-    """
-    Purged Stacking Sizer with residual correction.
-    
-    Uses out-of-sample predictions from base models to train a correction model,
-    preventing the correction from learning in-sample noise.
-    """
-    
-    def __init__(self, base_models: List, correction_model, purged_cv: bool = True):
-        self.base_models = base_models  # e.g. [ExtraTrees, Ridge]
-        self.correction_model = correction_model  # e.g. XGBoost
-        self.calibrator = IsotonicRegression(out_of_bounds='clip')
-        self.purged_cv = purged_cv
-        self.fitted_base_models = []
-        self.is_fitted = False
-        
-    def fit(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None):
-        """
-        Fit the stacking sizer with purged cross-validation.
-        
-        Args:
-            X: Feature matrix
-            y: Target labels
-            sample_weight: Sample weights for financial attribution
-        """
-        tprint_info("🔄 Training PurgedStackingSizer...")
-        
-        # 1. Generate Out-of-Sample Predictions for the Base Layer
-        oos_preds = []
-        for i, model in enumerate(self.base_models):
-            tprint_info(f"📊 Generating OOS predictions for model {i+1}/{len(self.base_models)}...")
-            
-            # Use cross_val_predict for OOS predictions
-            if sample_weight is not None:
-                # XGBoost needs special handling for sample weights
-                if hasattr(model, 'fit') and 'sample_weight' in model.fit.__code__.co_varnames:
-                    p = cross_val_predict(model, X, y, cv=5, method='predict', 
-                                        fit_params={'sample_weight': sample_weight})
-                else:
-                    p = cross_val_predict(model, X, y, cv=5, method='predict')
-            else:
-                p = cross_val_predict(model, X, y, cv=5, method='predict')
-            
-            oos_preds.append(p)
-        
-        consensus_oos = np.mean(oos_preds, axis=0)
-        
-        # 2. Train the Correction Layer on OOS Residuals
-        tprint_info("🎯 Training correction model on OOS residuals...")
-        residual_target = y - consensus_oos
-        
-        if sample_weight is not None:
-            self.correction_model.fit(X, residual_target, sample_weight=sample_weight)
-        else:
-            self.correction_model.fit(X, residual_target)
-        
-        # 3. Final Step: Train the actual Base Models on the FULL dataset
-        tprint_info("🏋️ Training base models on full dataset...")
-        self.fitted_base_models = []
-        for model in self.base_models:
-            fitted_model = clone(model)
-            if sample_weight is not None and hasattr(fitted_model, 'fit') and 'sample_weight' in fitted_model.fit.__code__.co_varnames:
-                fitted_model.fit(X, y, sample_weight=sample_weight)
-            else:
-                fitted_model.fit(X, y)
-            self.fitted_base_models.append(fitted_model)
-            
-        # 4. Calibration
-        tprint_info("🎚️ Calibrating final predictions...")
-        final_p = np.mean([m.predict(X) for m in self.fitted_base_models], axis=0) + self.correction_model.predict(X)
-        self.calibrator.fit(final_p, y)
-        
-        self.is_fitted = True
-        tprint_success("✅ PurgedStackingSizer training completed")
-    
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """
-        Generate calibrated probability predictions.
-        
-        Args:
-            X: Feature matrix
-            
-        Returns:
-            Calibrated probabilities
-        """
-        if not self.is_fitted:
-            raise ValueError("PurgedStackingSizer must be fitted before prediction")
-        
-        base_p = np.mean([m.predict(X) for m in self.fitted_base_models], axis=0)
-        correction = self.correction_model.predict(X)
-        return self.calibrator.transform(base_p + correction)
 
 
 class EnhancedDePradoRiskEngine:
@@ -412,10 +330,10 @@ class EnhancedDePradoRiskEngine:
                  consensus_weights: Optional[Dict[str, float]] = None):
         
         # Default consensus weights
+        # Default consensus weights (Causal Framework: 66% ET, 34% Ridge)
         self.consensus_weights = consensus_weights or {
-            'extratrees': 0.4,  # Maximize Information Gain
-            'ridge': 0.3,        # Minimize L2-Regularized Squared Error  
-            'xgboost': 0.3       # Minimize Weighted Log-Loss
+            'extratrees': 0.66,
+            'ridge': 0.34
         }
         
         # Initialize base models
@@ -429,19 +347,7 @@ class EnhancedDePradoRiskEngine:
         
         self.ridge = Ridge(alpha=1.0, random_state=42)
         
-        if XGB_AVAILABLE:
-            self.xgboost = xgb.XGBRegressor(
-                n_estimators=n_estimators,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                n_jobs=-1
-            )
-        else:
-            self.xgboost = None
-            tprint_warning("⚠️ XGBoost not available, using only ExtraTrees and Ridge")
+        self.xgboost = None
         
         # Individual calibrators
         self.calibrators = {
@@ -1262,7 +1168,7 @@ def train_layer4_simple_multimodel(
     # Generate market features using existing Layer 4 infrastructure
     meta_features = MetaLearnerFeatures(config=config)
     market_features = meta_features.generate(
-        df=oof_df.join(market_data, how='left'),
+        df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
         raw_price_col='close',
         denoised_price_col='denoised_price'
     )
@@ -1344,6 +1250,44 @@ def train_layer4_simple_multimodel(
     tprint_info(f"🎯 Consensus Weighted LogLoss: {results['avg_consensus_weighted_logloss']:.4f}")
     tprint_info(f"📊 Consensus Brier Score: {results['avg_consensus_brier_score']:.4f}")
     
+
+    # Generate comprehensive Layer 4 reports
+    try:
+        from pathlib import Path
+        outcomes_dir = Path(config.get("outcomes_dir", "outcomes"))
+        
+        # Prepare models dictionary for reporting
+        models_dict = {
+            "model_type": "SimpleMultiModel",
+            "n_estimators": n_estimators,
+            "max_features": max_features,
+            "models": [],  # Models are stored in the risk engine
+            "risk_engine": engine  # The risk engine used
+        }
+        
+        # Extract overall metrics for reporting
+        overall_metrics = {
+            "total_pnl": results.get("overall_pnl", 0),
+            "sharpe_ratio": results.get("overall_sharpe_ratio", 0),
+            "sortino_ratio": results.get("overall_sortino", 0),
+            "max_drawdown": results.get("overall_max_drawdown", 0),
+            "win_rate": results.get("overall_win_rate", 0),
+            "profit_factor": results.get("overall_profit_factor", 0),
+            "calmar_ratio": results.get("overall_calmar_ratio", 0),
+            "annualized_return": results.get("overall_annualized_return", 0),
+            "total_folds": results.get("total_folds", 0),
+            "total_oof_samples": results.get("total_oof_samples", 0),
+            "valid_oof_samples": results.get("valid_oof_samples", 0),
+            "oof_coverage": results.get("oof_coverage", 0),
+            "mean_bet_size": results.get("mean_bet_size", 0),
+            "bet_size_std": results.get("bet_size_std", 0)
+        }
+        
+        generate_layer4_reports(oof_df, models_dict, fold_results, overall_metrics, config)
+        
+    except Exception as e:
+        tprint_warning(f"⚠️ Failed to generate Layer 4 reports: {e}")
+
     return oof_predictions, results
 
 
@@ -1469,7 +1413,10 @@ def _train_layer4_oof_extratrees_pnl(
     n_folds: int = 5,
     config: Optional[Dict[str, Any]] = None,
     n_estimators: int = 1000,
-    max_features: str = 'log2'
+    max_features: str = 'log2',
+    # Deprecated parameters - kept for backward compatibility only
+    l3_models_metadata: Optional[Dict] = None,
+    l3_quantile_thresholds: Optional[List[float]] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Train Layer 4 using Simple Multi-Model Risk Engine.
@@ -1728,3 +1675,25 @@ def train_layer4_oof(
         l3_models_metadata=l3_models_metadata,
         l3_quantile_thresholds=l3_quantile_thresholds
     )
+
+def generate_layer4_reports(oof_df: pd.DataFrame, models_dict: Dict[str, Any], 
+                           fold_results: List[Dict[str, Any]], overall_metrics: Dict[str, Any],
+                           config: Dict[str, Any]) -> None:
+    """
+    Generate comprehensive Layer 4 reports using the new reporting module.
+    """
+    try:
+        from .layer4_reporting import Layer4Reporter
+        
+        # Initialize reporter
+        reporter = Layer4Reporter()
+        
+        # Generate all reports
+        reporter.generate_all_reports(oof_df, models_dict, fold_results, overall_metrics, config)
+        
+        tprint_success("✅ Layer 4 comprehensive reports generated successfully")
+        
+    except Exception as e:
+        tprint_error(f"❌ Failed to generate Layer 4 reports: {e}")
+        import traceback
+        tprint_error(f"Traceback: {traceback.format_exc()}")

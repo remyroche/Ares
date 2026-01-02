@@ -6,7 +6,7 @@ Handles comprehensive reporting and diagnostics for Layer 3 models.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
@@ -162,6 +162,40 @@ def _generate_layer3_meta_report(
         
         for category, count in feature_counts.items():
             tprint_info(f"📊 {category.capitalize()} features: {count}")
+
+        # 6. Framework Details
+        lines.append("## Causal Framework Summary\n")
+        causal_summary = config.get('causal_summary', {})
+        if causal_summary:
+            lines.append(f"- **Framework Type**: {causal_summary.get('framework_type', 'N/A')}\n")
+            lines.append(f"- **Specialist Count**: {causal_summary.get('specialist_count', 'N/A')}\n")
+            lines.append(f"- **Causal Event Count**: {causal_summary.get('causal_event_count', 'N/A')}\n")
+            lines.append(f"- **Surprise Density**: {causal_summary.get('surprise_density', 'N/A')}\n")
+            lines.append(f"- **Causal Target Columns**: {causal_summary.get('causal_target_columns', 'N/A')}\n")
+            lines.append(f"- **Dataset Fingerprint**: {causal_summary.get('dataset_fingerprint', 'N/A')}\n\n")
+        else:
+            lines.append("Causal summary not available.\n\n")
+
+        # 7. Hyperparameter Parity
+        lines.append("## Causal Hyperparameters\n")
+        causal_hps = config.get('causal_hyperparams', {})
+        if causal_hps:
+            for key, value in causal_hps.items():
+                lines.append(f"- **{key}**: {value}\n")
+            lines.append("\n")
+        else:
+            lines.append("No causal hyperparameters were propagated from Layer 2.\n\n")
+
+        # 8. Selected Weighting Schemes
+        lines.append("## Weighting Schemes\n")
+        selected_scheme = models.get('selected_weighting_scheme', 'N/A')
+        available_schemes = models.get('available_weighting_schemes', [])
+        lines.append(f"- **Selected Scheme**: {selected_scheme}\n")
+        if available_schemes:
+            lines.append("- **Available Schemes**:\n")
+            for scheme in available_schemes:
+                lines.append(f"  - {scheme}\n")
+        lines.append("\n")
 
         report_path = outcomes_dir / f"layer3_meta_report_{ts}.md"
         report_path.write_text("".join(lines))

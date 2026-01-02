@@ -1,20 +1,32 @@
+import json
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 import logging
 import os
+from pathlib import Path
 from datetime import datetime, timedelta
-from typing import List, Dict, Union, Callable, Optional, Tuple, Any
+from typing import List, Dict, Union, Callable, Optional, Tuple, Any, Set
 from enum import Enum
+from collections import Counter
 from scipy.stats import spearmanr, entropy as shannon_entropy, norm
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import pdist
-from sklearn.feature_selection import f_classif, mutual_info_classif
+from sklearn.feature_selection import f_classif, mutual_info_classif, f_regression, mutual_info_regression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import MinMaxScaler
 from dataclasses import dataclass
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from .focal_loss_utils import get_focal_loss_lgbm
+
+# Import causal framework modules for surprise events
+try:
+    from src.training.steps.labeling.causal_surprise_events import CausalSurpriseDetector, quick_causal_surprise
+    from src.training.steps.labeling.causal_specialists import CausalSpecialist, CausalSpecialistManager
+    CAUSAL_AVAILABLE_ORTHOGONAL = True
+except ImportError:
+    CAUSAL_AVAILABLE_ORTHOGONAL = False
+
 
 # Setup Logger
 logger = logging.getLogger(__name__)
@@ -71,6 +83,22 @@ def _should_use_range_specific_optimization() -> bool:
 # ==========================================
 # 0. Data Structures & Configuration
 # ==========================================
+
+MIN_CAUSAL_OVERLAP_SUPPORT = 0.05
+PATH_STABILITY_CHUNKS = 4
+EPSILON = 1e-9
+RAW_METRIC_FIELDS = [
+    'ic',
+    'f_stat',
+    'significance',
+    'stability',
+    'balance',
+    'density',
+    'path_score',
+    'interventional_contrast',
+    'overlap_support',
+    'path_stability_var'
+]
 
 FIXED_GRID = [
     # --- Ratio 1.5 ---
@@ -234,6 +262,408 @@ def ewma_volatility(returns, span=100):
     """
     return returns.ewm(span=span, adjust=False).std()
 
+
+# ==========================================
+# 0.5. Dynamic Event Frequency Adaptation
+# ==========================================
+
+class AdaptiveEventThresholds:
+    """
+    Dynamic threshold adjustment to maintain consistent event density.
+    
+    Problem: Fixed CUSUM thresholds produce too few events in low-vol regimes 
+    and too many in high-vol regimes, causing "label starvation."
+    
+    Solution: Adjust thresholds based on current vs historical volatility, 
+    with optional target events-per-day calibration.
+    
+    Usage:
+        adapter = AdaptiveEventThresholds(target_events_per_day=2.0)
+        adjusted_threshold = adapter.calibrate_threshold(df, base_threshold, generator)
+    """
+    
+    def __init__(
+        self, 
+        target_events_per_day: float = 2.0, 
+        min_events_per_day: float = 0.5,
+        max_events_per_day: float = 10.0,
+        max_iterations: int = 8,
+        tolerance: float = 0.3
+    ):
+        """
+        Args:
+            target_events_per_day: Desired event frequency
+            min_events_per_day: Lower bound for acceptable frequency
+            max_events_per_day: Upper bound for acceptable frequency
+            max_iterations: Max binary search iterations for calibration
+            tolerance: Acceptable deviation from target (as fraction)
+        """
+        self.target_events_per_day = target_events_per_day
+        self.min_events_per_day = min_events_per_day
+        self.max_events_per_day = max_events_per_day
+        self.max_iterations = max_iterations
+        self.tolerance = tolerance
+        self._calibration_cache = {}
+    
+    def get_vol_adjustment_factor(self, df: pd.DataFrame, lookback: int = 100) -> float:
+        """
+        Calculate volatility-based adjustment factor.
+        
+        Returns:
+            Multiplier: >1 raises threshold (fewer events in high-vol), 
+                       <1 lowers threshold (more events in low-vol).
+        """
+        if 'close' not in df.columns:
+            return 1.0
+        
+        returns = df['close'].pct_change().dropna()
+        if len(returns) < lookback * 2:
+            return 1.0
+        
+        # Current volatility (recent window)
+        current_vol = returns.iloc[-lookback:].std()
+        
+        # Historical volatility (full history)
+        historical_vol = returns.std()
+        
+        if historical_vol <= 0 or not np.isfinite(historical_vol):
+            return 1.0
+        
+        # Adjustment factor: current / historical
+        # Bounded to prevent extreme adjustments
+        factor = current_vol / historical_vol
+        factor = np.clip(factor, 0.5, 2.0)
+        
+        return float(factor)
+    
+    def calibrate_threshold(
+        self, 
+        df: pd.DataFrame, 
+        base_threshold: float,
+        generator: 'BaseEventGenerator',
+        generator_kwargs: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """
+        Calibrate threshold to achieve target event frequency using binary search.
+        
+        Args:
+            df: Market data DataFrame
+            base_threshold: Starting threshold value
+            generator: Event generator instance
+            generator_kwargs: Additional kwargs for generator.generate()
+            
+        Returns:
+            Calibrated threshold value
+        """
+        if generator_kwargs is None:
+            generator_kwargs = {}
+        
+        # Calculate data span in days
+        if len(df) < 2:
+            return base_threshold
+        
+        try:
+            span_days = (df.index[-1] - df.index[0]).total_seconds() / 86400
+        except Exception:
+            span_days = len(df) / 96  # Assume 15-min bars, 96 per day
+        
+        if span_days <= 0:
+            return base_threshold
+        
+        # Cache key
+        cache_key = (generator.__class__.__name__, len(df), round(base_threshold, 4))
+        if cache_key in self._calibration_cache:
+            return self._calibration_cache[cache_key]
+        
+        # Binary search bounds
+        low_thresh = base_threshold * 0.25
+        high_thresh = base_threshold * 4.0
+        best_threshold = base_threshold
+        best_diff = float('inf')
+        
+        for iteration in range(self.max_iterations):
+            mid_thresh = (low_thresh + high_thresh) / 2
+            
+            # Generate events with current threshold
+            try:
+                # Most generators take threshold as first positional arg
+                test_kwargs = generator_kwargs.copy()
+                
+                # Handle different generator signatures
+                gen_class = generator.__class__.__name__
+                if gen_class in ('VolatilityCusumEvents', 'LiquidityCusumEvents'):
+                    events = generator.generate(df, h=mid_thresh, vol_span=100)
+                elif gen_class == 'VolumeCusumEvents':
+                    events = generator.generate(df, h=mid_thresh, span=960)
+                elif gen_class in ('ImprovedCUSUMEvents', 'AdaptiveSymmetricCUSUMEvents'):
+                    events = generator.generate(df, multiplier=mid_thresh, vol_window=20)
+                else:
+                    # Generic fallback
+                    if isinstance(df, pd.DataFrame):
+                        events = generator.generate(df, mid_thresh)
+                    else:
+                        events = generator.generate(df['close'], mid_thresh)
+            except Exception as e:
+                logger.warning(f"Calibration failed for {gen_class}: {e}")
+                break
+            
+            # Calculate events per day
+            events_per_day = len(events) / max(span_days, 1)
+            diff = abs(events_per_day - self.target_events_per_day)
+            
+            # Check if within tolerance
+            if diff < best_diff:
+                best_diff = diff
+                best_threshold = mid_thresh
+            
+            # Check for early exit
+            relative_diff = diff / self.target_events_per_day
+            if relative_diff < self.tolerance:
+                tprint_info(f"✅ Calibrated {gen_class}: threshold={mid_thresh:.4f} -> {events_per_day:.1f} events/day")
+                self._calibration_cache[cache_key] = mid_thresh
+                return mid_thresh
+            
+            # Binary search update
+            if events_per_day > self.target_events_per_day:
+                # Too many events, raise threshold
+                low_thresh = mid_thresh
+            else:
+                # Too few events, lower threshold
+                high_thresh = mid_thresh
+        
+        # Return best found
+        tprint_info(f"📊 Best calibration for {generator.__class__.__name__}: threshold={best_threshold:.4f}")
+        self._calibration_cache[cache_key] = best_threshold
+        return best_threshold
+    
+    def suggest_threshold_adjustment(
+        self,
+        current_events: int,
+        span_days: float,
+        current_threshold: float
+    ) -> float:
+        """
+        Quick heuristic adjustment without full calibration.
+        
+        Useful for runtime adjustments when full calibration is too expensive.
+        """
+        if span_days <= 0:
+            return current_threshold
+        
+        current_rate = current_events / span_days
+        
+        if current_rate < self.min_events_per_day:
+            # Too few events, lower threshold
+            adjustment = max(0.5, current_rate / self.target_events_per_day)
+            return current_threshold * adjustment
+        elif current_rate > self.max_events_per_day:
+            # Too many events, raise threshold
+            adjustment = min(2.0, current_rate / self.target_events_per_day)
+            return current_threshold * adjustment
+        
+        return current_threshold
+
+
+# ==========================================
+# 0.6. Regressor-Specific Target Engineering
+# ==========================================
+
+def engineer_regressor_targets(
+    df: pd.DataFrame, 
+    events: pd.DatetimeIndex,
+    raw_returns: pd.Series,
+    regressor_type: str = 'lgbm',
+    horizon: int = 48
+) -> pd.Series:
+    """
+    Create optimized targets for different regressor types.
+    
+    Different model types have different optimal target distributions:
+    - Ridge: Prefers smooth, normally distributed, stationary targets
+    - Tree-based (LGBM/XGB): Can handle non-linear, Sharpe-like targets
+    
+    Args:
+        df: Market data DataFrame with 'close', 'volatility_1d', etc.
+        events: Event timestamps
+        raw_returns: Raw return targets indexed by events
+        regressor_type: 'ridge', 'lgbm', 'xgboost', 'tree', or 'auto'
+        horizon: Lookahead horizon in bars
+        
+    Returns:
+        Engineered targets optimized for the specified regressor.
+    """
+    if regressor_type == 'ridge':
+        return _create_ridge_targets(df, events, raw_returns, horizon)
+    elif regressor_type in ('lgbm', 'xgboost', 'tree'):
+        return _create_tree_targets(df, events, raw_returns, horizon)
+    elif regressor_type == 'auto':
+        # Default to tree targets as LGBM is most common
+        return _create_tree_targets(df, events, raw_returns, horizon)
+    else:
+        # Fallback to raw returns
+        return raw_returns
+
+
+def _create_ridge_targets(
+    df: pd.DataFrame, 
+    events: pd.DatetimeIndex, 
+    raw_returns: pd.Series,
+    horizon: int
+) -> pd.Series:
+    """
+    Ridge-optimized: Smooth, normally distributed targets.
+    
+    Transforms:
+    1. Multi-horizon weighted average (exponential decay) - reduces noise
+    2. Volatility normalization - ensures stationarity
+    3. Winsorization - removes outliers that hurt linear models
+    """
+    if raw_returns.empty or len(events) == 0:
+        return raw_returns
+    
+    # Get volatility for normalization
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d']
+    else:
+        vol = df['close'].pct_change().rolling(20).std()
+    
+    # Multi-horizon weighted returns
+    horizons = [horizon // 4, horizon // 2, horizon, horizon * 2]
+    horizons = [max(1, h) for h in horizons]  # Ensure positive
+    weights = np.exp(-0.1 * np.arange(len(horizons)))  # Exponential decay
+    weights = weights / weights.sum()
+    
+    # Calculate returns at each horizon
+    close = df['close']
+    engineered = pd.Series(index=events, dtype=float)
+    
+    for event in events:
+        if event not in df.index:
+            engineered[event] = np.nan
+            continue
+        
+        event_loc = df.index.get_loc(event)
+        event_vol = vol.iloc[event_loc] if event_loc < len(vol) else vol.mean()
+        
+        if not np.isfinite(event_vol) or event_vol <= 0:
+            event_vol = vol.mean()
+        
+        horizon_returns = []
+        for h in horizons:
+            end_loc = min(event_loc + h, len(df) - 1)
+            ret = (close.iloc[end_loc] / close.iloc[event_loc]) - 1.0
+            horizon_returns.append(ret)
+        
+        # Weighted average
+        weighted_ret = np.average(horizon_returns, weights=weights)
+        
+        # Volatility normalization (z-score like)
+        normalized_ret = weighted_ret / (event_vol * np.sqrt(horizon) + 1e-9)
+        
+        engineered[event] = normalized_ret
+    
+    # Winsorization (clip to 3 std)
+    engineered = engineered.dropna()
+    if len(engineered) > 10:
+        mean_val = engineered.mean()
+        std_val = engineered.std()
+        if std_val > 0:
+            lower = mean_val - 3 * std_val
+            upper = mean_val + 3 * std_val
+            engineered = engineered.clip(lower, upper)
+    
+    return engineered
+
+
+def _create_tree_targets(
+    df: pd.DataFrame, 
+    events: pd.DatetimeIndex, 
+    raw_returns: pd.Series,
+    horizon: int
+) -> pd.Series:
+    """
+    Tree-optimized: Sharpe-like targets that capture risk-adjusted alpha.
+    
+    Transforms:
+    1. Return / Volatility ratio (Sharpe-like)
+    2. Path quality adjustment (penalize choppy paths)
+    3. Preserves non-linearity trees can exploit
+    """
+    if raw_returns.empty or len(events) == 0:
+        return raw_returns
+    
+    # Get volatility
+    if 'volatility_1d' in df.columns:
+        vol = df['volatility_1d']
+    else:
+        vol = df['close'].pct_change().rolling(20).std()
+    
+    close = df['close']
+    engineered = pd.Series(index=events, dtype=float)
+    
+    for event in events:
+        if event not in df.index:
+            engineered[event] = np.nan
+            continue
+        
+        event_loc = df.index.get_loc(event)
+        end_loc = min(event_loc + horizon, len(df) - 1)
+        
+        # Basic return
+        ret = (close.iloc[end_loc] / close.iloc[event_loc]) - 1.0
+        
+        # Path volatility over horizon
+        if end_loc > event_loc + 1:
+            path_returns = close.iloc[event_loc:end_loc+1].pct_change().dropna()
+            path_vol = path_returns.std() if len(path_returns) > 1 else vol.iloc[event_loc]
+        else:
+            path_vol = vol.iloc[event_loc]
+        
+        if not np.isfinite(path_vol) or path_vol <= 0:
+            path_vol = vol.mean()
+        
+        # Sharpe-like ratio: return / volatility
+        # Scale by sqrt(horizon) for time-normalization
+        sharpe_target = ret / (path_vol * np.sqrt(horizon) + 1e-9)
+        
+        # Path quality: consistency of direction
+        if end_loc > event_loc + 2:
+            path_prices = close.iloc[event_loc:end_loc+1]
+            # Efficiency ratio: net movement / total movement
+            net_move = abs(path_prices.iloc[-1] - path_prices.iloc[0])
+            total_move = path_prices.diff().abs().sum()
+            efficiency = net_move / (total_move + 1e-9) if total_move > 0 else 1.0
+        else:
+            efficiency = 1.0
+        
+        # Adjust Sharpe by path quality (boost clean moves, penalize choppy)
+        adjusted_target = sharpe_target * (0.5 + 0.5 * efficiency)
+        
+        engineered[event] = adjusted_target
+    
+    return engineered.dropna()
+
+
+def get_target_for_model_type(model_name: str) -> str:
+    """
+    Map model name to appropriate target type.
+    
+    Args:
+        model_name: Name like 'LGBM_Focal', 'XGB_Tree', 'Ridge', etc.
+        
+    Returns:
+        Target type: 'ridge', 'tree', or 'auto'
+    """
+    model_upper = model_name.upper()
+    
+    if 'RIDGE' in model_upper or 'LINEAR' in model_upper:
+        return 'ridge'
+    elif any(x in model_upper for x in ['LGBM', 'XGB', 'CATBOOST', 'RF', 'FOREST', 'TREE']):
+        return 'tree'
+    else:
+        return 'auto'
+
+
 # ==========================================
 # 1. Labeling Logic (Vectorized Dominance & State)
 # ==========================================
@@ -286,8 +716,9 @@ def compute_volatility_labels(
     # Calculate Ratio
     vol_ratio = vol_end / vol_start
 
-    # Label: 1 if Expansion (regime signal, no fee filtering needed)
-    labels_arr = (vol_ratio > k).astype(float)
+    # Label: Continuous Change Ratio (Regressor-Compatible)
+    # Binary thresholding k is still used for event selection, but target is continuous
+    labels_arr = vol_ratio - 1.0
 
     # Weights: Magnitude of expansion
     weights_arr = np.log1p(np.abs(vol_ratio - 1.0))
@@ -379,8 +810,9 @@ def compute_path_degradation_labels(
 
     thresholds = vol_vals * d_sigma
 
-    # Label: 1 if stress detected (max DD exceeds threshold) - regime signal, no fee filtering
-    labels_arr = (max_dd > thresholds).astype(float)
+    # Label: Continuous Drawdown Ratio (Regressor-Compatible)
+    # Binary threshold d_sigma is still used for event selection, but target is continuous
+    labels_arr = max_dd / np.maximum(vol_vals * d_sigma, 1e-9)
 
     # Weights: Severity of breakdown
     weights_arr = np.log1p(max_dd / thresholds)
@@ -449,8 +881,9 @@ def compute_tail_regime_labels(
     # "Abnormal risk". Extreme values.
     avg_abs_z = np.mean(np.abs(window_z), axis=1)
 
-    # Label: 1 if extreme tail risk persists (regime signal, no fee filtering)
-    labels_arr = (avg_abs_z > z_thresh).astype(float)
+    # Label: Continuous Persistence Ratio (Regressor-Compatible)
+    # Binary threshold z_thresh is still used for event selection, but target is continuous
+    labels_arr = avg_abs_z / np.maximum(z_thresh, 1e-9)
     weights_arr = np.log1p(avg_abs_z)
     returns_arr = avg_abs_z  # Proxy
 
@@ -502,9 +935,9 @@ def compute_trend_persistence_labels(
     matches = np.sign(future_trends) == initial_trend[:, None]
     consistency = np.mean(matches, axis=1)
 
-    # Label: High consistency (> 0.55) - regime signal, no fee filtering
-    # Re-tightened from 0.5 to 0.55 for quality
-    labels_arr = (consistency > 0.55).astype(float)
+    # Label: Continuous Consistency Ratio (Regressor-Compatible)
+    # Binary threshold 0.55 is still used for event selection, but target is continuous
+    labels_arr = consistency / 0.55
     weights_arr = consistency
     returns_arr = consistency  # Proxy
 
@@ -551,9 +984,9 @@ def compute_vol_state_labels(
     matches = future_states == initial_state[:, None]
     persistence = np.mean(matches, axis=1)
 
-    # Label: High persistence (> 0.55) - regime signal, no fee filtering
-    # Re-tightened from 0.5 to 0.55 for quality
-    labels_arr = (persistence > 0.55).astype(float)
+    # Label: Continuous Persistence Ratio (Regressor-Compatible)
+    # Binary threshold 0.55 is still used for event selection, but target is continuous
+    labels_arr = persistence / 0.55
     weights_arr = persistence
     returns_arr = persistence  # Proxy
 
@@ -749,29 +1182,32 @@ def compute_dominance_labels(
     first_pt_idx = np.argmax(hit_pt, axis=1)
     first_sl_idx = np.argmax(hit_sl, axis=1)
 
-    # TBM Logic (simple win/loss)
+    # TBM Logic (Ternary +1, -1, 0)
+    # Case 1: Proft hit first (relative to SL)
     win_mask = any_pt & (~any_sl | (first_pt_idx < first_sl_idx))
-
+    # Case 2: Stop hit first (relative to PT)
+    loss_mask = any_sl & (~any_pt | (first_sl_idx < first_pt_idx))
+    
+    # Initialize ternary labels
+    labels = np.zeros(len(valid_idxs), dtype=float)
+    
     # Risk Budget Logic: MAE / Stop_Dist <= risk_budget
     stop_dist = sl_mult * vol_vals
     risk_used = mae / np.maximum(stop_dist, 1e-9)
     risk_mask = risk_used <= risk_budget
-
-    # Economic viability
     min_profit = transaction_cost * 1.1
     profit_mask = mfe > min_profit
-
-    # Final Label (without timeouts)
-    final_label_mask = win_mask & risk_mask & profit_mask
-    labels = final_label_mask.astype(float)
     
-    # Fee-aware timeout labeling: positive if return > fees (0.3%), negative otherwise
+    labels[win_mask & risk_mask & profit_mask] = 1.0
+    labels[loss_mask] = -1.0 # Losses are -1 regardless of risk budget or profit mask
+    
+    # Case 3: Timeout
     timeout_mask = (~any_pt) & (~any_sl)
-    timeout_returns = close_returns[:, -1]  # Return at horizon
-    FEE_THRESHOLD = 0.003  # 0.3% total fees (round-trip)
-    timeout_profitable = timeout_returns > FEE_THRESHOLD
-    labels[timeout_mask & timeout_profitable] = 1.0  # Profitable timeout = positive label
-    # labels[timeout_mask & ~timeout_profitable] already 0.0 from final_label_mask
+    timeout_returns = close_returns[:, -1]
+    FEE_THRESHOLD = transaction_cost
+    labels[timeout_mask & (timeout_returns > FEE_THRESHOLD)] = 1.0
+    labels[timeout_mask & (timeout_returns < -FEE_THRESHOLD)] = -1.0
+    # Otherwise label remains 0 (within noise band)
 
     # 5. Weighting
     mae_safe = np.maximum(mae, 1e-9)
@@ -875,20 +1311,38 @@ def check_label_quality(
     else:
         gates_log.append(f"Sample: {n}/{rate:.2f}/d [OK]")
 
-    # 2. Class Balance Gate (relaxed to 10%/90%)
-    pos_rate = labels.mean()
-    val_metrics['pos_rate'] = pos_rate
+    # 2. Class/Sample Balance Gate (relaxed)
+    is_regression = family not in ['PRICE_CUSUM'] # All current non-PRICE families use realized returns
     
-    # 2. Class Balance Gate (relaxed to 10%/90%)
-    # Special relaxation for PRICE_CUSUM (allows 3-90%)
-    min_bal = 0.03 if family == 'PRICE_CUSUM' else 0.10
-    
-    if pos_rate < min_bal or pos_rate > 0.90:
-        gates_log.append(f"Bal: {pos_rate:.1%} [FAIL]")
-        overall_pass = False
-        if failure_reason == "PASS": failure_reason = "Class Balance"
+    if family == 'PRICE_CUSUM':
+        # For ternary (+1, -1, 0), pos_rate = % of non-zero labels that are +1
+        non_zero = labels[labels != 0]
+        if len(non_zero) > 0:
+            pos_rate = (non_zero == 1).mean()
+        else:
+            pos_rate = 0.0
+        val_metrics['pos_rate'] = pos_rate
+        
+        # Gates: We want at least 10% on one side (relaxed from 15%)
+        if pos_rate < 0.10 or pos_rate > 0.90:
+            gates_log.append(f"Bal: {pos_rate:.1%} (Ternary) [FAIL]")
+            overall_pass = False
+            if failure_reason == "PASS": failure_reason = "Ternary Class Balance (<10% or >90%)"
+        else:
+            gates_log.append(f"Bal: {pos_rate:.1%} (Ternary) [OK]")
     else:
-        gates_log.append(f"Bal: {pos_rate:.1%} [OK]")
+        # Regression: Check if we have enough non-zero samples (signals)
+        pos_rate = (labels != 0).mean()
+        val_metrics['pos_rate'] = pos_rate
+        
+        # Reduced minimum samples to 5% for regimes (relaxed from 10%)
+        min_bal = 0.05 if is_regression else 0.10
+        if pos_rate < min_bal:
+            gates_log.append(f"Bal: {pos_rate:.1%} (Samples) [FAIL]")
+            overall_pass = False
+            if failure_reason == "PASS": failure_reason = "Sample Balance (<5% non-zero)"
+        else:
+            gates_log.append(f"Bal: {pos_rate:.1%} (Samples) [OK]")
 
     # 3. Perturbation Stability Gate
     try:
@@ -922,23 +1376,31 @@ def check_label_quality(
     # 4. ANOVA Gate
     X = probe_features.loc[labels.index]
     y = labels
-    # Sanitize X to remove inf/nan values before f_classif
+    # Sanitize X to remove inf/nan values before f_classif/f_regression
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    
+    # 4. Statistical Power Gate (ANOVA / F-test)
     with np.errstate(divide='ignore', invalid='ignore'):
-        F, p_values = f_classif(X, y)
+        if family == 'PRICE_CUSUM':
+            # Use classification F-test for ternary labels
+            F, p_values = f_classif(X, y)
+        else:
+            # Use regression F-test for continuous targets
+            F, p_values = f_regression(X, y)
+            
     valid_p = p_values[~np.isnan(p_values)]
     
     if len(valid_p) > 0:
         min_p = np.min(valid_p)
         val_metrics['min_p'] = min_p
         if min_p > 0.20:
-            gates_log.append(f"ANOVA: p={min_p:.2f} [FAIL]")
+            gates_log.append(f"F-STAT: p={min_p:.2f} [FAIL]")
             overall_pass = False
-            if failure_reason == "PASS": failure_reason = "ANOVA"
+            if failure_reason == "PASS": failure_reason = "F-STAT"
         else:
-            gates_log.append(f"ANOVA: p={min_p:.2f} [OK]")
+            gates_log.append(f"F-STAT: p={min_p:.2f} [OK]")
     else:
-         gates_log.append("ANOVA: N/A [WARN]")
+         gates_log.append("F-STAT: N/A [WARN]")
 
     # 5. Mutual Info Gate
     # Optimization: effective N limit for MI to avoid O(N^2) scaling
@@ -952,16 +1414,23 @@ def check_label_quality(
         X_mi = X
         y_mi = y
 
-    mi = mutual_info_classif(X_mi, y_mi, discrete_features=False, random_state=42)
-    max_mi = np.max(mi)
-    val_metrics['max_mi'] = max_mi
-    
-    # MI gate now just a warning (non-blocking) since MI values are consistently very low
-    if max_mi < 0.001:
-        gates_log.append(f"MI: {max_mi:.4f} [WARN]")  # Warning only, don't fail
-        # NOT blocking: overall_pass = False
-    else:
-        gates_log.append(f"MI: {max_mi:.4f} [OK]")
+    try:
+        if family == 'PRICE_CUSUM':
+            mi = mutual_info_classif(X_mi, y_mi, discrete_features=False, random_state=42)
+        else:
+            mi = mutual_info_regression(X_mi, y_mi, discrete_features=False, random_state=42)
+            
+        max_mi = np.max(mi)
+        val_metrics['max_mi'] = max_mi
+        
+        # MI gate now just a warning (non-blocking) since MI values are consistently very low
+        if max_mi < 0.001:
+            gates_log.append(f"MI: {max_mi:.4f} [WARN]")
+        else:
+            gates_log.append(f"MI: {max_mi:.4f} [OK]")
+    except Exception as e:
+        gates_log.append(f"MI: Error [WARN]")
+        val_metrics['max_mi'] = 0.0
 
     summary_str = " | ".join(gates_log)
     if overall_pass:
@@ -981,6 +1450,7 @@ def calculate_multifactor_score(
 ) -> List[Dict]:
     if not candidates: return []
     scores = []
+    raw_metric_log = []
 
     for cand in candidates:
         labels = cand['labels']
@@ -990,6 +1460,7 @@ def calculate_multifactor_score(
         vol = cand['vol']
 
         X = probe_features.loc[labels.index]
+        metrics = cand.get('metrics', {}) or {}
         # Optimization: Limit sample size for Spearman calculation
         MAX_SAMPLES = 2000
         if n > MAX_SAMPLES:
@@ -1042,11 +1513,25 @@ def calculate_multifactor_score(
         path_asymmetry = (mfe / vol) - (mae.abs() / vol)
         path_score = path_asymmetry.mean()
 
-        cand['metrics_raw'] = {
-            'ic': ic_max, 'f_stat': f_max, 'significance': significance,
-            'stability': stability, 'balance': balance, 'density': density,
-            'path_score': path_score
+        cand_raw_metrics = {
+            'ic': ic_max,
+            'f_stat': f_max,
+            'significance': significance,
+            'stability': stability,
+            'balance': balance,
+            'density': density,
+            'path_score': path_score,
+            # Causal/robustness extensions
+            'interventional_contrast': metrics.get('interventional_contrast', np.nan),
+            'overlap_support': metrics.get('overlap_support', np.nan),
+            'path_stability_var': metrics.get('path_stability_var', np.nan),
         }
+        cand['metrics_raw'] = cand_raw_metrics
+        raw_metric_log.append({
+            'uuid': cand.get('uuid', cand.get('name')),
+            'family': cand.get('family'),
+            **cand_raw_metrics
+        })
         scores.append(cand)
 
     df_scores = pd.DataFrame([c['metrics_raw'] for c in scores])
@@ -1068,6 +1553,17 @@ def calculate_multifactor_score(
         )
         cand['score'] = final_score
         cand['power'] = power
+
+    # Persist raw metric inspection log for diagnostics
+    try:
+        diagnostics_dir = Path("outcomes")
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        raw_path = diagnostics_dir / f"layer2_raw_metric_log_{timestamp}.json"
+        raw_path.write_text(json.dumps(raw_metric_log, indent=2, default=float))
+        tprint_info(f"Saved raw metric log to {raw_path}")
+    except Exception as exc:
+        logger.warning(f"Failed to persist raw metric log: {exc}")
 
     return scores
 
@@ -1371,16 +1867,11 @@ GENERATOR_PARAM_NAMES = {
 }
 
 DF_REQUIRED_CLASSES = (
-    # 'KalmanRegimeEvents',
-    'ImprovedCUSUMEvents',
-    'VolatilityCusumEvents',
-    'LiquidityCusumEvents',
-    'VolumeCusumEvents',
-    'RangeATRcusumEvents',
-    'SRCusumEvents',
-    'TailRiskCusumEvents',
-    'TrendRegimeCusumEvents',
-    'VolatilityStateEvents',
+    'ImprovedCUSUMEvents', 'MultiHorizonPriceCUSUMEvents', 
+    'VolumeCusumEvents', 'VolatilityCUSUMEvents', 'LiquidityCusumEvents',
+    'TailRiskCusumEvents', 'TrendRegimeCusumEvents', 'VolStateCusumEvents',
+    'RangeATRcusumEvents', 'SRCusumEvents', 'VolatilityStateEvents',
+    'CausalSurpriseEvents', 'InventorySpecialistEvents'
 ) 
 # I can define this tuple inside the functions or at the end of the file, or move classes up?
 # Moving classes is risky.
@@ -1899,36 +2390,55 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
         {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
     ]
     
-    # Horizon options (Restricted to 12 and 48 per instruction)
-    horizon_options = [12, 48]
+    # Horizon options per family (de Prado: PRICE_CUSUM [12, 48], others [48] only)
+    horizon_options = {
+        'PRICE_CUSUM': [12, 48],  # Classifiers get multiple horizons
+        'default': [48],          # Regressors get single horizon
+    }
     
-    # Family-specific parameter grids (restricted to 12, 24, 48)
+    # Family-specific parameter grids (tightened for efficiency)
     family_grids = {
         'PRICE_CUSUM': {
-            # TUNED: k increased from 0.08-0.12 to 0.6-1.5 for 5-10 events/day target
-            'base_params': [(0.8, 20), (1.2, 30)],  # k, vol_window - Higher k = fewer, stronger signals
+            # TUNED: k range for classifier (multiple options for diversity)
+            'base_params': [(0.3, 20), (0.5, 20), (0.8, 20), (1.2, 30)],  # k, vol_window
+            'horizons': [12, 48],  # Classifier uses multiple horizons
         },
         'VOL_CUSUM': {
-            'base_params': [(4.0, 100), (3.0, 50)],  # h, vol_span
+            'base_params': [(2.5, 100)],  # Single config for regressor (Relaxed from 4.0)
+            'horizons': [48],
         },
         'LIQ_CUSUM': {
-            'base_params': [(4.0, 100), (3.0, 50)],  # h, vol_span
+            'base_params': [(2.5, 100)],  # Relaxed from 4.0
+            'horizons': [48],
         },
         'VOL_PARTICIPATION': {
-            'base_params': [(5.0, 960), (10.0, 960)],  # h (accumulated % excess), span (10 days @ 15m)
+            'base_params': [(3.0, 480)],  # Relaxed from 5.0, span from 960
+            'horizons': [48],
         },
         'RANGE_ATR': {
-            'base_params': [(2.0, 14, 20), (1.5, 14, 20)], # h, atr_window, vol_window
+            'base_params': [(2.0, 14, 20)],  # Single config
+            'horizons': [48],
         },
         'TAIL_RISK': {
-            'base_params': [(2.0, 50, 'skew'), (2.0, 50, 'kurt')], # h, window, metric
+            'base_params': [(2.0, 50, 'skew')],  # Single metric
+            'horizons': [48],
         },
         'TREND_REGIME': {
-            'base_params': [(2.0, 20, 50), (1.5, 10, 30)], # h, fast, slow
+            'base_params': [(2.0, 20, 50)],  # Single config
+            'horizons': [48],
         },
         'VOL_STATE': {
-            'base_params': [(2.0, 100)], # h, vol_span
+            'base_params': [(2.0, 100)],  # Already single
+            'horizons': [48],
         },
+        'CAUSAL_SURPRISE': {
+            'base_params': [(2.0, 'all')], # threshold, type
+            'horizons': [48],
+        },
+        'INVENTORY_SPECIALIST': {
+            'base_params': [(2.0, 20)], # threshold, window
+            'horizons': [48],
+        }
     }
     
     return {
@@ -2060,6 +2570,43 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
     final_weights = (1 + intensity) * u_w
     return final_weights
 
+def get_inventory_specialist_events(df: pd.DataFrame, threshold: float = 2.0, window: int = 20) -> pd.DatetimeIndex:
+    """
+    Detects inventory stress events using VPIN-like proxy.
+    Inventory Stress = |BuyVol - SellVol| / TotalVol
+    """
+    if 'volume' not in df.columns or 'close' not in df.columns:
+        return pd.DatetimeIndex([])
+        
+    price = df['close']
+    volume = df['volume']
+    
+    # Estimate Buy/Sell Volume (Bulk Classification)
+    price_change = price.diff()
+    buy_vol = volume.where(price_change > 0, 0)
+    sell_vol = volume.where(price_change < 0, 0)
+    
+    # Add half volume for flat moves? Or just ignore.
+    # Standard VPIN bulk classification logic 
+    
+    # Calculate Order Imbalance
+    buy_roll = buy_vol.rolling(window).sum()
+    sell_roll = sell_vol.rolling(window).sum()
+    total_roll = volume.rolling(window).sum()
+    
+    # VPIN proxy
+    vpin = (buy_roll - sell_roll).abs() / (total_roll + 1e-9)
+    
+    # Standardize VPIN
+    vpin_mean = vpin.expanding().mean()
+    vpin_std = vpin.expanding().std()
+    vpin_z = (vpin - vpin_mean) / (vpin_std + 1e-9)
+    
+    # Events when inventory stress is high
+    events = vpin_z[vpin_z > threshold].index
+    
+    return events
+
 def _safe_to_markdown(df: pd.DataFrame) -> str:
     """Fallback for to_markdown() if tabulate is missing."""
     try:
@@ -2073,6 +2620,92 @@ def _safe_to_markdown(df: pd.DataFrame) -> str:
             res.append(" | " + " | ".join(formatted_row) + " | ")
         return "\n".join(res)
 
+
+def _persist_gate_diagnostics(
+    outcomes_log: List[Dict[str, Any]],
+    scored_candidates: List[Dict[str, Any]],
+    selected_geometries_path: Union[str, Path]
+) -> None:
+    """
+    Persist gate diagnostics, reconcile with selected geometries, and propagate raw metrics.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = Path("outcomes")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    diag_df = pd.DataFrame(outcomes_log)
+
+    # Save CSV regardless for traceability
+    csv_path = out_dir / f"geometry_gates_{timestamp}.csv"
+    diag_df.to_csv(csv_path, index=False)
+    tprint_info(f"Saved geometry gates log to {csv_path}")
+
+    # Load selected geometries to reconcile families and ensure raw metrics carry causal extensions
+    selected_families: Set[str] = set()
+    missing_families: Set[str] = set()
+    selected_geoms: List[Dict[str, Any]] = []
+
+    selected_path = Path(selected_geometries_path)
+    if selected_path.exists():
+        try:
+            selected_geoms = json.loads(selected_path.read_text())
+            selected_families = {g.get('family') for g in selected_geoms if g.get('family')}
+        except Exception as exc:
+            tprint_warning(f"⚠️ Failed loading selected geometries for reconciliation: {exc}")
+    else:
+        tprint_warning("⚠️ layer2_selected_geometries.json not found; reconciliation skipped.")
+
+    optimized_families = {log.get('family') for log in outcomes_log if log.get('family')}
+    missing_families = optimized_families - selected_families
+    if missing_families:
+        tprint_warning(f"⚠️ Gate Reconciliation: Missing families in selection: {sorted(missing_families)}")
+
+    # Propagate causal robustness metrics onto selected geoms if missing
+    metrics_by_uuid = {cand.get('uuid') or cand.get('name'): cand.get('metrics_raw', {}) for cand in scored_candidates}
+    updated = False
+    for geom in selected_geoms:
+        raw_metrics = geom.get('raw_metrics', {}) or {}
+        source_metrics = metrics_by_uuid.get(geom.get('uuid')) or raw_metrics
+        merged_metrics = raw_metrics.copy()
+        for key in RAW_METRIC_FIELDS:
+            if key in source_metrics and (key not in merged_metrics or pd.isna(merged_metrics[key])):
+                merged_metrics[key] = source_metrics[key]
+        if merged_metrics != raw_metrics:
+            geom['raw_metrics'] = merged_metrics
+            updated = True
+
+    if updated:
+        try:
+            selected_path.write_text(json.dumps(selected_geoms, indent=2, default=float))
+            tprint_info(f"Updated {selected_path} with causal robustness metrics")
+        except Exception as exc:
+            tprint_warning(f"⚠️ Failed to update selected geometries with metrics: {exc}")
+
+    # Build markdown diagnostics with reconciliation summary
+    if not diag_df.empty:
+        summary_lines = ["# Layer 2 Geometry Gate Diagnostics\n\n"]
+        summary_lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+        summary_lines.append("## Family Pass Rates\n")
+        family_stats = diag_df.groupby('family').agg({'status': lambda x: (x == 'PASS').mean()})
+        summary_lines.append(_safe_to_markdown(family_stats.sort_values('status', ascending=False)) + "\n\n")
+
+        summary_lines.append("## Top Failure Reasons\n")
+        fail_df = diag_df[diag_df['status'] != 'PASS']
+        if not fail_df.empty:
+            fail_stats = fail_df['status'].value_counts().to_frame()
+            summary_lines.append(_safe_to_markdown(fail_stats) + "\n\n")
+
+        summary_lines.append("## Missing Families In Gate Diagnostics vs Selection\n")
+        if missing_families:
+            summary_lines.append(f"- Missing families: {', '.join(sorted(missing_families))}\n\n")
+        else:
+            summary_lines.append("- All optimized families represented in selected geometries.\n\n")
+
+        diag_path = out_dir / f"layer2_gate_diagnostics_{timestamp}.md"
+        diag_path.write_text("".join(summary_lines))
+        tprint_success(f"💾 Gate diagnostics report saved to {diag_path}")
+
 def orthogonal_label_generation(
     data: Union[pd.Series, pd.DataFrame],
     volume: Optional[pd.Series] = None,
@@ -2080,7 +2713,12 @@ def orthogonal_label_generation(
     target_signals_per_day: float = 7.5,
     use_adaptive_thresholds: bool = True,
     signal_weights: Optional[Dict[str, float]] = None,
-    return_raw_candidates: bool = False
+    return_raw_candidates: bool = False,
+    # Causal framework parameters
+    enable_causal_events: bool = True,
+    specialist_predictions: Optional[Dict[str, pd.Series]] = None,
+    causal_graph: Optional[Dict[str, List[str]]] = None,
+    causal_surprise_threshold: float = 1.8
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -2117,16 +2755,27 @@ def orthogonal_label_generation(
     if volume is None and df_full is not None and 'volume' not in df_full.columns:
         volume = df_full['volume']
     
-    # 1. Generate Probe Features
-    X_probe = generate_probe_features(price, volume)
-    
-    # Use df_full if provided, else construct min necessary
-    if df_full is None:
-        df_full = pd.DataFrame({'close': price})
-        if volume is not None:
-            df_full['volume'] = volume
     elif 'volume' not in df_full.columns and volume is not None:
         df_full['volume'] = volume
+
+    # 1. Subsampling (de Prado optimization)
+    # Target 10% with min 4 months @ 15m (11,520 bars)
+    orig_len = len(df_full)
+    MIN_BARS = 4 * 30 * 24 * 4  # 11,520
+    if orig_len > MIN_BARS:
+        sample_frac = 0.10
+        target_len = max(MIN_BARS, int(orig_len * sample_frac))
+        tprint_info(f"💾 Subsampling enabled: using {target_len} bars (orig: {orig_len})")
+        # We take the most recent bars to ensure we are training on relevant data
+        df_full = df_full.iloc[-target_len:].copy()
+        price = df_full['close']
+        if 'volume' in df_full.columns:
+            volume = df_full['volume']
+        # Update X_probe later or generate it on the sample
+    
+    # Update X_probe based on (possibly sampled) price/volume
+    X_probe = generate_probe_features(price, volume)
+
 
     # 2. Check for 1.5-3% range optimization configuration
     use_range_specific = _should_use_range_specific_optimization()
@@ -2165,19 +2814,64 @@ def orthogonal_label_generation(
          )
          tprint_info(f"Calibrated Thresholds: {adaptive_thresholds}")
 
+    # Validate framework separation
+    enable_afml_events = not enable_causal_events  # Default to AFML unless causal is enabled
+
+    if enable_causal_events and enable_afml_events:
+        tprint_warning("⚠️ Framework Separation: Both causal and AFML events enabled")
+        tprint_info("💡 Using causal framework - disabling AFML events")
+
     # Orthogonal signal families
-    base_generators = [
-        # Price-based (single best: trend/reversal weighted)
-        ('PRICE_CUSUM', ImprovedCUSUMEvents()),
-        # Contextual families
-        ('VOL_CUSUM', VolatilityCusumEvents()),
-        ('LIQ_CUSUM', LiquidityCusumEvents()),
-        ('VOL_PARTICIPATION', VolumeCusumEvents()),
-        ('RANGE_ATR', RangeATRcusumEvents()),
-        ('TAIL_RISK', TailRiskCusumEvents()),
-        ('TREND_REGIME', TrendRegimeCusumEvents()),
-        ('VOL_STATE', VolatilityStateEvents()),
-    ]
+    base_generators = []
+
+    # Configure event generators based on framework
+    tprint_info("🏗️ Orthogonal: Configuring Event Generators...")
+    tprint_info(f"   🔬 Causal events enabled: {enable_causal_events}")
+    tprint_info(f"   📦 Causal modules available: {CAUSAL_AVAILABLE_ORTHOGONAL}")
+    tprint_info(f"   🎯 Specialist predictions available: {len(specialist_predictions) > 0 if specialist_predictions is not None else False}")
+
+    # Add causal specialists and surprise events if enabled
+    if enable_causal_events and CAUSAL_AVAILABLE_ORTHOGONAL:
+        tprint_info("🔬 Orthogonal: Using Causal Framework - Causal Specialists as Parents")
+        tprint_info("   🎯 Adding causal event generators:")
+        causal_generators = [
+            ('CAUSAL_SURPRISE', CausalSurpriseEvents()),
+            ('VOLUME_SPECIALIST', VolumeSpecialistEvents()),
+            ('VOLATILITY_SPECIALIST', VolatilitySpecialistEvents()),
+            ('LIQUIDITY_SPECIALIST', LiquiditySpecialistEvents()),
+            ('INFORMATION_SPECIALIST', InformationSpecialistEvents()),
+            ('INVENTORY_SPECIALIST', InventorySpecialistEvents()),
+        ]
+
+        for gen_name, gen_class in causal_generators:
+            tprint_info(f"      • {gen_name}: {type(gen_class).__name__}")
+            base_generators.append((gen_name, gen_class))
+
+        tprint_success(f"✅ Orthogonal: Added {len(causal_generators)} causal event generators")
+    else:
+        # Traditional CUSUM-based families
+        tprint_info("📊 Orthogonal: Using Traditional AFML - CUSUM-based Event Families")
+        tprint_info("   📈 Adding traditional event generators:")
+        traditional_generators = [
+            # Price-based (single best: trend/reversal weighted)
+            ('PRICE_CUSUM', ImprovedCUSUMEvents()),
+            # Contextual families
+            ('VOL_CUSUM', VolatilityCusumEvents()),
+            ('LIQ_CUSUM', LiquidityCusumEvents()),
+            ('VOL_PARTICIPATION', VolumeCusumEvents()),
+            ('RANGE_ATR', RangeATRcusumEvents()),
+            ('TAIL_RISK', TailRiskCusumEvents()),
+            ('TREND_REGIME', TrendRegimeCusumEvents()),
+            ('VOL_STATE', VolatilityStateEvents()),
+        ]
+
+        for gen_name, gen_class in traditional_generators:
+            tprint_info(f"      • {gen_name}: {gen_class.__name__}")
+            base_generators.append((gen_name, gen_class))
+
+        tprint_success(f"✅ Orthogonal: Added {len(traditional_generators)} traditional event generators")
+
+    tprint_info(f"🏁 Orthogonal: Total event generators configured: {len(base_generators)}")
     
     # Build enhanced parameter combinations
     for fam, gen in base_generators:
@@ -2239,7 +2933,7 @@ def orthogonal_label_generation(
     # Define Central Parameters (Median/Default values)
     CENTRAL_PARAMS = {
         'PRICE_CUSUM': (1.0, 20),      # k=1.0, vol=20
-        'VOL_CUSUM': (4.0, 100),       # h=4.0, span=100
+        'VOL_CUSUM': (2.5, 100),       # h=2.5, span=100 (Relaxed from 4.0)
         'LIQ_CUSUM': (4.0, 100),       # h=4.0, span=100
         'VOL_PARTICIPATION': (5.0, 960), # h=5.0 (500% excess), span=960 (10d)
         'RANGE_ATR': (2.0, 14, 20),    # h=2.0, atr=14, vol=20
@@ -2280,28 +2974,20 @@ def orthogonal_label_generation(
              
              if gen_classname in df_required_local:
                  if gen_classname == 'ImprovedCUSUMEvents':
-                      p_names = GENERATOR_PARAM_NAMES.get('ImprovedCUSUMEvents', [])
-                      # params are tuple, zip with names
-                      # ImprovedCUSUMEvents params: (multiplier, vol_window) -> k, vol_window
-                      # Default param names might be different, check definition or use positional logic if generate supports it.
-                      # ImprovedCUSUM: generate(df, **params) but params definition says:
-                      # generate(self, df: pd.DataFrame, **params)
-                      # And inside: k, alpha, beta ... 
-                      # The passed 'params' tuple from grid is likely (k, vol_window).
-                      # Let's assume standard positional *args work if generate supports it, OR we reconstruct kwargs.
-                      # Looking at call site in main loop:
-                      # kwargs = dict(zip(param_names, params))
-                      # events = gen.generate(df_full, **kwargs)
-                      # So we must do the same.
-                      
-                      # Re-fetch param names if needed or hardcode common ones
-                      p_names = ['k', 'vol_window'] # Based on grid def usually
-                      # If param_grids not visible here, relying on GENERATOR_PARAM_NAMES is safer.
+                      # ImprovedCUSUM: generate(df, k=..., vol_window=...)
                       p_names = GENERATOR_PARAM_NAMES.get('ImprovedCUSUMEvents', ['k', 'vol_window'])
                       kwargs = dict(zip(p_names, central_args))
                       c_events = gen_instance.generate(df_full, **kwargs)
                  else:
                       c_events = gen_instance.generate(df_full, *central_args)
+             elif gen_classname == 'CausalSurpriseEvents' or fam.startswith('CAUSAL_') or fam.endswith('_SPECIALIST'):
+                 # Causal generators need specialist predictions
+                 c_events = gen_instance.generate(
+                     df_full,
+                     specialist_predictions=specialist_predictions,
+                     causal_graph=causal_graph,
+                     surprise_threshold=causal_surprise_threshold
+                 )
              else:
                   c_events = gen_instance.generate(price, *central_args)
         except Exception as e:
@@ -2354,12 +3040,15 @@ def orthogonal_label_generation(
                 if lbls.empty: continue
                 
                 # Check Gates: Balance & Count
-                pos_rate = lbls.mean()
-                count_ok = len(lbls) >= 50 # Relaxed for pruning
+                if fam == 'PRICE_CUSUM':
+                    pos_rate = (lbls == 1).mean()
+                    min_bal = 0.03
+                else:
+                    pos_rate = (lbls != 0).mean()
+                    min_bal = 0.10
                 
-                # PRICE_CUSUM specific relaxation (3%)
-                min_bal = 0.03 if fam == 'PRICE_CUSUM' else 0.10
-                bal_ok = (pos_rate >= min_bal) and (pos_rate <= 0.90)
+                count_ok = len(lbls) >= 50 # Relaxed for pruning
+                bal_ok = (pos_rate >= min_bal) and (pos_rate <= 0.90) if fam == 'PRICE_CUSUM' else (pos_rate >= min_bal)
                 
                 if count_ok and bal_ok:
                     valid_items.append(grid_item)
@@ -2395,7 +3084,15 @@ def orthogonal_label_generation(
                     'ImprovedCUSUMEvents'
                 )
 
-                if gen.__class__.__name__ in df_required:
+                if gen.__class__.__name__ == 'CausalSurpriseEvents':
+                    # Special handling for causal surprise events
+                    events = gen.generate(
+                        df_full,
+                        specialist_predictions=specialist_predictions,
+                        causal_graph=causal_graph,
+                        surprise_threshold=causal_surprise_threshold
+                    )
+                elif gen.__class__.__name__ in df_required:
                     if gen.__class__.__name__ == 'ImprovedCUSUMEvents':
                          # Must pass as kwargs for **params
                          param_names = GENERATOR_PARAM_NAMES.get('ImprovedCUSUMEvents', [])
@@ -2439,11 +3136,17 @@ def orthogonal_label_generation(
             horizon_options = param_grids['horizon_options']
             risk_budget_options = [0.4, 0.7, 1.0]  # 0=no drawdown before TP, 1=very close to SL on average
             
+            # Get family-specific horizons (PRICE_CUSUM: [12, 48], others: [48])
+            if isinstance(horizon_options, dict):
+                family_horizons = horizon_options.get(fam, horizon_options.get('default', [48]))
+            else:
+                family_horizons = horizon_options  # Fallback for list
+            
             for grid_item in tpsl_grid:
                 pt = grid_item['pt']
                 sl = grid_item['sl']
                 
-                for horizon in horizon_options:
+                for horizon in family_horizons:
                     for risk_budget in risk_budget_options:
                         high = df_full.get('high')
                         low = df_full.get('low')
@@ -2532,54 +3235,12 @@ def orthogonal_label_generation(
     # 4. Multi-Factor Scoring
     scored_candidates = calculate_multifactor_score(candidates, X_probe)
     
-    # Save outcomes log and Generate Gate Diagnostics Report
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_dir = "outcomes"
-        os.makedirs(out_dir, exist_ok=True)
-        
-        # 1. Save CSV
-        pd.DataFrame(outcomes_log).to_csv(f"{out_dir}/geometry_gates_{timestamp}.csv", index=False)
-        tprint_info(f"Saved geometry gates log to {out_dir}/geometry_gates_{timestamp}.csv")
-        
-        # 2. Save Markdown Report
-        diag_df = pd.DataFrame(outcomes_log)
-        if not diag_df.empty:
-            summary_lines = ["# Layer 2 Geometry Gate Diagnostics\n\n"]
-            summary_lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            # Family Stats
-            summary_lines.append("## Family Pass Rates\n")
-            family_stats = diag_df.groupby('family').agg({
-                'status': lambda x: (x == 'PASS').mean()
-            }).sort_values('status', ascending=False)
-            summary_lines.append(_safe_to_markdown(family_stats) + "\n\n")
-            
-            # Failure Reasons
-            summary_lines.append("## Top Failure Reasons\n")
-            fail_df = diag_df[diag_df['status'] != 'PASS']
-            if not fail_df.empty:
-                fail_stats = fail_df['status'].value_counts().to_frame()
-                summary_lines.append(_safe_to_markdown(fail_stats) + "\n\n")
-            
-            # Detail by Family
-            summary_lines.append("## Failure Detail by Family\n")
-            for fam in diag_df['family'].unique():
-                fam_df = diag_df[diag_df['family'] == fam]
-                top_fail = fam_df['status'].value_counts().index[0]
-                summary_lines.append(f"- **{fam}**: Top status: {top_fail} (Pass rate: {(fam_df['status']=='PASS').mean():.1%})\n")
-            
-            diag_path = f"{out_dir}/layer2_gate_diagnostics_{timestamp}.md"
-            with open(diag_path, 'w') as f:
-                f.writelines(summary_lines)
-            tprint_success(f"💾 Gate diagnostics report saved to {diag_path}")
-            
-    except Exception as e:
-        logger.error(f"Failed to generate gate diagnostics: {e}")
-    
     if not scored_candidates:
         tprint_warning("No candidates passed gates.")
         return []
+
+    # Gate diagnostics persist + reconciliation with selected geometries
+    _persist_gate_diagnostics(outcomes_log, scored_candidates, selected_geometries_path="outcomes/layer2_selected_geometries.json")
 
     # Rank -> Top 50% -> Cluster (5) -> Top 1 -> Probe
 
@@ -2607,7 +3268,8 @@ def orthogonal_label_generation(
             
             purity = 1.0 # Placeholder
             
-            final_weights = get_signal_specific_weights(df_full, cand['events'], sr_levels, component_weights=signal_weights, family=cand['family'])
+            # Skip expensive weight calculation for raw candidates - specific weights only needed for final geometry
+            final_weights = None # get_signal_specific_weights(df_full, cand['events'], sr_levels, component_weights=signal_weights, family=cand['family'])
             
             geo = OutputGeometry(
                 name=f"{cand['family']}_{cand['params']}",
@@ -3260,6 +3922,251 @@ class SymmetricCusumEvents(BaseEventGenerator):
         return pd.DatetimeIndex(t_events)
 
 
+
+
+class InventorySpecialistEvents(BaseEventGenerator):
+    """
+    Inventory Specialist as Causal Parent.
+
+    Causal Role: Predicts the Mean Reversion Pressure based on order-flow toxicity.
+    Mechanism: Models "Friction" as a function of the dealer's balance sheet.
+    Causal Surprise: If the market gaps up while dealer inventory is at a negative extreme,
+                    it signals a "Short Squeeze" intervention—a powerful structural event.
+    """
+    def generate(self, df: pd.DataFrame, *args, **params) -> pd.DatetimeIndex:
+        # Map positional args to params
+        threshold = args[0] if len(args) > 0 else params.get('threshold', 2.5)
+        window = int(args[1]) if len(args) > 1 else params.get('window', 50)
+
+        try:
+            return self._get_inventory_causal_events(df, threshold=threshold, window=window)
+        except Exception as e:
+            logger.warning(f"InventorySpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_inventory_causal_events(self, df: pd.DataFrame, window=50, threshold=2.5):
+        """
+        Crypto Inventory Proxy using OHLCV.
+        Identifies 'Causal Shocks' where dealer inventory is dangerously skewed.
+        """
+        if not all(col in df.columns for col in ['close', 'volume']):
+            return pd.DatetimeIndex([])
+
+        close = df['close']
+        volume = df['volume']
+
+        # 1. Classify Volume (Informed vs Uninformed proxy)
+        # Price Change / Range is a proxy for aggressiveness
+        returns = close.diff()
+        high_low_range = close.rolling(window).max() - close.rolling(window).min()
+
+        # Buy/Sell Volume Proxy (Standard de Prado VPIN approach)
+        # Using the normal distribution CDF to estimate the buy/sell split
+        import scipy.stats as stats
+        z_score = returns / (close.rolling(window).std() + 1e-9)
+        buy_vol = volume * stats.norm.cdf(z_score)
+        sell_vol = volume - buy_vol
+
+        # 2. Compute Order Imbalance (Inventory Proxy)
+        order_imbalance = (buy_vol - sell_vol).rolling(window).sum()
+
+        # 3. Standardize the 'Toxicity' (Standardized Inventory Stress)
+        inventory_stress = np.abs(order_imbalance / (volume.rolling(window).sum() + 1e-9))
+
+        # 4. Trigger Event when inventory risk causes a Mechanism Break
+        # i.e., Price is moving but Inventory Stress is at an extreme
+        events = inventory_stress[inventory_stress > threshold].index
+
+        return events
+
+
+class VolumeSpecialistEvents(BaseEventGenerator):
+    """
+    Volume Specialist as Causal Parent.
+
+    Causal Role: Predicts the Impact (ΔP). If a large trade occurs, the model expects a certain price move.
+    Mechanism: Volume drives price movement through liquidity consumption.
+    Causal Surprise: When volume occurs but expected price impact doesn't materialize.
+    """
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        window = params.get('window', 20)
+
+        try:
+            return self._get_volume_causal_events(df, threshold=threshold, window=window)
+        except Exception as e:
+            logger.warning(f"VolumeSpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_volume_causal_events(self, df: pd.DataFrame, window=20, threshold=2.0):
+        """Generate events when volume prediction fails."""
+        if not all(col in df.columns for col in ['close', 'volume']):
+            return pd.DatetimeIndex([])
+
+        close = df['close']
+        volume = df['volume']
+
+        # Expected price impact from volume (simplified model)
+        expected_impact = volume.rolling(window).mean() * 0.001  # Coefficient proxy
+
+        # Actual price movement
+        actual_returns = close.pct_change()
+
+        # Prediction error (surprise)
+        surprise = np.abs(actual_returns - expected_impact)
+
+        # Standardized surprise
+        surprise_std = surprise.rolling(window).std()
+        standardized_surprise = surprise / (surprise_std + 1e-9)
+
+        # Trigger events on large surprises
+        events = standardized_surprise[standardized_surprise > threshold].index
+
+        return events
+
+
+class VolatilitySpecialistEvents(BaseEventGenerator):
+    """
+    Volatility Specialist as Causal Parent.
+
+    Causal Role: Predicts the Range (σ). Sets the "Expected Variance" of the causal link.
+    Mechanism: Volatility determines the friction in price movement.
+    Causal Surprise: When realized volatility deviates from expected range.
+    """
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        window = params.get('window', 20)
+
+        try:
+            return self._get_volatility_causal_events(df, threshold=threshold, window=window)
+        except Exception as e:
+            logger.warning(f"VolatilitySpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, threshold=2.0):
+        """Generate events when volatility predictions fail."""
+        if 'close' not in df.columns:
+            return pd.DatetimeIndex([])
+
+        close = df['close']
+
+        # Expected volatility (rolling standard deviation)
+        expected_vol = close.pct_change().rolling(window).std()
+
+        # Actual volatility (realized range)
+        high_low_range = (df['high'] - df['low']) / df['close']
+        actual_vol = high_low_range.rolling(window).mean()
+
+        # Prediction error
+        vol_error = np.abs(actual_vol - expected_vol)
+        vol_error_std = vol_error.rolling(window).std()
+        standardized_error = vol_error / (vol_error_std + 1e-9)
+
+        # Trigger events on volatility surprises
+        events = standardized_error[standardized_error > threshold].index
+
+        return events
+
+
+class LiquiditySpecialistEvents(BaseEventGenerator):
+    """
+    Liquidity Specialist as Causal Parent.
+
+    Causal Role: Predicts the Friction (k). Determines energy required to move price.
+    Mechanism: Liquidity constraints create price impact.
+    Causal Surprise: When price moves with less volume than expected.
+    """
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        window = params.get('window', 20)
+
+        try:
+            return self._get_liquidity_causal_events(df, threshold=threshold, window=window)
+        except Exception as e:
+            logger.warning(f"LiquiditySpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_liquidity_causal_events(self, df: pd.DataFrame, window=20, threshold=2.0):
+        """Generate events when liquidity predictions fail."""
+        if not all(col in df.columns for col in ['close', 'volume', 'high', 'low']):
+            return pd.DatetimeIndex([])
+
+        close = df['close']
+        volume = df['volume']
+
+        # Price impact per unit volume (liquidity friction)
+        returns = close.pct_change()
+        price_impact = np.abs(returns) / (volume + 1e-9)
+
+        # Expected friction (rolling average)
+        expected_friction = price_impact.rolling(window).mean()
+
+        # Current friction
+        current_friction = price_impact
+
+        # Surprise in friction
+        friction_error = np.abs(current_friction - expected_friction)
+        friction_std = friction_error.rolling(window).std()
+        standardized_friction = friction_error / (friction_std + 1e-9)
+
+        # Trigger events on liquidity surprises
+        events = standardized_friction[standardized_friction > threshold].index
+
+        return events
+
+
+class InformationSpecialistEvents(BaseEventGenerator):
+    """
+    Information Specialist as Causal Parent.
+
+    Causal Role: Estimates PIN (Probability of Informed Trading).
+    Mechanism: If PIN is high, expects sticky price discovery. If low, expects mean-reversion.
+    Causal Surprise: Large price moves when PIN is at historical lows.
+    """
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        window = params.get('window', 50)
+
+        try:
+            return self._get_information_causal_events(df, threshold=threshold, window=window)
+        except Exception as e:
+            logger.warning(f"InformationSpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_information_causal_events(self, df: pd.DataFrame, window=50, threshold=2.0):
+        """Generate events when information flow predictions fail."""
+        if not all(col in df.columns for col in ['close', 'volume']):
+            return pd.DatetimeIndex([])
+
+        close = df['close']
+        volume = df['volume']
+
+        # Simple PIN proxy: ratio of large trades to total volume
+        returns = close.pct_change()
+        large_moves = np.abs(returns) > returns.rolling(window).quantile(0.8)
+        large_volume = volume * large_moves.astype(int)
+
+        # PIN proxy: fraction of volume in large moves
+        pin_proxy = large_volume.rolling(window).sum() / volume.rolling(window).sum()
+
+        # Expected price movement based on PIN
+        # High PIN -> expect persistent moves, Low PIN -> expect reversions
+        expected_persistence = pin_proxy
+
+        # Actual persistence (autocorrelation)
+        persistence = returns.rolling(window).corr(returns.shift(1))
+
+        # Surprise in information flow
+        info_error = np.abs(persistence - expected_persistence)
+        info_std = info_error.rolling(window).std()
+        standardized_info = info_error / (info_std + 1e-9)
+
+        # Trigger events when information predictions fail
+        events = standardized_info[standardized_info > threshold].index
+
+        return events
+
+
 class ImprovedCUSUMEvents(BaseEventGenerator):
     """CUSUM with differentiated trend vs reversal weights."""
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
@@ -3416,6 +4323,133 @@ class TimeEvents(BaseEventGenerator):
     """Time-based periodic events."""
     def generate(self, price: pd.Series, frequency: int = 24) -> pd.DatetimeIndex:
         return price.index[::frequency]
+
+
+class CausalSurpriseEvents(BaseEventGenerator):
+    """
+    Causal surprise event generator using specialist prediction errors.
+
+    Replaces CUSUM-based events with causal mechanism break detection.
+    Events are generated when specialists' causal predictions fail.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.surprise_detector = None
+        self.specialists = {}
+
+    def generate(self, df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series] = None,
+                causal_graph: Dict[str, List[str]] = None, surprise_threshold: float = 1.8) -> pd.DatetimeIndex:
+        """
+        Generate causal surprise events from specialist prediction errors.
+
+        Args:
+            df: Market data DataFrame
+            specialist_predictions: Dictionary of specialist predictions
+            causal_graph: Causal graph structure
+            surprise_threshold: Z-score threshold for surprise detection
+
+        Returns:
+            DatetimeIndex of causal surprise events
+        """
+        tprint_info(f"🎯 CausalSurpriseEvents: Starting event generation...")
+        tprint_info(f"   📊 Data shape: {df.shape}")
+        tprint_info(f"   🧠 Specialists available: {len(specialist_predictions) if specialist_predictions else 0}")
+        tprint_info(f"   🔗 Causal relationships: {len(causal_graph) if causal_graph else 0}")
+        tprint_info(f"   🎚️ Surprise threshold: {surprise_threshold}")
+
+        try:
+            if not CAUSAL_AVAILABLE_ORTHOGONAL:
+                tprint_warning("⚠️ CausalSurpriseEvents: Causal modules not available - using fallback")
+                return self._fallback_volatility_events(df)
+
+            if not specialist_predictions:
+                tprint_warning("⚠️ CausalSurpriseEvents: No specialist predictions provided")
+                tprint_error("   ❌ CausalSurpriseEvents: Fail fast - no fallback allowed")
+                return pd.DataFrame()
+
+            # Initialize surprise detector
+            tprint_info("   🚨 CausalSurpriseEvents: Initializing surprise detector...")
+            self.surprise_detector = CausalSurpriseDetector(
+                surprise_threshold=surprise_threshold,
+                verbose=False
+            )
+            tprint_info("   ✅ CausalSurpriseEvents: Surprise detector initialized")
+
+            # Register specialists
+            tprint_info("   📝 CausalSurpriseEvents: Registering specialists...")
+            registered_count = 0
+
+            for spec_name, predictions in specialist_predictions.items():
+                tprint_info(f"      - Processing specialist: {spec_name}")
+
+                # Create target (use price as proxy for causal relationships)
+                if 'close' in df.columns:
+                    targets = df['close']
+                    tprint_info("         • Using close price as target")
+                else:
+                    tprint_warning(f"         • No close column available, skipping {spec_name}")
+                    continue
+
+                # Align indices
+                common_idx = predictions.index.intersection(targets.index).intersection(df.index)
+                tprint_info(f"         • Prediction samples: {len(predictions)}")
+                tprint_info(f"         • Target samples: {len(targets)}")
+                tprint_info(f"         • Common samples: {len(common_idx)}")
+
+                if len(common_idx) < 10:
+                    tprint_warning(f"         • Insufficient samples ({len(common_idx)}), skipping {spec_name}")
+                    continue
+
+                pred_aligned = predictions.loc[common_idx]
+                target_aligned = targets.loc[common_idx]
+
+                self.surprise_detector.register_specialist(spec_name, pred_aligned, target_aligned)
+                registered_count += 1
+                tprint_info("         ✅ Registered successfully")
+            tprint_info(f"   📊 CausalSurpriseEvents: Specialists registered: {registered_count}/{len(specialist_predictions)}")
+
+            if len(self.surprise_detector.specialist_errors_) == 0:
+                tprint_warning("   ⚠️ CausalSurpriseEvents: No specialists registered successfully")
+                return self._fallback_volatility_events(df)
+
+            # Generate surprise events
+            tprint_info("   🔍 CausalSurpriseEvents: Computing surprise scores...")
+            surprise_df = self.surprise_detector.aggregate_specialist_surprise()
+
+            if surprise_df.empty:
+                tprint_warning("   ⚠️ CausalSurpriseEvents: No surprise scores computed")
+                return self._fallback_volatility_events(df)
+
+            tprint_info("   🎯 CausalSurpriseEvents: Generating causal events...")
+            causal_events = self.surprise_detector.generate_causal_events()
+
+            if causal_events:
+                event_indices = list(causal_events.keys())
+                tprint_info(f"🎯 Generated {len(event_indices)} causal surprise events")
+                return pd.DatetimeIndex(event_indices)
+            else:
+                return self._fallback_volatility_events(df)
+
+        except Exception as e:
+            tprint_error(f"❌ Causal surprise event generation failed: {e}")
+            return self._fallback_volatility_events(df)
+
+    def _fallback_volatility_events(self, df: pd.DataFrame) -> pd.DatetimeIndex:
+        """Fallback event generation using volatility shocks."""
+        try:
+            if 'close' in df.columns:
+                price = df['close']
+                # Simple volatility-based events
+                returns = price.pct_change()
+                vol = returns.rolling(20).std()
+                vol_threshold = vol.quantile(0.8)
+                events = df.index[vol > vol_threshold]
+                return events[:min(len(events), 100)]  # Limit events
+            else:
+                return pd.DatetimeIndex([])
+        except Exception:
+            return pd.DatetimeIndex([])
 
 
 # Aliases

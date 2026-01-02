@@ -82,6 +82,7 @@ class Layer4FeatureGenerator:
         self.enable_model = self.config.get('enable_model', True)
         self.enable_time = self.config.get('enable_time', True)
         self.enable_contextual = self.config.get('enable_contextual', True)
+        self.enable_causal = self.config.get('enable_causal', True)
         
         # Initialize sub-generators
         self._init_sub_generators()
@@ -374,6 +375,13 @@ class Layer4FeatureGenerator:
                 features_df = pd.concat([features_df, context_features], axis=1)
                 feature_counts['contextual'] = len(context_features.columns)
         
+        # 9. Causal Features (from Layer 2 causal targets)
+        if self.enable_causal:
+            causal_features = self._generate_causal_features(features_df)
+            if causal_features is not None and hasattr(causal_features, 'columns') and len(causal_features.columns) > 0:
+                features_df = pd.concat([features_df, causal_features], axis=1)
+                feature_counts['causal'] = len(causal_features.columns)
+        
         # Clean up infinite and NaN values
         numeric_cols = features_df.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
@@ -626,6 +634,74 @@ class Layer4FeatureGenerator:
             
         except Exception as e:
             tprint_warning(f"⚠️ Contextual feature generation failed: {e}")
+            return None
+    
+    def _generate_causal_features(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Generate causal-derived features from Layer 2 causal targets."""
+        try:
+            # Look for causal effect columns that should be available from Layer 2
+            causal_cols = [
+                'causal_effect_estimate', 'causal_effect_ci_low', 'causal_effect_ci_high',
+                'causal_refutation_score', 'causal_residuals', 'cate_estimates',
+                'heterogeneity_score', 'treatment_residuals'
+            ]
+            
+            available_causal_cols = [col for col in causal_cols if col in df.columns]
+            if not available_causal_cols:
+                return None
+            
+            features = pd.DataFrame(index=df.index)
+            
+            # Copy available causal features
+            for col in available_causal_cols:
+                features[col] = df[col]
+            
+            # Generate derived causal features
+            if 'causal_effect_estimate' in features.columns:
+                # Calibrated causal bet sizes (clipped and scaled)
+                effect_estimate = features['causal_effect_estimate']
+                features['causal_bet_size'] = np.tanh(effect_estimate * 2)  # Scale and clip to [-1, 1]
+                
+                # Causal effect confidence (based on CI width)
+                if 'causal_effect_ci_low' in features.columns and 'causal_effect_ci_high' in features.columns:
+                    ci_width = features['causal_effect_ci_high'] - features['causal_effect_ci_low']
+                    features['causal_confidence'] = 1.0 / (1.0 + ci_width)  # Inverse of CI width
+                else:
+                    features['causal_confidence'] = 0.5  # Default confidence
+            
+            if 'causal_residuals' in features.columns:
+                # Causal residual z-scores
+                residuals = features['causal_residuals']
+                residual_mean = residuals.rolling(100, min_periods=20).mean()
+                residual_std = residuals.rolling(100, min_periods=20).std()
+                features['causal_residual_zscore'] = (residuals - residual_mean) / (residual_std + 1e-8)
+                
+                # Causal residual momentum
+                features['causal_residual_momentum'] = residuals.rolling(20).mean()
+            
+            if 'causal_refutation_score' in features.columns:
+                # Refuter agreement metrics (transform refutation score)
+                refutation = features['causal_refutation_score']
+                features['causal_reliability'] = refutation  # Direct use as reliability score
+                features['causal_validity'] = (refutation > 0.5).astype(float)  # Binary validity flag
+            
+            if 'cate_estimates' in features.columns:
+                # CATE-based features
+                cate = features['cate_estimates']
+                features['cate_strength'] = np.abs(cate)  # Absolute CATE strength
+                features['cate_direction'] = np.sign(cate)  # CATE direction
+                features['cate_volatility'] = cate.rolling(20).std()  # CATE volatility
+            
+            if 'heterogeneity_score' in features.columns:
+                # Treatment effect heterogeneity features
+                het_score = features['heterogeneity_score']
+                features['heterogeneity_magnitude'] = np.abs(het_score)
+                features['heterogeneity_regime'] = (het_score > 1.0).astype(float)  # High heterogeneity regime
+            
+            return features.fillna(0.0)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Causal feature generation failed: {e}")
             return None
     
     def get_feature_summary(self, df: pd.DataFrame) -> Dict[str, Any]:

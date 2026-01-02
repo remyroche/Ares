@@ -32,8 +32,17 @@ from sklearn.feature_selection import mutual_info_regression
 from scipy.stats import spearmanr, normaltest, kstest, entropy as shannon_entropy
 from scipy.spatial.distance import pdist, squareform
 from scipy.special import expit
-import statsmodels.api as sm
-from statsmodels.tsa.stattools import adfuller, kpss
+
+try:
+    from statsmodels.tsa.stattools import adfuller, kpss
+    _STATSMODELS_AVAILABLE = True
+except ModuleNotFoundError:
+    adfuller = None
+    kpss = None
+    _STATSMODELS_AVAILABLE = False
+    logging.getLogger(__name__).warning(
+        "statsmodels not available - stationarity diagnostics (ADF/KPSS) will be skipped"
+    )
 
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.versioned_artifacts import VersionedArtifactStore

@@ -123,21 +123,16 @@ class RobustFocalLoss:
         # If alpha is None, calculate it based on current batch ratio
         if self.alpha is None:
             pos_ratio = np.mean(y_true)
-            # Clip for safety
-            pos_ratio = np.clip(pos_ratio, 0.001, 0.999)
+            # Clip for safety to avoid 0 or 1
+            pos_ratio = np.clip(pos_ratio, 0.0001, 0.9999)
             
-            # Logic: If positives are rare (<0.5), we want high alpha to boost them.
-            # If negatives are rare (>0.5), we want low alpha (high 1-alpha) to boost them.
-            if pos_ratio < 0.5:
-                # Rare positives: boost alpha
-                # e.g. ratio=0.1 -> dist=0.4 -> alpha=0.5 + 0.4*0.8 = 0.82
-                current_alpha = 0.5 + (0.5 - pos_ratio) * 0.8
-            else:
-                # Rare negatives: reduce alpha
-                # e.g. ratio=0.9 -> dist=0.4 -> alpha=0.5 - 0.4*0.8 = 0.18
-                current_alpha = 0.5 - (pos_ratio - 0.5) * 0.8
+            # Logic: Use Inverse Class Frequency for strong balancing
+            # If pos_ratio = 0.01 (1%), alpha = 0.99
+            current_alpha = 1.0 - pos_ratio
         else:
             current_alpha = self.alpha
+            
+        # Epsilon for numerical stability
             
         # Epsilon for numerical stability
         epsilon = 1e-9
@@ -439,3 +434,13 @@ class AsymmetricRegressionLoss:
         hess = np.maximum(hess, 1e-6)
 
         return grad, hess
+
+def get_focal_loss_init_score(y_true):
+    """
+    Calculates the 2026 Standard Bias Init score based on class frequency.
+    Prevents gradient explosion at start of training with Focal Loss.
+    """
+    pi = np.mean(y_true)
+    pi = np.clip(pi, 1e-5, 1 - 1e-5)
+    init_bias = -np.log((1.0 - pi) / pi)
+    return np.full_like(y_true, fill_value=init_bias, dtype=np.float32)

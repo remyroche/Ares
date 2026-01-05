@@ -240,8 +240,10 @@ class CausalFeatureGenerator:
         l2 = low.rolling(2).min()
         gamma = np.log(h2 / l2) ** 2
 
-        # Alpha
-        alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / (3 - 2 * np.sqrt(2))
+        # Alpha (Corrected Corwin-Schultz formula)
+        # alpha = (sqrt(2*beta) - sqrt(beta)) / (3 - 2*sqrt(2)) - sqrt(gamma / (3 - 2*sqrt(2)))
+        den = 3 - 2 * np.sqrt(2)
+        alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / den - np.sqrt(gamma / den)
 
         # Spread
         spread = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
@@ -251,7 +253,7 @@ class CausalFeatureGenerator:
     @staticmethod
     def shannon_entropy_feature(df: pd.DataFrame, window: int = 20) -> pd.Series:
         """
-        Shannon Entropy: Approximate Entropy on binary price changes.
+        Shannon Entropy: Approximate Entropy on binary price changes (in bits).
         """
         ret = df['close'].diff()
         binary = (ret > 0).astype(int)
@@ -261,7 +263,7 @@ class CausalFeatureGenerator:
         def calc_entropy(x):
             counts = np.bincount(x.astype(int))
             probs = counts / len(x)
-            return entropy(probs)
+            return entropy(probs, base=2)
 
         return binary.rolling(window).apply(calc_entropy, raw=True)
 
@@ -285,3 +287,41 @@ class CausalFeatureGenerator:
         total_vol = df['volume'].rolling(window).sum()
 
         return imbalance / (total_vol + 1e-9)
+
+    @staticmethod
+    def time_of_day_features(index: pd.DatetimeIndex) -> pd.DataFrame:
+        """
+        Sessionality: Sin/Cos of hour of day.
+        Captures cyclic nature of market sessions (Asian, London, NY).
+        """
+        # Ensure index is datetime
+        if not isinstance(index, pd.DatetimeIndex):
+            try:
+                index = pd.to_datetime(index)
+            except Exception:
+                return pd.DataFrame(0.0, index=index, columns=['sin_time', 'cos_time'])
+
+        # Extract hour (and minute fraction)
+        # We normalize to [0, 2pi]
+        # Using 24 hours cycle
+
+        # If naive, assume UTC or local as is
+        # Calculate time in hours (0-24)
+        time_hours = index.hour + index.minute / 60.0
+
+        # Transform
+        sin_time = np.sin(2 * np.pi * time_hours / 24.0)
+        cos_time = np.cos(2 * np.pi * time_hours / 24.0)
+
+        return pd.DataFrame({
+            'sin_time': sin_time,
+            'cos_time': cos_time
+        }, index=index)
+
+    @staticmethod
+    def volatility_of_volatility_feature(volatility_series: pd.Series, window: int = 10) -> pd.Series:
+        """
+        Volatility-of-Volatility: Std dev of volatility over window.
+        W (Nuisance) variable.
+        """
+        return volatility_series.rolling(window).std().fillna(0.0)

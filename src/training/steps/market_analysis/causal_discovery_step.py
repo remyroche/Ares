@@ -69,8 +69,11 @@ class CausalDiscoveryStep(BaseStep):
         # Main Features for CUSUM
         # 1. Volatility (Garman-Klass)
         features['volatility_gk'] = CausalFeatureGenerator.volatility_main_feature(market_data)
-        # 2. Path Smoothness
-        features['efficiency_ratio'] = CausalFeatureGenerator.path_smoothness_feature(market_data)
+
+        # 2. Path Smoothness (Efficiency Ratio) - Lagged to avoid collider bias
+        er = CausalFeatureGenerator.path_smoothness_feature(market_data)
+        features['efficiency_ratio'] = er.shift(1) # Lagged t-1
+
         # 3. Volume
         features['volume_intensity'] = CausalFeatureGenerator.volume_main_feature(market_data)
         # 4. Market Reversion / Trend
@@ -84,8 +87,18 @@ class CausalDiscoveryStep(BaseStep):
         # 8. Order Imbalance
         features['order_imbalance'] = CausalFeatureGenerator.order_imbalance_feature(market_data)
 
-        # Normalize features for CUSUM
-        features_norm = (features - features.rolling(100).mean()) / (features.rolling(100).std() + 1e-9)
+        # 9. Shadow Variables (Sessionality)
+        sessionality = CausalFeatureGenerator.time_of_day_features(market_data.index)
+        features['sin_time'] = sessionality['sin_time']
+        features['cos_time'] = sessionality['cos_time']
+
+        # 10. Volatility-of-Volatility
+        features['vol_of_vol'] = CausalFeatureGenerator.volatility_of_volatility_feature(features['volatility_gk'], window=10)
+
+        # Normalize features for CUSUM (exclude time features from normalization as they are bounded)
+        cols_to_norm = [c for c in features.columns if c not in ['sin_time', 'cos_time']]
+        features_norm = features.copy()
+        features_norm[cols_to_norm] = (features[cols_to_norm] - features[cols_to_norm].rolling(100).mean()) / (features[cols_to_norm].rolling(100).std() + 1e-9)
 
         # 3. Signal Generation (CUSUM)
         logger.info("Generating CUSUM Signals...")
@@ -109,146 +122,109 @@ class CausalDiscoveryStep(BaseStep):
             logger.warning("Too few events for causal analysis.")
             return {"status": "skipped", "reason": "insufficient_events"}
 
-        # 4. Labeling (Triple Barrier Method)
-        logger.info("Applying Triple Barrier Labeling...")
-        # Volatility for barriers
-        volatility = features['volatility_gk'] # Use GK vol or close-to-close?
-        # TBM: TP 2x, SL 1x, horizon 32
-        # Need to construct labels. Using simple apply_triple_barrier_multi style or custom.
-        # User asked for TBM (TP 2x sigma, SL 1x sigma, horizon 32)
-        # AND Trend model (TP 4x, SL 2x, horizon 250)
+        # 4. Define Geometries (Multiple Horizons)
+        # 1) Standard TBM: TP 2x, SL 1x, Horizon 32
+        # 2) Trend Model: TP 4x, SL 2x, Horizon 250
+        geometries = [
+            {"name": "standard_tbm", "pt": 2.0, "sl": 1.0, "horizon": 32},
+            {"name": "trend_model",  "pt": 4.0, "sl": 2.0, "horizon": 250}
+        ]
 
-        # We can create two sets of labels or just use the primary one for now as 'Y'.
-        # The prompt implies training ONE ORF model.
-        # "Feed it to a TBM (TP 2x, SL 1x, horizon 32). For the trend model: also use (TP 4x, SL 2x, horizon 250)"
-        # This implies potentially two target variables or two models.
-        # Let's focus on the primary TBM first (horizon 32).
+        all_metrics = []
 
-        # Calculating TBM Labels
-        # We need a function that returns the return at the barrier touch or horizon.
+        # 5. Loop through Geometries
+        for geom in geometries:
+            geom_name = geom["name"]
+            logger.info(f"Processing Geometry: {geom_name}")
 
-        labels_32 = self._apply_tbm(market_data['close'], events, volatility, pt=2.0, sl=1.0, horizon=32)
+            # Calculating TBM Labels
+            labels = self._apply_tbm(market_data['close'], events, features['volatility_gk'],
+                                     pt=geom["pt"], sl=geom["sl"], horizon=geom["horizon"])
 
-        # 5. Sequential Bootstrap & Bagging (Uniqueness)
-        # Implementation of Sequential Bootstrap to get sample weights/indices?
-        # Or just standard bagging in the model?
-        # User says: "Implement Sequential Bootstrap and Bagging: ensure sample uniqueness per de Prado is implemented"
-        # DMLOrthoForest handles bagging internally via 'subsample_ratio'.
-        # Sample uniqueness weighting should probably be applied if possible, or filtered.
-        # EconML DMLOrthoForest doesn't natively take uniqueness weights in fit() typically, but 'sample_weight' might be supported.
-        # Let's compute average uniqueness and maybe filter or weight.
+            # Sequential Bootstrap & Bagging (Uniqueness)
+            uniqueness = self._compute_uniqueness(events, market_data.index, horizon=geom["horizon"])
 
-        uniqueness = self._compute_uniqueness(events, market_data.index, horizon=32)
-        # Filter events with low uniqueness? Or just pass as weights?
-        # Let's use uniqueness as sample_weight if supported, or just to filter redundant events.
+            # 6. Prepare Data for ORF
+            df_events = features.loc[events].copy()
+            y_events = labels.loc[events]
+            w_events = uniqueness.loc[events] # Uniqueness weights
 
-        # 6. Prepare Data for ORF
-        # T: Treatment (Order Imbalance, Kalman Trend)
-        # X: Effect Modifiers (Shannon Entropy, Momentum Persistence)
-        # W: Nuisance (Volatility, Volume Intensity, Liquidity Spread, Efficiency Ratio)
-        # Y: Labels (Return at barrier)
+            # Drop NaNs
+            valid_mask = ~df_events.isna().any(axis=1) & ~y_events.isna()
+            df_events = df_events[valid_mask]
+            y_events = y_events[valid_mask]
+            w_events = w_events[valid_mask]
 
-        # Align data
-        df_events = features.loc[events].copy()
-        y_events = labels_32.loc[events]
-        w_events = uniqueness.loc[events] # Uniqueness weights
+            if len(df_events) < 50:
+                 logger.warning(f"Too few events after alignment for geometry {geom_name}.")
+                 continue
 
-        # Drop NaNs
-        valid_mask = ~df_events.isna().any(axis=1) & ~y_events.isna()
-        df_events = df_events[valid_mask]
-        y_events = y_events[valid_mask]
-        w_events = w_events[valid_mask]
+            T_cols = ['order_imbalance', 'kalman_trend']
+            X_cols = ['shannon_entropy', 'momentum_persistence', 'sin_time', 'cos_time']
+            W_cols = ['volatility_gk', 'volume_intensity', 'liquidity_spread', 'efficiency_ratio', 'vol_of_vol']
 
-        if len(df_events) < 50:
-             logger.warning("Too few events after alignment.")
-             return {"status": "skipped"}
+            Y = y_events.values
+            T = df_events[T_cols].values
+            X = df_events[X_cols].values
+            W = df_events[W_cols].values
 
-        T_cols = ['order_imbalance', 'kalman_trend']
-        X_cols = ['shannon_entropy', 'momentum_persistence']
-        W_cols = ['volatility_gk', 'volume_intensity', 'liquidity_spread', 'efficiency_ratio']
+            # 7. Train DMLOrthoForest
+            logger.info(f"Training DMLOrthoForest for {geom_name}...")
 
-        Y = y_events.values
-        T = df_events[T_cols].values
-        X = df_events[X_cols].values
-        W = df_events[W_cols].values
+            rf_model = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=5,
+                min_samples_leaf=30,
+                bootstrap=False,
+                n_jobs=-1
+            )
 
-        # 7. Train DMLOrthoForest
-        logger.info("Training DMLOrthoForest...")
+            orf = DMLOrthoForest(
+                n_trees=300,
+                min_leaf_size=30,
+                max_depth=5,
+                subsample_ratio=0.5,
+                model_T=clone(rf_model),
+                model_Y=clone(rf_model),
+                discrete_treatment=False,
+                random_state=42
+            )
 
-        # Custom model_T and model_Y as requested
-        # "replace LassoCV with a lightly-tuned Random Forest; setting subsample_ratio=0.5 and bootstrap=False; max_depth 5; min_leaf_size 30; 1.5% min_leaf_size"
-        # min_samples_leaf = 30 or 0.015 * N? User says "30; 1.5% min_leaf_size". Assuming max(30, 0.015*N) or similar.
-        # Or just fixed params for the RF.
+            # Fit
+            orf.fit(Y, T, X=X, W=W, sample_weight=w_events.values)
 
-        rf_model = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=5,
-            min_samples_leaf=30,
-            bootstrap=False,
-            n_jobs=-1
-        )
+            # 8. Causal Metrics
+            logger.info(f"Calculating Metrics for {geom_name}...")
 
-        orf = DMLOrthoForest(
-            n_trees=300,            # User asked for 300 (or 500 in code block? Prompt text says 300)
-            min_leaf_size=30,     # User asked for 30
-            max_depth=5,
-            subsample_ratio=0.5,
-            model_T=clone(rf_model),
-            model_Y=clone(rf_model),
-            discrete_treatment=False,
-            random_state=42
-        )
+            # Calculate CATE (Conditional Average Treatment Effect)
+            cate_pred = orf.const_marginal_effect(X)
 
-        # Fit
-        orf.fit(Y, T, X=X, W=W, sample_weight=w_events.values)
+            # ATE (Average Treatment Effect)
+            ate = np.mean(cate_pred, axis=0)
+            # CATE Dispersion
+            cate_std = np.std(cate_pred, axis=0)
 
-        # 8. Causal Metrics & Reporting
-        logger.info("Calculating Metrics...")
-
-        # OOF Predictions? DMLOrthoForest creates OOF estimates internally for CATE?
-        # "Generate 3-fold 100% OOF predictions"
-        # We can manually do KFold if we want explicit OOF array, or trust the library's internal splitting.
-        # However, to report specific metrics like ATE Stability, we might need manual folds or use the 'const_marginal_effect' on test set.
-
-        # Calculate CATE (Conditional Average Treatment Effect)
-        # const_marginal_effect returns the marginal effect of T on Y, conditional on X.
-        cate_pred = orf.const_marginal_effect(X)
-
-        # CATE is shape (n_samples, n_treatments)
-
-        # Report Metrics
-        # 1. ATE (Average Treatment Effect)
-        ate = np.mean(cate_pred, axis=0)
-
-        # 2. CATE Dispersion (std of effects)
-        cate_std = np.std(cate_pred, axis=0)
-
-        # 3. Policy Value (Counterfactual PnL)
-        # Simple policy: if effect > 0, trade size proportional to effect
-        # PnL = sum( T_actual * Y * sign(Effect) ) ? No.
-        # We are estimating Effect of T.
-        # Policy: T_opt = sign(CATE).
-        # But T is continuous (Order Imbalance).
-        # We assume we can control T? Or we are selecting events where T was naturally high?
-        # The user says "Your decision to enter is conditional on this structural direction." (Kalman Trend as Policy?)
-        # T includes Kalman Trend.
+            metrics_row = {
+                "timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "geometry": geom_name,
+                "horizon": geom["horizon"],
+                "ate_order_imbalance": ate[0],
+                "ate_kalman_trend": ate[1] if len(ate) > 1 else 0.0,
+                "cate_std_order_imbalance": cate_std[0],
+                "cate_std_kalman_trend": cate_std[1] if len(cate_std) > 1 else 0.0,
+                "n_events": len(events)
+            }
+            all_metrics.append(metrics_row)
 
         # Save metrics
-        metrics_row = {
-            "timestamp": datetime.now().isoformat(),
-            "symbol": symbol,
-            "ate_order_imbalance": ate[0],
-            "ate_kalman_trend": ate[1] if len(ate) > 1 else 0.0,
-            "cate_std_order_imbalance": cate_std[0],
-            "cate_std_kalman_trend": cate_std[1] if len(cate_std) > 1 else 0.0,
-            "n_events": len(events)
-        }
+        if not all_metrics:
+            return {"status": "skipped", "reason": "no_valid_geometries"}
 
-        # Save to CSV
         results_file = outcomes_dir / f"causal_metrics_{symbol}_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        pd.DataFrame([metrics_row]).to_csv(results_file, index=False)
+        pd.DataFrame(all_metrics).to_csv(results_file, index=False)
 
-        return {"status": "success", "metrics": metrics_row, "file": str(results_file)}
+        return {"status": "success", "metrics_count": len(all_metrics), "file": str(results_file)}
 
     def _apply_tbm(self, close: pd.Series, events: pd.DatetimeIndex, volatility: pd.Series, pt: float, sl: float, horizon: int) -> pd.Series:
         """

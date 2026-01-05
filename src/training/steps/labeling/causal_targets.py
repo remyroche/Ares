@@ -100,6 +100,51 @@ class CausalTargetComputer:
         
         return models[model_name]
     
+    def get_guarded_confounders(
+        self,
+        X: pd.DataFrame,
+        treatment_cols: List[str],
+        correlation_threshold: float = 0.85
+    ) -> pd.DataFrame:
+        """
+        Enhanced 2026 Causal Filter:
+        1. Removes Treatment Leakage (T is not in W).
+        2. Implements Temporal Discipline (Pre-Treatment check).
+        3. Handles Multi-collinearity (Denoising W).
+        """
+        # 1. Start with all numeric
+        potential_w = X.select_dtypes(include=[np.number])
+
+        # 2. EXCLUDE the treatment itself and any direct descendants
+        potential_w = potential_w.drop(columns=treatment_cols, errors='ignore')
+
+        # 3. TEMPORAL DISCIPLINE: Only keep features that are ex-ante (historical)
+        # We look for 'lag', 'rolling', or '_w' (rolling window) to identify historical context
+        valid_confounders = [
+            c for c in potential_w.columns
+            if 'lag' in c.lower() or 'rolling' in c.lower() or '_w' in c.lower()
+        ]
+
+        # If filtering removed everything, fall back to potential_w (with warning)
+        # to prevent DML failure, but log it.
+        if not valid_confounders:
+            if self.verbose:
+                tprint_warning("   ⚠️ Guarded selection removed all features! Falling back to all numeric features (potential leakage).")
+            return potential_w
+
+        # 4. DENOISING: Remove redundant confounders
+        w_subset = potential_w[valid_confounders]
+        corr_matrix = w_subset.corr().abs()
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper.columns if any(upper[column] > correlation_threshold)]
+
+        final_w_cols = [c for c in valid_confounders if c not in to_drop]
+
+        if self.verbose:
+            tprint_info(f"   🛡️ Guarded Confounders: Selected {len(final_w_cols)} features (dropped {len(to_drop)} redundant)")
+
+        return X[final_w_cols]
+
     def compute_dml_causal_effects(
         self,
         X: pd.DataFrame,
@@ -123,6 +168,14 @@ class CausalTargetComputer:
             if self.verbose:
                 tprint_info("🧮 Computing DML Causal Effects...")
             
+            # Determine treatment columns to exclude BEFORE converting to numpy
+            treatment_cols = []
+            if isinstance(treatments, pd.Series):
+                if treatments.name:
+                    treatment_cols = [str(treatments.name)]
+            elif isinstance(treatments, pd.DataFrame):
+                treatment_cols = [str(c) for c in treatments.columns]
+
             # Convert to numpy arrays for downstream math while keeping indices for confounders
             treatments_array = np.asarray(treatments)
             outcomes_array = np.asarray(outcomes)
@@ -132,17 +185,19 @@ class CausalTargetComputer:
             if outcomes_array.ndim == 1:
                 outcomes_array = outcomes_array.reshape(-1, 1)
             
-            # Use X as confounders if not provided, ensuring only numeric columns
+            # Use X as confounders if not provided, using guarded selection
             if confounders is None:
-                confounders = X.select_dtypes(include=[np.number])
+                confounders = self.get_guarded_confounders(X, treatment_cols)
             else:
                 confounders = pd.concat(
                     [
-                        X.select_dtypes(include=[np.number]),
+                        self.get_guarded_confounders(X, treatment_cols),
                         confounders.select_dtypes(include=[np.number])
                     ],
                     axis=1
                 )
+                # Deduplicate columns if explicit confounders overlap with X
+                confounders = confounders.loc[:, ~confounders.columns.duplicated()]
             
             # Ensure we have some numeric features
             if confounders.empty:

@@ -114,10 +114,14 @@ from src.training.steps.labeling import FeatureGenerationMetaLabelingStep
 # 'meta_labeling_hpo_experiment'.
 from src.training.steps.labeling import MetaLabelingHPOExperimentStep
 
+# Import Causal Discovery Step
+from .causal_discovery_step import CausalDiscoveryStep
+
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
 # and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.
 
 # Register market analysis steps
+step_registry.register("causal_discovery_step", CausalDiscoveryStep)
 step_registry.register("sr_parameter_optimization", SRParameterOptimizationStep)
 step_registry.register("regime_clustering", RegimeClusteringStep)
 step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)

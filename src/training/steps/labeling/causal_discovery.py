@@ -22,6 +22,8 @@ from scipy import stats
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.covariance import GraphicalLassoCV
+from sklearn.linear_model import LinearRegression
+from src.utils.ml_common.evaluation.hsic import calculate_hsic
 
 # Import tprint functions
 try:
@@ -175,21 +177,168 @@ class CausalDiscovery:
                         return True, 1.0
                 
                 else:
-                    # Kernel-based test (simplified)
+                    # Kernel-based test (HSIC)
+                    # For X _||_ Y | Z, we use the residual method approximation:
+                    # 1. Regress X on Z -> Rx
+                    # 2. Regress Y on Z -> Ry
+                    # 3. Test independence(Rx, Ry) using HSIC
+
                     if self.verbose:
-                        tprint_warning("   ⚠️ CI Test: Kernel method not implemented, returning independent")
-                    return True, 1.0
+                        tprint_info(f"   ⚙️ CI Test: Kernel HSIC (Residual Method)")
+
+                    try:
+                        # Simple linear regression for residuals (fast approx for additive noise)
+                        # LinearRegression is imported at top level
+
+                        # Reshape Z
+                        z_reshaped = z
+                        if z.ndim == 1:
+                            z_reshaped = z.reshape(-1, 1)
+                        elif z.ndim == 2 and z.shape[0] != len(x):
+                             z_reshaped = z.T
+
+                        # Regress X on Z
+                        reg_x = LinearRegression().fit(z_reshaped, x)
+                        rx = x - reg_x.predict(z_reshaped)
+
+                        # Regress Y on Z
+                        reg_y = LinearRegression().fit(z_reshaped, y)
+                        ry = y - reg_y.predict(z_reshaped)
+
+                        # Test Independence of Residuals
+                        # calculate_hsic returns a float value, we need to threshold it
+                        # Since we don't have a p-value from calculate_hsic directly (it needs permutation),
+                        # we implement a fast permutation test here.
+
+                        hsic_val = calculate_hsic(rx, ry)
+
+                        # Fast permutation test (e.g. 50 permutations)
+                        n_perms = 50
+                        hsic_perms = []
+                        rng = np.random.RandomState(42)
+                        for _ in range(n_perms):
+                            ry_perm = rng.permutation(ry)
+                            hsic_perms.append(calculate_hsic(rx, ry_perm))
+
+                        # p-value = (sum(hsic_perm >= hsic_val) + 1) / (n_perms + 1)
+                        p_value = (np.sum(np.array(hsic_perms) >= hsic_val) + 1) / (n_perms + 1)
+
+                        is_independent = p_value > self.significance_level
+
+                        if self.verbose:
+                            tprint_info(f"   ⚙️ CI Test: HSIC - val={hsic_val:.4f}, p={p_value:.4f}")
+
+                        return is_independent, p_value
+
+                    except Exception as e:
+                        if self.verbose:
+                            tprint_warning(f"   ⚠️ CI Test: Kernel method failed: {e}")
+                        return True, 1.0
 
         except Exception as e:
             if self.verbose:
                 tprint_warning(f"⚠️ Conditional independence test failed: {e}")
             return True, 1.0
+
+    def discover_stable_graph(
+        self,
+        data: pd.DataFrame,
+        n_bootstraps: int = 20,
+        subsample_size: float = 0.8,
+        stability_threshold: float = 0.6,
+        target_variable: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Discover stable causal graph using bootstrap aggregation (Stability Selection).
+
+        Args:
+            data: Input dataframe
+            n_bootstraps: Number of bootstrap iterations
+            subsample_size: Fraction of data to use in each bootstrap
+            stability_threshold: Minimum frequency to keep an edge (0.0 to 1.0)
+            target_variable: Target variable for analysis
+
+        Returns:
+            Dictionary with stable graph results
+        """
+        try:
+            tprint_info(f"🛡️ Discovering Stable Graph ({n_bootstraps} bootstraps)...")
+
+            n_samples = len(data)
+            n_vars = data.shape[1]
+            var_names = list(data.columns)
+
+            # Edge counts: (source, target) -> count
+            edge_counts = {}
+
+            for b in range(n_bootstraps):
+                if self.verbose:
+                    tprint_info(f"   🔄 Bootstrap {b+1}/{n_bootstraps}...")
+
+                # Subsample
+                sample_indices = np.random.choice(n_samples, int(n_samples * subsample_size), replace=True)
+                bootstrap_data = data.iloc[sample_indices].copy()
+
+                # Run discovery (disable verbose for inner loop)
+                original_verbose = self.verbose
+                self.verbose = False
+                try:
+                    result = self.discover_causal_structure(bootstrap_data)
                     
+                    if 'causal_graph' in result:
+                        graph = result['causal_graph']
+                        for parent, children in graph.items():
+                            for child in children:
+                                edge = (parent, child)
+                                edge_counts[edge] = edge_counts.get(edge, 0) + 1
+
+                except Exception as e:
+                    pass
+                finally:
+                    self.verbose = original_verbose
+
+            # Filter edges by stability threshold
+            stable_graph = {var: [] for var in var_names}
+            stable_adjacency = np.zeros((n_vars, n_vars))
+
+            min_count = int(n_bootstraps * stability_threshold)
+
+            for (parent, child), count in edge_counts.items():
+                if count >= min_count:
+                    stable_graph[parent].append(child)
+                    i, j = var_names.index(parent), var_names.index(child)
+                    stable_adjacency[i, j] = 1
+
+            # Identify parents for target
+            stable_parents = {}
+            if target_variable and target_variable in stable_graph:
+                # Need to find who points TO target, stable_graph is parent->child
+                parents = []
+                for p, children in stable_graph.items():
+                    if target_variable in children:
+                        parents.append(p)
+                stable_parents[target_variable] = parents
+
+            # Store as main result
+            self.causal_graph_ = stable_graph
+            self.adjacency_matrix_ = stable_adjacency
+            # Re-estimate strength on full data using stable structure
+            self.estimate_causal_strength(data)
+
+            tprint_success(f"✅ Stable Graph Discovery Complete:")
+            tprint_info(f"   - Stable edges: {np.sum(stable_adjacency)}")
+
+            return {
+                'causal_graph': stable_graph,
+                'adjacency_matrix': stable_adjacency,
+                'causal_parents': stable_parents,
+                'edge_stability': {f"{k[0]}->{k[1]}": v/n_bootstraps for k, v in edge_counts.items()}
+            }
+
         except Exception as e:
-            if self.verbose:
-                tprint_warning(f"⚠️ Conditional independence test failed: {e}")
-            return True, 1.0
-    
+            tprint_error(f"❌ Stable graph discovery failed: {e}")
+            return {'error': str(e)}
+
     def pc_algorithm(
         self,
         data: pd.DataFrame,

@@ -151,37 +151,13 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
         """Compatibility shim for legacy enhanced momentum helpers."""
         return self._compute_enhanced_volatility_optimized_horizon_optimized_momentum_features(df)
 
-    def _generate_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Generate enhanced volatility burst features with manual feature engineering."""
-        # Basic momentum features
+    def _get_volatility_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Generate combined manual features for Volatility Burst."""
         momentum_features = self._compute_enhanced_momentum_features(df)
+        manual_features = self._create_manual_volatility_burst_enhanced_features(df, pipeline_features)
         
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'volatility_burst', {'enhanced_features': True}
-        )
-        
-        # Manual feature engineering for volatility burst
-        manual_features = self._create_manual_volatility_burst_enhanced_features(df, enhanced_features)
-        
-        # Combine all features
-        all_features = [momentum_features, enhanced_features, manual_features]
-        
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_volatility_burst_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
-        
-        return pd.DataFrame(index=df.index)
-    
+        return pd.concat([momentum_features, manual_features], axis=1)
+
     def _create_manual_volatility_burst_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create manual enhanced features for volatility burst detection."""
         manual_features = pd.DataFrame(index=df.index)
@@ -319,187 +295,22 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
             
         return manual_features
     
-    def _apply_manual_volatility_burst_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Apply manual feature selection for volatility burst features."""
-        if features.empty:
-            return features
-        
-        # Remove constant features
-        constant_features = features.columns[features.nunique() <= 1]
-        if len(constant_features) > 0:
-            features = features.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant volatility burst features")
-        
-        # Manual redundancy reduction - remove highly correlated features
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(
-            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-        )
-        
-        # Find highly correlated pairs (>0.9)
-        to_drop = []
-        for column in upper_triangle.columns:
-            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
-            if not correlated_features.empty:
-                # Keep the feature that comes first alphabetically (deterministic)
-                for correlated_feature in correlated_features.index:
-                    if correlated_feature > column:  # Drop the later feature alphabetically
-                        to_drop.append(correlated_feature)
-        
-        # Remove redundant features
-        if to_drop:
-            features = features.drop(columns=list(set(to_drop)))
-            self.logger.info(f"Removed {len(set(to_drop))} redundant volatility burst features: {list(set(to_drop))}")
-        
-        # Keep only the most informative features (limit to top 30 by variance)
-        if len(features.columns) > 30:
-            feature_variances = features.var()
-            top_features = feature_variances.nlargest(30).index
-            features = features[top_features]
-            self.logger.info(f"Limited volatility burst features to top 30 by variance")
-        
-        return features
-    
-    def _create_volatility_burst_labels(self, df: pd.DataFrame, lookforward: int = 35) -> pd.Series:
-        """Create true volatility burst labels targeting volatility expansion."""
-        returns = df['close'].pct_change()
-        
-        # 1. Realized volatility (rolling std)
-        current_vol = returns.rolling(25).std()
-        
-        # 2. Future realized volatility over the lookforward window
-        # We look at the standard deviation of returns in the next 'lookforward' periods
-        future_vol = returns.shift(-lookforward).rolling(lookforward).std()
-        
-        # 3. Future absolute returns (max price move)
-        future_abs_return = returns.shift(-lookforward).rolling(lookforward).apply(lambda x: np.abs(x).max(), raw=True)
-        
-        # Binary label: Volatility expansion OR price shock
-        # Expansion: Future vol is 50% higher than current vol
-        # Shock: Future move is > 2 standard deviations
-        vol_expansion = future_vol > current_vol * 1.5
-        price_shock = future_abs_return > current_vol * 2.5
-        
-        labels = (vol_expansion | price_shock).astype(int)
-        
-        return labels
-    
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced volatility burst step."""
-        start_time = time.time()
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model=self.step_name
-            )
-            
-            self._versioned_store = None
-            _ = self.versioned_store
-            
-            # 1. Load market data
-            market_data, market_source = self.load_market_data_or_fail(
-                {**config, "timeframe": timeframe},
-                pipeline_state={},
-                allow_config_override=True,
-            )
-            
-            # 2. Generate Enhanced Features
-            tprint_info("🛠️ Generating enhanced volatility features...")
-            feature_df = self._generate_enhanced_features(market_data)
-            
-            # 3-4. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=feature_df,
-                config=config,
-                filter_type='volatility',
-                pt_sl_config_key='volatility_burst_pt_sl',
-                default_pt_sl=[3.0, 1.0]
-            )
-
-            # 4. Train Enhanced Model with Centralized XGB Trainer
-            tprint_info("🤖 Training Enhanced Volatility Burst model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-            metrics = training_result.metrics
-
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'n_samples': len(X)
-            })
-
-            # 5. Generate Final Standardized Output
-            final_probs = pd.Series(np.nan, index=market_data.index)
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index)
-            full_labels.loc[y.index] = y
-
-            result = self.save_specialist_results(
-                config=config,
-                feature_df=feature_df,
-                labels=full_labels,
-                predictions=final_preds.values,
-                probabilities=final_probs.values,
-                model=last_model,
-                metrics=metrics,
-                specialist_name="EnhancedMLVolatilityBurstStep"
-            )
-            
-            tprint_success(f"✅ Enhanced Volatility Burst completed in {time.time()-start_time:.2f}s")
-            return result
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced volatility burst step failed: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.VOLATILITY_BURST,
+            manual_feature_func=self._get_volatility_combined_manual_features,
+            filter_type='volatility',
+            pt_sl_config_key='volatility_burst_pt_sl',
+            default_pt_sl=[3.0, 1.0],
+            suffix="enhanced_volatility_burst_features"
+        )
     
-    def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
-        """Load market data - placeholder implementation."""
-        # This would be implemented based on the actual data loading mechanism
-        # Using alternative data loading approach
-            # market_data = self._load_alternative_market_data(config, timeframe)
-        market_data, _market_source = self.load_market_data_or_fail(
-            {**config, "timeframe": timeframe},
+    def _load_market_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
+        """Load market data using BaseStep method."""
+        market_data, _ = self.load_market_data_or_fail(
+            {"symbol": symbol, "exchange": exchange, "timeframe": timeframe},
             pipeline_state={},
             allow_config_override=True,
         )

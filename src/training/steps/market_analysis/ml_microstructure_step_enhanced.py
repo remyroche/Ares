@@ -143,29 +143,16 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
         
         return features
     
-    def _generate_enhanced_features(self, df: pd.DataFrame, specialist_type=None) -> pd.DataFrame:
-        """Generate enhanced microstructure features with optimized performance."""
-        # Basic microstructure features
+    def _get_micro_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine microstructure features and manual enhancements."""
+        # 1. Base Microstructure Features
         micro_features = self._compute_enhanced_structural_optimized_horizon_optimized_microstructure_features(df)
         
-        # Skip heavy enhanced feature pipeline for performance
-        enhanced_features = pd.DataFrame(index=df.index)
+        # 2. Manual Features
+        manual_features = self._create_manual_microstructure_enhanced_features(df, pipeline_features)
         
-        # Manual feature engineering (limited)
-        manual_features = self._create_manual_microstructure_enhanced_features(df, enhanced_features)
-        
-        # Combine features
-        all_features = pd.concat([micro_features, enhanced_features, manual_features], axis=1)
-        
-        # Remove duplicate columns
-        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
-        
-        # Limit to top 50 features for performance
-        if len(all_features.columns) > 50:
-            all_features = all_features.iloc[:, :50]
-        
-        return all_features
-    
+        return pd.concat([micro_features, manual_features], axis=1)
+
     def _create_manual_microstructure_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create manual enhanced features for microstructure analysis (optimized)."""
         manual_features = pd.DataFrame(index=df.index)
@@ -210,220 +197,22 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
         
         return manual_features
     
-    def _apply_manual_microstructure_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Apply manual feature selection for microstructure features."""
-        if features.empty:
-            return features
-        
-        # Remove constant features
-        constant_features = features.columns[features.nunique() <= 1]
-        if len(constant_features) > 0:
-            features = features.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant microstructure features")
-        
-        # Manual redundancy reduction - remove highly correlated features
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(
-            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-        )
-        
-        # Find highly correlated pairs (>0.9)
-        to_drop = []
-        for column in upper_triangle.columns:
-            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
-            if not correlated_features.empty:
-                # Keep the feature that comes first alphabetically (deterministic)
-                for correlated_feature in correlated_features.index:
-                    if correlated_feature > column:  # Drop the later feature alphabetically
-                        to_drop.append(correlated_feature)
-        
-        # Remove redundant features
-        if to_drop:
-            features = features.drop(columns=list(set(to_drop)))
-            self.logger.info(f"Removed {len(set(to_drop))} redundant microstructure features: {list(set(to_drop))}")
-        
-        # Keep only the most informative features (limit to top 30 by variance)
-        if len(features.columns) > 30:
-            feature_variances = features.var()
-            top_features = feature_variances.nlargest(30).index
-            features = features[top_features]
-            self.logger.info(f"Limited microstructure features to top 30 by variance")
-        
-        return features
-    
-    def _create_microstructure_labels(self, df: pd.DataFrame, lookforward: int = 35) -> pd.Series:
-        """Create momentum persistence labels."""
-        returns = df['close'].pct_change()
-        
-        # Future momentum
-        future_returns = returns.shift(-lookforward).rolling(lookforward).sum()
-        
-        # Binary label: positive future momentum
-        labels = (future_returns > returns.rolling(25).std() * 0.5).astype(int)
-        
-        return labels
-    
-    def _compute_mi_during_training(self, X_train: pd.DataFrame, y_train: pd.Series, 
-                                  X_val: pd.DataFrame, y_val: pd.Series,
-                                  model_predictions: np.ndarray) -> Dict[str, float]:
-        """Compute MI metrics during training for monitoring."""
-        mi_metrics = {}
-        
-        try:
-            # Feature MI to target
-            feature_mi_scores = []
-            for col in X_train.select_dtypes(include=[np.number]).columns:
-                mi_score = mutual_info_regression(
-                    X_train[col].values.reshape(-1, 1), y_train.values
-                )[0]
-                feature_mi_scores.append(mi_score)
-            
-            if feature_mi_scores:
-                mi_metrics['avg_feature_mi'] = np.mean(feature_mi_scores)
-                mi_metrics['max_feature_mi'] = np.max(feature_mi_scores)
-                mi_metrics['high_mi_features'] = sum(1 for mi in feature_mi_scores if mi > 0.02)
-            
-            # Prediction MI to target
-            mi_metrics['prediction_mi'] = mutual_info_regression(
-                model_predictions.reshape(-1, 1), y_val.values
-            )[0]
-            
-            # MI improvement tracking
-            self.mi_history.append(mi_metrics['prediction_mi'])
-            
-        except Exception as e:
-            self.logger.warning(f"MI computation failed: {e}")
-            mi_metrics = {'prediction_mi': 0.0, 'avg_feature_mi': 0.0}
-        
-        return mi_metrics
-    
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced momentum persistence step."""
-        start_time = time.time()
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            # Set context for artifact saving - MUST BE DONE FIRST
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model=self.step_name
-            )
-
-            tprint_info(f"🚀 Starting Enhanced Microstructure for {symbol} on {exchange}")
-
-            # Load market data
-            market_data = self._load_market_data(config, timeframe)
-            
-            # Generate enhanced features
-            tprint_info("🛠️ Generating enhanced microstructure features...")
-            features = self._generate_enhanced_features(market_data)
-            
-            # AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            # Using 'spread' for microstructure (market depth/capacity proxy)
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=features,
-                config=config,
-                filter_type='spread',
-                pt_sl_config_key='microstructure_pt_sl',
-                default_pt_sl=[2.0, 1.0]
-            )
-
-            # Note: prepare_specialist_data handles CUSUM, TBM, Weighting, and Alignment.
-            # Original code used `_create_microstructure_labels` which seems to be a custom label generator.
-            # However, user requested AFML standardization: "The sequence of apply_afml_sampling ... is repeated almost verbatim in every execute method."
-            # So switching to prepare_specialist_data (using TBM) is the correct action to standardize.
-
-            tprint_info(f"📊 Training data: {len(X)} samples, {len(X.columns)} features")
-            
-            # 4. Centralized purged-CV training
-            tprint_info("🤖 Training Enhanced Microstructure model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-            metrics = training_result.metrics
-
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = labels.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(features.columns),
-                'n_samples': len(features)
-            })
-
-            # Generate Final Standardized Output (Aligned to full market_data index)
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=market_data.index)
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index)
-            full_labels.loc[labels.index] = labels
-
-            result = self.save_specialist_results(
-                config=config,
-                feature_df=features,
-                labels=full_labels,
-                predictions=final_preds.values,
-                probabilities=final_probs.values,
-                model=last_model,
-                metrics=metrics,
-                specialist_name="EnhancedMLMicrostructureStep"
-            )
-            
-            execution_time = time.time() - start_time
-            result["execution_time"] = execution_time
-            result["mi_history"] = self.mi_history
-            result["training_metrics"] = self.training_metrics
-
-            tprint_success(f"✅ Enhanced Microstructure completed in {execution_time:.2f}s")
-            
-            return result
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced Microstructure step failed: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.MICROSTRUCTURE_REGIME, # Assuming exist or fallback
+            manual_feature_func=self._get_micro_combined_manual_features,
+            filter_type='spread',
+            pt_sl_config_key='microstructure_pt_sl',
+            default_pt_sl=[2.0, 1.0],
+            suffix="enhanced_microstructure_features"
+        )
     
-    def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
+    def _load_market_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
         """Load market data using BaseStep method."""
-        market_data, _market_source = self.load_market_data_or_fail(
-            {**config, "timeframe": timeframe},
+        market_data, _ = self.load_market_data_or_fail(
+            {"symbol": symbol, "exchange": exchange, "timeframe": timeframe},
             pipeline_state={},
             allow_config_override=True,
         )

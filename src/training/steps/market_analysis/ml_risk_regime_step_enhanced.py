@@ -23,17 +23,21 @@ from scipy.stats import gaussian_kde
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 from src.training.steps.base_step import BaseStep
-from src.utils.ml_common.afml_utils import (
-    get_daily_vol, get_t_events, get_vertical_barrier, 
-    apply_triple_barrier, get_bins, get_weights_by_uniqueness,
-    frac_diff_fixed, get_sample_weights
-)
 from src.utils.tprint import (
     tprint,
     tprint_info,
     tprint_warning,
     tprint_error,
     tprint_success,
+)
+from src.utils.ml_common.afml_utils import (
+    get_daily_vol, get_t_events, get_vertical_barrier,
+    apply_triple_barrier, get_bins, get_weights_by_uniqueness,
+    frac_diff_fixed, get_sample_weights
+)
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
 )
 from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import (
     SpecialistDiagnosticsMixinEnhancedV2
@@ -89,78 +93,29 @@ class EnhancedMLRiskRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecial
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
-    def _generate_enhanced_risk_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate enhanced risk features with manual feature engineering."""
+    def _get_risk_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine risk features, enhanced features, and specific risk enhancements."""
         # Import original risk features
-        from src.feature_generation.categories.risk_regime_features import generate_risk_regime_features
-        base_risk_features = generate_risk_regime_features(df, config)
-        
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'risk_regime', {'enhanced_features': True}
-        )
+        try:
+            # Reconstruct basic config from context
+            config = {
+                'symbol': self._current_context.get('symbol'),
+                'exchange': self._current_context.get('exchange'),
+                'timeframe': self._current_context.get('timeframe'),
+                'direction': self._current_context.get('direction')
+            }
+            from src.feature_generation.categories.risk_regime_features import generate_risk_regime_features
+            base_risk_features = generate_risk_regime_features(df, config)
+        except ImportError:
+            base_risk_features = pd.DataFrame(index=df.index)
         
         # Manual feature engineering for risk regime
-        manual_features = self._create_manual_risk_enhanced_features(df, enhanced_features)
+        manual_features = self._create_manual_risk_enhanced_features(df, pipeline_features)
         
         # Combine all features
-        all_features = [base_risk_features, enhanced_features, manual_features]
+        all_features = pd.concat([base_risk_features, manual_features], axis=1)
         
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_risk_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
-        
-        return pd.DataFrame(index=df.index)
-    
-    def _apply_manual_risk_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Apply manual feature selection for risk regime features."""
-        if features.empty:
-            return features
-        
-        # Remove constant features
-        constant_features = features.columns[features.nunique() <= 1]
-        if len(constant_features) > 0:
-            features = features.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant risk features")
-        
-        # Manual redundancy reduction - remove highly correlated features
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(
-            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-        )
-        
-        # Find highly correlated pairs (>0.9)
-        to_drop = []
-        for column in upper_triangle.columns:
-            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
-            if not correlated_features.empty:
-                # Keep the feature that comes first alphabetically (deterministic)
-                for correlated_feature in correlated_features.index:
-                    if correlated_feature > column:  # Drop the later feature alphabetically
-                        to_drop.append(correlated_feature)
-        
-        # Remove redundant features
-        if to_drop:
-            features = features.drop(columns=list(set(to_drop)))
-            self.logger.info(f"Removed {len(set(to_drop))} redundant risk features: {list(set(to_drop))}")
-        
-        # Keep only the most informative features (limit to top 30 by variance)
-        if len(features.columns) > 30:
-            feature_variances = features.var()
-            top_features = feature_variances.nlargest(30).index
-            features = features[top_features]
-            self.logger.info(f"Limited risk features to top 30 by variance")
-        
-        return features
+        return all_features
     
     def _create_manual_risk_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create advanced manual enhanced features for risk regime detection."""
@@ -350,6 +305,7 @@ class EnhancedMLRiskRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecial
             manual_features['risk_appetite'] = risk_appetite
             
         return manual_features
+
     def _add_risk_specific_features(self, df: pd.DataFrame, risk_features: pd.DataFrame) -> pd.DataFrame:
         """Add risk-specific enhanced features."""
         features = pd.DataFrame(index=df.index)
@@ -511,401 +467,17 @@ class EnhancedMLRiskRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecial
         
         return features
     
-    def _create_risk_labels(self, df: pd.DataFrame, lookforward: int = 35) -> pd.Series:
-        """Create enhanced risk labels based on multiple risk factors."""
-        if 'close' in df.columns:
-            returns = df['close'].pct_change()
-            
-            # Multi-timeframe volatility analysis
-            vol_10 = returns.rolling(10).std()
-            vol_20 = returns.rolling(25).std()
-            vol_50 = returns.rolling(60).std()
-            
-            # Volatility regime detection
-            vol_regime_current = vol_20 / vol_50
-            vol_regime_future = returns.shift(-lookforward).rolling(25).std() / vol_50
-            
-            # Drawdown-based risk
-            rolling_max = df['close'].rolling(20).max()
-            drawdown = (df['close'] - rolling_max) / rolling_max
-            future_drawdown = drawdown.shift(-lookforward)
-            
-            # Downside risk focus
-            downside_returns = returns.copy()
-            downside_returns[downside_returns > 0] = 0
-            downside_vol = downside_returns.rolling(20).std()
-            future_downside_vol = downside_returns.shift(-lookforward).rolling(20).std()
-            
-            # Enhanced risk labeling with balanced thresholds
-            # Condition 1: Volatility escalation (adjusted for balance)
-            vol_escalation = vol_regime_future > vol_regime_current * 1.15  # Increased from 1.05
-            
-            # Condition 2: Significant drawdown ahead (adjusted for balance)
-            drawdown_risk = future_drawdown < -0.025  # Increased from 2% to 2.5%
-            
-            # Condition 3: Downside volatility increase (adjusted for balance)
-            downside_risk = future_downside_vol > downside_vol * 1.3  # Increased from 1.1
-            
-            # Condition 4: Price shock risk (adjusted for balance)
-            price_shock_threshold = vol_20 * 1.8  # Increased from 1.5-sigma to 1.8-sigma
-            future_shock = abs(returns.shift(-lookforward)) > price_shock_threshold
-            
-            # Condition 5: Volatility regime shift detection (adjusted for balance)
-            vol_regime_shift = (
-                (vol_regime_current < 0.7) & (vol_regime_future > 1.3) |  # Tighter thresholds
-                (vol_regime_current > 1.3) & (vol_regime_future < 0.7)
-            )
-            
-            # Condition 6: Sudden volatility spike detection (adjusted for balance)
-            vol_spike_threshold = vol_20.rolling(50).mean() * 2.2  # Increased from 1.8
-            vol_spike = vol_regime_future > vol_spike_threshold
-            
-            # Condition 7: Volatility persistence detection (adjusted for balance)
-            vol_persistence = (vol_regime_future > 1.5) & (vol_regime_current > 1.5)  # Increased from 1.3
-            
-            # Combine risk signals with higher threshold for balance
-            risk_signal = (
-                vol_escalation.astype(int) + 
-                drawdown_risk.astype(int) + 
-                downside_risk.astype(int) + 
-                future_shock.astype(int) +
-                vol_regime_shift.astype(int) +
-                vol_spike.astype(int) +
-                vol_persistence.astype(int)
-            )
-            
-            # Label: 1 for high risk conditions, 0 for normal/low risk
-            # Use higher threshold to reduce positive labels
-            labels = (risk_signal >= 2).astype(int)  # Increased from 1 to 2
-            
-            # Add regime-aware adjustment
-            # In high volatility regimes, be more selective
-            high_vol_regime = vol_regime_current > 1.5
-            labels.loc[high_vol_regime] = labels.loc[high_vol_regime] & (
-                (vol_escalation.loc[high_vol_regime]) | 
-                (future_shock.loc[high_vol_regime]) |
-                (vol_spike.loc[high_vol_regime])
-            )
-            
-            # In low volatility regimes, be more sensitive to escalation
-            low_vol_regime = vol_regime_current < 0.7
-            labels.loc[low_vol_regime] = labels.loc[low_vol_regime] | (
-                (vol_escalation.loc[low_vol_regime]) |
-                (vol_regime_shift.loc[low_vol_regime])
-            )
-            
-            return labels.astype(int)
-        else:
-            # Enhanced fallback labels
-            returns = df['close'].pct_change()
-            vol_20 = returns.rolling(25).std()
-            future_vol = returns.shift(-lookforward).rolling(25).std()
-            
-            # Use lower threshold for better sensitivity
-            labels = (future_vol > vol_20 * 1.1).astype(int)
-            return labels
-    
-
-    def _optimize_xgb_hyperparameters_for_mi(self, X: pd.DataFrame, y: pd.Series) -> Tuple[Dict[str, Any], float]:
-        """Optimize XGBoost hyperparameters specifically for MI improvement."""
-        best_params = {}
-        best_mi = 0.0
-        
-        # Parameter grid for XGBoost MI optimization
-        # Parameter grid for MI-focused optimization
-        param_grid = {
-            "n_estimators": [200, 300, 500],
-            "max_depth": [4, 6],
-            "learning_rate": [0.03, 0.07, 0.1],
-            "subsample": [0.8, 0.9],
-            "colsample_bytree": [0.8, 0.9],
-            "gamma": [0, 0.1, 0.2],
-            "reg_alpha": [0.1, 0.5, 1.0],
-            "reg_lambda": [2, 5, 10],
-            "min_child_weight": [20, 40]
-        }
-        
-        # Time series split for validation
-        tscv = TimeSeriesSplit(n_splits=3)
-        
-        for params in self._generate_param_combinations(param_grid, max_combinations=15):
-            mi_scores = []
-            
-            for train_idx, val_idx in tscv.split(X):
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-                
-                # Train XGBoost model
-                import xgboost as xgb
-                model = xgb.XGBClassifier(
-                    objective='binary:logistic',
-                    random_state=42,
-                    eval_metric='logloss',
-                    early_stopping_rounds=20,
-                    **params
-                )
-                
-                model.fit(X_train, y_train, eval_set=[(X_val, y_val)],
-                         verbose=False)
-                
-                # Compute MI
-                val_pred = model.predict_proba(X_val)[:, 1]
-                mi_score = mutual_info_regression(
-                    val_pred.reshape(-1, 1), y_val.values
-                )[0]
-                mi_scores.append(mi_score)
-            
-            avg_mi = np.mean(mi_scores)
-            
-            if avg_mi > best_mi:
-                best_mi = avg_mi
-                best_params = params.copy()
-                
-                tprint_info(f"🔥 New best XGB MI: {avg_mi:.4f} with params: {params}")
-        
-        tprint_success(f"✅ Best XGBoost hyperparameters found: MI = {best_mi:.4f}")
-        return best_params, best_mi
-    
-    def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
-        """Generate parameter combinations for optimization."""
-        import itertools
-        import random
-        
-        keys = list(param_grid.keys())
-        values = list(param_grid.values())
-        
-        # Generate all combinations
-        all_combinations = list(itertools.product(*values))
-        
-        # Randomly sample if too many
-        if len(all_combinations) > max_combinations:
-            all_combinations = random.sample(all_combinations, max_combinations)
-        
-        for combination in all_combinations:
-            yield dict(zip(keys, combination))
-    
-    def _train_enhanced_risk_model(self, features: pd.DataFrame, labels: pd.Series, 
-                                 config: Dict[str, Any], sample_weight: Optional[pd.Series] = None) -> Tuple[Any, Dict[str, float]]:
-        """Train enhanced risk model with MI optimization and optional AFML weights, optimized for Meta-Labeling."""
-        import xgboost as xgb
-        
-        # Optimize hyperparameters for MI
-        tprint_info("🔧 Optimizing XGBoost hyperparameters for Meta-Labeling (Tail-Loss probability)...")
-        best_params, best_mi = self._optimize_xgb_hyperparameters_for_mi(features, labels)
-        
-        tprint_success(f"✅ Best hyperparameters found with MI = {best_mi:.4f}")
-        
-        # Train final model with best params using time series CV
-        tscv = TimeSeriesSplit(n_splits=5)
-        
-        final_model = xgb.XGBClassifier(
-            objective='binary:logistic',
-            eval_metric='logloss',
-            early_stopping_rounds=20,
-            n_estimators=best_params.get('n_estimators', 300),
-            max_depth=best_params.get('max_depth', 6),
-            learning_rate=best_params.get('learning_rate', 0.05),
-            subsample=best_params.get('subsample', 0.8),
-            colsample_bytree=best_params.get('colsample_bytree', 0.8),
-            gamma=best_params.get('gamma', 0.1),
-            reg_alpha=best_params.get('reg_alpha', 0.5),
-            reg_lambda=best_params.get('reg_lambda', 2.0),
-            min_child_weight=best_params.get('min_child_weight', 20),
-            # Risk focus: scale_pos_weight if labels are imbalanced (tail losses are rare)
-            scale_pos_weight=(len(labels) - labels.sum()) / (labels.sum() + 1e-8) if labels.sum() > 0 else 1.0
-        )
-        
-        # Get last fold for final training with validation
-        train_indices, val_indices = list(tscv.split(features))[-1]
-        X_train, X_val = features.iloc[train_indices], features.iloc[val_indices]
-        y_train, y_val = labels.iloc[train_indices], labels.iloc[val_indices]
-        w_train = sample_weight.iloc[train_indices] if sample_weight is not None else None
-        
-        final_model.fit(X_train, y_train, sample_weight=w_train, eval_set=[(X_val, y_val)], verbose=False)
-        
-        # Compute MI score on validation set
-        val_pred = final_model.predict_proba(X_val)[:, 1]
-        mi_score = self.compute_binned_mi(val_pred, y_val.values)
-        
-        # Store training metrics
-        self.training_metrics.append({
-            'mi_score': mi_score,
-            'n_features': len(features.columns),
-            'best_params': best_params
-        })
-        
-        # Compute AUC on validation set
-        from sklearn.metrics import roc_auc_score, log_loss
-        try:
-            auc_score = roc_auc_score(y_val, val_pred)
-            logloss = log_loss(y_val, val_pred)
-        except Exception:
-            auc_score = 0.5
-            logloss = 0.0
-        
-        metrics = {
-            'mi_score': mi_score,
-            'auc': auc_score,
-            'log_loss': logloss,
-            'n_features': len(features.columns),
-            'optimization_params': best_params,
-        }
-        
-        return final_model, metrics
-    
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced risk regime step."""
-        start_time = time.time()
-        metrics: Dict[str, Any] = {}
-        artifacts: List[str] = []
-
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            if not symbol or not exchange:
-                raise ValueError("Config must include 'symbol' and 'exchange'")
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model="enhanced_risk_regime",
-            )
-
-            tprint_info(f"🚀 Starting Enhanced Risk Regime for {symbol} on {exchange}")
-
-            # 1. Load Market Data
-            market_data, market_source = self._load_market_data_with_cache(config, timeframe)
-
-            # 2. Generate Enhanced Features
-            tprint_info("🛠️ Generating Enhanced Risk Regime features...")
-            features_df = self._generate_enhanced_risk_features(market_data, config)
-            
-            # AFML UPDATE: Apply CUSUM Sampling
-            # Risk regime should focus on periods of significant volatility activity to capture tail-risk
-            # 3. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            tprint_info("🎯 Generating Enhanced Risk Regime labels with Triple Barrier Method...")
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=features_df,
-                config=config,
-                filter_type='volatility',
-                pt_sl_config_key='risk_regime_pt_sl',
-                default_pt_sl=[2.0, 1.0]
-            )
-
-            # 4. Train Enhanced Model with MI Optimization using OOF and weights
-            tprint_info("🤖 Training Enhanced Risk Regime model (Meta-Label) with OOF & AFML weights...")
-            
-            # Use TimeSeriesSplit for OOF predictions
-            n_splits = 5
-            tscv = TimeSeriesSplit(n_splits=n_splits)
-            
-            oof_probs = pd.Series(np.nan, index=X.index)
-            last_model = None
-            
-            # Optimize hyperparameters once on the sampled set
-            best_params, best_mi = self._optimize_xgb_hyperparameters_for_mi(X, y)
-
-            for fold, (train_indices, val_indices) in enumerate(tscv.split(X)):
-                X_train_fold, X_val_fold = X.iloc[train_indices], X.iloc[val_indices]
-                y_train_fold, y_val_fold = y.iloc[train_indices], y.iloc[val_indices]
-                w_train_fold = weights.iloc[train_indices]
-                
-                # Train model for this fold
-                model = xgb.XGBClassifier(
-                    objective='binary:logistic',
-                    eval_metric='logloss',
-                    early_stopping_rounds=20,
-                    random_state=42 + fold,
-                    **best_params
-                )
-                
-                model.fit(
-                    X_train_fold.fillna(0), 
-                    y_train_fold.fillna(0), 
-                    sample_weight=w_train_fold,
-                    eval_set=[(X_val_fold.fillna(0), y_val_fold.fillna(0))], 
-                    verbose=False
-                )
-                
-                # Store OOF prediction
-                fold_probs = model.predict_proba(X_val_fold.fillna(0))[:, 1]
-                oof_probs.iloc[val_indices] = fold_probs
-                last_model = model
-
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                metrics = {}
-                try:
-                    # Use fast binned MI proxy for binary targets
-                    metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                except Exception as e:
-                    self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                    metrics['auc'] = 0.5
-                    metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'optimization_params': best_params if 'best_params' in locals() else {},
-                'n_samples': len(X)
-            })
-
-            # 5. Generate Final Standardized Output (Aligned to full market_data index)
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            full_labels.loc[y.index] = y
-
-            result = self.save_specialist_results(
-                config=config,
-                feature_df=feature_df if 'feature_df' in locals() else (features_df if 'features_df' in locals() else X),
-                labels=full_labels,
-                predictions=final_preds.values,
-                probabilities=final_probs.values,
-                model=last_model,
-                metrics=metrics,
-                specialist_name="EnhancedMLRiskRegimeStep"
-            )
-
-            # 9. Final Summary
-            execution_time = time.time() - start_time
-            metrics["execution_time"] = execution_time
-            metrics["n_samples"] = len(X)
-
-            result["execution_time"] = execution_time
-            result["mi_history"] = self.mi_history
-            result["training_metrics"] = self.training_metrics
-
-            tprint_success(f"✅ Enhanced Risk Regime completed in {execution_time:.2f}s")
-            tprint_info(f"📊 Final Metrics: MI={metrics.get('mi_score', 0):.4f}, AUC={metrics.get('auc', 0):.3f}")
-
-            return result
-
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced Risk Regime step failed: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.RISK_REGIME, # Assuming this exists or falls back
+            manual_feature_func=self._get_risk_combined_manual_features,
+            filter_type='volatility',
+            pt_sl_config_key='risk_regime_pt_sl',
+            default_pt_sl=[2.0, 1.0],
+            suffix="enhanced_risk_regime_features"
+        )
     
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching using BaseStep method."""
@@ -932,115 +504,3 @@ class EnhancedMLRiskRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecial
         
         self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for {symbol} from {market_source}")
         return market_data, market_source
-    
-    def _generate_synthetic_market_data(self, symbol: str, timeframe: str, end_date: datetime) -> pd.DataFrame:
-        """Generate synthetic market data with realistic characteristics."""
-        import numpy as np
-        
-        # Determine number of periods based on timeframe
-        periods_per_day = {
-            '1m': 1440,
-            '5m': 288,
-            '15m': 96,
-            '1h': 24,
-            '4h': 6,
-            '1d': 1
-        }
-        
-        periods = periods_per_day.get(timeframe, 96)  # Default to 15m
-        
-        # Generate 3 years of data
-        total_periods = periods * 365 * 3
-        
-        # Create date range
-        dates = pd.date_range(end=end_date, periods=total_periods, freq=f'{timeframe}')
-        
-        # Generate realistic price series with trend and volatility
-        np.random.seed(42)
-        
-        # Base price (starting around $2000 for ETH)
-        base_price = 2000.0
-        
-        # Generate returns with realistic characteristics
-        # Geometric Brownian Motion
-        drift = 0.0001  # Slight upward trend
-        volatility = 0.02  # 2% per period
-        
-        returns = []
-        current_return = 0.0
-        
-        for i in range(total_periods):
-            # Random shock
-            random_shock = np.random.normal(0, volatility)
-            
-            # Total return
-            total_return = drift + random_shock
-            
-            # Add some volatility clustering
-            if i > 20:
-                recent_vol = np.std(returns[-20:]) if len(returns) > 20 else volatility
-                volatility_factor = 0.7 + 0.6 * (recent_vol / volatility)
-                total_return *= volatility_factor
-            
-            returns.append(total_return)
-            current_return = total_return
-        
-        # Convert to prices
-        prices = [base_price]
-        for ret in returns:
-            new_price = prices[-1] * (1 + ret)
-            prices.append(new_price)
-        
-        prices = prices[1:]  # Remove initial price
-        
-        # Generate OHLC from returns
-        high_prices = []
-        low_prices = []
-        close_prices = prices
-        open_prices = []
-        
-        for i in range(len(prices)):
-            if i == 0:
-                open_price = base_price
-            else:
-                open_price = close_prices[i-1]
-            
-            # Generate realistic intrabar movement
-            intrabar_vol = volatility * 0.5
-            high = open_price * (1 + abs(np.random.normal(0, intrabar_vol)))
-            low = open_price * (1 - abs(np.random.normal(0, intrabar_vol)))
-            
-            # Ensure OHLC relationships
-            high = max(high, open_price, close_prices[i])
-            low = min(low, open_price, close_prices[i])
-            
-            high_prices.append(high)
-            low_prices.append(low)
-            open_prices.append(open_price)
-        
-        # Generate volume with correlation to price movement
-        base_volume = 1000000
-        volume_multipliers = []
-        
-        for i in range(len(prices)):
-            # Volume tends to be higher with larger price movements
-            price_move = abs(returns[i])
-            volume_multiplier = 1.0 + price_move * 10  # Volume increases with price movement
-            
-            # Add some randomness
-            volume_multiplier *= np.random.uniform(0.5, 2.0)
-            
-            volume_multipliers.append(volume_multiplier)
-        
-        volumes = [base_volume * vm for vm in volume_multipliers]
-        
-        # Create DataFrame
-        synthetic_data = pd.DataFrame({
-            'open': open_prices,
-            'high': high_prices,
-            'low': low_prices,
-            'close': close_prices,
-            'volume': volumes
-        }, index=dates)
-        
-        return synthetic_data

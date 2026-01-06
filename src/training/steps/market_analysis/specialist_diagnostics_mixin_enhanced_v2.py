@@ -158,6 +158,10 @@ class SpecialistDiagnosticsMixinEnhancedV2:
                     'enhanced_mi_score': diagnostics_result['compliance_report']['metrics'].get('mi_score', 0.0),
                     'enhanced_requirements_met': diagnostics_result['compliance_report'].get('requirements_met', False),
                 })
+             if 'ensemble_compatibility' in diagnostics_result:
+                 metrics.update({
+                     'ensemble_ready': diagnostics_result['ensemble_compatibility'].get('ensemble_ready', False),
+                 })
 
         return {
             "success": True,

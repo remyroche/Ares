@@ -97,37 +97,29 @@ class EnhancedMLLiquidityRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
-    def _generate_enhanced_liquidity_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate enhanced liquidity features with manual feature engineering."""
+    def _get_liquidity_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine liquidity features, enhanced features, and specific liquidity enhancements."""
         # Import original liquidity features
-        from src.feature_generation.categories.liquidity_regime_features import generate_liquidity_regime_features
-        base_liquidity_features = generate_liquidity_regime_features(df, config)
-        
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'liquidity_regime', {'enhanced_features': True}
-        )
-        
+        try:
+             # Reconstruct basic config from context
+            config = {
+                'symbol': self._current_context.get('symbol'),
+                'exchange': self._current_context.get('exchange'),
+                'timeframe': self._current_context.get('timeframe'),
+                'direction': self._current_context.get('direction')
+            }
+            from src.feature_generation.categories.liquidity_regime_features import generate_liquidity_regime_features
+            base_liquidity_features = generate_liquidity_regime_features(df, config)
+        except ImportError:
+            base_liquidity_features = pd.DataFrame(index=df.index)
+
         # Manual feature engineering for liquidity regime
-        manual_features = self._create_manual_liquidity_enhanced_features(df, enhanced_features)
+        manual_features = self._create_manual_liquidity_enhanced_features(df, pipeline_features)
         
         # Combine all features
-        all_features = [base_liquidity_features, enhanced_features, manual_features]
+        all_features = pd.concat([base_liquidity_features, manual_features], axis=1)
         
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_liquidity_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
-        
-        return pd.DataFrame(index=df.index)
+        return all_features
     
     def _create_manual_liquidity_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create manual enhanced features for liquidity regime detection."""
@@ -235,281 +227,17 @@ class EnhancedMLLiquidityRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
             
         return manual_features
     
-    def _apply_manual_liquidity_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Apply manual feature selection for liquidity regime features."""
-        if features.empty:
-            return features
-        
-        # Remove constant features
-        constant_features = features.columns[features.nunique() <= 1]
-        if len(constant_features) > 0:
-            features = features.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant liquidity features")
-        
-        # Manual redundancy reduction - remove highly correlated features
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(
-            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-        )
-        
-        # Find highly correlated pairs (>0.9)
-        to_drop = []
-        for column in upper_triangle.columns:
-            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
-            if not correlated_features.empty:
-                # Keep the feature that comes first alphabetically (deterministic)
-                for correlated_feature in correlated_features.index:
-                    if correlated_feature > column:  # Drop the later feature alphabetically
-                        to_drop.append(correlated_feature)
-        
-        # Remove redundant features
-        if to_drop:
-            features = features.drop(columns=list(set(to_drop)))
-            self.logger.info(f"Removed {len(set(to_drop))} redundant liquidity features: {list(set(to_drop))}")
-        
-        # Keep only the most informative features (limit to top 30 by variance)
-        if len(features.columns) > 30:
-            feature_variances = features.var()
-            top_features = feature_variances.nlargest(30).index
-            features = features[top_features]
-            self.logger.info(f"Limited liquidity features to top 30 by variance")
-        
-        return features
-    
-    def _add_liquidity_specific_features(self, df: pd.DataFrame, liquidity_features: pd.DataFrame) -> pd.DataFrame:
-        """Add liquidity-specific enhanced features."""
-        features = pd.DataFrame(index=df.index)
-        
-        # Enhanced volume analysis
-        if 'volume' in df.columns and 'close' in df.columns:
-            volume = df['volume']
-            price_change = df['close'].pct_change()
-            
-            # Volume-price relationship enhancements
-            features['volume_price_correlation_10'] = price_change.rolling(15).corr(volume)
-            features['volume_price_correlation_20'] = price_change.rolling(25).corr(volume)
-            features['volume_price_correlation_50'] = price_change.rolling(60).corr(volume)
-            
-            # Volume pattern recognition
-            volume_ma = volume.rolling(25).mean()
-            features['volume_pattern_accumulation'] = (volume > volume_ma * 1.5).astype(int)
-            features['volume_pattern_distribution'] = (volume < volume_ma * 0.5).astype(int)
-            features['volume_pattern_churning'] = ((volume >= volume_ma * 0.5) & (volume <= volume_ma * 1.5)).astype(int)
-            
-            # Volume efficiency metrics
-            features['volume_efficiency_ratio'] = price_change.abs() / (volume + 1e-8)
-            features['volume_efficiency_ma'] = features['volume_efficiency_ratio'].rolling(25).mean()
-            
-            # Volume momentum
-            volume_change = volume.pct_change()
-            features['volume_momentum_10'] = volume_change.rolling(15).sum()
-            features['volume_momentum_20'] = volume_change.rolling(25).sum()
-            features['volume_acceleration'] = volume_change.rolling(15).sum() - volume_change.rolling(25).sum()
-        
-        # Enhanced price analysis
-        if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
-            high_low_range = df['high'] - df['low']
-            close_price = df['close']
-            
-            # Range analysis
-            range_ma = high_low_range.rolling(25).mean()
-            features['range_expansion'] = high_low_range / range_ma
-            features['range_contraction'] = (high_low_range < range_ma * 0.7).astype(int)
-            features['range_breakout_up'] = (high_low_range > high_low_range.rolling(25).max().shift(1)).astype(int)
-            features['range_breakout_down'] = (high_low_range < high_low_range.rolling(25).min().shift(1)).astype(int)
-            
-            # Price efficiency
-            mid_price = (df['high'] + df['low']) / 2
-            features['price_efficiency'] = (close_price - mid_price) / mid_price
-            features['price_efficiency_ma'] = features['price_efficiency'].rolling(25).mean()
-            
-            # Support/resistance levels
-            for window in [20, 50]:
-                rolling_max = close_price.rolling(window).max()
-                rolling_min = close_price.rolling(window).min()
-                
-                features[f'distance_to_resistance_{window}'] = (rolling_max - close_price) / rolling_max
-                features[f'distance_to_support_{window}'] = (close_price - rolling_min) / rolling_max
-                features[f'sr_strength_{window}'] = (rolling_max - rolling_min) / close_price
-        
-        # Market microstructure features
-        if 'volume' in df.columns and 'close' in df.columns:
-            # Volume profile analysis
-            volume_ma = df['volume'].rolling(25).mean()
-            price_change = df['close'].pct_change()
-            
-            features['volume_anomaly'] = df['volume'] / volume_ma
-            features['volume_price_trend'] = (price_change * df['volume']).rolling(15).sum()
-            
-            # Order flow imbalance proxy
-            features['order_flow_proxy'] = (price_change * df['volume']).rolling(15).sum()
-            features['order_flow_persistence'] = (features['order_flow_proxy'] > 0).rolling(25).sum()
-        
-        return features
-    
-    def _create_liquidity_labels(self, df: pd.DataFrame, lookforward: int = 35) -> pd.Series:
-        """Create liquidity regime labels based on volume and price patterns."""
-        if 'volume' not in df.columns or 'close' not in df.columns:
-            # Fallback to simple return-based labels
-            returns = df['close'].pct_change()
-            volume_change = df['volume'].pct_change()
-            
-            # Liquidity stress indicator
-            liquidity_stress = returns.rolling(25).std() * volume_change.rolling(25).std()
-            future_stress = liquidity_stress.shift(-lookforward)
-            
-            labels = (future_stress > liquidity_stress.quantile(0.8)).astype(int)
-            return labels
-        
-        # Liquidity-specific labeling
-        volume = df['volume']
-        close_price = df['close']
-        
-        # Volume patterns
-        volume_ma = volume.rolling(25).mean()
-        volume_anomaly = volume / volume_ma
-        
-        # Price patterns
-        price_change = close_price.pct_change()
-        price_volatility = price_change.rolling(25).std()
-        
-        # Liquidity stress indicator
-        liquidity_stress = price_volatility * volume_anomaly
-        
-        # Future liquidity stress
-        future_stress = liquidity_stress.shift(-lookforward)
-        
-        # Label: positive if liquidity stress increases (potential regime change)
-        labels = (future_stress > liquidity_stress.quantile(0.75)).astype(int)
-        
-        return labels
-    
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced liquidity regime step with AFML hardening."""
-        start_time = time.time()
-        metrics: Dict[str, Any] = {}
-        artifacts: List[str] = []
-
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            if not symbol or not exchange:
-                raise ValueError("Config must include 'symbol' and 'exchange'")
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model=self.step_name,
-            )
-            # Reset versioned store per run to ensure correct context/path
-            self._versioned_store = None
-            # Ensure versioned store is initialized with correct context
-            _ = self.versioned_store
-
-            # 1. Load Market Data
-            market_data, market_source = self._load_market_data_with_cache(config, timeframe)
-
-            # 2. Generate Enhanced Features
-            tprint_info("🛠️ Generating Enhanced Liquidity features...")
-            feature_df = self._generate_enhanced_liquidity_features(market_data, config)
-            
-            # 3-5. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=feature_df,
-                config=config,
-                filter_type='spread',
-                pt_sl_config_key='liquidity_pt_sl',
-                default_pt_sl=[1.5, 1.5]
-            )
-
-            # 6. Centralized purged-CV training
-            tprint_info("🤖 Training Enhanced Liquidity model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-            
-            metrics = training_result.metrics.copy()
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'n_samples': len(X)
-            })
-
-            # 5. Generate Final Standardized Output (Aligned to full market_data index)
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            full_labels.loc[y.index] = y
-
-            result = self.save_specialist_results(
-                config=config,
-                feature_df=feature_df if 'feature_df' in locals() else (features_df if 'features_df' in locals() else X),
-                labels=full_labels,
-                predictions=final_preds.values,
-                probabilities=final_probs.values,
-                model=last_model,
-                metrics=metrics,
-                specialist_name="EnhancedMLLiquidityRegimeStep"
-            )
-
-            # 11. Final Summary
-            execution_time = time.time() - start_time
-            metrics["execution_time"] = execution_time
-            metrics["n_samples"] = len(X)
-
-            result["execution_time"] = execution_time
-            result["mi_history"] = self.mi_history
-            result["training_metrics"] = self.training_metrics
-
-            tprint_success(f"✅ Enhanced Liquidity Regime completed in {execution_time:.2f}s")
-            tprint_info(f"📊 Final Metrics: MI={metrics.get('mi_score', 0):.4f}, AUC={metrics.get('auc', 0):.3f}")
-
-            return result
-
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced Liquidity Regime step failed: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.LIQUIDITY_REGIME, # Assuming this exists or falls back
+            manual_feature_func=self._get_liquidity_combined_manual_features,
+            filter_type='spread',
+            pt_sl_config_key='liquidity_pt_sl',
+            default_pt_sl=[1.5, 1.5],
+            suffix="enhanced_liquidity_regime_features"
+        )
     
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching."""

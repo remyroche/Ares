@@ -37,6 +37,11 @@ from src.utils.versioned_artifacts.temporal_splits import (
 )
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
 from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import (
+    SpecialistDiagnosticsMixinEnhancedV2
+)
+from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecialistMixin
+from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 
 logger = logging.getLogger(__name__)
 
@@ -83,34 +88,28 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeci
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
-    def _generate_enhanced_macro_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate enhanced macro features with MI improvements."""
-        # Import original macro features
+    def _get_macro_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine macro features, enhanced features, and specific macro enhancements."""
+        # Import original macro features or create empty
         try:
             from src.feature_generation.categories.macro_regime_features import generate_macro_regime_features
+            # Need config for generate_macro_regime_features.
+            # Reconstruct basic config from context
+            config = {
+                'symbol': self._current_context.get('symbol'),
+                'exchange': self._current_context.get('exchange'),
+                'timeframe': self._current_context.get('timeframe'),
+                'direction': self._current_context.get('direction')
+            }
             macro_features = generate_macro_regime_features(df, config)
         except ImportError:
-            # Fallback if original features not available
             macro_features = pd.DataFrame(index=df.index)
-        
-        # Generate enhanced features
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'macro_regime', config
-        )
         
         # Macro-specific enhancements
         macro_enhanced = self._add_macro_specific_features(df, macro_features)
         
-        # Combine all features
-        all_features = pd.concat([macro_features, enhanced_features, macro_enhanced], axis=1)
-        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
-        
-        # Remove duplicates and clean
-        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
-        all_features = all_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-        
-        return all_features
-    
+        return pd.concat([macro_features, macro_enhanced], axis=1)
+
     def _add_macro_specific_features(self, df: pd.DataFrame, macro_features: pd.DataFrame) -> pd.DataFrame:
         """Add macro-specific enhanced features."""
         features = pd.DataFrame(index=df.index)
@@ -283,175 +282,17 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeci
         
         return features
     
-    def _create_macro_labels(self, df: pd.DataFrame, lookforward: int = 200) -> pd.Series:
-        """Create macro labels based on macro regime patterns with increased lookforward."""
-        if 'close' in df.columns:
-            returns = df['close'].pct_change()
-            
-            # Multi-timeframe macro analysis
-            macro_trend_50 = returns.rolling(100).mean()
-            macro_trend_100 = returns.rolling(200).mean()
-            
-            # Macro regime strength
-            regime_strength = abs(macro_trend_50) / returns.rolling(100).std()
-            
-            # Future macro trend - Increased lookforward
-            future_macro_trend = returns.shift(-lookforward).rolling(100).mean()
-            
-            # Macro regime change detection
-            regime_change = abs(future_macro_trend - macro_trend_50)
-            regime_change_threshold = returns.rolling(100).std() * 0.5
-            
-            # Label: 1 for significant macro regime change
-            labels = (regime_change > regime_change_threshold).astype(int)
-            
-            return labels
-        else:
-            # Fallback to simple trend-based labels
-            returns = df['close'].pct_change()
-            future_returns = returns.shift(-lookforward)
-            labels = (future_returns.abs() > returns.rolling(35).std() * 1.5).astype(int)
-            return labels
-    
-
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced XGB macro regime step."""
-        start_time = time.time()
-        metrics: Dict[str, Any] = {}
-        artifacts: List[str] = []
-
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            if not symbol or not exchange:
-                raise ValueError("Config must include 'symbol' and 'exchange'")
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model="enhanced_xgb_macro_regime",
-            )
-
-            tprint_info(f"🚀 Starting Enhanced XGB Macro Regime for {symbol} on {exchange}")
-
-            # 1. Load Market Data
-            market_data, market_source = self._load_market_data_with_cache(config, timeframe)
-
-            # 2. Generate Enhanced Features
-            tprint_info("🛠️ Generating Enhanced XGB Macro Regime features...")
-            feature_df = self._generate_enhanced_macro_features(market_data, config)
-            
-            tprint_info(f"✅ Enhanced XGB Macro Regime features: {len(feature_df.columns)} columns")
-
-            if not config.get("is_batch_run", False):
-                feature_df_reset = feature_df.reset_index().rename(columns={feature_df.index.name or "index": "timestamp"})
-                features_path = self._save_artifact(
-                    data=feature_df_reset,
-                    artifact_name="enhanced_xgb_macro_features",
-                    artifact_type="data",
-                    data_category="features",
-                    metadata={"source": market_source, "enhanced": True}
-                )
-                artifacts.append(features_path)
-
-            # 3-4. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            tprint_info("🎯 Generating Enhanced XGB Macro Regime labels with Triple Barrier Method...")
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=feature_df,
-                config=config,
-                filter_type='price',
-                pt_sl_config_key='macro_pt_sl',
-                default_pt_sl=[3.5, 2.0]
-            )
-
-            # 4. Centralized purged-CV training
-            tprint_info("🤖 Training Enhanced XGB Macro Regime model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-            metrics = training_result.metrics
-            
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'n_samples': len(X),
-            })
-
-            # 5. Generate Final Standardized Output (Aligned to full market_data index)
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            full_labels.loc[y.index] = y
-
-            result = self.save_specialist_results(
-                config=config,
-                feature_df=feature_df if 'feature_df' in locals() else (features_df if 'features_df' in locals() else X),
-                labels=full_labels,
-                predictions=final_preds.values,
-                probabilities=final_probs.values,
-                model=last_model,
-                metrics=metrics,
-                specialist_name="EnhancedXGBMacroRegimeStep"
-            )
-
-            # 9. Final Summary
-            execution_time = time.time() - start_time
-            metrics["execution_time"] = execution_time
-            metrics["n_samples"] = len(X)
-
-            result["execution_time"] = execution_time
-            result["mi_history"] = self.mi_history
-            result["training_metrics"] = self.training_metrics
-
-            tprint_success(f"✅ Enhanced XGB Macro Regime completed in {execution_time:.2f}s")
-            tprint_info(f"📊 Final Metrics: MI={metrics.get('mi_score', 0):.4f}, AUC={metrics.get('auc', 0):.3f}")
-
-            return result
-
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced XGB Macro Regime step failed: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.MACRO_REGIME, # Assuming this exists or falls back to string
+            manual_feature_func=self._get_macro_combined_manual_features,
+            filter_type='price',
+            pt_sl_config_key='macro_pt_sl',
+            default_pt_sl=[3.5, 2.0],
+            suffix="enhanced_xgb_macro_features"
+        )
     
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching."""

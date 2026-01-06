@@ -73,30 +73,28 @@ class EnhancedXGBMesoRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
-    def _generate_enhanced_meso_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate enhanced meso features with MI improvements."""
+    def _get_meso_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine meso features, enhanced features, and specific meso enhancements."""
         # Import original meso features
         try:
             from src.feature_generation.categories.meso_regime_features import generate_meso_regime_features
+            # Need config for generate_meso_regime_features.
+            config = {
+                'symbol': self._current_context.get('symbol'),
+                'exchange': self._current_context.get('exchange'),
+                'timeframe': self._current_context.get('timeframe'),
+                'direction': self._current_context.get('direction')
+            }
             meso_features = generate_meso_regime_features(df, config)
         except ImportError:
             # Fallback if original features not available
             meso_features = pd.DataFrame(index=df.index)
         
-        # Generate enhanced features
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'meso_regime', config
-        )
-        
         # Meso-specific enhancements
         meso_enhanced = self._add_meso_specific_features(df, meso_features)
         
         # Combine all features
-        all_features = pd.concat([meso_features, enhanced_features, meso_enhanced], axis=1)
-        all_features = all_features.loc[:, ~all_features.columns.duplicated()]
-        
-        # Remove duplicates and clean
-        all_features = all_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        all_features = pd.concat([meso_features, meso_enhanced], axis=1)
         
         return all_features
     
@@ -298,176 +296,18 @@ class EnhancedXGBMesoRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
             features['is_friday'] = (df.index.dayofweek == 4).astype(int)
         
         return features
-    
-
-    def _create_meso_labels(self, df: pd.DataFrame, lookforward: int = 35) -> pd.Series:
-        """Create meso labels based on meso regime patterns."""
-        if 'close' in df.columns:
-            returns = df['close'].pct_change()
-            
-            # Multi-timeframe meso analysis
-            meso_trend_10 = returns.rolling(15).mean()
-            meso_trend_20 = returns.rolling(25).mean()
-            
-            # Meso regime strength
-            regime_strength = abs(meso_trend_10) / returns.rolling(15).std()
-            
-            # Future meso trend
-            future_meso_trend = returns.shift(-lookforward).rolling(15).mean()
-            
-            # Meso regime change detection
-            regime_change = abs(future_meso_trend - meso_trend_10)
-            regime_change_threshold = returns.rolling(15).std() * 0.3
-            
-            # Label: 1 for significant meso regime change
-            labels = (regime_change > regime_change_threshold).astype(int)
-            
-            return labels
-        else:
-            # Fallback to simple trend-based labels
-            returns = df['close'].pct_change()
-            future_returns = returns.shift(-lookforward)
-            labels = (future_returns.abs() > returns.rolling(15).std()).astype(int)
-            return labels
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced XGB meso regime step."""
-        start_time = time.time()
-        metrics: Dict[str, Any] = {}
-        artifacts: List[str] = []
-
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            if not symbol or not exchange:
-                raise ValueError("Config must include 'symbol' and 'exchange'")
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model="enhanced_xgb_meso_regime",
-            )
-
-            tprint_info(f"🚀 Starting Enhanced XGB Meso Regime for {symbol} on {exchange}")
-
-            # 1. Load Market Data
-            market_data, market_source = self._load_market_data_with_cache(config, timeframe)
-
-            # 2. Generate Enhanced Features
-            tprint_info("🛠️ Generating Enhanced XGB Meso Regime features...")
-            feature_df = self._generate_enhanced_meso_features(market_data, config)
-            
-            tprint_info(f"✅ Enhanced XGB Meso Regime features: {len(feature_df.columns)} columns")
-
-            if not config.get("is_batch_run", False):
-                feature_df_reset = feature_df.reset_index().rename(columns={feature_df.index.name or "index": "timestamp"})
-                features_path = self._save_artifact(
-                    data=feature_df_reset,
-                    artifact_name="enhanced_xgb_meso_features",
-                    artifact_type="data",
-                    data_category="features",
-                    metadata={"source": market_source, "enhanced": True}
-                )
-                artifacts.append(features_path)
-
-            # 3-5. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            tprint_info("🎯 Applying AFML hardening (CUSUM, TBM, Hardened Weights)...")
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=feature_df,
-                config=config,
-                filter_type='price',
-                pt_sl_config_key='meso_pt_sl',
-                default_pt_sl=[2.0, 1.0]
-            )
-
-            # 4. Centralized purged-CV training
-            tprint_info("🤖 Training Enhanced XGB Meso Regime model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-            metrics = training_result.metrics
-            
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'n_samples': len(X),
-            })
-
-            # 5. Generate Final Standardized Output (Aligned to full market_data index)
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=market_data.index)
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index)
-            full_labels.loc[y.index] = y
-
-            result = self.save_specialist_results(
-                config=config,
-                feature_df=feature_df,
-                labels=full_labels,
-                predictions=final_preds.values,
-                probabilities=final_probs.values,
-                model=last_model,
-                metrics=metrics,
-                specialist_name="EnhancedXGBMesoRegimeStep"
-            )
-
-            # 9. Final Summary
-            execution_time = time.time() - start_time
-            metrics["execution_time"] = execution_time
-            metrics["n_samples"] = len(X)
-
-            result["execution_time"] = execution_time
-            result["mi_history"] = self.mi_history
-            result["training_metrics"] = self.training_metrics
-
-            tprint_success(f"✅ Enhanced XGB Meso Regime completed in {execution_time:.2f}s")
-            tprint_info(f"📊 Final Metrics: MI={metrics.get('mi_score', 0):.4f}, AUC={metrics.get('auc', 0):.3f}")
-
-            return result
-
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced XGB Meso Regime step failed: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.MESO_REGIME, # Assuming this exists
+            manual_feature_func=self._get_meso_combined_manual_features,
+            filter_type='price',
+            pt_sl_config_key='meso_pt_sl',
+            default_pt_sl=[2.0, 1.0],
+            suffix="enhanced_xgb_meso_features"
+        )
     
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching."""

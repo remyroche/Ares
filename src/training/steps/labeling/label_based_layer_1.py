@@ -51,6 +51,12 @@ except ImportError:
     generate_unified_layer2_price = None
     apply_hampel_filter = None
 
+# Import Optimized Wavelet Decomposition
+try:
+    from src.training.steps.labeling.optimized_wavelet_decomposition import OptimizedWaveletDecomposition
+except ImportError:
+    OptimizedWaveletDecomposition = None
+
 
 def safe_layer1_objective(
     weights: np.ndarray,
@@ -58,6 +64,7 @@ def safe_layer1_objective(
     concurrency: np.ndarray,
     volatility: np.ndarray,
     noise_threshold: float = 0.001,
+    quality_scores: Optional[np.ndarray] = None,
 ) -> float:
     """
     Calculate a safe objective score for Layer 1 weighting optimization.
@@ -65,6 +72,7 @@ def safe_layer1_objective(
     The score rewards:
     - Correlation with magnitude (MAS)
     - Entropy (WES)
+    - Correlation with quality scores (QAS) if available
 
     And penalizes:
     - Weight on noise (NWP)
@@ -145,6 +153,13 @@ def safe_layer1_objective(
     vdp_corr = _safe_corr(w, vol_arr)
     vdp_penalty = max(0.0, vdp_corr - 0.6)
 
+    qas_reward = 0.0
+    if quality_scores is not None:
+        q_arr = np.asarray(quality_scores, dtype=float)
+        # We reward weights that correlate with quality (clean labels)
+        qas_corr = _safe_corr(w, q_arr)
+        qas_reward = max(0.0, qas_corr)
+
     try:
         w_sorted = np.sort(w_norm)[::-1]
         k10 = int(max(1, round(0.10 * float(n))))
@@ -165,6 +180,7 @@ def safe_layer1_objective(
     score = (
         1.0 * mas
         + 1.5 * wes
+        + 1.0 * qas_reward
         - 2.0 * nwp
         - 1.0 * uop_penalty
         - 1.0 * vdp_penalty
@@ -420,7 +436,7 @@ def run_layer1_optimization(
         pass
 
     try:
-        cons_series = compute_multi_horizon_consistency(close_series, horizons=[6, 12, 24])
+        cons_series = compute_multi_horizon_consistency(close_series, horizons=[12, 48])
         event_consistency = cons_series.reindex(t_events).replace([np.inf, -np.inf], np.nan).fillna(0.5).values
         event_consistency = np.asarray(event_consistency, dtype=float)
         if event_consistency.shape[0] != returns_arr.shape[0]:
@@ -453,6 +469,45 @@ def run_layer1_optimization(
             vol100 = close.pct_change().rolling(100).std()
             rel_vol = (vol20 / (vol100 + 1e-9)).reindex(t_events)
             vol20 = vol20.reindex(t_events)
+
+            # Wavelet-based Noise Features (Robust Quality)
+            wavelet_d1_feat = pd.Series(0.0, index=t_events)
+            wavelet_d2_feat = pd.Series(0.0, index=t_events)
+
+            if OptimizedWaveletDecomposition is not None:
+                try:
+                    # Decompose signal
+                    wavelet_engine = OptimizedWaveletDecomposition(
+                        wavelet='db4',
+                        scales=['d1', 'd2'],
+                        max_level=2,
+                        verbose=False
+                    )
+
+                    # We use log-returns or prices. Prices are safer for shape, but returns are stationary.
+                    # Decomposition works on price usually.
+                    decomp = wavelet_engine.decompose_signal_vectorized(close.values)
+
+                    # Compute rolling energy (volatility) of components
+                    if 'd1' in decomp:
+                        d1_series = pd.Series(decomp['d1'], index=close.index)
+                        # d1 represents high-freq noise/micro-structure
+                        d1_vol = d1_series.rolling(window=20).std()
+                        wavelet_d1_feat = d1_vol.reindex(t_events).fillna(0.0)
+
+                    if 'd2' in decomp:
+                        d2_series = pd.Series(decomp['d2'], index=close.index)
+                        # d2 represents dealer flow / short-term cycles
+                        d2_vol = d2_series.rolling(window=20).std()
+                        wavelet_d2_feat = d2_vol.reindex(t_events).fillna(0.0)
+
+                except Exception as e_wav:
+                    tprint_warning(f"⚠️ Wavelet feature generation failed: {e_wav}")
+
+            # Consistency Features
+            cons_feat = pd.Series(0.5, index=t_events)
+            if event_consistency is not None:
+                cons_feat = pd.Series(event_consistency, index=t_events).fillna(0.5)
 
             # 3. RSI-14 (Oscillator)
             try:
@@ -519,7 +574,10 @@ def run_layer1_optimization(
                         "bb_pct_b": bb_pct_b_feat,
                         "stoch_k": stoch_k_feat,
                         "er": er_feat,
-                        "trend_dev": trend_feat
+                        "trend_dev": trend_feat,
+                        "wavelet_d1_vol": wavelet_d1_feat,
+                        "wavelet_d2_vol": wavelet_d2_feat,
+                        "consistency": cons_feat,
                     },
                     index=t_events,
                 )
@@ -714,7 +772,7 @@ def run_layer1_optimization(
         'quality_intensity': {
             'type': 'float',
             'low': 0.0,
-            'high': 3.0,
+            'high': 5.0,
             'log': False,
         },
         'quality_floor': {
@@ -872,6 +930,7 @@ def run_layer1_optimization(
                     concurrency=event_concurrency,
                     volatility=event_volatility,
                     noise_threshold=float(small_ret_thr) if small_ret_thr > 0 else 0.001,
+                    quality_scores=cl_quality_scores,
                 )
             return float(score)
         except Exception as e:

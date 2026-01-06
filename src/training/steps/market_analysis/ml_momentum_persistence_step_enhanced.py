@@ -333,37 +333,15 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, AF
             tprint_info("🛠️ Generating enhanced momentum features...")
             feature_df = self._generate_enhanced_features(df, SpecialistType.MOMENTUM_PERSISTENCE)
             
-            # 2. AFML: CUSUM Sampling (Price-based for Momentum)
-            tprint_info("🎯 Applying AFML CUSUM sampling...")
-            sampled_df, t_events = self.apply_afml_sampling(df, config, filter_type='price')
-            
-            # 3. AFML: Triple Barrier Labels
-            # Momentum refactored: Success = 2.5 sigma, Failure = Trendline break
-            # We use pt_sl = [2.5, 1.0] where PT is 2.5 sigma and SL is 1.0 sigma (proxy for trendline break)
-            pt_sl = config.get('momentum_pt_sl', [2.5, 1.0])
-            tbm_labels_df = self.generate_tbm_labels(df, t_events, config, pt_sl)
-            
-            # 4. AFML: Alignment and Uniqueness Weighting
-            X_sampled = feature_df.loc[t_events]
-            y_sampled = tbm_labels_df['bin']
-            t1_sampled = tbm_labels_df['t1']
-            ret_sampled = tbm_labels_df['ret']
-            
-            # AFML Hardening: Sample Weighting (u_bar * |return|)
-            num_concurrent = self.get_concurrent_weights(t1_sampled, df.index)
-            # Note: afml_specialist_mixin.get_concurrent_weights currently returns uniqueness weights
-            # We want the combined weighting: uniqueness * |return|
-            weights_sampled = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
-            
-            # Filter numeric and drop NaNs
-            X = X_sampled.select_dtypes(include=[np.number])
-            valid_mask = X.notna().all(axis=1) & y_sampled.notna()
-            X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_sampled.loc[valid_mask]
-            
-            if len(X) < 100:
-                tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-            
-            tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+            # 2-4. AFML: Sampling, Labeling, Weighting, Alignment via Helper
+            X, y, weights = self.prepare_specialist_data(
+                market_data=df,
+                feature_df=feature_df,
+                config=config,
+                filter_type='price',
+                pt_sl_config_key='momentum_pt_sl',
+                default_pt_sl=[2.5, 1.0]
+            )
             
             # 5. Centralized purged-CV training
             tprint_info("🤖 Training enhanced momentum model with centralized XGB helper (purged CV & AFML weights)...")

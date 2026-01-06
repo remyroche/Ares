@@ -542,34 +542,15 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
             tprint_info("🛠️ Generating Enhanced SMC features...")
             feature_df = self._generate_enhanced_smc_features(market_data, config)
             
-            # 3. AFML: CUSUM Sampling (10% target)
-            tprint_info("🎯 Applying AFML CUSUM sampling (10% target)...")
-            # SMC focuses on structural changes, using volume-based sampling to differentiate from Macro (price) and Risk (volatility)
-            sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type='volume')
-            
-            # 4. AFML: Triple Barrier Labels
-            pt_sl = config.get('smc_pt_sl', [2.0, 1.0])
-            tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
-            
-            # 5. AFML: Alignment and AFML Hardening (Sample Weighting)
-            X_sampled = feature_df.loc[t_events]
-            y_sampled = tbm_labels_df['bin']
-            t1_sampled = tbm_labels_df['t1']
-            ret_sampled = tbm_labels_df['ret']
-            
-            # AFML Hardening: Sample Weighting (u_bar * |return|)
-            num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
-            weights_series = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
-            
-            # Filter numeric and drop NaNs
-            X = X_sampled.select_dtypes(include=[np.number])
-            valid_mask = X.notna().all(axis=1) & y_sampled.notna()
-            X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_series.loc[valid_mask]
-
-            if len(X) < 100:
-                tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-
-            tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+            # 3-5. AFML: Sampling, Labeling, Weighting, Alignment via Helper
+            X, y, weights = self.prepare_specialist_data(
+                market_data=market_data,
+                feature_df=feature_df,
+                config=config,
+                filter_type='volume',
+                pt_sl_config_key='smc_pt_sl',
+                default_pt_sl=[2.0, 1.0]
+            )
 
             # 6. Centralized purged-CV training
             tprint_info("🤖 Training Enhanced SMC model with centralized XGB helper (purged CV & AFML weights)...")

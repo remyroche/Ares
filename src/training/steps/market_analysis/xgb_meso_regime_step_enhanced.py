@@ -375,35 +375,16 @@ class EnhancedXGBMesoRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
                 )
                 artifacts.append(features_path)
 
-            # 3. AFML Hardening: Sampling & Labeling
+            # 3-5. AFML: Sampling, Labeling, Weighting, Alignment via Helper
             tprint_info("🎯 Applying AFML hardening (CUSUM, TBM, Hardened Weights)...")
-            
-            # AFML: CUSUM Sampling (Price-based for Meso Regime)
-            sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type='price')
-            
-            # 4. AFML: Triple Barrier Labels
-            pt_sl = config.get('meso_pt_sl', [2.0, 1.0])
-            tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
-            
-            # 5. AFML: Alignment and AFML Hardening (Sample Weighting)
-            X_sampled = feature_df.loc[t_events]
-            y_sampled = tbm_labels_df['bin']
-            t1_sampled = tbm_labels_df['t1']
-            ret_sampled = tbm_labels_df['ret']
-            
-            # AFML Hardening: Sample Weighting (u_bar * |return|)
-            num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
-            weights_series = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
-            
-            # Filter numeric and drop NaNs
-            X = X_sampled.select_dtypes(include=[np.number])
-            valid_mask = X.notna().all(axis=1) & y_sampled.notna()
-            X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_series.loc[valid_mask]
-
-            if len(X) < 100:
-                tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-
-            tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+            X, y, weights = self.prepare_specialist_data(
+                market_data=market_data,
+                feature_df=feature_df,
+                config=config,
+                filter_type='price',
+                pt_sl_config_key='meso_pt_sl',
+                default_pt_sl=[2.0, 1.0]
+            )
 
             # 4. Centralized purged-CV training
             tprint_info("🤖 Training Enhanced XGB Meso Regime model with centralized XGB helper (purged CV & AFML weights)...")

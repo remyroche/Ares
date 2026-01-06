@@ -415,34 +415,15 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
             tprint_info("🛠️ Generating enhanced volatility features...")
             feature_df = self._generate_enhanced_features(market_data)
             
-            # 3. AFML Hardening: Sampling & Labeling
-            tprint_info("🎯 Applying AFML hardening (CUSUM, TBM, Uniqueness Weights)...")
-            
-            # AFML: CUSUM Sampling (Volatility-based for VolBurst)
-            sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type='volatility')
-            
-            # AFML: Triple Barrier Labels
-            pt_sl = config.get('volatility_burst_pt_sl', [3.0, 1.0])
-            tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
-            
-            # 4. AFML: Alignment and AFML Hardening (Sample Weighting)
-            X_sampled = feature_df.loc[t_events]
-            y_sampled = tbm_labels_df['bin']
-            t1_sampled = tbm_labels_df['t1']
-            ret_sampled = tbm_labels_df['ret']
-            
-            num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
-            weights_series = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
-            
-            # Filter numeric and drop NaNs
-            X = X_sampled.select_dtypes(include=[np.number])
-            valid_mask = X.notna().all(axis=1) & y_sampled.notna()
-            X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_series.loc[valid_mask]
-
-            if len(X) < 100:
-                tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-
-            tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+            # 3-4. AFML: Sampling, Labeling, Weighting, Alignment via Helper
+            X, y, weights = self.prepare_specialist_data(
+                market_data=market_data,
+                feature_df=feature_df,
+                config=config,
+                filter_type='volatility',
+                pt_sl_config_key='volatility_burst_pt_sl',
+                default_pt_sl=[3.0, 1.0]
+            )
 
             # 4. Train Enhanced Model with Centralized XGB Trainer
             tprint_info("🤖 Training Enhanced Volatility Burst model with centralized XGB helper (purged CV & AFML weights)...")

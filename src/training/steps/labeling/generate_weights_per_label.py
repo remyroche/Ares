@@ -305,14 +305,14 @@ def compute_multi_horizon_consistency(
     
     Args:
         price_series: Series of prices
-        horizons: List of horizons to check (default: [6, 12, 24])
+        horizons: List of horizons to check (default: [12, 48])
         aggregation: How to combine scores ("mean", "min", "geometric")
     
     Returns:
         Series of multi-horizon consistency scores (0.0 to 1.0)
     """
     if horizons is None:
-        horizons = [6, 12, 24]
+        horizons = [12, 48]
     
     # Compute consistency at each horizon
     consistency_scores = []

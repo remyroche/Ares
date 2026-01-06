@@ -482,88 +482,34 @@ class EnhancedMLLiquidityRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
             full_labels = pd.Series(0, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
             full_labels.loc[y.index] = y
 
-            standardized_output = self._create_standardized_output(
-                feature_df if 'feature_df' in locals() else (features_df if 'features_df' in locals() else X), 
-                full_labels, final_preds.values, final_probs.values, symbol, exchange, timeframe, direction
-            )
-
-            # 9. Save Artifacts
-            artifact_name = f"enhanced_ml_liquidity_predictions_{timeframe}"
-            metadata = SpecialistDataInterface.create_standard_metadata(
-                specialist_name="EnhancedMLLiquidityRegimeStep",
+            result = self.save_specialist_results(
                 config=config,
+                feature_df=feature_df if 'feature_df' in locals() else (features_df if 'features_df' in locals() else X),
+                labels=full_labels,
+                predictions=final_preds.values,
+                probabilities=final_probs.values,
+                model=last_model,
                 metrics=metrics,
-                mi_score=metrics['mi_score'],
-                hsic_score=0.0
+                specialist_name="EnhancedMLLiquidityRegimeStep"
             )
-            
-            artifact_path = self._save_artifact(
-                data=standardized_output,
-                artifact_name=artifact_name,
-                artifact_type="data",
-                data_category="predictions",
-                metadata=metadata
-            )
-            artifacts.append(artifact_path)
-
-            # 10. Run Enhanced Diagnostics
-            tprint_info("🔍 Running Enhanced Diagnostics...")
-            diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
-            
-            if diagnostics_result.get('success', False):
-                compliance_report = diagnostics_result['compliance_report']
-                ensemble_compatibility = diagnostics_result['ensemble_compatibility']
-                
-                tprint_success(f"✅ Enhanced Diagnostics Complete:")
-                tprint_info(f"   MI Score: {compliance_report['metrics']['mi_score']:.4f}")
-                tprint_info(f"   Requirements Met: {compliance_report['requirements_met']}/3")
-                tprint_info(f"   Ensemble Ready: {ensemble_compatibility['ensemble_ready']}")
-                
-                metrics.update({
-                    'enhanced_mi_score': compliance_report['metrics']['mi_score'],
-                    'enhanced_requirements_met': compliance_report['requirements_met'],
-                    'enhanced_ensemble_ready': ensemble_compatibility['ensemble_ready']
-                })
 
             # 11. Final Summary
             execution_time = time.time() - start_time
             metrics["execution_time"] = execution_time
             metrics["n_samples"] = len(X)
 
+            result["execution_time"] = execution_time
+            result["mi_history"] = self.mi_history
+            result["training_metrics"] = self.training_metrics
+
             tprint_success(f"✅ Enhanced Liquidity Regime completed in {execution_time:.2f}s")
             tprint_info(f"📊 Final Metrics: MI={metrics.get('mi_score', 0):.4f}, AUC={metrics.get('auc', 0):.3f}")
 
-            return {
-                "success": True,
-                "metrics": metrics,
-                "n_samples": len(X),
-                "features": list(X.columns),
-                "artifacts": artifacts,
-                "diagnostics": diagnostics_result,
-                "mi_history": self.mi_history,
-                "training_metrics": self.training_metrics,
-                "execution_time": execution_time
-            }
+            return result
 
         except Exception as e:
             self.logger.exception(f"❌ Enhanced Liquidity Regime step failed: {e}")
             return {"success": False, "error": str(e)}
-    
-    def _create_standardized_output(self, features: pd.DataFrame, labels: pd.Series,
-                                  predictions: np.ndarray, probabilities: np.ndarray,
-                                  symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:
-        """Create standardized output structure."""
-        standardized = pd.DataFrame(index=features.index)
-        standardized['timestamp'] = features.index
-        standardized['specialist_prediction'] = predictions
-        standardized['specialist_probability'] = probabilities
-        standardized['target_label'] = labels
-        
-        # Add original features for reference
-        for col in features.columns[:20]:  # Limit to first 20 features
-            standardized[f'feature_{col}'] = features[col]
-        
-        return standardized
     
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching."""

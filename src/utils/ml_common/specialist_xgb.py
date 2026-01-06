@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, List
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.feature_selection import mutual_info_regression
+from sklearn.linear_model import Ridge
 from sklearn.metrics import average_precision_score, roc_auc_score
 from src.utils.purged_kfold import PurgedKFoldTime
-
+from src.utils.tprint import tprint_info
 
 DEFAULT_XGB_PARAMS: Dict[str, Any] = {
     "objective": "binary:logistic",
@@ -20,9 +21,9 @@ DEFAULT_XGB_PARAMS: Dict[str, Any] = {
     "subsample": 0.6,
     "colsample_bytree": 0.7,
     "gamma": 4,
-    "min_child_weight": 20,  # ETHUSDT 15m noise – force larger leaves
-    "reg_alpha": 4.0,  # high L1 to tame overfitting
-    "reg_lambda": 1.25,  # modest L2 keeps stability without over-smoothing
+    "min_child_weight": 20,
+    "reg_alpha": 4.0,
+    "reg_lambda": 1.25,
     "tree_method": "hist",
     "max_delta_step": 5.0,
     "early_stopping_rounds": 40,
@@ -39,7 +40,6 @@ class XGBTrainingResult:
 
 
 def _compute_scale_pos_weight(y: pd.Series) -> float:
-    """Compute adaptive class weight for binary targets."""
     y_clean = pd.Series(y).dropna()
     pos = float((y_clean == 1).sum())
     neg = float((y_clean == 0).sum())
@@ -56,15 +56,40 @@ def _build_params(y: pd.Series, params_override: Optional[Dict[str, Any]] = None
     return params
 
 
+def _determine_monotonic_constraints(X: pd.DataFrame, y: pd.Series, threshold: float = 0.03) -> Tuple[Optional[Dict[str, int]], List[str]]:
+    tprint_info("   [XGB] Determining Monotonic Constraints via Ridge...")
+    model = Ridge(alpha=1.0)
+    X_clean = X.fillna(0.0)
+    model.fit(X_clean, y)
+
+    constraints = {}
+    strong_features = []
+
+    for feat, coef in zip(X.columns, model.coef_):
+        if abs(coef) > threshold:
+            strong_features.append(feat)
+            constraints[feat] = 1 if coef > 0 else -1
+        else:
+            constraints[feat] = 0
+
+    tprint_info(f"   [XGB] Found {len(strong_features)} strong monotonic features.")
+    return constraints, strong_features
+
 def _fit_single_model(
     X: pd.DataFrame,
     y: pd.Series,
     sample_weight: Optional[pd.Series] = None,
     eval_set: Optional[list[tuple[pd.DataFrame, pd.Series]]] = None,
     params_override: Optional[Dict[str, Any]] = None,
+    monotonic_constraints: Optional[Dict[str, int]] = None
 ) -> xgb.XGBClassifier:
+
     params = _build_params(y, params_override)
     early_stopping_rounds = params.pop("early_stopping_rounds", 40)
+
+    if monotonic_constraints:
+        params["monotone_constraints"] = tuple(monotonic_constraints.get(c, 0) for c in X.columns)
+
     model = xgb.XGBClassifier(**params)
 
     fit_kwargs: Dict[str, Any] = {"verbose": False}
@@ -78,7 +103,6 @@ def _fit_single_model(
     return model
 
 
-# Default purge / embargo windows for ETHUSDT 15m regime work.
 PURGE_MINUTES = 45
 EMBARGO_MINUTES = 15
 
@@ -89,22 +113,18 @@ def train_specialist_xgb_with_oof(
     sample_weight: Optional[pd.Series] = None,
     n_splits: int = 5,
     params_override: Optional[Dict[str, Any]] = None,
+    apply_monotonic_constraints: bool = True
 ) -> XGBTrainingResult:
-    """
-    Train a specialist-grade XGB classifier with time-series CV OOF tracking.
-
-    Args:
-        X: Feature matrix aligned on datetime index.
-        y: Binary labels (0/1).
-        sample_weight: Optional AFML weights.
-        n_splits: Number of TimeSeriesSplit folds.
-        params_override: Optional overrides for default hyper-parameters.
-    """
+    tprint_info(f"   [XGB] Training with OOF (Splits: {n_splits})...")
     X = X.copy()
     y = y.astype(float).copy()
 
     if sample_weight is not None:
         sample_weight = sample_weight.astype(float)
+
+    mono_constraints = None
+    if apply_monotonic_constraints:
+        mono_constraints, strong_feats = _determine_monotonic_constraints(X, y)
 
     splitter = PurgedKFoldTime(
         n_splits=n_splits,
@@ -125,18 +145,20 @@ def train_specialist_xgb_with_oof(
             sample_weight=w_train,
             eval_set=[(X_val.fillna(0.0), y_val)],
             params_override=params_override,
+            monotonic_constraints=mono_constraints
         )
         fold_probs = model.predict_proba(X_val.fillna(0.0))[:, 1]
         oof_probs.iloc[val_idx] = fold_probs
         last_model = model
 
-    # Final fit on all data (no early stopping; reuse overrides for reproducibility)
+    tprint_info("   [XGB] Training Final Model on Full Data...")
     final_model = _fit_single_model(
         X.fillna(0.0),
         y,
         sample_weight=sample_weight,
         eval_set=None,
         params_override=params_override,
+        monotonic_constraints=mono_constraints
     )
 
     metrics: Dict[str, float] = {
@@ -169,7 +191,6 @@ def train_specialist_xgb_with_oof(
         metrics["aucpr"] = 0.0
         metrics["mi_score"] = 0.0
 
-    # Propagate classifier parameters for logging purposes
     params_snapshot = getattr(last_model, "get_params", lambda: DEFAULT_XGB_PARAMS.copy())()
 
     return XGBTrainingResult(

@@ -1,0 +1,427 @@
+"""
+Layer 3 Geometry System
+
+Handles geometry generation and selection with correlation-based optimization.
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from joblib import Parallel, delayed
+from scipy.stats import spearmanr
+from numba import njit, prange
+import numba as nb
+import logging
+from functools import partial
+
+# Import tprint functions
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    # Fallback print functions
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+
+from .utils import finalize_sample_weights, is_pareto_efficient_numba, apply_smart_activation
+
+logger = logging.getLogger(__name__)
+
+EPS = 1e-12
+
+@njit
+def calculate_correlation_matrix_jit(signal_matrix: np.ndarray) -> np.ndarray:
+    """JIT-compiled correlation matrix calculation for better performance."""
+    n_signals = signal_matrix.shape[0]
+    corr_matrix = np.zeros((n_signals, n_signals))
+
+    for i in range(n_signals):
+        for j in range(n_signals):
+            if i == j:
+                corr_matrix[i, j] = 1.0
+            else:
+                # Calculate Pearson correlation
+                x = signal_matrix[i, :]
+                y = signal_matrix[j, :]
+                x_mean = np.mean(x)
+                y_mean = np.mean(y)
+                x_std = np.std(x)
+                y_std = np.std(y)
+
+                if x_std > 0 and y_std > 0:
+                    covariance = np.mean((x - x_mean) * (y - y_mean))
+                    corr_matrix[i, j] = covariance / (x_std * y_std)
+                else:
+                    corr_matrix[i, j] = 0.0
+
+    return corr_matrix
+
+@njit
+def calculate_average_correlations_jit(corr_matrix: np.ndarray) -> np.ndarray:
+    """JIT-compiled average correlation calculation for each geometry."""
+    n_geoms = corr_matrix.shape[0]
+    avg_correlations = np.zeros(n_geoms)
+
+    for i in range(n_geoms):
+        correlations = corr_matrix[i, :]
+        correlations[i] = 0  # Exclude self-correlation
+        # Calculate mean of absolute correlations
+        abs_corrs = np.abs(correlations)
+        avg_correlations[i] = np.mean(abs_corrs)
+
+    return avg_correlations
+
+def generate_geometries_adaptive(
+    base_signals: pd.DataFrame,
+    volatility: pd.Series,
+    mfe: pd.Series,
+    mae: pd.Series,
+    n_geometries: int = 4,
+    orthogonality_threshold: float = 0.3,
+    diversity_objectives: List[str] = None,
+    fast_mode: bool = False
+) -> Dict[str, Dict]:
+    """
+    Generate orthogonal geometries with diversity constraints.
+    """
+    tprint_info("🔮 Generating Adaptive Geometries...")
+    tprint_info(f"📊 Input: {len(base_signals)} signals, {len(volatility)} volatility points")
+    
+    if fast_mode:
+        # Fast mode: simplified geometries
+        diversity_objectives = ['balanced', 'trend_focus']
+        alphas = np.array([0.5, 0.7])
+        activations = ['linear', 'linear']
+        n_geometries = min(n_geometries, 2)
+    else:
+        if diversity_objectives is None:
+            diversity_objectives = ['trend_focus', 'reversal_focus', 'balanced', 'volatility_adaptive']
+    
+    if not fast_mode:
+        tprint_info(f"🎯 Objectives: {diversity_objectives}")
+    
+    if base_signals.empty:
+        tprint_warning("⚠️ Empty base_signals passed to generate_geometries_adaptive")
+        return {}
+
+    trend_cols = [c for c in base_signals.columns if 'trend_signal' in c]
+    rev_cols = [c for c in base_signals.columns if 'reversal_signal' in c]
+
+    if not trend_cols or not rev_cols:
+        tprint_error("❌ No trend or reversal signals found")
+        return {}
+
+    tprint_info(f"📈 Found {len(trend_cols)} trend signals: {trend_cols}")
+    tprint_info(f"🔄 Found {len(rev_cols)} reversal signals: {rev_cols}")
+
+    trend_vec = base_signals[trend_cols].mean(axis=1).values.astype(np.float32)[:, None]
+    rev_vec = base_signals[rev_cols].mean(axis=1).values.astype(np.float32)[:, None]
+    vol_vec = volatility.values.astype(np.float32)[:, None]
+
+    mfe_arr = mfe.values.astype(np.float32)
+    mae_arr = mae.values.astype(np.float32)
+
+    if not fast_mode:
+        # Generate diverse alphas and activations
+        alphas = np.linspace(0.1, 0.9, n_geometries)  # Better spacing
+        activations = ['linear', 'tanh_dynamic', 'cubic_regime', 'sigmoid']
+        
+        tprint_info(f"🔧 Alpha range: {alphas.min():.2f} → {alphas.max():.2f}")
+        tprint_info(f"⚡ Activations: {activations[:n_geometries]}")
+    
+    # Vectorized Linear Mix
+    w_trend = alphas[None, :]
+    w_rev = 1.0 - w_trend
+    linear_sigs = (trend_vec @ w_trend) - (rev_vec @ w_rev)
+
+    # Parallel geometry processing for better performance
+    def process_single_geometry(args):
+        """Process a single geometry in parallel"""
+        i, alpha, act, obj, base_sig = args
+
+        if not fast_mode:
+            tprint_info(f"   Creating g_{obj}_{act}: alpha={alpha:.2f}, activation={act}, objective={obj}")
+        
+        # Apply objective-specific parameters - simplified for fast mode
+        if fast_mode:
+            # Fast mode: simple linear activation
+            if obj == 'trend_focus':
+                final_sig = base_sig * 1.2
+            elif obj == 'balanced':
+                final_sig = base_sig
+            else:
+                final_sig = base_sig
+        else:
+            # Full mode: complex activations
+            if obj == 'trend_focus':
+                final_sig = apply_smart_activation(base_sig * 1.2, vol_vec.flatten(), act)  # Amplify trend
+            elif obj == 'reversal_focus':
+                final_sig = apply_smart_activation(base_sig * 0.8, vol_vec.flatten(), act)  # Dampen trend
+            elif obj == 'balanced':
+                final_sig = apply_smart_activation(base_sig, vol_vec.flatten(), act)
+            elif obj == 'volatility_adaptive':
+                vol_adj_sig = base_sig * (1.0 + vol_vec.flatten())
+                final_sig = apply_smart_activation(vol_adj_sig, vol_vec.flatten(), act)
+            else:
+                final_sig = apply_smart_activation(base_sig, vol_vec.flatten(), act)
+
+        geom_id = f"g_{obj}_{act}"
+        return geom_id, {
+            'composite_signal': final_sig,
+            'alpha': alpha,
+            'activation': act,
+            'objective': obj,
+            'mfe': mfe_arr,
+            'mae': mae_arr,
+            'sigma_eff': vol_vec.flatten(),
+            'sig_ptr': final_sig.astype(np.float32)
+        }
+
+    # Prepare arguments for parallel processing
+    geometry_args = [
+        (i, alpha, act, obj, linear_sigs[:, i])
+        for i, (alpha, act, obj) in enumerate(zip(alphas, activations[:n_geometries], diversity_objectives))
+    ]
+
+    # Process geometries in parallel
+    if len(geometry_args) > 1:
+        # Use parallel processing for multiple geometries
+        results = Parallel(n_jobs=min(len(geometry_args), 4), backend='threading')(
+            delayed(process_single_geometry)(args) for args in geometry_args
+        )
+        meta_geometries = dict(results)
+    else:
+        # Single geometry - process sequentially
+        geom_id, geom_data = process_single_geometry(geometry_args[0])
+        meta_geometries = {geom_id: geom_data}
+
+    tprint_success(f"✅ Generated {len(meta_geometries)} geometries")
+    return meta_geometries
+
+def select_best_geometries_adaptive(
+    meta_geometries: dict,
+    labels: pd.Series,
+    X: pd.DataFrame,
+    model_type: str = 'classifier',
+    objective_func: str = 'binary_logloss',
+    top_k: int = 4,
+    correlation_weight: float = 0.3,
+    n_jobs: int = -1
+) -> pd.DataFrame:
+    """
+    Adaptive geometry selection with correlation-based optimization.
+    """
+    tprint_info("🔍 Selecting Best Geometries with Correlation-Based Optimization...")
+    tprint_info(f"📊 Evaluating {len(meta_geometries)} geometries with {model_type} ({objective_func})")
+    tprint_info(f"🎯 Target: top_k={top_k}, correlation_weight={correlation_weight}")
+    
+    labels_arr = labels.values
+    
+    # Convert labels to binary if needed for classification
+    if model_type == 'classifier':
+        y_binary = (labels_arr >= 0.5).astype(int)
+        positive_rate = y_binary.mean()
+        tprint_info(f"🎯 Binary target: {positive_rate:.1%} positive rate")
+    else:
+        y_binary = labels_arr  # For regression models
+        tprint_info(f"📈 Regression target: mean={y_binary.mean():.4f}, std={y_binary.std():.4f}")
+    
+    # Prepare dict inputs for worker
+    evaluation_start_time = datetime.now()
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(worker_evaluate_geometry_adaptive)(k, v, y_binary, X, model_type, objective_func)
+        for k, v in meta_geometries.items()
+    )
+    results = [r for r in results if r is not None]
+    evaluation_time = (datetime.now() - evaluation_start_time).total_seconds()
+
+    if not results:
+        tprint_error("❌ No geometry evaluations completed")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(results)
+    tprint_success(f"✅ Evaluated {len(results)} geometries in {evaluation_time:.2f}s")
+
+    # Hard Filter
+    initial_count = len(df)
+    if model_type == 'classifier':
+        df = df[df['score'] > 0].copy().reset_index(drop=True)  # ScoreL3 > 0
+        threshold_type = "ScoreL3 > 0"
+    else:
+        df = df[df['ic'] > 0.01].copy().reset_index(drop=True)  # Minimum IC threshold
+        threshold_type = "IC > 0.01"
+        
+    filtered_count = len(df)
+    tprint_info(f"📉 Hard filter ({threshold_type}): {initial_count} → {filtered_count}")
+        
+    if df.empty:
+        tprint_warning("⚠️ No candidates passed minimum score threshold")
+        return pd.DataFrame()
+
+    # Transformations & Normalization
+    if model_type == 'classifier':
+        mad_score = (df['score'] - df['score'].mean()).abs().mean()
+        df['z_score'] = (df['score'] - df['score'].median()) / (mad_score + EPS)
+        
+        mad_ic = (df['ic'] - df['ic'].mean()).abs().mean()
+        mad_stab = (df['stability'] - df['stability'].mean()).abs().mean()
+        df['z_ic'] = (df['ic'] - df['ic'].median()) / (mad_ic + EPS)
+        df['z_stability'] = (df['stability'] - df['stability'].median()) / (mad_stab + EPS)
+        fitness_matrix = df[['z_ic', 'z_stability']].values
+        tprint_info("📊 Using IC and stability z-score normalization")
+    else:
+        mad_ic = (df['ic'] - df['ic'].mean()).abs().mean()
+        mad_stability = (df['stability'] - df['stability'].mean()).abs().mean()
+        df['z_ic'] = (df['ic'] - df['ic'].median()) / (mad_ic + EPS)
+        df['z_stability'] = (df['stability'] - df['stability'].median()) / (mad_stability + EPS)
+        fitness_matrix = df[['z_ic', 'z_stability']].values
+        tprint_info("📊 Using IC and stability z-score normalization")
+
+    # Pareto Filter
+    pareto_start_time = datetime.now()
+    pareto_mask = is_pareto_efficient_numba(fitness_matrix)
+    pareto_candidates = df[pareto_mask].copy()
+    pareto_time = (datetime.now() - pareto_start_time).total_seconds()
+    
+    tprint_success(f"✅ Pareto filter completed in {pareto_time:.2f}s: {len(df)} → {len(pareto_candidates)} candidates")
+
+    candidates = pareto_candidates if len(pareto_candidates) >= top_k else df
+
+    # Final Ranking
+    if model_type == 'classifier':
+        candidates['final_score'] = candidates['score']
+        tprint_info("📊 Ranking by ScoreL3")
+    else:
+        candidates['final_score'] = 0.7 * candidates['ic'] + 0.3 * candidates['stability']
+        tprint_info("📊 Ranking by weighted IC (70%) + stability (30%)")
+    
+    candidates = candidates.sort_values('final_score', ascending=False)
+
+    # Correlation-Based Selection
+    correlation_start_time = datetime.now()
+    tprint_info("🔄 Correlation-Based Selection...")
+    
+    selected_geometries = select_top_k_with_correlation_penalty(
+        candidates, k=top_k, correlation_weight=correlation_weight
+    )
+    
+    correlation_time = (datetime.now() - correlation_start_time).total_seconds()
+    
+    selected_geometries = selected_geometries.drop(columns=['sig_ptr'])
+    
+    tprint_success(f"✅ Correlation selection completed in {correlation_time:.2f}s")
+    tprint_success(f"🎯 Selected {len(selected_geometries)} geometries:")
+    
+    # Show selected geometries with scores
+    for _, row in selected_geometries.iterrows():
+        if model_type == 'classifier':
+            tprint_info(f"   - {row['id']}: score={row['final_score']:.4f}, penalty={row.get('corr_penalty', 0):.4f}")
+        else:
+            tprint_info(f"   - {row['id']}: score={row['final_score']:.4f}, ic={row.get('ic', 0):.4f}")
+    
+    return selected_geometries
+
+def select_top_k_with_correlation_penalty(candidates, k, correlation_weight=0.3):
+    """
+    Select top k geometries balancing performance and correlation.
+    """
+    tprint_info(f"🔄 Selecting top {k} geometries with correlation penalty weight={correlation_weight}")
+    
+    if len(candidates) <= k:
+        tprint_info(f"📊 Only {len(candidates)} candidates available, selecting all")
+        return candidates.head(k)
+    
+    # Calculate correlation matrix using JIT-compiled function
+    # Pre-allocate and optimize memory layout for better cache performance
+    n_candidates = len(candidates)
+    signal_matrix = np.empty((n_candidates, len(candidates.iloc[0]['sig_ptr'])), dtype=np.float32)
+
+    # Fill matrix efficiently
+    for i in range(n_candidates):
+        signal_matrix[i] = candidates.iloc[i]['sig_ptr']
+
+    corr_matrix = calculate_correlation_matrix_jit(signal_matrix)
+    
+    # Calculate average correlation for each geometry using JIT-compiled function
+    avg_correlations = calculate_average_correlations_jit(corr_matrix)
+    
+    # Adjust scores: performance - correlation_penalty
+    candidates['corr_penalty'] = correlation_weight * np.array(avg_correlations)
+    candidates['adjusted_score'] = candidates['final_score'] - candidates['corr_penalty']
+    
+    # Show correlation analysis
+    high_corr_count = sum(1 for corr in avg_correlations if corr > 0.7)
+    tprint_info(f"📊 Correlation analysis: {high_corr_count} geometries with >0.7 avg correlation")
+    tprint_info(f"📊 Avg correlation range: {min(avg_correlations):.3f} → {max(avg_correlations):.3f}")
+    
+    # Select top k by adjusted score
+    selected = candidates.nlargest(k, 'adjusted_score')
+    
+    tprint_success(f"✅ Selected {len(selected)} geometries balancing performance and diversity")
+    return selected
+
+# Helper function for parallel evaluation
+def worker_evaluate_geometry_adaptive(
+    gid: str,
+    df: Dict[str, np.ndarray],
+    labels: np.ndarray,
+    X_full: pd.DataFrame,
+    model_type: str,
+    objective_func: str
+):
+    """
+    Worker function for parallel geometry evaluation using final model objectives.
+    """
+    try:
+        # Extract signal
+        signal = df['composite_signal']
+        
+        # FIX: Ensure signal has index matching X_full if just array
+        if isinstance(signal, np.ndarray) and len(signal) == len(X_full):
+             signal_series = pd.Series(signal, index=X_full.index)
+        else:
+             signal_series = pd.Series(signal)
+
+        # Align with X_full
+        common_index = X_full.index.intersection(signal_series.index)
+        if len(common_index) < len(signal) * 0.9:
+            return None
+            
+        signal_aligned = signal_series.loc[common_index].values
+        X_aligned = X_full.loc[common_index]
+        
+        # Handle labels alignment (labels is numpy array)
+        if isinstance(labels, np.ndarray):
+             labels_aligned = labels[X_full.index.get_indexer(common_index)]
+        else:
+             labels_aligned = labels.loc[common_index].values
+        
+        # Simple evaluation (IC for regression, AUC for classification)
+        if model_type == 'classifier':
+            from sklearn.metrics import roc_auc_score
+            # Convert signal to probability
+            signal_prob = 1 / (1 + np.exp(-signal_aligned))
+            try:
+                score = roc_auc_score(labels_aligned, signal_prob)
+            except:
+                score = 0.5
+        else:
+            from scipy.stats import spearmanr
+            try:
+                ic, _ = spearmanr(labels_aligned, signal_aligned)
+                score = ic if np.isfinite(ic) else 0.0
+            except:
+                score = 0.0
+        
+        return {
+            'id': gid,
+            'score': score,
+            'ic': score if model_type != 'classifier' else 0.0,
+            'stability': 1.0,  # Placeholder
+            'sig_ptr': signal_aligned.astype(np.float32)
+        }
+        
+    except Exception as e:
+        return None

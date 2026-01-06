@@ -1,0 +1,13 @@
+Name,Success,AUC,MI,Samples,Time
+Path,True,0.572,0.0033,17910,54.9s
+VolForce,True,0.527,0.0006,17514,50.9s
+Risk,True,0.529,0.0014,17910,54.5s
+VolBurst,True,0.548,0.0009,17520,55.8s
+Reversion,True,0.520,0.0009,17910,355.5s
+Momentum,True,0.539,0.0026,17910,73.2s
+Liquidity,True,0.575,0.0036,17514,63.5s
+SMC,True,0.611,0.0096,17910,76.0s
+Spectral,True,0.539,0.0009,17520,145.5s
+Micro,True,0.581,0.0043,17488,62.3s
+Macro,True,0.676,0.0036,17910,173.5s
+Meso,True,0.589,0.0053,17910,170.5s

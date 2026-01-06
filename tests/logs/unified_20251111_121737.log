@@ -1,0 +1,45 @@
+Nov 11, 2025 12:17:37 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Nov 11, 2025 12:17:37 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Nov 11, 2025 12:17:37 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Nov 11, 2025 12:17:37 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Nov 11, 2025 12:17:37 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Nov 11, 2025 12:17:37 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Nov 11, 2025 12:17:37 (+00:00:00) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Nov 11, 2025 12:17:37 (+00:00:00) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Nov 11, 2025 12:17:37 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Nov 11, 2025 12:17:37 (+00:00:00) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Nov 11, 2025 12:17:37 (+00:00:00) - utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Nov 11, 2025 12:17:37 (+00:00:00) - ares.registry - INFO - Registered step: regime_models_training
+Nov 11, 2025 12:17:37 (+00:00:00) - System.tprint - INFO - ✅ Regime models training step registered SUCCESS
+Nov 11, 2025 12:17:37 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - RegimeEnsembleTrainingConfigManager initialisé
+Nov 11, 2025 12:17:37 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Répertoire config: /Users/remyroche/Documents/Ares/tests/../src/config/regime_ensemble_training
+Nov 11, 2025 12:17:37 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Config personnalisée: None
+Nov 11, 2025 12:17:37 (+00:00:00) - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - Fallback hardcodé: True
+Nov 11, 2025 12:17:37 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Nov 11, 2025 12:17:37 (+00:00:00) - System.tprint - INFO - ✅ Regime ensemble training step registered SUCCESS
+Nov 11, 2025 12:17:37 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Nov 11, 2025 12:17:38 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - 🔧 Initializing Execution Mode Lookback Configuration
+Nov 11, 2025 12:17:38 (+00:00:00) - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ✅ Execution Mode Lookback Configuration initialized
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: rolling_hmm_regime_discovery
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: sr_parameter_optimization
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: regime_clustering
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: regime_models_training
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: regime_ensemble_training
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: sr_clustering
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: sr_detection
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: regime_feature_selection
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: sticky_finite_hmm_regime_discovery
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: rolling_hmm_regime_discovery
+Nov 11, 2025 12:17:38 (+00:00:00) - ares.registry - INFO - Registered step: data_download

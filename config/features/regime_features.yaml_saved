@@ -1,0 +1,349 @@
+# Regime Discovery Feature Configuration
+# Defines 5 feature families with formulas, windows, and dependencies
+# Total target: 200-300 features across all families
+
+# ============================================================================
+# FEATURE FAMILY 1: RETURNS/TREND/MOMENTUM
+# ============================================================================
+returns_momentum:
+  description: "Returns, trend, and momentum indicators"
+  target_features: 60
+  lookback_windows: [5, 10, 20, 50, 100, 200]
+  
+  features:
+    # Basic returns
+    - name: "log_returns"
+      formula: "np.log(close / close.shift(1))"
+      windows: [1, 5, 10, 20]
+      dependencies: ["close"]
+      
+    - name: "returns_volatility"
+      formula: "returns.rolling(window).std()"
+      windows: [5, 10, 20, 50]
+      dependencies: ["log_returns"]
+      
+    # Trend indicators
+    - name: "ema_crossover"
+      formula: "ema_fast - ema_slow"
+      windows: [12, 26], [50, 200]
+      dependencies: ["close"]
+      
+    - name: "trend_strength"
+      formula: "abs(close - close.shift(window)) / close.shift(window)"
+      windows: [5, 10, 20, 50]
+      dependencies: ["close"]
+      
+    # Momentum indicators
+    - name: "momentum"
+      formula: "close / close.shift(window) - 1"
+      windows: [5, 10, 20, 50, 100]
+      dependencies: ["close"]
+      
+    - name: "momentum_acceleration"
+      formula: "momentum.diff()"
+      windows: [5, 10, 20]
+      dependencies: ["momentum"]
+      
+    - name: "rsi"
+      formula: "100 - (100 / (1 + rs))"
+      windows: [14, 21, 50]
+      dependencies: ["close"]
+      
+    - name: "macd"
+      formula: "ema_12 - ema_26"
+      windows: [12, 26, 9]
+      dependencies: ["close"]
+      
+    - name: "macd_signal"
+      formula: "macd.ewm(span=9).mean()"
+      windows: [9]
+      dependencies: ["macd"]
+      
+    - name: "macd_histogram"
+      formula: "macd - macd_signal"
+      windows: [1]
+      dependencies: ["macd", "macd_signal"]
+
+# ============================================================================
+# FEATURE FAMILY 2: VOLATILITY
+# ============================================================================
+volatility:
+  description: "Volatility metrics and regimes"
+  target_features: 50
+  lookback_windows: [5, 10, 20, 50, 100, 200]
+  
+  features:
+    # Realized volatility
+    - name: "realized_volatility"
+      formula: "returns.rolling(window).std() * np.sqrt(252)"
+      windows: [5, 10, 20, 50, 100]
+      dependencies: ["log_returns"]
+      
+    - name: "parkinson_volatility"
+      formula: "np.sqrt(0.25 * np.log(high/low)**2 / window)"
+      windows: [5, 10, 20, 50]
+      dependencies: ["high", "low"]
+      
+    - name: "garman_klass_volatility"
+      formula: "np.sqrt(0.5 * (np.log(high/low)**2 - (2*np.log(2)-1) * np.log(close/open)**2) / window)"
+      windows: [5, 10, 20, 50]
+      dependencies: ["high", "low", "close", "open"]
+      
+    # Volatility regimes
+    - name: "volatility_regime"
+      formula: "pd.cut(realized_volatility, bins=5, labels=False)"
+      windows: [20, 50, 100]
+      dependencies: ["realized_volatility"]
+      
+    - name: "volatility_percentile"
+      formula: "realized_volatility.rolling(window).rank(pct=True)"
+      windows: [20, 50, 100, 200]
+      dependencies: ["realized_volatility"]
+      
+    # Volatility clustering
+    - name: "volatility_clustering"
+      formula: "realized_volatility.rolling(window).autocorr(lag=1)"
+      windows: [10, 20, 50]
+      dependencies: ["realized_volatility"]
+
+# ============================================================================
+# FEATURE FAMILY 3: VOLUME/FLOW/IMPACT
+# ============================================================================
+volume_flow:
+  description: "Volume, flow, and market impact metrics"
+  target_features: 80
+  lookback_windows: [5, 10, 20, 50, 100]
+  microstructure_enabled: true
+  market_impact_enabled: true
+  order_flow_enabled: true
+
+  features:
+    # Volume indicators
+    - name: "volume_ratio"
+      formula: "volume / volume.rolling(window).mean()"
+      windows: [5, 10, 20, 50]
+      dependencies: ["volume"]
+      
+    - name: "volume_momentum"
+      formula: "volume.pct_change(window)"
+      windows: [5, 10, 20]
+      dependencies: ["volume"]
+      
+    - name: "obv"
+      formula: "np.cumsum(volume * np.sign(close.diff()))"
+      windows: [1]
+      dependencies: ["volume", "close"]
+      
+    - name: "cmf"
+      formula: "((close - low) - (high - close)) / (high - low) * volume"
+      windows: [1]
+      dependencies: ["close", "high", "low", "volume"]
+      
+    # Market impact
+    - name: "price_impact"
+      formula: "abs(close.diff()) / volume"
+      windows: [1, 5, 10]
+      dependencies: ["close", "volume"]
+      
+    - name: "kyle_lambda"
+      formula: "close.diff().rolling(window).cov(volume.diff()) / volume.diff().rolling(window).var()"
+      windows: [5, 10, 20]
+      dependencies: ["close", "volume"]
+      
+    - name: "amihud_illiquidity"
+      formula: "abs(close.pct_change()) / volume"
+      windows: [1, 5, 10]
+      dependencies: ["close", "volume"]
+      
+    # Order flow
+    - name: "buy_sell_pressure"
+      formula: "(close - low) / (high - low)"
+      windows: [1, 5, 10]
+      dependencies: ["close", "high", "low"]
+      
+    - name: "order_flow_imbalance"
+      formula: "buy_sell_pressure - 0.5"
+      windows: [1, 5, 10]
+      dependencies: ["buy_sell_pressure"]
+
+    # Additional microstructure metrics
+    - name: "effective_spread"
+      formula: "2 * abs(close - vwap) / vwap"
+      windows: [5, 10, 20]
+      dependencies: ["close", "volume"]
+      note: "Measure of bid-ask spread through market impact"
+
+    - name: "volume_weighted_volatility"
+      formula: "returns.rolling(window).std() * sqrt(volume.rolling(window).mean())"
+      windows: [10, 20, 50]
+      dependencies: ["log_returns", "volume"]
+      note: "Volatility scaled by volume strength"
+
+# ============================================================================
+# FEATURE FAMILY 4: ENTROPY/COMPLEXITY
+# ============================================================================
+entropy_complexity:
+  description: "Information-theoretic and complexity measures"
+  target_features: 40
+  lookback_windows: [20, 50, 100, 200]
+  optimization_hints:
+    use_numba: true
+    cache_by_window: true
+    complexity_warning_threshold: 5000
+    
+  features:
+    # Sample entropy
+    - name: "sample_entropy"
+      formula: "compute_sample_entropy(close, m=2, r=0.2*std)"
+      windows: [20, 50, 100]
+      dependencies: ["close"]
+      complexity: "O(N²)"
+      
+    - name: "approximate_entropy"
+      formula: "compute_approximate_entropy(close, m=2, r=0.2*std)"
+      windows: [20, 50, 100]
+      dependencies: ["close"]
+      complexity: "O(N²)"
+      
+    # Hurst exponent
+    - name: "hurst_exponent"
+      formula: "compute_hurst_exponent(close)"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      complexity: "O(N log N)"
+      
+    # Permutation entropy
+    - name: "permutation_entropy"
+      formula: "compute_permutation_entropy(close, m=3)"
+      windows: [20, 50, 100]
+      dependencies: ["close"]
+      complexity: "O(N)"
+      
+    # Fractal dimension
+    - name: "fractal_dimension"
+      formula: "compute_fractal_dimension(close)"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      complexity: "O(N²)"
+      window_adjustment: "Increased from 20 to 50 minimum to reduce box-counting collapse"
+
+    # Additional advanced complexity metrics
+    - name: "hurst_exponent"
+      formula: "compute_hurst_exponent(close)"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      complexity: "O(N log N)"
+      note: "More robust than fractal_dimension for financial time series"
+
+    - name: "permutation_entropy"
+      formula: "compute_permutation_entropy(close, m=3)"
+      windows: [20, 50, 100]
+      dependencies: ["close"]
+      complexity: "O(N)"
+
+# ============================================================================
+# FEATURE FAMILY 5: SPECTRAL/MULTI-SCALE
+# ============================================================================
+spectral_multiscale:
+  description: "Frequency/spectral and multi-scale features"
+  target_features: 50
+  lookback_windows: [50, 100, 200, 500]
+  optimization_hints:
+    use_scipy_welch: true
+    document_taper: true
+    persist_params: true
+    
+  features:
+    # FFT-based features
+    - name: "dominant_frequency"
+      formula: "compute_dominant_frequency(close, method='welch')"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      taper: "hann"
+      
+    - name: "spectral_centroid"
+      formula: "compute_spectral_centroid(close)"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      taper: "hann"
+      
+    - name: "spectral_bandwidth"
+      formula: "compute_spectral_bandwidth(close)"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      taper: "hann"
+      
+    # Wavelet features
+    - name: "wavelet_energy"
+      formula: "compute_wavelet_energy(close, wavelet='db4')"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      
+    - name: "wavelet_entropy"
+      formula: "compute_wavelet_entropy(close, wavelet='db4')"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      
+    # Multi-timeframe correlations
+    - name: "cross_timeframe_correlation"
+      formula: "close.rolling(short).corr(close.rolling(long))"
+      windows: [5, 20], [20, 50]
+      dependencies: ["close"]
+      
+    - name: "multi_scale_volatility"
+      formula: "compute_multi_scale_volatility(close, scales=[1,2,4,8])"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+
+# ============================================================================
+# CACHING AND OPTIMIZATION CONFIGURATION
+# ============================================================================
+caching:
+  entropy_features:
+    cache_size: 1000
+    cache_by: ["window_size", "stride"]
+    ttl_seconds: 3600
+    
+  spectral_features:
+    cache_size: 500
+    cache_by: ["window_size", "taper_type"]
+    ttl_seconds: 1800
+    
+  wavelet_features:
+    cache_size: 500
+    cache_by: ["window_size", "wavelet_type"]
+    ttl_seconds: 1800
+
+optimization:
+  numba:
+    enabled: true
+    parallel: true
+    cache: true
+    
+  vectorization:
+    use_numpy_optimized: true
+    chunk_size: 1000
+    
+  memory:
+    max_memory_mb: 2048
+    gc_frequency: 100
+
+# ============================================================================
+# FEATURE SELECTION AND PRUNING
+# ============================================================================
+feature_selection:
+  correlation_threshold: 0.9
+  mi_threshold: 0.9
+  variance_threshold: 1e-8
+  do_not_drop_patterns:
+    - "regime_leaf_interaction__*"
+    - "regime_leaf_interaction_transition*__*"
+  
+  family_balance:
+    max_features_per_family: 60
+    min_features_per_family: 20
+    
+  stability_requirements:
+    min_temporal_stability: 0.1
+    max_nan_rate: 0.05
+    min_observations: 100

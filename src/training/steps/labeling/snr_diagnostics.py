@@ -39,7 +39,7 @@ import sys
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List, Optional, Union
+from typing import Tuple, List, Optional, Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -55,36 +55,14 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import ( 
     compute_learnability_score,
     compute_label_entropy_score,
     combined_label_quality_objective,
+    DEFAULT_TRANSACTION_COST,
     compute_label_quality_score_from_components,
 )
-from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 from src.training.steps.labeling.labeled_data_schema import (
     LABELED_DATA_SCHEMA_VERSION,
     get_required_labeled_data_columns,
     validate_labeled_data_schema,
 )
-
-# Import calibration quality utilities for enhanced diagnostics
-try:
-    from src.training.steps.labeling.probability_calibration import (
-        calibration_quality_report,
-        validate_monotonicity,
-        select_brier_optimal_threshold,
-    )
-    CALIBRATION_QUALITY_AVAILABLE = True
-except ImportError:
-    CALIBRATION_QUALITY_AVAILABLE = False
-
-# Import signal spacing utilities for density diagnostics
-try:
-    from src.training.steps.labeling.signal_spacing_utils import (
-        compute_signal_spacing_stats,
-        recommend_signal_spacing,
-    )
-    SIGNAL_SPACING_AVAILABLE = True
-except ImportError:
-    SIGNAL_SPACING_AVAILABLE = False
-
 
 try:
     import lightgbm as lgb  # type: ignore
@@ -110,355 +88,16 @@ logger = system_logger.getChild("snr_diagnostics")
 # --------------------------------------------------------------------------------------
 
 
-def _estimate_label_noise_confident_learning(
-    y_true: np.ndarray,
-    y_proba: np.ndarray,
-    threshold_confident: float = 0.9,
-) -> dict:
-    y_true = np.asarray(y_true, dtype=int)
-    y_proba = np.asarray(y_proba, dtype=float)
-
-    mask = np.isfinite(y_true) & np.isfinite(y_proba)
-    y_true = y_true[mask]
-    y_proba = y_proba[mask]
-
-    if y_true.size == 0:
-        return {
-            "n_confident_predictions": 0,
-            "n_mislabeled_candidates": 0,
-            "estimated_noise_rate": 0.0,
-            "false_neg_rate_confident": 0.0,
-            "false_pos_rate_confident": 0.0,
-            "mislabeled_indices": [],
-        }
-
-    y_pred = (y_proba >= 0.5).astype(int)
-    confidence = np.abs(y_proba - 0.5) * 2.0
-    confident_mask = confidence >= float(threshold_confident)
-    disagreement_mask = (y_pred != y_true) & confident_mask
-
-    mislabeled_indices = np.where(disagreement_mask)[0]
-    n_confident = int(np.sum(confident_mask))
-    n_disagreements = int(np.sum(disagreement_mask))
-    noise_rate = n_disagreements / max(n_confident, 1)
-
-    pos_mask = y_true == 1
-    neg_mask = y_true == 0
-
-    false_neg_rate = 0.0
-    if np.any(pos_mask):
-        false_neg_rate = float(
-            np.sum((y_pred[pos_mask] != y_true[pos_mask]) & confident_mask[pos_mask])
-            / max(np.sum(pos_mask), 1)
-        )
-
-    false_pos_rate = 0.0
-    if np.any(neg_mask):
-        false_pos_rate = float(
-            np.sum((y_pred[neg_mask] != y_true[neg_mask]) & confident_mask[neg_mask])
-            / max(np.sum(neg_mask), 1)
-        )
-
-    return {
-        "n_confident_predictions": int(n_confident),
-        "n_mislabeled_candidates": int(n_disagreements),
-        "estimated_noise_rate": float(noise_rate),
-        "false_neg_rate_confident": float(false_neg_rate),
-        "false_pos_rate_confident": float(false_pos_rate),
-        "mislabeled_indices": mislabeled_indices.tolist()[:100],
-    }
-
 OUTCOMES_DIR = Path("outcomes")
 
 
 _LAST_EXPORTS: dict[str, dict] = {}
 
 
-def _resolve_outcomes_dir(outcomes_dir: Optional[Union[str, Path]] = None) -> Path:
-    if outcomes_dir is None:
-        return OUTCOMES_DIR
-    try:
-        return Path(outcomes_dir)
-    except Exception:
-        return OUTCOMES_DIR
-
-
-def _read_indexed_csv(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path, index_col=0)
-    try:
-        df.index = pd.to_datetime(df.index)
-    except Exception:
-        pass
-    return df
-
-
-def _is_label_based_df(df: pd.DataFrame) -> bool:
-    try:
-        return str(df.attrs.get("snr_source", "")).lower() == "label_based"
-    except Exception:
-        return False
-
-
-def _load_label_based_outputs(
-    symbol: str,
-    exchange: str,
-    timeframe: str,
-    direction: str,
-    model: str,
-    outcomes_dir: Optional[Union[str, Path]] = None,
-) -> pd.DataFrame:
-    out_dir = _resolve_outcomes_dir(outcomes_dir)
-    candidate_dirs: list[Path] = []
-
-    try:
-        from src.utils.pipeline_standards import PipelineStandards  # type: ignore
-
-        base_dir = PipelineStandards.build_path("reports", exchange=exchange, asset=symbol)
-        candidate_dirs.append(Path(base_dir))
-    except Exception:
-        pass
-
-    candidate_dirs.append(out_dir)
-
-    layer5_candidates: list[Path] = []
-    layer3_candidates: list[Path] = []
-
-    for d in candidate_dirs:
-        if not d.exists():
-            continue
-
-        # Check for Layer 5 (position sizing) outputs
-        layer5_candidates.extend(sorted(d.glob(f"layer5_sized_events_{symbol}_{timeframe}_*.csv")))
-        # Fallback to old layer4 naming for backwards compatibility
-        layer5_candidates.extend(sorted(d.glob(f"layer4_sized_events_{symbol}_{timeframe}_*.csv")))
-        layer3_candidates.extend(sorted(d.glob(f"layer3_oof_preds_{symbol}_{timeframe}_*.csv")))
-
-        fixed_l5 = d / "layer5_sized_events.csv"
-        if fixed_l5.exists():
-            layer5_candidates.append(fixed_l5)
-        # Fallback to old naming
-        fixed_l4 = d / "layer4_sized_events.csv"
-        if fixed_l4.exists():
-            layer5_candidates.append(fixed_l4)
-
-        fixed_l3 = d / "layer3_oof_preds.csv"
-        if fixed_l3.exists():
-            layer3_candidates.append(fixed_l3)
-
-    def _pick_latest(paths: list[Path]) -> Optional[Path]:
-        if not paths:
-            return None
-        existing = [p for p in paths if p.exists()]
-        if not existing:
-            return None
-        return sorted(existing, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-
-    l5_path = _pick_latest(layer5_candidates)
-    l3_path = _pick_latest(layer3_candidates)
-
-    if l5_path is None and l3_path is None:
-        raise FileNotFoundError(
-            f"Could not locate label_based outputs in {candidate_dirs}. "
-            "Expected layer5_sized_events.csv or layer3_oof_preds.csv."
-        )
-
-    l4_df = None  # Keep variable name for compatibility with downstream code
-    if l5_path is not None:
-        try:
-            l4_df = _read_indexed_csv(l5_path)
-        except Exception:
-            l4_df = None
-
-    l3_df = None
-    if l3_path is not None:
-        try:
-            l3_df = _read_indexed_csv(l3_path)
-        except Exception:
-            l3_df = None
-
-    if isinstance(l3_df, pd.DataFrame) and not l3_df.empty:
-        df = l3_df.copy()
-        if isinstance(l4_df, pd.DataFrame) and not l4_df.empty:
-            join_candidates = [
-                "realized_return",
-                "volatility_1d",
-                "layer5_size",
-                "layer5_pnl",
-                "layer4_size",
-                "layer4_pnl",
-            ]
-            join_cols = [c for c in join_candidates if c in l4_df.columns and c not in df.columns]
-            if join_cols:
-                try:
-                    df = df.join(l4_df[join_cols], how="left")
-                except Exception:
-                    pass
-    elif isinstance(l4_df, pd.DataFrame) and not l4_df.empty:
-        df = l4_df.copy()
-    else:
-        raise FileNotFoundError(
-            f"Found label_based files but failed to read them: layer3={l3_path}, layer5={l5_path}"
-        )
-
-    if "meta_probability" not in df.columns and "meta_prob" in df.columns:
-        df["meta_probability"] = pd.to_numeric(df["meta_prob"], errors="coerce")
-
-    if "realized_return" not in df.columns and "ret" in df.columns:
-        df["realized_return"] = pd.to_numeric(df["ret"], errors="coerce")
-
-    if "realized_return" not in df.columns:
-        fallback_cols = [
-            "trade_return",
-            "return",
-            "pnl",
-            "layer5_pnl",
-            "layer4_pnl",
-        ]
-        chosen = None
-        for c in fallback_cols:
-            if c in df.columns:
-                chosen = c
-                break
-        if chosen is not None:
-            df["realized_return"] = pd.to_numeric(df[chosen], errors="coerce")
-
-    if "realized_return" not in df.columns and "layer5_pnl" in df.columns and "layer5_size" in df.columns:
-        pnl = pd.to_numeric(df["layer5_pnl"], errors="coerce")
-        size = pd.to_numeric(df["layer5_size"], errors="coerce")
-        denom = size.replace(0.0, np.nan)
-        df["realized_return"] = pnl / denom
-
-    if "realized_return" not in df.columns and "layer4_pnl" in df.columns and "layer4_size" in df.columns:
-        pnl = pd.to_numeric(df["layer4_pnl"], errors="coerce")
-        size = pd.to_numeric(df["layer4_size"], errors="coerce")
-        denom = size.replace(0.0, np.nan)
-        df["realized_return"] = pnl / denom
-
-    if "event_duration_bars" not in df.columns:
-        df["event_duration_bars"] = np.nan
-
-    target_col = None
-    for cand in ["l2_consensus_target", "target", "y", "label"]:
-        if cand in df.columns:
-            target_col = cand
-            break
-
-    if target_col is not None:
-        y = pd.to_numeric(df[target_col], errors="coerce")
-    else:
-        y = pd.Series(np.nan, index=df.index, dtype=float)
-
-    try:
-        y = y.mask(y == 0.5, np.nan)
-    except Exception:
-        pass
-
-    if "binary_label" not in df.columns:
-        df["binary_label"] = y
-
-    if "binary_label_long" not in df.columns:
-        df["binary_label_long"] = df["binary_label"]
-    if "binary_label_short" not in df.columns:
-        df["binary_label_short"] = df["binary_label"]
-
-    if "volatility_1d" in df.columns:
-        df["volatility_1d"] = pd.to_numeric(df["volatility_1d"], errors="coerce")
-
-    try:
-        df.attrs["snr_source"] = "label_based"
-    except Exception:
-        pass
-
-    logger.info(
-        "Loaded label_based outputs (layer3=%s, layer4=%s) with shape %s",
-        str(l3_path) if l3_path is not None else None,
-        str(l5_path) if l5_path is not None else None,
-        df.shape,
-    )
-    return df
-
-
-def _compute_prob_fold_metrics(
-    y: pd.Series,
-    p: pd.Series,
-    cv_splits: int,
-) -> tuple[list[dict], np.ndarray, np.ndarray, np.ndarray]:
-    y_array = pd.to_numeric(y, errors="coerce").values.astype(float)
-    p_array = pd.to_numeric(p, errors="coerce").values.astype(float)
-
-    tscv = TimeSeriesSplit(n_splits=cv_splits)
-
-    fold_metrics: list[dict] = []
-    all_y_true: list[np.ndarray] = []
-    all_p_pred: list[np.ndarray] = []
-    all_p_baseline: list[np.ndarray] = []
-    for fold_idx, (tr_idx, te_idx) in enumerate(tscv.split(p_array), start=1):
-        y_tr, y_te = y_array[tr_idx], y_array[te_idx]
-        p_te = p_array[te_idx]
-
-        mask_tr = ~np.isnan(y_tr)
-        mask_te = ~np.isnan(y_te) & ~np.isnan(p_te)
-        y_tr_clean = y_tr[mask_tr]
-        y_te_clean = y_te[mask_te]
-        p_te_clean = p_te[mask_te]
-
-        if len(y_tr_clean) < 20 or len(y_te_clean) < 10:
-            continue
-
-        uniq_tr = np.unique(y_tr_clean)
-        uniq_te = np.unique(y_te_clean)
-        if uniq_tr.size < 2 or uniq_te.size < 2:
-            continue
-
-        pos_rate_tr = float(np.nanmean(y_tr_clean)) if len(y_tr_clean) > 0 else 0.5
-        baseline_prob = np.full_like(p_te_clean, fill_value=pos_rate_tr, dtype=float)
-
-        all_y_true.append(y_te_clean)
-        all_p_pred.append(p_te_clean)
-        all_p_baseline.append(baseline_prob)
-
-        try:
-            auc = roc_auc_score(y_te_clean, p_te_clean)
-        except Exception:
-            auc = float("nan")
-
-        try:
-            brier = brier_score_loss(y_te_clean, p_te_clean)
-        except Exception:
-            brier = float("nan")
-
-        try:
-            ap = average_precision_score(y_te_clean, p_te_clean)
-        except Exception:
-            ap = float("nan")
-
-        fold_metrics.append(
-            {
-                "fold": fold_idx,
-                "n_train": int(len(y_tr_clean)),
-                "n_test": int(len(y_te_clean)),
-                "auc": float(auc) if np.isfinite(auc) else float("nan"),
-                "brier": float(brier) if np.isfinite(brier) else float("nan"),
-                "ap": float(ap) if np.isfinite(ap) else float("nan"),
-            }
-        )
-
-    if all_y_true:
-        y_all = np.concatenate(all_y_true)
-        p_all = np.concatenate(all_p_pred)
-        p_base_all = np.concatenate(all_p_baseline)
-    else:
-        y_all = np.array([])
-        p_all = np.array([])
-        p_base_all = np.array([])
-
-    return fold_metrics, y_all, p_all, p_base_all
-
-
-def _ensure_outcomes_dir(outcomes_dir: Optional[Union[str, Path]] = None) -> Path:
-    out_dir = _resolve_outcomes_dir(outcomes_dir)
-    out_dir.mkdir(exist_ok=True)
-    return out_dir
+def _ensure_outcomes_dir() -> Path:
+    """Ensure outcomes directory exists and return it."""
+    OUTCOMES_DIR.mkdir(exist_ok=True)
+    return OUTCOMES_DIR
 
 
 def _export_report(
@@ -470,39 +109,41 @@ def _export_report(
     model: str,
     payload: dict,
     markdown_lines: list[str],
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> tuple[Path, Path]:
-    out_dir = _ensure_outcomes_dir(outcomes_dir)
+    """Export diagnostics payload as JSON and Markdown into outcomes/.
+
+    Filenames are of the form:
+        outcomes/{prefix}_{symbol}_{timeframe}_{YYYYMMDD_HHMMSS}.json/md
+    """
+    out_dir = _ensure_outcomes_dir()
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     base_name = f"{prefix}_{symbol}_{timeframe}_{ts}"
 
+    # Enrich payload with common metadata
     meta = {
         "symbol": symbol,
         "exchange": exchange,
         "timeframe": timeframe,
         "direction": direction,
         "model": model,
+        "prefix": prefix,
         "timestamp_utc": ts,
     }
-
-    try:
-        payload = {**payload, "meta": meta}
-    except Exception:
-        pass
+    full_payload = {"metadata": meta, **payload}
 
     json_path = out_dir / f"{base_name}.json"
     md_path = out_dir / f"{base_name}.md"
 
-    with open(json_path, "w") as f:
-        json.dump(payload, f, indent=2, default=str)
+    with json_path.open("w") as f_json:
+        json.dump(full_payload, f_json, indent=2, default=str)
 
-    with open(md_path, "w") as f:
-        f.write("\n".join(markdown_lines) + "\n")
+    with md_path.open("w") as f_md:
+        f_md.write("\n".join(markdown_lines))
 
     _LAST_EXPORTS[prefix] = {
-        "json_path": str(json_path),
-        "md_path": str(md_path),
-        "payload": payload,
+        "json_path": json_path,
+        "md_path": md_path,
+        "payload": full_payload,
         "markdown_lines": markdown_lines,
     }
 
@@ -516,26 +157,12 @@ def _load_labeled_data(
     timeframe: str,
     direction: str = "long",
     model: str = "analyst",
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> pd.DataFrame:
     """Load labeled_data artifact produced by FeatureGenerationMetaLabelingStep.
 
     Tries both versioned HDF5 and legacy artifacts via the same BaseStep
     `_get_artifact` mechanism, so it remains compatible with older runs.
     """
-    if outcomes_dir is not None:
-        try:
-            return _load_label_based_outputs(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model=model,
-                outcomes_dir=outcomes_dir,
-            )
-        except Exception:
-            pass
-
     step = FeatureGenerationMetaLabelingStep()
     step.set_context(
         symbol=symbol,
@@ -584,17 +211,6 @@ def _load_labeled_data(
                     df,
                     context="snr_diagnostics._load_labeled_data",
                 )
-            # Helpful debug info: these columns drive the bucket diagnostics.
-            try:
-                cols = set(map(str, df.columns))
-                logger.info(
-                    "labeled_data columns present: meta_probability=%s, volatility_1d=%s, targets=%s",
-                    "meta_probability" in cols,
-                    "volatility_1d" in cols,
-                    any(c in cols for c in ("target_long", "target_short")),
-                )
-            except Exception:
-                pass
             logger.info(
                 "Loaded labeled data from artifact '%s' with shape %s",
                 name,
@@ -602,21 +218,9 @@ def _load_labeled_data(
             )
             return df
 
-    try:
-        return _load_label_based_outputs(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            direction=direction,
-            model=model,
-            outcomes_dir=outcomes_dir,
-        )
-    except Exception:
-        pass
-
     raise FileNotFoundError(
         f"Could not locate labeled_data artifact for {symbol} {exchange} {timeframe}. "
-        f"Tried names: {candidate_names}. Also failed to load label_based outputs from outcomes."
+        f"Tried names: {candidate_names}. Run feature_generation_meta_labeling_step first."
     )
 
 
@@ -675,7 +279,7 @@ def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame, direction: str 
     y_clean = y[valid_mask]
     X_clean = X.loc[y_clean.index].fillna(0)
 
-    if len(y_clean) < 20:
+    if len(y_clean) < 50:
         logger.warning("Only %d valid samples after cleaning; diagnostics may be noisy", len(y_clean))
 
     return X_clean, y_clean
@@ -860,374 +464,22 @@ def _compute_feature_importance_stability(
     }
 
 
-def _apply_confident_learning_noise_filter(
-    df: pd.DataFrame,
-    y_true_col: str = "binary_label",
-    y_proba_col: str = "meta_probability",
+def _estimate_label_noise_confident_learning(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
     threshold_confident: float = 0.9,
-    min_samples_required: int = 100,
-    verbose: bool = True
 ) -> dict:
-    """Apply confident learning noise filter to remove suspected mislabeled rows.
-    
-    This function identifies samples where the model is highly confident but the label
-    disagrees with the prediction, indicating potential mislabeling. These samples are
-    removed from the dataset and SNR metrics are recomputed.
-    
-    Args:
-        df: Input DataFrame with labels and probabilities
-        y_true_col: Column name for true labels
-        y_proba_col: Column name for predicted probabilities
-        threshold_confident: Confidence threshold for identifying confident predictions
-        min_samples_required: Minimum samples required for filtering
-        verbose: Whether to print filtering statistics
-        
+    """Implement confident learning to estimate label noise.
+
+    Finds samples where model is highly confident but label disagrees with
+    predicted class, indicating potential mislabeling.
+
     Returns:
-        Dict with filtered DataFrame, noise statistics, and SNR recomputation
+        Dict with noise metrics and indices of potentially mislabeled samples.
     """
-    # Validate inputs
-    if y_true_col not in df.columns or y_proba_col not in df.columns:
-        if verbose:
-            print(f"Warning: Missing required columns {y_true_col} or {y_proba_col}")
-        return {
-            "filtered_df": df,
-            "noise_stats": {},
-            "snr_before": {},
-            "snr_after": {},
-            "applied_filter": False
-        }
-    
-    # Get labeled samples only
-    labeled_mask = df[y_true_col].notna() & df[y_proba_col].notna()
-    labeled_df = df[labeled_mask].copy()
-    
-    if len(labeled_df) < min_samples_required:
-        if verbose:
-            print(f"Warning: Insufficient labeled samples ({len(labeled_df)} < {min_samples_required})")
-        return {
-            "filtered_df": df,
-            "noise_stats": {},
-            "snr_before": {},
-            "snr_after": {},
-            "applied_filter": False
-        }
-    
-    # Extract labels and probabilities
-    y_true = labeled_df[y_true_col].values
-    y_proba = labeled_df[y_proba_col].values
-    
-    # Estimate noise using confident learning
-    noise_stats = _estimate_label_noise_confident_learning(
-        y_true, y_proba, threshold_confident=threshold_confident
-    )
-    
-    # Get indices of potential mislabeled samples
-    mislabeled_indices = noise_stats["mislabeled_indices"]
-    
-    if len(mislabeled_indices) == 0:
-        if verbose:
-            print("No mislabeled candidates detected")
-        return {
-            "filtered_df": df,
-            "noise_stats": noise_stats,
-            "snr_before": {},
-            "snr_after": {},
-            "applied_filter": False
-        }
-    
-    # Get actual DataFrame indices to remove
-    labeled_indices = labeled_df.index
-    indices_to_remove = [labeled_indices[i] for i in mislabeled_indices if i < len(labeled_indices)]
-    
-    # Compute SNR before filtering
-    snr_before = {}
-    if "realized_return" in labeled_df.columns:
-        returns = labeled_df["realized_return"]
-        pos_mask = labeled_df[y_true_col] == 1
-        neg_mask = labeled_df[y_true_col] == 0
-        
-        if pos_mask.sum() > 0 and neg_mask.sum() > 0:
-            pos_returns = returns[pos_mask].dropna()
-            neg_returns = returns[neg_mask].dropna()
-            
-            if len(pos_returns) > 1 and len(neg_returns) > 1:
-                pos_mean, pos_std = pos_returns.mean(), pos_returns.std()
-                neg_mean = neg_returns.mean()
-                snr_before = {
-                    "pos_mean": float(pos_mean),
-                    "pos_std": float(pos_std),
-                    "neg_mean": float(neg_mean),
-                    "snr": float(pos_mean / (pos_std + 1e-8)),
-                    "cohens_d": float((pos_mean - neg_mean) / np.sqrt(((pos_returns.var() + neg_returns.var()) / 2) + 1e-8))
-                }
-    
-    # Apply filter - remove mislabeled samples
-    filtered_df = df.drop(indices_to_remove).copy()
-    
-    # Compute SNR after filtering
-    snr_after = {}
-    if "realized_return" in filtered_df.columns:
-        filtered_labeled_mask = filtered_df[y_true_col].notna() & filtered_df[y_proba_col].notna()
-        filtered_labeled = filtered_df[filtered_labeled_mask]
-        
-        if len(filtered_labeled) > 0:
-            returns = filtered_labeled["realized_return"]
-            pos_mask = filtered_labeled[y_true_col] == 1
-            neg_mask = filtered_labeled[y_true_col] == 0
-            
-            if pos_mask.sum() > 0 and neg_mask.sum() > 0:
-                pos_returns = returns[pos_mask].dropna()
-                neg_returns = returns[neg_mask].dropna()
-                
-                if len(pos_returns) > 1 and len(neg_returns) > 1:
-                    pos_mean, pos_std = pos_returns.mean(), pos_returns.std()
-                    neg_mean = neg_returns.mean()
-                    snr_after = {
-                        "pos_mean": float(pos_mean),
-                        "pos_std": float(pos_std),
-                        "neg_mean": float(neg_mean),
-                        "snr": float(pos_mean / (pos_std + 1e-8)),
-                        "cohens_d": float((pos_mean - neg_mean) / np.sqrt(((pos_returns.var() + neg_returns.var()) / 2) + 1e-8))
-                    }
-    
-    # Calculate improvement metrics
-    snr_improvement = {}
-    if snr_before and snr_after:
-        snr_improvement = {
-            "snr_delta": float(snr_after["snr"] - snr_before["snr"]),
-            "snr_pct_change": float((snr_after["snr"] - snr_before["snr"]) / abs(snr_before["snr"]) * 100) if snr_before["snr"] != 0 else 0,
-            "cohens_d_delta": float(snr_after["cohens_d"] - snr_before["cohens_d"]),
-            "samples_removed": len(indices_to_remove),
-            "samples_remaining": len(filtered_labeled_mask),
-            "removal_rate": float(len(indices_to_remove) / len(labeled_df) * 100)
-        }
-    
-    if verbose:
-        print(f"\n=== Confident Learning Noise Filter Results ===")
-        print(f"Original labeled samples: {len(labeled_df)}")
-        print(f"Mislabeled candidates: {len(indices_to_remove)} ({noise_stats['estimated_noise_rate']:.1%})")
-        print(f"Samples remaining: {len(filtered_labeled_mask)}")
-        
-        if snr_improvement:
-            print(f"SNR change: {snr_before['snr']:.3f} → {snr_after['snr']:.3f} ({snr_improvement['snr_pct_change']:+.1f}%)")
-            print(f"Cohen's d change: {snr_before['cohens_d']:.3f} → {snr_after['cohens_d']:.3f} ({snr_improvement['cohens_d_delta']:+.3f})")
-    
-    return {
-        "filtered_df": filtered_df,
-        "noise_stats": noise_stats,
-        "snr_before": snr_before,
-        "snr_after": snr_after,
-        "snr_improvement": snr_improvement,
-        "applied_filter": len(indices_to_remove) > 0,
-        "indices_removed": indices_to_remove
-    }
-
-
-def _apply_confident_learning_noise_filter(
-    df: pd.DataFrame,
-    y_true_col: str = "binary_label",
-    y_proba_col: str = "meta_probability",
-    threshold_confident: float = 0.9,
-    min_samples_required: int = 100,
-    verbose: bool = True
-) -> dict:
-    """Apply confident learning noise filter to remove suspected mislabeled rows.
-    
-    This function identifies samples where the model is highly confident but the label
-    disagrees with the prediction, indicating potential mislabeling. These samples are
-    removed from the dataset and SNR metrics are recomputed.
-    
-    Args:
-        df: Input DataFrame with labels and probabilities
-        y_true_col: Column name for true labels
-        y_proba_col: Column name for predicted probabilities
-        threshold_confident: Confidence threshold for identifying confident predictions
-        min_samples_required: Minimum samples required for filtering
-        verbose: Whether to print progress
-        
-    Returns:
-        Dict with filtered DataFrame and noise statistics
-    """
-    # Check if probability column exists
-    if y_proba_col not in df.columns:
-        if verbose:
-            print(f"Probability column '{y_proba_col}' not found - skipping noise filter")
-        return {
-            "filtered_df": df,
-            "noise_stats": {},
-            "snr_before": {},
-            "snr_after": {},
-            "snr_improvement": {},
-            "applied_filter": False,
-            "indices_removed": []
-        }
-    
-    # Filter labeled samples
-    labeled_df = df[df[y_true_col].notna()].copy()
-    if len(labeled_df) < min_samples_required:
-        if verbose:
-            print(f"Insufficient labeled samples ({len(labeled_df)} < {min_samples_required}) - skipping")
-        return {
-            "filtered_df": df,
-            "noise_stats": {},
-            "snr_before": {},
-            "snr_after": {},
-            "snr_improvement": {},
-            "applied_filter": False,
-            "indices_removed": []
-        }
-    
-    # Extract labels and probabilities
-    y_true = labeled_df[y_true_col].values
-    y_proba = labeled_df[y_proba_col].values
-    
-    # Estimate noise using confident learning
-    noise_stats = _estimate_label_noise_confident_learning(
-        y_true, y_proba, threshold_confident=threshold_confident
-    )
-    
-    # Get indices of potential mislabeled samples
-    mislabeled_indices = noise_stats["mislabeled_indices"]
-    
-    if len(mislabeled_indices) == 0:
-        if verbose:
-            print("No mislabeled candidates detected")
-        return {
-            "filtered_df": df,
-            "noise_stats": noise_stats,
-            "snr_before": {},
-            "snr_after": {},
-            "snr_improvement": {},
-            "applied_filter": False,
-            "indices_removed": []
-        }
-    
-    # Get original indices
-    original_indices = labeled_df.index[mislabeled_indices]
-    
-    # Create filtered dataset
-    filtered_df = df.drop(original_indices)
-    
-    # Compute SNR before and after filtering
-    snr_before = _compute_snr_metrics(labeled_df[y_true_col], labeled_df.get('realized_return', pd.Series()))
-    snr_after = _compute_snr_metrics(
-        filtered_df[filtered_df[y_true_col].notna()][y_true_col],
-        filtered_df[filtered_df[y_true_col].notna()].get('realized_return', pd.Series())
-    )
-    
-    # Compute improvement metrics
-    snr_improvement = {}
-    if snr_before and snr_after:
-        snr_improvement = {
-            "snr_delta": snr_after.get("snr", 0) - snr_before.get("snr", 0),
-            "snr_pct_change": ((snr_after.get("snr", 0) - snr_before.get("snr", 0)) / max(abs(snr_before.get("snr", 1e-8)), 1e-8)) * 100,
-            "cohens_d_delta": snr_after.get("cohens_d", 0) - snr_before.get("cohens_d", 0)
-        }
-    
-    # Additional statistics
-    filtered_labeled_mask = filtered_df[y_true_col].notna()
-    indices_to_remove = list(original_indices)
-    
-    noise_stats.update({
-        "original_labeled_samples": len(labeled_df),
-        "samples_remaining": len(filtered_labeled_mask),
-        "removal_rate": float(len(indices_to_remove) / len(labeled_df) * 100)
-    })
-    
-    if verbose:
-        print(f"\n=== Confident Learning Noise Filter Results ===")
-        print(f"Original labeled samples: {len(labeled_df)}")
-        print(f"Mislabeled candidates: {len(indices_to_remove)} ({noise_stats['estimated_noise_rate']:.1%})")
-        print(f"Samples remaining: {len(filtered_labeled_mask)}")
-        
-        if snr_improvement:
-            print(f"SNR change: {snr_before['snr']:.3f} → {snr_after['snr']:.3f} ({snr_improvement['snr_pct_change']:+.1f}%)")
-            print(f"Cohen's d change: {snr_before['cohens_d']:.3f} → {snr_after['cohens_d']:.3f} ({snr_improvement['cohens_d_delta']:+.3f})")
-    
-    return {
-        "filtered_df": filtered_df,
-        "noise_stats": noise_stats,
-        "snr_before": snr_before,
-        "snr_after": snr_after,
-        "snr_improvement": snr_improvement,
-        "applied_filter": len(indices_to_remove) > 0,
-        "indices_removed": indices_to_remove
-    }
-
-
-def _compute_snr_metrics(y_true: pd.Series, y_returns: Optional[pd.Series] = None) -> dict:
-    """Compute SNR metrics for label quality assessment."""
-    if len(y_true) == 0:
-        return {}
-    
-    # Basic metrics
-    n_positive = int((y_true == 1).sum())
-    n_negative = int((y_true == 0).sum())
-    n_total = len(y_true)
-    
-    # Handle continuous labels by thresholding if strict 0/1 counts fail
-    if n_positive == 0 and n_negative == 0 and n_total > 0:
-        y_vals = pd.to_numeric(y_true, errors='coerce').dropna()
-        if len(y_vals) > 0:
-            # Assume soft labels
-            n_positive = int((y_vals >= 0.5).sum())
-            n_negative = int((y_vals < 0.5).sum())
-            # For SNR calculations, we use a binary mask derived from threshold
-            y_true_binary = (y_vals >= 0.5).astype(int)
-        else:
-            y_true_binary = y_true # Keep as is if empty
-    else:
-        y_true_binary = y_true
-
-    if n_positive == 0 or n_negative == 0:
-        return {
-            "n_positive": n_positive,
-            "n_negative": n_negative,
-            "n_total": n_total,
-            "positive_rate": n_positive / n_total,
-            "snr": 0.0,
-            "cohens_d": 0.0
-        }
-    
-    # Compute effect size and SNR if returns available
-    snr = 0.0
-    cohens_d = 0.0
-    
-    if y_returns is not None and len(y_returns) == len(y_true):
-        try:
-            # Use binary mask (potentially derived from threshold)
-            pos_mask = (y_true_binary == 1)
-            neg_mask = (y_true_binary == 0)
-
-            pos_returns = y_returns[pos_mask].dropna()
-            neg_returns = y_returns[neg_mask].dropna()
-            
-            if len(pos_returns) > 1 and len(neg_returns) > 1:
-                pos_mean = float(pos_returns.mean())
-                neg_mean = float(neg_returns.mean())
-                pos_std = float(pos_returns.std())
-                neg_std = float(neg_returns.std())
-                
-                # Cohen's d
-                pooled_std = np.sqrt(((len(pos_returns) - 1) * pos_std**2 + (len(neg_returns) - 1) * neg_std**2) / 
-                                   (len(pos_returns) + len(neg_returns) - 2))
-                cohens_d = (pos_mean - neg_mean) / max(pooled_std, 1e-8)
-                
-                # SNR (signal-to-noise ratio)
-                signal = abs(pos_mean - neg_mean)
-                noise = np.sqrt((pos_std**2 + neg_std**2) / 2)
-                snr = signal / max(noise, 1e-8)
-        except Exception:
-            pass
-    
-    return {
-        "n_positive": n_positive,
-        "n_negative": n_negative,
-        "n_total": n_total,
-        "positive_rate": n_positive / n_total,
-        "snr": snr,
-        "cohens_d": cohens_d
-    }
+    # Predicted class and confidence
+    y_pred = (y_proba >= 0.5).astype(int)
+    confidence = np.abs(y_proba - 0.5) * 2  # 0-1 scale
 
     # Find confident predictions (high confidence in one direction)
     confident_mask = confidence >= threshold_confident
@@ -1304,7 +556,7 @@ def _run_label_shuffle_cv(
         y_te_clean = y_te[mask_te]
         X_te_clean = X_te[mask_te]
 
-        if len(y_tr_clean) < 20 or len(y_te_clean) < 10:
+        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
             continue
         if len(np.unique(y_tr_clean)) < 2 or len(np.unique(y_te_clean)) < 2:
             continue
@@ -1375,7 +627,7 @@ def _compute_strict_holdout_metrics(
     y_clean = y_array[mask]
 
     n_total = len(y_clean)
-    if n_total < 20:
+    if n_total < 100:
         return {
             "n_total": int(n_total),
             "n_train": 0,
@@ -1524,7 +776,6 @@ def _plot_temporal_auc(
     temporal_aucs: list,
     symbol: str,
     timeframe: str,
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> Path:
     """Generate and save temporal AUC plot."""
     try:
@@ -1542,7 +793,7 @@ def _plot_temporal_auc(
             ax.grid(True, alpha=0.3)
             ax.legend()
 
-        out_dir = _ensure_outcomes_dir(outcomes_dir)
+        out_dir = _ensure_outcomes_dir()
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         plot_path = out_dir / f"temporal_auc_{symbol}_{timeframe}_{ts}.png"
 
@@ -1560,16 +811,16 @@ def _plot_temporal_auc(
 # Label-quality diagnostics
 # --------------------------------------------------------------------------------------
 
+
 def run_label_quality(
     symbol: str,
     exchange: str,
     timeframe: str,
     direction: str = "long",
     model: str = "analyst",
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> None:
     """Compute label-quality and economic SNR diagnostics from labeled_data."""
-    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model, outcomes_dir=outcomes_dir)
+    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
 
     # Prefer directional binary labels
     if direction == "long" and "binary_label_long" in df.columns:
@@ -1598,11 +849,6 @@ def run_label_quality(
 
     n_positive = int((binary_labels == 1.0).sum())
     n_negative = int((binary_labels == 0.0).sum())
-
-    # Fallback for soft labels (e.g. l2_consensus_target)
-    if n_positive == 0 and n_negative == 0 and n_labeled > 0:
-        n_positive = int((binary_labels >= 0.5).sum())
-        n_negative = int((binary_labels < 0.5).sum())
     positive_rate = n_positive / n_labeled if n_labeled > 0 else 0.0
     coverage = n_labeled / n_samples if n_samples > 0 else 0.0
 
@@ -1718,7 +964,6 @@ def run_label_quality(
     # using isotonic expected returns instead of raw realized returns.
     bucket_stats = {}
     prob_series = None
-    prob_variance_warning = None
     if "meta_probability" in df.columns and expected_ret is not None:
         prob_series = df["meta_probability"].astype(float)
         valid_bucket_mask = labeled_mask & prob_series.notna() & expected_ret.notna()
@@ -1726,15 +971,6 @@ def run_label_quality(
             probs_valid = prob_series[valid_bucket_mask]
             rets_valid = expected_ret[valid_bucket_mask]
             labels_valid = binary_labels[valid_bucket_mask]
-            
-            # Check for constant or near-constant probabilities (indicates model not learning)
-            prob_std = float(probs_valid.std())
-            prob_range = float(probs_valid.max() - probs_valid.min())
-            if prob_std < 0.01 or prob_range < 0.05:
-                prob_variance_warning = (
-                    f"⚠️ Low probability variance (std={prob_std:.4f}, range={prob_range:.4f}). "
-                    "Model may be outputting constant probabilities - bucket analysis unreliable."
-                )
 
             bucket_fracs = [0.05, 0.10, 0.20, 0.30, 0.40]
             for frac in bucket_fracs:
@@ -1765,7 +1001,8 @@ def run_label_quality(
                 except Exception:
                     continue
 
-    # Enhanced volatility-bucket diagnostics with adaptive thresholds
+    # Volatility-bucket diagnostics (low/mid/high volatility regimes) using
+    # volatility_1d when available in labeled_data.
     vol_bucket_stats = {}
     if "volatility_1d" in df.columns:
         try:
@@ -1781,10 +1018,6 @@ def run_label_quality(
                     "mid": (vol >= low_thr) & (vol < high_thr),
                     "high": vol >= high_thr,
                 }
-
-                # Get adaptive threshold information if available
-                adaptive_profit = df.get("adaptive_profit_threshold")
-                adaptive_stop = df.get("adaptive_stop_threshold")
 
                 for name, regime_mask in regimes.items():
                     seg_mask = vol_mask & regime_mask
@@ -1809,7 +1042,7 @@ def run_label_quality(
                     seg_total = int(seg_mask.sum())
                     seg_pos_rate = seg_pos / max(seg_pos + seg_neg, 1)
 
-                    bucket_stats = {
+                    vol_bucket_stats[name] = {
                         "n_events": seg_total,
                         "n_positive": seg_pos,
                         "n_negative": seg_neg,
@@ -1819,23 +1052,7 @@ def run_label_quality(
                         "low_threshold": float(low_thr),
                         "high_threshold": float(high_thr),
                     }
-
-                    # Add adaptive threshold statistics if available
-                    if adaptive_profit is not None and adaptive_stop is not None:
-                        seg_adaptive_profit = adaptive_profit[seg_mask].dropna()
-                        seg_adaptive_stop = adaptive_stop[seg_mask].dropna()
-                        
-                        if len(seg_adaptive_profit) > 0:
-                            bucket_stats.update({
-                                "adaptive_threshold_mean": float(seg_adaptive_profit.mean()),
-                                "adaptive_threshold_std": float(seg_adaptive_profit.std()),
-                                "adaptive_stop_mean": float(seg_adaptive_stop.mean()),
-                                "adaptive_stop_std": float(seg_adaptive_stop.std()),
-                            })
-
-                    vol_bucket_stats[name] = bucket_stats
-        except Exception as e:
-            print(f"Warning: Volatility bucket analysis failed: {e}")
+        except Exception:
             vol_bucket_stats = {}
 
     # Simple interpretation helpers for coverage, effect size, SNR and retention
@@ -1956,22 +1173,8 @@ def run_label_quality(
     if bucket_stats:
         print()
         print("-- High-Probability Buckets (by meta_probability, isotonic expected returns) --")
-        if prob_variance_warning:
-            print(prob_variance_warning)
-        def _bucket_frac(value) -> float:
-            try:
-                if isinstance(value, dict):
-                    return float(value.get("frac", float("inf")))
-                return float(value)
-            except Exception:
-                return float("inf")
-
-        for key in sorted(bucket_stats.keys(), key=lambda k: _bucket_frac(bucket_stats.get(k))):
+        for key in sorted(bucket_stats.keys(), key=lambda k: bucket_stats[k]["frac"]):
             stats = bucket_stats[key]
-            if not isinstance(stats, dict):
-                continue
-            if "frac" not in stats or "n_events" not in stats:
-                continue
             print(
                 f"Top {int(stats['frac']*100):2d}%: n={stats['n_events']}, "
                 f"win_rate={stats['win_rate']:.1%}, "
@@ -1981,7 +1184,7 @@ def run_label_quality(
 
     if vol_bucket_stats:
         print()
-        print("-- Enhanced Volatility Buckets (by volatility_1d) --")
+        print("-- Volatility Buckets (by volatility_1d) --")
         for name in ["low", "mid", "high"]:
             if name not in vol_bucket_stats:
                 continue
@@ -1990,14 +1193,8 @@ def run_label_quality(
                 f"Vol {name:>4}: n={stats['n_events']}, "
                 f"pos_rate={stats['positive_rate']:.1%}, "
                 f"mean_ret={stats['mean_return']:.2%}, "
-                f"Sharpe={stats['sharpe']:.2f}, "
-                f"vol_range=[{stats.get('low_threshold', 'nan'):.4f}, {stats.get('high_threshold', 'nan'):.4f}]"
+                f"Sharpe={stats['sharpe']:.2f}"
             )
-            
-            # Add volatility-aware threshold diagnostics if available
-            if 'adaptive_threshold_mean' in stats:
-                print(f"         Adaptive profit threshold: {stats['adaptive_threshold_mean']:.4f} ± {stats.get('adaptive_threshold_std', 0):.4f}")
-                print(f"         Adaptive stop threshold: {stats['adaptive_stop_mean']:.4f} ± {stats.get('adaptive_stop_std', 0):.4f}")
 
     print()
     print("-- Interpretation Hints --")
@@ -2048,7 +1245,6 @@ def run_label_quality(
             "frac_small_vs_cost": float(frac_small),
         },
         "probability_buckets": bucket_stats,
-        "probability_variance_warning": prob_variance_warning,
         "volatility_buckets": vol_bucket_stats,
         "advanced": {
             "aleatoric_uncertainty_fraction": float(aleatoric_fraction),
@@ -2105,22 +1301,8 @@ def run_label_quality(
     ]
 
     if bucket_stats:
-        if prob_variance_warning:
-            md_lines.append(f"\n{prob_variance_warning}\n")
-        def _bucket_frac_md(value) -> float:
-            try:
-                if isinstance(value, dict):
-                    return float(value.get("frac", float("inf")))
-                return float(value)
-            except Exception:
-                return float("inf")
-
-        for key in sorted(bucket_stats.keys(), key=lambda k: _bucket_frac_md(bucket_stats.get(k))):
+        for key in sorted(bucket_stats.keys(), key=lambda k: bucket_stats[k]["frac"]):
             stats = bucket_stats[key]
-            if not isinstance(stats, dict):
-                continue
-            if "frac" not in stats or "n_events" not in stats:
-                continue
             md_lines.append(
                 f"- Top {int(stats['frac']*100):2d}%: n={stats['n_events']}, "
                 f"win_rate={stats['win_rate']:.1%}, "
@@ -2132,7 +1314,7 @@ def run_label_quality(
 
     md_lines.extend([
         "",
-        "## Enhanced Volatility Buckets (by volatility_1d)",
+        "## Volatility Buckets (by volatility_1d)",
     ])
 
     if vol_bucket_stats:
@@ -2144,18 +1326,8 @@ def run_label_quality(
                 f"- Vol {name}: n={stats['n_events']}, "
                 f"pos_rate={stats['positive_rate']:.1%}, "
                 f"mean_ret={stats['mean_return']:.2%}, "
-                f"Sharpe={stats['sharpe']:.2f}, "
-                f"vol_range=[{stats.get('low_threshold', 'nan'):.4f}, {stats.get('high_threshold', 'nan'):.4f}]"
+                f"Sharpe={stats['sharpe']:.2f}"
             )
-            
-            # Add adaptive threshold information to markdown
-            if 'adaptive_threshold_mean' in stats:
-                md_lines.append(
-                    f"  - Adaptive profit threshold: {stats['adaptive_threshold_mean']:.4f} ± {stats.get('adaptive_threshold_std', 0):.4f}"
-                )
-                md_lines.append(
-                    f"  - Adaptive stop threshold: {stats['adaptive_stop_mean']:.4f} ± {stats.get('adaptive_stop_std', 0):.4f}"
-                )
     else:
         md_lines.append("- volatility_1d not available or insufficient data for volatility buckets.")
 
@@ -2182,7 +1354,6 @@ def run_label_quality(
         model=model,
         payload=payload,
         markdown_lines=md_lines,
-        outcomes_dir=outcomes_dir,
     )
 
     print(f"\nReports saved to: {json_path} and {md_path}")
@@ -2192,6 +1363,7 @@ def run_label_quality(
 # Label-learnability diagnostics
 # --------------------------------------------------------------------------------------
 
+
 def run_label_learnability(
     symbol: str,
     exchange: str,
@@ -2199,48 +1371,20 @@ def run_label_learnability(
     direction: str = "long",
     model: str = "analyst",
     cv_splits: int = 3,
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> None:
     """Compute learnability & entropy-based label-quality scores."""
-    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model, outcomes_dir=outcomes_dir)
+    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
+    X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
-    if _is_label_based_df(df) and "meta_probability" in df.columns:
-        y = df.get("binary_label_long") if direction == "long" else df.get("binary_label_short")
-        if y is None:
-            y = df.get("binary_label")
-        if y is None:
-            raise ValueError("label_based inputs must contain binary_label")
-
-        p = df["meta_probability"]
-        fold_metrics, _, _, _ = _compute_prob_fold_metrics(y, p, cv_splits=cv_splits)
-        if not fold_metrics:
-            print("No valid CV folds for learnability diagnostics (insufficient data or degenerate labels).")
-            return
-
-        aucs = np.array([m["auc"] for m in fold_metrics], dtype=float)
-        mean_auc = float(np.nanmean(aucs))
-        std_auc = float(np.nanstd(aucs))
-        learnability = float(mean_auc - 0.5 * std_auc)
-        balance = compute_label_entropy_score(pd.to_numeric(y, errors="coerce"))
-        combined = float(0.7 * learnability + 0.3 * balance)
-        diagnostics = {
-            "mode": "label_based_meta_prob",
-            "folds": fold_metrics,
-            "mean_auc": mean_auc,
-            "std_auc": std_auc,
-        }
-    else:
-        X, y = _build_feature_matrix_from_labeled(df, direction=direction)
-
-        learnability, mean_auc = compute_learnability_score(X, y, cv_splits=cv_splits)
-        balance = compute_label_entropy_score(y)
-        combined, diagnostics = combined_label_quality_objective(
-            X,
-            y,
-            learnability_weight=0.7,
-            balance_weight=0.3,
-            cv_splits=cv_splits,
-        )
+    learnability, mean_auc = compute_learnability_score(X, y, cv_splits=cv_splits)
+    balance = compute_label_entropy_score(y)
+    combined, diagnostics = combined_label_quality_objective(
+        X,
+        y,
+        learnability_weight=0.7,
+        balance_weight=0.3,
+        cv_splits=cv_splits,
+    )
 
     n_valid = int((~y.isna()).sum())
     pos_rate = float(y.mean()) if n_valid > 0 else 0.0
@@ -2372,7 +1516,6 @@ def run_label_learnability(
         model=model,
         payload=payload,
         markdown_lines=md_lines,
-        outcomes_dir=outcomes_dir,
     )
 
     print(f"\nReports saved to: {json_path} and {md_path}")
@@ -2382,6 +1525,7 @@ def run_label_learnability(
 # Model-robustness diagnostics
 # --------------------------------------------------------------------------------------
 
+
 def run_model_robustness(
     symbol: str,
     exchange: str,
@@ -2389,145 +1533,118 @@ def run_model_robustness(
     direction: str = "long",
     model: str = "analyst",
     cv_splits: int = 5,
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> None:
     """Run a probe LightGBM model with time-series CV to assess robustness.
 
     Reports per-fold AUC, Brier score, PR-AUC, and summary statistics.
     """
-    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model, outcomes_dir=outcomes_dir)
+    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
+    X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
-    if _is_label_based_df(df) and "meta_probability" in df.columns:
-        y = df.get("binary_label_long") if direction == "long" else df.get("binary_label_short")
-        if y is None:
-            y = df.get("binary_label")
-        if y is None:
-            raise ValueError("label_based inputs must contain binary_label")
-        p = df["meta_probability"]
+    y_array = y.values.astype(float)
+    X_array = X.values.astype(float)
 
-        fold_metrics, y_all, p_all, p_base_all = _compute_prob_fold_metrics(y, p, cv_splits=cv_splits)
-        if not fold_metrics:
-            print("No valid CV folds for robustness diagnostics (insufficient data or degenerate labels).")
-            return
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
 
-        for m in fold_metrics:
-            m["auc_logistic"] = float("nan")
-            m["brier_logistic"] = float("nan")
-            m["ap_logistic"] = float("nan")
+    fold_metrics = []
+    all_y_true = []
+    all_p_pred = []
+    all_p_baseline = []
+    for fold_idx, (tr_idx, te_idx) in enumerate(tscv.split(X_array), start=1):
+        X_tr, X_te = X_array[tr_idx], X_array[te_idx]
+        y_tr, y_te = y_array[tr_idx], y_array[te_idx]
 
-        X = pd.DataFrame(index=df.index)
-        model_family_comment = "Not applicable in label_based mode (no probe model training)."
-    else:
-        X, y = _build_feature_matrix_from_labeled(df, direction=direction)
+        # Require both classes in train and test for meaningful AUC
+        if len(np.unique(y_tr[~np.isnan(y_tr)])) < 2 or len(np.unique(y_te[~np.isnan(y_te)])) < 2:
+            continue
 
-        y_array = y.values.astype(float)
-        X_array = X.values.astype(float)
+        # Clean NaNs in labels consistently between X and y
+        mask_tr = ~np.isnan(y_tr)
+        y_tr_clean = y_tr[mask_tr]
+        X_tr_clean = X_tr[mask_tr]
+        mask_te = ~np.isnan(y_te)
+        y_te_clean = y_te[mask_te]
+        X_te_clean = X_te[mask_te]
 
-        tscv = TimeSeriesSplit(n_splits=cv_splits)
+        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+            continue
 
-        fold_metrics = []
-        all_y_true = []
-        all_p_pred = []
-        all_p_baseline = []
-        for fold_idx, (tr_idx, te_idx) in enumerate(tscv.split(X_array), start=1):
-            X_tr, X_te = X_array[tr_idx], X_array[te_idx]
-            y_tr, y_te = y_array[tr_idx], y_array[te_idx]
+        clf = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=50,
+            learning_rate=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            min_child_samples=20,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42,
+        )
 
-            if len(np.unique(y_tr[~np.isnan(y_tr)])) < 2 or len(np.unique(y_te[~np.isnan(y_te)])) < 2:
-                continue
+        clf.fit(X_tr_clean, y_tr_clean)
+        prob = clf.predict_proba(X_te_clean)[:, 1]
 
-            mask_tr = ~np.isnan(y_tr)
-            y_tr_clean = y_tr[mask_tr]
-            X_tr_clean = X_tr[mask_tr]
-            mask_te = ~np.isnan(y_te)
-            y_te_clean = y_te[mask_te]
-            X_te_clean = X_te[mask_te]
+        # Logistic regression model for model-family comparison
+        log_clf = LogisticRegression(solver="lbfgs", max_iter=200)
+        log_clf.fit(X_tr_clean, y_tr_clean)
+        log_prob = log_clf.predict_proba(X_te_clean)[:, 1]
 
-            if len(y_tr_clean) < 20 or len(y_te_clean) < 10:
-                continue
+        # Naive baseline: constant probability equal to training positive rate
+        pos_rate_tr = float(np.nanmean(y_tr_clean)) if len(y_tr_clean) > 0 else 0.5
+        baseline_prob = np.full_like(prob, fill_value=pos_rate_tr, dtype=float)
 
-            clf = lgb.LGBMClassifier(
-                boosting_type="gbdt",
-                objective="binary",
-                max_depth=3,
-                n_estimators=50,
-                learning_rate=0.1,
-                subsample=0.7,
-                colsample_bytree=0.7,
-                min_child_samples=20,
-                n_jobs=-1,
-                verbose=-1,
-                random_state=42,
-            )
+        all_y_true.append(y_te_clean)
+        all_p_pred.append(prob)
+        all_p_baseline.append(baseline_prob)
 
-            clf.fit(X_tr_clean, y_tr_clean)
-            prob = clf.predict_proba(X_te_clean)[:, 1]
+        try:
+            auc = roc_auc_score(y_te_clean, prob)
+        except Exception:
+            auc = float("nan")
 
-            log_clf = LogisticRegression(solver="lbfgs", max_iter=200)
-            log_clf.fit(X_tr_clean, y_tr_clean)
-            log_prob = log_clf.predict_proba(X_te_clean)[:, 1]
+        try:
+            brier = brier_score_loss(y_te_clean, prob)
+        except Exception:
+            brier = float("nan")
 
-            pos_rate_tr = float(np.nanmean(y_tr_clean)) if len(y_tr_clean) > 0 else 0.5
-            baseline_prob = np.full_like(prob, fill_value=pos_rate_tr, dtype=float)
+        try:
+            ap = average_precision_score(y_te_clean, prob)
+        except Exception:
+            ap = float("nan")
 
-            all_y_true.append(y_te_clean)
-            all_p_pred.append(prob)
-            all_p_baseline.append(baseline_prob)
+        # Logistic regression metrics
+        try:
+            auc_log = roc_auc_score(y_te_clean, log_prob)
+        except Exception:
+            auc_log = float("nan")
 
-            try:
-                auc = roc_auc_score(y_te_clean, prob)
-            except Exception:
-                auc = float("nan")
+        try:
+            brier_log = brier_score_loss(y_te_clean, log_prob)
+        except Exception:
+            brier_log = float("nan")
 
-            try:
-                brier = brier_score_loss(y_te_clean, prob)
-            except Exception:
-                brier = float("nan")
+        try:
+            ap_log = average_precision_score(y_te_clean, log_prob)
+        except Exception:
+            ap_log = float("nan")
 
-            try:
-                ap = average_precision_score(y_te_clean, prob)
-            except Exception:
-                ap = float("nan")
+        fold_metrics.append({
+            "fold": fold_idx,
+            "n_train": int(len(y_tr_clean)),
+            "n_test": int(len(y_te_clean)),
+            "auc": float(auc) if np.isfinite(auc) else float("nan"),
+            "brier": float(brier) if np.isfinite(brier) else float("nan"),
+            "ap": float(ap) if np.isfinite(ap) else float("nan"),
+            "auc_logistic": float(auc_log) if np.isfinite(auc_log) else float("nan"),
+            "brier_logistic": float(brier_log) if np.isfinite(brier_log) else float("nan"),
+            "ap_logistic": float(ap_log) if np.isfinite(ap_log) else float("nan"),
+        })
 
-            try:
-                auc_log = roc_auc_score(y_te_clean, log_prob)
-            except Exception:
-                auc_log = float("nan")
-
-            try:
-                brier_log = brier_score_loss(y_te_clean, log_prob)
-            except Exception:
-                brier_log = float("nan")
-
-            try:
-                ap_log = average_precision_score(y_te_clean, log_prob)
-            except Exception:
-                ap_log = float("nan")
-
-            fold_metrics.append({
-                "fold": fold_idx,
-                "n_train": int(len(y_tr_clean)),
-                "n_test": int(len(y_te_clean)),
-                "auc": float(auc) if np.isfinite(auc) else float("nan"),
-                "brier": float(brier) if np.isfinite(brier) else float("nan"),
-                "ap": float(ap) if np.isfinite(ap) else float("nan"),
-                "auc_logistic": float(auc_log) if np.isfinite(auc_log) else float("nan"),
-                "brier_logistic": float(brier_log) if np.isfinite(brier_log) else float("nan"),
-                "ap_logistic": float(ap_log) if np.isfinite(ap_log) else float("nan"),
-            })
-
-        if not fold_metrics:
-            print("No valid CV folds for robustness diagnostics (insufficient data or degenerate labels).")
-            return
-
-        if all_y_true:
-            y_all = np.concatenate(all_y_true)
-            p_all = np.concatenate(all_p_pred)
-            p_base_all = np.concatenate(all_p_baseline)
-        else:
-            y_all = np.array([])
-            p_all = np.array([])
-            p_base_all = np.array([])
+    if not fold_metrics:
+        print("No valid CV folds for robustness diagnostics (insufficient data or degenerate labels).")
+        return
 
     aucs = np.array([m["auc"] for m in fold_metrics], dtype=float)
     briers = np.array([m["brier"] for m in fold_metrics], dtype=float)
@@ -2554,6 +1671,14 @@ def run_model_robustness(
     stability_score = 1.0 - (std_auc / (mean_auc + 1e-9)) if np.isfinite(mean_auc) else 0.0
 
     # Aggregate predictions across folds for advanced diagnostics
+    if all_y_true:
+        y_all = np.concatenate(all_y_true)
+        p_all = np.concatenate(all_p_pred)
+        p_base_all = np.concatenate(all_p_baseline)
+    else:
+        y_all = np.array([])
+        p_all = np.array([])
+        p_base_all = np.array([])
 
     pseudo_r2 = float("nan")
     model_snr = float("nan")
@@ -2699,55 +1824,10 @@ def run_model_robustness(
                 pseudo_r2_ci_low = float(np.percentile(boot_arr, 2.5))
                 pseudo_r2_ci_high = float(np.percentile(boot_arr, 97.5))
 
-    if _is_label_based_df(df):
-        label_shuffle_metrics = {"n_folds": 0}
-        try:
-            if y_all.size >= 50 and p_all.size == y_all.size:
-                rng = np.random.default_rng(42)
-                perm_aucs = []
-                for _ in range(200):
-                    y_perm = rng.permutation(y_all)
-                    try:
-                        perm_auc = roc_auc_score(y_perm, p_all)
-                        if np.isfinite(perm_auc):
-                            perm_aucs.append(float(perm_auc))
-                    except Exception:
-                        continue
-                if perm_aucs:
-                    label_shuffle_metrics = {
-                        "n_folds": int(len(perm_aucs)),
-                        "mean_auc": float(np.mean(perm_aucs)),
-                        "std_auc": float(np.std(perm_aucs)),
-                    }
-        except Exception:
-            pass
-
-        strict_holdout_metrics = {"n_test": 0}
-        try:
-            if y_all.size > 0:
-                holdout_fraction = 0.3
-                split = int((1.0 - holdout_fraction) * y_all.size)
-                y_te = y_all[split:]
-                p_te = p_all[split:]
-                mask = np.isfinite(y_te) & np.isfinite(p_te)
-                y_te = y_te[mask]
-                p_te = p_te[mask]
-                if y_te.size > 0 and np.unique(y_te).size >= 2:
-                    strict_holdout_metrics = {
-                        "n_train": int(split),
-                        "n_test": int(y_te.size),
-                        "auc": float(roc_auc_score(y_te, p_te)),
-                        "brier": float(brier_score_loss(y_te, p_te)),
-                        "ap": float(average_precision_score(y_te, p_te)),
-                    }
-        except Exception:
-            pass
-
-        single_feature_leakage = {"max_auc": None, "auc_threshold": None}
-    else:
-        label_shuffle_metrics = _run_label_shuffle_cv(X, y, cv_splits=cv_splits)
-        strict_holdout_metrics = _compute_strict_holdout_metrics(X, y)
-        single_feature_leakage = _scan_single_feature_leakage(X, y)
+    # Label-shuffle CV, strict holdout, and single-feature leakage scan
+    label_shuffle_metrics = _run_label_shuffle_cv(X, y, cv_splits=cv_splits)
+    strict_holdout_metrics = _compute_strict_holdout_metrics(X, y)
+    single_feature_leakage = _scan_single_feature_leakage(X, y)
 
     # NEW: Compute enhanced diagnostics
     regime_aucs = {}
@@ -2782,7 +1862,6 @@ def run_model_robustness(
                     temporal_auc_data["temporal_aucs"],
                     symbol,
                     timeframe,
-                    outcomes_dir=outcomes_dir,
                 )
     except Exception as e:
         logger.warning(f"Failed to compute regime AUC breakdown: {e}")
@@ -2800,19 +1879,19 @@ def run_model_robustness(
     except Exception as e:
         logger.warning(f"Failed to estimate label noise: {e}")
 
-    if not _is_label_based_df(df):
-        model_family_comment = "N/A"
-        if np.isfinite(mean_auc) and np.isfinite(mean_auc_log):
-            diff = mean_auc - mean_auc_log
-            if diff > 0.02:
-                model_family_comment = "Nonlinear (LightGBM) >> linear (Logistic); real nonlinear structure present."
-            elif diff < -0.02:
-                model_family_comment = "Linear >> nonlinear; tree model may be overfitting or mis-specified."
+    # Model family comparison comment (LightGBM vs LogisticRegression)
+    model_family_comment = "N/A"
+    if np.isfinite(mean_auc) and np.isfinite(mean_auc_log):
+        diff = mean_auc - mean_auc_log
+        if diff > 0.02:
+            model_family_comment = "Nonlinear (LightGBM) >> linear (Logistic); real nonlinear structure present."
+        elif diff < -0.02:
+            model_family_comment = "Linear >> nonlinear; tree model may be overfitting or mis-specified."
+        else:
+            if mean_auc >= 0.6 and mean_auc_log >= 0.6:
+                model_family_comment = "All models perform similarly well; problem is stable and well-posed."
             else:
-                if mean_auc >= 0.6 and mean_auc_log >= 0.6:
-                    model_family_comment = "All models perform similarly well; problem is stable and well-posed."
-                else:
-                    model_family_comment = "All models perform similarly poorly; target has low intrinsic predictability."
+                model_family_comment = "All models perform similarly poorly; target has low intrinsic predictability."
 
     # Interpretation helpers for robustness
     if mean_auc < 0.55:
@@ -2879,8 +1958,9 @@ def run_model_robustness(
         return f"{float(value):.{digits}f}"
 
     # Console output
-    header = "Model-Robustness Diagnostics (Layer3 OOF meta_probability)" if _is_label_based_df(df) else "Model-Robustness Diagnostics (Probe LightGBM)"
-    print(f"\n=== {header} ===".strip())
+    print("""
+=== Model-Robustness Diagnostics (Probe LightGBM) ===
+""".strip())
     print(f"Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}")
     print(f"Folds evaluated: {len(fold_metrics)} (requested: {cv_splits})")
     print()
@@ -3000,8 +2080,8 @@ def run_model_robustness(
     print()
     print("-- Feature Importance Stability Analysis --")
     if feature_importance_data.get("top_features"):
-        print(f"  Feature importance std (across CV folds): {feature_importance_data['feature_importance_std']:.4f}")
-        print(f"  Importance concentration (top 20 features): {feature_importance_data['importance_concentration']:.1%}")
+        print(f"  Feature importance std: {feature_importance_data['feature_importance_std']:.4f}")
+        print(f"  Importance concentration: {feature_importance_data['importance_concentration']:.1%}")
         print("  Top 5 features:")
         for feat in feature_importance_data["top_features"][:5]:
             feat_idx = feat.get("feature_idx", "?")
@@ -3236,7 +2316,6 @@ def run_model_robustness(
         model=model,
         payload=payload,
         markdown_lines=md_lines,
-        outcomes_dir=outcomes_dir,
     )
 
     print(f"\nReports saved to: {json_path} and {md_path}")
@@ -3245,6 +2324,7 @@ def run_model_robustness(
 # --------------------------------------------------------------------------------------
 # Trading simulation diagnostics
 # --------------------------------------------------------------------------------------
+
 
 def run_trading_simulation(
     symbol: str,
@@ -3255,13 +2335,12 @@ def run_trading_simulation(
     prob_column: str = "meta_probability",
     prob_thresholds: Optional[List[float]] = None,
     cv_splits: int = 5,
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> None:
     """Run trading simulation diagnostics with calibration and threshold analysis.
 
     Computes:
     - Model calibration (Brier score, calibration curves)
-    - Trading metrics at different probability thresholds (0.60, 0.65, 0.70, 0.75):
+    - Trading metrics at different probability thresholds (0.55, 0.60, 0.65):
       - Trades per day
       - PnL per day (average, percentage)
       - Simplified equity curve simulation
@@ -3269,34 +2348,13 @@ def run_trading_simulation(
       - Win-rate stability
     """
     if prob_thresholds is None:
-        prob_thresholds = [0.60, 0.65, 0.70, 0.75]
+        prob_thresholds = [0.50, 0.55, 0.60, 0.65]
 
-    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model, outcomes_dir=outcomes_dir)
+    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
     X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
     if prob_column not in df.columns:
-        # Auto-fallback: prefer ensemble / bagged outputs if meta_probability is absent.
-        fallback_cols = [
-            "meta_probability",
-            "meta_probability_ensemble",
-            "meta_probability_lgbm_bag_mean",
-            "meta_probability_lgbm_bag_lower",
-        ]
-        chosen = None
-        for c in fallback_cols:
-            if c in df.columns:
-                chosen = c
-                break
-        if chosen is None:
-            raise ValueError(
-                f"labeled_data must contain '{prob_column}' (or one of {fallback_cols}) column for trading simulation"
-            )
-        logger.warning(
-            "prob_column '%s' not found; falling back to '%s' for trading simulation",
-            prob_column,
-            chosen,
-        )
-        prob_column = chosen
+        raise ValueError(f"labeled_data must contain '{prob_column}' column for trading simulation")
     if "realized_return" not in df.columns:
         raise ValueError("labeled_data must contain 'realized_return' column for trading simulation")
 
@@ -3333,7 +2391,7 @@ def run_trading_simulation(
         valid_mask = valid_mask & binary_labels.notna()
 
     n_valid = int(valid_mask.sum())
-    if n_valid < 20:
+    if n_valid < 50:
         print(f"Insufficient valid samples ({n_valid}) for trading simulation diagnostics.")
         return
 
@@ -3342,26 +2400,74 @@ def run_trading_simulation(
     labels_valid = binary_labels[valid_mask].values if binary_labels is not None else None
 
     # -------------------------------------------------------------------------
-    # 1. Model Calibration Diagnostics (Production Model)
+    # 1. Model Calibration Diagnostics
     # -------------------------------------------------------------------------
 
-    # Use the production model probabilities (prob_valid) and corresponding labels (labels_valid)
-    # We skip fitting a probe model here because we want to diagnose the existing meta_probability.
+    # Train a probe model and get predictions for calibration analysis
+    y_array = y.values.astype(float)
+    X_array = X.values.astype(float)
 
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
+
+    all_y_true = []
+    all_p_pred = []
+
+    for fold_idx, (tr_idx, te_idx) in enumerate(tscv.split(X_array), start=1):
+        X_tr, X_te = X_array[tr_idx], X_array[te_idx]
+        y_tr, y_te = y_array[tr_idx], y_array[te_idx]
+
+        # Require both classes in train and test
+        if len(np.unique(y_tr[~np.isnan(y_tr)])) < 2 or len(np.unique(y_te[~np.isnan(y_te)])) < 2:
+            continue
+
+        mask_tr = ~np.isnan(y_tr)
+        y_tr_clean = y_tr[mask_tr]
+        X_tr_clean = X_tr[mask_tr]
+        mask_te = ~np.isnan(y_te)
+        y_te_clean = y_te[mask_te]
+        X_te_clean = X_te[mask_te]
+
+        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+            continue
+
+        clf = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=50,
+            learning_rate=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            min_child_samples=20,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42,
+        )
+
+        clf.fit(X_tr_clean, y_tr_clean)
+        prob = clf.predict_proba(X_te_clean)[:, 1]
+
+        all_y_true.append(y_te_clean)
+        all_p_pred.append(prob)
+
+    # Aggregate predictions for calibration
     calibration_metrics = {}
     calibration_curve_data = {}
 
-    if labels_valid is not None and len(labels_valid) > 0:
-        # Brier score (Production Model)
+    if all_y_true:
+        y_all = np.concatenate(all_y_true)
+        p_all = np.concatenate(all_p_pred)
+
+        # Brier score
         try:
-            brier = float(brier_score_loss(labels_valid, prob_valid))
+            brier = float(brier_score_loss(y_all, p_all))
         except Exception:
             brier = float("nan")
 
         # Calibration curve (reliability diagram data)
         try:
             fraction_of_positives, mean_predicted_value = calibration_curve(
-                labels_valid, prob_valid, n_bins=10, strategy='uniform'
+                y_all, p_all, n_bins=10, strategy='uniform'
             )
             calibration_curve_data = {
                 "fraction_of_positives": [float(x) for x in fraction_of_positives],
@@ -3369,11 +2475,11 @@ def run_trading_simulation(
             }
 
             # Expected Calibration Error (ECE)
-            bin_counts = np.histogram(prob_valid, bins=10, range=(0, 1))[0]
+            bin_counts = np.histogram(p_all, bins=10, range=(0, 1))[0]
             ece = 0.0
             for i in range(len(fraction_of_positives)):
                 if i < len(bin_counts) and bin_counts[i] > 0:
-                    ece += (bin_counts[i] / len(prob_valid)) * abs(fraction_of_positives[i] - mean_predicted_value[i])
+                    ece += (bin_counts[i] / len(p_all)) * abs(fraction_of_positives[i] - mean_predicted_value[i])
 
             # Maximum Calibration Error (MCE)
             mce = float(np.max(np.abs(fraction_of_positives - mean_predicted_value)))
@@ -3386,8 +2492,7 @@ def run_trading_simulation(
             "brier_score": brier,
             "expected_calibration_error": float(ece) if np.isfinite(ece) else float("nan"),
             "max_calibration_error": float(mce) if np.isfinite(mce) else float("nan"),
-            "n_samples": int(len(labels_valid)),
-            "isotonic_calibration_applied": False,
+            "n_samples": int(len(y_all)),
         }
     else:
         calibration_metrics = {
@@ -3395,39 +2500,11 @@ def run_trading_simulation(
             "expected_calibration_error": float("nan"),
             "max_calibration_error": float("nan"),
             "n_samples": 0,
-            "isotonic_calibration_applied": False,
         }
-
-    # --- Profit by Probability Bucket (Attribution) ---
-    buckets = [
-        (0.5, 0.6, "[0.5, 0.6)"),
-        (0.6, 0.7, "[0.6, 0.7)"),
-        (0.7, 0.8, "[0.7, 0.8)"),
-        (0.8, 1.0, "[0.8, 1.0]")
-    ]
-    profit_attribution = []
-    for low, high, label in buckets:
-        mask = (prob_valid >= low) & (prob_valid < high) if high < 1.0 else (prob_valid >= low)
-        n_in_bucket = int(mask.sum())
-        if n_in_bucket > 0:
-            avg_ret = float(np.mean(returns_valid[mask]))
-            total_ret = float(np.sum(returns_valid[mask]))
-            win_rate = float(np.mean(labels_valid[mask] == 1.0)) if labels_valid is not None else float(np.mean(returns_valid[mask] > 0))
-            profit_attribution.append({
-                "bucket": label,
-                "n_samples": n_in_bucket,
-                "avg_return": avg_ret,
-                "total_return": total_ret,
-                "win_rate": win_rate
-            })
 
     # -------------------------------------------------------------------------
     # 2. Trading Simulation at Different Probability Thresholds
     # -------------------------------------------------------------------------
-    
-    # Use raw probabilities for trading simulation to assess actual ranking power
-    prob_trading = prob_valid
-    logger.info("Using raw production probabilities for trading simulation (no cross-model calibration)")
 
     threshold_results = {}
     best_gate_info: Optional[dict] = None
@@ -3435,8 +2512,8 @@ def run_trading_simulation(
     regime_gating_cfg: dict = {}
 
     for threshold in prob_thresholds:
-        # Filter events passing the threshold (using calibrated probabilities)
-        trade_mask = prob_trading >= threshold
+        # Filter events passing the threshold
+        trade_mask = prob_valid >= threshold
         n_trades = int(trade_mask.sum())
 
         if n_trades < 10:
@@ -3888,14 +2965,6 @@ def run_trading_simulation(
     print(f"Max Calibration Error (MCE): {calibration_metrics.get('max_calibration_error', float('nan')):.4f}")
     print()
 
-    print("-- Profit Attribution by Probability Bucket --")
-    if profit_attribution:
-        for pa in profit_attribution:
-            print(f"  {pa['bucket']}: n={pa['n_samples']} | AvgRet={pa['avg_return']*100:.4f}% | WinRate={pa['win_rate']*100:.1f}%")
-    else:
-        print("  (No attribution data available)")
-    print()
-
     print("-- Trading Metrics by Probability Threshold --")
     print()
 
@@ -3934,7 +3003,6 @@ def run_trading_simulation(
         "n_valid_samples": int(n_valid),
         "calibration": calibration_metrics,
         "calibration_curve": calibration_curve_data,
-        "profit_attribution": profit_attribution,
         "threshold_results": threshold_results,
     }
     if regime_threshold_results:
@@ -3951,7 +3019,6 @@ def run_trading_simulation(
         f"**Exchange**: {exchange}",
         f"**Timeframe**: {timeframe}",
         f"**Direction**: {direction}",
-        f"**Model**: {model}",
         "",
         "## Overview",
         f"- Date range: {date_range_days} days",
@@ -3966,21 +3033,9 @@ def run_trading_simulation(
         f"- {brier_comment}",
         f"- {ece_comment}",
         "",
-        "## Profit Attribution by Probability Bucket",
-        "",
-        "| Bucket | Samples | Avg Return | Total Return | Win Rate |",
-        "|--------|---------|------------|--------------|----------|",
-    ]
-    for pa in profit_attribution:
-        md_lines.append(
-            f"| {pa['bucket']} | {pa['n_samples']} | {pa['avg_return']*100:.4f}% | "
-            f"{pa['total_return']*100:.3f}% | {pa['win_rate']*100:.1f}% |"
-        )
-    md_lines.extend([
-        "",
         "## Trading Metrics by Probability Threshold",
         "",
-    ])
+    ]
 
     # Add threshold results to markdown
     for key in sorted(threshold_results.keys()):
@@ -4069,7 +3124,6 @@ def run_trading_simulation(
         model=model,
         payload=payload,
         markdown_lines=md_lines,
-        outcomes_dir=outcomes_dir,
     )
 
     print(f"\nReports saved to: {json_path} and {md_path}")
@@ -4085,7 +3139,6 @@ def run_full(
     cv_splits_robust: int = 5,
     prob_column: str = "meta_probability",
     prob_thresholds: Optional[List[float]] = None,
-    outcomes_dir: Optional[Union[str, Path]] = None,
 ) -> None:
     _LAST_EXPORTS.clear()
 
@@ -4095,7 +3148,6 @@ def run_full(
         timeframe=timeframe,
         direction=direction,
         model=model,
-        outcomes_dir=outcomes_dir,
     )
 
     run_label_learnability(
@@ -4105,7 +3157,6 @@ def run_full(
         direction=direction,
         model=model,
         cv_splits=cv_splits_learn,
-        outcomes_dir=outcomes_dir,
     )
 
     run_model_robustness(
@@ -4115,7 +3166,6 @@ def run_full(
         direction=direction,
         model=model,
         cv_splits=cv_splits_robust,
-        outcomes_dir=outcomes_dir,
     )
 
     run_trading_simulation(
@@ -4127,7 +3177,6 @@ def run_full(
         prob_column=prob_column,
         prob_thresholds=prob_thresholds,
         cv_splits=cv_splits_robust,
-        outcomes_dir=outcomes_dir,
     )
 
     required_prefixes = [
@@ -4227,7 +3276,7 @@ def run_full(
         f"- Probe global AUC (all folds combined): {_fmt_float(mr_global_auc, digits=4)}",
         f"- Probe pseudo-R^2 (y vs predicted prob): {_fmt_float(mr_pseudo_r2, digits=4)}",
         f"- Probe permutation p-value (AUC): {_fmt_float(mr_perm_p, digits=3)}",
-        f"- Model-level SNR (p_hat pos vs neg): {_fmt_float(mr_pseudo_r2, digits=4)}",
+        f"- Probe vs baseline ΔAUC: {_fmt_float(mr_delta_auc, digits=4)}, ΔBrier (baseline - probe): {_fmt_float(mr_delta_brier, digits=4)}, ΔAP: {_fmt_float(mr_delta_ap, digits=4)}",
         "",
         f"- Label-quality summary score: {_fmt_float(lq_score, digits=3)} (Rating: {lq_rating or 'N/A'})",
         f"- Learnability summary score: {_fmt_float(ll_score, digits=3)} (Rating: {ll_rating or 'N/A'})",
@@ -4349,15 +3398,339 @@ def run_full(
         model=model,
         payload=combined_payload,
         markdown_lines=md_lines,
-        outcomes_dir=outcomes_dir,
     )
 
     print(f"\nFull diagnostics report saved to: {json_path} and {md_path}")
 
 
 # --------------------------------------------------------------------------------------
+# Feature Set Comparison (2025-12-08)
+# --------------------------------------------------------------------------------------
+
+
+def _load_feature_set_results(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """Load multi-feature-set results from outcomes directory."""
+    import glob
+    
+    outcomes_dir = Path("outcomes")
+    pattern = f"multi_feature_set_results_{symbol}_{timeframe}_*.json"
+    
+    files = sorted(glob.glob(str(outcomes_dir / pattern)), reverse=True)
+    if not files:
+        logger.warning(f"No feature set results found for {symbol} {timeframe}")
+        return None
+    
+    # Load latest results
+    latest_file = files[0]
+    try:
+        with open(latest_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load feature set results: {e}")
+        return None
+
+
+def _compute_metrics_for_feature_set(
+    df: pd.DataFrame,
+    feature_list: List[str],
+    direction: str = "long",
+    cv_splits: int = 5,
+) -> Dict[str, Any]:
+    """Compute key metrics for a specific feature set."""
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    # Get labels
+    if direction == "long" and "binary_label_long" in df.columns:
+        y = df["binary_label_long"]
+    elif direction == "short" and "binary_label_short" in df.columns:
+        y = df["binary_label_short"]
+    elif "binary_label" in df.columns:
+        y = df["binary_label"]
+    else:
+        return {"error": "No binary labels found"}
+    
+    # Get realized returns
+    ret_col = "realized_return"
+    if ret_col not in df.columns:
+        ret_col = "realized_return_long" if direction == "long" else "realized_return_short"
+    
+    if ret_col not in df.columns:
+        realized_returns = None
+    else:
+        realized_returns = df[ret_col]
+    
+    # Filter to features that exist in the dataframe
+    available_features = [f for f in feature_list if f in df.columns]
+    if len(available_features) < 10:
+        return {"error": f"Only {len(available_features)} features available"}
+    
+    X = df[available_features].fillna(0)
+    
+    # Clean data
+    valid_mask = ~y.isna()
+    X_clean = X[valid_mask]
+    y_clean = y[valid_mask]
+    
+    if len(y_clean) < 100:
+        return {"error": "Too few samples"}
+    
+    # Run CV
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
+    aucs = []
+    briers = []
+    
+    for tr_idx, te_idx in tscv.split(X_clean):
+        X_tr = X_clean.iloc[tr_idx]
+        X_te = X_clean.iloc[te_idx]
+        y_tr = y_clean.iloc[tr_idx]
+        y_te = y_clean.iloc[te_idx]
+        
+        if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+            continue
+        
+        try:
+            clf = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                max_depth=4,
+                n_estimators=100,
+                learning_rate=0.05,
+                verbosity=-1,
+                random_state=42,
+            )
+            clf.fit(X_tr, y_tr)
+            prob = clf.predict_proba(X_te)[:, 1]
+            
+            aucs.append(roc_auc_score(y_te, prob))
+            briers.append(brier_score_loss(y_te, prob))
+        except Exception:
+            continue
+    
+    if not aucs:
+        return {"error": "CV failed"}
+    
+    # Compute generalization gap (train AUC - test AUC)
+    train_aucs = []
+    for tr_idx, te_idx in tscv.split(X_clean):
+        X_tr = X_clean.iloc[tr_idx]
+        y_tr = y_clean.iloc[tr_idx]
+        
+        if len(np.unique(y_tr)) < 2:
+            continue
+        
+        try:
+            clf = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                max_depth=4,
+                n_estimators=100,
+                learning_rate=0.05,
+                verbosity=-1,
+                random_state=42,
+            )
+            clf.fit(X_tr, y_tr)
+            prob_tr = clf.predict_proba(X_tr)[:, 1]
+            train_aucs.append(roc_auc_score(y_tr, prob_tr))
+        except Exception:
+            continue
+    
+    generalization_gap = np.mean(train_aucs) - np.mean(aucs) if train_aucs and aucs else 0.0
+    
+    return {
+        "n_features": len(available_features),
+        "n_samples": len(y_clean),
+        "mean_auc": float(np.mean(aucs)),
+        "std_auc": float(np.std(aucs)),
+        "mean_brier": float(np.mean(briers)),
+        "generalization_gap": float(generalization_gap),
+        "cv_folds": len(aucs),
+    }
+
+
+def run_feature_set_comparison(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str = "long",
+    model: str = "analyst",
+) -> Dict[str, Any]:
+    """
+    Compare metrics across different feature sets (50/60/70/80 features).
+    
+    This function:
+    1. Loads labeled data
+    2. Loads feature set definitions
+    3. Computes metrics for each feature set
+    4. Generates comparison report in markdown and CSV
+    
+    Returns:
+        Dictionary with comparison results
+    """
+    logger.info(f"Running feature set comparison for {symbol} {exchange} {timeframe}")
+    
+    # Load labeled data
+    try:
+        df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
+    except FileNotFoundError as e:
+        logger.error(f"Could not load labeled data: {e}")
+        return {"error": str(e)}
+    
+    # Load feature set definitions
+    from .lgbm_feature_selection import FeatureSetPersistence
+    persistence = FeatureSetPersistence()
+    
+    feature_sets_data = persistence.load_feature_sets(exchange, symbol)
+    if feature_sets_data is None:
+        logger.warning("No persisted feature sets found, using default sizes")
+        feature_sets_data = {"feature_sets": {}}
+    
+    feature_sets = feature_sets_data.get("feature_sets", {})
+    
+    # If no feature sets exist, build from numeric columns
+    if not feature_sets:
+        logger.info("Building feature sets from available columns")
+        numeric = df.select_dtypes(include=[np.number])
+        all_features = [c for c in numeric.columns if not any(
+            pat in c.lower() for pat in ["target", "label", "return", "meta_probability", "sample_weight"]
+        )]
+        
+        for size in [80, 70, 60, 50]:
+            feature_sets[str(size)] = {
+                "features": all_features[:size] if len(all_features) >= size else all_features
+            }
+    
+    # Compute metrics for each feature set
+    comparison_results = {}
+    for size_str, fs_data in feature_sets.items():
+        features = fs_data.get("features", [])
+        if not features:
+            continue
+        
+        size = int(size_str)
+        logger.info(f"Computing metrics for {size}-feature set ({len(features)} features)")
+        
+        metrics = _compute_metrics_for_feature_set(
+            df=df,
+            feature_list=features,
+            direction=direction,
+        )
+        
+        comparison_results[size] = metrics
+    
+    # Generate comparison report
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    
+    # Markdown report
+    md_lines = [
+        f"# Feature Set Comparison Report",
+        f"",
+        f"**Symbol**: {symbol}",
+        f"**Exchange**: {exchange}",
+        f"**Timeframe**: {timeframe}",
+        f"**Direction**: {direction}",
+        f"**Generated**: {ts}",
+        f"",
+        f"## Summary",
+        f"",
+        f"| Feature Set | N Features | Mean AUC | Std AUC | Mean Brier | Generalization Gap |",
+        f"|-------------|------------|----------|---------|------------|-------------------|",
+    ]
+    
+    for size in sorted(comparison_results.keys(), reverse=True):
+        metrics = comparison_results[size]
+        if "error" in metrics:
+            md_lines.append(f"| {size} | - | - | - | - | {metrics['error']} |")
+        else:
+            md_lines.append(
+                f"| {size} | {metrics['n_features']} | "
+                f"{metrics['mean_auc']:.4f} | {metrics['std_auc']:.4f} | "
+                f"{metrics['mean_brier']:.4f} | {metrics['generalization_gap']:.4f} |"
+            )
+    
+    md_lines.extend([
+        f"",
+        f"## Interpretation",
+        f"",
+        f"- **Mean AUC**: Higher is better (target: 0.55-0.67 for prop-shop acceptable range)",
+        f"- **Generalization Gap**: Lower is better (indicates less overfitting)",
+        f"- **Mean Brier**: Lower is better (calibration quality)",
+        f"",
+        f"## Recommendation",
+        f"",
+    ])
+    
+    # Find best feature set
+    valid_results = {k: v for k, v in comparison_results.items() if "error" not in v}
+    if valid_results:
+        # Score based on AUC (higher better) and generalization gap (lower better)
+        scores = {}
+        for size, metrics in valid_results.items():
+            # Normalize: higher AUC is better, lower gap is better
+            auc_score = metrics["mean_auc"]
+            gap_penalty = metrics["generalization_gap"] * 2  # Penalize overfitting
+            scores[size] = auc_score - gap_penalty
+        
+        best_size = max(scores, key=scores.get)
+        md_lines.append(f"Based on the metrics above, the **{best_size}-feature set** is recommended.")
+        md_lines.append(f"")
+        md_lines.append(f"Score breakdown: AUC={valid_results[best_size]['mean_auc']:.4f}, Gap={valid_results[best_size]['generalization_gap']:.4f}")
+    else:
+        md_lines.append("Unable to compute recommendations due to errors in all feature sets.")
+    
+    # Save reports
+    payload = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "comparison_results": comparison_results,
+        "feature_set_metadata": feature_sets_data.get("metadata", {}),
+    }
+    
+    json_path, md_path = _export_report(
+        prefix="feature_set_comparison",
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+        payload=payload,
+        markdown_lines=md_lines,
+    )
+    
+    # Save CSV
+    csv_path = _ensure_outcomes_dir() / f"feature_set_comparison_{symbol}_{timeframe}_{ts}.csv"
+    try:
+        rows = []
+        for size, metrics in comparison_results.items():
+            row = {"feature_set_size": size}
+            row.update(metrics)
+            rows.append(row)
+        
+        csv_df = pd.DataFrame(rows)
+        csv_df.to_csv(csv_path, index=False)
+        logger.info(f"Saved CSV report to {csv_path}")
+    except Exception as e:
+        logger.warning(f"Failed to save CSV: {e}")
+    
+    print(f"\nFeature set comparison report saved to: {json_path} and {md_path}")
+    
+    return {
+        "comparison_results": comparison_results,
+        "json_path": str(json_path),
+        "md_path": str(md_path),
+        "csv_path": str(csv_path),
+    }
+
+
+# --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
+
 
 def _add_common_args(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--symbol", type=str, default="ETHUSDT")
@@ -4365,7 +3738,6 @@ def _add_common_args(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--timeframe", type=str, default="15m")
     sub.add_argument("--direction", type=str, default="long", choices=["long", "short", "both"])
     sub.add_argument("--model", type=str, default="analyst")
-    sub.add_argument("--outcomes-dir", type=str, default="outcomes")
 
 
 def main() -> None:
@@ -4404,6 +3776,10 @@ def main() -> None:
                         help="Name of probability column to use for trading simulation (default: meta_probability)")
     p_full.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
                         help="Probability thresholds to analyze (default: 0.55 0.60 0.65 0.70 0.75 0.80)")
+    
+    # feature-set-comparison (2025-12-08)
+    p_fs_compare = subparsers.add_parser("feature-set-comparison", help="Compare metrics across feature sets (50/60/70/80)")
+    _add_common_args(p_fs_compare)
 
     args = parser.parse_args()
 
@@ -4416,7 +3792,6 @@ def main() -> None:
             timeframe=args.timeframe,
             direction=args.direction,
             model=args.model,
-            outcomes_dir=args.outcomes_dir,
         )
 
     elif args.command == "label-learnability":
@@ -4427,7 +3802,6 @@ def main() -> None:
             direction=args.direction,
             model=args.model,
             cv_splits=args.cv_splits,
-            outcomes_dir=args.outcomes_dir,
         )
 
     elif args.command == "model-robustness":
@@ -4438,7 +3812,6 @@ def main() -> None:
             direction=args.direction,
             model=args.model,
             cv_splits=args.cv_splits,
-            outcomes_dir=args.outcomes_dir,
         )
 
     elif args.command == "trading-simulation":
@@ -4451,7 +3824,6 @@ def main() -> None:
             prob_column=args.prob_column,
             prob_thresholds=args.prob_thresholds,
             cv_splits=args.cv_splits,
-            outcomes_dir=args.outcomes_dir,
         )
 
     elif args.command == "full":
@@ -4465,7 +3837,15 @@ def main() -> None:
             cv_splits_robust=args.cv_splits_robust,
             prob_column=args.prob_column,
             prob_thresholds=args.prob_thresholds,
-            outcomes_dir=args.outcomes_dir,
+        )
+    
+    elif args.command == "feature-set-comparison":
+        run_feature_set_comparison(
+            symbol=args.symbol,
+            exchange=args.exchange,
+            timeframe=args.timeframe,
+            direction=args.direction,
+            model=args.model,
         )
 
 

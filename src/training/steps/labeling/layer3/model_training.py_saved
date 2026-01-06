@@ -1,0 +1,825 @@
+"""
+Layer 3 Model Training
+
+Handles dual-head model training with De Prado compliance.
+Includes: LGBM (gbdt, dart, rf, linear), CatBoost, Ridge
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Any, Optional
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, ExtraTreesClassifier
+from sklearn.linear_model import Ridge
+import lightgbm as lgb
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import roc_auc_score, log_loss
+from scipy.stats import spearmanr
+import logging
+from numba import njit
+from joblib import Parallel, delayed
+
+# CatBoost import (optional)
+try:
+    from catboost import CatBoostClassifier, CatBoostRegressor
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
+
+# Import tprint functions
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    # Fallback print functions
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_lgbm_params(
+    config_section: Optional[Dict[str, Any]],
+    *,
+    boost_type: str,
+    objective: str,
+    classifier: bool = False,
+) -> Dict[str, Any]:
+    """
+    Build LightGBM parameter dictionary using shared defaults and optional overrides.
+    """
+    cfg = config_section or {}
+
+    params: Dict[str, Any] = {
+        'n_estimators': cfg.get('n_estimators', 1000),
+        'max_depth': cfg.get('max_depth', 6),
+        'learning_rate': cfg.get('learning_rate', cfg.get('eta', 0.03)),
+        'reg_lambda': cfg.get('lambda', cfg.get('reg_lambda', 12.0)),
+        'reg_alpha': cfg.get('alpha', cfg.get('reg_alpha', 1.0)),
+        'min_child_weight': cfg.get('min_child_weight', 20),
+        'min_child_samples': cfg.get('min_child_samples', 20),
+        'colsample_bytree': cfg.get('colsample_bytree', 0.6),
+        'n_jobs': cfg.get('n_jobs', 1),
+        'verbose': -1 if str(cfg.get('verbose', -1)).lower() == 'false' else int(cfg.get('verbose', -1)),
+        'boosting_type': boost_type,
+    }
+
+    subsample = cfg.get('subsample', 0.5)
+    if boost_type == 'goss':
+        params['top_rate'] = cfg.get('top_rate', 0.2)
+        params['other_rate'] = cfg.get('other_rate', 0.1)
+    else:
+        params['subsample'] = subsample
+
+    params['objective'] = cfg.get('objective', objective)
+    if classifier:
+        params['metric'] = cfg.get('metric', 'auc')
+    else:
+        params['metric'] = cfg.get('metric', 'mse')
+
+    if cfg.get('min_split_gain') is not None:
+        params['min_split_gain'] = cfg['min_split_gain']
+    if cfg.get('num_leaves') is not None:
+        params['num_leaves'] = cfg['num_leaves']
+
+    return params
+
+
+def _resolve_catboost_params(
+    config_section: Optional[Dict[str, Any]],
+    *,
+    objective: str,
+    classifier: bool = False,
+) -> Dict[str, Any]:
+    """
+    Build CatBoost parameter dictionary aligned with Layer3 defaults.
+    """
+    cfg = config_section or {}
+    params: Dict[str, Any] = {
+        'iterations': cfg.get('n_estimators', 1000),
+        'depth': cfg.get('max_depth', 7),
+        'learning_rate': cfg.get('learning_rate', cfg.get('eta', 0.03)),
+        'l2_leaf_reg': cfg.get('lambda', cfg.get('reg_lambda', 12.0)),
+        'subsample': cfg.get('subsample', 0.6),
+        'colsample_bylevel': cfg.get('colsample_bytree', 0.7),
+        'random_seed': cfg.get('random_seed', 42),
+        'verbose': cfg.get('catboost_verbose', False),
+        'allow_writing_files': cfg.get('allow_writing_files', False),
+    }
+    if cfg.get('min_child_weight') is not None:
+        params['min_data_in_leaf'] = cfg['min_child_weight']
+    params['loss_function'] = cfg.get('objective', objective)
+    if classifier:
+        params.setdefault('eval_metric', 'AUC')
+    return params
+
+
+def train_dual_head_models(
+    X: pd.DataFrame,
+    y_alpha: np.ndarray,
+    y_prob: np.ndarray,
+    w_alpha: np.ndarray,
+    w_prob: np.ndarray,
+    cv_splits: List[Tuple[np.ndarray, np.ndarray]],
+    config: Optional[Dict[str, Any]] = None,
+    fast_mode: bool = False
+) -> Dict[str, Any]:
+    """
+    Train dual-head models (Alpha generation + Probability calibration).
+    """
+    tprint_info("🤖 Training Dual-Head Models...")
+    tprint_info(f"📊 Training data: {X.shape[0]} samples, {X.shape[1]} features")
+    tprint_info(f"🔄 Cross-validation: {len(cv_splits)} folds")
+    
+    cfg = config or {}
+    
+    # Train Alpha Head (Regression)
+    tprint_info("📈 Training Alpha Head (Regression)...")
+    
+    alpha_results = None
+    
+    # Check for auxiliary targets (Multi-Horizon)
+    if 'aux_targets' in cfg and cfg['aux_targets']:
+        tprint_info(f"   🌊 Multi-Horizon Training Detected: {list(cfg['aux_targets'].keys())}")
+        aux_oofs = []
+        aux_models = []
+        
+        for name, target in cfg['aux_targets'].items():
+             tprint_info(f"   🔹 Training Alpha Horizon: {name}")
+             # Validate target
+             if len(target) != len(X):
+                 tprint_warning(f"   ⚠️ Target {name} length mismatch ({len(target)} vs {len(X)}), using Main target")
+                 target = y_alpha
+
+             res = train_alpha_head(
+                X, target, w_alpha, cv_splits, cfg.get('alpha_config', {}), fast_mode, suffix=f"_{name}"
+             )
+             aux_models.extend(res['models'])
+             aux_oofs.append(res['oof_predictions'])
+        
+        # Average OOFs
+        if aux_oofs:
+            avg_oof = np.nanmean(aux_oofs, axis=0)
+            alpha_results = {
+                'models': aux_models,
+                'oof_predictions': avg_oof,
+                'metrics': {'final_ic': spearmanr(y_alpha, avg_oof)[0], 'strategy': 'multi_horizon_ensemble'}
+            }
+            
+    # Fallback / Single Horizon
+    if alpha_results is None:
+        alpha_results = train_alpha_head(
+            X, y_alpha, w_alpha, cv_splits, cfg.get('alpha_config', {}), fast_mode
+        )
+    
+    # Train Probability Head (Classification) with Multi-Horizon support
+    tprint_info("🎯 Training Probability Head (Classification)...")
+    
+    prob_results = None
+    if 'aux_targets' in cfg and cfg['aux_targets']:
+        tprint_info(f"   🌊 Multi-Horizon Classification Detected")
+        aux_oofs = []
+        aux_models = []
+        aux_calibrated = []
+        
+        for name, target_val in cfg['aux_targets'].items():
+            tprint_info(f"   🔹 Training Prob Horizon: {name}")
+            # Target for classification (binary)
+            y_prob_aux = (target_val > 0).astype(int)
+            
+            res = train_probability_head(
+                X, y_prob_aux, w_prob, cv_splits, cfg.get('prob_config', {}), fast_mode, suffix=f"_{name}"
+            )
+            aux_models.extend(res['models'])
+            aux_calibrated.extend(res['calibrated_models'])
+            aux_oofs.append(res['oof_predictions'])
+            
+        if aux_oofs:
+            avg_oof = np.nanmean(aux_oofs, axis=0)
+            prob_results = {
+                'models': aux_models,
+                'calibrated_models': aux_calibrated,
+                'oof_predictions': avg_oof,
+                'metrics': {
+                    'final_auc': roc_auc_score((y_alpha > 0).astype(int), avg_oof) if len(np.unique(y_alpha > 0)) > 1 else 0.5,
+                    'strategy': 'multi_horizon_ensemble'
+                }
+            }
+
+    if prob_results is None:
+        prob_results = train_probability_head(
+            X, y_prob, w_prob, cv_splits, cfg.get('prob_config', {}), fast_mode
+        )
+    
+    results = {
+        'alpha_models': alpha_results['models'],
+        'alpha_oof': alpha_results['oof_predictions'],
+        'alpha_metrics': alpha_results['metrics'],
+        'prob_models': prob_results['models'],
+        'prob_oof': prob_results['oof_predictions'],
+        'prob_metrics': prob_results['metrics'],
+        'calibrated_models': prob_results['calibrated_models']
+    }
+    
+    tprint_success("✅ Dual-Head Training Complete!")
+    tprint_success(f"📈 Alpha models: {len(alpha_results['models'])}")
+    tprint_success(f"🎯 Probability models: {len(prob_results['models'])}")
+    
+    return results
+
+def train_alpha_head(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    w: np.ndarray,
+    cv_splits: List[Tuple[np.ndarray, np.ndarray]],
+    config: Dict[str, Any],
+    fast_mode: bool = False,
+    suffix: str = ""
+) -> Dict[str, Any]:
+    """
+    Train Alpha generation models with De Prado compliance.
+    """
+    tprint_info(f"📈 Alpha Head{suffix}: Racing Model Candidates...")
+    alpha_config = config.get('alpha_config', {})
+    
+    # De Prado compliant model candidates with diverse boosting types
+    if fast_mode:
+        alpha_candidates = [
+            {'name': 'Ridge_MSE', 'type': 'alpha_ridge', 'obj': 'mse', 'boost': None},
+            {'name': 'LGBM_GOSS', 'type': 'alpha_lgbm', 'obj': 'mse', 'boost': 'goss'}
+        ]
+    else:
+        alpha_candidates = [
+            # Ridge baseline
+            {'name': 'Ridge_MSE', 'type': 'alpha_ridge', 'obj': 'mse', 'boost': None},
+            # LGBM with GOSS (efficient gradient-based sampling)
+            {'name': 'LGBM_GOSS', 'type': 'alpha_lgbm', 'obj': 'mse', 'boost': 'goss'},
+            # Replaced LGBM_Huber with Pseudo-Huber
+            {'name': 'LGBM_PseudoHuber', 'type': 'alpha_lgbm', 'obj': 'huber', 'boost': 'gbdt'}, 
+            # ExtraTrees (extremely randomized trees)
+            {'name': 'ExtraTrees_MSE', 'type': 'alpha_extratrees', 'obj': 'mse', 'boost': None},
+        ]
+        # Add CatBoost if available
+        if CATBOOST_AVAILABLE:
+            alpha_candidates.append(
+                {'name': 'CatBoost_MSE', 'type': 'alpha_catboost', 'obj': 'RMSE', 'boost': None}
+            )
+    
+    tprint_info(f"🏁 Racing {len(alpha_candidates)} candidates:")
+    for cand in alpha_candidates:
+        tprint_info(f"   - {cand['name']} ({cand['type']}, {cand['obj']})")
+    
+    # Race candidates
+    alpha_scores = {}
+    alpha_oof_predictions = {}
+    
+    for cand in alpha_candidates:
+        tprint_info(f"   🏃 Racing {cand['name']}...")
+        fold_ics = []
+        # Use proper OOF array with NaN for missing predictions
+        model_oof = np.full(len(X), np.nan)
+        
+        # Process folds sequentially to ensure correct index ordering
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y[train_idx], y[val_idx]
+            w_tr = w[train_idx]
+            
+            try:
+                if cand['type'] == 'alpha_ridge':
+                    from sklearn.preprocessing import StandardScaler
+                    scaler = StandardScaler()
+                    X_tr_scaled = scaler.fit_transform(X_tr)
+                    X_val_scaled = scaler.transform(X_val)
+                    ridge_alpha = config.get('ridge_alpha', 10.0)
+                    model = Ridge(alpha=ridge_alpha)
+                    model.fit(X_tr_scaled, y_tr, sample_weight=w_tr)
+                    preds = model.predict(X_val_scaled)
+                elif cand['type'] == 'alpha_catboost':
+                    cat_params = _resolve_catboost_params(
+                        alpha_config,
+                        objective=cand['obj'],
+                        classifier=False,
+                    )
+                    # Ensure regression loss
+                    cat_params['loss_function'] = cand['obj']
+                    model = CatBoostRegressor(**cat_params)
+                    model.fit(
+                        X_tr,
+                        y_tr,
+                        sample_weight=w_tr,
+                        eval_set=(X_val, y_val),
+                        verbose=False,
+                    )
+                    preds = model.predict(X_val)
+                else:
+                    boost_type = cand.get('boost', alpha_config.get('boosting_type', 'goss'))
+                    params = _resolve_lgbm_params(
+                        alpha_config,
+                        boost_type=boost_type,
+                        objective='mse',
+                        classifier=False,
+                    )
+                    if cand['obj'] == 'huber':
+                        params['objective'] = pseudo_huber_obj
+                        params['metric'] = 'mae'
+                    model = lgb.LGBMRegressor(**params)
+                    
+                    callbacks = [lgb.early_stopping(50, verbose=False)]
+                    
+                    model.fit(
+                        X_tr, y_tr,
+                        sample_weight=w_tr,
+                        eval_set=[(X_val, y_val)],
+                        callbacks=callbacks,
+                        eval_metric=params.get('metric', 'mse')
+                    )
+                    preds = model.predict(X_val)
+                
+                # Store predictions at correct indices
+                model_oof[val_idx] = preds
+                
+                # Evaluate IC (Information Coefficient)
+                ic, _ = spearmanr(y_val, preds)
+                if np.isfinite(ic):
+                    fold_ics.append(ic)
+                    
+            except Exception as e:
+                tprint_warning(f"     Fold {fold_idx+1} failed: {e}")
+                # Fill with median prediction for failed folds
+                model_oof[val_idx] = 0.0
+        
+        # Compute ScoreIC (De Prado metric)
+        if fold_ics:
+            mean_ic = np.mean(fold_ics)
+            std_ic = np.std(fold_ics) + 1e-6
+            score_ic = 100 * mean_ic + 50 * (mean_ic / std_ic)
+        else:
+            mean_ic = 0.0
+            score_ic = -999.0
+        
+        alpha_scores[cand['name']] = score_ic
+        # Always store OOF predictions (NaN for missing)
+        alpha_oof_predictions[cand['name']] = model_oof
+        
+        ic_stats = f"mean={mean_ic:.4f}" if fold_ics else "N/A"
+        tprint_info(f"     ScoreIC: {score_ic:.4f} (IC: {ic_stats})")
+    
+    # Select top uncorrelated models (De Prado ensemble selection)
+    tprint_info("🔄 Selecting Top Uncorrelated Models...")
+    selected_alpha_names = select_uncorrelated_models(alpha_scores, alpha_oof_predictions, top_k=2)
+    
+    tprint_success(f"✅ Selected Alpha Models: {selected_alpha_names}")
+    
+    # Train final ensemble
+    ensemble_models = []
+    ensemble_oof = None
+    
+    for name in selected_alpha_names:
+        tprint_info(f"🎯 Training final {name}...")
+        cand = next(c for c in alpha_candidates if c['name'] == name)
+        
+        # HPO parameters (simplified)
+        if cand['type'] == 'alpha_ridge':
+            best_params = {'alpha': config.get('ridge_alpha', 10.0)}
+        elif cand['type'] == 'alpha_catboost':
+            best_params = _resolve_catboost_params(
+                alpha_config,
+                objective='RMSE',
+                classifier=False,
+            )
+        else:
+            boost_type = cand.get('boost', alpha_config.get('boosting_type', 'goss'))
+            best_params = _resolve_lgbm_params(
+                alpha_config,
+                boost_type=boost_type,
+                objective='mse',
+                classifier=False,
+            )
+            if cand['obj'] == 'huber':
+                best_params['objective'] = pseudo_huber_obj
+                best_params['metric'] = 'mae'
+        
+        # OOF predictions
+        model_oof = np.full(len(X), np.nan)
+        for train_idx, val_idx in cv_splits:
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y[train_idx], y[val_idx]
+            w_tr = w[train_idx]
+            
+            if cand['type'] == 'alpha_ridge':
+                model = Ridge(**best_params)
+            else:
+                model = lgb.LGBMRegressor(**best_params)
+            
+            model.fit(X_tr, y_tr, sample_weight=w_tr)
+            model_oof[val_idx] = model.predict(X_val)
+        
+        # Final model
+        if cand['type'] == 'alpha_ridge':
+            final_model = Ridge(**best_params)
+        elif cand['type'] == 'alpha_catboost':
+            final_model = CatBoostRegressor(**best_params)
+        else:
+            final_model = lgb.LGBMRegressor(**best_params)
+        
+        final_model.fit(X, y, sample_weight=w)
+        
+        ensemble_models.append(final_model)
+        
+        if ensemble_oof is None:
+            ensemble_oof = model_oof
+        else:
+            ensemble_oof = np.mean([ensemble_oof, model_oof], axis=0)
+    
+    # Calculate metrics
+    final_ic, _ = spearmanr(y, ensemble_oof)
+    
+    tprint_success(f"✅ Alpha Head Training Complete!")
+    tprint_info(f"📈 Final IC: {final_ic:.4f}")
+    
+    return {
+        'models': ensemble_models,
+        'oof_predictions': ensemble_oof,
+        'metrics': {
+            'final_ic': final_ic,
+            'selected_models': selected_alpha_names,
+            'model_scores': {name: alpha_scores[name] for name in selected_alpha_names}
+        }
+    }
+
+def train_probability_head(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    w: np.ndarray,
+    cv_splits: List[Tuple[np.ndarray, np.ndarray]],
+    config: Dict[str, Any],
+    fast_mode: bool = False,
+    suffix: str = ""
+) -> Dict[str, Any]:
+    """
+    Train Probability calibration models with De Prado compliance.
+    """
+    tprint_info(f"🎯 Probability Head{suffix}: Racing Model Candidates...")
+    prob_config = config or {}
+    
+    # De Prado compliant model candidates with diverse boosting types
+    if fast_mode:
+        prob_candidates = [
+            {'name': 'LGBM_GOSS', 'type': 'classifier', 'obj': 'binary', 'boost': 'goss'},
+            {'name': 'ExtraTrees_Clf', 'type': 'extratrees', 'obj': 'binary', 'boost': None}
+        ]
+    else:
+        prob_candidates = [
+            # LGBM with GOSS (efficient gradient-based sampling)
+            {'name': 'LGBM_GOSS', 'type': 'classifier', 'obj': 'binary', 'boost': 'goss'},
+            {'name': 'LGBM_Focal', 'type': 'classifier', 'obj': 'focal', 'boost': 'goss'},
+            # ExtraTrees (extremely randomized trees)
+            {'name': 'ExtraTrees_Clf', 'type': 'extratrees', 'obj': 'binary', 'boost': None},
+        ]
+        # Add CatBoost if available
+        if CATBOOST_AVAILABLE:
+            prob_candidates.append(
+                {'name': 'CatBoost_LogLoss', 'type': 'catboost', 'obj': 'Logloss', 'boost': None}
+            )
+    
+    tprint_info(f"🏁 Racing {len(prob_candidates)} candidates:")
+    for cand in prob_candidates:
+        tprint_info(f"   - {cand['name']} ({cand['type']}, {cand['obj']})")
+    
+    # Race candidates
+    prob_scores = {}
+    prob_oof_predictions = {}
+    
+    for cand in prob_candidates:
+        tprint_info(f"   🏃 Racing {cand['name']}...")
+        fold_scores = []
+        # Use proper OOF array with NaN for missing predictions
+        model_oof = np.full(len(X), np.nan)
+        
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y[train_idx], y[val_idx]
+            w_tr = w[train_idx]
+            
+            # Skip fold if single-class
+            if len(np.unique(y_tr)) < 2:
+                tprint_warning(f"     Fold {fold_idx+1}: Single class in train, skipping")
+                model_oof[val_idx] = 0.5
+                continue
+            if len(np.unique(y_val)) < 2:
+                tprint_warning(f"     Fold {fold_idx+1}: Single class in val, skipping")
+                model_oof[val_idx] = 0.5
+                continue
+            
+            try:
+                if cand['type'] == 'catboost':
+                    cat_params = _resolve_catboost_params(
+                        prob_config,
+                        objective=cand['obj'],
+                        classifier=True,
+                    )
+                    cat_params['loss_function'] = cand['obj']
+                    model = CatBoostClassifier(**cat_params)
+                    model.fit(
+                        X_tr, y_tr,
+                        sample_weight=w_tr,
+                        eval_set=(X_val, y_val),
+                        early_stopping_rounds=10,
+                        verbose=False
+                    )
+                elif cand['type'] == 'extratrees':
+                    # ExtraTrees classifier (sklearn)
+                    n_estimators = 50 if fast_mode else 200
+                    model = ExtraTreesClassifier(
+                        n_estimators=n_estimators,
+                        max_depth=5 if fast_mode else 10,
+                        min_samples_split=20,
+                        n_jobs=1,
+                        random_state=42
+                    )
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+                else:
+                    boost_type = cand.get('boost', prob_config.get('boosting_type', 'goss'))
+                    params = _resolve_lgbm_params(
+                        prob_config,
+                        boost_type=boost_type,
+                        objective='binary',
+                        classifier=True,
+                    )
+                    if cand['obj'] == 'focal':
+                        params['objective'] = _focal_loss_objective
+                    model = lgb.LGBMClassifier(**params)
+                    model.fit(
+                        X_tr, y_tr,
+                        sample_weight=w_tr,
+                        eval_set=[(X_val, y_val)],
+                        callbacks=[lgb.early_stopping(10, verbose=False)]
+                    )
+                
+                # Handle predict_proba output shape
+                prob_output = model.predict_proba(X_val)
+                if prob_output.ndim == 2 and prob_output.shape[1] >= 2:
+                    probs = prob_output[:, 1]
+                elif prob_output.ndim == 2 and prob_output.shape[1] == 1:
+                    probs = prob_output[:, 0]
+                else:
+                    probs = prob_output
+                
+                # For custom objectives (focal), apply sigmoid and clip to [0, 1]
+                if cand['obj'] == 'focal':
+                    # Custom objectives return raw logits, convert to probabilities
+                    probs = 1 / (1 + np.exp(-probs))  # Sigmoid
+                probs = np.clip(probs, 0.0, 1.0)  # Ensure valid probability range
+                
+                # Store predictions at correct indices
+                model_oof[val_idx] = probs
+                
+                # ScoreL3 (De Prado metric)
+                auc = roc_auc_score(y_val, probs)
+                # Standard log loss
+                ll = log_loss(y_val, probs, labels=[0, 1])
+                
+                # Enhanced weighted log loss with absolute return weighting
+                # NOTE: returns_val not available in this context, skip weighted loss
+                # try:
+                #     if len(returns_val) == len(probs):
+                #         weighted_ll = enhanced_weighted_logloss(
+                #             y_val, probs, returns_val,
+                #             sample_weights=w_val,
+                #             alpha=0.5, beta=0.3
+                #         )
+                #         tprint_info(f"   📊 Weighted LogLoss: {weighted_ll:.4f} (vs {ll:.4f} standard)")
+                #     else:
+                #         tprint_warning("   ⚠️ Mismatched lengths, skipping weighted loss")
+                # except Exception as e:
+                #     tprint_warning(f"   ⚠️ Weighted loss calculation failed: {e}")
+                
+                score = 100 * (auc - 0.5) + 50 * (0.693 - ll)
+                fold_scores.append(score)
+                
+            except Exception as e:
+                tprint_warning(f"     Fold {fold_idx+1} failed: {e}")
+                model_oof[val_idx] = 0.5
+        
+        prob_scores[cand['name']] = np.mean(fold_scores) if fold_scores else -999.0
+        # Always store OOF predictions
+        prob_oof_predictions[cand['name']] = model_oof
+        
+        score_stats = f"mean={np.mean(fold_scores):.4f}" if fold_scores else "N/A"
+        tprint_info(f"     ScoreL3: {prob_scores[cand['name']]:.4f} ({score_stats})")
+    
+    # Select top uncorrelated models
+    tprint_info("🔄 Selecting Top Uncorrelated Models...")
+    selected_prob_names = select_uncorrelated_models(prob_scores, prob_oof_predictions, top_k=2)
+    
+    tprint_success(f"✅ Selected Probability Models: {selected_prob_names}")
+    
+    # Train final ensemble with calibration
+    ensemble_models = []
+    calibrated_models = []
+    ensemble_oof = None
+    
+    for name in selected_prob_names:
+        tprint_info(f"🎯 Training final calibrated {name}...")
+        cand = next(c for c in prob_candidates if c['name'] == name)
+        
+        # HPO parameters (simplified)
+        if cand['type'] == 'logistic_regression':
+            best_params = {'C': 1.0}
+        else:
+            best_params = {
+                'n_estimators': 300,
+                'max_depth': 6,
+                'learning_rate': 0.03,
+                'verbose': -1,
+                'n_jobs': 1,
+                'min_child_samples': 25
+            }
+        
+        # OOF with calibration
+        model_oof = np.full(len(X), np.nan)
+        for train_idx, val_idx in cv_splits:
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y[train_idx], y[val_idx]
+            w_tr = w[train_idx]
+            
+            # Skip fold if single-class in train or val
+            if len(np.unique(y_tr)) < 2:
+                tprint_warning(f"⚠️ Skipping fold: Single class in training set")
+                model_oof[val_idx] = 0.5  # Neutral prediction
+                continue
+            if len(np.unique(y_val)) < 2:
+                tprint_warning(f"⚠️ Skipping fold: Single class in validation set")
+                model_oof[val_idx] = 0.5  # Neutral prediction
+                continue
+            
+            try:
+                if cand['type'] == 'logistic_regression':
+                    base_model = LogisticRegression(**best_params, solver='lbfgs', max_iter=1000)
+                else:
+                    base_model = lgb.LGBMClassifier(**best_params)
+                
+                # Apply calibration with dynamic CV
+                min_samples = min([np.sum(y_tr == c) for c in np.unique(y_tr)])
+                if min_samples < 2:
+                    tprint_warning(f"⚠️ Insufficient samples for calibration (min_samples={min_samples}), skipping calibration")
+                    base_model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    prob = base_model.predict_proba(X_val)
+                else:
+                    n_cv = min(3, min_samples)
+                    # Adaptive Calibration: Use Sigmoid (Platt) for small samples to prevent overfitting
+                    cal_method = 'sigmoid' if min_samples < 100 else 'isotonic'
+                    tprint_info(f"       Using {cal_method} calibration (n={min_samples})")
+                    cal_model = CalibratedClassifierCV(base_model, method=cal_method, cv=n_cv)
+                    cal_model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    prob = cal_model.predict_proba(X_val)
+
+                if prob.ndim == 2 and prob.shape[1] >= 2:
+                    model_oof[val_idx] = prob[:, 1]
+                elif prob.ndim == 2 and prob.shape[1] == 1:
+                    model_oof[val_idx] = prob[:, 0]  # Single class, use that probability
+                else:
+                    model_oof[val_idx] = prob
+            except Exception as e:
+                tprint_warning(f"⚠️ Fold training failed: {e}")
+                model_oof[val_idx] = 0.5  # Neutral prediction
+        
+        # Final calibrated model
+        if cand['type'] == 'logistic_regression':
+            base_model = LogisticRegression(**best_params, solver='lbfgs', max_iter=1000)
+        else:
+            base_model = lgb.LGBMClassifier(**best_params)
+        
+        # Final calibration with dynamic CV
+        min_samples_final = min([np.sum(y == c) for c in np.unique(y)])
+        if min_samples_final < 2:
+            final_calibrated = base_model
+            final_calibrated.fit(X, y, sample_weight=w)
+        else:
+            n_cv_final = min(3, min_samples_final)
+            cal_method = 'sigmoid' if min_samples_final < 100 else 'isotonic'
+            final_calibrated = CalibratedClassifierCV(base_model, method=cal_method, cv=n_cv_final)
+            final_calibrated.fit(X, y, sample_weight=w)
+        
+        ensemble_models.append(base_model)
+        calibrated_models.append(final_calibrated)
+        
+        if ensemble_oof is None:
+            ensemble_oof = model_oof
+        else:
+            ensemble_oof = np.mean([ensemble_oof, model_oof], axis=0)
+    
+    # Check for Positive Rate issues
+    pos_rate = np.mean(ensemble_oof > 0.5)
+    if pos_rate == 0.0:
+        tprint_warning(f"⚠️ Positive Rate is 0.0% with 0.5 threshold. Prob range: [{ensemble_oof.min():.4f}, {ensemble_oof.max():.4f}]")
+        # Shift threshold to median if extreme sparsity detected
+        if ensemble_oof.max() < 0.5 and ensemble_oof.max() > 0.0:
+            median_th = np.median(ensemble_oof)
+            tprint_info(f"💡 Suggestion: Consider shifting trade threshold to {median_th:.4f}")
+    else:
+        tprint_info(f"📊 Positive Rate (th=0.5): {pos_rate:.1%}")
+    # Calculate metrics (handle single-class case)
+    try:
+        final_auc = roc_auc_score(y, ensemble_oof)
+    except ValueError:
+        tprint_warning("⚠️ Could not compute AUC (single class in y_true)")
+        final_auc = 0.5
+    try:
+        final_ll = log_loss(y, ensemble_oof, labels=[0, 1])
+    except ValueError:
+        tprint_warning("⚠️ Could not compute log_loss (single class in y_true)")
+        final_ll = 1.0
+    
+    tprint_success(f"✅ Probability Head Training Complete!")
+    tprint_info(f"🎯 Final AUC: {final_auc:.4f}")
+    tprint_info(f"🎯 Final LogLoss: {final_ll:.4f}")
+    
+    return {
+        'models': ensemble_models,
+        'calibrated_models': calibrated_models,
+        'oof_predictions': ensemble_oof,
+        'metrics': {
+            'final_auc': final_auc,
+            'final_logloss': final_ll,
+            'selected_models': selected_prob_names,
+            'model_scores': {name: prob_scores[name] for name in selected_prob_names}
+        }
+    }
+
+def select_uncorrelated_models(
+    scores: Dict[str, float],
+    oof_predictions: Dict[str, np.ndarray],
+    top_k: int = 2,
+    correlation_threshold: float = 0.9
+) -> List[str]:
+    """
+    Select top uncorrelated models based on scores and correlations.
+    """
+    tprint_info(f"🔄 Selecting {top_k} uncorrelated models (threshold={correlation_threshold})")
+    
+    if len(oof_predictions) < top_k:
+        tprint_info(f"📊 Only {len(oof_predictions)} models available, selecting all")
+        return list(scores.keys())[:top_k]
+    
+    # Sort by score
+    sorted_models = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
+    tprint_info(f"📊 Model ranking by score: {sorted_models}")
+    
+    selected = []
+    selected_predictions = []
+    
+    for model_name in sorted_models:
+        if len(selected) >= top_k:
+            break
+        
+        if model_name not in oof_predictions:
+            continue
+        
+        current_pred = oof_predictions[model_name]
+        
+        # Check correlation with already selected models
+        is_correlated = False
+        for selected_pred in selected_predictions:
+            corr = np.corrcoef(current_pred, selected_pred)[0, 1]
+            if corr > correlation_threshold:
+                is_correlated = True
+                tprint_info(f"   ❌ {model_name} correlated with selected model (corr={corr:.3f})")
+                break
+        
+        if not is_correlated:
+            selected.append(model_name)
+            selected_predictions.append(current_pred)
+            tprint_info(f"   ✅ Selected {model_name} (score={scores[model_name]:.4f})")
+    
+    return selected
+
+# Custom objective functions for De Prado compliance
+@njit
+def _asymmetric_mse_objective(y_true, y_pred):
+    """Asymmetric MSE objective for alpha models. JIT compiled for performance."""
+    residual = y_true - y_pred
+    grad = -2 * residual * (residual > 0).astype(np.float64)  # Penalize negative residuals more
+    hess = 2 * np.ones_like(residual)
+    return grad, hess
+
+@njit
+def _focal_loss_objective(y_true, y_pred):
+    """Focal loss objective for probability models. JIT compiled for performance."""
+    gamma = 2.0  # Focusing parameter
+    p = 1 / (1 + np.exp(-y_pred))
+    
+    grad = -gamma * (1 - p) ** gamma * np.log(p) * (y_true - p) + (p - y_true)
+    hess = p * (1 - p)
+    
+    return grad, hess
+
+def pseudo_huber_obj(y_true, y_pred):
+    """Pseudo-Huber gradient and hessian for LGBM (User Request)"""
+    delta = 0.005 # Tunable
+    diff = y_pred - y_true
+    scale = np.sqrt(1 + (diff / delta)**2)
+    grad = diff / scale
+    hess = 1 / scale**3
+    return grad, hess

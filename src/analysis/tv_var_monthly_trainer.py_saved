@@ -1,0 +1,870 @@
+"""
+TV-VAR Monthly Manual Trainer
+
+This module implements the monthly manual training system for TV-VAR with stable outputs.
+Designed for manual monthly updates with high stability and consistent results.
+
+Key Features:
+- Monthly manual training with parameter continuity
+- High stability factor for consistent outputs
+- Parameter loading from previous month
+- Stable convergence optimization
+- Monthly reporting and validation
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Optional, Any, Union
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import logging
+import pickle
+import json
+from pathlib import Path
+import warnings
+
+from .tv_var_system import TVVARSystem, TVVARResults
+from .tv_var_regime_definition import EightFeatureRegimeDetector
+from .tv_var_decision_tree_rules import TVVARDecisionTreeRules
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class MonthlyTrainingConfig:
+    """Configuration for monthly TV-VAR training."""
+    stability_factor: float = 0.1  # High stability for consistent outputs
+    convergence_tolerance: float = 1e-6
+    max_iterations: int = 1000
+    parameter_continuity_weight: float = 0.8  # Weight for previous month's parameters
+    validation_split: float = 0.2  # Portion for validation
+    min_stability_score: float = 0.7  # Minimum acceptable stability
+
+@dataclass
+class MonthlyTrainingResults:
+    """Results from monthly TV-VAR training."""
+    tv_var_results: TVVARResults
+    decision_tree_rules: TVVARDecisionTreeRules
+    training_config: MonthlyTrainingConfig
+    stability_metrics: Dict[str, float]
+    validation_results: Dict[str, Any]
+    monthly_report: str
+    training_metadata: Dict[str, Any]
+
+class TVVARMonthlyTrainer:
+    """
+    Monthly manual TV-VAR trainer with stable outputs.
+    
+    This system is designed for manual monthly updates with high stability
+    and consistent results suitable for production deployment.
+    """
+    
+    def __init__(self, config: Optional[MonthlyTrainingConfig] = None):
+        """
+        Initialize monthly trainer.
+        
+        Args:
+            config: Training configuration
+        """
+        self.config = config or MonthlyTrainingConfig()
+        
+        # Initialize components
+        self.tv_var_system = TVVARSystem(
+            stability_factor=self.config.stability_factor,
+            use_unscented_kf=True
+        )
+        self.regime_detector = EightFeatureRegimeDetector()
+        self.rule_extractor = TVVARDecisionTreeRules()
+        
+        # Training history
+        self.training_history = []
+        self.last_training_date = None
+        
+        # Parameter storage
+        self.parameter_storage = Path("artifacts/tv_var_monthly")
+        self.parameter_storage.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"✅ TV-VAR Monthly Trainer initialized with stability_factor={self.config.stability_factor}")
+    
+    def train_monthly_tv_var(self, 
+                           features_df: pd.DataFrame,
+                           training_date: Optional[datetime] = None,
+                           symbol: str = "ETHUSDT",
+                           validate_models: bool = True) -> MonthlyTrainingResults:
+        """
+        Perform monthly TV-VAR training with stability optimization.
+        
+        Args:
+            features_df: DataFrame with 8 core features
+            training_date: Date of training (defaults to now)
+            symbol: Trading symbol
+            validate_models: Whether to perform validation
+            
+        Returns:
+            MonthlyTrainingResults with all outputs
+        """
+        if training_date is None:
+            training_date = datetime.now()
+        
+        logger.info(f"🚀 Starting monthly TV-VAR training for {symbol} - {training_date.strftime('%Y-%m-%d')}")
+        
+        # Step 1: Validate input data
+        self._validate_training_data(features_df, training_date)
+        
+        # Step 2: Load previous month's parameters for stability
+        previous_params = self._load_previous_month_parameters(training_date)
+        
+        # Step 3: Detect regimes using 8-feature definition
+        regimes = self.regime_detector.detect_regimes(features_df)
+        
+        # Step 4: Train TV-VAR with stability constraints
+        tv_var_results = self._train_with_stability_constraints(
+            features_df, regimes, previous_params, training_date
+        )
+        
+        # Step 5: Extract decision tree rules
+        decision_tree_rules = self._extract_decision_tree_rules(
+            features_df, tv_var_results, regimes
+        )
+        
+        # Step 6: Validate models if requested
+        validation_results = {}
+        if validate_models:
+            validation_results = self._validate_models(features_df, tv_var_results, regimes)
+        
+        # Step 7: Calculate stability metrics
+        stability_metrics = self._calculate_stability_metrics(tv_var_results, previous_params)
+        
+        # Step 8: Generate monthly report
+        monthly_report = self._generate_monthly_report(
+            symbol, training_date, tv_var_results, decision_tree_rules, 
+            stability_metrics, validation_results
+        )
+        
+        # Step 9: Save results
+        self._save_monthly_results(
+            symbol, training_date, tv_var_results, decision_tree_rules, 
+            stability_metrics, validation_results, monthly_report
+        )
+        
+        # Create results object
+        results = MonthlyTrainingResults(
+            tv_var_results=tv_var_results,
+            decision_tree_rules=decision_tree_rules,
+            training_config=self.config,
+            stability_metrics=stability_metrics,
+            validation_results=validation_results,
+            monthly_report=monthly_report,
+            training_metadata={
+                'symbol': symbol,
+                'training_date': training_date,
+                'n_features': len(features_df.columns),
+                'n_samples': len(features_df),
+                'stability_factor': self.config.stability_factor,
+                'parameter_continuity_weight': self.config.parameter_continuity_weight
+            }
+        )
+        
+        # Update training history
+        self.training_history.append({
+            'training_date': training_date,
+            'symbol': symbol,
+            'stability_score': stability_metrics.get('overall_stability', 0.0),
+            'validation_score': validation_results.get('overall_score', 0.0)
+        })
+        
+        self.last_training_date = training_date
+        
+        logger.info(f"✅ Monthly TV-VAR training completed - Stability: {stability_metrics.get('overall_stability', 0.0):.3f}")
+        
+        return results
+    
+    def _validate_training_data(self, features_df: pd.DataFrame, training_date: datetime) -> None:
+        """Validate training data requirements."""
+        
+        # Check minimum data requirements
+        min_samples = 500  # Minimum samples for stable training
+        if len(features_df) < min_samples:
+            raise ValueError(f"Insufficient data: need at least {min_samples} samples, got {len(features_df)}")
+        
+        # Check for required features
+        required_features = {
+            'rv_z_short', 'rv_z_long', 'vol_ratio',
+            'volume_z', 'spread_proxy_z',
+            'trend_slope_z', 'trend_strength', 'drawdown_z'
+        }
+        
+        missing_features = required_features - set(features_df.columns)
+        if missing_features:
+            raise ValueError(f"Missing required features: {missing_features}")
+        
+        # Check data quality
+        if features_df.isnull().any().any():
+            logger.warning("Missing values found, applying forward fill")
+            features_df = features_df.fillna(method='ffill').fillna(0)
+        
+        # Check for extreme values
+        for col in features_df.columns:
+            if np.isinf(features_df[col]).any():
+                logger.warning(f"Infinite values in {col}, replacing with NaN")
+                features_df[col] = features_df[col].replace([np.inf, -np.inf], np.nan)
+        
+        logger.info(f"✅ Training data validated: {len(features_df)} samples, {len(features_df.columns)} features")
+    
+    def _load_previous_month_parameters(self, training_date: datetime) -> Optional[pd.DataFrame]:
+        """Load parameters from previous month for stability."""
+        
+        # Calculate previous month
+        if training_date.month == 1:
+            prev_month = training_date.replace(year=training_date.year - 1, month=12)
+        else:
+            prev_month = training_date.replace(month=training_date.month - 1)
+        
+        # Look for previous month's parameters
+        param_file = self.parameter_storage / f"tv_var_params_{prev_month.strftime('%Y%m')}.pkl"
+        
+        if param_file.exists():
+            try:
+                with open(param_file, 'rb') as f:
+                    previous_params = pickle.load(f)
+                
+                logger.info(f"📂 Loaded previous month parameters from {param_file}")
+                return previous_params
+                
+            except Exception as e:
+                logger.warning(f"Failed to load previous parameters: {e}")
+        
+        logger.info("No previous month parameters found, using initialization")
+        return None
+    
+    def _train_with_stability_constraints(self, 
+                                        features_df: pd.DataFrame,
+                                        regimes: pd.Series,
+                                        previous_params: Optional[pd.DataFrame],
+                                        training_date: datetime) -> TVVARResults:
+        """Train TV-VAR with stability constraints."""
+        
+        logger.info("🔧 Training TV-VAR with stability constraints")
+        
+        # Initialize with previous parameters if available
+        if previous_params is not None:
+            # Use parameter continuity weight
+            initial_params = previous_params.iloc[-1].values
+            logger.info(f"Using previous month parameters with continuity weight {self.config.parameter_continuity_weight}")
+        else:
+            initial_params = None
+            logger.info("No previous parameters, using random initialization")
+        
+        # Train TV-VAR with enhanced stability
+        tv_var_results = self.tv_var_system.fit_tv_var_monthly_stable(
+            features_df, training_date
+        )
+        
+        # Apply stability constraints
+        if previous_params is not None:
+            tv_var_results = self._apply_stability_constraints(tv_var_results, previous_params)
+        
+        return tv_var_results
+    
+    def _apply_stability_constraints(self, 
+                                   current_results: TVVARResults,
+                                   previous_params: pd.DataFrame) -> TVVARResults:
+        """Apply stability constraints to current results."""
+        
+        logger.info("⚖️ Applying stability constraints")
+        
+        # Get current coefficients
+        current_coeffs = current_results.time_varying_coefficients
+        
+        # Apply weighted average with previous parameters
+        if len(previous_params) > 0 and len(current_coeffs) > 0:
+            # Align parameter dimensions
+            min_params = min(len(previous_params.columns), len(current_coeffs.columns))
+            
+            for i in range(min_params):
+                prev_col = previous_params.columns[i]
+                curr_col = current_coeffs.columns[i]
+                
+                # Apply weighted average
+                current_coeffs[curr_col] = (
+                    self.config.parameter_continuity_weight * previous_params[prev_col].values[-len(current_coeffs):] +
+                    (1 - self.config.parameter_continuity_weight) * current_coeffs[curr_col].values
+                )
+        
+        # Update results with stabilized coefficients
+        current_results.time_varying_coefficients = current_coeffs
+        
+        # Recalculate stability score
+        current_results.stability_score = self.tv_var_system._calculate_stability_score(current_coeffs)
+        
+        return current_results
+    
+    def _extract_decision_tree_rules(self, 
+                                   features_df: pd.DataFrame,
+                                   tv_var_results: TVVARResults,
+                                   regimes: pd.Series) -> TVVARDecisionTreeRules:
+        """Extract decision tree rules from TV-VAR results."""
+        
+        logger.info("🌳 Extracting decision tree rules")
+        
+        # Extract rules
+        rule_sets = self.rule_extractor.extract_decision_tree_rules(
+            features_df, tv_var_results.time_varying_coefficients, regimes
+        )
+        
+        return self.rule_extractor
+    
+    def _validate_models(self, 
+                        features_df: pd.DataFrame,
+                        tv_var_results: TVVARResults,
+                        regimes: pd.Series) -> Dict[str, Any]:
+        """Validate trained models."""
+        
+        logger.info("🔍 Validating trained models")
+        
+        validation_results = {}
+        
+        # 1. Stability validation
+        validation_results['stability'] = self._validate_stability(tv_var_results)
+        
+        # 2. Regime consistency validation
+        validation_results['regime_consistency'] = self._validate_regime_consistency(regimes)
+        
+        # 3. Coefficient reasonableness validation
+        validation_results['coefficient_validation'] = self._validate_coefficients(tv_var_results)
+        
+        # 4. Rule validation
+        validation_results['rule_validation'] = self._validate_decision_tree_rules(
+            features_df, tv_var_results, regimes
+        )
+        
+        # 5. Overall validation score
+        validation_results['overall_score'] = self._calculate_overall_validation_score(validation_results)
+        
+        return validation_results
+    
+    def _validate_stability(self, tv_var_results: TVVARResults) -> Dict[str, float]:
+        """Validate model stability."""
+        
+        coeffs = tv_var_results.time_varying_coefficients
+        
+        # Calculate stability metrics
+        coeff_volatility = coeffs.rolling(window=20).std().mean().mean()
+        coeff_trend_stability = 1.0 - coeffs.diff().abs().mean().mean()
+        
+        stability_score = tv_var_results.stability_score
+        
+        return {
+            'coefficient_volatility': float(coeff_volatility),
+            'trend_stability': float(coeff_trend_stability),
+            'overall_stability': float(stability_score),
+            'passes_threshold': stability_score >= self.config.min_stability_score
+        }
+    
+    def _validate_regime_consistency(self, regimes: pd.Series) -> Dict[str, float]:
+        """Validate regime consistency."""
+        
+        # Calculate regime persistence
+        regime_changes = regimes != regimes.shift(1)
+        total_changes = regime_changes.sum()
+        change_frequency = total_changes / len(regimes)
+        
+        # Calculate regime durations
+        regime_durations = []
+        current_regime = regimes.iloc[0]
+        current_duration = 1
+        
+        for i in range(1, len(regimes)):
+            if regimes.iloc[i] == current_regime:
+                current_duration += 1
+            else:
+                regime_durations.append(current_duration)
+                current_regime = regimes.iloc[i]
+                current_duration = 1
+        
+        regime_durations.append(current_duration)  # Add last regime
+        
+        avg_duration = np.mean(regime_durations)
+        min_duration = np.min(regime_durations)
+        
+        return {
+            'change_frequency': float(change_frequency),
+            'avg_regime_duration': float(avg_duration),
+            'min_regime_duration': float(min_duration),
+            'total_changes': int(total_changes)
+        }
+    
+    def _validate_coefficients(self, tv_var_results: TVVARResults) -> Dict[str, float]:
+        """Validate coefficient reasonableness."""
+        
+        coeffs = tv_var_results.time_varying_coefficients
+        
+        # Check for extreme values
+        max_coeff = coeffs.abs().max().max()
+        min_coeff = coeffs.abs().min().min()
+        
+        # Check for NaN or infinite values
+        nan_count = coeffs.isnull().sum().sum()
+        inf_count = np.isinf(coeffs).sum().sum()
+        
+        # Check coefficient variance
+        coeff_variance = coeffs.var().mean()
+        
+        return {
+            'max_coefficient': float(max_coeff),
+            'min_coefficient': float(min_coeff),
+            'nan_count': int(nan_count),
+            'inf_count': int(inf_count),
+            'coefficient_variance': float(coeff_variance),
+            'all_valid': nan_count == 0 and inf_count == 0
+        }
+    
+    def _validate_decision_tree_rules(self, 
+                                    features_df: pd.DataFrame,
+                                    tv_var_results: TVVARResults,
+                                    regimes: pd.Series) -> Dict[str, float]:
+        """Validate decision tree rules."""
+        
+        try:
+            # Test rule execution
+            test_features = features_df.iloc[0]
+            
+            # Test specialist selection
+            specialist_weights = self.rule_extractor.get_specialist_weights_realtime(test_features)
+            specialist_valid = all(0 <= w <= 1 for w in specialist_weights.values())
+            
+            # Test regime prediction
+            predicted_regime = self.rule_extractor.predict_regime_realtime(test_features)
+            regime_valid = predicted_regime in ['NEUTRAL', 'HIGH_VOLATILITY', 'LOW_VOLATILITY', 
+                                             'STRESS_REGIME', 'TREND_REGIME', 'LIQUIDITY_REGIME']
+            
+            # Test orthogonalization
+            orth_weights = self.rule_extractor.get_orthogonalization_weights_realtime(test_features)
+            orth_valid = len(orth_weights) > 0
+            
+            return {
+                'specialist_rules_valid': float(specialist_valid),
+                'regime_rules_valid': float(regime_valid),
+                'orthogonalization_rules_valid': float(orth_valid),
+                'all_rules_valid': float(specialist_valid and regime_valid and orth_valid)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Rule validation failed: {e}")
+            return {
+                'specialist_rules_valid': 0.0,
+                'regime_rules_valid': 0.0,
+                'orthogonalization_rules_valid': 0.0,
+                'all_rules_valid': 0.0,
+                'error': str(e)
+            }
+    
+    def _calculate_overall_validation_score(self, validation_results: Dict[str, Any]) -> float:
+        """Calculate overall validation score."""
+        
+        scores = []
+        
+        # Stability score (40% weight)
+        stability = validation_results.get('stability', {})
+        if 'overall_stability' in stability:
+            scores.append(stability['overall_stability'] * 0.4)
+        
+        # Regime consistency (20% weight)
+        regime_consistency = validation_results.get('regime_consistency', {})
+        if 'avg_regime_duration' in regime_consistency:
+            # Normalize duration score (higher is better, cap at 20)
+            duration_score = min(1.0, regime_consistency['avg_regime_duration'] / 20.0)
+            scores.append(duration_score * 0.2)
+        
+        # Coefficient validation (20% weight)
+        coeff_validation = validation_results.get('coefficient_validation', {})
+        if 'all_valid' in coeff_validation:
+            scores.append(float(coeff_validation['all_valid']) * 0.2)
+        
+        # Rule validation (20% weight)
+        rule_validation = validation_results.get('rule_validation', {})
+        if 'all_rules_valid' in rule_validation:
+            scores.append(rule_validation['all_rules_valid'] * 0.2)
+        
+        return np.mean(scores) if scores else 0.0
+    
+    def _calculate_stability_metrics(self, 
+                                   tv_var_results: TVVARResults,
+                                   previous_params: Optional[pd.DataFrame]) -> Dict[str, float]:
+        """Calculate comprehensive stability metrics."""
+        
+        metrics = {}
+        
+        # Basic stability score
+        metrics['overall_stability'] = tv_var_results.stability_score
+        
+        # Parameter continuity (if previous params available)
+        if previous_params is not None:
+            continuity = self._calculate_parameter_continuity(
+                tv_var_results.time_varying_coefficients, previous_params
+            )
+            metrics['parameter_continuity'] = continuity
+        else:
+            metrics['parameter_continuity'] = 0.0  # No previous params to compare
+        
+        # Coefficient stability
+        coeffs = tv_var_results.time_varying_coefficients
+        metrics['coefficient_volatility'] = float(coeffs.rolling(window=20).std().mean().mean())
+        metrics['coefficient_trend_stability'] = float(1.0 - coeffs.diff().abs().mean().mean())
+        
+        # Regime stability
+        regimes = tv_var_results.regime_assignments
+        regime_changes = (regimes != regimes.shift(1)).sum()
+        metrics['regime_stability'] = float(1.0 - (regime_changes / len(regimes)))
+        
+        # Overall stability assessment
+        stability_components = [
+            metrics['overall_stability'],
+            metrics['parameter_continuity'],
+            metrics['coefficient_trend_stability'],
+            metrics['regime_stability']
+        ]
+        metrics['composite_stability'] = np.mean(stability_components)
+        
+        return metrics
+    
+    def _calculate_parameter_continuity(self, 
+                                      current_coeffs: pd.DataFrame,
+                                      previous_params: pd.DataFrame) -> float:
+        """Calculate parameter continuity with previous month."""
+        
+        try:
+            # Get last coefficients from previous month
+            prev_last_coeffs = previous_params.iloc[-1]
+            
+            # Get first coefficients from current month
+            curr_first_coeffs = current_coeffs.iloc[0]
+            
+            # Calculate correlation
+            common_cols = set(prev_last_coeffs.index) & set(curr_first_coeffs.index)
+            
+            if len(common_cols) > 1:
+                prev_values = prev_last_coeffs[list(common_cols)]
+                curr_values = curr_first_coeffs[list(common_cols)]
+                
+                continuity = np.corrcoef(prev_values, curr_values)[0, 1]
+                return float(continuity) if not np.isnan(continuity) else 0.0
+            else:
+                return 0.0
+                
+        except Exception as e:
+            logger.warning(f"Failed to calculate parameter continuity: {e}")
+            return 0.0
+    
+    def _generate_monthly_report(self, 
+                                symbol: str,
+                                training_date: datetime,
+                                tv_var_results: TVVARResults,
+                                decision_tree_rules: TVVARDecisionTreeRules,
+                                stability_metrics: Dict[str, float],
+                                validation_results: Dict[str, Any]) -> str:
+        """Generate comprehensive monthly training report."""
+        
+        report = f"""
+# TV-VAR Monthly Training Report
+
+## Training Summary
+- **Symbol**: {symbol}
+- **Training Date**: {training_date.strftime('%Y-%m-%d %H:%M:%S')}
+- **Features**: {tv_var_results.training_metadata['n_features']}
+- **Samples**: {tv_var_results.training_metadata['n_samples']}
+- **Lags**: {tv_var_results.training_metadata['n_lags']}
+- **Window Size**: {tv_var_results.training_metadata['window_size']}
+- **Stability Factor**: {self.config.stability_factor}
+
+## Stability Metrics
+- **Overall Stability**: {stability_metrics.get('overall_stability', 0):.3f}
+- **Parameter Continuity**: {stability_metrics.get('parameter_continuity', 0):.3f}
+- **Coefficient Volatility**: {stability_metrics.get('coefficient_volatility', 0):.4f}
+- **Coefficient Trend Stability**: {stability_metrics.get('coefficient_trend_stability', 0):.3f}
+- **Regime Stability**: {stability_metrics.get('regime_stability', 0):.3f}
+- **Composite Stability**: {stability_metrics.get('composite_stability', 0):.3f}
+
+## Validation Results
+- **Overall Validation Score**: {validation_results.get('overall_score', 0):.3f}
+- **Stability Validation**: {validation_results.get('stability', {}).get('overall_stability', 0):.3f}
+- **Regime Consistency**: {validation_results.get('regime_consistency', {}).get('avg_regime_duration', 0):.1f} periods
+- **Coefficient Validation**: {'PASS' if validation_results.get('coefficient_validation', {}).get('all_valid', False) else 'FAIL'}
+- **Rule Validation**: {'PASS' if validation_results.get('rule_validation', {}).get('all_rules_valid', False) else 'FAIL'}
+
+## Performance Metrics
+"""
+        
+        for metric_name, metric_value in tv_var_results.performance_metrics.items():
+            report += f"- **{metric_name}**: {metric_value:.4f}\n"
+        
+        report += f"""
+## Regime Distribution
+{tv_var_results.regime_assignments.value_counts().to_string()}
+
+## Decision Tree Rules Summary
+- **Specialist Selection Rules**: {len(decision_tree_rules.rule_sets.get('specialist_selection', {}).rules or [])}
+- **Orthogonalization Rules**: {len(decision_tree_rules.rule_sets.get('orthogonalization_weights', {}).rules or [])}
+- **Regime Detection Rules**: {len(decision_tree_rules.rule_sets.get('regime_detection', {}).rules or [])}
+- **Risk Management Rules**: {len(decision_tree_rules.rule_sets.get('risk_management', {}).rules or [])}
+
+## Training Quality Assessment
+"""
+        
+        # Quality assessment
+        stability_score = stability_metrics.get('composite_stability', 0)
+        validation_score = validation_results.get('overall_score', 0)
+        
+        if stability_score > 0.8 and validation_score > 0.8:
+            quality = "EXCELLENT"
+            recommendation = "Ready for production deployment"
+        elif stability_score > 0.7 and validation_score > 0.7:
+            quality = "GOOD"
+            recommendation = "Suitable for production with monitoring"
+        elif stability_score > 0.6 and validation_score > 0.6:
+            quality = "ACCEPTABLE"
+            recommendation = "Use with caution, monitor closely"
+        else:
+            quality = "NEEDS IMPROVEMENT"
+            recommendation = "Not recommended for production"
+        
+        report += f"""
+- **Overall Quality**: {quality}
+- **Recommendation**: {recommendation}
+- **Production Ready**: {'YES' if stability_score > 0.7 and validation_score > 0.7 else 'NO'}
+
+## Next Steps
+- **Next Training Date**: {(training_date + timedelta(days=30)).strftime('%Y-%m-%d')}
+- **Monitoring Priority**: {'HIGH' if stability_score < 0.7 else 'MEDIUM'}
+- **Parameter Backup**: {'COMPLETED' if stability_score > 0.8 else 'RECOMMENDED'}
+
+## Training History
+"""
+        
+        # Add recent training history
+        recent_history = self.training_history[-3:] if self.training_history else []
+        for history in recent_history:
+            report += f"""
+- **{history['training_date'].strftime('%Y-%m-%d')}**: Stability={history['stability_score']:.3f}, Validation={history['validation_score']:.3f}
+"""
+        
+        report += f"""
+
+---
+*Report generated by TV-VAR Monthly Trainer v1.0*
+*Training completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
+"""
+        
+        return report
+    
+    def _save_monthly_results(self, 
+                            symbol: str,
+                            training_date: datetime,
+                            tv_var_results: TVVARResults,
+                            decision_tree_rules: TVVARDecisionTreeRules,
+                            stability_metrics: Dict[str, float],
+                            validation_results: Dict[str, Any],
+                            monthly_report: str) -> None:
+        """Save all monthly results to files."""
+        
+        # Create directories
+        month_str = training_date.strftime('%Y%m')
+        results_dir = self.parameter_storage / month_str
+        results_dir.mkdir(exist_ok=True)
+        
+        try:
+            # Save TV-VAR results
+            tv_var_file = results_dir / f"tv_var_results_{symbol}_{month_str}.pkl"
+            with open(tv_var_file, 'wb') as f:
+                pickle.dump(tv_var_results, f)
+            
+            # Save decision tree rules
+            rules_file = results_dir / f"decision_tree_rules_{symbol}_{month_str}.json"
+            decision_tree_rules.save_rules(str(rules_file))
+            
+            # Save stability metrics
+            stability_file = results_dir / f"stability_metrics_{symbol}_{month_str}.json"
+            with open(stability_file, 'w') as f:
+                json.dump(stability_metrics, f, indent=2)
+            
+            # Save validation results
+            validation_file = results_dir / f"validation_results_{symbol}_{month_str}.json"
+            with open(validation_file, 'w') as f:
+                json.dump(validation_results, f, indent=2, default=str)
+            
+            # Save monthly report
+            report_file = results_dir / f"monthly_report_{symbol}_{month_str}.md"
+            with open(report_file, 'w') as f:
+                f.write(monthly_report)
+            
+            # Save training metadata
+            metadata = {
+                'symbol': symbol,
+                'training_date': training_date.isoformat(),
+                'config': {
+                    'stability_factor': self.config.stability_factor,
+                    'convergence_tolerance': self.config.convergence_tolerance,
+                    'max_iterations': self.config.max_iterations,
+                    'parameter_continuity_weight': self.config.parameter_continuity_weight
+                },
+                'stability_metrics': stability_metrics,
+                'validation_results': validation_results,
+                'files_saved': {
+                    'tv_var_results': str(tv_var_file),
+                    'decision_tree_rules': str(rules_file),
+                    'stability_metrics': str(stability_file),
+                    'validation_results': str(validation_file),
+                    'monthly_report': str(report_file)
+                }
+            }
+            
+            metadata_file = results_dir / f"training_metadata_{symbol}_{month_str}.json"
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            logger.info(f"💾 Monthly results saved to {results_dir}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save monthly results: {e}")
+    
+    def load_monthly_results(self, 
+                           symbol: str,
+                           training_date: datetime) -> Optional[MonthlyTrainingResults]:
+        """Load monthly results from files."""
+        
+        month_str = training_date.strftime('%Y%m')
+        results_dir = self.parameter_storage / month_str
+        
+        if not results_dir.exists():
+            logger.warning(f"No results found for {training_date.strftime('%Y-%m')}")
+            return None
+        
+        try:
+            # Load TV-VAR results
+            tv_var_file = results_dir / f"tv_var_results_{symbol}_{month_str}.pkl"
+            with open(tv_var_file, 'rb') as f:
+                tv_var_results = pickle.load(f)
+            
+            # Load decision tree rules
+            rules_file = results_dir / f"decision_tree_rules_{symbol}_{month_str}.json"
+            decision_tree_rules = TVVARDecisionTreeRules()
+            decision_tree_rules.load_rules(str(rules_file))
+            
+            # Load stability metrics
+            stability_file = results_dir / f"stability_metrics_{symbol}_{month_str}.json"
+            with open(stability_file, 'r') as f:
+                stability_metrics = json.load(f)
+            
+            # Load validation results
+            validation_file = results_dir / f"validation_results_{symbol}_{month_str}.json"
+            with open(validation_file, 'r') as f:
+                validation_results = json.load(f)
+            
+            # Load monthly report
+            report_file = results_dir / f"monthly_report_{symbol}_{month_str}.md"
+            with open(report_file, 'r') as f:
+                monthly_report = f.read()
+            
+            # Load training metadata
+            metadata_file = results_dir / f"training_metadata_{symbol}_{month_str}.json"
+            with open(metadata_file, 'r') as f:
+                training_metadata = json.load(f)
+            
+            # Create results object
+            results = MonthlyTrainingResults(
+                tv_var_results=tv_var_results,
+                decision_tree_rules=decision_tree_rules,
+                training_config=self.config,
+                stability_metrics=stability_metrics,
+                validation_results=validation_results,
+                monthly_report=monthly_report,
+                training_metadata=training_metadata
+            )
+            
+            logger.info(f"📂 Monthly results loaded for {symbol} - {training_date.strftime('%Y-%m-%d')}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to load monthly results: {e}")
+            return None
+    
+    def get_training_summary(self, months: int = 6) -> str:
+        """Get summary of recent training history."""
+        
+        if not self.training_history:
+            return "No training history available"
+        
+        recent_history = self.training_history[-months:]
+        
+        summary = f"""
+# TV-VAR Training Summary (Last {months} Months)
+
+## Training History
+"""
+        
+        for history in recent_history:
+            summary += f"""
+- **{history['training_date'].strftime('%Y-%m-%d')}**: 
+  - Symbol: {history['symbol']}
+  - Stability: {history['stability_score']:.3f}
+  - Validation: {history['validation_score']:.3f}
+"""
+        
+        # Calculate averages
+        if recent_history:
+            avg_stability = np.mean([h['stability_score'] for h in recent_history])
+            avg_validation = np.mean([h['validation_score'] for h in recent_history])
+            
+            summary += f"""
+## Average Performance
+- **Average Stability**: {avg_stability:.3f}
+- **Average Validation**: {avg_validation:.3f}
+- **Training Trend**: {'IMPROVING' if len(recent_history) > 1 and recent_history[-1]['stability_score'] > recent_history[0]['stability_score'] else 'STABLE'}
+"""
+        
+        return summary
+
+# Convenience function for monthly training
+def train_tv_var_monthly_manual(features_df: pd.DataFrame,
+                               symbol: str = "ETHUSDT",
+                               training_date: Optional[datetime] = None,
+                               stability_factor: float = 0.1) -> MonthlyTrainingResults:
+    """
+    Convenience function for monthly manual TV-VAR training.
+    
+    Args:
+        features_df: DataFrame with 8 core features
+        symbol: Trading symbol
+        training_date: Training date (defaults to now)
+        stability_factor: Stability factor (0.1 = high stability)
+        
+    Returns:
+        MonthlyTrainingResults object
+    """
+    config = MonthlyTrainingConfig(stability_factor=stability_factor)
+    trainer = TVVARMonthlyTrainer(config)
+    
+    results = trainer.train_monthly_tv_var(
+        features_df=features_df,
+        training_date=training_date,
+        symbol=symbol,
+        validate_models=True
+    )
+    
+    # Print summary
+    print(f"\n📊 Monthly TV-VAR Training Summary for {symbol}")
+    print(f"Training Date: {results.training_metadata['training_date'].strftime('%Y-%m-%d')}")
+    print(f"Stability Score: {results.stability_metrics.get('composite_stability', 0):.3f}")
+    print(f"Validation Score: {results.validation_results.get('overall_score', 0):.3f}")
+    print(f"Production Ready: {'YES' if results.stability_metrics.get('composite_stability', 0) > 0.7 else 'NO'}")
+    
+    return results
+
+if __name__ == "__main__":
+    # Example usage
+    print("TV-VAR Monthly Trainer - Ready for integration")
+    print("Features:")
+    print("- Monthly manual training with stability optimization")
+    print("- Parameter continuity from previous month")
+    print("- Comprehensive validation and reporting")
+    print("- Production-ready stable outputs")

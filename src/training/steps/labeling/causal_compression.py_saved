@@ -1,0 +1,705 @@
+"""
+Causal Compression System for Adaptive Event-Driven Labeling (AEDL)
+
+This module implements the three-stage causal compression pipeline:
+1. Spectral PCA: Compress 5 scales into 2 principal components
+2. Causal Parent Filtering: Use DAG to remove redundant specialists
+3. Orthogonalization: Remove beta component, keep only alpha
+
+Key Features:
+- 5-scale → 2-PC compression for each specialist
+- DAG-based parent filtering to eliminate redundancy
+- Alpha/beta separation through orthogonalization
+- 20 → 4 features (5x compression) while preserving signal
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Optional, Tuple, Any
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+import warnings
+from concurrent.futures import ThreadPoolExecutor
+
+# Import tprint functions
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    # Fallback print functions
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+
+
+class SpectralPCA:
+    """
+    Compress 5 wavelet scales into 2 principal components for each specialist.
+    
+    PC1 (Momentum): Captures shared energy across all scales
+    PC2 (Decoupling): Captures conflict/divergence between fast and slow scales
+    """
+    
+    def __init__(
+        self,
+        n_components: int = 2,
+        variance_explained_threshold: float = 0.95,
+        enable_parallel: bool = True,
+        verbose: bool = True
+    ):
+        """
+        Initialize Optimized Spectral PCA compressor.
+        
+        Args:
+            n_components: Number of principal components to keep
+            variance_explained_threshold: Minimum variance to preserve
+            enable_parallel: Enable parallel processing
+            verbose: Whether to print progress information
+        """
+        self.verbose = verbose
+        self.n_components = n_components
+        self.variance_explained_threshold = variance_explained_threshold
+        self.enable_parallel = enable_parallel
+        
+        self.pca_models = {}  # One PCA model per specialist
+        self.scalers = {}     # One scaler per specialist
+        self.compression_metrics = {}
+        
+        if self.verbose:
+            tprint_info("🚀 Optimized Spectral PCA: Initializing...")
+            tprint_info(f"   ⚙️ Components to keep: {n_components}")
+            tprint_info(f"   ⚙️ Variance threshold: {variance_explained_threshold}")
+            tprint_info(f"   ⚙️ Parallel processing: {enable_parallel}")
+            tprint_success("   ✅ Optimized Spectral PCA: Initialization complete")
+    
+    def _create_scale_matrix_inplace(self, specialist_scales: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
+        """
+        Create scale matrix efficiently with in-place operations.
+        
+        Args:
+            specialist_scales: Dictionary with 5 scale coefficients
+            
+        Returns:
+            Tuple of (scale_matrix, valid_scales)
+        """
+        scale_order = ['d1', 'd2', 'd3', 'd4', 's4']
+        valid_scales = []
+        scale_data = []
+        
+        for scale in scale_order:
+            if scale in specialist_scales:
+                scale_coeffs = specialist_scales[scale]
+                if len(scale_coeffs) > 0:
+                    scale_data.append(scale_coeffs)
+                    valid_scales.append(scale)
+                else:
+                    scale_data.append(np.zeros(100))  # Dummy data
+                    valid_scales.append(scale)
+            else:
+                scale_data.append(np.zeros(100))  # Dummy data
+                valid_scales.append(scale)
+        
+        # Find minimum length
+        min_length = min(len(data) for data in scale_data if len(data) > 0)
+        if min_length < 10:
+            return np.zeros((100, 5)), valid_scales
+        
+        # Create scale matrix efficiently
+        scale_matrix = np.zeros((min_length, 5))
+        for i, data in enumerate(scale_data):
+            if len(data) >= min_length:
+                scale_matrix[:, i] = data[:min_length]
+            else:
+                # In-place padding
+                scale_matrix[:len(data), i] = data
+                scale_matrix[len(data):, i] = 0.0
+        
+        return scale_matrix, valid_scales
+    
+    def fit_transform_specialist(
+        self,
+        specialist_name: str,
+        specialist_scales: Dict[str, np.ndarray]
+    ) -> Tuple[Dict[str, np.ndarray], PCA]:
+        """
+        Optimized PCA fitting and transformation for one specialist.
+        
+        Args:
+            specialist_name: Name of the specialist
+            specialist_scales: Dictionary with 5 scale coefficients
+            
+        Returns:
+            Tuple of (compressed_features, pca_model)
+        """
+        try:
+            if self.verbose:
+                tprint_info(f"   📊 Optimized compression of {specialist_name} specialist...")
+            
+            # Create scale matrix efficiently
+            scale_matrix, valid_scales = self._create_scale_matrix_inplace(specialist_scales)
+            
+            # Handle potential NaNs in scale matrix
+            if np.isnan(scale_matrix).any():
+                scale_matrix = np.nan_to_num(scale_matrix, nan=0.0)
+            
+            if scale_matrix.shape[0] < 10:
+                if self.verbose:
+                    tprint_warning(f"      ⚠️ Insufficient data for {specialist_name}: {scale_matrix.shape[0]}")
+                return self._create_dummy_compression(specialist_name), None
+            
+            # In-place standardization with NaN handling
+            scaler = StandardScaler()
+            scaled_data = scaler.fit_transform(scale_matrix)
+            
+            # Handle NaN results from scaling (e.g. constant signals)
+            if np.isnan(scaled_data).any():
+                scaled_data = np.nan_to_num(scaled_data, nan=0.0)
+            
+            # Apply PCA
+            pca = PCA(n_components=self.n_components)
+            principal_components = pca.fit_transform(scaled_data)
+            
+            # Check variance explained
+            variance_explained = np.sum(pca.explained_variance_ratio_)
+            
+            # Fix for NaN variance (can happen with constant/zero signals)
+            if np.isnan(variance_explained):
+                variance_explained = 0.0
+            
+            if variance_explained < self.variance_explained_threshold:
+                if self.verbose:
+                    tprint_warning(f"      ⚠️ Low variance explained for {specialist_name}: {variance_explained:.3f}")
+            
+            # Create compressed features efficiently
+            compressed_features = {}
+            for i in range(self.n_components):
+                comp_name = f'PC{i+1}'
+                if i == 0: label = "Momentum"
+                elif i == 1: label = "Decoupling"
+                else: label = "Residual"
+                
+                if i < principal_components.shape[1]:
+                    compressed_features[f'{specialist_name}_{comp_name}'] = principal_components[:, i]
+                else:
+                    compressed_features[f'{specialist_name}_{comp_name}'] = np.zeros(principal_components.shape[0])
+            
+            # Store models
+            self.pca_models[specialist_name] = pca
+            self.scalers[specialist_name] = scaler
+            
+            # Store metrics
+            self.compression_metrics[specialist_name] = {
+                'variance_explained': variance_explained,
+                'original_features': 5,
+                'compressed_features': self.n_components,
+                'compression_ratio': 5 / self.n_components,
+                'explained_variance_ratio': pca.explained_variance_ratio_.tolist()
+            }
+            
+            if self.verbose:
+                tprint_success(f"      ✅ {specialist_name}: {variance_explained:.3f} variance preserved")
+            
+            return compressed_features, pca
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"      ❌ Optimized PCA compression failed for {specialist_name}: {e}")
+            return self._create_dummy_compression(specialist_name), None
+    
+    def compress_all_specialists(
+        self,
+        spectral_specialists: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        """
+        Optimized compression of all specialists with parallel processing.
+        
+        Args:
+            spectral_specialists: Dictionary with all spectral components
+            
+        Returns:
+            Dictionary with compressed features
+        """
+        try:
+            if self.verbose:
+                tprint_info("🚀 Optimized Spectral PCA: Compressing all specialists...")
+            
+            compressed_features = {}
+            
+            # Group spectral components by specialist
+            specialist_groups = self._group_by_specialist(spectral_specialists)
+            
+            # Parallel or sequential processing
+            if self.enable_parallel and len(specialist_groups) > 1:
+                # Parallel processing
+                with ThreadPoolExecutor(max_workers=min(4, len(specialist_groups))) as executor:
+                    futures = [
+                        executor.submit(
+                            self.fit_transform_specialist,
+                            specialist_name, specialist_scales
+                        )
+                        for specialist_name, specialist_scales in specialist_groups.items()
+                    ]
+                    
+                    # Collect results
+                    for future in futures:
+                        try:
+                            specialist_compressed, _ = future.result(timeout=30)
+                            compressed_features.update(specialist_compressed)
+                        except Exception as e:
+                            if self.verbose:
+                                tprint_warning(f"      ⚠️ Parallel compression failed: {e}")
+            else:
+                # Sequential processing
+                for specialist_name, specialist_scales in specialist_groups.items():
+                    specialist_compressed, _ = self.fit_transform_specialist(
+                        specialist_name, specialist_scales
+                    )
+                    compressed_features.update(specialist_compressed)
+            
+            if self.verbose:
+                total_variance = np.mean([
+                    metrics['variance_explained'] 
+                    for metrics in self.compression_metrics.values()
+                ])
+                tprint_success(f"✅ Optimized Spectral PCA Complete:")
+                tprint_info(f"   - Specialists compressed: {len(self.compression_metrics)}")
+                tprint_info(f"   - Features before: {len(spectral_specialists)}")
+                tprint_info(f"   - Features after: {len(compressed_features)}")
+                tprint_info(f"   - Avg variance preserved: {total_variance:.3f}")
+                tprint_info(f"   - Compression ratio: {len(spectral_specialists) / len(compressed_features):.1f}x")
+                tprint_info(f"   - Processing method: {'Parallel' if self.enable_parallel else 'Sequential'}")
+            
+            return compressed_features
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Optimized multi-specialist compression failed: {e}")
+            return {}
+    
+    def _group_by_specialist(
+        self,
+        spectral_specialists: Dict[str, np.ndarray]
+    ) -> Dict[str, Dict[str, np.ndarray]]:
+        """Group spectral components by specialist name."""
+        if self.verbose:
+            tprint_info("👥 Grouping spectral components by specialist")
+        specialist_groups = {}
+        
+        for key, coeffs in spectral_specialists.items():
+            parts = key.split('_')
+            if len(parts) >= 2:
+                specialist_name = '_'.join(parts[:-1])
+                scale_name = parts[-1]
+                
+                if specialist_name not in specialist_groups:
+                    specialist_groups[specialist_name] = {}
+                
+                specialist_groups[specialist_name][scale_name] = coeffs
+        
+        return specialist_groups
+    
+    def _create_dummy_compression(self, specialist_name: str) -> Dict[str, np.ndarray]:
+        """Create dummy compression when real compression fails."""
+        if self.verbose:
+            tprint_info("📝 Creating dummy compression")
+        dummy = {}
+        for i in range(self.n_components):
+            dummy[f'{specialist_name}_PC{i+1}'] = np.zeros(100)
+        return dummy
+    
+    def get_compression_metrics(self) -> Dict[str, Dict[str, float]]:
+        """Get compression metrics for all specialists."""
+        if self.verbose:
+            tprint_info("📊 Getting compression metrics")
+        return self.compression_metrics
+
+
+class CausalParentFilter:
+    """
+    Use DAG to identify and remove redundant specialists.
+    
+    If Volume Specialist is a parent of Liquidity Specialist,
+    the Liquidity Specialist is providing duplicate information.
+    Keep only Root Parents in the spectral stack.
+    """
+    
+    def __init__(
+        self,
+        causal_graph: Dict[str, List[str]],
+        verbose: bool = True
+    ):
+        """
+        Initialize Causal Parent Filter.
+        
+        Args:
+            causal_graph: DAG showing causal relationships
+            verbose: Whether to print progress information
+        """
+        self.verbose = verbose
+        self.causal_graph = causal_graph
+        self.root_parents = []
+        self.child_specialists = []
+        
+        if self.verbose:
+            tprint_info("🔍 Causal Parent Filter: Initializing...")
+            tprint_info(f"   ⚙️ Causal graph nodes: {len(causal_graph)}")
+            tprint_success("   ✅ Causal Parent Filter: Initialization complete")
+    
+    def identify_root_parents(self, specialist_names: List[str]) -> List[str]:
+        """
+        Find true root parents in causal graph.
+        
+        Args:
+            specialist_names: List of specialist names to analyze
+            
+        Returns:
+            List of root parent specialist names
+        """
+        try:
+            if self.verbose:
+                tprint_info("   🎯 Identifying root parents in causal graph...")
+            
+            # Build set of all specialists
+            all_specialists = set(specialist_names)
+            
+            # Build set of child specialists (those that have parents)
+            child_specialists = set()
+            for parents in self.causal_graph.values():
+                child_specialists.update(parents)
+            
+            # Root parents = specialists that are not children
+            self.root_parents = list(all_specialists - child_specialists)
+            self.child_specialists = list(all_specialists & child_specialists)
+            
+            if self.verbose:
+                tprint_success(f"   ✅ Root parents identified:")
+                tprint_info(f"      - Root parents: {self.root_parents}")
+                tprint_info(f"      - Child specialists: {self.child_specialists}")
+                tprint_info(f"      - Reduction: {len(specialist_names)} → {len(self.root_parents)} specialists")
+            
+            return self.root_parents
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"   ❌ Root parent identification failed: {e}")
+            return specialist_names  # Return all as fallback
+    
+    def filter_specialists(
+        self,
+        compressed_features: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        """
+        Keep only root parents, remove redundant children.
+        
+        Args:
+            compressed_features: Compressed features for all specialists
+            
+        Returns:
+            Filtered features with only root parents
+        """
+        try:
+            if self.verbose:
+                tprint_info("🔍 Filtering specialists by causal parents...")
+            
+            # Extract specialist names from feature keys
+            specialist_names = set()
+            for feature_name in compressed_features.keys():
+                parts = feature_name.split('_')
+                if len(parts) >= 2:
+                    specialist_name = '_'.join(parts[:-1])
+                    specialist_names.add(specialist_name)
+            
+            # Identify root parents
+            root_parents = self.identify_root_parents(list(specialist_names))
+            
+            # Filter features
+            filtered_features = {}
+            
+            for feature_name, feature_values in compressed_features.items():
+                parts = feature_name.split('_')
+                if len(parts) >= 2:
+                    specialist_name = '_'.join(parts[:-1])
+                    
+                    # Keep only root parent features
+                    if specialist_name in root_parents:
+                        filtered_features[feature_name] = feature_values
+            
+            if self.verbose:
+                tprint_success(f"✅ Specialist filtering complete:")
+                tprint_info(f"   - Features before: {len(compressed_features)}")
+                tprint_info(f"   - Features after: {len(filtered_features)}")
+                tprint_info(f"   - Specialists kept: {root_parents}")
+                tprint_info(f"   - Compression gain: {len(compressed_features) / len(filtered_features):.1f}x")
+            
+            return filtered_features
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Specialist filtering failed: {e}")
+            return compressed_features  # Return all as fallback
+
+
+class CausalOrthogonalizer:
+    """
+    Remove beta component, keep only alpha.
+    
+    Regress each feature against the Causal Anchor's prediction
+    and keep only the Residual (unexplained, non-linear gaps).
+    """
+    
+    def __init__(
+        self,
+        min_samples: int = 100,
+        verbose: bool = True
+    ):
+        """
+        Initialize Causal Orthogonalizer.
+        
+        Args:
+            min_samples: Minimum samples required for regression
+            verbose: Whether to print progress information
+        """
+        self.verbose = verbose
+        self.min_samples = min_samples
+        self.beta_models = {}
+        self.alpha_features = {}
+        self.orthogonalization_metrics = {}
+        
+        if self.verbose:
+            tprint_info("🔬 Causal Orthogonalizer: Initializing...")
+            tprint_info(f"   ⚙️ Minimum samples: {min_samples}")
+            tprint_success("   ✅ Causal Orthogonalizer: Initialization complete")
+    
+    def orthogonalize_features(
+        self,
+        compressed_features: Dict[str, np.ndarray],
+        causal_anchor_predictions: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        """
+        Regress each feature against causal anchor, keep residuals.
+        
+        Args:
+            compressed_features: Compressed spectral features
+            causal_anchor_predictions: Causal anchor predictions
+            
+        Returns:
+            Orthogonalized (alpha-only) features
+        """
+        try:
+            if self.verbose:
+                tprint_info("🔬 Orthogonalizing features (removing beta, keeping alpha)...")
+            
+            orthogonalized_features = {}
+            
+            for feature_name, feature_values in compressed_features.items():
+                try:
+                    # Remove NaN values
+                    valid_mask = ~(np.isnan(feature_values) | np.isnan(causal_anchor_predictions))
+                    feature_clean = feature_values[valid_mask]
+                    anchor_clean = causal_anchor_predictions[valid_mask]
+                    
+                    if len(feature_clean) < self.min_samples:
+                        if self.verbose:
+                            tprint_warning(f"      ⚠️ Insufficient samples for {feature_name}: {len(feature_clean)}")
+                        orthogonalized_features[feature_name] = feature_values
+                        continue
+                    
+                    # Regress feature against causal anchor
+                    beta_model = LinearRegression()
+                    beta_model.fit(anchor_clean.reshape(-1, 1), feature_clean)
+                    
+                    # Calculate beta component
+                    beta_component = beta_model.predict(anchor_clean.reshape(-1, 1))
+                    
+                    # Keep only alpha (residuals)
+                    alpha_component = feature_clean - beta_component
+                    
+                    # Store results
+                    orthogonalized_features[feature_name] = alpha_component
+                    self.beta_models[feature_name] = beta_model
+                    
+                    # Calculate orthogonalization metrics
+                    r_squared = beta_model.score(anchor_clean.reshape(-1, 1), feature_clean)
+                    alpha_variance = np.var(alpha_component)
+                    beta_variance = np.var(beta_component)
+                    
+                    self.orthogonalization_metrics[feature_name] = {
+                        'beta_explained_variance': r_squared,
+                        'alpha_variance': alpha_variance,
+                        'beta_variance': beta_variance,
+                        'alpha_ratio': alpha_variance / (alpha_variance + beta_variance + 1e-9),
+                        'samples_used': len(feature_clean)
+                    }
+                    
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"      ⚠️ Orthogonalization failed for {feature_name}: {e}")
+                    orthogonalized_features[feature_name] = feature_values
+            
+            if self.verbose:
+                avg_alpha_ratio = np.mean([
+                    metrics['alpha_ratio'] 
+                    for metrics in self.orthogonalization_metrics.values()
+                ])
+                tprint_success(f"✅ Orthogonalization complete:")
+                tprint_info(f"   - Features orthogonalized: {len(orthogonalized_features)}")
+                tprint_info(f"   - Avg alpha ratio: {avg_alpha_ratio:.3f}")
+                tprint_info(f"   - Beta removed from: {len(self.beta_models)} features")
+            
+            return orthogonalized_features
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Feature orthogonalization failed: {e}")
+            return compressed_features
+
+
+class CausalCompression:
+    """
+    Complete causal compression pipeline: 20 → 4 features.
+    
+    1. Spectral PCA: 20 → 8 features (5 scales → 2 PCs per specialist)
+    2. Causal Parent Filtering: 8 → 4 features (remove redundant specialists)
+    3. Orthogonalization: 4 → 4 alpha features (remove beta, keep alpha)
+    """
+    
+    def __init__(
+        self,
+        causal_graph: Dict[str, List[str]],
+        variance_threshold: float = 0.90, # Relaxed from 0.95 to balance noise vs signal
+        min_samples: int = 100,
+        verbose: bool = True
+    ):
+        """
+        Initialize Complete Causal Compression pipeline.
+        
+        Args:
+            causal_graph: DAG showing causal relationships
+            variance_threshold: Minimum variance to preserve in PCA
+            min_samples: Minimum samples for orthogonalization
+            verbose: Whether to print progress information
+        """
+        self.verbose = verbose
+        self.causal_graph = causal_graph
+        
+        # Initialize components
+        # Increase components to 3 to capture more signal variance as requested
+        self.spectral_pca = SpectralPCA(
+            n_components=3, 
+            variance_explained_threshold=variance_threshold,
+            verbose=verbose
+        )
+        self.parent_filter = CausalParentFilter(causal_graph, verbose=verbose)
+        self.orthogonalizer = CausalOrthogonalizer(min_samples=min_samples, verbose=verbose)
+        
+        self.compression_history = {}
+        
+        if self.verbose:
+            tprint_info("🚀 Causal Compression: Initializing complete pipeline...")
+            tprint_info(f"   ⚙️ Variance threshold: {variance_threshold}")
+            tprint_info(f"   ⚙️ PCA Components: 3 (increased for signal preservation)")
+            tprint_info(f"   ⚙️ Minimum samples: {min_samples}")
+            tprint_success("   ✅ Causal Compression: Initialization complete")
+    
+    def compress_spectral_features(
+        self,
+        spectral_specialists: Dict[str, np.ndarray],
+        causal_anchor_predictions: np.ndarray
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+        """
+        Complete compression pipeline: 20 → 4 alpha features.
+        
+        Args:
+            spectral_specialists: Spectral components (20 features)
+            causal_anchor_predictions: Causal anchor predictions
+            
+        Returns:
+            Tuple of (alpha_features, compression_metrics)
+        """
+        try:
+            if self.verbose:
+                tprint_info("🚀 Causal Compression: Starting complete pipeline...")
+            
+            original_count = len(spectral_specialists)
+            
+            # Step 1: Spectral PCA (20 → 8 features)
+            if self.verbose:
+                tprint_info("   📊 Step 1: Spectral PCA compression...")
+            
+            compressed_features = self.spectral_pca.compress_all_specialists(spectral_specialists)
+            pca_count = len(compressed_features)
+            
+            # Step 2: Causal Parent Filtering (8 → 4 features)
+            if self.verbose:
+                tprint_info("   🔍 Step 2: Causal parent filtering...")
+            
+            filtered_features = self.parent_filter.filter_specialists(compressed_features)
+            filtered_count = len(filtered_features)
+            
+            # Step 3: Orthogonalization (remove beta, keep alpha)
+            if self.verbose:
+                tprint_info("   🔬 Step 3: Orthogonalization (alpha/beta separation)...")
+            
+            alpha_features = self.orthogonalizer.orthogonalize_features(
+                filtered_features, causal_anchor_predictions
+            )
+            final_count = len(alpha_features)
+            
+            # Compile compression metrics
+            compression_metrics = {
+                'original_count': original_count,
+                'pca_compressed': pca_count,
+                'parent_filtered': filtered_count,
+                'final_alpha_count': final_count,
+                'total_compression_ratio': original_count / final_count,
+                'pca_compression_ratio': original_count / pca_count,
+                'parent_filtering_ratio': pca_count / filtered_count,
+                'pca_metrics': self.spectral_pca.get_compression_metrics(),
+                'root_parents': self.parent_filter.root_parents,
+                'discarded_children': self.parent_filter.child_specialists,
+                'orthogonalization_metrics': self.orthogonalizer.orthogonalization_metrics
+            }
+            
+            if self.verbose:
+                tprint_success("✅ Causal Compression Complete:")
+                tprint_info(f"   - Original features: {original_count}")
+                tprint_info(f"   - After PCA: {pca_count}")
+                tprint_info(f"   - After parent filtering: {filtered_count}")
+                tprint_info(f"   - Final alpha features: {final_count}")
+                tprint_info(f"   - Total compression: {original_count} → {final_count} ({compression_metrics['total_compression_ratio']:.1f}x)")
+                tprint_info(f"   - Root parents kept: {len(self.parent_filter.root_parents)}")
+                tprint_info(f"   - Children discarded: {len(self.parent_filter.child_specialists)}")
+            
+            return alpha_features, compression_metrics
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Causal compression failed: {e}")
+            return spectral_specialists, {'error': str(e)}
+
+
+# Convenience functions for quick usage
+def quick_causal_compression(
+    spectral_specialists: Dict[str, np.ndarray],
+    causal_anchor_predictions: np.ndarray,
+    causal_graph: Dict[str, List[str]],
+    verbose: bool = True
+) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    """Quick causal compression pipeline."""
+    if verbose:
+        tprint_info("🚀 Quick causal compression")
+    compressor = CausalCompression(causal_graph, verbose=verbose)
+    return compressor.compress_spectral_features(spectral_specialists, causal_anchor_predictions)
+
+
+if __name__ == "__main__":
+    # Example usage
+    print("Causal Compression System for AEDL")
+    print("Use quick_causal_compression() for quick usage")
+    
+    print("\nCompression Pipeline:")
+    print("1. Spectral PCA: 20 → 8 features (5 scales → 2 PCs per specialist)")
+    print("2. Causal Parent Filtering: 8 → 4 features (remove redundant specialists)")
+    print("3. Orthogonalization: 4 → 4 alpha features (remove beta, keep alpha)")
+    print("Total: 20 → 4 features (5x compression)")

@@ -1,0 +1,66 @@
+# Layer 2 Comprehensive Coverage Relaxation Configuration
+# Purpose: Increase coverage from 3.23% to target 25-35% through multiple gate relaxations
+# Enhanced for 1.5-3% target range optimization per de Prado framework
+
+layer2:
+  # Position Rate Gates (relaxed from 5-75% to 5-85%)
+  min_pos_rate: 0.05      # Allow selective strategies (changed from 0.01 to 0.05 as requested)
+  max_pos_rate: 0.85      # Allow high win rate strategies (up from 0.75)
+
+  layer2_signal_k: 0.07
+  layer2_signal_alpha: 0.0
+  
+  # 1.5-3% Target Range Optimization
+  # Kappa Range (tp_mult related, optimized for 1.5-3% returns)
+  kappa_low: 1.5          # Lower bound for 1.5% minimum profit target
+  kappa_high: 3.0        # Upper bound for 3% maximum profit target
+  
+  # Stop Loss Multiplier Range (tightened for medium-term trades)
+  sl_mult_low: 0.5        # Lower bound for tighter risk management
+  sl_mult_high: 1.0       # Upper bound for controlled losses
+  
+  # Enhanced Profitability Gate (optimized for 1.5-3% range)
+  profitability_mode: intelligent  # Allow break-even with risk filters
+  min_mean_trade_return: 0.005   # Require 0.5% minimum after costs (optimized for range)
+  max_acceptable_loss: 0.003      # Max 0.3% loss (tighter control)
+  min_sharpe_proxy: 0.08           # Higher risk threshold for medium-term trades
+  min_positive_trades: 15          # Minimum profitable trades for statistical significance
+  
+  # Coverage Targets
+  target_coverage: 0.40   # Aim for 40% coverage for 1.5-3% range
+  min_coverage: 0.30      # Minimum acceptable coverage
+  
+  # Other Gates (unchanged but documented)
+  probe_auc_threshold: 0.52
+  stability_threshold: 0.85
+
+# 1.5-3% Range Specific Configuration
+target_range_optimization:
+  enabled: true
+  min_target_pct: 0.015    # 1.5% minimum target
+  max_target_pct: 0.03     # 3% maximum target
+  default_tp_pct: 0.0225    # 2.25% default take profit (midpoint)
+  default_sl_pct: 0.75     # 0.75% default stop loss
+  volatility_adjustment: true  # Adjust barriers based on volatility regime
+  regime_specific_params: true  # Use different parameters per market regime
+
+# Layer 3 Efficiency Improvements
+layer3:
+  efficiency_threshold: 0.25   # Increased for better 1.5-3% range filtering
+  tx_cost_proxy: 0.003         # 30bps transaction cost
+  efficiency_mode: relative     # Use percentile-based labeling instead of absolute
+  
+# Expected Combined Impact for 1.5-3% Range:
+# 1. Range-Specific TP/SL: +8-12% coverage for target range
+# 2. Tightened Profitability: Better quality signals for medium-term moves
+# 3. Enhanced Coverage: 30-40% coverage for 1.5-3% opportunities
+# 4. Regime-Specific Optimization: Improved performance per market state
+# 
+# Total Expected Coverage: 30-40% for 1.5-3% range (from baseline ~3.23%)
+# 
+# Key Changes for 1.5-3% Optimization:
+# - TP Range: [1.5%, 3.0%] for focused medium-term targets
+# - SL Range: [0.5%, 1.0%] for tighter risk control
+# - Profitability: 0.5% minimum return (realistic for this range)
+# - Volatility Adjustment: Dynamic barrier sizing based on market conditions
+# - Regime Awareness: Different parameters for trend/volatile/calm markets

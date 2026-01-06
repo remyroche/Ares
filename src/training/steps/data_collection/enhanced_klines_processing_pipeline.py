@@ -31,7 +31,7 @@ Quality Features:
 """
 
 # Type annotations for lazy-loaded quality utilities
-from typing import Optional, TYPE_CHECKING, Any, Union, Dict, List, Tuple, Callable
+from typing import Optional, TYPE_CHECKING, Any, Union
 import sys
 import os
 from pathlib import Path
@@ -77,100 +77,15 @@ if TYPE_CHECKING:
         StatisticalValidator = Any
         QualityAlertManager = Any
 
-# Lazy imports for heavy dependencies
-_pandas = None
-_numpy = None
-_asyncio = None
-_datetime = None
-_timedelta = None
-_dataclass = None
-_field = None
-_Enum = None
-
-def _lazy_import_heavy_dependencies():
-    """Import heavy dependencies only when needed."""
-    global _pandas, _numpy, _asyncio, _datetime, _timedelta, _dataclass, _field, _Enum
-    
-    if _pandas is not None:
-        return
-    
-    import pandas as pd
-    import numpy as np
-    import asyncio
-    from datetime import datetime, timedelta
-    from dataclasses import dataclass, field
-    from enum import Enum
-    
-    _pandas = pd
-    _numpy = np
-    _asyncio = asyncio
-    _datetime = datetime
-    _timedelta = timedelta
-    _dataclass = dataclass
-    _field = field
-    _Enum = Enum
-
-# Make imports available at module level through properties
-class LazyImports:
-    @property
-    def pd(self):
-        if _pandas is None:
-            _lazy_import_heavy_dependencies()
-        return _pandas
-    
-    @property
-    def np(self):
-        if _numpy is None:
-            _lazy_import_heavy_dependencies()
-        return _numpy
-    
-    @property
-    def asyncio(self):
-        if _asyncio is None:
-            _lazy_import_heavy_dependencies()
-        return _asyncio
-    
-    @property
-    def datetime(self):
-        if _datetime is None:
-            _lazy_import_heavy_dependencies()
-        return _datetime
-    
-    @property
-    def timedelta(self):
-        if _timedelta is None:
-            _lazy_import_heavy_dependencies()
-        return _timedelta
-    
-    @property
-    def dataclass(self):
-        if _dataclass is None:
-            _lazy_import_heavy_dependencies()
-        return _dataclass
-    
-    @property
-    def field(self):
-        if _field is None:
-            _lazy_import_heavy_dependencies()
-        return _field
-    
-    @property
-    def Enum(self):
-        if _Enum is None:
-            _lazy_import_heavy_dependencies()
-        return _Enum
-
-lazy_imports = LazyImports()
-
-# Forward references for backward compatibility
-pd = lazy_imports.pd
-np = lazy_imports.np
-asyncio = lazy_imports.asyncio
-datetime = lazy_imports.datetime
-timedelta = lazy_imports.timedelta
-dataclass = lazy_imports.dataclass
-field = lazy_imports.field
-Enum = lazy_imports.Enum
+import asyncio
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Awaitable, Set
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from enum import Enum
+import sys
 
 # Add project root to path for imports
 # File is at: Ares/src/training/steps/data_collection/enhanced_klines_processing_pipeline.py
@@ -202,25 +117,11 @@ def get_tprint_functions():
 # Initialize lazy imports
 system_logger = get_system_logger()
 tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_functions()
-try:
-    print(
-        f"[tprint-debug] Loaded tprint_info from {getattr(tprint_info, '__module__', 'unknown')} "
-        f"(func={tprint_info})",
-        flush=True,
-    )
-    print(
-        f"[tprint-debug] Env TPRINT_MINIMAL={os.environ.get('TPRINT_MINIMAL')} "
-        f"TPRINT_DISABLED={os.environ.get('TPRINT_DISABLED')}",
-        flush=True,
-    )
-except Exception:
-    pass
 # Import comprehensive data quality utilities from src/utils/data/quality/
 # Use lazy imports to avoid circular import issues
 
 # Global variables for lazy-loaded quality utilities with type annotations
 QUALITY_UTILITIES_AVAILABLE: bool = False
-QUALITY_UTILITIES_DISABLED: bool = False  # Flag to disable quality utilities entirely
 _COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[Any] = None
 _DATA_QUALITY_FRAMEWORK: Optional[Any] = None
 _COMPREHENSIVE_QUALITY_SCORER: Optional[Any] = None
@@ -235,8 +136,8 @@ _ANALYZE_DUPLICATES_COMPREHENSIVE = None
 class FallbackQualityResult:
     """Fallback quality result."""
     passed: bool
-    issues: 'List[str]'
-    warnings: 'List[str]'
+    issues: List[str]
+    warnings: List[str]
     quality_score: float
 
 # Define QualityScoreLevel, QualityScore, and QualityAssessment before lazy import
@@ -254,38 +155,37 @@ class QualityScore:
     """Quality score result."""
     overall_score: float
     level: QualityScoreLevel
-    component_scores: 'Dict[str, float]'
-    issues: 'List[str]'
-    warnings: 'List[str]'
-    recommendations: 'List[str]'
-    assessment_timestamp: 'datetime'
-    data_shape: 'Tuple[int, int]'
+    component_scores: Dict[str, float]
+    issues: List[str]
+    warnings: List[str]
+    recommendations: List[str]
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
 
 @dataclass
 class QualityAssessment:
     """Quality assessment result."""
     overall_score: float
-    metrics: 'List[str]'
+    metrics: List[str]
     issues_found: int
     warnings_found: int
     critical_issues: int
-    assessment_timestamp: 'datetime'
-    data_shape: 'Tuple[int, int]'
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
 
 def _lazy_import_quality_utilities():
-    """Lazy import of quality utilities to avoid circular imports and memory usage."""
-    global QUALITY_UTILITIES_AVAILABLE, QUALITY_UTILITIES_DISABLED, _COMPREHENSIVE_DUPLICATE_ANALYZER, _DATA_QUALITY_FRAMEWORK
+    """Lazy import of quality utilities to avoid circular imports."""
+    global QUALITY_UTILITIES_AVAILABLE, _COMPREHENSIVE_DUPLICATE_ANALYZER, _DATA_QUALITY_FRAMEWORK
     global _COMPREHENSIVE_QUALITY_SCORER, _ADVANCED_QUALITY_METRICS, _DATA_CLEANER
     global _STATISTICAL_VALIDATOR, _QUALITY_ALERT_SYSTEM, _ANALYZE_DUPLICATES_COMPREHENSIVE
     
-    if QUALITY_UTILITIES_AVAILABLE is True or QUALITY_UTILITIES_DISABLED is True:
+    if QUALITY_UTILITIES_AVAILABLE is True:
         return
     
     # Get the current module to update module-level names
     current_module = sys.modules[__name__]
     
     try:
-        # Import only when actually needed to reduce memory footprint
         from src.utils.data.quality.comprehensive_duplicate_analyzer import (
             ComprehensiveDuplicateAnalyzer as ImportedComprehensiveDuplicateAnalyzer,
             analyze_duplicates_comprehensive as imported_analyze_duplicates_comprehensive
@@ -317,8 +217,6 @@ def _lazy_import_quality_utilities():
         setattr(current_module, 'analyze_duplicates_comprehensive', imported_analyze_duplicates_comprehensive)
         
         QUALITY_UTILITIES_AVAILABLE = True
-        if QUALITY_UTILITIES_AVAILABLE:
-            tprint_info("✅ Quality utilities loaded successfully")
     except ImportError as e:
         tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
         QUALITY_UTILITIES_AVAILABLE = False
@@ -336,6 +234,10 @@ def _lazy_import_quality_utilities():
         def analyze_duplicates_comprehensive(df):
             return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
 
+        _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
+        _COMPREHENSIVE_DUPLICATE_ANALYZER = ComprehensiveDuplicateAnalyzer
+
+        # Fallback classes for missing quality utilities
         class DataQualityFramework:
             def validate_data(self, df, thresholds=None):
                 return FallbackQualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
@@ -402,155 +304,41 @@ def _lazy_import_quality_utilities():
 
 # Initialize quality utilities at module load time
 _lazy_import_quality_utilities()
-# Lazy imports for exchange interface to avoid Python version issues
-_ExchangeInterface = None
-_create_exchange_interface = None
-_EXCHANGE_INTERFACE_AVAILABLE = False
-
-def _lazy_import_exchange_interface():
-    """Import exchange interface only when needed."""
-    global _ExchangeInterface, _create_exchange_interface, _EXCHANGE_INTERFACE_AVAILABLE
-    
-    if _ExchangeInterface is not None:
-        return
-    
+# Import ExchangeInterface from the proper location
+try:
+    from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+    EXCHANGE_INTERFACE_AVAILABLE = True
+except ImportError as e:  # Allow running without trading stack (use existing klines only)
+    EXCHANGE_INTERFACE_AVAILABLE = False
+    ExchangeInterface = None  # type: ignore
+    create_exchange_interface = None  # type: ignore
+    # Retry import after stubs are available
     try:
-        from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
-        _ExchangeInterface = ExchangeInterface
-        _create_exchange_interface = create_exchange_interface
-        _EXCHANGE_INTERFACE_AVAILABLE = True
-    except ImportError as e:  # Allow running without trading stack (use existing klines only)
-        _EXCHANGE_INTERFACE_AVAILABLE = False
-
-# Exchange interface access through properties
-class LazyExchangeInterface:
-    @property
-    def ExchangeInterface(self):
-        if _ExchangeInterface is None:
-            _lazy_import_exchange_interface()
-        return _ExchangeInterface
-    
-    @property
-    def create_exchange_interface(self):
-        if _create_exchange_interface is None:
-            _lazy_import_exchange_interface()
-        return _create_exchange_interface
-    
-    @property
-    def EXCHANGE_INTERFACE_AVAILABLE(self):
-        if _ExchangeInterface is None:
-            _lazy_import_exchange_interface()
-        return _EXCHANGE_INTERFACE_AVAILABLE
-
-lazy_exchange_interface = LazyExchangeInterface()
-
-# Exchange interface available through lazy_exchange_interface property
-# ExchangeInterface = lazy_exchange_interface.ExchangeInterface  # Commented out to avoid immediate import
-# create_exchange_interface = lazy_exchange_interface.create_exchange_interface  # Commented out to avoid immediate import
-# EXCHANGE_INTERFACE_AVAILABLE = lazy_exchange_interface.EXCHANGE_INTERFACE_AVAILABLE  # Commented out to avoid immediate import
-
-_KlinesParquetManager = None
-_fill_1m_gaps_and_resample_for_symbol = None
-_ExchangeType = None
-_TradingMode = None
-_create_exchange_dispatcher = None
-_ExchangeConfig = None
-_UnifiedOHLCVStandardizer = None
-
-def _lazy_import_exchange_modules():
-    """Import exchange modules only when needed."""
-    global _KlinesParquetManager, _fill_1m_gaps_and_resample_for_symbol
-    global _ExchangeType, _TradingMode, _create_exchange_dispatcher, _ExchangeConfig
-    global _UnifiedOHLCVStandardizer
-    
-    if _KlinesParquetManager is not None:
-        return
-    
-    from src.utils.data.klines_parquet import KlinesParquetManager
-    from src.training.steps.data_collection.klines_gap_filler_1m import fill_1m_gaps_and_resample_for_symbol
-    from exchanges.exchange_types import ExchangeType, TradingMode
-    
-    _KlinesParquetManager = KlinesParquetManager
-    _fill_1m_gaps_and_resample_for_symbol = fill_1m_gaps_and_resample_for_symbol
-    _ExchangeType = ExchangeType
-    _TradingMode = TradingMode
-    
-    # Try to import dispatcher
-    try:
-        from exchanges.exchange_dispatcher import create_exchange_dispatcher, ExchangeConfig
-        _create_exchange_dispatcher = create_exchange_dispatcher
-        _ExchangeConfig = ExchangeConfig
+        from src.trading.execution.exchange_interface import ExchangeInterface as _EI, create_exchange_interface as _CEI
+        ExchangeInterface = _EI
+        create_exchange_interface = _CEI
+        EXCHANGE_INTERFACE_AVAILABLE = True
     except Exception:
         pass
-    
-    # Try to import standardizer
-    try:
-        from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
-        _UnifiedOHLCVStandardizer = UnifiedOHLCVStandardizer
-    except Exception:
-        pass
+from exchanges.exchange_types import ExchangeType, TradingMode
+# Dispatcher factory to wire exchange-specific adapters
+try:
+    from exchanges.exchange_dispatcher import create_exchange_dispatcher, ExchangeConfig
+except Exception:
+    create_exchange_dispatcher = None  # type: ignore
+    ExchangeConfig = None  # type: ignore
 
-# Exchange module access through properties
-class LazyExchangeImports:
-    @property
-    def KlinesParquetManager(self):
-        if _KlinesParquetManager is None:
-            _lazy_import_exchange_modules()
-        return _KlinesParquetManager
-    
-    @property
-    def fill_1m_gaps_and_resample_for_symbol(self):
-        if _fill_1m_gaps_and_resample_for_symbol is None:
-            _lazy_import_exchange_modules()
-        return _fill_1m_gaps_and_resample_for_symbol
-    
-    @property
-    def ExchangeType(self):
-        if _ExchangeType is None:
-            _lazy_import_exchange_modules()
-        return _ExchangeType
-    
-    @property
-    def TradingMode(self):
-        if _TradingMode is None:
-            _lazy_import_exchange_modules()
-        return _TradingMode
-    
-    @property
-    def create_exchange_dispatcher(self):
-        if _create_exchange_dispatcher is None:
-            _lazy_import_exchange_modules()
-        return _create_exchange_dispatcher
-    
-    @property
-    def ExchangeConfig(self):
-        if _ExchangeConfig is None:
-            _lazy_import_exchange_modules()
-        return _ExchangeConfig
-    
-    @property
-    def UnifiedOHLCVStandardizer(self):
-        global _UnifiedOHLCVStandardizer
-        if _UnifiedOHLCVStandardizer is None:
-            _lazy_import_exchange_modules()
-            if _UnifiedOHLCVStandardizer is None:
-                # Fallback no-op standardizer
-                class UnifiedOHLCVStandardizer:
-                    def standardize(self, df, *args, **kwargs):
-                        return df
-                _UnifiedOHLCVStandardizer = UnifiedOHLCVStandardizer
-        return _UnifiedOHLCVStandardizer
+# Import the proper classes from their locations (fallback stubs to bypass missing exchange deps)
+try:
+    from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+except Exception:
+    class UnifiedOHLCVStandardizer:  # type: ignore
+        """Fallback no-op standardizer when exchange shared modules are unavailable."""
+        def standardize(self, df, *args, **kwargs):
+            return df
 
-lazy_exchange_imports = LazyExchangeImports()
-
-# Exchange modules available through lazy_exchange_imports properties
-# KlinesParquetManager = lazy_exchange_imports.KlinesParquetManager  # Commented out to avoid immediate import
-# fill_1m_gaps_and_resample_for_symbol = lazy_exchange_imports.fill_1m_gaps_and_resample_for_symbol  # Commented out to avoid immediate import
-# ExchangeType = lazy_exchange_imports.ExchangeType  # Commented out to avoid immediate import
-# TradingMode = lazy_exchange_imports.TradingMode  # Commented out to avoid immediate import
-# create_exchange_dispatcher = lazy_exchange_imports.create_exchange_dispatcher  # Commented out to avoid immediate import
-# ExchangeConfig = lazy_exchange_imports.ExchangeConfig  # Commented out to avoid immediate import
-# UnifiedOHLCVStandardizer = lazy_exchange_imports.UnifiedOHLCVStandardizer  # Commented out to avoid immediate import
+from src.utils.data.klines_parquet import KlinesParquetManager
+from src.training.steps.data_collection.klines_gap_filler_1m import fill_1m_gaps_and_resample_for_symbol
 
 class StorageConfig:
     """Simple storage config."""
@@ -631,47 +419,6 @@ class PipelineConfig:
     force_download: bool = False  # If True, ignore existing data and download fresh
     storage_config: Optional[StorageConfig] = None
 
-class LazyComponentLoader:
-    """Lazy loader for expensive pipeline components to defer initialization until needed."""
-    
-    _components = {}
-    _instances = {}
-    
-    @classmethod
-    def register(cls, name: str, component_factory: Callable, dependencies: List[str] = None):
-        """Register a component with its factory function and dependencies."""
-        cls._components[name] = {
-            'factory': component_factory,
-            'dependencies': dependencies or []
-        }
-    
-    @classmethod
-    def get_component(cls, name: str, pipeline_instance=None):
-        """Get or create component instance lazily."""
-        if name not in cls._instances:
-            if name not in cls._components:
-                raise ValueError(f"Component {name} not registered")
-            
-            # Check dependencies first
-            component_info = cls._components[name]
-            for dep in component_info['dependencies']:
-                if dep not in cls._instances:
-                    cls.get_component(dep, pipeline_instance)
-            
-            # Create instance using factory
-            factory = component_info['factory']
-            if pipeline_instance:
-                instance = factory(pipeline_instance)
-            else:
-                instance = factory()
-            cls._instances[name] = instance
-        return cls._instances[name]
-    
-    @classmethod
-    def clear_cache(cls):
-        """Clear all cached instances (useful for testing)."""
-        cls._instances.clear()
-
 class EnhancedKlinesProcessingPipeline:
     """
     Enhanced klines data processing pipeline with comprehensive type hints,
@@ -701,13 +448,16 @@ class EnhancedKlinesProcessingPipeline:
         self.exchange = self.config.exchange.lower()
         self.enable_logging = self.config.enable_logging
 
-        # Register lazy component factories
-        self._register_lazy_components()
-        
-        # Initialize lazy components (deferred until first use)
-        self._data_standardizer = None
-        self._duplicate_analyzer = None
-        self._klines_manager = None
+        # Initialize components
+        self.data_standardizer = UnifiedOHLCVStandardizer()
+        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
+
+        # Initialize parquet manager with explicit exchange so data is stored
+        # under the correct exchange subdirectory (e.g., binance, bingx, etc.)
+        self.klines_manager = KlinesParquetManager(
+            data_dir=self.config.data_dir,
+            exchange=self.exchange,
+        )
 
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -731,47 +481,6 @@ class EnhancedKlinesProcessingPipeline:
             tprint_info(f"   🔧 Gap filling: {'enabled' if self.config.enable_gap_filling else 'disabled'}")
             tprint_info(f"   📊 Resampling: {'enabled' if self.config.enable_resampling else 'disabled'}")
             tprint_info(f"   🔄 Batch compatible: {'enabled' if self.config.batch_compatible else 'disabled'}")
-    
-    def _register_lazy_components(self):
-        """Register all lazy component factories."""
-        
-        def create_data_standardizer():
-            return lazy_exchange_imports.UnifiedOHLCVStandardizer()
-        
-        def create_duplicate_analyzer():
-            return ComprehensiveDuplicateAnalyzer()
-        
-        def create_klines_manager(pipeline):
-            return lazy_exchange_imports.KlinesParquetManager(
-                data_dir=pipeline.config.data_dir,
-                exchange=pipeline.exchange,
-            )
-        
-        # Register components
-        LazyComponentLoader.register('data_standardizer', create_data_standardizer)
-        LazyComponentLoader.register('duplicate_analyzer', create_duplicate_analyzer)
-        LazyComponentLoader.register('klines_manager', create_klines_manager)
-    
-    @property
-    def data_standardizer(self):
-        """Lazy-loaded data standardizer."""
-        if self._data_standardizer is None:
-            self._data_standardizer = LazyComponentLoader.get_component('data_standardizer')
-        return self._data_standardizer
-    
-    @property
-    def duplicate_analyzer(self):
-        """Lazy-loaded duplicate analyzer."""
-        if self._duplicate_analyzer is None:
-            self._duplicate_analyzer = LazyComponentLoader.get_component('duplicate_analyzer')
-        return self._duplicate_analyzer
-    
-    @property
-    def klines_manager(self):
-        """Lazy-loaded klines manager."""
-        if self._klines_manager is None:
-            self._klines_manager = LazyComponentLoader.get_component('klines_manager', self)
-        return self._klines_manager
 
     @staticmethod
     def _ensure_naive_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -1232,7 +941,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str,
         years: int,
-        exchange_interface: "ExchangeInterface",
+        exchange_interface: ExchangeInterface,
         resampling_config: Optional[ResamplingConfig] = None,
         max_gap_minutes: Optional[int] = None,
         create_consolidated: bool = True,
@@ -1245,7 +954,7 @@ class EnhancedKlinesProcessingPipeline:
             symbol: Trading symbol (e.g., "ETHUSDT")
             interval: Data interval (e.g., "1m")
             years: Number of years of data to process
-            exchange_interface: "ExchangeInterface" instance for data access
+            exchange_interface: ExchangeInterface instance for data access
             resampling_config: Configuration for data resampling
             max_gap_minutes: Maximum allowed gap in minutes (uses config default if None)
             create_consolidated: Whether to create consolidated output file
@@ -1372,7 +1081,7 @@ class EnhancedKlinesProcessingPipeline:
             # Step 5: Handle duplicates (if enabled)
             if self.config.enable_duplicate_handling:
                 duplicate_result = await self._handle_duplicates(
-                    current_data, symbol, interval
+                    current_data, symbol, interval, exchange_interface
                 )
                 self.processing_results.append(duplicate_result)
 
@@ -1401,7 +1110,7 @@ class EnhancedKlinesProcessingPipeline:
                     filled_ranges = None
 
                 resample_result = await self._resample_data_with_age_check(
-                    current_data, symbol, resampling_config, batch_id, filled_ranges=filled_ranges
+                    current_data, symbol, resampling_config, batch_id, years, filled_ranges=filled_ranges
                 )
                 self.processing_results.append(resample_result)
 
@@ -1447,6 +1156,11 @@ class EnhancedKlinesProcessingPipeline:
                                 except Exception as synthetic_exc:
                                     if self.enable_logging:
                                         tprint_warning(f"⚠️ Synthetic 1m gap filler failed: {synthetic_exc}")
+                        
+                        # Final mandatory gap verification for ALL target intervals
+                        final_gap_report = await self._verify_all_resampled_gaps(symbol, resampling_config, years)
+                        results["metadata"]["final_gap_report"] = {k: len(v) for k, v in final_gap_report.items()}
+                        
                     except Exception as e:
                         if self.enable_logging:
                             tprint_warning(f"⚠️ Processed 15m gap analysis/backfill failed: {e}")
@@ -1561,10 +1275,10 @@ class EnhancedKlinesProcessingPipeline:
             'rate_limits': {}
         }
         
-        from src.trading.execution.exchange_interface import ExchangeInterface as ImportedExchangeInterface
+        from src.trading.execution.exchange_interface import ExchangeInterface
         if self.enable_logging:
             tprint_info(f"🔌 Creating ExchangeInterface with config: {exchange_config}")
-        exchange_interface = ImportedExchangeInterface(exchange_config)
+        exchange_interface = ExchangeInterface(exchange_config)
         if self.enable_logging:
             tprint_info(f"🔌 ExchangeInterface created: {exchange_interface}")
         
@@ -1653,7 +1367,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str,
         years: int,
-        exchange_interface: "ExchangeInterface"
+        exchange_interface: ExchangeInterface
     ) -> ProcessingResult:
         """Download or load klines data from exchange or existing files."""
         start_time = datetime.now()
@@ -1666,33 +1380,11 @@ class EnhancedKlinesProcessingPipeline:
 
         try:
             if self.enable_logging:
-                tprint_info(f"📥 STARTING DOWNLOAD PROCESS for {symbol} {interval}")
-                tprint_info(f"   📅 Requested: {years} years of data")
-                tprint_info(f"   🗂️ Data directory: {self.config.data_dir}")
-                tprint_info(f"   🌐 Exchange: {self.exchange}")
-                tprint_info(f"   💾 Has exchange interface: {exchange_interface is not None}")
+                tprint_info(f"📥 Processing {years} years of {symbol} {interval} data")
 
             # Check if we have existing data first
             data_dir = Path(self.config.data_dir) / self.exchange / symbol.lower() / "raw"
-            if self.enable_logging:
-                tprint_info(f"🔍 CHECKING FOR EXISTING DATA in {data_dir}")
-            
             parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
-            
-            if self.enable_logging:
-                if parquet_files:
-                    tprint_info(f"📁 FOUND {len(parquet_files)} existing parquet files:")
-                    for pf in parquet_files[:5]:  # Show first 5 files
-                        tprint_info(f"   📄 {pf.name}")
-                    if len(parquet_files) > 5:
-                        tprint_info(f"   ... and {len(parquet_files)-5} more files")
-                else:
-                    tprint_info(f"📁 NO existing parquet files found - will download fresh data")
-
-            # Prefer existing klines; only download gaps or fresh when forced or empty
-            if parquet_files and not getattr(self.config, "force_download", False):
-                if self.enable_logging:
-                    tprint_info(f"✅ USING existing data ({len(parquet_files)} files) - no download needed")
 
             # Prefer existing klines; only download gaps or fresh when forced or empty
             if parquet_files and not getattr(self.config, "force_download", False):
@@ -1720,10 +1412,6 @@ class EnhancedKlinesProcessingPipeline:
                     desired_end = datetime.now()
                     desired_start = desired_end - timedelta(days=365 * years)
 
-                    if self.enable_logging:
-                        tprint_success(f"📊 LOADED existing data: {len(klines_data):,} records from {earliest_data_time} to {latest_data_time}")
-                        tprint_info(f"   Requested range: {desired_start} to {desired_end}")
-
                     gaps_to_fill: List[Tuple[str, datetime, datetime]] = []
                     gap_dfs: List[pd.DataFrame] = []
                     expected_frequency = pd.Timedelta(minutes=self._interval_to_minutes(interval))
@@ -1747,11 +1435,10 @@ class EnhancedKlinesProcessingPipeline:
 
                     if gaps_to_fill and exchange_interface is not None:
                         if self.enable_logging:
-                            tprint_info(f"📥 FOUND {len(gaps_to_fill)} gaps to fill:")
-                            for gap_type, gap_start, gap_end in gaps_to_fill:
-                                gap_size = (gap_end - gap_start).total_seconds() / 3600
-                                tprint_info(f"   • {gap_type}: {gap_start} to {gap_end} ({gap_size:.1f} hours)")
+                            tprint_info(f"📥 Filling {len(gaps_to_fill)} gap(s); download only missing ranges")
 
+                        # Use the unified ExchangeInterface.get_klines API for gap fills so we
+                        # benefit from dispatcher wiring and the Binance public klines fallback.
                         interval_minutes = self._interval_to_minutes(interval) or 1
                         interval_delta = timedelta(minutes=interval_minutes)
                         batch_size = 1000
@@ -1760,9 +1447,6 @@ class EnhancedKlinesProcessingPipeline:
                         for gap_type, gap_start, gap_end in gaps_to_fill:
                             if gap_end <= gap_start:
                                 continue
-
-                            if self.enable_logging:
-                                tprint_info(f"🔄 FILLING {gap_type} gap: {gap_start} to {gap_end}")
 
                             current_start = gap_start
                             gap_klines: List[Any] = []
@@ -1782,19 +1466,23 @@ class EnhancedKlinesProcessingPipeline:
                                         tprint_warning(f"⚠️ Gap download failed ({gap_type}): {e}")
                                     break
 
-                                if batch is None or (hasattr(batch, 'empty') and batch.empty):
+                                if not batch:
                                     break
 
                                 gap_klines.extend(batch)
 
+                                # Derive the timestamp of the last candle in the batch to
+                                # advance the window. Support both KlineData objects and
+                                # raw list/tuple formats for robustness.
                                 last_ts = None
                                 try:
                                     last_kline = batch[-1]
                                     if hasattr(last_kline, "timestamp"):
                                         last_ts = getattr(last_kline, "timestamp")
                                     else:
-                                        raw_ts = batch[-1][0]
+                                        raw_ts = last_kline[0]
                                         if isinstance(raw_ts, (int, float)):
+                                            # Assume milliseconds when values are large
                                             unit = "ms" if raw_ts > 1e12 else "s"
                                             last_ts = pd.to_datetime(raw_ts, unit=unit).to_pydatetime()
                                         else:
@@ -1812,15 +1500,12 @@ class EnhancedKlinesProcessingPipeline:
                             if gap_klines:
                                 gap_df = self._klines_to_dataframe(gap_klines, symbol, interval)
                                 gap_dfs.append(gap_df)
-
                         if gap_dfs:
                             klines_data = pd.concat([klines_data] + gap_dfs).drop_duplicates().sort_index()
                     elif gaps_to_fill and exchange_interface is None and self.enable_logging:
                         tprint_warning("⚠️ Skipping gap download because exchange interface is unavailable; using existing data only")
-                    else:
-                        if self.enable_logging:
-                            tprint_success("✅ No gaps found - data is complete")
 
+                    # Finalize using existing data (+ gaps if any)
                     total_gap_records = sum(len(df) for df in gap_dfs) if gap_dfs else 0
                     result.success = True
                     result.data = klines_data
@@ -1838,33 +1523,23 @@ class EnhancedKlinesProcessingPipeline:
                         tprint_info(f"📅 Full range: {klines_data.index.min()} to {klines_data.index.max()}")
                     return result
                 else:
+                    # No readable parquet data; fall through to fresh download
                     if self.enable_logging:
-                        if not parquet_files:
-                            tprint_info(f"🌐 NO existing data found - starting FRESH DOWNLOAD for {symbol} {interval}")
-                        else:
-                            tprint_info(f"🔄 FORCE DOWNLOAD enabled - downloading fresh data despite existing files")
-                
-                if self.enable_logging:
-                    tprint_info(f"🚀 STARTING FRESH DOWNLOAD for {symbol} {interval} ({years} years)")
-                    tprint_info(f"   📅 Date range: {datetime.now() - timedelta(days=365*years)} to {datetime.now()}")
+                        tprint_warning("⚠️ No valid data found in existing parquet files; downloading fresh data")
 
             # If no data and no exchange interface available, fail fast
             if not parquet_files and exchange_interface is None:
                 raise RuntimeError("No existing raw klines found and exchange interface unavailable; cannot download.")
 
             # Ensure dispatcher is wired for live download
-            if (
-                exchange_interface is not None
-                and getattr(exchange_interface, "dispatcher", None) is None
-                and getattr(exchange_interface, "supports_dispatcher", True)
-            ):
-                if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
+            if exchange_interface is not None and getattr(exchange_interface, "dispatcher", None) is None:
+                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
                     try:
-                        ex_type = lazy_exchange_imports.ExchangeType(self.exchange) if isinstance(self.exchange, str) else self.exchange
+                        ex_type = ExchangeType(self.exchange) if isinstance(self.exchange, str) else self.exchange
                     except Exception:
-                        ex_type = lazy_exchange_imports.ExchangeType.BINANCE if str(self.exchange).lower() == "binance" else lazy_exchange_imports.ExchangeType.BINANCE
+                        ex_type = ExchangeType.BINANCE if str(self.exchange).lower() == "binance" else ExchangeType.BINANCE
                     try:
-                        dispatcher_cfg = lazy_exchange_imports.ExchangeConfig(
+                        dispatcher_cfg = ExchangeConfig(
                             exchange_type=ex_type,
                             api_key=getattr(exchange_interface, "api_key", None),
                             api_secret=getattr(exchange_interface, "api_secret", None),
@@ -1873,278 +1548,180 @@ class EnhancedKlinesProcessingPipeline:
                             use_testnet=getattr(exchange_interface, "use_testnet", False),
                             trade_symbol=symbol,
                         )
-                        dispatcher = lazy_exchange_imports.create_exchange_dispatcher(dispatcher_cfg)
-                        # Initialize dispatcher if supported
-                        if hasattr(dispatcher, "initialize"):
-                            dispatcher.initialize()
-                        # Wire dispatcher to interface
-                        exchange_interface.dispatcher = dispatcher
-                        if self.enable_logging:
-                            tprint_info(f"🔌 Dispatcher wired to exchange interface")
+                        exchange_interface.dispatcher = create_exchange_dispatcher(dispatcher_cfg)
                     except Exception as e:
                         if self.enable_logging:
-                            tprint_warning(f"⚠️ Failed to wire dispatcher: {e}")
+                            tprint_warning(f"⚠️ Failed to wire dispatcher; live download may be empty: {e}")
 
+            # Download fresh data from exchange in batches
             if self.enable_logging:
-                message = f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange"
-                tprint_info(message)
-                print(message, flush=True)
-            
-            # Calculate date range
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=years * 365)
-            
-            if self.enable_logging:
-                message = f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
-                tprint_info(message)
-                print(message, flush=True)
-                estimated_candles = years * 365 * 24 * 60  # Rough estimate for 1m data
-                message = f"📊 Estimated candles: ~{estimated_candles:,}"
-                tprint_info(message)
-                print(message, flush=True)
-            
-            # Download data in batches (API limit is 1000 candles per request)
-            all_batches = []
-            current_start = start_date
-            batch_size = 1000
-
-            # For 1m interval, 1000 candles = ~16.67 hours
-            interval_minutes = self._interval_to_minutes(interval) or 1
-
-            # Shorten per-request span for dense 1m downloads so each HTTP call
-            # only covers ~4 hours (~250 candles). This keeps progress prints
-            # responsive and prevents the public ccxt path from hanging on massive
-            # 16h windows.
-            if interval_minutes == 1:
-                batch_size = min(batch_size, 250)
-
-            batch_duration = timedelta(minutes=batch_size * interval_minutes)
-
-            # Detect whether the underlying exchange exposes a dedicated
-            # historical klines API. When available (e.g. BingX), we
-            # prefer that path so start/end windows are honored instead of
-            # repeatedly fetching just the most recent window.
-            dispatcher = getattr(exchange_interface, "dispatcher", None)
-            underlying_exchange = getattr(dispatcher, "exchange", None) if dispatcher is not None else None
-            has_historical_klines = bool(
-                underlying_exchange is not None
-                and hasattr(underlying_exchange, "get_historical_klines")
-            )
-
-            batch_num = 1
-
-            while current_start < end_date:
-                batch_end = min(current_start + batch_duration, end_date)
-
-                # Log every 50th batch to show progress without spamming
-                if self.enable_logging and (batch_num == 1 or batch_num % 25 == 0):
-                    elapsed = current_start - start_date
-                    progress_pct = max(0.0, min(100.0, (elapsed.total_seconds() / ((end_date - start_date).total_seconds() or 1)) * 100))
-                    message = (
-                        f"📦 [{symbol}] Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} → "
-                        f"{batch_end.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}% of lookback)"
-                    )
-                    tprint_info(message)
-                    print(message, flush=True)
-
+                tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
+                
+                # Calculate date range
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=years * 365)
+                
                 if self.enable_logging:
-                    message = (
-                        f"⏳ [{symbol}] Requesting batch {batch_num}: "
-                        f"{current_start.strftime('%Y-%m-%d %H:%M')} → "
-                        f"{batch_end.strftime('%Y-%m-%d %H:%M')} (limit {batch_size})"
-                    )
-                    tprint_info(message)
-                    print(message, flush=True)
+                    tprint_info(f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+                    estimated_candles = years * 365 * 24 * 60  # Rough estimate for 1m data
+                    tprint_info(f"📊 Estimated candles: ~{estimated_candles:,}")
+                
+                # Download data in batches (API limit is 1000 candles per request)
+                all_batches = []
+                current_start = start_date
+                batch_size = 1000
+                batch_num = 1
 
-                try:
-                    if self.enable_logging:
-                        if has_historical_klines and hasattr(exchange_interface, "get_historical_klines"):
-                            message = (
-                                f"🔥 [{symbol}] Calling get_historical_klines for batch {batch_num} "
-                                f"{current_start.strftime('%Y-%m-%d %H:%M')} → {batch_end.strftime('%Y-%m-%d %H:%M')} "
-                                f"(limit {batch_size})"
+                # For 1m interval, 1000 candles = ~16.67 hours
+                interval_minutes = 1  # TODO: Parse from interval string
+                batch_duration = timedelta(minutes=batch_size * interval_minutes)
+
+                # Detect whether the underlying exchange exposes a dedicated
+                # historical klines API. When available (e.g. BingX), we
+                # prefer that path so start/end windows are honored instead of
+                # repeatedly fetching just the most recent window.
+                dispatcher = getattr(exchange_interface, "dispatcher", None)
+                underlying_exchange = getattr(dispatcher, "exchange", None) if dispatcher is not None else None
+                has_historical_klines = bool(
+                    underlying_exchange is not None
+                    and hasattr(underlying_exchange, "get_historical_klines")
+                )
+
+                while current_start < end_date:
+                    batch_end = min(current_start + batch_duration, end_date)
+
+                    # Log every 50th batch to show progress without spamming
+                    if self.enable_logging and (batch_num == 1 or batch_num % 50 == 0):
+                        progress_pct = ((current_start - start_date).days / (years * 365)) * 100
+                        tprint_info(
+                            f"📦 Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)"
+                        )
+
+                    try:
+                        if has_historical_klines and hasattr(
+                            exchange_interface, "get_historical_klines"
+                        ):
+                            # Prefer true historical path when available
+                            batch_data = await exchange_interface.get_historical_klines(
+                                symbol=symbol,
+                                interval=interval,
+                                start_time=current_start,
+                                end_time=batch_end,
+                                limit=batch_size,
                             )
-                            tprint_info(message)
-                            print(message, flush=True)
                         else:
-                            message = (
-                                f"🔥 [{symbol}] Calling get_klines for batch {batch_num} "
-                                f"{current_start.strftime('%Y-%m-%d %H:%M')} → {batch_end.strftime('%Y-%m-%d %H:%M')} "
-                                f"(limit {batch_size})"
+                            # Fallback to generic recent klines
+                            batch_data = await exchange_interface.get_klines(
+                                symbol=symbol,
+                                interval=interval,
+                                start_time=current_start,
+                                end_time=batch_end,
+                                limit=batch_size,
                             )
-                            tprint_info(message)
-                            print(message, flush=True)
-                    if has_historical_klines and hasattr(
-                        exchange_interface, "get_historical_klines"
-                    ):
-                        # Prefer true historical path when available
-                        batch_data = await exchange_interface.get_historical_klines(
-                            symbol=symbol,
-                            interval=interval,
-                            start_time=current_start,
-                            end_time=batch_end,
-                            limit=batch_size,
-                        )
-                    else:
-                        # Fallback to generic recent klines
-                        batch_data = await exchange_interface.get_klines(
-                            symbol=symbol,
-                            interval=interval,
-                            start_time=current_start,
-                            end_time=batch_end,
-                            limit=batch_size,
-                        )
 
-                    is_df_batch = hasattr(batch_data, "empty")
-                    batch_has_rows = (
-                        (not batch_data.empty) if is_df_batch
-                        else (batch_data is not None and len(batch_data) > 0)
-                    )
-
-                    if batch_data and len(batch_data) > 0:
-                        all_batches.append(batch_data)
-
-                        # Persist the freshly downloaded batch immediately so interruptions
-                        # do not force a full re-download on the next run.
-                        batch_df = self._klines_to_dataframe(batch_data, symbol, interval)
-                        if not batch_df.empty:
-                            # Ensure millisecond timestamps and datetime index even if _klines_to_dataframe
-                            # returned integer timestamps (e.g., due to retries).
-                            if not isinstance(batch_df.index, pd.DatetimeIndex):
-                                batch_df.index = pd.to_datetime(batch_df.index, unit="ms", utc=True).tz_localize(None)
-                            if batch_df.index.max() < datetime(2009, 1, 1):
-                                batch_df.index = pd.to_datetime(batch_df.index, utc=True).tz_localize(None)
-                            stored = self.klines_manager.write_data(
-                                batch_df,
-                                symbol,
-                                interval,
-                                data_type="raw",
-                                overwrite=False,
-                            )
-                            if stored and self.enable_logging:
+                        if batch_data and len(batch_data) > 0:
+                            all_batches.append(batch_data)
+                            # Log progress every 100 batches
+                            if self.enable_logging and batch_num % 100 == 0:
+                                total_candles = sum(len(b) for b in all_batches)
+                                progress_pct = ((current_start - start_date).days / (years * 365)) * 100
                                 tprint_info(
-                                    f"   💾 [{symbol}] Persisted batch {batch_num} "
-                                    f"({batch_df.index.min()} → {batch_df.index.max()}, {len(batch_df)} rows)"
+                                    f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles ({progress_pct:.1f}%)"
                                 )
+                        else:
+                            # No data returned, might have reached the end of available data
+                            if self.enable_logging:
+                                tprint_info(
+                                    f"   ℹ️ No data returned for batch {batch_num}, stopping download"
+                                )
+                            break
 
-                        # Log progress every 20 batches
-                        if self.enable_logging and batch_num % 20 == 0:
-                            total_candles = sum(len(b) for b in all_batches)
-                            elapsed = current_start - start_date
-                            total_span = end_date - start_date
-                            progress_pct = max(0.0, min(100.0, (elapsed.total_seconds() / (total_span.total_seconds() or 1)) * 100))
-                            tprint_info(
-                                f"   📊 [{symbol}] Progress: {len(all_batches)} batches, {total_candles:,} candles "
-                                f"({progress_pct:.1f}% complete)"
-                            )
-                    else:
-                        # No data returned, might have reached the end of available data
+                        # Move to next batch
+                        current_start = batch_end
+                        batch_num += 1
+
+                        # Small delay to respect rate limits (50ms = 20 requests/sec max)
+                        await asyncio.sleep(0.05)
+
+                    except Exception as e:
                         if self.enable_logging:
-                            tprint_info(
-                                f"   ℹ️ [{symbol}] No data returned for batch {batch_num}, stopping download window "
-                                f"{current_start.strftime('%Y-%m-%d %H:%M')} → {batch_end.strftime('%Y-%m-%d %H:%M')}"
-                            )
-                        break
-
-                    # Move to next batch
-                    current_start = batch_end
-                    batch_num += 1
-
-                    # Small delay to respect rate limits (50ms = 20 requests/sec max)
-                    await asyncio.sleep(0.05)
-
-                except Exception as e:
-                    if self.enable_logging:
-                        tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
-                    current_start = batch_end
-                    batch_num += 1
-                    # Longer delay after error
-                    await asyncio.sleep(1.0)
-            
-            if not all_batches:
-                raise ValueError("No data received from exchange")
-            
-            if self.enable_logging:
-                total_candles = sum(len(b) for b in all_batches)
-                tprint_success(f"✅ Downloaded {total_candles:,} candles in {len(all_batches)} batches")
-            
-            # Combine all batches
-            klines_data = []
-            for batch in all_batches:
-                klines_data.extend(batch)
-            
-            if self.enable_logging:
-                tprint_info(f"🔍 Total klines collected: {len(klines_data)}")
-                tprint_info(f"🔍 klines_data type: {type(klines_data)}")
+                            tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
+                        current_start = batch_end
+                        batch_num += 1
+                        # Longer delay after error
+                        await asyncio.sleep(1.0)
+                
+                if not all_batches:
+                    raise ValueError("No data received from exchange")
+                
+                if self.enable_logging:
+                    total_candles = sum(len(b) for b in all_batches)
+                    tprint_success(f"✅ Downloaded {total_candles:,} candles in {len(all_batches)} batches")
+                
+                # Combine all batches
+                klines_data = []
+                for batch in all_batches:
+                    klines_data.extend(batch)
+                
+                if self.enable_logging:
+                    tprint_info(f"🔍 Total klines collected: {len(klines_data)}")
+                    tprint_info(f"🔍 klines_data type: {type(klines_data)}")
                 
                 # Convert KlineData objects to DataFrame format if not already a DataFrame
                 # Convert KlineData objects to list format
                 raw_data = []
-                interval_ms = int((self._interval_to_minutes(interval) or 1) * 60_000)
-
                 for i, kline in enumerate(klines_data):
-                    is_sequence = isinstance(kline, (list, tuple))
+                    # Debug first kline
                     if i == 0 and self.enable_logging:
                         tprint_info(f"🔍 First kline type: {type(kline)}")
-                        if is_sequence and kline:
-                            tprint_info(f"🔍 First kline raw head: {kline[:6]}")
-                        elif hasattr(kline, 'timestamp'):
-                            tprint_info(f"🔍 First kline timestamp: {kline.timestamp}")
-                            tprint_info(f"🔍 First kline timestamp type: {type(kline.timestamp)}")
+                        tprint_info(f"🔍 First kline timestamp: {kline.timestamp}")
+                        tprint_info(f"🔍 First kline timestamp type: {type(kline.timestamp)}")
                     
-                    if is_sequence:
-                        ts_source = kline[0] if len(kline) > 0 else None
-                        open_price = kline[1] if len(kline) > 1 else None
-                        high_price = kline[2] if len(kline) > 2 else None
-                        low_price = kline[3] if len(kline) > 3 else None
-                        close_price = kline[4] if len(kline) > 4 else None
-                        volume = kline[5] if len(kline) > 5 else None
-                        close_source = kline[6] if len(kline) > 6 else None
-                        quote_volume = kline[7] if len(kline) > 7 else None
-                        num_trades = kline[8] if len(kline) > 8 else None
-                        taker_buy_base = kline[9] if len(kline) > 9 else None
-                        taker_buy_quote = kline[10] if len(kline) > 10 else None
+                    # Handle both datetime and int timestamps
+                    if isinstance(kline.timestamp, datetime):
+                        ts = int(kline.timestamp.timestamp() * 1000)
+                    elif isinstance(kline.timestamp, (int, float)):
+                        # Binance returns milliseconds timestamps (13 digits)
+                        # If timestamp is too small (< 1e10), it's likely in seconds or invalid
+                        if kline.timestamp < 1e10:
+                            # Likely seconds, convert to milliseconds
+                            ts = int(kline.timestamp * 1000)
+                        else:
+                            ts = int(kline.timestamp)
                     else:
-                        ts_source = getattr(kline, "timestamp", None)
-                        close_source = getattr(kline, "close_time", None)
-                        open_price = getattr(kline, "open_price", None)
-                        high_price = getattr(kline, "high_price", None)
-                        low_price = getattr(kline, "low_price", None)
-                        close_price = getattr(kline, "close_price", None)
-                        volume = getattr(kline, "volume", None)
-                        quote_volume = getattr(kline, "quote_asset_volume", None)
-                        num_trades = getattr(kline, "number_of_trades", None)
-                        taker_buy_base = getattr(kline, "taker_buy_base_asset_volume", None)
-                        taker_buy_quote = getattr(kline, "taker_buy_quote_asset_volume", None)
-
-                    def _normalize_ts(value, fallback=None):
-                        if value is None:
-                            return fallback
-                        if isinstance(value, datetime):
-                            return int(value.timestamp() * 1000)
-                        if isinstance(value, (int, float)):
-                            return int(value if value >= 1e10 else value * 1000)
-                        try:
-                            numeric = float(value)
-                            return int(numeric if numeric >= 1e10 else numeric * 1000)
-                        except Exception:
-                            return fallback
-
-                    ts = _normalize_ts(ts_source)
-                    ct = _normalize_ts(close_source, fallback=(ts + interval_ms) if ts is not None else None)
-
+                        ts_val = float(kline.timestamp)
+                        if ts_val < 1e10:
+                            ts = int(ts_val * 1000)
+                        else:
+                            ts = int(ts_val)
+                    
+                    if isinstance(kline.close_time, datetime):
+                        ct = int(kline.close_time.timestamp() * 1000)
+                    elif isinstance(kline.close_time, (int, float)):
+                        # Same logic for close_time
+                        if kline.close_time < 1e10:
+                            ct = int(kline.close_time * 1000)
+                        else:
+                            ct = int(kline.close_time)
+                    else:
+                        ct_val = float(kline.close_time)
+                        if ct_val < 1e10:
+                            ct = int(ct_val * 1000)
+                        else:
+                            ct = int(ct_val)
+                    
                     raw_data.append([
-                        ts,
-                        open_price,
-                        high_price,
-                        low_price,
-                        close_price,
-                        volume,
-                        ct,
-                        quote_volume,
-                        num_trades,
-                        taker_buy_base,
-                        taker_buy_quote,
+                        ts,  # timestamp
+                        kline.open_price,  # open
+                        kline.high_price,  # high
+                        kline.low_price,   # low
+                        kline.close_price, # close
+                        kline.volume,      # volume
+                        ct,  # close_time
+                        kline.quote_asset_volume,  # quote_volume
+                        kline.number_of_trades,     # trades
+                        kline.taker_buy_base_asset_volume,  # taker_buy_base
+                        kline.taker_buy_quote_asset_volume   # taker_buy_quote
                     ])
                 
                 if not raw_data:
@@ -2645,7 +2222,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str,
         max_gap_minutes: int,
-        exchange_interface: "ExchangeInterface"
+        exchange_interface: ExchangeInterface
     ) -> ProcessingResult:
         """Detect and fill data gaps."""
         start_time = datetime.now()
@@ -2749,29 +2326,55 @@ class EnhancedKlinesProcessingPipeline:
         self,
         df: pd.DataFrame,
         interval: str,
-        max_gap_minutes: int
+        max_gap_minutes: int,
+        expected_start: Optional[datetime] = None,
+        expected_end: Optional[datetime] = None
     ) -> List[GapInfo]:
-        """Detect gaps in the data."""
+        """
+        Detect gaps in the data, including boundary gaps if expected range is provided.
+        """
         gaps = []
-
-        if df.empty or len(df) < 2:
-            return gaps
 
         # Calculate expected interval in minutes
         interval_minutes = self._interval_to_minutes(interval)
         if interval_minutes is None:
             return gaps
 
+        # Ensure we have a symbol for GapInfo
+        symbol = self.current_symbol or (df['symbol'].iloc[0] if not df.empty and 'symbol' in df.columns else 'UNKNOWN')
+
+        if df.empty:
+            if expected_start and expected_end:
+                # Entire range is missing
+                gaps.append(GapInfo(
+                    start_time=expected_start,
+                    end_time=expected_end,
+                    duration_minutes=int((expected_end - expected_start).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                ))
+            return gaps
+
         # Normalize index to UTC tz-aware for reliable comparisons
         df_normalized = self._ensure_utc_index(df)
-        if self.enable_logging and isinstance(df_normalized.index, pd.DatetimeIndex):
-            tz_obj = df_normalized.index.tz
-            tz_info = getattr(tz_obj, "zone", str(tz_obj))
-            tprint_info(f"🕒 Gap detection using timezone: {tz_info}")
-
         df_sorted = df_normalized.sort_index()
+        
+        # 1. Check start boundary gap
+        if expected_start:
+            expected_start_utc = self._ensure_utc_timestamp(expected_start)
+            actual_start_utc = df_sorted.index[0]
+            if (actual_start_utc - expected_start_utc).total_seconds() / 60 > max_gap_minutes:
+                gaps.append(GapInfo(
+                    start_time=expected_start_utc,
+                    end_time=actual_start_utc,
+                    duration_minutes=int((actual_start_utc - expected_start_utc).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                ))
 
-        # Check for gaps; large windows may be split into multiple segments to avoid overwhelming gap fill
+        # 2. Check internal gaps
         safety_max_hours = 24 * 7  # 1 week segments for large historical gaps
         safety_max_minutes = safety_max_hours * 60
 
@@ -2790,21 +2393,33 @@ class EnhancedKlinesProcessingPipeline:
                     segment_end = min(remaining_start + timedelta(minutes=safety_max_minutes), remaining_end)
                     segment_duration_minutes = int((segment_end - remaining_start).total_seconds() / 60)
 
-                    gap = GapInfo(
-                        start_time=remaining_start,
-                        end_time=segment_end,
-                        duration_minutes=segment_duration_minutes,
-                        symbol=df_sorted.iloc[i].get('symbol', ''),
-                        interval=interval,
-                        # Treat all gaps at least one base interval long as priority 1 so that
-                        # even short multi-minute holes (e.g. 2–10 minutes at 1m) are filled.
-                        # For higher intervals (e.g. 15m), this still requires at least one
-                        # full interval of missing data to be considered high priority.
-                        priority=1 if segment_duration_minutes >= interval_minutes else 2
-                    )
-                    gaps.append(gap)
+                    # Only add if segment has meaningful duration
+                    if segment_duration_minutes > 0:
+                        gap = GapInfo(
+                            start_time=remaining_start,
+                            end_time=segment_end,
+                            duration_minutes=segment_duration_minutes,
+                            symbol=symbol,
+                            interval=interval,
+                            priority=1 if segment_duration_minutes >= interval_minutes else 2
+                        )
+                        gaps.append(gap)
 
                     remaining_start = segment_end
+
+        # 3. Check end boundary gap
+        if expected_end:
+            expected_end_utc = self._ensure_utc_timestamp(expected_end)
+            actual_end_utc = df_sorted.index[-1]
+            if (expected_end_utc - actual_end_utc).total_seconds() / 60 > max_gap_minutes:
+                gaps.append(GapInfo(
+                    start_time=actual_end_utc,
+                    end_time=expected_end_utc,
+                    duration_minutes=int((expected_end_utc - actual_end_utc).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                ))
 
         return gaps
 
@@ -2813,6 +2428,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         years: int
     ) -> List[GapInfo]:
+        """Detect missing ranges in the processed 15m data set for a given lookback."""
         gaps: List[GapInfo] = []
 
         try:
@@ -2827,22 +2443,20 @@ class EnhancedKlinesProcessingPipeline:
                 data_type="processed",
             )
 
-            if df_15m is None or df_15m.empty:
-                return gaps
-
-            if not isinstance(df_15m.index, pd.DatetimeIndex):
-                df_15m.index = pd.to_datetime(df_15m.index, errors="coerce")
-                df_15m = df_15m.loc[df_15m.index.notna()]
-
-            if df_15m.empty:
-                return gaps
-
-            gaps = self._detect_gaps(df_15m, "15m", self.config.max_gap_minutes)
+            # Use refined _detect_gaps with boundary checks
+            gaps = self._detect_gaps(
+                df_15m if df_15m is not None else pd.DataFrame(),
+                "15m", 
+                self.config.max_gap_minutes,
+                expected_start=start_date,
+                expected_end=end_date
+            )
 
             if self.enable_logging:
                 if gaps:
+                    total_missing_mins = sum(g.duration_minutes for g in gaps)
                     tprint_warning(
-                        f"⚠️ Detected {len(gaps)} missing ranges in processed 15m data for {symbol}"
+                        f"⚠️ Detected {len(gaps)} missing ranges ({total_missing_mins} mins) in processed 15m data for {symbol}"
                     )
                 else:
                     tprint_info(
@@ -2867,11 +2481,10 @@ class EnhancedKlinesProcessingPipeline:
     ) -> Dict[str, Any]:
         """Backfill processed 15m gaps by downloading corresponding base-interval data.
 
-        This helper:
-        - Downloads base_interval klines (typically 1m) for each 15m gap window
-        - Standardizes the new data to the unified OHLCV schema
-        - Resamples the new data to 15m using the existing resampling logic
-        - Updates the processed 15m parquet storage via KlinesParquetManager.update_data
+        Enhanced with:
+        - Atomic updates per gap to ensure partial progress is saved.
+        - Robust error handling and retry logic.
+        - Detailed stats reporting.
         """
 
         stats: Dict[str, Any] = {
@@ -2880,6 +2493,7 @@ class EnhancedKlinesProcessingPipeline:
             "gaps_filled": 0,
             "base_candles_downloaded": 0,
             "resampled_15m_records": 0,
+            "failed_gaps": [],
         }
 
         if not gaps_15m or exchange_interface is None:
@@ -2892,8 +2506,6 @@ class EnhancedKlinesProcessingPipeline:
         batch_size = 1000
         batch_duration = timedelta(minutes=batch_size * interval_minutes)
         interval_delta = timedelta(minutes=interval_minutes)
-
-        all_base_klines: List[Any] = []
 
         for gap in gaps_15m:
             if gap.priority > 1:
@@ -2910,19 +2522,20 @@ class EnhancedKlinesProcessingPipeline:
 
             if self.enable_logging:
                 tprint_info(
-                    f"📥 Backfilling processed 15m gap: {gap_start} → {gap_end} "
-                    f"({gap.duration_minutes} minutes)"
+                    f"📥 Backfilling 15m gap: {gap_start} → {gap_end} "
+                    f"({gap.duration_minutes} mins)"
                 )
 
             current_start = gap_start
             safety_counter = 0
             gap_base_klines: List[Any] = []
+            gap_success = True
 
             while current_start < gap_end:
                 safety_counter += 1
                 if safety_counter > 10000:
-                    if self.enable_logging:
-                        tprint_warning("⚠️ Safety break while downloading missing ranges for 15m gaps")
+                    tprint_warning("⚠️ Safety break in gap download")
+                    gap_success = False
                     break
 
                 batch_end = min(current_start + batch_duration, gap_end)
@@ -2935,78 +2548,77 @@ class EnhancedKlinesProcessingPipeline:
                         end_time=batch_end,
                         limit=batch_size,
                     )
-                except Exception as e:  # pragma: no cover - network dependent
-                    if self.enable_logging:
-                        tprint_warning(f"⚠️ Missing-range batch download failed: {e}")
+                    
+                    if not batch_klines:
+                        # No data returned for this segment
+                        current_start = batch_end + interval_delta
+                        continue
+
+                    gap_base_klines.extend(batch_klines)
+
+                    extracted_ts = self._extract_timestamps_from_klines(batch_klines)
+                    if not extracted_ts:
+                        current_start = batch_end + interval_delta
+                        continue
+
+                    last_ts = max(extracted_ts)
+                    last_naive = self._to_naive_timestamp(last_ts)
+                    if last_naive is None:
+                        current_start = batch_end + interval_delta
+                        continue
+
+                    current_start = last_naive + interval_delta
+                    await asyncio.sleep(0.1)  # Rate limit respect
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ Batch download failed for {symbol} at {current_start}: {e}")
+                    gap_success = False
                     break
 
-                if batch_klines is None or (hasattr(batch_klines, 'empty') and batch_klines.empty):
-                    break
+            if gap_success and gap_base_klines:
+                # Process this gap immediately to ensure progress persistence
+                try:
+                    base_df = self._klines_to_dataframe(gap_base_klines, symbol, base_interval)
+                    if not base_df.empty:
+                        standardized_df = self.data_standardizer.standardize(base_df, exchange=self.exchange)
+                        standardized_df = self._ensure_naive_datetime_index(standardized_df)
+                        
+                        # Add required columns if missing
+                        for col, val in [('timestamp', standardized_df.index), ('symbol', symbol), 
+                                       ('interval', base_interval), ('exchange', self.exchange)]:
+                            if col not in standardized_df.columns:
+                                standardized_df[col] = val
 
-                gap_base_klines.extend(batch_klines)
+                        stats["base_candles_downloaded"] += len(standardized_df)
 
-                extracted_ts = self._extract_timestamps_from_klines(batch_klines)
-                if not extracted_ts:
-                    break
+                        # Resample to 15m
+                        resampled_15m = self._perform_resampling(standardized_df, "15m", resampling_config)
+                        if not resampled_15m.empty:
+                            normalized_15m = self._normalize_calendar_columns(resampled_15m)
+                            if normalized_15m is not None:
+                                resampled_15m = normalized_15m
 
-                last_ts = max(extracted_ts)
-                last_naive = self._to_naive_timestamp(last_ts)
-                if last_naive is None:
-                    break
+                            stats["resampled_15m_records"] += len(resampled_15m)
 
-                current_start = last_naive + interval_delta
-
-                await asyncio.sleep(0.05)
-
-            if gap_base_klines:
-                stats["gaps_filled"] += 1
-                all_base_klines.extend(gap_base_klines)
-
-        if not all_base_klines:
-            return stats
-
-        base_df = self._klines_to_dataframe(all_base_klines, symbol, base_interval)
-        if base_df.empty:
-            return stats
-
-        # Standardize base data to match the rest of the pipeline
-        standardized_df = self.data_standardizer.standardize(base_df, exchange=self.exchange)
-        standardized_df = self._ensure_naive_datetime_index(standardized_df)
-        if 'timestamp' not in standardized_df.columns:
-            standardized_df['timestamp'] = standardized_df.index
-        if 'symbol' not in standardized_df.columns:
-            standardized_df['symbol'] = symbol
-        if 'interval' not in standardized_df.columns:
-            standardized_df['interval'] = base_interval
-        if 'exchange' not in standardized_df.columns:
-            standardized_df['exchange'] = self.exchange
-
-        stats["base_candles_downloaded"] = len(standardized_df)
-
-        # Resample the new base data to 15m
-        resampled_15m = self._perform_resampling(standardized_df, "15m", resampling_config)
-        if resampled_15m.empty:
-            return stats
-
-        normalized_15m = self._normalize_calendar_columns(resampled_15m)
-        if normalized_15m is not None:
-            resampled_15m = normalized_15m
-
-        stats["resampled_15m_records"] = len(resampled_15m)
-
-        # Update processed 15m storage
-        try:
-            updated = self.klines_manager.update_data(
-                resampled_15m,
-                symbol,
-                "15m",
-                data_type="processed",
-            )
-            if not updated and self.enable_logging:
-                tprint_warning("⚠️ Failed to update processed 15m data with missing ranges")
-        except Exception as e:
-            if self.enable_logging:
-                tprint_warning(f"⚠️ Exception while updating processed 15m data: {e}")
+                            # Atomic update to parquet storage
+                            updated = self.klines_manager.update_data(
+                                resampled_15m,
+                                symbol,
+                                "15m",
+                                data_type="processed",
+                            )
+                            if updated:
+                                stats["gaps_filled"] += 1
+                                if self.enable_logging:
+                                    tprint_success(f"✅ Filled and persisted gap: {gap_start} → {gap_end}")
+                            else:
+                                tprint_warning(f"⚠️ Failed to persist gap: {gap_start}")
+                                stats["failed_gaps"].append(str(gap_start))
+                except Exception as process_exc:
+                    tprint_error(f"❌ Error processing gap {gap_start}: {process_exc}")
+                    stats["failed_gaps"].append(str(gap_start))
+            elif not gap_success:
+                stats["failed_gaps"].append(str(gap_start))
 
         return stats
 
@@ -3066,7 +2678,7 @@ class EnhancedKlinesProcessingPipeline:
         gaps: List[GapInfo],
         symbol: str,
         interval: str,
-        exchange_interface: "ExchangeInterface"
+        exchange_interface: ExchangeInterface
     ) -> pd.DataFrame:
         """Fill gaps by re-downloading data in batches.
 
@@ -3370,7 +2982,7 @@ class EnhancedKlinesProcessingPipeline:
         interval: str,
         interval_minutes: int,
         batch_size: int,
-        exchange_interface: "ExchangeInterface"
+        exchange_interface: ExchangeInterface
     ) -> Optional[pd.DataFrame]:
         """Download remaining gap candles by scanning forward in daily windows to work around exchange limits."""
         collected_frames: List[pd.DataFrame] = []
@@ -3407,24 +3019,8 @@ class EnhancedKlinesProcessingPipeline:
                             tprint_warning(f"   ⚠️ Forward batch request failed: {e}")
                         break
 
-                    if batch_klines is None or (hasattr(batch_klines, 'empty') and batch_klines.empty):
-                        # Check for existing parquet data first
-                        if self.enable_logging:
-                            tprint_info(f"🔍 Checking for existing {symbol} {interval} data in {self.data_dir}")
-                        
-                        parquet_files = self._find_existing_parquet_files(self.data_dir, symbol, interval)
-                        
-                        if self.enable_logging:
-                            if parquet_files:
-                                tprint_info(f"📁 Found {len(parquet_files)} existing parquet files for {symbol}")
-                                for pf in parquet_files[:3]:  # Show first 3 files
-                                    tprint_info(f"   - {pf}")
-                                if len(parquet_files) > 3:
-                                    tprint_info(f"   ... and {len(parquet_files)-3} more files")
-                            else:
-                                tprint_info(f"📁 No existing parquet files found for {symbol} - will download fresh data")
-                        if batch_df.empty:
-                            break
+                    if not batch_klines:
+                        break
 
                     batch_df = self._klines_to_dataframe(batch_klines, symbol, interval)
                     if batch_df.empty:
@@ -3474,9 +3070,10 @@ class EnhancedKlinesProcessingPipeline:
         self,
         df: pd.DataFrame,
         symbol: str,
-        interval: str
+        interval: str,
+        exchange_interface: Optional[ExchangeInterface] = None
     ) -> ProcessingResult:
-        """Handle duplicate timestamps."""
+        """Handle duplicate timestamps with optional redownload for conflicting records."""
         start_time = datetime.now()
         result = ProcessingResult(
             step=ProcessingStep.DUPLICATE_HANDLING,
@@ -3490,34 +3087,28 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
             df_with_timestamp = self._ensure_timestamp_column(df)
+            timestamp_column = 'timestamp_ms' if 'timestamp_ms' in df_with_timestamp.columns else 'timestamp'
 
-            # Analyze duplicates
-            analysis_result = self.duplicate_analyzer.analyze_duplicates(df_with_timestamp, timestamp_column='timestamp_ms')
+            # 1. Use ComprehensiveDuplicateAnalyzer for deep analysis
+            analysis_result = self.duplicate_analyzer.analyze_duplicates(df_with_timestamp, timestamp_column=timestamp_column)
 
-            # Handle true duplicates (remove only records that are truly identical on key OHLCV fields
-            # at the same timestamp). This mirrors the KlinesParquetManager logic and avoids touching
-            # false/mixed duplicates, which require manual review.
             cleaned_df = df.copy()
             true_duplicate_records_removed = 0
-
-            # Prefer high-resolution timestamp_ms when available
-            timestamp_column = 'timestamp_ms' if 'timestamp_ms' in df_with_timestamp.columns else 'timestamp'
+            conflicting_ranges_for_redownload = []
 
             if timestamp_column in df_with_timestamp.columns:
                 ts_series = df_with_timestamp[timestamp_column]
                 duplicate_mask = ts_series.duplicated(keep=False)
 
                 if duplicate_mask.any():
-                    # Define key columns that must match for records to be considered true duplicates
-                    key_columns = ['open', 'high', 'low', 'close', 'volume', 'open_time', 'close_time']
+                    key_columns = ['open', 'high', 'low', 'close', 'volume']
                     available_key_columns = [col for col in key_columns if col in df_with_timestamp.columns]
 
                     if available_key_columns:
                         indices_to_drop: List[Any] = []
-
-                        # Group only records with duplicate timestamps
                         duplicated_df = df_with_timestamp[duplicate_mask]
-                        for _, group in duplicated_df.groupby(timestamp_column):
+                        
+                        for ts, group in duplicated_df.groupby(timestamp_column):
                             if len(group) <= 1:
                                 continue
 
@@ -3531,26 +3122,51 @@ class EnhancedKlinesProcessingPipeline:
                                     break
 
                             if all_identical:
-                                # All records in this timestamp group are identical on key columns:
-                                # keep the last one and drop the rest (true duplicates only).
+                                # All identical: keep latest, drop others
                                 indices_to_drop.extend(group.index[:-1].tolist())
+                            else:
+                                # Conflicting records at same timestamp: flag for redownload
+                                ts_dt = pd.to_datetime(ts, unit='ms') if timestamp_column == 'timestamp_ms' else ts
+                                conflicting_ranges_for_redownload.append(ts_dt)
 
                         if indices_to_drop:
                             cleaned_df = cleaned_df.drop(index=list(set(indices_to_drop)))
                             true_duplicate_records_removed = len(indices_to_drop)
 
-                            if self.enable_logging:
-                                tprint_info(
-                                    f"🧹 Removed {true_duplicate_records_removed} true-duplicate records "
-                                    f"across {analysis_result.true_duplicate_groups} groups"
-                                )
-
-            # Warn about false duplicates
-            if analysis_result.false_duplicate_groups > 0:
-                warning_msg = f"Found {analysis_result.false_duplicate_groups} groups of false duplicates - manual review required"
-                result.warnings.append(warning_msg)
+            # 2. Handle conflicting duplicates via redownload if interface available
+            if conflicting_ranges_for_redownload and exchange_interface:
                 if self.enable_logging:
-                    tprint_warning(f"⚠️ {warning_msg}")
+                    tprint_warning(f"⚠️ Found {len(conflicting_ranges_for_redownload)} conflicting timestamps; attempting recovery redownload")
+                
+                # Recover each conflicting timestamp with a fresh download
+                recovered_records = []
+                for ts in conflicting_ranges_for_redownload:
+                    try:
+                        # Download exactly this timestamp
+                        fresh_klines = await exchange_interface.get_klines(
+                            symbol=symbol,
+                            interval=interval,
+                            start_time=ts,
+                            end_time=ts,
+                            limit=1
+                        )
+                        if fresh_klines:
+                            fresh_df = self._klines_to_dataframe(fresh_klines, symbol, interval)
+                            fresh_df = self.data_standardizer.standardize(fresh_df, exchange=self.exchange)
+                            fresh_df = self._ensure_naive_datetime_index(fresh_df)
+                            recovered_records.append(fresh_df)
+                            await asyncio.sleep(0.1) # Rate limit
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to recover timestamp {ts}: {e}")
+
+                if recovered_records:
+                    recovered_df = pd.concat(recovered_records)
+                    # Remove the conflicting timestamps from cleaned_df and append recovered ones
+                    cleaned_df = cleaned_df[~cleaned_df.index.isin(conflicting_ranges_for_redownload)]
+                    cleaned_df = pd.concat([cleaned_df, recovered_df]).sort_index()
+                    
+                    if self.enable_logging:
+                        tprint_success(f"✅ Recovered {len(recovered_records)} conflicting timestamps via redownload")
 
             result.success = True
             result.data = cleaned_df
@@ -3558,12 +3174,15 @@ class EnhancedKlinesProcessingPipeline:
                 "total_duplicates": analysis_result.total_duplicates,
                 "true_duplicate_groups": analysis_result.true_duplicate_groups,
                 "true_duplicate_records_removed": true_duplicate_records_removed,
+                "conflicting_timestamps": len(conflicting_ranges_for_redownload),
                 "false_duplicates": analysis_result.false_duplicate_groups,
                 "mixed_duplicates": analysis_result.mixed_duplicate_groups
             }
 
             if self.enable_logging:
-                tprint_success(f"✅ Duplicate handling completed: {analysis_result.total_duplicates} duplicates processed")
+                tprint_success(f"✅ Duplicate handling completed: {analysis_result.total_duplicates} processed")
+                if conflicting_ranges_for_redownload:
+                    tprint_warning(f"   ⚠️ {len(conflicting_ranges_for_redownload)} timestamps have conflicting data!")
 
         except Exception as e:
             error_msg = f"Duplicate handling failed: {str(e)}"
@@ -3984,15 +3603,62 @@ class EnhancedKlinesProcessingPipeline:
         result.processing_time = (datetime.now() - start_time).total_seconds()
         return result
 
+    async def _verify_all_resampled_gaps(
+        self,
+        symbol: str,
+        resampling_config: ResamplingConfig,
+        years: int
+    ) -> Dict[str, List[GapInfo]]:
+        """Verify gaps across all target intervals after resampling."""
+        all_gaps = {}
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=years * 365)
+
+        for interval in resampling_config.target_intervals:
+            try:
+                df = self.klines_manager.read_data(
+                    symbol=symbol,
+                    interval=interval,
+                    start_date=start_date,
+                    end_date=end_date,
+                    data_type="processed"
+                )
+                
+                gaps = self._detect_gaps(
+                    df if df is not None else pd.DataFrame(),
+                    interval,
+                    self.config.max_gap_minutes,
+                    expected_start=start_date,
+                    expected_end=end_date
+                )
+                all_gaps[interval] = gaps
+                
+                if self.enable_logging:
+                    if gaps:
+                        tprint_warning(f"⚠️ Post-resample: {len(gaps)} gaps remain in {interval}")
+                    else:
+                        tprint_success(f"✅ Post-resample: 100% coverage verified for {interval}")
+            except Exception as e:
+                tprint_error(f"❌ Verification failed for {interval}: {e}")
+                
+        return all_gaps
+
     async def _resample_data_with_age_check(
         self,
         df: pd.DataFrame,
         symbol: str,
         resampling_config: ResamplingConfig,
         batch_id: Optional[str],
+        years: int,
         filled_ranges: Optional[List[Tuple[datetime, datetime]]] = None
     ) -> ProcessingResult:
-        """Resample data with age-based filtering."""
+        """
+        Resample data with age-based filtering.
+        
+        Instead of skipping the entire process, this filters the source data to only 
+        include points older than the configured threshold (e.g., 3 days), ensuring 
+        stability in processed/resampled files while allowing the pipeline to proceed.
+        """
         start_time = datetime.now()
         result = ProcessingResult(
             step=ProcessingStep.RESAMPLING,
@@ -4003,99 +3669,85 @@ class EnhancedKlinesProcessingPipeline:
 
         try:
             if self.enable_logging:
-                tprint_info(f"📊 Checking data age for resampling: {symbol}")
+                tprint_info(f"📊 Filtering data by age for resampling: {symbol}")
 
-            # Check if data is older than threshold
-            current_time = datetime.now()
-            max_time = df.index.max()
+            # 1. Determine the cutoff time for resampling
+            current_time = datetime.now(tz=pd.Timestamp.now().tzinfo)
+            threshold_days = getattr(resampling_config, "resample_older_than_days", 3)
+            cutoff_time = current_time - timedelta(days=threshold_days)
             
-            # Handle timezone-aware vs timezone-naive comparison
-            if max_time.tzinfo is not None and current_time.tzinfo is None:
-                current_time = current_time.replace(tzinfo=max_time.tzinfo)
-            elif max_time.tzinfo is None and current_time.tzinfo is not None:
-                max_time = max_time.replace(tzinfo=current_time.tzinfo)
-            
-            data_age_days = (current_time - max_time).days
-            threshold_days = getattr(resampling_config, "resample_older_than_days", 0)
+            # Ensure df index is UTC for reliable comparison
+            df_utc = self._ensure_utc_index(df)
+            cutoff_time_utc = self._ensure_utc_timestamp(cutoff_time)
 
-            # Only skip resampling when a positive threshold is configured
-            if threshold_days and threshold_days > 0 and data_age_days < threshold_days:
+            # 2. Filter data by age
+            mask_age = df_utc.index < cutoff_time_utc
+            if not mask_age.any():
                 result.success = True
                 result.metadata = {
                     "resampled_intervals": [],
                     "stored_files": [],
-                    "reason": f"Data is only {data_age_days} days old, resampling threshold is {threshold_days} days"
+                    "reason": f"No data points older than {threshold_days} days (cutoff: {cutoff_time_utc})"
                 }
-
                 if self.enable_logging:
-                    tprint_info(f"⏭️ Skipping resampling: data is {data_age_days} days old (threshold: {threshold_days} days)")
-
+                    tprint_info(f"⏭️ Skipping resampling: no data points older than {threshold_days} days")
                 return result
 
-            # Perform resampling
+            df_to_resample = df_utc.loc[mask_age]
+            
+            if self.enable_logging:
+                tprint_info(f"   Filtered {len(df_to_resample)}/{len(df)} points for resampling (cutoff: {cutoff_time_utc})")
+
+            # 3. Perform resampling on the aged data
             resampled_intervals = []
             stored_files = []
-            span_mismatches: List[str] = []
             resample_modes: Dict[str, str] = {}
-
-            base_start = df.index.min() if len(df) else None
-            base_end = df.index.max() if len(df) else None
 
             for target_interval in resampling_config.target_intervals:
                 try:
                     if self.enable_logging:
-                        tprint_info(f"🔄 Resampling to {target_interval}")
+                        tprint_info(f"🔄 Resampling aged data to {target_interval}")
 
-                    # Decide whether to resample only filled windows
-                    source_df = df
-                    mode = "full"
+                    # Decide whether to resample only filled windows (within the aged set)
+                    source_df = df_to_resample
+                    mode = "full_aged"
                     if filled_ranges:
-                        mask = pd.Series(False, index=df.index)
-                        for start, end in filled_ranges:
-                            mask |= (df.index >= start) & (df.index <= end)
-                        if mask.any():
-                            source_df = df.loc[mask]
-                            mode = "selective"
+                        # Convert filled_ranges to UTC for comparison
+                        filled_ranges_utc = [(self._ensure_utc_timestamp(s), self._ensure_utc_timestamp(e)) for s, e in filled_ranges]
+                        mask_filled = pd.Series(False, index=df_to_resample.index)
+                        for start, end in filled_ranges_utc:
+                            if start and end:
+                                mask_filled |= (df_to_resample.index >= start) & (df_to_resample.index <= end)
+                        
+                        if mask_filled.any():
+                            source_df = df_to_resample.loc[mask_filled]
+                            mode = "selective_aged"
 
                     resampled_df = self._perform_resampling(source_df, target_interval, resampling_config)
 
-                    # If selective produced empty, fall back to full dataset
-                    if resampled_df.empty and mode == "selective":
+                    # If selective produced empty, fall back to full aged dataset
+                    if resampled_df.empty and mode == "selective_aged":
                         if self.enable_logging:
-                            tprint_warning(f"⚠️ Selective resample empty for {target_interval}; falling back to full data")
-                        resampled_df = self._perform_resampling(df, target_interval, resampling_config)
-                        mode = "fallback_full"
+                            tprint_warning(f"⚠️ Selective aged resample empty for {target_interval}; falling back to full aged data")
+                        resampled_df = self._perform_resampling(df_to_resample, target_interval, resampling_config)
+                        mode = "fallback_full_aged"
 
                     if not resampled_df.empty:
                         normalized_resampled = self._normalize_calendar_columns(resampled_df)
                         if normalized_resampled is not None:
                             resampled_df = normalized_resampled
-                        # Store resampled data
-                        success = self.klines_manager.write_data(
-                            resampled_df, symbol, target_interval, "processed", overwrite=True
+                        
+                        # Store resampled data (using update_data to be additive/atomic)
+                        success = self.klines_manager.update_data(
+                            resampled_df, symbol, target_interval, "processed"
                         )
 
                         if success:
                             resampled_intervals.append(target_interval)
                             stored_files.append(f"{symbol}_{target_interval}_resampled")
                             resample_modes[target_interval] = mode
-
-                            # Span consistency check
-                            resampled_start = resampled_df.index.min()
-                            resampled_end = resampled_df.index.max()
-                            if base_start and base_end:
-                                if resampled_start > base_start or resampled_end < base_end:
-                                    span_mismatches.append(
-                                        f"{target_interval}: {resampled_start}→{resampled_end} vs base {base_start}→{base_end}"
-                                    )
-                                    if self.enable_logging:
-                                        tprint_warning(
-                                            f"⚠️ Span mismatch for {target_interval}: "
-                                            f"{resampled_start}→{resampled_end} vs base {base_start}→{base_end}"
-                                        )
-
                             if self.enable_logging:
-                                tprint_success(f"✅ Resampled to {target_interval}: {len(resampled_df)} records")
+                                tprint_success(f"✅ Resampled aged data to {target_interval}: {len(resampled_df)} records")
                         else:
                             result.warnings.append(f"Failed to store resampled data for {target_interval}")
                     else:
@@ -4108,13 +3760,12 @@ class EnhancedKlinesProcessingPipeline:
             result.metadata = {
                 "resampled_intervals": resampled_intervals,
                 "stored_files": stored_files,
-                "data_age_days": data_age_days,
-                "span_mismatches": span_mismatches,
+                "cutoff_time": str(cutoff_time_utc),
                 "resample_modes": resample_modes
             }
 
         except Exception as e:
-            error_msg = f"Resampling with age check failed: {str(e)}"
+            error_msg = f"Resampling with age filtering failed: {str(e)}"
             result.errors.append(error_msg)
             if self.enable_logging:
                 tprint_error(f"❌ {error_msg}")
@@ -4187,7 +3838,7 @@ async def process_klines_data_enhanced(
     symbol: str,
     interval: str,
     years: int,
-    exchange_interface: "ExchangeInterface",
+    exchange_interface: ExchangeInterface,
     config: Optional[PipelineConfig] = None,
     resampling_config: Optional[ResamplingConfig] = None,
     max_gap_minutes: Optional[int] = None,
@@ -4201,7 +3852,7 @@ async def process_klines_data_enhanced(
         symbol: Trading symbol (e.g., "ETHUSDT")
         interval: Data interval (e.g., "1m")
         years: Number of years of data to process
-        exchange_interface: "ExchangeInterface" instance for data access
+        exchange_interface: ExchangeInterface instance for data access
         config: Pipeline configuration
         resampling_config: Configuration for data resampling
         max_gap_minutes: Maximum allowed gap in minutes
@@ -4231,9 +3882,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Enhanced Klines Data Processing Pipeline')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name (binance, bingx, okx, etc.)')
     parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol (e.g., ETHUSDT)')
-    parser.add_argument('--assets', type=str, default='ETH,BTC,LINK,SOL,AVAX,BNB', help='Comma-separated list of assets for multi-asset processing (e.g., ETH,BTC,LINK)')
-    parser.add_argument('--global', action='store_true', help='Global multi-asset processing mode (full execution)')
-    parser.add_argument('--global-dry', action='store_true', help='Global multi-asset processing mode (blank execution)')
     parser.add_argument('--interval', type=str, default='1m', help='Data interval (1m, 5m, 1h, etc.)')
     parser.add_argument('--years', type=int, default=4, help='Number of years of data to collect')
     parser.add_argument('--data-dir', type=str, default='historical_data', help='Data directory')
@@ -4244,13 +3892,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-gap-filling', action='store_true', help='Disable gap filling')
     parser.add_argument('--no-resampling', action='store_true', help='Disable resampling')
     parser.add_argument('--no-quality-validation', action='store_true', help='Disable quality validation')
-    parser.add_argument('--disable-quality-utilities', action='store_true', help='Disable quality utilities entirely for faster startup')
     args = parser.parse_args()
-
-    # Disable quality utilities if flag is set
-    if args.disable_quality_utilities:
-        QUALITY_UTILITIES_DISABLED = True
-        print("⚡ Quality utilities disabled for faster startup")
 
     os.environ.setdefault("OMP_NUM_THREADS", "2")
     os.environ.setdefault("MKL_NUM_THREADS", "2")
@@ -4265,33 +3907,156 @@ if __name__ == "__main__":
             print("🚀 ENHANCED KLINES PROCESSING PIPELINE")
             print("=" * 80)
             print()
+            print(f"📊 Configuration:")
+            print(f"   - Exchange: {args.exchange}")
+            print(f"   - Symbol: {args.symbol}")
+            print(f"   - Interval: {args.interval}")
+            print(f"   - Lookback: {args.years} years")
+            print(f"   - Data Directory: {args.data_dir}")
+            print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled'}")
+            print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
+            print(f"   - Quality Validation: {'❌ Disabled' if args.no_quality_validation else '✅ Enabled'}")
+            print(f"   - Authenticated: {'✅ Yes' if args.api_key and args.api_secret else '❌ No'}")
+            print()
             
-            # Check if global multi-asset processing is enabled
-            if getattr(args, 'global', False) or getattr(args, 'global_dry', False):
-                assets = [asset.strip() for asset in args.assets.split(',')]
-                print(f"🌍 Global multi-asset processing mode: {'DRY RUN' if getattr(args, 'global_dry', False) else 'FULL EXECUTION'}")
-                print(f"📊 Assets to process: {', '.join(assets)}")
-                print()
-                
-                # Process each asset
-                for asset in assets:
-                    symbol = f"{asset}USDT"
-                    print(f"🔄 Processing {symbol}...")
-                    print()
-                    
-                    await process_single_asset(symbol, asset)
-                    
-                    if asset != assets[-1]:  # Not the last asset
-                        print("\n" + "=" * 80)
-                        print()
-                
-                print("\n" + "=" * 80)
-                print("✅ GLOBAL MULTI-ASSET PROCESSING COMPLETED")
-                print("=" * 80)
+            # Configure pipeline
+            pipeline_config = PipelineConfig(
+                data_dir=args.data_dir,
+                exchange=args.exchange,
+                enable_logging=True,
+                enable_gap_filling=not args.no_gap_filling,
+                enable_resampling=not args.no_resampling,
+                enable_duplicate_handling=True,
+                enable_quality_validation=not args.no_quality_validation,
+                batch_compatible=True,
+                max_gap_minutes=1
+            )
+            
+            # Configure resampling
+            # Use resample_older_than_days=0 to always resample, letting the
+            # age-based skip logic be controlled explicitly by the config.
+            resampling_config = ResamplingConfig(
+                target_intervals=['5m', '15m', '30m', '1h'],
+                method='ohlc',
+                preserve_volume=True,
+                resample_older_than_days=0,
+                enable_auto_resampling=True
+            ) if not args.no_resampling else None
+            
+            # Create pipeline
+            print(f"🔧 Initializing pipeline...")
+            pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
+            print(f"✅ Pipeline initialized")
+            print()
+            
+            # Create exchange interface (prefer factory + dispatcher)
+            print(f"🔗 Connecting to {args.exchange.upper()}...")
+            exchange_interface = None
+            if EXCHANGE_INTERFACE_AVAILABLE and ExchangeInterface is not None:
+                dispatcher = None
+                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
+                    try:
+                        ex_type = ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
+                    except Exception:
+                        ex_type = ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else ExchangeType.BINANCE
+                    try:
+                        dispatcher_cfg = ExchangeConfig(
+                            exchange_type=ex_type,
+                            api_key=args.api_key or None,
+                            api_secret=args.api_secret or None,
+                            password=args.api_password or None,
+                            subaccount_id=None,
+                            use_testnet=args.use_testnet,
+                            trade_symbol=args.symbol,
+                            mode=TradingMode.TRADE,  # allow live data pulls
+                        )
+                        dispatcher = create_exchange_dispatcher(dispatcher_cfg)
+                        # Initialize dispatcher if supported
+                        try:
+                            init_ret = dispatcher.initialize()
+                            # If initialize is coroutine, await it and check success
+                            if hasattr(init_ret, "__await__"):
+                                init_ret = await init_ret
+                            if init_ret is False:
+                                tprint_warning("⚠️ Dispatcher initialize returned False; live download may fail")
+                                dispatcher = None
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Dispatcher initialize failed: {e}")
+                        if dispatcher is not None:
+                            exchange_interface.dispatcher = dispatcher
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to create dispatcher: {e}")
+                        dispatcher = None
+
+                exchange_config = {
+                    'exchange_type': args.exchange,
+                    'api_key': args.api_key or None,
+                    'api_secret': args.api_secret or None,
+                    'password': args.api_password or None,
+                    'testnet': args.use_testnet,
+                    'rate_limits': {},
+                }
+                try:
+                    if create_exchange_interface is not None:
+                        exchange_interface = create_exchange_interface(exchange_config)
+                    else:
+                        exchange_interface = ExchangeInterface(exchange_config)
+                    if dispatcher is not None:
+                        exchange_interface.dispatcher = dispatcher
+                    await exchange_interface.connect()
+                    print(f"✅ Connected to {args.exchange.upper()}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Connection warning: {e}")
+                    tprint_info("📝 Continuing with existing/local data only...")
+                    exchange_interface = None
             else:
-                # Single asset processing
-                await process_single_asset(args.symbol, args.symbol.replace('USDT', ''))
-                
+                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
+            print()
+            
+            # Process data
+            print(f"🚀 Starting data collection and processing...")
+            print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print()
+            
+            results = await pipeline.process_klines_data(
+                symbol=args.symbol,
+                interval=args.interval,
+                years=args.years,
+                exchange_interface=exchange_interface,
+                resampling_config=resampling_config,
+                max_gap_minutes=1,
+                create_consolidated=True,
+                batch_id=f"{args.exchange}_{args.symbol.lower()}_{args.years}y_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            
+            print()
+            print("=" * 80)
+            print("✅ PROCESSING COMPLETED")
+            print("=" * 80)
+            print()
+            print(f"📊 Results:")
+            print(f"   - Pipeline Success: {results['pipeline_success']}")
+            print(f"   - Data Quality: {results['data_quality']}")
+            print(f"   - Final Data Shape: {results['final_data_shape']}")
+            print()
+            
+            if 'stored_files' in results and results['stored_files']:
+                print(f"💾 Stored Files:")
+                for file_path in results['stored_files']:
+                    print(f"   - {file_path}")
+                print()
+            
+            if 'resampled_intervals' in results and results['resampled_intervals']:
+                print(f"🔄 Resampled Intervals:")
+                for interval in results['resampled_intervals']:
+                    print(f"   - {interval}")
+                print()
+            
+            print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            if exchange_interface is not None:
+                await exchange_interface.disconnect()
+            
         except Exception as e:
             print()
             print("=" * 80)
@@ -4301,354 +4066,6 @@ if __name__ == "__main__":
             print()
             import traceback
             traceback.print_exc()
-    
-    async def process_single_asset(symbol: str, asset_name: str):
-        """Process a single asset."""
-        print(f"📊 Configuration:")
-        print(f"   - Exchange: {args.exchange}")
-        print(f"   - Symbol: {symbol}")
-        print(f"   - Interval: {args.interval}")
-        print(f"   - Lookback: {args.years} years")
-        print(f"   - Data Directory: {args.data_dir}")
-        print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled'}")
-        print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
-        print(f"   - Quality Validation: {'❌ Disabled' if args.no_quality_validation else '✅ Enabled'}")
-        print(f"   - Authenticated: {'✅ Yes' if args.api_key and args.api_secret else '❌ No'}")
-        print(f"   - Mode: {'DRY RUN' if getattr(args, 'global_dry', False) else 'FULL EXECUTION'}")
-        print()
-        if args.enable_logging if hasattr(args, "enable_logging") else True:
-            tprint_info(f"🛰️ Preparing download pipeline for {symbol} ({args.interval} / {args.years}y lookback)")
-            tprint_info(f"📁 Data directory: {args.data_dir}")
-            tprint_info(f"🌐 Exchange: {args.exchange}")
-            tprint_info(f"📊 Symbol: {symbol}")
-            tprint_info(f"⏰ Timeframe: {args.years} years of {args.interval} data")
-        
-        
-        # Configure pipeline
-        pipeline_config = PipelineConfig(
-            data_dir=args.data_dir,
-            exchange=args.exchange,
-            enable_logging=True,
-            enable_gap_filling=not args.no_gap_filling,
-            enable_resampling=not args.no_resampling,
-            enable_duplicate_handling=True,
-            enable_quality_validation=not args.no_quality_validation,
-            batch_compatible=True,
-            max_gap_minutes=1
-        )
-        
-        # Configure resampling
-        # Use resample_older_than_days=0 to always resample, letting the
-        # age-based skip logic be controlled explicitly by the config.
-        resampling_config = ResamplingConfig(
-            target_intervals=['5m', '15m', '30m', '1h'],
-            method='ohlc',
-            preserve_volume=True,
-            resample_older_than_days=0,
-            enable_auto_resampling=True
-        ) if not args.no_resampling else None
-        
-        # Create pipeline
-        print(f"🔧 Initializing pipeline...")
-        pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
-        print(f"✅ Pipeline initialized")
-        print()
-        
-        # Create exchange interface (prefer factory + dispatcher)
-        print(f"🔗 Connecting to {args.exchange.upper()}...")
-        exchange_interface = None
-        
-        # When no API credentials are supplied (single-asset or global), force the public ccxt path
-        no_api_keys = not args.api_key and not args.api_secret
-        selection_message = (
-            f"🛰️ Exchange selection inputs -> no_api_keys={no_api_keys}, "
-            f"global_dry={getattr(args, 'global_dry', False)}, "
-            f"enable_logging={getattr(args, 'enable_logging', True)}"
-        )
-        if 'tprint_info' in globals():
-            tprint_info(selection_message)
-        print(selection_message, flush=True)
-        if no_api_keys and not getattr(args, 'global_dry', False):
-            if 'tprint_info' in globals():
-                tprint_info("🛣️ Taking PUBLIC ccxt fallback path (no API keys supplied)")
-            print("🛣️ Taking PUBLIC ccxt fallback path (no API keys supplied)", flush=True)
-            try:
-                import ccxt
-                # Create a simple public data exchange interface
-                class PublicDataExchangeInterface:
-                    def __init__(self, exchange_name):
-                        self.exchange_name = exchange_name.lower()
-                        self.exchange_type = exchange_name.lower()  # Add missing attribute
-                        self.ccxt_exchange = ccxt.binance({'apiKey': '', 'secret': '', 'enableRateLimit': True})
-                        self.connected = True
-                        self.supports_dispatcher = False  # signal to skip heavy dispatcher wiring
-                        
-                    async def connect(self):
-                        # Test the connection with a simple call
-                        try:
-                            markets = self.ccxt_exchange.load_markets()
-                            print(f"✅ Connected to {self.exchange_name.upper()} (public API)")
-                            return True
-                        except Exception as e:
-                            print(f"⚠️ Public API connection test failed: {e}")
-                            return False
-                    
-                    async def disconnect(self):
-                        pass
-                    
-                    @staticmethod
-                    def _to_millis(ts_value):
-                        if ts_value is None:
-                            return None
-                        if hasattr(ts_value, "timestamp"):
-                            return int(ts_value.timestamp() * 1000)
-                        if isinstance(ts_value, str):
-                            import pandas as pd  # localized import to avoid global pandas dependency here
-                            parsed = pd.to_datetime(ts_value)
-                            return int(parsed.value / 1_000_000)  # ns -> ms
-                        if isinstance(ts_value, (int, float)):
-                            return int(ts_value if ts_value > 1e12 else ts_value * 1000)
-                        raise TypeError(f"Unsupported timestamp value: {ts_value}")
-
-                    async def get_klines(self, symbol, interval, limit=1000, since=None, start_time=None, end_time=None):
-                        """Download klines using public API."""
-                        try:
-                            message = (
-                                f"🌐 [ccxt] get_klines invoked: symbol={symbol}, interval={interval}, "
-                                f"start_time={start_time}, end_time={end_time}, since={since}, limit={limit}"
-                            )
-                            if 'tprint_info' in globals():
-                                tprint_info(message)
-                            print(message, flush=True)
-                            # Convert interval format if needed
-                            timeframe = interval
-                            if interval == '1m':
-                                timeframe = '1m'
-                            elif interval == '5m':
-                                timeframe = '5m'
-                            elif interval == '15m':
-                                timeframe = '15m'
-                            elif interval == '30m':
-                                timeframe = '30m'
-                            elif interval == '1h':
-                                timeframe = '1h'
-                            
-                            # Use start_time if provided (preferred), otherwise use since
-                            if start_time is not None:
-                                since_ms = self._to_millis(start_time)
-                                limit = min(limit, 2000)  # ccxt allows up to 2000, but large windows only when start supplied
-                            elif since is not None:
-                                since_ms = self._to_millis(since)
-                            else:
-                                since_ms = None
-                            max_retries = 5
-                            timeout_seconds = 30
-                            base_delay = 1.0
-                            last_error = None
-
-                            for attempt in range(1, max_retries + 1):
-                                request_window = ""
-                                if start_time is not None and end_time is not None:
-                                    request_window = (
-                                        f" ({start_time} → {end_time})"
-                                    )
-                                try:
-                                    attempt_message = (
-                                        f"⏳ [ccxt] Fetch attempt {attempt}/{max_retries} "
-                                        f"for {symbol} {timeframe}{request_window or ''} "
-                                        f"(limit {limit}, since={since_ms})"
-                                    )
-                                    if 'tprint_info' in globals():
-                                        tprint_info(attempt_message)
-                                    print(attempt_message, flush=True)
-
-                                    def _fetch():
-                                        if since_ms is not None:
-                                            return self.ccxt_exchange.fetch_ohlcv(
-                                                symbol,
-                                                timeframe=timeframe,
-                                                since=since_ms,
-                                                limit=limit,
-                                            )
-                                        return self.ccxt_exchange.fetch_ohlcv(
-                                            symbol,
-                                            timeframe=timeframe,
-                                            limit=limit,
-                                        )
-
-                                    klines = await asyncio.wait_for(
-                                        asyncio.to_thread(_fetch),
-                                        timeout=timeout_seconds,
-                                    )
-                                    return klines
-                                except asyncio.TimeoutError as e:
-                                    last_error = e
-                                    timeout_message = (
-                                        f"⌛ [ccxt] Fetch attempt {attempt} timed out after "
-                                        f"{timeout_seconds}s for {symbol} {timeframe}"
-                                    )
-                                    if 'tprint_warning' in globals():
-                                        tprint_warning(timeout_message)
-                                    print(timeout_message, flush=True)
-                                except Exception as e:
-                                    last_error = e
-                                    error_message = f"⚠️ [ccxt] Fetch attempt {attempt} failed: {e}"
-                                    if 'tprint_warning' in globals():
-                                        tprint_warning(error_message)
-                                    print(error_message, flush=True)
-
-                                if attempt < max_retries:
-                                    delay = base_delay * (2 ** (attempt - 1))
-                                    await asyncio.sleep(delay)
-                            
-                            exhaustion_message = (
-                                f"❌ [ccxt] Exhausted retries fetching {symbol} {timeframe}: {last_error}"
-                            )
-                            if 'tprint_warning' in globals():
-                                tprint_warning(exhaustion_message)
-                            print(exhaustion_message, flush=True)
-                            return []
-                            
-                        except Exception as e:
-                            print(f"❌ Failed to download klines: {e}")
-                            return []
-                
-                if args.exchange:
-                    tprint_info(f"🌐 Using public ccxt downloader for {args.exchange.upper()} (no API keys provided)")
-                exchange_interface = PublicDataExchangeInterface(args.exchange)
-                connected = await exchange_interface.connect()
-                if not connected:
-                    exchange_interface = None
-                    tprint_warning("⚠️ Public ccxt downloader failed to connect; will rely on local data only")
-                    
-            except ImportError:
-                tprint_warning("⚠️ ccxt not available for public data access")
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to create public data interface: {e}")
-        
-        # Fall back to the original ExchangeInterface logic
-        # Only attempt the heavy ExchangeInterface path when API credentials are supplied.
-        # Without keys we rely entirely on the public ccxt fallback defined above.
-        if (
-            exchange_interface is None
-            and not getattr(args, 'global_dry', False)
-            and bool(args.api_key and args.api_secret)
-            and lazy_exchange_interface.EXCHANGE_INTERFACE_AVAILABLE
-            and lazy_exchange_interface.ExchangeInterface is not None
-        ):
-            if 'tprint_info' in globals():
-                tprint_info("🛣️ Taking authenticated ExchangeInterface path (API keys supplied)")
-            print("🛣️ Taking authenticated ExchangeInterface path (API keys supplied)", flush=True)
-            dispatcher = None
-            if lazy_exchange_imports.create_exchange_dispatcher is not None and lazy_exchange_imports.ExchangeConfig is not None:
-                try:
-                    ex_type = lazy_exchange_imports.ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
-                except Exception:
-                    ex_type = lazy_exchange_imports.ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else lazy_exchange_imports.ExchangeType.BINANCE
-                try:
-                    dispatcher_cfg = lazy_exchange_imports.ExchangeConfig(
-                        exchange_type=ex_type,
-                        api_key=args.api_key or None,
-                        api_secret=args.api_secret or None,
-                        password=args.api_password or None,
-                        subaccount_id=None,
-                        use_testnet=args.use_testnet,
-                        trade_symbol=symbol,
-                        mode=lazy_exchange_imports.TradingMode.TRADE,  # allow live data pulls
-                    )
-                    dispatcher = lazy_exchange_imports.create_exchange_dispatcher(dispatcher_cfg)
-                    # Initialize dispatcher if supported
-                    try:
-                        init_ret = dispatcher.initialize()
-                        # If initialize is coroutine, await it and check success
-                        if hasattr(init_ret, "__await__"):
-                            init_ret = await init_ret
-                        if init_ret is False:
-                            tprint_warning("⚠️ Dispatcher initialize returned False; live download may fail")
-                            dispatcher = None
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Dispatcher initialize failed: {e}")
-                        dispatcher = None
-                    if dispatcher is not None:
-                        exchange_interface.dispatcher = dispatcher
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to create dispatcher: {e}")
-                    dispatcher = None
-
-            exchange_config = {
-                'exchange_type': args.exchange,
-                'api_key': args.api_key or None,
-                'api_secret': args.api_secret or None,
-                'password': args.api_password or None,
-                'testnet': args.use_testnet,
-                'rate_limits': {},
-            }
-            try:
-                if lazy_exchange_interface.create_exchange_interface is not None:
-                    exchange_interface = lazy_exchange_interface.create_exchange_interface(exchange_config)
-                else:
-                    exchange_interface = lazy_exchange_interface.ExchangeInterface(exchange_config)
-                if dispatcher is not None:
-                    exchange_interface.dispatcher = dispatcher
-                await exchange_interface.connect()
-                print(f"✅ Connected to {args.exchange.upper()}")
-            except Exception as e:
-                tprint_warning(f"⚠️ Connection warning: {e}")
-                tprint_info("📝 Continuing with existing/local data only...")
-                exchange_interface = None
-        if exchange_interface is None:
-            if getattr(args, 'global_dry', False):
-                tprint_info("🔍 DRY RUN MODE: Skipping exchange connection")
-            else:
-                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
-        else:
-            tprint_success(f"🤝 Data download will use {getattr(exchange_interface, 'exchange_type', args.exchange)} (public API)")
-        print()
-        
-        # Process data
-        print(f"🚀 Starting data collection and processing...")
-        print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"📡 Download mode: {'PUBLIC API (ccxt)' if exchange_interface and hasattr(exchange_interface, 'ccxt_exchange') else 'LOCAL ONLY'}")
-        print()
-        
-        results = await pipeline.process_klines_data(
-            symbol=symbol,
-            interval=args.interval,
-            years=args.years,
-            exchange_interface=exchange_interface,
-            resampling_config=resampling_config,
-            max_gap_minutes=1,
-            create_consolidated=True,
-            batch_id=f"{args.exchange}_{symbol.lower()}_{args.years}y_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        )
-        
-        print()
-        print("=" * 80)
-        print(f"✅ PROCESSING COMPLETED for {symbol}")
-        print("=" * 80)
-        print()
-        print(f"📊 Results:")
-        print(f"   - Pipeline Success: {results['pipeline_success']}")
-        print(f"   - Data Quality: {results['data_quality']}")
-        print(f"   - Final Data Shape: {results['final_data_shape']}")
-        print()
-        
-        if 'stored_files' in results and results['stored_files']:
-            print(f"💾 Stored Files:")
-            for file_path in results['stored_files']:
-                print(f"   - {file_path}")
-            print()
-        
-        if 'resampled_intervals' in results and results['resampled_intervals']:
-            print(f"🔄 Resampled Intervals:")
-            for interval in results['resampled_intervals']:
-                print(f"   - {interval}")
-            print()
-        
-        print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        if exchange_interface is not None:
-            await exchange_interface.disconnect()
 
     # Example usage - for reference only
     async def main_example():
@@ -4683,7 +4100,7 @@ if __name__ == "__main__":
                 'testnet': True,
                 'rate_limits': {}
             }
-            exchange_interface = lazy_exchange_interface.ExchangeInterface(exchange_config)
+            exchange_interface = ExchangeInterface(exchange_config)
             
             try:
                 await exchange_interface.connect()

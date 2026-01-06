@@ -1,0 +1,3475 @@
+#!/usr/bin/env python3
+import psutil
+from tqdm import tqdm
+"""Specialist Feature Diagnostics CLI.
+
+Analyzes specialist model outputs (Risk, Liquidity, Breakout/Bounce)
+loaded via `get_specialist_models_outputs` against meta-labeling targets
+produced by `FeatureGenerationMetaLabelingStep`.
+
+Metrics per specialist feature:
+- Event-aware correlation-based MI proxy (cheap mutual information proxy)
+- MI stability across time-series CV folds (mean and coefficient of variation)
+- Pearson correlation with target label and corresponding R^2
+
+Outputs Markdown and CSV reports under the `outcomes/` directory.
+Optionally restricts analysis to the last N calendar days via --lookback-days.
+
+Usage example (from project root):
+
+  # Uses direction-aware default target (binary_label_long for longs)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --regime-timeframe 1h --lookback-days 365
+
+  # Explicit target column (regression target for regressors)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --target-col target_long --regime-timeframe 1h
+
+  # Compare multiple targets (classifiers vs regressors)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --compare-targets --regime-timeframe 1h
+"""
+
+import argparse
+import logging
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Tuple, Optional, List
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    brier_score_loss,
+    mean_squared_error,
+    r2_score,
+    roc_auc_score,
+)
+from sklearn.feature_selection import mutual_info_regression
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+
+# Ensure project root is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.logger import system_logger  # type: ignore
+from src.utils.ml_common.get_specialist_models_outputs import (  # type: ignore
+    get_specialist_models_outputs,
+    get_enhanced_specialist_models_outputs,
+)
+from src.utils.ml_common.feature_selection import get_feature_selection_utils  # type: ignore
+from src.training.steps.labeling.feature_generation_meta_labeling_step import (  # type: ignore
+    FeatureGenerationMetaLabelingStep,
+)
+from src.training.steps.labeling.snr_diagnostics import (  # type: ignore
+    _load_labeled_data,
+)
+from src.training.steps.pre_training.components.final_feature_selection import (  # type: ignore
+    FinalFeatureSelectionConfig,
+    FinalFeatureSelectionComponent,
+)
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+from src.training.steps.market_analysis import step_registry  # type: ignore
+from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
+from src.analysis.tv_var_system import TVVARSystem
+from src.analysis.tv_var_regime_definition import EightFeatureRegimeDetector
+from src.analysis.tv_var_decision_tree_rules import TVVARDecisionTreeRules
+from src.analysis.tv_var_monthly_trainer import TVVARMonthlyTrainer
+from src.analysis.tv_var_backtesting import TVVARBacktester, backtest_tv_var_enhanced
+from src.training.steps.labeling.unified_price_layer2 import (  # type: ignore
+    load_layer0_params,
+    apply_hampel_filter,
+    apply_savgol_filter,
+)
+
+
+logger = system_logger.getChild("specialist_feature_diagnostics")
+
+OUTCOMES_DIR = Path("outcomes")
+_LAYER0_PARAMS_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _load_latest_layer0_params() -> Dict[str, Any]:
+    """Load (and cache) the most recent Layer0 smoothing parameters."""
+    global _LAYER0_PARAMS_CACHE
+    if _LAYER0_PARAMS_CACHE is not None:
+        return _LAYER0_PARAMS_CACHE
+
+    try:
+        params = load_layer0_params()
+        _LAYER0_PARAMS_CACHE = params
+        logger.info(
+            "🧽 Loaded latest Layer0 params (Q=%.2e, R=%.2e, vwap_weight=%.3f)",
+            params.get("kalman_Q", 0.0),
+            params.get("kalman_R", 0.0),
+            params.get("vwap_weight", 0.0),
+        )
+        return params
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("⚠️ Failed to load Layer0 params, skipping global denoising: %s", exc)
+        _LAYER0_PARAMS_CACHE = {}
+        return _LAYER0_PARAMS_CACHE
+
+
+def _apply_global_layer0_denoising(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply Layer0-derived Hampel/Savitzky-Golay denoising to all numeric specialist features once.
+    """
+    params = _load_latest_layer0_params()
+    if not params:
+        return df
+
+    hampel_enabled = params.get("hampel_filter_enabled", False)
+    savgol_enabled = params.get("savgol_filter_enabled", False)
+    if not (hampel_enabled or savgol_enabled):
+        return df
+
+    numeric_cols = df.select_dtypes(include=[np.number, "bool"]).columns
+    if not len(numeric_cols):
+        return df
+
+    denoised_df = df.copy()
+
+    hampel_window = int(params.get("hampel_window", 5))
+    hampel_threshold = float(params.get("hampel_threshold", 3.0))
+    savgol_window = int(params.get("savgol_window", 21))
+    savgol_order = int(params.get("savgol_order", 3))
+
+    logger.info(
+        "🔧 Applying global Layer0 denoising (hampel=%s, savgol=%s) to %d specialist columns",
+        hampel_enabled,
+        savgol_enabled,
+        len(numeric_cols),
+    )
+
+    for col in numeric_cols:
+        series = denoised_df[col].astype(float)
+        series = series.replace([np.inf, -np.inf], np.nan)
+        series = series.ffill().bfill()
+
+        if hampel_enabled and len(series.dropna()) >= max(3, hampel_window + 1):
+            try:
+                series = apply_hampel_filter(series, window=hampel_window, threshold=hampel_threshold)
+            except Exception as exc:  # pragma: no cover - logging only
+                logger.debug("Hampel filter failed for %s: %s", col, exc)
+
+        if savgol_enabled and len(series.dropna()) >= max(savgol_window + 1, savgol_order + 2):
+            try:
+                series = apply_savgol_filter(series, window_length=savgol_window, poly_order=savgol_order)
+            except Exception as exc:  # pragma: no cover - logging only
+                logger.debug("Savitzky-Golay filter failed for %s: %s", col, exc)
+
+        # Restore original dtype if it was boolean
+        if pd.api.types.is_bool_dtype(df[col].dtype):
+            denoised_df[col] = (series >= 0.5).astype(bool)
+        else:
+            denoised_df[col] = series
+
+    return denoised_df
+
+
+async def _run_specialist_training(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    regime_timeframe: str,
+    lookback_days: Optional[float] = None,
+    selected_specialists: Optional[list[str]] = None,
+) -> None:
+    """Run training for all (or selected) specialist models sequentially."""
+    logger.info("🚀 Starting specialist model training sequence")
+
+    # Order matters: some steps might depend on artifacts from others,
+    # though ideally they should be independent or use shared feature generation.
+    default_specialist_steps_enhanced = [
+        "enhanced_ml_momentum_persistence_step",
+        "enhanced_ml_smc_regime_step",
+        "enhanced_ml_volatility_burst_step",
+        "enhanced_ml_volume_force_step",
+        "enhanced_ml_breakout_bounce_regime_step",
+        "enhanced_xgb_macro_regime_step",
+        "enhanced_ml_liquidity_regime_step",
+        "enhanced_ml_path_regime_step",
+        "enhanced_ml_risk_regime_step",
+        "enhanced_xgb_meso_regime_step",
+        "enhanced_ml_microstructure_step",
+        "enhanced_ml_spectral_step",
+    ]
+    
+    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps_enhanced
+
+    config_base = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "regime_timeframe": regime_timeframe,
+        "execution_mode": "full", # default to full for training
+    }
+
+    if lookback_days:
+        config_base["lookback_days"] = lookback_days
+
+    for step_key in specialist_steps:
+        # Verify registry key and handle potential aliases (e.g. missing _step suffix)
+        try:
+             if not step_registry.is_registered(step_key):
+                 if step_registry.is_registered(step_key + "_step"):
+                     step_key = step_key + "_step"
+                 else:
+                     logger.warning(f"⚠️ Step '{step_key}' not found in registry. Skipping.")
+                     continue
+        except Exception:
+             logger.warning(f"⚠️ Error checking registry for '{step_key}'. Skipping.")
+             continue
+
+        logger.info(f"▶️ Running {step_key}...")
+        try:
+            StepClass = step_registry.get_step(step_key)
+            step_instance = StepClass(step_name=step_key)
+
+            # Run the step (per-step overrides allowed)
+            step_config = dict(config_base)
+            if step_key == "ml_liquidity_regime_step":
+                # LiquidityClusterQualityAssessor is useful, but the generic
+                # ClusterQualityAssessor can be extremely slow on long histories
+                # and is not needed for this diagnostics pipeline.
+                step_config.setdefault("liquidity_quality_skip_generic_cluster_assessor", True)
+                step_config.setdefault("liquidity_quality_fast_mode", True)
+
+            result = await step_instance.run(step_config)
+
+            if result.get("success"):
+                logger.info(f"✅ {step_key} completed successfully.")
+            else:
+                logger.error(f"❌ {step_key} failed: {result.get('error')}")
+        except Exception as exc:
+            logger.error(f"❌ Exception running {step_key}: {exc}")
+
+    logger.info("🏁 Specialist model training sequence finished.")
+
+
+def _ensure_outcomes_dir() -> Path:
+    """Ensure outcomes directory exists and return it."""
+    OUTCOMES_DIR.mkdir(exist_ok=True)
+    return OUTCOMES_DIR
+
+
+def _export_report(
+    prefix: str,
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    model: str,
+    payload: Dict[str, Any],
+    markdown_lines: list[str],
+) -> Tuple[Path, Path]:
+    """Export diagnostics payload as Markdown and CSV into outcomes/.
+
+    Filenames are of the form:
+        outcomes/{prefix}_{symbol}_{timeframe}_{YYYYMMDD_%H%M%S}.md/csv
+    """
+    out_dir = _ensure_outcomes_dir()
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    base_name = f"{prefix}_{symbol}_{timeframe}_{ts}"
+
+    md_path = out_dir / f"{base_name}.md"
+    csv_path = out_dir / f"{base_name}.csv"
+
+    with md_path.open("w") as f_md:
+        f_md.write("\n".join(markdown_lines))
+
+    # Optional CSV export when feature_metrics are provided in the payload
+    feature_metrics = payload.get("feature_metrics")
+    model_reliability = payload.get("model_reliability")
+    model_pairwise = payload.get("model_pairwise")
+
+    if isinstance(feature_metrics, dict) and feature_metrics:
+        try:
+            frames: list[pd.DataFrame] = []
+
+            # Base per-feature metrics
+            # Filter out special metadata entries
+            clean_metrics = {k: v for k, v in feature_metrics.items() if k != "_tv_var_system"}
+            df_features = pd.DataFrame.from_dict(clean_metrics, orient="index")
+
+            df_features.index.name = "feature"
+            df_features.insert(0, "row_type", "feature")
+            frames.append(df_features)
+
+            # Optional per-model reliability metrics
+            if isinstance(model_reliability, dict):
+                per_model = model_reliability.get("per_model")
+                if isinstance(per_model, dict) and per_model:
+                    df_models = pd.DataFrame.from_dict(per_model, orient="index")
+                    df_models.index.name = "feature"
+                    df_models.insert(0, "row_type", "model_reliability")
+                    frames.append(df_models)
+
+            # Optional pairwise relationships between specialist models
+            if isinstance(model_pairwise, dict):
+                pairs = model_pairwise.get("pairs")
+                if isinstance(pairs, list) and pairs:
+                    df_pairs = pd.DataFrame(pairs)
+                    if not df_pairs.empty:
+                        df_pairs = df_pairs.copy()
+                        pair_index = (
+                            df_pairs["model_i"].astype(str)
+                            + "|"
+                            + df_pairs["model_j"].astype(str)
+                        )
+                        df_pairs.index = pair_index
+                        df_pairs.index.name = "feature"
+                        df_pairs.insert(0, "row_type", "model_pairwise")
+                        frames.append(df_pairs)
+
+            if frames:
+                df_all = pd.concat(frames, axis=0, sort=False)
+                df_all.to_csv(csv_path)
+                logger.info(
+                    "Saved %s diagnostics to %s and %s",
+                    prefix,
+                    md_path,
+                    csv_path,
+                )
+            else:
+                # Fallback: feature metrics only (should not normally trigger)
+                df = pd.DataFrame.from_dict(feature_metrics, orient="index")
+                df.index.name = "feature"
+                df.to_csv(csv_path)
+                logger.info(
+                    "Saved %s diagnostics to %s and %s",
+                    prefix,
+                    md_path,
+                    csv_path,
+                )
+        except Exception as csv_exc:  # pragma: no cover - best-effort CSV export
+            logger.warning("Failed to export CSV diagnostics table: %s", csv_exc)
+    else:
+        logger.info("Saved %s diagnostics to %s", prefix, md_path)
+
+    return md_path, csv_path
+
+
+def _prepare_labels(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    model: str,
+    target_col: str,
+    lookback_days: Optional[float] = None,
+) -> Tuple[pd.Series, pd.DatetimeIndex, pd.Series]:
+    """Load labeled_data and return (y, datetime index, realized_return).
+
+    Uses the same loader as snr_diagnostics to ensure compatibility with
+    FeatureGenerationMetaLabelingStep artifacts.
+    
+    Returns:
+        Tuple of (target_series, training_index, realized_return_series)
+    """
+    labeled_df = _load_labeled_data(
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+    )
+
+    if target_col not in labeled_df.columns:
+        raise ValueError(
+            f"Target column '{target_col}' not found in labeled_data; "
+            f"available columns: {sorted(labeled_df.columns)}"
+        )
+
+    # Normalize timestamp index. Prefer an existing DatetimeIndex on
+    # labeled_df if available; only fall back to timestamp/close_time
+    # columns when the index is not already datetime-like.
+    if isinstance(labeled_df.index, pd.DatetimeIndex):
+        idx = labeled_df.index
+        if idx.tz is not None:
+            try:
+                idx = idx.tz_convert("UTC").tz_localize(None)
+            except Exception:
+                idx = idx.tz_localize(None)
+        labeled_df = labeled_df.copy()
+        labeled_df.index = idx
+    elif "timestamp" in labeled_df.columns:
+        ts_raw = labeled_df["timestamp"]
+
+        # Handle both datetime-like and numeric Unix timestamp columns.
+        # Meta-labeling typically stores exchange timestamps in milliseconds,
+        # so we interpret numeric values as ms since epoch to avoid bogus
+        # 1970-01-01 ranges.
+        if pd.api.types.is_datetime64_any_dtype(ts_raw):
+            ts = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+        else:
+            numeric = pd.to_numeric(ts_raw, errors="coerce")
+            if numeric.notna().any():
+                ts = pd.to_datetime(numeric, unit="ms", utc=True, errors="coerce")
+            else:
+                ts = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+
+        try:
+            ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
+        except Exception:
+            ts = ts.dt.tz_localize(None)
+
+        valid_mask = ~ts.isna()
+        labeled_df = labeled_df.loc[valid_mask].copy()
+        ts = ts[valid_mask]
+        labeled_df.index = ts
+    elif "close_time" in labeled_df.columns:
+        # Fallback for labeled_data artifacts that store event timestamps
+        # in a 'close_time' column rather than a generic 'timestamp'.
+        close_col = labeled_df["close_time"]
+        try:
+            if pd.api.types.is_datetime64_any_dtype(close_col):
+                ts = pd.to_datetime(close_col, utc=True, errors="coerce")
+            else:
+                # Infer epoch unit (s, ms, ns) from numeric magnitude to avoid
+                # misinterpreting seconds as milliseconds (which would produce
+                # bogus 1970-era timestamps).
+                close_numeric = pd.to_numeric(close_col, errors="coerce")
+                if close_numeric.notna().any():
+                    q = float(close_numeric.dropna().quantile(0.5))
+                    if q > 1e14:
+                        unit = "ns"
+                    elif q > 1e11:
+                        unit = "ms"
+                    elif q > 1e9:
+                        unit = "s"
+                    else:
+                        unit = "ms"
+                    ts = pd.to_datetime(close_numeric, unit=unit, utc=True, errors="coerce")
+                else:
+                    ts = pd.to_datetime(close_col, utc=True, errors="coerce")
+        except Exception:
+            ts = pd.to_datetime(close_col, utc=True, errors="coerce")
+        try:
+            ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
+        except Exception:
+            ts = ts.dt.tz_localize(None)
+        valid_mask = ~ts.isna()
+        labeled_df = labeled_df.loc[valid_mask].copy()
+        ts = ts[valid_mask]
+        labeled_df.index = ts
+    else:
+        raise ValueError(
+            "labeled_data has neither 'timestamp'/'close_time' column nor DatetimeIndex"
+        )
+
+    y = labeled_df[target_col].astype(float)
+    valid_y = ~y.isna()
+    y = y[valid_y]
+
+    # Optional time-based lookback restriction
+    if lookback_days is not None and lookback_days > 0:
+        try:
+            cutoff = y.index.max() - pd.Timedelta(days=float(lookback_days))
+            y = y.loc[y.index >= cutoff]
+        except Exception as lb_exc:
+            logger.warning("Failed to apply lookback_days filter: %s", lb_exc)
+
+    # Debug: inspect target distribution after cleaning/lookback
+    try:
+        vc = y.value_counts(dropna=False).to_dict()
+        logger.info(
+            "🎯 Target '%s' distribution after cleaning/lookback_days=%s: n=%d, counts=%s",
+            target_col,
+            str(lookback_days),
+            len(y),
+            vc,
+        )
+    except Exception as dist_exc:
+        logger.warning("Failed to compute target distribution summary: %s", dist_exc)
+
+    if len(y) < 100:
+        logger.warning(
+            "Only %d valid target samples after cleaning/lookback; diagnostics may be noisy",
+            len(y),
+        )
+
+    # Diagnostics: report training index range used for specialist alignment
+    if isinstance(y.index, pd.DatetimeIndex) and len(y.index) > 0:
+        logger.info(
+            "🎯 Labeled training index range (%s): %s → %s (n=%d)",
+            target_col,
+            y.index.min(),
+            y.index.max(),
+            len(y.index),
+        )
+
+    # Extract realized_return for PnL simulation (if available)
+    if "realized_return" in labeled_df.columns:
+        realized_return = labeled_df["realized_return"].astype(float)
+        realized_return = realized_return.loc[y.index]
+    else:
+        # Fallback: use the target column as a proxy if it's a continuous value
+        realized_return = pd.Series(index=y.index, dtype=float)
+        logger.warning("realized_return column not found in labeled_data; PnL simulation will be limited")
+
+    return y, y.index, realized_return
+
+
+def _load_specialist_features(
+    symbol: str,
+    exchange: str,
+    base_timeframe: str,
+    regime_timeframe: str,
+    direction: str,
+    model: str,
+    training_index: pd.DatetimeIndex,
+    enable_risk_hmm_specialist: bool,
+) -> pd.DataFrame:
+    """Load specialist model outputs aligned to training_index.
+
+    Uses FeatureGenerationMetaLabelingStep's BaseStep machinery to obtain an
+    ArtifactRouter instance and then delegates to get_specialist_models_outputs.
+    """
+    step = FeatureGenerationMetaLabelingStep()
+    step.set_context(
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=base_timeframe,
+        direction=direction,
+        model=model,
+    )
+
+    specialist_config: Dict[str, Any] = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": base_timeframe,
+        "regime_timeframe": regime_timeframe,
+        "direction": direction,
+        "execution_mode": "full",  # Ensure full dataset usage
+        # Mirror training behavior: include the optional HMM risk specialist
+        # only when explicitly enabled so diagnostics can match the exact
+        # specialist feature block used for training.
+        "enable_risk_hmm_specialist": enable_risk_hmm_specialist,
+        # For diagnostics we prefer to start from the raw specialist blocks
+        # and collapse to scalars locally via _select_specialist_scalars,
+        # so that we can choose alternative MR scalars when dense series are
+        # effectively constant over the evaluation window.
+        # Canonical scalar projection enabled to reflect simplified feature set
+        # (merged Liquidity and selected Volume Force)
+        "use_canonical_specialist_scalars": True,
+    }
+
+    # Try enhanced specialists first
+    enhanced_specialist_df = get_enhanced_specialist_models_outputs(
+        symbol=specialist_config.get("symbol", "ETHUSDT"),
+        exchange=specialist_config.get("exchange", "binance"),
+        timeframe=specialist_config.get("timeframe", "15m"),
+        direction=specialist_config.get("direction", "long"),
+        model=specialist_config.get("model", "analyst"),
+        training_index=training_index,
+        config=specialist_config,
+        strict=False,
+    )
+
+    # Initialize specialist_df
+    specialist_df = None
+
+    # Try enhanced specialists first
+    if enhanced_specialist_df is not None and not enhanced_specialist_df.empty:
+        specialist_df = enhanced_specialist_df
+        step.logger.info("Using enhanced specialist outputs")
+
+    # Fall back to original specialists if enhanced not available or failed
+    if specialist_df is None or specialist_df.empty:
+        specialist_df = get_specialist_models_outputs(
+            artifact_router=step.artifact_router,
+            training_index=training_index,
+            config=specialist_config,
+            logger=step.logger,
+            strict=False,
+        )
+
+    if specialist_df is None or specialist_df.empty:
+        raise ValueError(
+            "No specialist model outputs found for the given context; "
+            "ensure the specialist steps have been run first."
+        )
+
+    # Ensure strict alignment to the training index
+    specialist_df = specialist_df.reindex(training_index, method="ffill")
+
+    # Keep only numeric columns; let downstream metrics logic drop degenerate
+    # features (all-NaN or zero variance) rather than failing early here.
+    numeric = specialist_df.select_dtypes(include=[np.number, "bool"]).copy()
+    if numeric.shape[1] == 0:
+        raise ValueError("No numeric specialist features found in specialist_df")
+
+    # Apply Layer0-based global denoising once across all specialist columns.
+    try:
+        numeric = _apply_global_layer0_denoising(numeric)
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("⚠️ Global Layer0 denoising failed; continuing with raw signals: %s", exc)
+
+    return numeric
+
+
+def compute_binned_mi(x: np.ndarray, y: np.ndarray, bins: int = 10) -> float:
+    """Compute a fast binned MI score for reporting."""
+    try:
+        from sklearn.metrics import mutual_info_score
+        if len(x) < 2 or len(np.unique(y)) < 2:
+            return 0.0
+        # Clean data
+        mask = ~(np.isnan(x) | np.isnan(y) | np.isinf(x) | np.isinf(y))
+        x_c, y_c = x[mask], y[mask]
+        if len(x_c) < 2:
+            return 0.0
+        
+        # Bin continuous x
+        x_edges = np.histogram_bin_edges(x_c, bins=bins)
+        x_binned = np.digitize(x_c, x_edges)
+        
+        return float(mutual_info_score(x_binned, y_c))
+    except Exception:
+        return 0.0
+
+def _compute_feature_metrics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_folds: int = 5,
+) -> Dict[str, Dict[str, float]]:
+    """Compute MI proxy, HSIC, MI stability, correlation, and R^2 per feature."""
+    # Align and clean
+    common_index = X.index.intersection(y.index)
+    X = X.loc[common_index].copy()
+    y = y.loc[common_index].astype(float)
+
+    mask = ~y.isna()
+    X = X.loc[mask]
+    y = y.loc[mask]
+
+    # Replace infinities and fill remaining NaNs in X for robust correlation-based metrics
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # Drop breakout/bounce and specialist features from diagnostics.
+    # These specialists are evaluated via their own dedicated pipelines and are
+    # not used as direct objectives for the meta-target here, so excluding them
+    # keeps the report focused on the core regime block (risk, liquidity,
+    # macro/path, SMC) without clutter from very weak or constant scalars.
+    drop_cols = [
+        col
+        for col in X.columns
+        if col.startswith("breakout_")
+        or col in {
+            "is_resistance",
+            "is_support",
+            "support_scalar",
+            "resistance_scalar",
+            "breakout_success_prob",
+            "breakout_high_conf_signal",
+        }
+    ]
+    if drop_cols:
+        X = X.drop(columns=drop_cols)
+
+    # Pre-compute numeric target array and detect binary vs continuous target
+    y_arr = y.to_numpy(dtype=float)
+    uniq = np.unique(y_arr[~np.isnan(y_arr)])
+    
+    logger.info(f"📊 Target distribution: {pd.Series(y_arr).value_counts(dropna=False).to_dict()}")
+    logger.info(f"📊 Target unique values: {uniq.tolist()}")
+
+    # Robust binary check: target is binary if it has <= 2 unique values AND those values are a subset of {0, 1}
+    is_binary_target = False
+    if len(uniq) <= 2 and uniq.size > 0:
+        if set(uniq).issubset({0.0, 1.0}):
+            is_binary_target = True
+
+    # Debug: log alignment statistics and class distribution actually
+    # entering the MI / R^2 computation.
+    try:
+        y_var = np.var(y_arr)
+        logger.info(
+            "📊 Feature metrics alignment: n_samples=%d, n_features=%d, target_var=%.6f, is_binary=%s, unique_vals=%s",
+            len(y),
+            X.shape[1],
+            y_var,
+            is_binary_target,
+            uniq[:10].tolist() if len(uniq) > 10 else uniq.tolist(),
+        )
+        
+        # Log feature variances to catch constant artifacts
+        feat_vars = X.var()
+        constant_feats = feat_vars[feat_vars < 1e-12].index.tolist()
+        if constant_feats:
+            logger.warning("⚠️ Found %d constant features: %s", len(constant_feats), constant_feats[:10])
+        logger.info("📊 Mean feature variance: %.6f", feat_vars.mean())
+
+        if is_binary_target:
+            class_counts = {
+                int(c): int((y_arr == c).sum()) for c in uniq
+            }
+            logger.info(
+                "📊 Binary target class counts after alignment: %s",
+                class_counts,
+            )
+    except Exception as align_exc:
+        logger.warning("Failed to log feature-metrics alignment statistics: %s", align_exc)
+
+    if len(y) < max(cv_folds * 5, 50):
+        logger.warning(
+            "Limited samples (%d) for CV=%d; MI stability estimates may be noisy",
+            len(y),
+            cv_folds,
+        )
+
+    # Use FinalFeatureSelectionComponent utilities for MI proxy and stability by default
+    config = FinalFeatureSelectionConfig()
+    component = FinalFeatureSelectionComponent(config=config)
+
+    # HSIC scores (kernel-based dependence) via the unified feature selection utils.
+    # This complements the MI proxy and can capture non-linear relationships.
+    hsic_scores: Dict[str, float] = {}
+    try:
+        fs_utils = get_feature_selection_utils()
+        X_mat = X.to_numpy(dtype=float)
+        hsic_scores = fs_utils.compute_hsic_features(
+            X=X_mat,
+            y=y_arr,
+            feature_names=list(X.columns),
+            kernel="rbf",
+        )
+    except Exception as hsic_exc:
+        logger.warning("Failed to compute HSIC scores; defaulting to 0.0: %s", hsic_exc)
+        hsic_scores = {col: 0.0 for col in X.columns}
+
+    if is_binary_target:
+        # Binary-aware MI proxy: use fast binned MI
+        mi_full_series = {}
+        for col in X.columns:
+            x_full = X[col].to_numpy(dtype=float)
+            mi_full_series[col] = compute_binned_mi(x_full, y_arr)
+        mi_full = pd.Series(mi_full_series, index=X.columns)
+
+        # MI stability across TimeSeriesSplit folds using the same binned MI
+        mi_mean: Dict[str, float] = {}
+        mi_cv: Dict[str, float] = {}
+        tscv = TimeSeriesSplit(n_splits=cv_folds)
+
+        for col in X.columns:
+            fold_scores: list[float] = []
+            for train_idx, _ in tscv.split(X):
+                y_tr = y_arr[train_idx]
+                x_tr = X.iloc[train_idx][col].to_numpy(dtype=float)
+
+                mask_tr = ~np.isnan(y_tr)
+                if not np.any(mask_tr):
+                    continue
+                y_tr_clean = y_tr[mask_tr]
+                x_tr_clean = x_tr[mask_tr]
+
+                if len(np.unique(y_tr_clean)) < 2:
+                    continue
+
+                score = compute_binned_mi(x_tr_clean, y_tr_clean)
+                fold_scores.append(score)
+
+            if fold_scores:
+                m = float(np.mean(fold_scores))
+                s = float(np.std(fold_scores))
+                mi_mean[col] = m
+                mi_cv[col] = float(s / max(abs(m), 1e-12))
+            else:
+                mi_mean[col] = 0.0
+                mi_cv[col] = float("nan")
+    else:
+        # Continuous/real-valued target: use binned MI proxy
+        mi_full_series = {}
+        for col in X.columns:
+            x_full = X[col].to_numpy(dtype=float)
+            mi_full_series[col] = compute_binned_mi(x_full, y_arr)
+        mi_full = pd.Series(mi_full_series, index=X.columns)
+
+        mi_mean: Dict[str, float] = {}
+        mi_cv: Dict[str, float] = {}
+        tscv = TimeSeriesSplit(n_splits=cv_folds)
+        
+        for col in X.columns:
+            fold_scores = []
+            for train_idx, _ in tscv.split(X):
+                y_tr = y_arr[train_idx]
+                x_tr = X.iloc[train_idx][col].to_numpy(dtype=float)
+                
+                mask_tr = ~np.isnan(y_tr)
+                if not np.any(mask_tr):
+                    continue
+                y_tr_clean = y_tr[mask_tr]
+                x_tr_clean = x_tr[mask_tr]
+                
+                if len(np.unique(y_tr_clean)) < 2:
+                    continue
+                
+                score = compute_binned_mi(x_tr_clean, y_tr_clean)
+                fold_scores.append(score)
+            
+            if fold_scores:
+                m = float(np.mean(fold_scores))
+                s = float(np.std(fold_scores))
+                mi_mean[col] = m
+                mi_cv[col] = float(s / max(abs(m), 1e-12))
+            else:
+                mi_mean[col] = 0.0
+                mi_cv[col] = float("nan")
+
+    # Simple Pearson correlation and R^2 per feature
+    # (uses the same cleaned y_arr computed above)
+    metrics: Dict[str, Dict[str, float]] = {}
+
+    for col in X.columns:
+        x = X[col].to_numpy(dtype=float)
+
+        # Skip only fully-missing features; allow constant ones so we still
+        # see them in the report (corr/R² will just be NaN).
+        if np.all(np.isnan(x)):
+            continue
+
+        try:
+            corr = float(np.corrcoef(x, y_arr)[0, 1])
+        except Exception:
+            corr = float("nan")
+
+        if not np.isfinite(corr):
+            r2 = float("nan")
+        else:
+            r2 = float(corr ** 2)
+
+        metrics[col] = {
+            "mi_proxy_full": float(mi_full.get(col, 0.0)),
+            "mi_mean_cv": float(mi_mean.get(col, 0.0)),
+            "mi_cv": float(mi_cv.get(col, float("inf"))),
+            "hsic": float(hsic_scores.get(col, 0.0)),
+            "pearson_corr": corr,
+            "r2": r2,
+        }
+
+    return metrics
+
+
+def _compute_feature_metrics_with_tv_var(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_folds: int = 5,
+    enable_tv_var: bool = True,
+    tv_var_window: int = 100,
+    tv_var_regime_aware: bool = True,
+) -> Tuple[Dict[str, Dict[str, float]], Dict[str, Any]]:
+    """Compute enhanced metrics with TV-VAR integration.
+    
+    Returns:
+        tuple: (feature_metrics, tv_var_info)
+    """
+    
+    # First compute standard metrics
+    standard_metrics = _compute_feature_metrics(X, y, cv_folds)
+    tv_var_info = {"enabled": False}
+    
+    if not enable_tv_var or len(X) < tv_var_window + 50:
+        logger.info("TV-VAR disabled or insufficient data, using standard metrics")
+        return standard_metrics, tv_var_info
+    
+    logger.info("🚀 Computing TV-VAR enhanced metrics")
+    
+    try:
+        # Generate 8 core features for TV-VAR if not already present
+        tv_var_features = _generate_tv_var_features_from_specialists(X)
+        
+        if len(tv_var_features.columns) < 8:
+            logger.warning("Insufficient features for TV-VAR, using standard metrics")
+            return standard_metrics, tv_var_info
+        
+        from src.analysis.tv_var_system import TVVARSystem
+        
+        # Initialize TV-VAR system
+        tv_var_system = TVVARSystem(window_size=tv_var_window)
+        
+        # Fit TV-VAR model
+        tv_var_results = tv_var_system.fit_tv_var_monthly_stable(tv_var_features)
+        
+        # Apply TV-VAR orthogonalization
+        X_orthogonalized = tv_var_system.apply_orthogonalization(X, use_decision_tree_rules=True)
+        
+        # Compute metrics on orthogonalized features
+        orthogonalized_metrics = _compute_feature_metrics(X_orthogonalized, y, cv_folds)
+        
+        # Merge standard and TV-VAR enhanced metrics
+        enhanced_metrics = {}
+        
+        for col in X.columns:
+            if col in standard_metrics:
+                enhanced_metrics[col] = standard_metrics[col].copy()
+                
+                # Add TV-VAR enhanced metrics if available
+                if col in orthogonalized_metrics:
+                    orth_metrics = orthogonalized_metrics[col]
+                    enhanced_metrics[col].update({
+                        f"tv_var_{k}": v for k, v in orth_metrics.items()
+                    })
+        
+        # Collect TV-VAR system metrics
+        tv_var_info = {
+            "enabled": True,
+            "stability_score": tv_var_results.stability_score,
+            "n_features": len(tv_var_features.columns),
+            "n_samples": len(tv_var_features),
+            "regime_count": len(tv_var_results.regime_assignments.unique()) if hasattr(tv_var_results.regime_assignments, 'unique') else 0,
+        }
+        
+        logger.info(f"✅ TV-VAR enhanced metrics computed - Stability: {tv_var_results.stability_score:.3f}")
+        
+        return enhanced_metrics, tv_var_info
+        
+    except Exception as e:
+        logger.error(f"TV-VAR computation failed: {e}, falling back to standard metrics")
+        return standard_metrics, tv_var_info
+
+
+def _generate_tv_var_features_from_specialists(specialist_df: pd.DataFrame) -> pd.DataFrame:
+    """Generate 8 core TV-VAR features from specialist outputs."""
+    
+    features = pd.DataFrame(index=specialist_df.index)
+    
+    try:
+        # Calculate returns from price data if available
+        if any("close" in col.lower() for col in specialist_df.columns):
+            close_col = next(col for col in specialist_df.columns if "close" in col.lower())
+            returns = specialist_df[close_col].pct_change()
+        else:
+            # Use specialist outputs as proxy for market activity
+            returns = specialist_df.mean(axis=1).pct_change()
+        
+        # 1. Volatility Regime features
+        # Short-term realized volatility Z-score
+        rv_short = returns.rolling(window=12).std() * np.sqrt(252)
+        rv_long = returns.rolling(window=48).std() * np.sqrt(252)
+        
+        features["rv_z_short"] = (rv_short - rv_short.rolling(100).mean()) / (rv_short.rolling(100).std() + 1e-8)
+        features["rv_z_long"] = (rv_long - rv_long.rolling(100).mean()) / (rv_long.rolling(100).std() + 1e-8)
+        features["vol_ratio"] = rv_short / (rv_long + 1e-8)
+        
+        # 2. Liquidity/Participation features
+        if "volume" in specialist_df.columns:
+            volume = specialist_df["volume"]
+        else:
+            volume = specialist_df.abs().sum(axis=1)
+        
+        features["volume_z"] = (volume - volume.rolling(50).mean()) / (volume.rolling(50).std() + 1e-8)
+        
+        # Spread proxy (using specialist dispersion)
+        specialist_std = specialist_df.std(axis=1)
+        features["spread_proxy_z"] = (specialist_std - specialist_std.rolling(50).mean()) / (specialist_std.rolling(50).std() + 1e-8)
+        
+        # 3. Trend/Directional features
+        # Use mean specialist output as trend proxy
+        trend_proxy = specialist_df.mean(axis=1)
+        trend_slope = trend_proxy.rolling(window=24).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == 24 else 0)
+        features["trend_slope_z"] = (trend_slope - trend_slope.rolling(100).mean()) / (trend_slope.rolling(100).std() + 1e-8)
+        features["trend_strength"] = abs(trend_slope)
+        
+        # 4. Stress/Tail Risk feature
+        # Drawdown based on trend proxy
+        rolling_max = trend_proxy.rolling(window=50).max()
+        drawdown = (trend_proxy - rolling_max) / (rolling_max + 1e-8)
+        features["drawdown_z"] = (drawdown - drawdown.rolling(100).mean()) / (drawdown.rolling(100).std() + 1e-8)
+        
+        # Clean up infinities and NaNs
+        features = features.replace([np.inf, -np.inf], np.nan).ffill().fillna(0)
+        
+        logger.info(f"✅ Generated {len(features.columns)} TV-VAR features from specialist outputs")
+        
+    except Exception as e:
+        logger.error(f"Failed to generate TV-VAR features: {e}")
+        # Return minimal features as fallback
+        features = pd.DataFrame(index=specialist_df.index, columns=[
+            "rv_z_short", "rv_z_long", "vol_ratio", "volume_z", 
+            "spread_proxy_z", "trend_slope_z", "trend_strength", "drawdown_z"
+        ]).fillna(0)
+    
+    return features
+
+
+
+
+def _compute_range_specific_metrics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    min_target: float = 0.015,
+    max_target: float = 0.03,
+    cv_folds: int = 5,
+) -> Dict[str, Dict[str, float]]:
+    """Compute range-specific metrics for 1.5-3% trading range."""
+    from sklearn.metrics import roc_auc_score, precision_recall_curve, average_precision_score
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    # Align and clean
+    common_index = X.index.intersection(y.index)
+    X = X.loc[common_index].copy()
+    y = y.loc[common_index].astype(float)
+    
+    mask = ~y.isna()
+    X = X.loc[mask]
+    y = y.loc[mask]
+    
+    # Replace infinities and fill remaining NaNs
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    
+    # Create range-specific labels (1.5-3% returns)
+    if 'realized_return' in X.columns:
+        returns = X['realized_return']
+        range_labels = ((returns >= min_target) & (returns <= max_target)).astype(int)
+    else:
+        # Fallback: use binary target as proxy
+        range_labels = (y > 0.5).astype(int)
+    
+    metrics = {}
+    
+    # Time series cross-validation for range-specific performance
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
+    
+    for col in X.columns:
+        x = X[col].to_numpy(dtype=float)
+        
+        if np.all(np.isnan(x)):
+            continue
+            
+        fold_metrics = []
+        
+        for train_idx, val_idx in tscv.split(X):
+            if len(train_idx) < 50 or len(val_idx) < 20:
+                continue
+                
+            x_train, x_val = x[train_idx], x[val_idx]
+            y_train, y_val = range_labels.iloc[train_idx], range_labels.iloc[val_idx]
+            
+            # Skip if no positive examples
+            if y_train.sum() == 0 or y_val.sum() == 0:
+                continue
+            
+            try:
+                # Simple threshold-based prediction for range
+                threshold = np.percentile(x_train, 70)  # Top 30% as signals
+                pred = (x_val >= threshold).astype(int)
+                
+                if len(np.unique(pred)) < 2:
+                    continue
+                
+                # Check if target is binary or continuous
+                uniq = np.unique(y_val[~np.isnan(y_val)])
+                if len(uniq) <= 2 and set(uniq).issubset({0.0, 1.0}):
+                    # Binary classification
+                    if len(uniq) > 1:
+                        auc = roc_auc_score(y_val, x_val)
+                        # Precision-Recall AUC (better for imbalanced data)
+                        pr_auc = average_precision_score(y_val, x_val)
+                    else:
+                        auc = 0.5
+                        pr_auc = 0.0
+                else:
+                    # Regression (continuous target)
+                    corr = np.corrcoef(x_val, y_val)[0, 1] if np.var(x_val) > 0 and np.var(y_val) > 0 else 0
+                    auc = 0.5 + 0.5 * abs(corr)
+                    pr_auc = abs(corr)
+                
+                # Range hit rate (precision for range targets)
+                precision = precision_recall_curve(y_val, x_val)[0][:2].mean()
+                
+                fold_metrics.append({
+                    'auc': auc,
+                    'pr_auc': pr_auc,
+                    'precision': precision
+                })
+                
+            except Exception as e:
+                logger.debug(f"Failed to calculate fold metrics: {e}")
+                continue
+        
+        if fold_metrics:
+            avg_metrics = {
+                'range_auc': np.mean([m['auc'] for m in fold_metrics]),
+                'range_auc_std': np.std([m['auc'] for m in fold_metrics]),
+                'range_pr_auc': np.mean([m['pr_auc'] for m in fold_metrics]),
+                'range_precision': np.mean([m['precision'] for m in fold_metrics]),
+                'range_coverage': len(fold_metrics) / cv_folds
+            }
+            metrics[col] = avg_metrics
+    
+    return metrics
+
+
+
+def _compute_model_quality_diagnostics(
+    feature_metrics: Dict[str, Dict[str, float]],
+    X: pd.DataFrame,
+    y: pd.Series,
+) -> Dict[str, Any]:
+    """Compute model quality diagnostics following de Prado framework."""
+    diagnostics = {}
+    
+    # Feature importance stability
+    mi_values = [feat_met.get('mi_mean_cv', 0) for k, feat_met in feature_metrics.items() if k != "_tv_var_system"]
+    r2_values = [feat_met.get('r2', 0) for k, feat_met in feature_metrics.items() if k != "_tv_var_system"]
+    
+    if mi_values:
+        diagnostics['feature_importance_stability'] = {
+            'mi_mean': np.mean(mi_values),
+            'mi_std': np.std(mi_values),
+            'mi_cv': np.std(mi_values) / (np.mean(mi_values) + 1e-8),
+            'r2_mean': np.mean(r2_values),
+            'r2_std': np.std(r2_values),
+            'n_features': len(mi_values)
+        }
+    
+    # Prediction correlation matrix (if we have predictions)
+    # This is a placeholder - would need actual model predictions
+    diagnostics['diversity_metrics'] = {
+        'avg_feature_correlation': 0.0,  # Would compute from predictions
+        'max_pairwise_correlation': 0.0,
+        'effective_n_features': len(feature_metrics),
+        'redundancy_ratio': 0.0
+    }
+    
+    # Calibration diagnostics
+    diagnostics['calibration_quality'] = {
+        'reliability_score': 0.0,  # Would compute from calibration curves
+        'brier_score': 0.0,
+        'expected_calibration_error': 0.0
+    }
+    
+    return diagnostics
+
+
+def _infer_model_group(feature_name: str) -> str:
+    name = feature_name.lower()
+    if "risk" in name:
+        return "risk"
+    if "liquidity" in name:
+        return "liquidity"
+    if "path" in name:
+        return "path"
+    if "smc" in name:
+        return "smc"
+    if "macro" in name:
+        return "xgb_macro"
+    if "meso" in name:
+        return "xgb_meso"
+    if "volume" in name or "vol_force" in name:
+        return "volume"
+    if "momentum" in name:
+        return "momentum"
+    if "micro" in name:
+        return "microstructure"
+    if "spectral" in name:
+        return "spectral"
+    if "volatility" in name:
+        return "volatility"
+    if "causal" in name or "surprise" in name:
+        return "causal"
+    return "other"
+
+
+def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
+    cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Risk: prefer explicit risk_score, otherwise derive from risk_regime
+    # ------------------------------------------------------------------
+    if "risk_score" not in cols and "risk_regime" in cols:
+        rr = X["risk_regime"].astype(float)
+        max_rr = float(np.nanmax(rr)) if rr.notna().any() else 0.0
+        if np.isfinite(max_rr) and max_rr > 0.0:
+            X["risk_score"] = rr / max_rr
+        else:
+            X["risk_score"] = 0.0
+        cols = list(X.columns)
+
+    risk_cols = [c for c in cols if c.startswith("risk_") or c.startswith("enhanced_ml_risk_")]
+    if "risk_score" in X.columns or any(c.endswith("_specialist_probability") for c in cols if "risk" in c):
+        # Prefer probability from enhanced model if available
+        prob_col = next((c for c in cols if "risk" in c and c.endswith("_specialist_probability")), None)
+        if prob_col:
+            X["risk_score"] = X[prob_col]
+        
+        risk_keep = {"risk_score"}
+        risk_drop = [c for c in risk_cols if c not in risk_keep]
+        X = X.drop(columns=risk_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Liquidity: collapse to attractiveness scalar (Regime 3 - Regime 0)
+    # ------------------------------------------------------------------
+    liq_cols = [c for c in cols if c.startswith("liquidity_") or c.startswith("enhanced_ml_liquidity_")]
+    prob_col = next((c for c in cols if "liquidity" in c and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["liquidity_score"] = X[prob_col]
+    elif "liquidity_regime_3_prob" in X.columns and "liquidity_regime_0_prob" in X.columns:
+        X["liquidity_score"] = X["liquidity_regime_3_prob"] - X["liquidity_regime_0_prob"]
+    
+    if "liquidity_score" in X.columns:
+        liq_keep = {"liquidity_score"}
+        liq_drop = [c for c in liq_cols if c not in liq_keep]
+        X = X.drop(columns=liq_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Momentum: prefer enhanced probability
+    # ------------------------------------------------------------------
+    mom_cols = [c for c in cols if c.startswith("momentum_") or c.startswith("enhanced_ml_momentum_")]
+    prob_col = next((c for c in cols if "momentum" in c and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["momentum_score"] = X[prob_col]
+        mom_keep = {"momentum_score"}
+        mom_drop = [c for c in mom_cols if c not in mom_keep]
+        X = X.drop(columns=mom_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Path: prefer dedicated risk-style scalar if present
+    # ------------------------------------------------------------------
+    path_cols = [c for c in cols if c.startswith("path_") or c.startswith("enhanced_ml_path_")]
+    prob_col = next((c for c in cols if "path" in c and c.endswith("_specialist_probability")), None)
+    path_scalar_col: Optional[str] = None
+    if prob_col:
+        X["path_score"] = X[prob_col]
+        path_scalar_col = "path_score"
+    elif "path_risk_score" in X.columns:
+        path_scalar_col = "path_risk_score"
+    elif "path_regime" in X.columns:
+        pr = X["path_regime"].astype(float)
+        max_pr = float(np.nanmax(pr)) if pr.notna().any() else 0.0
+        if np.isfinite(max_pr) and max_pr > 0.0:
+            X["path_risk_score"] = pr / max_pr
+        else:
+            X["path_risk_score"] = 0.0
+        path_scalar_col = "path_risk_score"
+
+    if path_scalar_col is not None:
+        path_keep = {path_scalar_col}
+        path_drop = [c for c in path_cols if c not in path_keep]
+        X = X.drop(columns=path_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # SMC: keep a single scalar
+    # ------------------------------------------------------------------
+    smc_cols = [c for c in cols if c.startswith("smc_") or c.startswith("enhanced_ml_smc_")]
+    prob_col = next((c for c in cols if "smc" in c and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["smc_predicted"] = X[prob_col]
+    
+    smc_keep = set()
+    if "smc_predicted" in X.columns:
+        smc_keep.add("smc_predicted")
+
+    smc_drop = [c for c in smc_cols if c not in smc_keep]
+    if smc_drop:
+        X = X.drop(columns=smc_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Others: generic handling for enhanced probability
+    # ------------------------------------------------------------------
+    remaining_specialists = ["spectral", "microstructure", "volatility_burst", "volume_force", "macro", "meso", "candlestick"]
+    for spec in remaining_specialists:
+        spec_cols = [c for c in cols if spec in c.lower()]
+        prob_col = next((c for c in cols if spec in c.lower() and c.endswith("_specialist_probability")), None)
+        if prob_col:
+            keep = {prob_col}
+            drop = [c for c in spec_cols if c not in keep]
+            if drop:
+                X = X.drop(columns=drop, errors="ignore")
+            cols = list(X.columns)
+
+    return X
+
+
+def _compute_model_reliability(
+    feature_metrics: Dict[str, Dict[str, float]],
+) -> Dict[str, Any]:
+    groups: Dict[str, Dict[str, Any]] = {}
+    for feat, met in feature_metrics.items():
+        group = _infer_model_group(feat)
+        if group == "other":
+            continue
+        g = groups.setdefault(
+            group,
+            {
+                "features": [],
+                "mi_values": [],
+                "r2_values": [],
+            },
+        )
+        mi_val = float(met.get("mi_mean_cv", 0.0))
+        r2_val = float(met.get("r2", 0.0))
+        g["features"].append(feat)
+        if np.isfinite(mi_val):
+            g["mi_values"].append(mi_val)
+        if np.isfinite(r2_val):
+            g["r2_values"].append(r2_val)
+
+    per_model: Dict[str, Dict[str, float]] = {}
+    for group, data in groups.items():
+        mi_arr = np.array(data["mi_values"], dtype=float)
+        r2_arr = np.array(data["r2_values"], dtype=float)
+        # Optional HSIC aggregation if present in the metrics
+        hsic_vals: list[float] = []
+        for feat in data["features"]:
+            met = feature_metrics.get(feat, {})
+            hsic_val = float(met.get("hsic", 0.0))
+            if np.isfinite(hsic_val):
+                hsic_vals.append(hsic_val)
+        hsic_arr = np.array(hsic_vals, dtype=float) if hsic_vals else np.array([], dtype=float)
+        n_features = len(data["features"])
+        model_summary: Dict[str, float] = {
+            "n_features": int(n_features),
+            "mi_mean_avg": float(mi_arr.mean()) if mi_arr.size else 0.0,
+            "mi_mean_median": float(np.median(mi_arr)) if mi_arr.size else 0.0,
+            "r2_mean": float(r2_arr.mean()) if r2_arr.size else 0.0,
+            "r2_median": float(np.median(r2_arr)) if r2_arr.size else 0.0,
+            "n_high_mi": int(np.sum(mi_arr > 0.1)) if mi_arr.size else 0,
+            "n_high_r2": int(np.sum(r2_arr > 0.05)) if r2_arr.size else 0,
+            "hsic_mean": float(hsic_arr.mean()) if hsic_arr.size else 0.0,
+            "hsic_median": float(np.median(hsic_arr)) if hsic_arr.size else 0.0,
+        }
+
+        best_mi: Optional[float] = None
+        best_mi_feat: Optional[str] = None
+        best_r2: Optional[float] = None
+        best_r2_feat: Optional[str] = None
+        best_hsic: Optional[float] = None
+        best_hsic_feat: Optional[str] = None
+
+        for feat in data["features"]:
+            met = feature_metrics.get(feat, {})
+            mi_val = float(met.get("mi_mean_cv", 0.0))
+            r2_val = float(met.get("r2", 0.0))
+            hsic_val = float(met.get("hsic", 0.0))
+            if np.isfinite(mi_val) and (best_mi is None or mi_val > best_mi):
+                best_mi = mi_val
+                best_mi_feat = feat
+            if np.isfinite(r2_val) and (best_r2 is None or r2_val > best_r2):
+                best_r2 = r2_val
+                best_r2_feat = feat
+            if np.isfinite(hsic_val) and (best_hsic is None or hsic_val > best_hsic):
+                best_hsic = hsic_val
+                best_hsic_feat = feat
+
+        if best_mi is not None:
+            model_summary["best_mi_feature_value"] = float(best_mi)
+        if best_mi_feat is not None:
+            model_summary["best_mi_feature"] = best_mi_feat
+        if best_r2 is not None:
+            model_summary["best_r2_feature_value"] = float(best_r2)
+        if best_r2_feat is not None:
+            model_summary["best_r2_feature"] = best_r2_feat
+        if best_hsic is not None:
+            model_summary["best_hsic_feature_value"] = float(best_hsic)
+        if best_hsic_feat is not None:
+            model_summary["best_hsic_feature"] = best_hsic_feat
+
+        per_model[group] = model_summary
+
+    ranked_by_mi = sorted(
+        per_model.items(), key=lambda kv: kv[1].get("mi_mean_avg", 0.0), reverse=True
+    )
+    ranked_by_r2 = sorted(
+        per_model.items(), key=lambda kv: kv[1].get("r2_mean", 0.0), reverse=True
+    )
+
+    return {
+        "per_model": per_model,
+        "ranked_by_mi": [g for g, _ in ranked_by_mi],
+        "ranked_by_r2": [g for g, _ in ranked_by_r2],
+    }
+
+
+def _compute_model_coverage(
+    X: pd.DataFrame,
+    y: pd.Series,
+) -> Dict[str, Any]:
+    """Compute data coverage (date range and sample count) per specialist group.
+
+    Coverage is defined over the intersection of the specialist feature index
+    and the target index. For each specialist group (alpha, macro_trend,
+    liquidity, breakout_bounce, risk, smc), we report:
+
+    - n_samples: number of target samples where at least one feature in that
+      group is non-null
+    - start / end: first and last timestamps (on the target index) where the
+      group has any non-null coverage
+    """
+    coverage: Dict[str, Dict[str, Any]] = {}
+
+    if not isinstance(X.index, pd.DatetimeIndex):
+        return coverage
+
+    common_index = X.index.intersection(y.index)
+    if len(common_index) == 0:
+        return coverage
+
+    Xc = X.loc[common_index]
+    yc = y.loc[common_index]
+
+    # Initialize groups based on features actually present
+    for feat in Xc.columns:
+        group = _infer_model_group(feat)
+        if group == "other":
+            continue
+        coverage.setdefault(
+            group,
+            {
+                "n_samples": 0,
+                "start": None,
+                "end": None,
+                "fraction_of_target": 0.0,
+            },
+        )
+
+    if not coverage:
+        return coverage
+
+    total = int(len(yc)) if len(yc) > 0 else 0
+
+    for group, info in coverage.items():
+        group_cols = [c for c in Xc.columns if _infer_model_group(c) == group]
+        if not group_cols:
+            continue
+        mask = (~Xc[group_cols].isna()).any(axis=1)
+        if not mask.any():
+            continue
+        idx = yc.index[mask]
+        if len(idx) == 0:
+            continue
+
+        n_samples = int(mask.sum())
+        info["n_samples"] = n_samples
+        info["start"] = idx.min()
+        info["end"] = idx.max()
+        info["fraction_of_target"] = float(n_samples / total) if total > 0 else 0.0
+
+    return coverage
+
+
+def _compute_model_pairwise_relationships(
+    X: pd.DataFrame,
+    feature_metrics: Dict[str, Dict[str, float]],
+) -> Dict[str, Any]:
+    group_to_best: Dict[str, str] = {}
+    group_to_best_score: Dict[str, float] = {}
+
+    for feat, met in feature_metrics.items():
+        group = _infer_model_group(feat)
+        if group == "other":
+            continue
+        score = float(met.get("mi_mean_cv", 0.0))
+        prev = group_to_best_score.get(group)
+        if prev is None or score > prev:
+            group_to_best_score[group] = score
+            group_to_best[group] = feat
+
+    if len(group_to_best) < 2:
+        return {"error": "Not enough specialist model groups for pairwise analysis"}
+
+    reps: Dict[str, pd.Series] = {}
+    for group, feat in group_to_best.items():
+        if feat not in X.columns:
+            continue
+        s = X[feat].astype(float).replace([np.inf, -np.inf], np.nan)
+        reps[group] = s
+
+    if len(reps) < 2:
+        return {"error": "Representative features missing in X for pairwise analysis"}
+
+    common_index: Optional[pd.DatetimeIndex] = None
+    for s in reps.values():
+        if common_index is None:
+            common_index = s.index
+        else:
+            common_index = common_index.intersection(s.index)
+
+    if common_index is None or len(common_index) == 0:
+        return {"error": "No overlapping samples for pairwise analysis"}
+
+    matrix = pd.DataFrame(
+        {g: s.loc[common_index] for g, s in reps.items()},
+        index=common_index,
+    )
+    matrix = matrix.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    config = FinalFeatureSelectionConfig()
+    component = FinalFeatureSelectionComponent(config=config)
+
+    groups = sorted(matrix.columns)
+    pairwise: list[Dict[str, Any]] = []
+
+    for i in range(len(groups)):
+        for j in range(i + 1, len(groups)):
+            gi = groups[i]
+            gj = groups[j]
+
+            xi = matrix[gi].to_numpy(dtype=float)
+            xj = matrix[gj].to_numpy(dtype=float)
+
+            try:
+                corr = float(np.corrcoef(xi, xj)[0, 1])
+            except Exception:
+                corr = float("nan")
+
+            if np.isfinite(corr):
+                r2_val = float(corr ** 2)
+            else:
+                r2_val = float("nan")
+
+            df_i = pd.DataFrame({gi: matrix[gi]})
+            df_j = pd.DataFrame({gj: matrix[gj]})
+
+            try:
+                # Use absolute correlation as a cheap symmetric MI proxy
+                mi_forward = abs(corr) if np.isfinite(corr) else 0.0
+                mi_backward = mi_forward
+            except Exception:
+                mi_forward = 0.0
+                mi_backward = 0.0
+
+            mi_sym = 0.5 * (mi_forward + mi_backward)
+
+            pairwise.append(
+                {
+                    "model_i": gi,
+                    "model_j": gj,
+                    "rep_feature_i": group_to_best.get(gi),
+                    "rep_feature_j": group_to_best.get(gj),
+                    "mi_proxy": float(mi_sym),
+                    "mi_forward": float(mi_forward),
+                    "mi_backward": float(mi_backward),
+                    "r2": r2_val,
+                }
+            )
+
+    pairwise.sort(key=lambda d: d["mi_proxy"], reverse=True)
+
+    return {
+        "representatives": group_to_best,
+        "pairs": pairwise,
+    }
+
+
+def _compute_probe_models(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+) -> Dict[str, Any]:
+    """Fit simple probe models (LogReg, LightGBM) and report metrics.
+
+    For now this assumes a binary meta-label target (0/1). If the target is
+    not approximately binary, the function returns a descriptive payload and
+    skips model fitting.
+    """
+    # Align and clean
+    common_index = X.index.intersection(y.index)
+    Xc = X.loc[common_index].copy()
+    yc = y.loc[common_index].astype(float)
+
+    mask = ~yc.isna()
+    Xc = Xc.loc[mask]
+    yc = yc.loc[mask]
+
+    # Ensure there are no NaNs in X for sklearn probe models
+    Xc = Xc.fillna(0.0)
+
+    result: Dict[str, Any] = {
+        "n_samples": int(len(yc)),
+        "n_features": int(Xc.shape[1]),
+        "task_type": "unknown",
+    }
+
+    if len(yc) < max(100, n_splits * 10):
+        result["warning"] = (
+            "Very few samples for probe models; metrics may be unstable"
+        )
+
+    # Determine if target looks binary
+    uniq = np.unique(yc.values[~np.isnan(yc.values)])
+    if uniq.size == 0:
+        result["error"] = "No valid target samples for probe models"
+        return result
+
+    # Check if target is binary (subset of {0, 1})
+    is_binary = False
+    if len(uniq) <= 2:
+        if set(uniq).issubset({0.0, 1.0}):
+            is_binary = True
+
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    if is_binary:
+        # --- Binary Classification Path ---
+        y_bin = (yc > 0.5).astype(int)
+        pos_frac = float(y_bin.mean())
+        result["task_type"] = "binary_classification"
+        result["class_balance"] = {"pos_frac": pos_frac, "neg_frac": 1.0 - pos_frac}
+
+        def _collect_scores_clf(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, float]:
+            try:
+                uniq_y = np.unique(y_true)
+                if len(uniq_y) < 2:
+                    auc = 0.5
+                else:
+                    auc = roc_auc_score(y_true, probs)
+            except Exception:
+                auc = 0.5
+            
+            acc = accuracy_score(y_true, (probs >= 0.5).astype(int))
+            brier = brier_score_loss(y_true, probs)
+            mse = mean_squared_error(y_true, probs)
+            rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
+            r2 = r2_score(y_true, probs)
+            return {
+                "auc": float(auc) if np.isfinite(auc) else float("nan"),
+                "accuracy": float(acc),
+                "brier": float(brier),
+                "rmse": float(rmse),
+                "pseudo_r2": float(r2),
+            }
+
+        # Logistic Regression probe
+        logreg_scores: Dict[str, list[float]] = {
+            "auc": [], "accuracy": [], "brier": [], "rmse": [], "pseudo_r2": []
+        }
+
+        for train_idx, test_idx in tscv.split(Xc):
+            X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+            y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
+            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                continue
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", LogisticRegression(max_iter=200, n_jobs=-1, class_weight="balanced")),
+                ])
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict_proba(X_te)[:, 1]
+                fold = _collect_scores_clf(p_te, y_te.values)
+                for k, v in fold.items():
+                    if np.isfinite(v):
+                        logreg_scores[k].append(v)
+            except Exception:
+                continue
+
+        if any(logreg_scores.values()):
+            result["logreg"] = {}
+            for k, v in logreg_scores.items():
+                result["logreg"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                result["logreg"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+
+        # LightGBM probe
+        try:
+            import lightgbm as lgb  # type: ignore
+            lgbm_scores: Dict[str, list[float]] = {
+                "auc": [], "accuracy": [], "brier": [], "rmse": [], "pseudo_r2": []
+            }
+            for train_idx, test_idx in tscv.split(Xc):
+                X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+                y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
+                if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                    continue
+                try:
+                    model = lgb.LGBMClassifier(
+                        objective="binary", n_estimators=200, learning_rate=0.05,
+                        num_leaves=15, max_depth=4, min_child_samples=50,
+                        reg_alpha=0.1, reg_lambda=0.1,
+                        subsample=0.7, colsample_bytree=0.7,
+                        random_state=42, n_jobs=-1, verbose=-1
+                    )
+                    model.fit(X_tr, y_tr)
+                    p_te = model.predict_proba(X_te)[:, 1]
+                    fold = _collect_scores_clf(p_te, y_te.values)
+                    for k, v in fold.items():
+                        if np.isfinite(v):
+                            lgbm_scores[k].append(v)
+                except Exception:
+                    continue
+
+            if any(lgbm_scores.values()):
+                result["lgbm"] = {}
+                for k, v in lgbm_scores.items():
+                    result["lgbm"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                    result["lgbm"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+        except ImportError:
+            result["lgbm"] = {"error": "lightgbm not available"}
+
+    else:
+        # --- Regression Path ---
+        from sklearn.linear_model import Ridge
+        from sklearn.metrics import mean_absolute_error
+
+        result["task_type"] = "regression"
+
+        def _collect_scores_reg(preds: np.ndarray, y_true: np.ndarray) -> Dict[str, float]:
+            mse = mean_squared_error(y_true, preds)
+            rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
+            mae = mean_absolute_error(y_true, preds)
+            r2 = r2_score(y_true, preds)
+            return {
+                "rmse": rmse,
+                "mae": float(mae),
+                "r2": float(r2),
+            }
+
+        # Ridge Regression probe (Linear)
+        ridge_scores: Dict[str, list[float]] = {
+            "rmse": [], "mae": [], "r2": []
+        }
+
+        for train_idx, test_idx in tscv.split(Xc):
+            X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+            y_tr, y_te = yc.iloc[train_idx], yc.iloc[test_idx]
+
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("reg", Ridge(alpha=1.0)),
+                ])
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict(X_te)
+                fold = _collect_scores_reg(p_te, y_te.values)
+                for k, v in fold.items():
+                    if np.isfinite(v):
+                        ridge_scores[k].append(v)
+            except Exception:
+                continue
+
+        if any(ridge_scores.values()):
+            result["logreg"] = {}  # Store under logreg key for unified reporting, or separate
+            # Actually better to rename for clarity, but keeping structure for report function
+            # Renaming key to 'linear_reg' or reuse 'logreg' but report reg metrics
+
+            # We will use 'linear_reg' and update report function to handle it
+            result["linear_reg"] = {}
+            for k, v in ridge_scores.items():
+                result["linear_reg"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                result["linear_reg"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+
+        # LightGBM Regressor probe
+        try:
+            import lightgbm as lgb
+            lgbm_reg_scores: Dict[str, list[float]] = {
+                "rmse": [], "mae": [], "r2": []
+            }
+            for train_idx, test_idx in tscv.split(Xc):
+                X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+                y_tr, y_te = yc.iloc[train_idx], yc.iloc[test_idx]
+
+                try:
+                    model = lgb.LGBMRegressor(
+                        n_estimators=200, learning_rate=0.05, 
+                        num_leaves=15, max_depth=4, min_child_samples=50,
+                        reg_alpha=0.1, reg_lambda=0.1,
+                        subsample=0.7, colsample_bytree=0.7,
+                        random_state=42,
+                        n_jobs=-1, verbose=-1
+                    )
+                    model.fit(X_tr, y_tr)
+                    p_te = model.predict(X_te)
+                    fold = _collect_scores_reg(p_te, y_te.values)
+                    for k, v in fold.items():
+                        if np.isfinite(v):
+                            lgbm_reg_scores[k].append(v)
+                except Exception:
+                    continue
+
+            if any(lgbm_reg_scores.values()):
+                result["lgbm"] = {}
+                for k, v in lgbm_reg_scores.items():
+                    result["lgbm"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                    result["lgbm"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+        except ImportError:
+            result["lgbm"] = {"error": "lightgbm not available"}
+
+    return result
+
+
+def _detect_feature_leakage(
+    X: pd.DataFrame,
+    y: pd.Series,
+    component: FinalFeatureSelectionComponent,
+) -> Dict[str, Any]:
+    """Use FinalFeatureSelectionComponent's leakage detector on specialist features."""
+    try:
+        leakage = component.detect_potential_leakage(
+            X=X,
+            y=y,
+            selected_features=list(X.columns),
+        )
+        return leakage
+    except Exception as exc:
+        logger.warning("Leakage detection failed: %s", exc)
+        return {"error": str(exc)}
+
+
+def _compute_global_stability(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+) -> Dict[str, Any]:
+    """Compute a simple global stability metric via CV variability (AUC for clf, R2 for reg)."""
+    common_index = X.index.intersection(y.index)
+    Xc = X.loc[common_index].copy()
+    yc = y.loc[common_index].astype(float)
+    mask = ~yc.isna()
+    Xc = Xc.loc[mask]
+    yc = yc.loc[mask]
+
+    # Ensure there are no NaNs in X for sklearn probe model
+    Xc = Xc.fillna(0.0)
+
+    # Determine task type
+    uniq = np.unique(yc.values[~np.isnan(yc.values)])
+    is_binary = len(uniq) <= 2 and set(uniq).issubset({0.0, 1.0})
+    
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    scores: list[float] = []
+
+    for train_idx, test_idx in tscv.split(Xc):
+        X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+        y_tr, y_te = yc.iloc[train_idx], yc.iloc[test_idx]
+        
+        if is_binary:
+            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                continue
+            try:
+                pipe = Pipeline(
+                    [
+                        ("scaler", StandardScaler()),
+                        ("clf", LogisticRegression(max_iter=200, n_jobs=-1, class_weight="balanced")),
+                    ]
+                )
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict_proba(X_te)[:, 1]
+                auc = roc_auc_score(y_te.values, p_te)
+                if np.isfinite(auc):
+                    scores.append(float(auc))
+            except Exception:
+                continue
+        else:
+            try:
+                from sklearn.linear_model import Ridge
+                pipe = Pipeline(
+                    [
+                        ("scaler", StandardScaler()),
+                        ("reg", Ridge(alpha=1.0)),
+                    ]
+                )
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict(X_te)
+                r2 = r2_score(y_te.values, p_te)
+                if np.isfinite(r2):
+                    scores.append(float(r2))
+            except Exception:
+                continue
+
+    if not scores:
+        return {"error": "Insufficient folds for stability analysis"}
+
+    mean_score = float(np.mean(scores))
+    std_score = float(np.std(scores))
+    stability = float(1.0 - std_score / abs(mean_score)) if abs(mean_score) > 1e-6 else float("nan")
+    
+    metric_name = "auc" if is_binary else "r2"
+    return {
+        "n_splits": int(n_splits),
+        "task_type": "binary_classification" if is_binary else "regression",
+        f"fold_{metric_name}s": scores,
+        f"mean_{metric_name}": mean_score,
+        f"std_{metric_name}": std_score,
+        "stability_score": stability,
+    }
+
+
+def _compute_tree_shap_interactions(
+    X: pd.DataFrame,
+    y: pd.Series,
+    feature_metrics: Dict[str, Dict[str, float]],
+    max_features: int = 30,
+    sample_size: int = 2000,
+) -> Dict[str, Any]:
+    """Estimate notable pairwise interactions using TreeSHAP (if available)."""
+    try:
+        import lightgbm as lgb  # type: ignore
+        import shap  # type: ignore
+    except ImportError as exc:
+        return {"error": f"lightgbm or shap not available: {exc}"}
+
+    # Align and clean
+    common_index = X.index.intersection(y.index)
+    Xc = X.loc[common_index].copy()
+    yc = y.loc[common_index].astype(float)
+    mask = ~yc.isna()
+    Xc = Xc.loc[mask]
+    yc = yc.loc[mask]
+
+    # Select top features by MI_mean (or fall back to all)
+    if feature_metrics:
+        # Filter out system metrics and ensure we have valid MI scores
+        valid_items = [
+            item for item in feature_metrics.items() 
+            if item[0] != "_tv_var_system" and isinstance(item[1], dict) and "mi_mean_cv" in item[1]
+        ]
+        ranked = sorted(
+            valid_items,
+            key=lambda kv: kv[1].get("mi_mean_cv", 0.0),
+            reverse=True,
+        )
+        top_names = [name for name, _ in ranked[:max_features]]
+    else:
+        top_names = list(Xc.columns)[:max_features]
+
+    X_sel = Xc[top_names].copy()
+
+    # Subsample for SHAP efficiency (use latest samples chronologically)
+    if len(X_sel) > sample_size:
+        X_sample = X_sel.iloc[-sample_size:]
+        y_sample = yc.iloc[-sample_size:]
+    else:
+        X_sample = X_sel
+        y_sample = yc
+
+    # Determine task type based on target
+    uniq = np.unique(y_sample[~np.isnan(y_sample)])
+    is_binary = len(uniq) <= 2 and set(uniq).issubset({0.0, 1.0})
+
+    if is_binary:
+        if len(uniq) < 2:
+            return {"error": "Insufficient classes for SHAP classification"}
+        model = lgb.LGBMClassifier(
+            objective="binary",
+            n_estimators=200,
+            learning_rate=0.05,
+            num_leaves=15,
+            max_depth=4,
+            min_child_samples=50,
+            reg_alpha=0.1,
+            reg_lambda=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1
+        )
+    else:
+        model = lgb.LGBMRegressor(
+            objective="regression",
+            n_estimators=200,
+            learning_rate=0.05,
+            num_leaves=15,
+            max_depth=4,
+            min_child_samples=50,
+            reg_alpha=0.1,
+            reg_lambda=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1
+        )
+    
+    model.fit(X_sample, y_sample)
+
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_int = explainer.shap_interaction_values(X_sample)
+    except Exception as exc:
+        return {"error": f"TreeSHAP interaction computation failed: {exc}"}
+
+    # shap_int shape: (n_samples, n_features, n_features)
+    if isinstance(shap_int, list):
+        # For binary classification, shap returns list per class; use average
+        shap_int_arr = np.mean(np.abs(np.array(shap_int)), axis=0)
+    else:
+        # For regression, it's already a single array (n_samples, n_features, n_features)
+        # but check shape to be sure
+        if len(shap_int.shape) == 4: # (n_outputs, n_samples, n_features, n_features)
+             shap_int_arr = np.mean(np.abs(shap_int), axis=(0, 1))
+        else:
+             shap_int_arr = np.mean(np.abs(shap_int), axis=0)
+
+    n_feat = shap_int_arr.shape[0]
+    pairs: list[Dict[str, Any]] = []
+    for i in range(n_feat):
+        for j in range(i + 1, n_feat):
+            score = float(shap_int_arr[i, j])
+            pairs.append(
+                {
+                    "feature_i": top_names[i],
+                    "feature_j": top_names[j],
+                    "interaction_strength": score,
+                }
+            )
+
+    if not pairs:
+        return {"error": "No interaction pairs computed"}
+
+    pairs.sort(key=lambda d: d["interaction_strength"], reverse=True)
+    top_pairs = pairs[:20]
+
+    return {
+        "n_features": len(top_names),
+        "sample_size": int(len(X_sample)),
+        "top_pairs": top_pairs,
+        "method": "tree_shap",
+    }
+
+
+def _compute_trading_simulation_pnl(
+    confidence_scores: pd.Series,
+    realized_returns: pd.Series,
+    thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
+    tp_pct: float = 0.02,  # 2% take profit (User requested standard)
+    sl_pct: float = 0.007,  # 0.7% stop loss (User requested standard)
+    fee_per_trade: float = 0.0015,  # 0.15% per trade (0.3% round trip)
+) -> Dict[str, Any]:
+    """Compute trading simulation PnL for specialist/probe models at various confidence thresholds.
+    
+    Uses a simplified triple-barrier approach:
+    - TP: Take profit at +2%
+    - SL: Stop loss at -0.7%
+    - Fees: 0.15% per trade (0.3% round-trip)
+    
+    For each threshold, computes:
+    - Number of trades
+    - Average trades per day
+    - Win rate
+    - Average PnL % per-day and per-month
+    
+    Args:
+        confidence_scores: Model confidence/probability scores (0-1)
+        realized_returns: Actual realized returns for each event
+        thresholds: Confidence thresholds to evaluate
+        tp_pct: Take profit percentage (default: 2%)
+        sl_pct: Stop loss percentage (default: 0.7%)
+        fee_per_trade: Fee per trade as fraction (default: 0.15%)
+        
+    Returns:
+        Dictionary with results per threshold
+    """
+    results = {
+        "thresholds": thresholds,
+        "tp_pct": tp_pct,
+        "sl_pct": sl_pct,
+        "fee_round_trip_pct": fee_per_trade * 2,
+        "per_threshold": {},
+    }
+    
+    # Align confidence and returns
+    common_idx = confidence_scores.index.intersection(realized_returns.index)
+    if len(common_idx) < 10:
+        return {"error": f"Insufficient overlapping data: {len(common_idx)} samples"}
+    
+    conf = confidence_scores.loc[common_idx].astype(float)
+    rets = realized_returns.loc[common_idx].astype(float)
+    
+    # Drop NaN values
+    valid_mask = conf.notna() & rets.notna()
+    conf = conf[valid_mask]
+    rets = rets[valid_mask]
+    
+    if len(conf) < 10:
+        return {"error": f"Insufficient valid data after NaN removal: {len(conf)} samples"}
+    
+    # Calculate date range for per-day/per-month metrics
+    if isinstance(conf.index, pd.DatetimeIndex):
+        date_range_days = (conf.index.max() - conf.index.min()).days
+        if date_range_days <= 0:
+            date_range_days = 1
+    else:
+        date_range_days = len(conf) / 96  # Assume 15m bars, ~96 per day
+    
+    date_range_months = date_range_days / 30.44  # Average days per month
+    
+    for threshold in thresholds:
+        # Filter trades above threshold
+        trade_mask = conf >= threshold
+        n_trades = int(trade_mask.sum())
+        
+        if n_trades == 0:
+            results["per_threshold"][f"{threshold:.0%}"] = {
+                "threshold": threshold,
+                "n_trades": 0,
+                "trades_per_day": 0.0,
+                "win_rate": 0.0,
+                "total_pnl_pct": 0.0,
+                "avg_pnl_per_trade_pct": 0.0,
+                "avg_pnl_per_day_pct": 0.0,
+                "avg_pnl_per_month_pct": 0.0,
+                "sharpe_estimate": 0.0,
+            }
+            continue
+        
+        # Get returns for trades above threshold
+        trade_returns = rets[trade_mask]
+        
+        # Apply triple-barrier logic (simplified):
+        # If return >= tp_pct: profit = tp_pct - fees
+        # If return <= -sl_pct: loss = -sl_pct - fees  
+        # Otherwise: use actual return - fees
+        def apply_barrier(ret: float) -> float:
+            if ret >= tp_pct:
+                return tp_pct - fee_per_trade * 2  # Hit TP
+            elif ret <= -sl_pct:
+                return -sl_pct - fee_per_trade * 2  # Hit SL
+            else:
+                return ret - fee_per_trade * 2  # Actual return minus fees
+        
+        barrier_returns = trade_returns.apply(apply_barrier)
+        
+        # Calculate metrics
+        n_wins = int((barrier_returns > 0).sum())
+        win_rate = n_wins / n_trades if n_trades > 0 else 0.0
+        
+        total_pnl_pct = float(barrier_returns.sum()) * 100  # As percentage
+        avg_pnl_per_trade_pct = float(barrier_returns.mean()) * 100
+        
+        trades_per_day = n_trades / date_range_days if date_range_days > 0 else 0.0
+        avg_pnl_per_day_pct = total_pnl_pct / date_range_days if date_range_days > 0 else 0.0
+        avg_pnl_per_month_pct = total_pnl_pct / date_range_months if date_range_months > 0 else 0.0
+        
+        # Estimate Sharpe-like metric (annualized)
+        if len(barrier_returns) > 1 and barrier_returns.std() > 0:
+            daily_sharpe = (barrier_returns.mean() / barrier_returns.std()) * np.sqrt(trades_per_day)
+            annualized_sharpe = daily_sharpe * np.sqrt(252)
+        else:
+            annualized_sharpe = 0.0
+        
+        results["per_threshold"][f"{threshold:.0%}"] = {
+            "threshold": threshold,
+            "n_trades": n_trades,
+            "trades_per_day": round(trades_per_day, 2),
+            "win_rate": round(win_rate, 4),
+            "total_pnl_pct": round(total_pnl_pct, 2),
+            "avg_pnl_per_trade_pct": round(avg_pnl_per_trade_pct, 4),
+            "avg_pnl_per_day_pct": round(avg_pnl_per_day_pct, 4),
+            "avg_pnl_per_month_pct": round(avg_pnl_per_month_pct, 2),
+            "sharpe_estimate": round(annualized_sharpe, 2),
+        }
+    
+    results["date_range_days"] = round(date_range_days, 1)
+    results["total_samples"] = len(conf)
+    
+    return results
+
+
+def _compute_probe_model_pnl(
+    X: pd.DataFrame,
+    y: pd.Series,
+    realized_returns: pd.Series,
+    n_splits: int = 5,
+    thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
+) -> Dict[str, Any]:
+    """Compute trading PnL metrics for probe models using cross-validation predictions.
+    
+    Supports both classification (LogisticRegression, LGBMClassifier) and
+    regression (Ridge, LGBMRegressor) depending on the target type.
+    """
+    results = {}
+    
+    # Check for valid data
+    common_idx = X.index.intersection(y.index).intersection(realized_returns.index)
+    if len(common_idx) < 100:
+        return {"error": f"Insufficient overlapping data: {len(common_idx)} samples"}
+    
+    X_aligned = X.loc[common_idx].copy()
+    y_aligned = y.loc[common_idx].copy()
+    rets_aligned = realized_returns.loc[common_idx].copy()
+    
+    # Drop NaN values
+    valid_mask = y_aligned.notna() & rets_aligned.notna()
+    X_aligned = X_aligned.loc[valid_mask]
+    y_aligned = y_aligned[valid_mask]
+    rets_aligned = rets_aligned[valid_mask]
+    
+    # Fill NaN in features
+    X_aligned = X_aligned.fillna(0.0)
+    
+    if len(X_aligned) < 100:
+        return {"error": f"Insufficient valid data: {len(X_aligned)} samples"}
+    
+    # Determine task type
+    y_vals = y_aligned.values
+    uniq = np.unique(y_vals)
+    is_binary = False
+    if len(uniq) <= 2:
+        if set(uniq).issubset({0.0, 1.0}):
+            is_binary = True
+
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    
+    if is_binary:
+        # --- Classification PnL ---
+        y_train_target = (y_aligned > 0.5).astype(int)
+        
+        oos_probs_logreg = pd.Series(index=X_aligned.index, dtype=float)
+        oos_probs_lgbm = pd.Series(index=X_aligned.index, dtype=float)
+        
+        for train_idx, val_idx in tscv.split(X_aligned):
+            X_train, X_val = X_aligned.iloc[train_idx], X_aligned.iloc[val_idx]
+            y_train = y_train_target.iloc[train_idx]
+
+            # Logistic Regression
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", LogisticRegression(max_iter=500, solver="lbfgs", random_state=42)),
+                ])
+                pipe.fit(X_train, y_train)
+                probs = pipe.predict_proba(X_val)[:, 1]
+                oos_probs_logreg.iloc[val_idx] = probs
+            except Exception:
+                pass
+
+            # LightGBM
+            try:
+                import lightgbm as lgb
+                lgbm_clf = lgb.LGBMClassifier(
+                    n_estimators=100, max_depth=4, learning_rate=0.05,
+                    num_leaves=15, min_child_samples=50,
+                    reg_alpha=0.1, reg_lambda=0.1,
+                    subsample=0.7, colsample_bytree=0.7,
+                    random_state=42, verbose=-1
+                )
+                lgbm_clf.fit(X_train, y_train)
+                probs = lgbm_clf.predict_proba(X_val)[:, 1]
+                oos_probs_lgbm.iloc[val_idx] = probs
+            except Exception:
+                pass
+
+        # Compute trading PnL for classification
+        if oos_probs_logreg.notna().sum() >= 10:
+            results["logreg"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_probs_logreg,
+                realized_returns=rets_aligned,
+                thresholds=thresholds,
+            )
+        else:
+            results["logreg"] = {"error": "Insufficient LogReg predictions"}
+
+        if oos_probs_lgbm.notna().sum() >= 10:
+            results["lgbm"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_probs_lgbm,
+                realized_returns=rets_aligned,
+                thresholds=thresholds,
+            )
+        else:
+            results["lgbm"] = {"error": "Insufficient LGBM predictions"}
+
+    else:
+        # --- Regression PnL ---
+        from sklearn.linear_model import Ridge
+
+        # Define regression thresholds (expected return > X)
+        reg_thresholds = [0.0, 0.0005, 0.001, 0.0015, 0.002]
+
+        oos_preds_linear = pd.Series(index=X_aligned.index, dtype=float)
+        oos_preds_lgbm = pd.Series(index=X_aligned.index, dtype=float)
+
+        for train_idx, val_idx in tscv.split(X_aligned):
+            X_train, X_val = X_aligned.iloc[train_idx], X_aligned.iloc[val_idx]
+            y_train = y_aligned.iloc[train_idx]
+
+            # Ridge Regression
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("reg", Ridge(alpha=1.0)),
+                ])
+                pipe.fit(X_train, y_train)
+                preds = pipe.predict(X_val)
+                oos_preds_linear.iloc[val_idx] = preds
+            except Exception:
+                pass
+
+            # LightGBM Regressor
+            try:
+                import lightgbm as lgb
+                lgbm_reg = lgb.LGBMRegressor(
+                    n_estimators=100, max_depth=4, learning_rate=0.05,
+                    num_leaves=15, min_child_samples=50,
+                    reg_alpha=0.1, reg_lambda=0.1,
+                    subsample=0.7, colsample_bytree=0.7,
+                    random_state=42, verbose=-1
+                )
+                lgbm_reg.fit(X_train, y_train)
+                preds = lgbm_reg.predict(X_val)
+                oos_preds_lgbm.iloc[val_idx] = preds
+            except Exception:
+                pass
+
+        # Compute trading PnL for regression (using predicted return as score)
+        if oos_preds_linear.notna().sum() >= 10:
+            results["linear_reg"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_preds_linear,
+                realized_returns=rets_aligned,
+                thresholds=reg_thresholds,
+            )
+        else:
+            results["linear_reg"] = {"error": "Insufficient LinearReg predictions"}
+
+        if oos_preds_lgbm.notna().sum() >= 10:
+            results["lgbm"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_preds_lgbm,
+                realized_returns=rets_aligned,
+                thresholds=reg_thresholds,
+            )
+        else:
+            results["lgbm"] = {"error": "Insufficient LGBM predictions"}
+
+    return results
+
+
+def _compute_group_lgbm_auc(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_folds: int = 3,
+) -> Dict[str, Any]:
+    """Train simple LGBM classifiers on combinations of specialist groups (1–3 groups).
+
+    For each group and group-combination (up to triples), this computes a
+    cross-validated AUC using a small LGBM classifier on the corresponding
+    specialist features to quantify joint interaction potential.
+    """
+    try:
+        import lightgbm as lgb  # type: ignore
+        from sklearn.metrics import roc_auc_score
+        from sklearn.model_selection import TimeSeriesSplit
+    except Exception:
+        return {"error": "lightgbm or sklearn not available for group LGBM probes"}
+
+    common_idx = X.index.intersection(y.index)
+    X = X.loc[common_idx].copy()
+    y = y.loc[common_idx].astype(float)
+
+    mask = ~y.isna()
+    X = X.loc[mask]
+    y = y.loc[mask]
+
+    if len(X) < max(cv_folds * 20, 120):
+        return {"error": f"Insufficient samples for group LGBM probe: {len(X)}"}
+
+    y_bin = (y > 0).astype(int)
+    if y_bin.nunique() < 2:
+        return {"error": "Binary target for group LGBM probe is single-class"}
+
+    # Group features by specialist model
+    group_features: Dict[str, List[str]] = {}
+    for col in X.columns:
+        group = _infer_model_group(col)
+        if group == "other":
+            continue
+        group_features.setdefault(group, []).append(col)
+
+    if not group_features:
+        return {"error": "No specialist groups found for group LGBM probe"}
+
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
+
+    def _cv_auc_for_features(feat_list: List[str]) -> Optional[Tuple[float, int]]:
+        if not feat_list:
+            return None
+        X_sub = X[feat_list]
+        oof = pd.Series(index=X_sub.index, dtype=float)
+        for train_idx, val_idx in tscv.split(X_sub):
+            X_tr = X_sub.iloc[train_idx]
+            X_val = X_sub.iloc[val_idx]
+            y_tr = y_bin.iloc[train_idx]
+            if y_tr.nunique() < 2:
+                continue
+            try:
+                clf = lgb.LGBMClassifier(
+                    n_estimators=100,
+                    max_depth=4,
+                    learning_rate=0.05,
+                    num_leaves=15,
+                    min_child_samples=50,
+                    reg_alpha=0.1,
+                    reg_lambda=0.1,
+                    subsample=0.7,
+                    colsample_bytree=0.7,
+                    random_state=42,
+                    verbose=-1,
+                )
+                clf.fit(X_tr, y_tr)
+                probs = clf.predict_proba(X_val)[:, 1]
+                oof.iloc[val_idx] = probs
+            except Exception:
+                continue
+
+        valid = oof.notna()
+        try:
+            if valid.sum() < max(20, 2 * cv_folds):
+                return None
+            
+            # Determine task type
+            uniq_val = np.unique(y_bin[valid])
+            if len(uniq_val) <= 2 and set(uniq_val).issubset({0.0, 1.0}):
+                if len(uniq_val) < 2:
+                    return 0.5, int(valid.sum())
+                try:
+                    auc = roc_auc_score(y_bin[valid], oof[valid])
+                except Exception:
+                    return 0.5, int(valid.sum())
+            else:
+                # Regression
+                corr = np.corrcoef(oof[valid], y_bin[valid])[0, 1] if np.var(oof[valid]) > 0 and np.var(y_bin[valid]) > 0 else 0
+                auc = 0.5 + 0.5 * abs(corr)
+        except Exception:
+            return None
+        return float(auc), int(valid.sum())
+
+    results: Dict[str, Dict[str, Any]] = {}
+
+    groups = sorted(group_features.keys())
+
+    # Single-group probes
+    for g in groups:
+        feats = group_features[g]
+        res = _cv_auc_for_features(feats)
+        if res is None:
+            continue
+        auc, n_valid = res
+        key = g
+        results[key] = {
+            "combination": key,
+            "n_features": int(len(feats)),
+            "auc": auc,
+            "n_samples": n_valid,
+        }
+
+    # Pairwise and triple-group probes
+    import itertools
+
+    for r in (2, 3):
+        for combo in itertools.combinations(groups, r):
+            combo_key = "|".join(combo)
+            feat_list: List[str] = []
+            for g in combo:
+                feat_list.extend(group_features.get(g, []))
+            if not feat_list:
+                continue
+            res = _cv_auc_for_features(feat_list)
+            if res is None:
+                continue
+            auc, n_valid = res
+            results[combo_key] = {
+                "combination": combo_key,
+                "n_features": int(len(feat_list)),
+                "auc": auc,
+                "n_samples": n_valid,
+            }
+
+    return {"group_lgbm_auc": results}
+
+
+def run_diagnostics(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    model: str,
+    regime_timeframe: str,
+    target_col: str,
+    cv_folds: int,
+    lookback_days: Optional[float] = None,
+    enable_risk_hmm_specialist: bool = True,
+    projection_mode: str = "canonical_scalars",
+    enable_orthogonalization: bool = False,
+    run_optimized_orthogonalization: bool = False,
+    anchor_specialist: str = "xgb_macro",
+    enable_cache: bool = False,
+    feature_optimization: bool = False,
+    orthogonal_hpo: bool = False,
+    conservative_pruning: bool = False,
+    run_lgbm_comparison: bool = False,
+    orthogonal_comparison_report: bool = False,
+    enable_tv_var: bool = True,
+    tv_var_window: int = 100,
+    tv_var_regime_aware: bool = True,
+    tv_var_backtest: bool = False,
+) -> Tuple[Path, Path]:
+    """Run full specialist feature diagnostics and export reports."""
+    # 1) Load labels and realized_return for PnL simulation
+    y, training_index, realized_return = _prepare_labels(
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+        target_col=target_col,
+        lookback_days=lookback_days,
+    )
+
+    # 2) Load specialist features aligned to the same index
+    specialist_df = _load_specialist_features(
+        symbol=symbol,
+        exchange=exchange,
+        base_timeframe=timeframe,
+        regime_timeframe=regime_timeframe,
+        direction=direction,
+        model=model,
+        training_index=training_index,
+        enable_risk_hmm_specialist=enable_risk_hmm_specialist,
+    )
+
+    logger.info(f"📊 Loaded specialist_df with {len(specialist_df)} rows and columns: {list(specialist_df.columns)}")
+    logger.info(f"📊 Training index size: {len(training_index)}")
+    logger.info(f"📊 Target y size: {len(y)}")
+
+    
+    # Deduplicate columns in specialist_df to prevent LightGBM errors
+    specialist_df = specialist_df.loc[:, ~specialist_df.columns.duplicated()]
+
+    # ---------------------------------------------------------
+    # Specialist Category Orthogonalization (ENHANCED)
+    # ---------------------------------------------------------
+    if enable_orthogonalization or run_optimized_orthogonalization:
+        from src.utils.ml_common.specialist_orthogonalizer import OptimizedSpecialistOrthogonalizer
+        
+        # Initialize orthogonalizer with optimization features
+        orthogonalizer = OptimizedSpecialistOrthogonalizer(
+            anchor_specialists=[anchor_specialist] if anchor_specialist else None,
+            enable_cache=enable_cache,
+            enable_feature_optimization=feature_optimization,
+            enable_orthogonal_hpo=orthogonal_hpo,
+            enable_conservative_pruning=conservative_pruning
+        )
+        
+        # Validate specialist coverage
+        coverage = orthogonalizer.validate_specialist_coverage(specialist_df)
+        available_specialists = [s for s, has in coverage.items() if has]
+        
+        tprint_info(f"🎯 Found {len(available_specialists)} available specialists for orthogonalization")
+        for specialist, has_features in coverage.items():
+            status = "✅" if has_features else "❌"
+            tprint_info(f"  {status} {specialist}")
+        
+        if len(available_specialists) < 2:
+            tprint_warning("⚠️ Need at least 2 specialists for orthogonalization")
+        else:
+            # Get sample weights
+            sample_weights = None
+            if 'target_sample_weight' in specialist_df.columns:
+                sample_weights = specialist_df['target_sample_weight']
+            
+            # Run optimized orthogonalization if requested
+            if run_optimized_orthogonalization:
+                tprint_info("🚀 Running optimized orthogonalization pipeline...")
+                
+                optimization_results = orthogonalizer.run_optimized_orthogonalization(
+                    specialist_df=specialist_df,
+                    target_series=y,
+                    sample_weights=sample_weights,
+                    run_hpo=orthogonal_hpo,
+                    run_pruning=conservative_pruning,
+                    optimize_features=feature_optimization
+                )
+                
+                # Store results for reporting
+                orthogonal_targets = optimization_results['orthogonal_targets']
+                auc_weights = optimization_results.get('hpo_results', {}).get('ensemble_config', {}).get('weights', {})
+                
+                # Log optimization summary
+                perf_summary = optimization_results.get('performance_summary', {})
+                tprint_success(f"✅ Optimized orthogonalization completed:")
+                tprint_info(f"  Specialists: {len(optimization_results.get('pruned_specialists', []))}")
+                tprint_info(f"  Mean AUC: {perf_summary.get('mean_auc', 0.5):.4f}")
+                tprint_info(f"  Total time: {optimization_results.get('optimization_time', 0):.1f}s")
+                
+            else:
+                # Run standard orthogonalization
+                orthogonal_targets, auc_weights = orthogonalizer.generate_auc_weighted_orthogonal_targets(
+                    specialist_df=specialist_df,
+                        target_series=y,
+                        sample_weights=sample_weights
+                    )
+                
+                # Run LGBM comparison if requested
+                if run_lgbm_comparison:
+                    tprint_info("🔬 Running LGBM comparison analysis...")
+                    
+                    if run_optimized_orthogonalization and 'optimization_results' in locals():
+                        # Use optimized results
+                        comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
+                            specialist_df, y, sample_weights
+                        )
+                    else:
+                        # Run standard comparison
+                        comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
+                            specialist_df, y, sample_weights
+                        )
+                    
+                    # Generate comprehensive comparison report
+                    if orthogonal_comparison_report:
+                        from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
+                        # Create a simple args-like object for the report generator
+                        class ArgsProxy:
+                            def __init__(self):
+                                self.symbol = symbol
+                                self.exchange = exchange
+                                self.timeframe = timeframe
+                                self.direction = direction
+                                self.model = model
+                                self.regime_timeframe = regime_timeframe
+                                self.target_col = target_col
+                                self.anchor_specialist = anchor_specialist
+                        generate_orthogonal_comparison_report(comparison_results, ArgsProxy())
+                    
+                    # Store comparison results
+                    orthogonalization_results = {
+                        'comparison_results': comparison_results,
+                        'orthogonal_targets': orthogonal_targets,
+                        'auc_weights': auc_weights,
+                        'specialist_coverage': coverage
+                    }
+                    
+                    tprint_success("✅ Orthogonalization and LGBM comparison completed")
+
+    # TV-VAR Enhanced Analysis and Backtesting
+    if enable_tv_var and tv_var_backtest and len(X) > 500:
+        tprint_info("�� Running TV-VAR backtesting validation...")
+        
+        try:
+            # Generate TV-VAR features for backtesting
+            tv_var_features = _generate_tv_var_features_from_specialists(X)
+            
+            if len(tv_var_features.columns) >= 8:
+                # Run TV-VAR backtesting
+                backtest_results = backtest_tv_var_enhanced(
+                    tv_var_features, X, y, symbol, 2024, 2024
+                )
+                
+                # Store TV-VAR results
+                tv_var_results = {
+                    "backtest_results": backtest_results,
+                    "stability_score": backtest_results.validation_summary.get("success_rate", 0),
+                    "improvement": backtest_results.validation_summary.get("avg_auc_improvement", 0),
+                    "production_ready": backtest_results.validation_summary.get("production_ready", False)
+                }
+                
+                tprint_success(f"✅ TV-VAR backtesting completed - Success Rate: {tv_var_results["stability_score"]:.1%}, Improvement: {tv_var_results["improvement"]:.2f}%")
+            else:
+                tprint_warning("⚠️ Insufficient TV-VAR features for backtesting")
+                tv_var_results = {"error": "Insufficient features"}
+        
+        except Exception as e:
+            tprint_error(f"❌ TV-VAR backtesting failed: {e}")
+            tv_var_results = {"error": str(e)}
+    else:
+        tv_var_results = {"disabled": True}
+
+# Optionally collapse raw specialist outputs to canonical scalars. When
+    # projection_mode == "raw", use the specialist block exactly as training
+    # sees it (same get_specialist_models_outputs output).
+    if projection_mode == "canonical_scalars":
+        X = _select_specialist_scalars(specialist_df)
+    else:
+        X = specialist_df
+
+    # 3) Compute per-feature metrics
+    feature_metrics, tv_var_info = _compute_feature_metrics_with_tv_var(X=X, y=y, cv_folds=cv_folds, enable_tv_var=enable_tv_var, tv_var_window=tv_var_window, tv_var_regime_aware=tv_var_regime_aware)
+
+    if not feature_metrics:
+        raise ValueError("No feature metrics computed; check inputs and artifacts")
+
+    model_reliability = _compute_model_reliability(feature_metrics=feature_metrics)
+    model_coverage = _compute_model_coverage(X=X, y=y)
+    model_relationships = _compute_model_pairwise_relationships(X=X, feature_metrics=feature_metrics)
+    group_lgbm_auc = _compute_group_lgbm_auc(X=X, y=y, cv_folds=cv_folds)
+
+    # 3b) Compute target date range
+    y_start = y.index.min()
+    y_end = y.index.max()
+    y_duration = (y_end - y_start).days if len(y) > 0 else 0
+
+    # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
+    probe_models = _compute_probe_models(X=X, y=y, n_splits=cv_folds)
+    
+    # 4b) Compute probe model trading PnL simulation
+    probe_pnl = _compute_probe_model_pnl(
+        X=X,
+        y=y,
+        realized_returns=realized_return,
+        n_splits=cv_folds,
+        thresholds=[0.6, 0.7, 0.8, 0.9],
+    )
+
+    # Reuse a FinalFeatureSelectionComponent instance for leakage detection
+    fs_config = FinalFeatureSelectionConfig()
+    fs_component = FinalFeatureSelectionComponent(config=fs_config)
+    
+    # Use detect_redundant_features as a proxy for leakage diagnostics if detect_potential_leakage is missing
+    if hasattr(fs_component, 'detect_potential_leakage'):
+        leakage_diagnostics = _detect_feature_leakage(X=X, y=y, component=fs_component)
+    elif hasattr(fs_component, 'detect_redundant_features'):
+        # Fallback to redundancy check
+        logger.info("Using detect_redundant_features as proxy for leakage diagnostics")
+        redundancy = fs_component.detect_redundant_features(X, list(X.columns))
+        leakage_diagnostics = {
+            "suspicious_features": [(f, 0.95) for f in redundancy.get("high_correlation_pairs", [])],
+            "perfect_features": [],
+            "redundancy_info": redundancy
+        }
+    else:
+        leakage_diagnostics = {"error": "No leakage detection method found in FinalFeatureSelectionComponent"}
+
+    global_stability = _compute_global_stability(X=X, y=y, n_splits=cv_folds)
+    interactions = _compute_tree_shap_interactions(
+        X=X,
+        y=y,
+        feature_metrics=feature_metrics,
+    )
+
+    # Aggregate summary stats
+    mi_values = np.array([m["mi_mean_cv"] for k, m in feature_metrics.items() if k != "_tv_var_system"], dtype=float)
+    r2_values = np.array([m["r2"] for k, m in feature_metrics.items() if k != "_tv_var_system"], dtype=float)
+
+    mi_values = mi_values[np.isfinite(mi_values)]
+    r2_values = r2_values[np.isfinite(r2_values)]
+
+    summary: Dict[str, Any] = {
+        "n_features": len(feature_metrics),
+        "mi_mean_avg": float(mi_values.mean()) if mi_values.size else 0.0,
+        "mi_mean_median": float(np.median(mi_values)) if mi_values.size else 0.0,
+        "r2_mean": float(r2_values.mean()) if r2_values.size else 0.0,
+        "r2_median": float(np.median(r2_values)) if r2_values.size else 0.0,
+        "n_high_mi": int(np.sum(mi_values > 0.1)) if mi_values.size else 0,
+        "n_high_r2": int(np.sum(r2_values > 0.05)) if r2_values.size else 0,
+    }
+
+    # Build Markdown summary (top features by MI and R^2)
+    sorted_by_mi = sorted(
+        [item for item in feature_metrics.items() if item[0] != "_tv_var_system"], 
+        key=lambda kv: kv[1].get("mi_mean_cv", 0.0), 
+        reverse=True
+    )
+    sorted_by_r2 = sorted(
+        [item for item in feature_metrics.items() if item[0] != "_tv_var_system"], 
+        key=lambda kv: kv[1].get("r2", 0.0), 
+        reverse=True
+    )
+
+    top_k = 20
+    md_lines: list[str] = [
+        "# Specialist Feature Diagnostics",
+        "",
+        f"**Symbol**: {symbol}",
+        f"**Exchange**: {exchange}",
+        f"**Timeframe**: {timeframe}",
+        f"**Direction**: {direction}",
+        f"**Model**: {model}",
+        f"**Regime timeframe**: {regime_timeframe}",
+        f"**Target column**: {target_col}",
+        "",
+        "## Data Range Analysis",
+        f"- Target start date: {y_start}",
+        f"- Target end date: {y_end}",
+        f"- Target duration: {y_duration} days",
+        f"- Target samples: {len(y)}",
+        "",
+        "## Overview",
+        f"- Number of specialist features: {summary['n_features']}",
+        f"- Mean MI (CV-averaged): {summary['mi_mean_avg']:.4f}",
+        f"- Median MI (CV-averaged): {summary['mi_mean_median']:.4f}",
+        f"- Mean R^2 (univariate): {summary['r2_mean']:.4f}",
+        f"- Median R^2 (univariate): {summary['r2_median']:.4f}",
+        f"- High-MI features (MI>0.10): {summary['n_high_mi']}",
+        f"- High-R^2 features (R^2>0.05): {summary['n_high_r2']}",
+        "",
+    ]
+    
+    if tv_var_info.get("enabled"):
+        md_lines.extend([
+            "### TV-VAR System Metrics",
+            f"- Stability Score: {tv_var_info['stability_score']:.3f}",
+            f"- TV-VAR Samples: {tv_var_info['n_samples']}",
+            f"- Market Regimes Detected: {tv_var_info['regime_count']}",
+            "",
+        ])
+
+    md_lines.append("### Probe model summary (LogReg / LGBM)")
+
+
+    # Add brief probe model summary if available
+    task_type = probe_models.get("task_type", "unknown")
+
+    if task_type == "binary_classification":
+        logreg_summary = probe_models.get("logreg", {}) if isinstance(probe_models, dict) else {}
+        lgbm_summary = probe_models.get("lgbm", {}) if isinstance(probe_models, dict) else {}
+
+        def _fmt_probe_clf(model_name: str, summary_dict: Dict[str, Any]) -> str:
+            if not summary_dict or "auc_mean" not in summary_dict:
+                return f"- {model_name}: not available"
+            auc_mean = summary_dict.get("auc_mean", float("nan"))
+            auc_std = summary_dict.get("auc_std", float("nan"))
+            acc_mean = summary_dict.get("accuracy_mean", float("nan"))
+            return (
+                f"- {model_name}: AUC={auc_mean:.3f}±{auc_std:.3f}, "
+                f"Accuracy={acc_mean:.3f}"
+            )
+
+        md_lines.extend(
+            [
+                _fmt_probe_clf("Logistic Regression", logreg_summary),
+                _fmt_probe_clf("LightGBM", lgbm_summary),
+            ]
+        )
+    elif task_type == "regression":
+        linear_summary = probe_models.get("linear_reg", {}) if isinstance(probe_models, dict) else {}
+        lgbm_summary = probe_models.get("lgbm", {}) if isinstance(probe_models, dict) else {}
+
+        def _fmt_probe_reg(model_name: str, summary_dict: Dict[str, Any]) -> str:
+            if not summary_dict or "rmse_mean" not in summary_dict:
+                return f"- {model_name}: not available"
+            rmse_mean = summary_dict.get("rmse_mean", float("nan"))
+            rmse_std = summary_dict.get("rmse_std", float("nan"))
+            r2_mean = summary_dict.get("r2_mean", float("nan"))
+            return (
+                f"- {model_name}: RMSE={rmse_mean:.4f}±{rmse_std:.4f}, "
+                f"R2={r2_mean:.4f}"
+            )
+
+        md_lines.extend(
+            [
+                _fmt_probe_reg("Linear Regression (Ridge)", linear_summary),
+                _fmt_probe_reg("LightGBM Regressor", lgbm_summary),
+            ]
+        )
+
+    # Add Trading PnL Simulation section
+    md_lines.extend(
+        [
+            "",
+            "### Trading PnL Simulation (TP=2%, SL=0.7%, Fees=0.3% round-trip)",
+            "",
+        ]
+    )
+
+    if "error" in probe_pnl:
+        md_lines.append(f"- Trading simulation unavailable: {probe_pnl['error']}")
+    else:
+        # Determine models to display based on task type
+        models_to_display = []
+        if task_type == "regression":
+            models_to_display = [("Linear Regression", "linear_reg"), ("LightGBM Regressor", "lgbm")]
+        else:
+            models_to_display = [("Logistic Regression", "logreg"), ("LightGBM", "lgbm")]
+
+        # Display results for each model
+        for model_name, model_key in models_to_display:
+            model_pnl = probe_pnl.get(model_key, {})
+            if "error" in model_pnl:
+                md_lines.append(f"**{model_name}**: {model_pnl['error']}")
+                md_lines.append("")
+                continue
+            
+            per_threshold = model_pnl.get("per_threshold", {})
+            if not per_threshold:
+                md_lines.append(f"**{model_name}**: No threshold data available")
+                md_lines.append("")
+                continue
+            
+            md_lines.append(f"**{model_name}** (data range: {model_pnl.get('date_range_days', 0):.0f} days, {model_pnl.get('total_samples', 0)} samples)")
+            md_lines.append("")
+            md_lines.append("| Threshold | Trades | Trades/Day | Win Rate | PnL/Trade | PnL/Day | PnL/Month | Sharpe |")
+            md_lines.append("|----------:|-------:|-----------:|---------:|----------:|--------:|----------:|-------:|")
+            
+            # Use dynamic threshold keys since regression thresholds differ from classification
+            sorted_thresholds = sorted(per_threshold.keys())
+
+            for threshold_key in sorted_thresholds:
+                t = per_threshold[threshold_key]
+                md_lines.append(
+                    f"| {threshold_key} | "
+                    f"{t['n_trades']:,} | "
+                    f"{t['trades_per_day']:.2f} | "
+                    f"{t['win_rate']:.1%} | "
+                    f"{t['avg_pnl_per_trade_pct']:.4f}% | "
+                    f"{t['avg_pnl_per_day_pct']:.4f}% | "
+                    f"{t['avg_pnl_per_month_pct']:.2f}% | "
+                    f"{t['sharpe_estimate']:.2f} |"
+                )
+            md_lines.append("")
+
+    md_lines.extend(
+        [
+            "",
+            "### Per-specialist model reliability vs target (MI / R^2)",
+        ]
+    )
+
+    per_model = model_reliability.get("per_model", {}) if isinstance(model_reliability, dict) else {}
+    if per_model:
+        for group_name, stats in per_model.items():
+            md_lines.append(
+                "- "
+                + f"{group_name}: "
+                + f"n_features={int(stats.get('n_features', 0))}, "
+                + f"MI_mean={float(stats.get('mi_mean_avg', 0.0)):.4f}, "
+                + f"R^2_mean={float(stats.get('r2_mean', 0.0)):.4f}, "
+                + f"high_MI={int(stats.get('n_high_mi', 0))}, "
+                + f"high_R^2={int(stats.get('n_high_r2', 0))}"
+            )
+    else:
+        md_lines.append("- Per-model reliability metrics unavailable")
+
+    md_lines.extend(
+        [
+            "",
+            "### Per-specialist data coverage",
+        ]
+    )
+
+    coverage_info = model_coverage if isinstance(model_coverage, dict) else {}
+    if coverage_info:
+        total_target = int(len(y))
+        if total_target > 0:
+            md_lines.append(f"*(Target samples: {total_target})*")
+
+        for group_name in sorted(coverage_info.keys()):
+            info = coverage_info.get(group_name, {})
+            n_samples = int(info.get("n_samples", 0) or 0)
+            frac = float(info.get("fraction_of_target", 0.0) or 0.0)
+            start = info.get("start")
+            end = info.get("end")
+
+            line = f"- **{group_name}**: n={n_samples} ({frac:.1%} coverage)"
+            if start is not None and end is not None:
+                line += f", range: {start} → {end}"
+
+                # Check for significant mismatch
+                if start > y_start + pd.Timedelta(days=7):
+                    line += " ⚠️ Starts late"
+                if end < y_end - pd.Timedelta(days=7):
+                    line += " ⚠️ Ends early"
+            else:
+                line += ", range unavailable"
+
+            if frac < 0.5:
+                line += " ⚠️ Low coverage (<50%)"
+
+            md_lines.append(line)
+    else:
+        md_lines.append("- Per-specialist coverage unavailable")
+
+    md_lines.extend(
+        [
+            "",
+            "### Pairwise relationships between specialist models (MI / R^2)",
+        ]
+    )
+
+    pairwise_info = model_relationships if isinstance(model_relationships, dict) else {}
+    pair_list = pairwise_info.get("pairs", []) if isinstance(pairwise_info, dict) else []
+
+    if not pair_list:
+        error_msg = pairwise_info.get("error") if isinstance(pairwise_info, dict) else None
+        if error_msg:
+            md_lines.append(f"- Pairwise model analysis unavailable: {error_msg}")
+        else:
+            md_lines.append("- Pairwise model analysis unavailable")
+    else:
+        md_lines.append("")
+        md_lines.append("| Model i | Model j | Rep feature i | Rep feature j | MI_proxy | R^2 |")
+        md_lines.append("|---------|---------|---------------|---------------|---------:|----:|")
+        for entry in pair_list:
+            md_lines.append(
+                "| "
+                + f"{entry.get('model_i', '')} | "
+                + f"{entry.get('model_j', '')} | "
+                + f"{entry.get('rep_feature_i', '')} | "
+                + f"{entry.get('rep_feature_j', '')} | "
+                + f"{float(entry.get('mi_proxy', 0.0)):.4f} | "
+                + f"{float(entry.get('r2', 0.0)):.4f} |"
+            )
+
+    md_lines.extend(
+        [
+            "",
+            "### LGBM interaction probes (specialist groups)",
+        ]
+    )
+
+    if isinstance(group_lgbm_auc, dict) and "group_lgbm_auc" in group_lgbm_auc:
+        group_auc_entries = group_lgbm_auc.get("group_lgbm_auc", {})
+        if group_auc_entries:
+            md_lines.append("")
+            md_lines.append("| Groups | n_features | AUC | n_oof_samples |")
+            md_lines.append("|--------|-----------:|----:|--------------:|")
+            for key, entry in sorted(
+                group_auc_entries.items(),
+                key=lambda kv: kv[1].get("auc", 0.0),
+                reverse=True,
+            )[:20]:
+                md_lines.append(
+                    f"| {entry.get('combination', key)} | "
+                    f"{int(entry.get('n_features', 0))} | "
+                    f"{entry.get('auc', 0.0):.3f} | "
+                    f"{int(entry.get('n_samples', 0))} |"
+                )
+        else:
+            err_msg = group_lgbm_auc.get("error")
+            if err_msg:
+                md_lines.append(f"- Group LGBM probes unavailable: {err_msg}")
+            else:
+                md_lines.append("- Group LGBM probes unavailable")
+    else:
+        md_lines.append("- Group LGBM probes unavailable")
+
+    md_lines.extend(
+        [
+            "",
+            "### Global stability (TimeSeriesSplit AUC)",
+        ]
+    )
+
+    if "error" in global_stability:
+        md_lines.append(f"- Stability analysis unavailable: {global_stability['error']}")
+    else:
+        md_lines.append(
+            f"- Mean AUC={global_stability.get('mean_auc', float('nan')):.3f}, "
+            f"std={global_stability.get('std_auc', float('nan')):.3f}, "
+            f"stability score={global_stability.get('stability_score', float('nan')):.3f}"
+        )
+
+    md_lines.extend(
+        [
+            "",
+            "## Top Features by MI Proxy (CV-averaged)",
+            "",
+            "| Feature | MI_full | MI_mean | MI_CV | Corr | R^2 |",
+            "|---------|--------:|--------:|------:|-----:|----:|",
+        ]
+    )
+
+    for name, met in sorted_by_mi[:top_k]:
+        md_lines.append(
+            f"| {name} | {met['mi_proxy_full']:.4f} | {met['mi_mean_cv']:.4f} | "
+            f"{met['mi_cv']:.3f} | {met['pearson_corr']:.3f} | {met['r2']:.4f} |"
+        )
+
+    md_lines.extend(
+        [
+            "",
+            "## Top Features by R^2 (Univariate)",
+            "",
+            "| Feature | MI_full | MI_mean | MI_CV | Corr | R^2 |",
+            "|---------|--------:|--------:|------:|-----:|----:|",
+        ]
+    )
+
+    for name, met in sorted_by_r2[:top_k]:
+        md_lines.append(
+            f"| {name} | {met['mi_proxy_full']:.4f} | {met['mi_mean_cv']:.4f} | "
+            f"{met['mi_cv']:.3f} | {met['pearson_corr']:.3f} | {met['r2']:.4f} |"
+        )
+
+    # Append constant/near-constant feature check
+    md_lines.extend(
+        [
+            "",
+            "## Constant / Near-Constant Feature Check",
+        ]
+    )
+    constant_feats = []
+    for col in X.columns:
+        if np.std(X[col]) < 1e-9:
+            val = float(X[col].mean()) if len(X) > 0 else 0.0
+            constant_feats.append(f"{col} (val={val:.4f})")
+
+    if constant_feats:
+        md_lines.append(f"⚠️ Found {len(constant_feats)} constant features:")
+        for f in constant_feats[:10]:
+            md_lines.append(f"- {f}")
+        if len(constant_feats) > 10:
+            md_lines.append(f"- ... and {len(constant_feats) - 10} more")
+    else:
+        md_lines.append("- No constant features found (std < 1e-9).")
+
+    # Append leakage and interaction summaries
+    md_lines.extend(
+        [
+            "",
+            "## Leakage diagnostics",
+        ]
+    )
+
+    if "error" in leakage_diagnostics:
+        md_lines.append(f"- Leakage detection unavailable: {leakage_diagnostics['error']}")
+    else:
+        susp = leakage_diagnostics.get("suspicious_features", [])
+        perf = leakage_diagnostics.get("perfect_features", [])
+        md_lines.append(f"- Suspicious features (|corr|>=0.95): {len(susp)}")
+        md_lines.append(f"- Perfect-correlation features (|corr|>=0.99): {len(perf)}")
+        if susp:
+            md_lines.append("- Examples (suspicious): " + ", ".join(f"{f[0]}({f[1]:.3f})" for f in susp[:5]))
+        if perf:
+            md_lines.append("- Examples (perfect): " + ", ".join(f"{f[0]}({f[1]:.3f})" for f in perf[:5]))
+
+    md_lines.extend(
+        [
+            "",
+            "## Notable pairwise interactions (TreeSHAP)",
+        ]
+    )
+
+    if "error" in interactions:
+        md_lines.append(f"- Interaction analysis unavailable: {interactions['error']}")
+    else:
+        top_pairs = interactions.get("top_pairs", [])
+        md_lines.append(
+            f"- Computed on {interactions.get('n_features', 0)} features, "
+            f"sample_size={interactions.get('sample_size', 0)}"
+        )
+        md_lines.append("")
+        md_lines.append("| Feature i | Feature j | Interaction strength |")
+        md_lines.append("|----------|----------|---------------------:|")
+        for p in top_pairs[:20]:
+            md_lines.append(
+                f"| {p['feature_i']} | {p['feature_j']} | {p['interaction_strength']:.4e} |"
+            )
+
+    payload: Dict[str, Any] = {
+        "summary": summary,
+        "feature_metrics": feature_metrics,
+        "tv_var_info": tv_var_info,
+        "cv_folds": int(cv_folds),
+        "probe_models": probe_models,
+        "probe_pnl_simulation": probe_pnl,
+        "leakage_diagnostics": leakage_diagnostics,
+        "stability_metrics": global_stability,
+        "interactions": interactions,
+        "model_reliability": model_reliability,
+        "model_pairwise": model_relationships,
+        "group_lgbm_auc": group_lgbm_auc,
+        "model_coverage": model_coverage,
+        "tv_var_results": tv_var_results,
+    }
+
+    return _export_report(
+        prefix="specialist_feature_diagnostics",
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+        payload=payload,
+        markdown_lines=md_lines,
+    )
+
+
+def _check_range_specific_config() -> bool:
+    """Check if 1.5-3% range optimization is enabled."""
+    try:
+        import yaml
+        config_path = "config/labeling/layer2_coverage_relax_config.yaml"
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        return config.get("target_range_optimization", {}).get("enabled", False)
+    except Exception:
+        return False
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="Diagnostics for specialist model outputs vs meta-label targets",
+    )
+    ap.add_argument(
+        "--independent-mode",
+        action="store_true",
+        help="Run specialist training before diagnostics"
+    )
+    ap.add_argument(
+        "--auto-train",
+        action="store_true",
+        help="Automatically run training for specialists"
+    )
+    ap.add_argument("--symbol", type=str, default="ETHUSDT")
+    ap.add_argument("--exchange", type=str, default="binance")
+    ap.add_argument("--timeframe", type=str, default="15m")
+    ap.add_argument("--direction", type=str, default="long", choices=["long", "short", "both"])
+    ap.add_argument("--model", type=str, default="analyst")
+    ap.add_argument("--regime-timeframe", type=str, default="1h")
+    # Default target column is now direction-aware: binary_label_long for longs, binary_label_short for shorts
+    # Falls back to unified binary_label if directional labels not available
+    
+        # Orthogonalization arguments
+    ap.add_argument(
+        "--enable-orthogonalization",
+        action="store_true",
+        help="Enable specialist category orthogonalization using XGB Macro Trend as anchor"
+    )
+    ap.add_argument(
+        "--anchor-specialist",
+        type=str,
+        default="xgb_macro",
+        help="Anchor specialist for orthogonalization (default: xgb_macro)"
+    )
+    ap.add_argument(
+        "--run-lgbm-comparison",
+        action="store_true",
+        help="Run LGBM comparison between baseline and orthogonal features"
+    )
+    ap.add_argument(
+        "--weighting-metric",
+        type=str,
+        default="auc",
+        choices=["auc", "mi", "hybrid"],
+        help="Weighting metric for orthogonal targets (default: auc)"
+    )
+    ap.add_argument(
+        "--orthogonal-comparison-report",
+        action="store_true",
+        help="Generate comprehensive orthogonal comparison report"
+    )
+    
+    # Target denoising arguments
+    ap.add_argument(
+        "--target-denoising",
+        action="store_true",
+        help="Enable target denoising before orthogonalization"
+    )
+    ap.add_argument(
+        "--denoising-method",
+        type=str,
+        default="kalman",
+        choices=["kalman", "hampel", "savgol", "volume", "ensemble"],
+        help="Target denoising method (default: kalman)"
+    )
+    ap.add_argument(
+        "--denoising-confidence-threshold",
+        type=float,
+        default=0.7,
+        help="Confidence threshold for denoising (default: 0.7)"
+    )
+    ap.add_argument(
+        "--volume-column",
+        type=str,
+        default="volume",
+        help="Volume column name for volume-weighted denoising (default: volume)"
+    )
+    
+    # New optimization arguments    # New optimization arguments
+    ap.add_argument(
+        "--orthogonal-hpo",
+        action="store_true",
+        help="Enable orthogonalization-aware HPO with narrow search spaces"
+    )
+    ap.add_argument(
+        "--conservative-pruning",
+        action="store_true",
+        help="Enable conservative ensemble pruning (8-12 specialists)"
+    )
+    ap.add_argument(
+        "--feature-optimization",
+        action="store_true",
+        help="Enable feature deduplication and optimization"
+    )
+    ap.add_argument(
+        "--enable-cache",
+        action="store_true",
+        help="Enable specialist model caching for faster execution"
+    )
+    ap.add_argument(
+        "--narrow-hpo",
+        action="store_true",
+        help="Use narrow HPO search spaces for faster convergence (30 trials max)"
+    )
+    ap.add_argument(
+        "--min-ensemble-size",
+        type=int,
+        default=8,
+        help="Minimum ensemble size after pruning (default: 8)"
+    )
+    ap.add_argument(
+        "--max-ensemble-size",
+        type=int,
+        default=12,
+        help="Maximum ensemble size after pruning (default: 12)"
+    )
+    ap.add_argument(
+        "--run-optimized-orthogonalization",
+        action="store_true",
+        help="Run complete optimized orthogonalization pipeline"
+    )
+    
+    # Additional missing arguments
+    ap.add_argument(
+        "--compare-targets",
+        action="store_true",
+        help="Compare multiple targets (classifiers vs regressors)"
+    )
+    ap.add_argument(
+        "--target-col",
+        type=str,
+        help="Explicit target column (overrides direction-aware default)"
+    )
+    ap.add_argument(
+        "--lookback-days",
+        type=float,
+        help="Restrict analysis to last N calendar days"
+    )
+    ap.add_argument(
+        "--cv-folds",
+        type=int,
+        default=5,
+        help="Number of cross-validation folds (default: 5)"
+    )
+    ap.add_argument(
+        "--enable-hmm-risk-specialist",
+        action="store_true",
+        help="Enable HMM risk specialist"
+    )
+    ap.add_argument(
+        "--projection-mode",
+        type=str,
+        default="canonical_scalars",
+        help="Projection mode (default: canonical_scalars)"
+    )
+
+    # TV-VAR Enhanced Analysis arguments (default enabled)
+    ap.add_argument(
+        "--enable-tv-var",
+        action="store_true",
+        default=True,
+        help="Enable TV-VAR enhanced analysis (default: True)"
+    )
+    ap.add_argument(
+        "--tv-var-window",
+        type=int,
+        default=100,
+        help="TV-VAR rolling window size (default: 100)"
+    )
+    ap.add_argument(
+        "--tv-var-regime-aware",
+        action="store_true",
+        default=True,
+        help="Use regime-aware TV-VAR analysis (default: True)"
+    )
+    ap.add_argument(
+        "--tv-var-backtest",
+        action="store_true",
+        help="Run TV-VAR backtesting validation"
+    )
+
+    args = ap.parse_args()
+
+    logging.getLogger().setLevel(logging.INFO)
+
+    # Optional: Compare targets if requested
+    if hasattr(args, 'compare_targets') and args.compare_targets:
+        targets_to_run = [args.target_col]
+        # Additional comparison logic would go here
+        pass
+
+    # Determine default target column based on direction if not explicitly provided
+    if not hasattr(args, 'target_col') or args.target_col is None:
+        # Priority: binary_label (often has better coverage/balance in AFML)
+        args.target_col = "binary_label"
+        print(f"Using unified default target: {args.target_col}")
+
+    # Normalize legacy/unified binary_label to direction-aware labels when possible
+    if args.target_col == "binary_label":
+        if args.direction == "long":
+            args.target_col = "binary_label_long"
+            print("Normalizing target_col 'binary_label' to 'binary_label_long' for long direction.")
+        elif args.direction == "short":
+            args.target_col = "binary_label_short"
+            print("Normalizing target_col 'binary_label' to 'binary_label_short' for short direction.")
+
+    targets_to_run = [args.target_col]
+    if args.compare_targets:
+        # Add regression targets for comparison
+        if args.direction == "long":
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
+            # Also compare with unified binary_label for reference
+            if "binary_label" not in targets_to_run:
+                targets_to_run.append("binary_label")
+        elif args.direction == "short":
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
+            if "binary_label" not in targets_to_run:
+                targets_to_run.append("binary_label")
+        elif args.direction == "both":
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
+
+    for tgt in targets_to_run:
+        if args.independent_mode or args.auto_train:
+            import asyncio
+            asyncio.run(_run_specialist_training(
+                symbol=args.symbol,
+                exchange=args.exchange,
+                timeframe=args.timeframe,
+                direction=args.direction,
+                regime_timeframe=args.regime_timeframe,
+                lookback_days=args.lookback_days
+            ))
+
+        print(f"\n--- Running diagnostics for target: {tgt} ---")
+        try:
+            md_path, csv_path = run_diagnostics(
+                symbol=args.symbol,
+                exchange=args.exchange,
+                timeframe=args.timeframe,
+                direction=args.direction,
+                model=args.model,
+                regime_timeframe=args.regime_timeframe,
+                target_col=tgt,
+                cv_folds=args.cv_folds,
+                lookback_days=args.lookback_days,
+                enable_risk_hmm_specialist=args.enable_hmm_risk_specialist,
+                projection_mode=args.projection_mode,
+                enable_orthogonalization=args.enable_orthogonalization,
+                run_optimized_orthogonalization=args.run_optimized_orthogonalization,
+                anchor_specialist=args.anchor_specialist,
+                enable_cache=args.enable_cache,
+                feature_optimization=args.feature_optimization,
+                orthogonal_hpo=args.orthogonal_hpo,
+                conservative_pruning=args.conservative_pruning,
+                run_lgbm_comparison=args.run_lgbm_comparison,
+                orthogonal_comparison_report=args.orthogonal_comparison_report,
+                enable_tv_var=args.enable_tv_var,
+                tv_var_window=args.tv_var_window,
+                tv_var_regime_aware=args.tv_var_regime_aware,
+                tv_var_backtest=args.tv_var_backtest,
+            )
+            print(
+                f"Specialist feature diagnostics for {tgt} saved to: {md_path} "
+                f"and {csv_path}"
+            )
+        except Exception as e:
+            print(f"Failed diagnostics for {tgt}: {e}")
+
+
+if __name__ == "__main__":
+    main()

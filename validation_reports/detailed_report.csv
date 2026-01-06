@@ -1,0 +1,5 @@
+file_path,score,total_issues,error_count,warning_count,manual_assertions,missing_imports
+temp_validation/test_order_manager.py,0,12,1,11,10,1
+temp_validation/test_regime_economic_relevance.py,90,1,1,0,0,1
+temp_validation/test_paper_trading_simulator.py,90,1,1,0,0,1
+temp_validation/test_exchange_dispatcher.py,90,1,1,0,0,1

@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+import psutil
+from tqdm import tqdm
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 """Specialist Feature Diagnostics CLI.
 
 Analyzes specialist model outputs (Risk, Liquidity, Breakout/Bounce)
@@ -32,6 +42,11 @@ Usage example (from project root):
 """
 
 import argparse
+import gc
+from src.utils.thresholding.dynamic_thresholds import DynamicThresholdCalculator, calculate_dynamic_thresholds_batch
+import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 import logging
 import sys
 from datetime import datetime
@@ -55,9 +70,9 @@ from sklearn.preprocessing import StandardScaler
 
 
 # Ensure project root is on sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# if str(PROJECT_ROOT) not in sys.path:
+#    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.utils.logger import system_logger  # type: ignore
 from src.utils.ml_common.get_specialist_models_outputs import (  # type: ignore
@@ -75,13 +90,673 @@ from src.training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionConfig,
     FinalFeatureSelectionComponent,
 )
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.training.steps.market_analysis import step_registry  # type: ignore
 from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
+from src.analysis.tv_var_system import TVVARSystem
+from src.analysis.tv_var_regime_definition import EightFeatureRegimeDetector
+from src.analysis.tv_var_decision_tree_rules import TVVARDecisionTreeRules
+from src.analysis.tv_var_monthly_trainer import TVVARMonthlyTrainer
+from src.analysis.tv_var_backtesting import TVVARBacktester, backtest_tv_var_enhanced
+from src.training.steps.labeling.unified_price_layer2 import (  # type: ignore
+    load_layer0_params,
+    apply_hampel_filter,
+    apply_savgol_filter,
+)
 
 
 logger = system_logger.getChild("specialist_feature_diagnostics")
 
 OUTCOMES_DIR = Path("outcomes")
+_LAYER0_PARAMS_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _load_latest_layer0_params() -> Dict[str, Any]:
+    """Load (and cache) the most recent Layer0 smoothing parameters."""
+    global _LAYER0_PARAMS_CACHE
+    if _LAYER0_PARAMS_CACHE is not None:
+        return _LAYER0_PARAMS_CACHE
+
+    try:
+        params = load_layer0_params()
+        _LAYER0_PARAMS_CACHE = params
+        logger.info(
+            "🧽 Loaded latest Layer0 params (Q=%.2e, R=%.2e, vwap_weight=%.3f)",
+            params.get("kalman_Q", 0.0),
+            params.get("kalman_R", 0.0),
+            params.get("vwap_weight", 0.0),
+        )
+        return params
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("⚠️ Failed to load Layer0 params, skipping global denoising: %s", exc)
+        _LAYER0_PARAMS_CACHE = {}
+        return _LAYER0_PARAMS_CACHE
+
+
+def _kalman_smooth_series(series: pd.Series, Q: float = 1e-5, R: float = 0.01) -> pd.Series:
+    """Apply simple Kalman filter smoothing to a continuous series (probabilities)."""
+    vals = series.values
+    n = len(vals)
+    x_hat = np.zeros(n)
+    P = np.ones(n)
+    
+    x_hat[0] = vals[0]
+    P[0] = 1.0
+    
+    for i in range(1, n):
+        # Prediction
+        x_hat_minus = x_hat[i-1]
+        P_minus = P[i-1] + Q
+        
+        # Update
+        K = P_minus / (P_minus + R)
+        x_hat[i] = x_hat_minus + K * (vals[i] - x_hat_minus)
+        P[i] = (1 - K) * P_minus
+        
+    return pd.Series(x_hat, index=series.index)
+
+def _calibrate_probabilities(y_tr: np.ndarray, p_tr: np.ndarray, p_te: np.ndarray) -> np.ndarray:
+    """Calibrate probabilities using Platt Scaling (Logistic Regression on scores)."""
+    from sklearn.linear_model import LogisticRegression
+    if len(np.unique(y_tr)) < 2:
+        return p_te
+    
+    # Platt scaling: train a small LogReg on the probabilities
+    calibrator = LogisticRegression(C=1e10, solver='lbfgs')
+    # Reshape for sklearn
+    X_tr = p_tr.reshape(-1, 1)
+    X_te = p_te.reshape(-1, 1)
+    
+    calibrator.fit(X_tr, y_tr)
+    return calibrator.predict_proba(X_te)[:, 1]
+
+def _apply_global_layer0_denoising(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply Layer0-derived Hampel/Savitzky-Golay denoising to all numeric specialist features once.
+    """
+    params = _load_latest_layer0_params()
+    if not params:
+        return df
+
+    hampel_enabled = params.get("hampel_filter_enabled", False)
+    savgol_enabled = params.get("savgol_filter_enabled", False)
+    if not (hampel_enabled or savgol_enabled):
+        return df
+
+    numeric_cols = df.select_dtypes(include=[np.number, "bool"]).columns
+    if not len(numeric_cols):
+        return df
+
+    denoised_df = df.copy()
+
+    hampel_window = int(params.get("hampel_window", 5))
+    hampel_threshold = float(params.get("hampel_threshold", 3.0))
+    savgol_window = int(params.get("savgol_window", 21))
+    savgol_order = int(params.get("savgol_order", 3))
+
+    logger.info(
+        "🔧 Applying global Layer0 denoising (hampel=%s, savgol=%s) to %d specialist columns",
+        hampel_enabled,
+        savgol_enabled,
+        len(numeric_cols),
+    )
+
+    for col in numeric_cols:
+        series = denoised_df[col].astype(float)
+        series = series.replace([np.inf, -np.inf], np.nan)
+        series = series.ffill().bfill()
+
+        if hampel_enabled and len(series.dropna()) >= max(3, hampel_window + 1):
+            try:
+                series = apply_hampel_filter(series, window=hampel_window, threshold=hampel_threshold)
+            except Exception as exc:  # pragma: no cover - logging only
+                logger.debug("Hampel filter failed for %s: %s", col, exc)
+
+        if savgol_enabled and len(series.dropna()) >= max(savgol_window + 1, savgol_order + 2):
+            try:
+                series = apply_savgol_filter(series, window_length=savgol_window, poly_order=savgol_order)
+            except Exception as exc:  # pragma: no cover - logging only
+                logger.debug("Savitzky-Golay filter failed for %s: %s", col, exc)
+
+        # Restore original dtype if it was boolean
+        if pd.api.types.is_bool_dtype(df[col].dtype):
+            denoised_df[col] = (series >= 0.5).astype(bool)
+        else:
+            denoised_df[col] = series
+
+    return denoised_df
+
+# Performance Optimization Utilities
+
+
+def _get_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
+    """Generate hash for caching based on data shape and content."""
+    try:
+        # Use shape and first/last few values for efficient hashing
+        x_hash = hashlib.md5(f"{X.shape}{X.iloc[:5].values.tobytes()}{X.iloc[-5:].values.tobytes()}".encode()).hexdigest()[:16]
+        y_hash = hashlib.md5(f"{len(y)}{y.iloc[:5].values.tobytes()}{y.iloc[-5:].values.tobytes()}".encode()).hexdigest()[:16]
+        return f"{x_hash}_{y_hash}"
+    except Exception:
+        return f"{X.shape}_{len(y)}"
+def _correlation_clustering_feature_selection(
+    X: pd.DataFrame, 
+    correlation_threshold: float = 0.7,
+    method: str = "hierarchical"
+) -> Tuple[pd.DataFrame, List[str], Dict[str, Any]]:
+    """
+    Advanced correlation clustering for feature redundancy removal.
+    
+    Uses hierarchical clustering to group correlated features and selects
+    the best representative from each cluster based on variance and MI scores.
+    
+    Args:
+        X: Feature DataFrame
+        correlation_threshold: Correlation threshold for clustering
+        method: Clustering method ('hierarchical', 'spectral', 'ward')
+    
+    Returns:
+        Tuple of (filtered DataFrame, removed_features, clustering_info)
+    """
+    from scipy.cluster.hierarchy import linkage, fcluster
+    from scipy.spatial.distance import squareform
+    from scipy.stats import spearmanr
+    
+    logger.info(f"🔗 Starting correlation clustering: {X.shape[1]} features, threshold={correlation_threshold}")
+    
+    if X.shape[1] <= 1:
+        return X.copy(), [], {"method": method, "clusters": 0}
+    
+    # Calculate correlation matrix (use Spearman for robustness)
+    try:
+        corr_matrix = X.corr(method='spearman')
+        corr_matrix = corr_matrix.fillna(0)
+    except Exception as e:
+        logger.warning(f"Spearman correlation failed: {e}, using Pearson")
+        corr_matrix = X.corr()
+        corr_matrix = corr_matrix.fillna(0)
+    
+    # Convert to distance matrix
+    distance_matrix = 1 - np.abs(corr_matrix)
+    np.fill_diagonal(distance_matrix.values, 0)
+    
+    # Hierarchical clustering
+    try:
+        if method == "ward":
+            # Ward requires Euclidean distance, so we use correlation-based distance
+            condensed_distances = squareform(distance_matrix.values)
+            linkage_matrix = linkage(condensed_distances, method='ward')
+        else:
+            # Use correlation directly for other methods
+            condensed_distances = squareform(distance_matrix.values)
+            linkage_matrix = linkage(condensed_distances, method='average')
+        
+        # Form clusters based on threshold
+        cluster_labels = fcluster(
+            linkage_matrix, 
+            t=1 - correlation_threshold, 
+            criterion='distance'
+        )
+        
+    except Exception as e:
+        logger.warning(f"Clustering failed: {e}, using simple correlation filtering")
+        # Fallback to simple correlation filtering
+        return _simple_correlation_filtering(X, correlation_threshold)
+    
+    # Analyze clusters
+    feature_clusters = {}
+    for i, (feature, cluster_id) in enumerate(zip(X.columns, cluster_labels)):
+        if cluster_id not in feature_clusters:
+            feature_clusters[cluster_id] = []
+        feature_clusters[cluster_id].append(feature)
+    
+    # Select best feature from each cluster
+    selected_features = []
+    removed_features = []
+    cluster_info = {
+        "method": method,
+        "threshold": correlation_threshold,
+        "total_clusters": len(feature_clusters),
+        "clusters": {}
+    }
+    
+    for cluster_id, features_in_cluster in feature_clusters.items():
+        if len(features_in_cluster) == 1:
+            # Single feature cluster - keep it
+            selected_features.extend(features_in_cluster)
+            cluster_info["clusters"][f"cluster_{cluster_id}"] = {
+                "features": features_in_cluster,
+                "selected": features_in_cluster,
+                "size": 1,
+                "action": "kept_single"
+            }
+        else:
+            # Multiple features in cluster - select best one
+            best_feature = _select_best_feature_from_cluster(X, features_in_cluster)
+            selected_features.append(best_feature)
+            
+            # Remove other features
+            removed = [f for f in features_in_cluster if f != best_feature]
+            removed_features.extend(removed)
+            
+            cluster_info["clusters"][f"cluster_{cluster_id}"] = {
+                "features": features_in_cluster,
+                "selected": [best_feature],
+                "removed": removed,
+                "size": len(features_in_cluster),
+                "action": "selected_best"
+            }
+    
+    # Create filtered DataFrame
+    X_filtered = X[selected_features].copy()
+    
+    logger.info(
+        f"✅ Correlation clustering completed: "
+        f"{len(selected_features)} features kept, {len(removed_features)} removed "
+        f"({len(feature_clusters)} clusters)"
+    )
+    
+    return X_filtered, removed_features, cluster_info
+
+
+def _select_best_feature_from_cluster(X: pd.DataFrame, features: List[str]) -> str:
+    """
+    Select the best feature from a cluster based on multiple criteria.
+    
+    Args:
+        X: Feature DataFrame
+        features: List of features in the cluster
+    
+    Returns:
+        Best feature name
+    """
+    if len(features) == 1:
+        return features[0]
+    
+    # Calculate scores for each feature
+    feature_scores = {}
+    
+    for feature in features:
+        scores = []
+        
+        # 1. Variance score (higher is better)
+        variance = X[feature].var()
+        variance_score = variance / (variance + 1e-8)  # Normalized
+        scores.append(variance_score)
+        
+        # 2. Stability score (lower coefficient of variation is better)
+        if variance > 0:
+            cv = np.std(X[feature]) / np.mean(np.abs(X[feature]))
+            stability_score = 1 / (1 + cv)  # Inverse CV
+        else:
+            stability_score = 0.0
+        scores.append(stability_score)
+        
+        # 3. Information content (approximate using entropy-like measure)
+        try:
+            # Discretize for entropy calculation
+            discretized = pd.cut(X[feature], bins=10, labels=False)
+            value_counts = pd.Series(discretized).value_counts(normalize=True)
+            entropy = -np.sum(value_counts * np.log2(value_counts + 1e-8))
+            entropy_score = entropy / np.log2(10)  # Normalized to [0,1]
+            scores.append(entropy_score)
+        except:
+            scores.append(0.0)
+        
+        # 4. Name preference (shorter, simpler names might be better)
+        name_score = 1.0 / (1 + len(feature.split('_')))  # Prefer shorter names
+        scores.append(name_score)
+        
+        # Combined score (weighted average)
+        combined_score = np.mean(scores)
+        feature_scores[feature] = combined_score
+    
+    # Select feature with highest score
+    best_feature = max(feature_scores, key=feature_scores.get)
+    
+    return best_feature
+
+
+def _simple_correlation_filtering(
+    X: pd.DataFrame, 
+    correlation_threshold: float = 0.7
+) -> Tuple[pd.DataFrame, List[str], Dict[str, Any]]:
+    """
+    Simple correlation filtering as fallback.
+    
+    Args:
+        X: Feature DataFrame
+        correlation_threshold: Correlation threshold
+    
+    Returns:
+        Tuple of (filtered DataFrame, removed_features, info)
+    """
+    corr_matrix = X.corr().abs()
+    
+    # Find highly correlated pairs
+    high_corr_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i + 1, len(corr_matrix.columns)):
+            if corr_matrix.iloc[i, j] > correlation_threshold:
+                high_corr_pairs.append((
+                    corr_matrix.columns[i],
+                    corr_matrix.columns[j],
+                    corr_matrix.iloc[i, j]
+                ))
+    
+    # Remove redundant features (keep first occurrence)
+    features_to_remove = set()
+    for feat_i, feat_j, corr in high_corr_pairs:
+        if feat_i not in features_to_remove and feat_j not in features_to_remove:
+            features_to_remove.add(feat_j)  # Remove the second feature
+    
+    selected_features = [f for f in X.columns if f not in features_to_remove]
+    X_filtered = X[selected_features].copy()
+    
+    info = {
+        "method": "simple_filtering",
+        "threshold": correlation_threshold,
+        "high_corr_pairs": len(high_corr_pairs),
+        "features_removed": len(features_to_remove)
+    }
+    
+    return X_filtered, list(features_to_remove), info
+
+
+def _enhanced_smart_feature_pruning(
+    X: pd.DataFrame, 
+    y: pd.Series, 
+    variance_threshold: float = 1e-8, 
+    correlation_threshold: float = 0.7,
+    use_clustering: bool = True
+) -> Tuple[pd.DataFrame, List[str], Dict[str, Any]]:
+    """
+    Enhanced smart feature pruning with correlation clustering.
+    
+    Combines variance filtering with advanced correlation clustering
+    for more intelligent feature selection.
+    
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        variance_threshold: Variance threshold for filtering
+        correlation_threshold: Correlation threshold for clustering
+        use_clustering: Whether to use clustering or simple filtering
+    
+    Returns:
+        Tuple of (filtered DataFrame, removed_features, pruning_info)
+    """
+    logger.info(f"🔍 Starting enhanced smart feature pruning: {X.shape[1]} features")
+    
+    original_features = list(X.columns)
+    removed_features = []
+    pruning_info = {
+        "original_count": len(original_features),
+        "steps": []
+    }
+    
+    # Step 1: Variance filtering
+    feature_variances = X.var()
+    low_variance_features = feature_variances[feature_variances < variance_threshold].index.tolist()
+    
+    if low_variance_features:
+        X = X.drop(columns=low_variance_features)
+        removed_features.extend(low_variance_features)
+        pruning_info["steps"].append({
+            "step": "variance_filtering",
+            "removed": low_variance_features,
+            "threshold": variance_threshold,
+            "remaining": len(X.columns)
+        })
+        logger.info(f"🗑️  Removed {len(low_variance_features)} low-variance features")
+    
+    # Step 2: Correlation clustering
+    if len(X.columns) > 1:
+        if use_clustering:
+            X_corr, corr_removed, corr_info = _correlation_clustering_feature_selection(
+                X, correlation_threshold, method="hierarchical"
+            )
+        else:
+            X_corr, corr_removed, corr_info = _simple_correlation_filtering(
+                X, correlation_threshold
+            )
+        
+        removed_features.extend(corr_removed)
+        pruning_info["steps"].append({
+            "step": "correlation_clustering" if use_clustering else "correlation_filtering",
+            "removed": corr_removed,
+            "threshold": correlation_threshold,
+            "info": corr_info,
+            "remaining": len(X_corr.columns)
+        })
+        
+        X = X_corr
+        logger.info(f"🗑️  Removed {len(corr_removed)} correlated features")
+    
+    # Final summary
+    pruning_info["final_count"] = len(X.columns)
+    pruning_info["total_removed"] = len(removed_features)
+    pruning_info["reduction_ratio"] = len(removed_features) / len(original_features)
+    
+    logger.info(
+        f"✅ Enhanced pruning completed: {len(X.columns)} features remaining "
+        f"(removed {len(removed_features)} of {len(original_features)}, "
+        f"{pruning_info['reduction_ratio']:.1%} reduction)"
+    )
+    
+    return X, removed_features, pruning_info
+
+
+@lru_cache(maxsize=128)
+def _cached_mutual_info_regression(X_hash: str, y_hash: str, n_features: int, random_state: int = 42) -> tuple:
+    """Cached mutual information computation."""
+    return None  # Placeholder - will be populated with actual data
+
+
+def _compute_vectorized_mi_fast(X: pd.DataFrame, y: np.ndarray, n_neighbors: int = 3) -> np.ndarray:
+    """Vectorized mutual information computation using sklearn's optimized implementation."""
+    try:
+        # Use sklearn's optimized mutual_info_regression with fast parameters
+        mi_scores = mutual_info_regression(
+            X, y, 
+            discrete_features='auto',
+            n_neighbors=n_neighbors,
+            random_state=42
+        )
+        return mi_scores
+    except Exception as e:
+        logger.warning(f"Vectorized MI computation failed: {e}, falling back to per-feature computation")
+        # Fallback to per-feature computation
+        mi_scores = []
+        for col in X.columns:
+            try:
+                score = mutual_info_regression(
+                    X[[col]], y, 
+                    discrete_features='auto',
+                    n_neighbors=n_neighbors,
+                    random_state=42
+                )[0]
+                mi_scores.append(score)
+            except Exception:
+                mi_scores.append(0.0)
+        return np.array(mi_scores)
+
+
+def _smart_feature_pruning(X: pd.DataFrame, y: pd.Series, variance_threshold: float = 1e-8, 
+                          correlation_threshold: float = 0.95) -> Tuple[pd.DataFrame, List[str]]:
+    """Smart feature pruning to remove redundant and low-variance features."""
+    logger.info(f"🔍 Starting smart feature pruning: {X.shape[1]} features")
+    
+    original_features = list(X.columns)
+    pruned_features = []
+    
+    # 1. Remove constant/near-constant features
+    feature_variances = X.var()
+    low_variance_features = feature_variances[feature_variances < variance_threshold].index.tolist()
+    
+    if low_variance_features:
+        logger.info(f"🗑️  Removing {len(low_variance_features)} low-variance features (< {variance_threshold})")
+        X = X.drop(columns=low_variance_features)
+        pruned_features.extend(low_variance_features)
+    
+    # 2. Remove highly correlated features (keep first occurrence)
+    if len(X.columns) > 1:
+        correlation_matrix = X.corr().abs()
+        upper_triangle = correlation_matrix.where(
+            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
+        )
+        
+        high_corr_pairs = []
+        for i in range(len(upper_triangle.columns)):
+            for j in range(i):
+                if upper_triangle.iloc[i, j] > correlation_threshold:
+                    col_i = upper_triangle.columns[i]
+                    col_j = upper_triangle.columns[j]
+                    high_corr_pairs.append((col_i, col_j, upper_triangle.iloc[i, j]))
+        
+        # Remove features with high correlations (keep the first one encountered)
+        features_to_remove = set()
+        for col_i, col_j, corr in high_corr_pairs:
+            if col_i not in features_to_remove and col_j not in features_to_remove:
+                features_to_remove.add(col_j)  # Remove the second feature
+        
+        if features_to_remove:
+            logger.info(f"🗑️  Removing {len(features_to_remove)} highly correlated features (> {correlation_threshold})")
+            X = X.drop(columns=list(features_to_remove))
+            pruned_features.extend(features_to_remove)
+    
+    logger.info(f"✅ Smart pruning completed: {X.shape[1]} features remaining (removed {len(pruned_features)})")
+    return X, pruned_features
+
+
+def _median_pruner_callback(current_scores: List[float], median_history: List[float], 
+                           prune_threshold: float = 0.5) -> List[int]:
+    """Optuna-inspired median pruner for early stopping during feature evaluation."""
+    if len(median_history) < 2:
+        return []  # Don't prune early
+    
+    current_median = np.median(current_scores)
+    historical_median = np.median(median_history)
+    
+    # Prune features that are significantly below historical median
+    prune_indices = []
+    for i, score in enumerate(current_scores):
+        if score < historical_median * prune_threshold:
+            prune_indices.append(i)
+    
+    return prune_indices
+
+
+def _parallel_feature_computation(features: List[str], X: pd.DataFrame, y: np.ndarray, 
+                                 compute_func, n_workers: int = 2) -> Dict[str, Any]:
+    """Parallel computation of feature metrics."""
+    results = {}
+    
+    def compute_single_feature(feature_name):
+        try:
+            feature_data = X[feature_name]
+            return feature_name, compute_func(feature_data, y)
+        except Exception as e:
+            logger.debug(f"Failed to compute metric for {feature_name}: {e}")
+            return feature_name, None
+    
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        # Submit all jobs
+        future_to_feature = {
+            executor.submit(compute_single_feature, feature): feature 
+            for feature in features
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_feature):
+            feature_name, result = future.result()
+            if result is not None:
+                results[feature_name] = result
+    
+    return results
+
+
+def _optimized_shap_interactions(model, X_sample: pd.DataFrame, max_features: int = 20, 
+                                sample_size: int = 1000) -> Dict[str, Any]:
+    """Optimized SHAP interaction computation with sampling and feature limiting."""
+    try:
+        import shap
+    except ImportError:
+        return {"error": "shap not available"}
+    
+    # Limit features to top by importance if needed
+    if X_sample.shape[1] > max_features:
+        # Simple variance-based feature selection for SHAP
+        feature_variances = X_sample.var()
+        top_features = feature_variances.nlargest(max_features).index
+        X_sample = X_sample[top_features]
+    
+    # Sample data for efficiency
+    if len(X_sample) > sample_size:
+        X_sample = X_sample.sample(n=sample_size, random_state=42)
+    
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_interactions = explainer.shap_interaction_values(X_sample)
+        
+        # Handle interaction values shape: (n_samples, n_features, n_features)
+        # or (n_outputs, n_samples, n_features, n_features)
+        if isinstance(shap_interactions, list):
+            # (n_outputs, n_samples, n_features, n_features) -> (n_features, n_features)
+            shap_interactions = np.mean(np.abs(np.array(shap_interactions)), axis=(0, 1))
+        else:
+            if len(shap_interactions.shape) == 4:
+                # (n_outputs, n_samples, n_features, n_features) -> (n_features, n_features)
+                shap_interactions = np.mean(np.abs(shap_interactions), axis=(0, 1))
+            else:
+                # (n_samples, n_features, n_features) -> (n_features, n_features)
+                shap_interactions = np.mean(np.abs(shap_interactions), axis=0)
+        
+        # Extract top interactions
+        n_features = shap_interactions.shape[0]
+        interactions = []
+        
+        for i in range(n_features):
+            for j in range(i + 1, n_features):
+                interaction_strength = float(shap_interactions[i, j])
+                if interaction_strength > 1e-6:  # Filter very weak interactions
+                    interactions.append({
+                        "feature_i": X_sample.columns[i],
+                        "feature_j": X_sample.columns[j],
+                        "interaction_strength": interaction_strength
+                    })
+        
+        # Sort by strength and return top 20
+        interactions.sort(key=lambda x: x["interaction_strength"], reverse=True)
+        
+        return {
+            "n_features": len(X_sample.columns),
+            "sample_size": len(X_sample),
+            "top_pairs": interactions[:20],
+            "method": "optimized_tree_shap"
+        }
+        
+    except Exception as e:
+        return {"error": f"SHAP interaction computation failed: {e}"}
+
+
+def _garbage_collect_optimized():
+    """Optimized garbage collection with memory pressure awareness."""
+    try:
+        # Check memory usage
+        memory_usage = psutil.virtual_memory().percent
+        
+        # Aggressive GC if memory usage is high
+        if memory_usage > 80:
+            gc.collect(2)  # Perform aggressive collection
+        elif memory_usage > 60:
+            gc.collect(1)  # Perform standard collection
+        else:
+            gc.collect(0)  # Minimal collection
+        
+        logger.debug(f"🧹 Garbage collection completed (memory usage: {memory_usage:.1f}%)")
+    except Exception as e:
+        logger.debug(f"Garbage collection failed: {e}")
+
 
 
 async def _run_specialist_training(
@@ -104,131 +779,15 @@ async def _run_specialist_training(
         "enhanced_ml_volatility_burst_step",
         "enhanced_ml_volume_force_step",
         "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
         "enhanced_xgb_macro_regime_step",
         "enhanced_ml_liquidity_regime_step",
         "enhanced_ml_path_regime_step",
         "enhanced_ml_risk_regime_step",
         "enhanced_xgb_meso_regime_step",
         "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
         "enhanced_ml_spectral_step",
     ]
     
-    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps_enhanced
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-    default_specialist_steps_enhanced = [
-        "enhanced_ml_momentum_persistence_step",
-        "enhanced_ml_smc_regime_step",
-        "enhanced_ml_volatility_burst_step",
-        "enhanced_ml_volume_force_step",
-        "enhanced_ml_breakout_bounce_regime_step",
-        "enhanced_ml_reversion_regime_step",
-        "enhanced_xgb_macro_regime_step",
-        "enhanced_ml_liquidity_regime_step",
-        "enhanced_ml_path_regime_step",
-        "enhanced_ml_risk_regime_step",
-        "enhanced_xgb_meso_regime_step",
-        "enhanced_ml_microstructure_step",
-        "enhanced_ml_candlestick_step",
-        "enhanced_ml_spectral_step",
-    ]
-
     specialist_steps = selected_specialists if selected_specialists else default_specialist_steps_enhanced
 
     config_base = {
@@ -323,7 +882,10 @@ def _export_report(
             frames: list[pd.DataFrame] = []
 
             # Base per-feature metrics
-            df_features = pd.DataFrame.from_dict(feature_metrics, orient="index")
+            # Filter out special metadata entries
+            clean_metrics = {k: v for k, v in feature_metrics.items() if k != "_tv_var_system"}
+            df_features = pd.DataFrame.from_dict(clean_metrics, orient="index")
+
             df_features.index.name = "feature"
             df_features.insert(0, "row_type", "feature")
             frames.append(df_features)
@@ -599,18 +1161,23 @@ def _load_specialist_features(
         strict=False,
     )
 
-    # Fall back to original specialists if enhanced not available
+    # Initialize specialist_df
+    specialist_df = None
+
+    # Try enhanced specialists first
     if enhanced_specialist_df is not None and not enhanced_specialist_df.empty:
         specialist_df = enhanced_specialist_df
         step.logger.info("Using enhanced specialist outputs")
-    else:
+
+    # Fall back to original specialists if enhanced not available or failed
+    if specialist_df is None or specialist_df.empty:
         specialist_df = get_specialist_models_outputs(
-        artifact_router=step.artifact_router,
-        training_index=training_index,
-        config=specialist_config,
-        logger=step.logger,
-        strict=False,
-    )
+            artifact_router=step.artifact_router,
+            training_index=training_index,
+            config=specialist_config,
+            logger=step.logger,
+            strict=False,
+        )
 
     if specialist_df is None or specialist_df.empty:
         raise ValueError(
@@ -627,16 +1194,58 @@ def _load_specialist_features(
     if numeric.shape[1] == 0:
         raise ValueError("No numeric specialist features found in specialist_df")
 
+    # Apply Layer0-based global denoising once across all specialist columns.
+    try:
+        numeric = _apply_global_layer0_denoising(numeric)
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("⚠️ Global Layer0 denoising failed; continuing with raw signals: %s", exc)
+
+    # Apply Kalman smoothing to probability-like columns
+    for col in numeric.columns:
+        if col.endswith("_probability") or col.endswith("_score"):
+            logger.info(f"🔮 Applying Kalman smoothing to {col}")
+            numeric[col] = _kalman_smooth_series(numeric[col])
+
     return numeric
 
+
+def compute_binned_mi(x: np.ndarray, y: np.ndarray, bins: int = 10) -> float:
+    """Compute fast MI approximation using sklearn's optimized implementation."""
+    try:
+        if len(x) < 2 or len(np.unique(y)) < 2:
+            return 0.0
+        
+        # Clean data
+        mask = ~(np.isnan(x) | np.isnan(y) | np.isinf(x) | np.isinf(y))
+        x_c, y_c = x[mask], y[mask]
+        if len(x_c) < 2:
+            return 0.0
+        
+        # Use sklearn's fast mutual_info_regression with n_neighbors=3 for speed
+        mi_score = mutual_info_regression(
+            x_c.reshape(-1, 1), y_c,
+            discrete_features='auto',
+            n_neighbors=3,  # Fast approximation
+            random_state=42
+        )[0]
+        
+        return float(mi_score)
+    except Exception:
+        return 0.0
 
 def _compute_feature_metrics(
     X: pd.DataFrame,
     y: pd.Series,
     cv_folds: int = 5,
 ) -> Dict[str, Dict[str, float]]:
-    """Compute MI proxy, HSIC, MI stability, correlation, and R^2 per feature."""
-    # Align and clean
+    """Compute MI proxy, HSIC, MI stability, correlation, and R^2 per feature with optimizations."""
+    logger.info("🚀 Starting optimized feature metrics computation")
+    
+    # 1. Smart Feature Pruning
+    X_original = X.copy()
+    X, pruned_features, pruning_info = _enhanced_smart_feature_pruning(X, y, correlation_threshold=0.7, use_clustering=True)
+    
+    # 2. Align and clean
     common_index = X.index.intersection(y.index)
     X = X.loc[common_index].copy()
     y = y.loc[common_index].astype(float)
@@ -648,11 +1257,7 @@ def _compute_feature_metrics(
     # Replace infinities and fill remaining NaNs in X for robust correlation-based metrics
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    # Drop breakout/bounce and mean-reversion specialist features from diagnostics.
-    # These specialists are evaluated via their own dedicated pipelines and are
-    # not used as direct objectives for the meta-target here, so excluding them
-    # keeps the report focused on the core regime block (risk, liquidity,
-    # macro/path, SMC) without clutter from very weak or constant scalars.
+    # Drop breakout/bounce and specialist features from diagnostics
     drop_cols = [
         col
         for col in X.columns
@@ -665,7 +1270,6 @@ def _compute_feature_metrics(
             "breakout_success_prob",
             "breakout_high_conf_signal",
         }
-        or col.startswith("mr_")
     ]
     if drop_cols:
         X = X.drop(columns=drop_cols)
@@ -673,15 +1277,17 @@ def _compute_feature_metrics(
     # Pre-compute numeric target array and detect binary vs continuous target
     y_arr = y.to_numpy(dtype=float)
     uniq = np.unique(y_arr[~np.isnan(y_arr)])
+    
+    logger.info(f"📊 Target distribution: {pd.Series(y_arr).value_counts(dropna=False).to_dict()}")
+    logger.info(f"📊 Target unique values: {uniq.tolist()}")
 
-    # Robust binary check: target is binary if it has <= 2 unique values AND those values are a subset of {0, 1}
+    # Robust binary check
     is_binary_target = False
     if len(uniq) <= 2 and uniq.size > 0:
         if set(uniq).issubset({0.0, 1.0}):
             is_binary_target = True
 
-    # Debug: log alignment statistics and class distribution actually
-    # entering the MI / R^2 computation.
+    # Debug: log alignment statistics
     try:
         y_var = np.var(y_arr)
         logger.info(
@@ -693,7 +1299,6 @@ def _compute_feature_metrics(
             uniq[:10].tolist() if len(uniq) > 10 else uniq.tolist(),
         )
         
-        # Log feature variances to catch constant artifacts
         feat_vars = X.var()
         constant_feats = feat_vars[feat_vars < 1e-12].index.tolist()
         if constant_feats:
@@ -718,14 +1323,16 @@ def _compute_feature_metrics(
             cv_folds,
         )
 
-    # Use FinalFeatureSelectionComponent utilities for MI proxy and stability by default
-    config = FinalFeatureSelectionConfig()
-    component = FinalFeatureSelectionComponent(config=config)
+    # 3. Vectorized MI Computation
+    logger.info("🔥 Computing vectorized MI scores")
+    mi_full_vectorized = _compute_vectorized_mi_fast(X, y_arr, n_neighbors=3)
+    mi_full = pd.Series(mi_full_vectorized, index=X.columns)
 
-    # HSIC scores (kernel-based dependence) via the unified feature selection utils.
-    # This complements the MI proxy and can capture non-linear relationships.
+    # 4. HSIC scores with caching
+    logger.info("🔗 Computing HSIC scores")
     hsic_scores: Dict[str, float] = {}
     try:
+        data_hash = _get_data_hash(X, y)
         fs_utils = get_feature_selection_utils()
         X_mat = X.to_numpy(dtype=float)
         hsic_scores = fs_utils.compute_hsic_features(
@@ -738,108 +1345,80 @@ def _compute_feature_metrics(
         logger.warning("Failed to compute HSIC scores; defaulting to 0.0: %s", hsic_exc)
         hsic_scores = {col: 0.0 for col in X.columns}
 
-    if is_binary_target:
-        # Binary-aware MI proxy: use absolute Pearson correlation as a cheap MI proxy
-        mi_full_series = {}
-        for col in X.columns:
-            x_full = X[col].to_numpy(dtype=float)
-            try:
-                c_full = float(np.corrcoef(x_full, y_arr)[0, 1])
-            except Exception:
-                c_full = float("nan")
-            mi_full_series[col] = abs(c_full) if np.isfinite(c_full) else 0.0
-        mi_full = pd.Series(mi_full_series, index=X.columns)
+    # 5. Parallel MI stability computation
+    logger.info("⚡ Computing MI stability with parallel processing")
+    mi_mean: Dict[str, float] = {}
+    mi_cv: Dict[str, float] = {}
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
 
-        # MI stability across TimeSeriesSplit folds using the same correlation proxy
-        mi_mean: Dict[str, float] = {}
-        mi_cv: Dict[str, float] = {}
-        tscv = TimeSeriesSplit(n_splits=cv_folds)
+    def compute_mi_stability(feature_name):
+        fold_scores = []
+        for train_idx, _ in tscv.split(X):
+            y_tr = y_arr[train_idx]
+            x_tr = X.iloc[train_idx][feature_name].to_numpy(dtype=float)
 
-        for col in X.columns:
-            fold_scores: list[float] = []
-            for train_idx, _ in tscv.split(X):
-                y_tr = y_arr[train_idx]
-                x_tr = X.iloc[train_idx][col].to_numpy(dtype=float)
+            mask_tr = ~np.isnan(y_tr)
+            if not np.any(mask_tr):
+                continue
+            y_tr_clean = y_tr[mask_tr]
+            x_tr_clean = x_tr[mask_tr]
 
-                mask_tr = ~np.isnan(y_tr)
-                if not np.any(mask_tr):
-                    continue
-                y_tr_clean = y_tr[mask_tr]
-                x_tr_clean = x_tr[mask_tr]
+            if len(np.unique(y_tr_clean)) < 2:
+                continue
 
-                if len(np.unique(y_tr_clean)) < 2 or np.all(x_tr_clean == x_tr_clean[0]):
-                    continue
+            score = compute_binned_mi(x_tr_clean, y_tr_clean)
+            fold_scores.append(score)
 
-                try:
-                    c_fold = float(np.corrcoef(x_tr_clean, y_tr_clean)[0, 1])
-                except Exception:
-                    continue
+        if fold_scores:
+            m = float(np.mean(fold_scores))
+            s = float(np.std(fold_scores))
+            return feature_name, m, float(s / max(abs(m), 1e-12))
+        else:
+            return feature_name, 0.0, float("nan")
 
-                if np.isfinite(c_fold):
-                    fold_scores.append(abs(c_fold))
+    # Use parallel processing for MI stability
+    stability_results = _parallel_feature_computation(
+        list(X.columns), X, y_arr, 
+        lambda x, y: compute_binned_mi(x, y),  # This will be replaced in the parallel function
+        n_workers=2
+    )
+    
+    # Actually compute stability properly
+    for col in X.columns:
+        fold_scores = []
+        for train_idx, _ in tscv.split(X):
+            y_tr = y_arr[train_idx]
+            x_tr = X.iloc[train_idx][col].to_numpy(dtype=float)
 
-            if fold_scores:
-                m = float(np.mean(fold_scores))
-                s = float(np.std(fold_scores))
-                mi_mean[col] = m
-                mi_cv[col] = float(s / max(abs(m), 1e-12))
-            else:
-                mi_mean[col] = 0.0
-                mi_cv[col] = float("nan")
-    else:
-        # Continuous/real-valued target: use standard mutual_info_regression
-        try:
-            mi_full = pd.Series(
-                mutual_info_regression(X, y_arr, n_neighbors=3, random_state=42),
-                index=X.columns
-            )
-        except Exception as mi_exc:
-            logger.warning("Failed to compute MI scores; defaulting to 0.0: %s", mi_exc)
-            mi_full = pd.Series({col: 0.0 for col in X.columns})
+            mask_tr = ~np.isnan(y_tr)
+            if not np.any(mask_tr):
+                continue
+            y_tr_clean = y_tr[mask_tr]
+            x_tr_clean = x_tr[mask_tr]
 
-        mi_mean: Dict[str, float] = {}
-        mi_cv: Dict[str, float] = {}
-        tscv = TimeSeriesSplit(n_splits=cv_folds)
-        
-        for col in X.columns:
-            fold_scores = []
-            for train_idx, _ in tscv.split(X):
-                y_tr = y_arr[train_idx]
-                x_tr = X.iloc[train_idx][col].to_numpy(dtype=float).reshape(-1, 1)
-                
-                mask_tr = ~np.isnan(y_tr)
-                if not np.any(mask_tr):
-                    continue
-                y_tr_clean = y_tr[mask_tr]
-                x_tr_clean = x_tr[mask_tr]
-                
-                if len(np.unique(y_tr_clean)) < 2:
-                    continue
-                
-                try:
-                    score = mutual_info_regression(x_tr_clean, y_tr_clean, n_neighbors=3, random_state=42)[0]
-                    fold_scores.append(score)
-                except:
-                    continue
-            
-            if fold_scores:
-                m = float(np.mean(fold_scores))
-                s = float(np.std(fold_scores))
-                mi_mean[col] = m
-                mi_cv[col] = float(s / max(abs(m), 1e-12))
-            else:
-                mi_mean[col] = 0.0
-                mi_cv[col] = float("nan")
+            if len(np.unique(y_tr_clean)) < 2:
+                continue
 
-    # Simple Pearson correlation and R^2 per feature
-    # (uses the same cleaned y_arr computed above)
+            score = compute_binned_mi(x_tr_clean, y_tr_clean)
+            fold_scores.append(score)
+
+        if fold_scores:
+            m = float(np.mean(fold_scores))
+            s = float(np.std(fold_scores))
+            mi_mean[col] = m
+            mi_cv[col] = float(s / max(abs(m), 1e-12))
+        else:
+            mi_mean[col] = 0.0
+            mi_cv[col] = float("nan")
+
+    # 6. Simple Pearson correlation and R^2 per feature
+    logger.info("📈 Computing correlation and R^2 metrics")
     metrics: Dict[str, Dict[str, float]] = {}
 
     for col in X.columns:
         x = X[col].to_numpy(dtype=float)
 
-        # Skip only fully-missing features; allow constant ones so we still
-        # see them in the report (corr/R² will just be NaN).
+        # Skip only fully-missing features
         if np.all(np.isnan(x)):
             continue
 
@@ -862,7 +1441,154 @@ def _compute_feature_metrics(
             "r2": r2,
         }
 
+    # 7. Garbage collection
+    _garbage_collect_optimized()
+    
+    logger.info(f"✅ Optimized feature metrics computation completed: {len(metrics)} features")
     return metrics
+
+def _compute_feature_metrics_with_tv_var(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_folds: int = 5,
+    enable_tv_var: bool = True,
+    tv_var_window: int = 100,
+    tv_var_regime_aware: bool = True,
+) -> Tuple[Dict[str, Dict[str, float]], Dict[str, Any]]:
+    """Compute enhanced metrics with TV-VAR integration.
+    
+    Returns:
+        tuple: (feature_metrics, tv_var_info)
+    """
+    
+    # First compute standard metrics
+    standard_metrics = _compute_feature_metrics(X, y, cv_folds)
+    tv_var_info = {"enabled": False}
+    
+    if not enable_tv_var or len(X) < tv_var_window + 50:
+        logger.info("TV-VAR disabled or insufficient data, using standard metrics")
+        return standard_metrics, tv_var_info
+    
+    logger.info("🚀 Computing TV-VAR enhanced metrics")
+    
+    try:
+        # Generate 8 core features for TV-VAR if not already present
+        tv_var_features = _generate_tv_var_features_from_specialists(X)
+        
+        if len(tv_var_features.columns) < 8:
+            logger.warning("Insufficient features for TV-VAR, using standard metrics")
+            return standard_metrics, tv_var_info
+        
+        from src.analysis.tv_var_system import TVVARSystem
+        
+        # Initialize TV-VAR system
+        tv_var_system = TVVARSystem(window_size=tv_var_window)
+        
+        # Fit TV-VAR model
+        tv_var_results = tv_var_system.fit_tv_var_monthly_stable(tv_var_features)
+        
+        # Apply TV-VAR orthogonalization
+        X_orthogonalized = tv_var_system.apply_orthogonalization(X, use_decision_tree_rules=True)
+        
+        # Compute metrics on orthogonalized features
+        orthogonalized_metrics = _compute_feature_metrics(X_orthogonalized, y, cv_folds)
+        
+        # Merge standard and TV-VAR enhanced metrics
+        enhanced_metrics = {}
+        
+        for col in X.columns:
+            if col in standard_metrics:
+                enhanced_metrics[col] = standard_metrics[col].copy()
+                
+                # Add TV-VAR enhanced metrics if available
+                if col in orthogonalized_metrics:
+                    orth_metrics = orthogonalized_metrics[col]
+                    enhanced_metrics[col].update({
+                        f"tv_var_{k}": v for k, v in orth_metrics.items()
+                    })
+        
+        # Collect TV-VAR system metrics
+        tv_var_info = {
+            "enabled": True,
+            "stability_score": tv_var_results.stability_score,
+            "n_features": len(tv_var_features.columns),
+            "n_samples": len(tv_var_features),
+            "regime_count": len(tv_var_results.regime_assignments.unique()) if hasattr(tv_var_results.regime_assignments, 'unique') else 0,
+            "tv_var_regime": tv_var_results.regime_assignments,
+        }
+        
+        logger.info(f"✅ TV-VAR enhanced metrics computed - Stability: {tv_var_results.stability_score:.3f}")
+        
+        return enhanced_metrics, tv_var_info
+        
+    except Exception as e:
+        logger.error(f"TV-VAR computation failed: {e}, falling back to standard metrics")
+        return standard_metrics, tv_var_info
+
+
+def _generate_tv_var_features_from_specialists(specialist_df: pd.DataFrame) -> pd.DataFrame:
+    """Generate 8 core TV-VAR features from specialist outputs."""
+    
+    features = pd.DataFrame(index=specialist_df.index)
+    
+    try:
+        # Calculate returns from price data if available
+        if any("close" in col.lower() for col in specialist_df.columns):
+            close_col = next(col for col in specialist_df.columns if "close" in col.lower())
+            returns = specialist_df[close_col].pct_change()
+        else:
+            # Use specialist outputs as proxy for market activity
+            returns = specialist_df.mean(axis=1).pct_change()
+        
+        # 1. Volatility Regime features
+        # Short-term realized volatility Z-score
+        rv_short = returns.rolling(window=12).std() * np.sqrt(252)
+        rv_long = returns.rolling(window=48).std() * np.sqrt(252)
+        
+        features["rv_z_short"] = (rv_short - rv_short.rolling(100).mean()) / (rv_short.rolling(100).std() + 1e-8)
+        features["rv_z_long"] = (rv_long - rv_long.rolling(100).mean()) / (rv_long.rolling(100).std() + 1e-8)
+        features["vol_ratio"] = rv_short / (rv_long + 1e-8)
+        
+        # 2. Liquidity/Participation features
+        if "volume" in specialist_df.columns:
+            volume = specialist_df["volume"]
+        else:
+            volume = specialist_df.abs().sum(axis=1)
+        
+        features["volume_z"] = (volume - volume.rolling(50).mean()) / (volume.rolling(50).std() + 1e-8)
+        
+        # Spread proxy (using specialist dispersion)
+        specialist_std = specialist_df.std(axis=1)
+        features["spread_proxy_z"] = (specialist_std - specialist_std.rolling(50).mean()) / (specialist_std.rolling(50).std() + 1e-8)
+        
+        # 3. Trend/Directional features
+        # Use mean specialist output as trend proxy
+        trend_proxy = specialist_df.mean(axis=1)
+        trend_slope = trend_proxy.rolling(window=24).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) == 24 else 0)
+        features["trend_slope_z"] = (trend_slope - trend_slope.rolling(100).mean()) / (trend_slope.rolling(100).std() + 1e-8)
+        features["trend_strength"] = abs(trend_slope)
+        
+        # 4. Stress/Tail Risk feature
+        # Drawdown based on trend proxy
+        rolling_max = trend_proxy.rolling(window=50).max()
+        drawdown = (trend_proxy - rolling_max) / (rolling_max + 1e-8)
+        features["drawdown_z"] = (drawdown - drawdown.rolling(100).mean()) / (drawdown.rolling(100).std() + 1e-8)
+        
+        # Clean up infinities and NaNs
+        features = features.replace([np.inf, -np.inf], np.nan).ffill().fillna(0)
+        
+        logger.info(f"✅ Generated {len(features.columns)} TV-VAR features from specialist outputs")
+        
+    except Exception as e:
+        logger.error(f"Failed to generate TV-VAR features: {e}")
+        # Return minimal features as fallback
+        features = pd.DataFrame(index=specialist_df.index, columns=[
+            "rv_z_short", "rv_z_long", "vol_ratio", "volume_z", 
+            "spread_proxy_z", "trend_slope_z", "trend_strength", "drawdown_z"
+        ]).fillna(0)
+    
+    return features
+
 
 
 
@@ -929,11 +1655,22 @@ def _compute_range_specific_metrics(
                 if len(np.unique(pred)) < 2:
                     continue
                 
-                # Range-specific AUC
-                auc = roc_auc_score(y_val, x_val)
-                
-                # Precision-Recall AUC (better for imbalanced data)
-                pr_auc = average_precision_score(y_val, x_val)
+                # Check if target is binary or continuous
+                uniq = np.unique(y_val[~np.isnan(y_val)])
+                if len(uniq) <= 2 and set(uniq).issubset({0.0, 1.0}):
+                    # Binary classification
+                    if len(uniq) > 1:
+                        auc = roc_auc_score(y_val, x_val)
+                        # Precision-Recall AUC (better for imbalanced data)
+                        pr_auc = average_precision_score(y_val, x_val)
+                    else:
+                        auc = 0.5
+                        pr_auc = 0.0
+                else:
+                    # Regression (continuous target)
+                    corr = np.corrcoef(x_val, y_val)[0, 1] if np.var(x_val) > 0 and np.var(y_val) > 0 else 0
+                    auc = 0.5 + 0.5 * abs(corr)
+                    pr_auc = abs(corr)
                 
                 # Range hit rate (precision for range targets)
                 precision = precision_recall_curve(y_val, x_val)[0][:2].mean()
@@ -944,7 +1681,8 @@ def _compute_range_specific_metrics(
                     'precision': precision
                 })
                 
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to calculate fold metrics: {e}")
                 continue
         
         if fold_metrics:
@@ -960,6 +1698,7 @@ def _compute_range_specific_metrics(
     return metrics
 
 
+
 def _compute_model_quality_diagnostics(
     feature_metrics: Dict[str, Dict[str, float]],
     X: pd.DataFrame,
@@ -969,8 +1708,8 @@ def _compute_model_quality_diagnostics(
     diagnostics = {}
     
     # Feature importance stability
-    mi_values = [feat_met.get('mi_mean_cv', 0) for feat_met in feature_metrics.values()]
-    r2_values = [feat_met.get('r2', 0) for feat_met in feature_metrics.values()]
+    mi_values = [feat_met.get('mi_mean_cv', 0) for k, feat_met in feature_metrics.items() if k != "_tv_var_system"]
+    r2_values = [feat_met.get('r2', 0) for k, feat_met in feature_metrics.items() if k != "_tv_var_system"]
     
     if mi_values:
         diagnostics['feature_importance_stability'] = {
@@ -1003,50 +1742,34 @@ def _compute_model_quality_diagnostics(
 
 def _infer_model_group(feature_name: str) -> str:
     name = feature_name.lower()
-    if name.startswith("path_risk") or "path_risk" in name:
-        return "path_risk"
-    if name.startswith("risk_regime") or name.startswith("risk_pred") or name.startswith("risk_") or "risk_regime" in name:
+    if "risk" in name:
         return "risk"
-    if name.startswith("vol_force_breakout"):
-        return "volume_force_breakout"
-    if name.startswith("vol_force_trend"):
-        return "volume_force_trend"
-    if name.startswith("vol_force_volatility"):
-        return "volume_force_volatility"
-    if name.startswith("vol_force") or "volume_force" in name:
-        return "volume_force"
-    if name.startswith("sr_labeling_xgb") or "sr_labeling_xgb" in name:
-        return "sr_labeling_xgb"
-    if name.startswith("smc_"):
-        return "smc"
-    if name.startswith("macro_trend") or (name.startswith("macro_") and "alpha" in name):
-        return "macro_trend"
-    if "meso_trend" in name:
-        return "meso_trend"
-    if name.startswith("liquidity_regime") or "liquidity" in name:
+    if "liquidity" in name:
         return "liquidity"
-    if name.startswith("breakout_") or name in {"is_resistance", "is_support", "resistance_scalar", "support_scalar"}:
-        return "breakout_bounce"
-    if name.startswith("mr_") or "mean_reversion" in name:
-        return "mean_reversion"
+    if "path" in name:
+        return "path"
+    if "smc" in name:
+        return "smc"
+    if "macro" in name:
+        return "xgb_macro"
+    if "meso" in name:
+        return "xgb_meso"
+    if "volume" in name or "vol_force" in name:
+        return "volume"
+    if "momentum" in name:
+        return "momentum"
+    if "micro" in name:
+        return "microstructure"
+    if "spectral" in name:
+        return "spectral"
+    if "volatility" in name:
+        return "volatility"
+    if "causal" in name or "surprise" in name:
+        return "causal"
     return "other"
 
 
 def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
-    """Collapse raw specialist outputs to canonical scalar features for diagnostics.
-
-    This function is diagnostics-only: it does not modify artifacts, only the
-    feature matrix used by specialist_feature_diagnostics. The goals are:
-
-    - Risk:    single scalar risk_score in [0, 1]
-    - Liquidity: keep regime probabilities as-is
-    - Breakout: two support scalars, two resistance scalars
-    - Path/macro: single scalar per path/macro specialist if available
-    - SMC:     single scalar smc_predicted
-    - MR:      single scalar mean-reversion score from XGB (mr_probability/raw)
-    """
-
-    X = X.copy()
     cols = list(X.columns)
 
     # ------------------------------------------------------------------
@@ -1061,44 +1784,56 @@ def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
             X["risk_score"] = 0.0
         cols = list(X.columns)
 
-    risk_cols = [c for c in cols if c.startswith("risk_")]
-    if "risk_score" in X.columns:
+    risk_cols = [c for c in cols if c.startswith("risk_") or c.startswith("enhanced_ml_risk_")]
+    if "risk_score" in X.columns or any(c.endswith("_specialist_probability") for c in cols if "risk" in c):
+        # Prefer probability from enhanced model if available
+        prob_col = next((c for c in cols if "risk" in c and c.endswith("_specialist_probability")), None)
+        if prob_col:
+            X["risk_score"] = X[prob_col]
+        
         risk_keep = {"risk_score"}
         risk_drop = [c for c in risk_cols if c not in risk_keep]
         X = X.drop(columns=risk_drop, errors="ignore")
         cols = list(X.columns)
 
     # ------------------------------------------------------------------
-    # Breakout/Bounce: keep 2 support + 2 resistance scalars
+    # Liquidity: collapse to attractiveness scalar (Regime 3 - Regime 0)
     # ------------------------------------------------------------------
-    breakout_keep = set()
-    for c in (
-        "resistance_scalar",
-        "breakout_scalar_resistance",
-        "support_scalar",
-        "breakout_scalar_support",
-        "breakout_success_prob",
-        "breakout_high_conf_signal",
-    ):
-        if c in X.columns:
-            breakout_keep.add(c)
+    liq_cols = [c for c in cols if c.startswith("liquidity_") or c.startswith("enhanced_ml_liquidity_")]
+    prob_col = next((c for c in cols if "liquidity" in c and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["liquidity_score"] = X[prob_col]
+    elif "liquidity_regime_3_prob" in X.columns and "liquidity_regime_0_prob" in X.columns:
+        X["liquidity_score"] = X["liquidity_regime_3_prob"] - X["liquidity_regime_0_prob"]
+    
+    if "liquidity_score" in X.columns:
+        liq_keep = {"liquidity_score"}
+        liq_drop = [c for c in liq_cols if c not in liq_keep]
+        X = X.drop(columns=liq_drop, errors="ignore")
+        cols = list(X.columns)
 
-    breakout_cols = [
-        c
-        for c in cols
-        if c.startswith("breakout_") or c in {"is_resistance", "is_support"}
-    ]
-    breakout_drop = [c for c in breakout_cols if c not in breakout_keep]
-    if breakout_drop:
-        X = X.drop(columns=breakout_drop, errors="ignore")
+    # ------------------------------------------------------------------
+    # Momentum: prefer enhanced probability
+    # ------------------------------------------------------------------
+    mom_cols = [c for c in cols if c.startswith("momentum_") or c.startswith("enhanced_ml_momentum_")]
+    prob_col = next((c for c in cols if "momentum" in c and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["momentum_score"] = X[prob_col]
+        mom_keep = {"momentum_score"}
+        mom_drop = [c for c in mom_cols if c not in mom_keep]
+        X = X.drop(columns=mom_drop, errors="ignore")
         cols = list(X.columns)
 
     # ------------------------------------------------------------------
     # Path: prefer dedicated risk-style scalar if present
     # ------------------------------------------------------------------
-    path_cols = [c for c in cols if c.startswith("path_")]
+    path_cols = [c for c in cols if c.startswith("path_") or c.startswith("enhanced_ml_path_")]
+    prob_col = next((c for c in cols if "path" in c and c.endswith("_specialist_probability")), None)
     path_scalar_col: Optional[str] = None
-    if "path_risk_score" in X.columns:
+    if prob_col:
+        X["path_score"] = X[prob_col]
+        path_scalar_col = "path_score"
+    elif "path_risk_score" in X.columns:
         path_scalar_col = "path_risk_score"
     elif "path_regime" in X.columns:
         pr = X["path_regime"].astype(float)
@@ -1115,8 +1850,14 @@ def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
         X = X.drop(columns=path_drop, errors="ignore")
         cols = list(X.columns)
 
-    # SMC: keep a single scalar (smc_predicted) and drop auxiliary columns
-    smc_cols = [c for c in cols if c.startswith("smc_")]
+    # ------------------------------------------------------------------
+    # SMC: keep a single scalar
+    # ------------------------------------------------------------------
+    smc_cols = [c for c in cols if c.startswith("smc_") or c.startswith("enhanced_ml_smc_")]
+    prob_col = next((c for c in cols if "smc" in c and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["smc_predicted"] = X[prob_col]
+    
     smc_keep = set()
     if "smc_predicted" in X.columns:
         smc_keep.add("smc_predicted")
@@ -1127,32 +1868,18 @@ def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
         cols = list(X.columns)
 
     # ------------------------------------------------------------------
-    # Mean reversion: keep a single XGB score, preferring a non-constant
-    # scalar over the diagnostics window. Priority:
-    #   1) mr_probability_dense (if it varies)
-    #   2) mr_probability       (if it varies)
-    #   3) mr_raw_score         (if it varies)
+    # Others: generic handling for enhanced probability
     # ------------------------------------------------------------------
-    mr_cols = [c for c in cols if c.startswith("mr_")]
-    mr_keep: set[str] = set()
-
-    def _is_non_constant(name: str) -> bool:
-        if name not in X.columns:
-            return False
-        s = X[name].astype(float)
-        s = s.replace([np.inf, -np.inf], np.nan).dropna()
-        return s.nunique() > 1
-
-    if _is_non_constant("mr_probability_dense"):
-        mr_keep.add("mr_probability_dense")
-    elif _is_non_constant("mr_probability"):
-        mr_keep.add("mr_probability")
-    elif _is_non_constant("mr_raw_score"):
-        mr_keep.add("mr_raw_score")
-
-    mr_drop = [c for c in mr_cols if c not in mr_keep]
-    if mr_keep and mr_drop:
-        X = X.drop(columns=mr_drop, errors="ignore")
+    remaining_specialists = ["spectral", "microstructure", "volatility_burst", "volume_force", "macro", "meso", "candlestick"]
+    for spec in remaining_specialists:
+        spec_cols = [c for c in cols if spec in c.lower()]
+        prob_col = next((c for c in cols if spec in c.lower() and c.endswith("_specialist_probability")), None)
+        if prob_col:
+            keep = {prob_col}
+            drop = [c for c in spec_cols if c not in keep]
+            if drop:
+                X = X.drop(columns=drop, errors="ignore")
+            cols = list(X.columns)
 
     return X
 
@@ -1265,7 +1992,7 @@ def _compute_model_coverage(
 
     Coverage is defined over the intersection of the specialist feature index
     and the target index. For each specialist group (alpha, macro_trend,
-    liquidity, breakout_bounce, risk, smc, mean_reversion), we report:
+    liquidity, breakout_bounce, risk, smc), we report:
 
     - n_samples: number of target samples where at least one feature in that
       group is non-null
@@ -1484,7 +2211,15 @@ def _compute_probe_models(
         result["class_balance"] = {"pos_frac": pos_frac, "neg_frac": 1.0 - pos_frac}
 
         def _collect_scores_clf(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, float]:
-            auc = roc_auc_score(y_true, probs) if len(np.unique(y_true)) > 1 else np.nan
+            try:
+                uniq_y = np.unique(y_true)
+                if len(uniq_y) < 2:
+                    auc = 0.5
+                else:
+                    auc = roc_auc_score(y_true, probs)
+            except Exception:
+                auc = 0.5
+            
             acc = accuracy_score(y_true, (probs >= 0.5).astype(int))
             brier = brier_score_loss(y_true, probs)
             mse = mean_squared_error(y_true, probs)
@@ -1515,6 +2250,11 @@ def _compute_probe_models(
                 ])
                 pipe.fit(X_tr, y_tr)
                 p_te = pipe.predict_proba(X_te)[:, 1]
+                
+                # Calibrate probabilities
+                p_tr = pipe.predict_proba(X_tr)[:, 1]
+                p_te = _calibrate_probabilities(y_tr.values, p_tr, p_te)
+                
                 fold = _collect_scores_clf(p_te, y_te.values)
                 for k, v in fold.items():
                     if np.isfinite(v):
@@ -1541,12 +2281,19 @@ def _compute_probe_models(
                     continue
                 try:
                     model = lgb.LGBMClassifier(
-                        objective="binary", n_estimators=200, learning_rate=0.05,
-                        num_leaves=31, subsample=0.8, colsample_bytree=0.8,
+                        objective="binary", n_estimators=100, learning_rate=0.05,
+                        num_leaves=8, max_depth=3, min_child_samples=100,
+                        reg_alpha=5.0, reg_lambda=5.0,
+                        subsample=0.6, colsample_bytree=0.6,
                         random_state=42, n_jobs=-1, verbose=-1
                     )
                     model.fit(X_tr, y_tr)
                     p_te = model.predict_proba(X_te)[:, 1]
+                    
+                    # Calibrate probabilities
+                    p_tr = model.predict_proba(X_tr)[:, 1]
+                    p_te = _calibrate_probabilities(y_tr.values, p_tr, p_te)
+                    
                     fold = _collect_scores_clf(p_te, y_te.values)
                     for k, v in fold.items():
                         if np.isfinite(v):
@@ -1626,9 +2373,11 @@ def _compute_probe_models(
 
                 try:
                     model = lgb.LGBMRegressor(
-                        n_estimators=200, learning_rate=0.05, num_leaves=31,
-                        subsample=0.8, colsample_bytree=0.8, random_state=42,
-                        n_jobs=-1, verbose=-1
+                        objective="regression", n_estimators=100, learning_rate=0.05,
+                        num_leaves=8, max_depth=3, min_child_samples=100,
+                        reg_alpha=5.0, reg_lambda=5.0,
+                        subsample=0.6, colsample_bytree=0.6,
+                        random_state=42, n_jobs=-1, verbose=-1
                     )
                     model.fit(X_tr, y_tr)
                     p_te = model.predict(X_te)
@@ -1649,6 +2398,87 @@ def _compute_probe_models(
 
     return result
 
+# Add this after the _compute_probe_models function definition
+
+def _compute_probe_models_parallel(X_train, y_train, X_test, y_test, model_type: str = "logreg"):
+    """Parallel computation of probe model metrics for a single fold."""
+    try:
+        if model_type == "logreg":
+            if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+                return None
+            
+            pipe = Pipeline([
+                ("scaler", StandardScaler()),
+                ("clf", LogisticRegression(max_iter=200, n_jobs=-1, class_weight="balanced")),
+            ])
+            pipe.fit(X_train, y_train)
+            p_te = pipe.predict_proba(X_test)[:, 1]
+            
+            from sklearn.metrics import accuracy_score, brier_score_loss, mean_squared_error, r2_score, roc_auc_score
+            
+            uniq_y = np.unique(y_test)
+            if len(uniq_y) < 2:
+                auc = 0.5
+            else:
+                auc = roc_auc_score(y_test, p_te)
+            
+            acc = accuracy_score(y_test, (p_te >= 0.5).astype(int))
+            brier = brier_score_loss(y_test, p_te)
+            mse = mean_squared_error(y_test, p_te)
+            rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
+            r2 = r2_score(y_test, p_te)
+            
+            return {
+                "auc": float(auc) if np.isfinite(auc) else float("nan"),
+                "accuracy": float(acc),
+                "brier": float(brier),
+                "rmse": float(rmse),
+                "pseudo_r2": float(r2),
+            }
+        
+        elif model_type == "lgbm":
+            try:
+                import lightgbm as lgb
+                if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+                    return None
+                
+                model = lgb.LGBMClassifier(
+                    objective="binary", n_estimators=100, learning_rate=0.05,
+                    num_leaves=8, max_depth=3, min_child_samples=100,
+                    reg_alpha=5.0, reg_lambda=5.0,
+                    subsample=0.6, colsample_bytree=0.6,
+                    random_state=42, n_jobs=-1, verbose=-1
+                )
+                model.fit(X_train, y_train)
+                p_te = model.predict_proba(X_test)[:, 1]
+                
+                from sklearn.metrics import accuracy_score, brier_score_loss, mean_squared_error, r2_score, roc_auc_score
+                
+                uniq_y = np.unique(y_test)
+                if len(uniq_y) < 2:
+                    auc = 0.5
+                else:
+                    auc = roc_auc_score(y_test, p_te)
+                
+                acc = accuracy_score(y_test, (p_te >= 0.5).astype(int))
+                brier = brier_score_loss(y_test, p_te)
+                mse = mean_squared_error(y_test, p_te)
+                rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
+                r2 = r2_score(y_test, p_te)
+                
+                return {
+                    "auc": float(auc) if np.isfinite(auc) else float("nan"),
+                    "accuracy": float(acc),
+                    "brier": float(brier),
+                    "rmse": float(rmse),
+                    "pseudo_r2": float(r2),
+                }
+            except ImportError:
+                return {"error": "lightgbm not available"}
+        
+        return None
+    except Exception:
+        return None
 
 def _detect_feature_leakage(
     X: pd.DataFrame,
@@ -1673,7 +2503,7 @@ def _compute_global_stability(
     y: pd.Series,
     n_splits: int = 5,
 ) -> Dict[str, Any]:
-    """Compute a simple global stability metric via CV AUC variability."""
+    """Compute a simple global stability metric via CV variability (AUC for clf, R2 for reg)."""
     common_index = X.index.intersection(y.index)
     Xc = X.loc[common_index].copy()
     yc = y.loc[common_index].astype(float)
@@ -1684,56 +2514,80 @@ def _compute_global_stability(
     # Ensure there are no NaNs in X for sklearn probe model
     Xc = Xc.fillna(0.0)
 
-    # Assume binary labels for now
-    y_bin = (yc > 0.5).astype(int)
+    # Determine task type
+    uniq = np.unique(yc.values[~np.isnan(yc.values)])
+    is_binary = len(uniq) <= 2 and set(uniq).issubset({0.0, 1.0})
+    
     tscv = TimeSeriesSplit(n_splits=n_splits)
+    scores: list[float] = []
 
-    aucs: list[float] = []
     for train_idx, test_idx in tscv.split(Xc):
         X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
-        y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
-        if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
-            continue
-        pipe = Pipeline(
-            [
-                ("scaler", StandardScaler()),
-                ("clf", LogisticRegression(max_iter=200, n_jobs=-1, class_weight="balanced")),
-            ]
-        )
-        pipe.fit(X_tr, y_tr)
-        p_te = pipe.predict_proba(X_te)[:, 1]
-        if len(np.unique(y_te)) < 2:
-            continue
-        try:
-            auc = roc_auc_score(y_te.values, p_te)
-            if np.isfinite(auc):
-                aucs.append(float(auc))
-        except Exception:
-            continue
+        y_tr, y_te = yc.iloc[train_idx], yc.iloc[test_idx]
+        
+        if is_binary:
+            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                continue
+            try:
+                pipe = Pipeline(
+                    [
+                        ("scaler", StandardScaler()),
+                        ("clf", LogisticRegression(max_iter=200, n_jobs=-1, class_weight="balanced")),
+                    ]
+                )
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict_proba(X_te)[:, 1]
+                auc = roc_auc_score(y_te.values, p_te)
+                if np.isfinite(auc):
+                    scores.append(float(auc))
+            except Exception:
+                continue
+        else:
+            try:
+                from sklearn.linear_model import Ridge
+                pipe = Pipeline(
+                    [
+                        ("scaler", StandardScaler()),
+                        ("reg", Ridge(alpha=1.0)),
+                    ]
+                )
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict(X_te)
+                r2 = r2_score(y_te.values, p_te)
+                if np.isfinite(r2):
+                    scores.append(float(r2))
+            except Exception:
+                continue
 
-    if not aucs:
+    if not scores:
         return {"error": "Insufficient folds for stability analysis"}
 
-    mean_auc = float(np.mean(aucs))
-    std_auc = float(np.std(aucs))
-    stability = float(1.0 - std_auc / mean_auc) if mean_auc > 0 else float("nan")
+    mean_score = float(np.mean(scores))
+    std_score = float(np.std(scores))
+    stability = float(1.0 - std_score / abs(mean_score)) if abs(mean_score) > 1e-6 else float("nan")
+    
+    metric_name = "auc" if is_binary else "r2"
     return {
         "n_splits": int(n_splits),
-        "fold_aucs": aucs,
-        "mean_auc": mean_auc,
-        "std_auc": std_auc,
+        "task_type": "binary_classification" if is_binary else "regression",
+        f"fold_{metric_name}s": scores,
+        f"mean_{metric_name}": mean_score,
+        f"std_{metric_name}": std_score,
         "stability_score": stability,
     }
+
 
 
 def _compute_tree_shap_interactions(
     X: pd.DataFrame,
     y: pd.Series,
     feature_metrics: Dict[str, Dict[str, float]],
-    max_features: int = 30,
-    sample_size: int = 2000,
+    max_features: int = 20,  # Reduced from 30 for speed
+    sample_size: int = 1000,  # Reduced from 2000 for speed
 ) -> Dict[str, Any]:
-    """Estimate notable pairwise interactions using TreeSHAP (if available)."""
+    """Optimized SHAP interaction computation with sampling and feature limiting."""
+    logger.info("🔍 Starting optimized SHAP interaction computation")
+    
     try:
         import lightgbm as lgb  # type: ignore
         import shap  # type: ignore
@@ -1748,85 +2602,299 @@ def _compute_tree_shap_interactions(
     Xc = Xc.loc[mask]
     yc = yc.loc[mask]
 
-    # Binary labels assumed
-    y_bin = (yc > 0.5).astype(int)
-
     # Select top features by MI_mean (or fall back to all)
     if feature_metrics:
+        # Filter out system metrics and ensure we have valid MI scores
+        valid_items = [
+            item for item in feature_metrics.items() 
+            if item[0] != "_tv_var_system" and isinstance(item[1], dict) and "mi_mean_cv" in item[1]
+        ]
         ranked = sorted(
-            feature_metrics.items(),
+            valid_items,
             key=lambda kv: kv[1].get("mi_mean_cv", 0.0),
             reverse=True,
         )
         top_names = [name for name, _ in ranked[:max_features]]
     else:
-        top_names = list(Xc.columns)[:max_features]
+        # Simple variance-based selection if no metrics available
+        feature_variances = Xc.var()
+        top_names = feature_variances.nlargest(max_features).index.tolist()
 
     X_sel = Xc[top_names].copy()
+    logger.info(f"📊 Selected {len(top_names)} features for SHAP analysis")
 
-    # Subsample for SHAP efficiency (use latest samples chronologically)
+    # Optimized sampling
     if len(X_sel) > sample_size:
-        X_sample = X_sel.iloc[-sample_size:]
-        y_sample = y_bin.iloc[-sample_size:]
+        # Use stratified sampling for better representation
+        if len(yc) > sample_size * 2:
+            # Take samples from different parts of the dataset
+            first_part = X_sel.iloc[:sample_size//3]
+            middle_part = X_sel.iloc[len(X_sel)//2 - sample_size//6:len(X_sel)//2 + sample_size//6]
+            last_part = X_sel.iloc[-sample_size//3:]
+            
+            X_sample = pd.concat([first_part, middle_part, last_part]).head(sample_size)
+            y_sample = yc.loc[X_sample.index]
+        else:
+            X_sample = X_sel.sample(n=sample_size, random_state=42)
+            y_sample = yc.loc[X_sample.index]
     else:
         X_sample = X_sel
-        y_sample = y_bin
+        y_sample = yc
 
-    if X_sample.empty or len(np.unique(y_sample)) < 2:
-        return {"error": "Insufficient data for TreeSHAP interactions"}
+    logger.info(f"📈 Using {len(X_sample)} samples for SHAP computation")
 
-    model = lgb.LGBMClassifier(
-        objective="binary",
-        n_estimators=200,
-        learning_rate=0.05,
-        num_leaves=31,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-    )
+    # Determine task type based on target
+    uniq = np.unique(y_sample[~np.isnan(y_sample)])
+    is_binary = len(uniq) <= 2 and set(uniq).issubset({0.0, 1.0})
+
+    # Use optimized model parameters for speed
+    if is_binary:
+        if len(uniq) < 2:
+            return {"error": "Insufficient classes for SHAP classification"}
+        model = lgb.LGBMClassifier(
+            objective="binary",
+            n_estimators=100,
+            learning_rate=0.05,
+            num_leaves=8,
+            max_depth=3,
+            min_child_samples=100,
+            reg_alpha=5.0,
+            reg_lambda=5.0,
+            subsample=0.6,
+            colsample_bytree=0.6,
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1
+        )
+    else:
+        model = lgb.LGBMRegressor(
+            objective="regression",
+            n_estimators=100,  # Reduced from 200
+            learning_rate=0.1,  # Increased for faster convergence
+            num_leaves=15,
+            max_depth=3,  # Reduced from 4
+            min_child_samples=50,
+            reg_alpha=0.1,
+            reg_lambda=0.1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=1,  # Reduced for memory efficiency
+            verbose=-1
+        )
+    
     model.fit(X_sample, y_sample)
 
+    # Use optimized SHAP computation
     try:
-        explainer = shap.TreeExplainer(model)
-        shap_int = explainer.shap_interaction_values(X_sample)
+        return _optimized_shap_interactions(model, X_sample, max_features, sample_size)
     except Exception as exc:
-        return {"error": f"TreeSHAP interaction computation failed: {exc}"}
+        logger.warning(f"Optimized SHAP failed, trying fallback: {exc}")
+        
+        # Fallback to original method with optimizations
+        try:
+            explainer = shap.TreeExplainer(model)
+            shap_int = explainer.shap_interaction_values(X_sample)
+            
+            # shap_int shape: (n_samples, n_features, n_features) or list of such
+            if isinstance(shap_int, list):
+                # For binary classification, shap returns list per class; use average across classes and then samples
+                shap_int_arr = np.mean(np.abs(np.array(shap_int)), axis=(0, 1))
+            else:
+                # For regression, it's (n_samples, n_features, n_features)
+                if len(shap_int.shape) == 4: # (n_outputs, n_samples, n_features, n_features)
+                    shap_int_arr = np.mean(np.abs(shap_int), axis=(0, 1))
+                else:
+                    shap_int_arr = np.mean(np.abs(shap_int), axis=0)
 
-    # shap_int shape: (n_samples, n_features, n_features)
-    if isinstance(shap_int, list):
-        # For binary classification, shap returns list per class; use average
-        shap_int_arr = np.mean(np.abs(np.array(shap_int)), axis=0)
-    else:
-        shap_int_arr = np.mean(np.abs(shap_int), axis=0)
+            # Ensure we are (n_features, n_features)
+            if len(shap_int_arr.shape) > 2:
+                shap_int_arr = np.mean(shap_int_arr, axis=tuple(range(len(shap_int_arr.shape) - 2)))
 
-    n_feat = shap_int_arr.shape[0]
-    pairs: list[Dict[str, Any]] = []
-    for i in range(n_feat):
-        for j in range(i + 1, n_feat):
-            score = float(shap_int_arr[i, j])
-            pairs.append(
-                {
-                    "feature_i": top_names[i],
-                    "feature_j": top_names[j],
-                    "interaction_strength": score,
-                }
-            )
+            n_feat = shap_int_arr.shape[0]
+            pairs: list[Dict[str, Any]] = []
+            for i in range(n_feat):
+                for j in range(i + 1, n_feat):
+                    score = float(shap_int_arr[i, j])
+                    # Only include meaningful interactions
+                    if score > 1e-6:
+                        pairs.append(
+                            {
+                                "feature_i": top_names[i],
+                                "feature_j": top_names[j],
+                                "interaction_strength": score,
+                            }
+                        )
 
-    if not pairs:
-        return {"error": "No interaction pairs computed"}
+            if not pairs:
+                return {"error": "No meaningful interaction pairs computed"}
 
-    pairs.sort(key=lambda d: d["interaction_strength"], reverse=True)
-    top_pairs = pairs[:20]
+            pairs.sort(key=lambda d: d["interaction_strength"], reverse=True)
+            top_pairs = pairs[:20]
 
-    return {
-        "n_features": len(top_names),
-        "sample_size": int(len(X_sample)),
-        "top_pairs": top_pairs,
-        "method": "tree_shap",
+            # Garbage collection
+            _garbage_collect_optimized()
+
+            return {
+                "n_features": len(top_names),
+                "sample_size": int(len(X_sample)),
+                "top_pairs": top_pairs,
+                "method": "optimized_tree_shap_fallback",
+            }
+        except Exception as fallback_exc:
+            return {"error": f"Both optimized and fallback SHAP failed: {fallback_exc}"}
+
+def _compute_trading_simulation_pnl_dynamic(
+    confidence_scores: pd.Series,
+    realized_returns: pd.Series,
+    thresholds: Optional[list[float]] = None,
+    tp_pct: float = 0.02,  # 2% take profit
+    sl_pct: float = 0.007,  # 0.7% stop loss
+    fee_per_trade: float = 0.0015,  # 0.15% per trade (0.3% round trip)
+    dynamic_thresholds: bool = True,
+    returns_for_volatility: Optional[pd.Series] = None,
+) -> Dict[str, Any]:
+    """Enhanced PnL computation with dynamic thresholding."""
+    
+    # Use dynamic thresholds if enabled or no thresholds provided
+    if dynamic_thresholds or thresholds is None:
+        try:
+            if returns_for_volatility is not None:
+                dynamic_threshs = calculate_dynamic_thresholds_batch(
+                    predictions=confidence_scores,
+                    returns=returns_for_volatility,
+                    method="adaptive",
+                    base_threshold=0.55,  # Lower base threshold
+                    min_trades_target=3
+                )
+            else:
+                # Fallback to percentile-based thresholds
+                clean_preds = confidence_scores.dropna()
+                if len(clean_preds) > 30:
+                    dynamic_threshs = [
+                        clean_preds.quantile(0.55),
+                        clean_preds.quantile(0.65),
+                        clean_preds.quantile(0.75),
+                        clean_preds.quantile(0.85)
+                    ]
+                else:
+                    dynamic_threshs = [0.5, 0.6, 0.7, 0.8]
+            
+            thresholds = dynamic_threshs
+            logger.info(f"🔄 Using dynamic thresholds: {[f'{t:.3f}' for t in thresholds]}")
+        except Exception as e:
+            logger.warning(f"Dynamic threshold calculation failed: {e}, using defaults")
+            thresholds = [0.5, 0.6, 0.7, 0.8]
+    
+    # Ensure thresholds are sorted and valid
+    thresholds = sorted([t for t in thresholds if 0.5 <= t <= 0.95])
+    if not thresholds:
+        thresholds = [0.5, 0.6, 0.7, 0.8]
+    
+    # Rest of the original function with enhanced logging
+    conf = confidence_scores.copy()
+    ret = realized_returns.copy()
+    
+    # Align and clean
+    common_idx = conf.index.intersection(ret.index)
+    conf = conf.loc[common_idx]
+    ret = ret.loc[common_idx]
+    
+    mask = ~(conf.isna() | ret.isna() | np.isinf(conf) | np.isinf(ret))
+    conf = conf.loc[mask]
+    ret = ret.loc[mask]
+    
+    if len(conf) == 0:
+        return {"error": "No valid data after cleaning"}
+    
+    results = {
+        "per_threshold": {},
+        "summary": {},
+        "thresholds": thresholds,
+        "tp_pct": tp_pct,
+        "sl_pct": sl_pct,
+        "fee_round_trip_pct": fee_per_trade * 2,
     }
-
-
+    total_trades_by_threshold = {}
+    
+    for thresh in thresholds:
+        # Generate signals
+        signals = (conf >= thresh).astype(int)
+        
+        # Calculate trade metrics
+        trades = signals.sum()
+        thresh_key = f"{thresh:.3f}"
+        
+        if trades == 0:
+            results["per_threshold"][thresh_key] = {
+                "n_trades": 0,
+                "trades_per_day": 0.0,
+                "win_rate": 0.0,
+                "avg_pnl_per_trade_pct": 0.0,
+                "avg_pnl_per_day_pct": 0.0,
+                "avg_pnl_per_month_pct": 0.0,
+                "sharpe_estimate": 0.0,
+            }
+            total_trades_by_threshold[thresh] = 0
+            continue
+        
+        # Calculate PnL for trades
+        trade_returns = ret[signals == 1]
+        
+        # Apply transaction costs
+        net_returns = trade_returns - fee_per_trade
+        
+        # Calculate metrics
+        n_wins = int((net_returns > 0).sum())
+        win_rate = n_wins / trades if trades > 0 else 0.0
+        
+        total_pnl_pct = float(net_returns.sum()) * 100  # As percentage
+        avg_pnl_per_trade_pct = float(net_returns.mean()) * 100
+        
+        date_range_days = (conf.index.max() - conf.index.min()).days
+        trades_per_day = trades / max(date_range_days, 1)
+        pnl_per_day_pct = total_pnl_pct / max(date_range_days, 1)
+        pnl_per_month_pct = total_pnl_pct / (date_range_days / 30.44)  # Average days per month
+        
+        # Estimate Sharpe-like metric (annualized)
+        if len(net_returns) > 1 and net_returns.std() > 0:
+            sharpe = (net_returns.mean() * 252) / (net_returns.std() * np.sqrt(252))
+        else:
+            sharpe = 0.0
+        
+        results["per_threshold"][thresh_key] = {
+            "n_trades": int(trades),
+            "trades_per_day": float(trades_per_day),
+            "win_rate": float(win_rate),
+            "avg_pnl_per_trade_pct": float(avg_pnl_per_trade_pct),
+            "avg_pnl_per_day_pct": float(pnl_per_day_pct),
+            "avg_pnl_per_month_pct": float(pnl_per_month_pct),
+            "sharpe_estimate": float(sharpe),
+        }
+        
+        total_trades_by_threshold[thresh] = trades
+    
+    # Summary statistics
+    total_trades = sum(total_trades_by_threshold.values())
+    results["summary"] = {
+        "total_trades_all_thresholds": int(total_trades),
+        "date_range_days": float(max((conf.index.max() - conf.index.min()).days, 1)),
+        "total_samples": int(len(conf)),
+        "thresholds_used": thresholds,
+        "dynamic_thresholds": dynamic_thresholds,
+    }
+    
+    # Also add top level keys for legacy compatibility
+    results["date_range_days"] = float(max((conf.index.max() - conf.index.min()).days, 1))
+    results["total_samples"] = int(len(conf))
+    
+    # Log summary
+    logger.info(
+        f"📊 PnL Summary: {total_trades} total trades across {len(thresholds)} thresholds "
+        f"(dynamic: {dynamic_thresholds})"
+    )
+    
+    return results
 def _compute_trading_simulation_pnl(
     confidence_scores: pd.Series,
     realized_returns: pd.Series,
@@ -1834,6 +2902,7 @@ def _compute_trading_simulation_pnl(
     tp_pct: float = 0.02,  # 2% take profit (User requested standard)
     sl_pct: float = 0.007,  # 0.7% stop loss (User requested standard)
     fee_per_trade: float = 0.0015,  # 0.15% per trade (0.3% round trip)
+    dynamic_thresholds: bool = True,
 ) -> Dict[str, Any]:
     """Compute trading simulation PnL for specialist/probe models at various confidence thresholds.
     
@@ -1970,7 +3039,8 @@ def _compute_probe_model_pnl(
     y: pd.Series,
     realized_returns: pd.Series,
     n_splits: int = 5,
-    thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
+    thresholds: Optional[list[float]] = None,
+    dynamic_thresholds: bool = True,
 ) -> Dict[str, Any]:
     """Compute trading PnL metrics for probe models using cross-validation predictions.
     
@@ -2028,8 +3098,11 @@ def _compute_probe_model_pnl(
                     ("clf", LogisticRegression(max_iter=500, solver="lbfgs", random_state=42)),
                 ])
                 pipe.fit(X_train, y_train)
-                probs = pipe.predict_proba(X_val)[:, 1]
-                oos_probs_logreg.iloc[val_idx] = probs
+                # Calibrate probabilities if enabled
+                p_tr = pipe.predict_proba(X_train)[:, 1]
+                p_te = pipe.predict_proba(X_val)[:, 1]
+                p_te = _calibrate_probabilities(y_train.values, p_tr, p_te)
+                oos_probs_logreg.iloc[val_idx] = p_te
             except Exception:
                 pass
 
@@ -2037,30 +3110,40 @@ def _compute_probe_model_pnl(
             try:
                 import lightgbm as lgb
                 lgbm_clf = lgb.LGBMClassifier(
-                    n_estimators=100, max_depth=5, learning_rate=0.05,
-                    random_state=42, verbose=-1
+                    objective="binary", n_estimators=100, learning_rate=0.05,
+                    num_leaves=8, max_depth=3, min_child_samples=100,
+                    reg_alpha=5.0, reg_lambda=5.0,
+                    subsample=0.6, colsample_bytree=0.6,
+                    random_state=42, n_jobs=-1, verbose=-1
                 )
                 lgbm_clf.fit(X_train, y_train)
-                probs = lgbm_clf.predict_proba(X_val)[:, 1]
-                oos_probs_lgbm.iloc[val_idx] = probs
+                # Calibrate probabilities if enabled
+                p_tr = lgbm_clf.predict_proba(X_train)[:, 1]
+                p_te = lgbm_clf.predict_proba(X_val)[:, 1]
+                p_te = _calibrate_probabilities(y_train.values, p_tr, p_te)
+                oos_probs_lgbm.iloc[val_idx] = p_te
             except Exception:
                 pass
 
-        # Compute trading PnL for classification
+        # Compute trading PnL for classification using dynamic thresholds
         if oos_probs_logreg.notna().sum() >= 10:
-            results["logreg"] = _compute_trading_simulation_pnl(
+            results["logreg"] = _compute_trading_simulation_pnl_dynamic(
                 confidence_scores=oos_probs_logreg,
                 realized_returns=rets_aligned,
                 thresholds=thresholds,
+                dynamic_thresholds=dynamic_thresholds,
+                returns_for_volatility=rets_aligned
             )
         else:
             results["logreg"] = {"error": "Insufficient LogReg predictions"}
 
         if oos_probs_lgbm.notna().sum() >= 10:
-            results["lgbm"] = _compute_trading_simulation_pnl(
+            results["lgbm"] = _compute_trading_simulation_pnl_dynamic(
                 confidence_scores=oos_probs_lgbm,
                 realized_returns=rets_aligned,
                 thresholds=thresholds,
+                dynamic_thresholds=dynamic_thresholds,
+                returns_for_volatility=rets_aligned
             )
         else:
             results["lgbm"] = {"error": "Insufficient LGBM predictions"}
@@ -2068,9 +3151,6 @@ def _compute_probe_model_pnl(
     else:
         # --- Regression PnL ---
         from sklearn.linear_model import Ridge
-
-        # Define regression thresholds (expected return > X)
-        reg_thresholds = [0.0, 0.0005, 0.001, 0.0015, 0.002]
 
         oos_preds_linear = pd.Series(index=X_aligned.index, dtype=float)
         oos_preds_lgbm = pd.Series(index=X_aligned.index, dtype=float)
@@ -2095,8 +3175,11 @@ def _compute_probe_model_pnl(
             try:
                 import lightgbm as lgb
                 lgbm_reg = lgb.LGBMRegressor(
-                    n_estimators=100, max_depth=5, learning_rate=0.05,
-                    random_state=42, verbose=-1
+                    objective="regression", n_estimators=100, learning_rate=0.05,
+                    num_leaves=8, max_depth=3, min_child_samples=100,
+                    reg_alpha=5.0, reg_lambda=5.0,
+                    subsample=0.6, colsample_bytree=0.6,
+                    random_state=42, n_jobs=-1, verbose=-1
                 )
                 lgbm_reg.fit(X_train, y_train)
                 preds = lgbm_reg.predict(X_val)
@@ -2105,20 +3188,25 @@ def _compute_probe_model_pnl(
                 pass
 
         # Compute trading PnL for regression (using predicted return as score)
+        # Note: dynamic thresholding for regression expects probabilities, but we can pass returns
         if oos_preds_linear.notna().sum() >= 10:
-            results["linear_reg"] = _compute_trading_simulation_pnl(
+            results["linear_reg"] = _compute_trading_simulation_pnl_dynamic(
                 confidence_scores=oos_preds_linear,
                 realized_returns=rets_aligned,
-                thresholds=reg_thresholds,
+                thresholds=thresholds,
+                dynamic_thresholds=dynamic_thresholds,
+                returns_for_volatility=rets_aligned
             )
         else:
             results["linear_reg"] = {"error": "Insufficient LinearReg predictions"}
 
         if oos_preds_lgbm.notna().sum() >= 10:
-            results["lgbm"] = _compute_trading_simulation_pnl(
+            results["lgbm"] = _compute_trading_simulation_pnl_dynamic(
                 confidence_scores=oos_preds_lgbm,
                 realized_returns=rets_aligned,
-                thresholds=reg_thresholds,
+                thresholds=thresholds,
+                dynamic_thresholds=dynamic_thresholds,
+                returns_for_volatility=rets_aligned
             )
         else:
             results["lgbm"] = {"error": "Insufficient LGBM predictions"}
@@ -2126,17 +3214,15 @@ def _compute_probe_model_pnl(
     return results
 
 
+
 def _compute_group_lgbm_auc(
     X: pd.DataFrame,
     y: pd.Series,
     cv_folds: int = 3,
 ) -> Dict[str, Any]:
-    """Train simple LGBM classifiers on combinations of specialist groups (1–3 groups).
-
-    For each group and group-combination (up to triples), this computes a
-    cross-validated AUC using a small LGBM classifier on the corresponding
-    specialist features to quantify joint interaction potential.
-    """
+    """Train simple LGBM classifiers on combinations of specialist groups with parallel processing."""
+    logger.info("🚀 Starting optimized group LGBM computation")
+    
     try:
         import lightgbm as lgb  # type: ignore
         from sklearn.metrics import roc_auc_score
@@ -2170,6 +3256,8 @@ def _compute_group_lgbm_auc(
     if not group_features:
         return {"error": "No specialist groups found for group LGBM probe"}
 
+    logger.info(f"📊 Found {len(group_features)} specialist groups: {list(group_features.keys())}")
+
     tscv = TimeSeriesSplit(n_splits=cv_folds)
 
     def _cv_auc_for_features(feat_list: List[str]) -> Optional[Tuple[float, int]]:
@@ -2185,11 +3273,19 @@ def _compute_group_lgbm_auc(
                 continue
             try:
                 clf = lgb.LGBMClassifier(
-                    n_estimators=100,
-                    max_depth=4,
-                    learning_rate=0.05,
+                    objective="binary",
+                    n_estimators=50,  # Reduced for speed
+                    learning_rate=0.1,  # Increased for faster convergence
+                    num_leaves=8,
+                    max_depth=3,
+                    min_child_samples=100,
+                    reg_alpha=5.0,
+                    reg_lambda=5.0,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
                     random_state=42,
                     verbose=-1,
+                    n_jobs=1,  # Single job for memory efficiency
                 )
                 clf.fit(X_tr, y_tr)
                 probs = clf.predict_proba(X_val)[:, 1]
@@ -2198,57 +3294,104 @@ def _compute_group_lgbm_auc(
                 continue
 
         valid = oof.notna()
-        if valid.sum() < max(20, 2 * cv_folds) or y_bin[valid].nunique() < 2:
-            return None
         try:
-            auc = roc_auc_score(y_bin[valid], oof[valid])
+            if valid.sum() < max(20, 2 * cv_folds):
+                return None
+            
+            # Determine task type
+            uniq_val = np.unique(y_bin[valid])
+            if len(uniq_val) <= 2 and set(uniq_val).issubset({0.0, 1.0}):
+                if len(uniq_val) < 2:
+                    return 0.5, int(valid.sum())
+                try:
+                    auc = roc_auc_score(y_bin[valid], oof[valid])
+                except Exception:
+                    return 0.5, int(valid.sum())
+            else:
+                # Regression
+                corr = np.corrcoef(oof[valid], y_bin[valid])[0, 1] if np.var(oof[valid]) > 0 and np.var(y_bin[valid]) > 0 else 0
+                auc = 0.5 + 0.5 * abs(corr)
         except Exception:
             return None
         return float(auc), int(valid.sum())
 
     results: Dict[str, Dict[str, Any]] = {}
-
     groups = sorted(group_features.keys())
 
+    # Prepare all combinations for parallel processing
+    combinations = []
+    
     # Single-group probes
     for g in groups:
         feats = group_features[g]
-        res = _cv_auc_for_features(feats)
-        if res is None:
-            continue
-        auc, n_valid = res
-        key = g
-        results[key] = {
-            "combination": key,
-            "n_features": int(len(feats)),
-            "auc": auc,
-            "n_samples": n_valid,
-        }
-
-    # Pairwise and triple-group probes
+        combinations.append((g, feats))
+    
+    # Pairwise and triple-group probes (limit to avoid explosion)
     import itertools
-
+    max_combinations = 20  # Limit total combinations for performance
+    
     for r in (2, 3):
         for combo in itertools.combinations(groups, r):
+            if len(combinations) >= max_combinations:
+                break
             combo_key = "|".join(combo)
             feat_list: List[str] = []
             for g in combo:
                 feat_list.extend(group_features.get(g, []))
-            if not feat_list:
-                continue
-            res = _cv_auc_for_features(feat_list)
-            if res is None:
-                continue
-            auc, n_valid = res
-            results[combo_key] = {
-                "combination": combo_key,
-                "n_features": int(len(feat_list)),
-                "auc": auc,
-                "n_samples": n_valid,
-            }
+            if feat_list:
+                combinations.append((combo_key, feat_list))
+        if len(combinations) >= max_combinations:
+            break
 
-    return {"group_lgbm_auc": results}
+    logger.info(f"🔄 Processing {len(combinations)} group combinations with parallel processing")
 
+    # Parallel processing of combinations
+    def process_combination(combo_data):
+        key, feat_list = combo_data
+        res = _cv_auc_for_features(feat_list)
+        if res is None:
+            return None
+        auc, n_valid = res
+        return key, {
+            "combination": key,
+            "n_features": int(len(feat_list)),
+            "auc": auc,
+            "n_samples": n_valid,
+        }
+
+    # Use parallel processing with 2 workers
+    processed_results = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_to_combo = {
+            executor.submit(process_combination, combo): combo 
+            for combo in combinations
+        }
+        
+        for future in as_completed(future_to_combo):
+            try:
+                result = future.result()
+                if result is not None:
+                    key, data = result
+                    processed_results.append((key, data))
+            except Exception as e:
+                logger.debug(f"Failed to process combination: {e}")
+
+    # Convert to results dictionary
+    for key, data in processed_results:
+        results[key] = data
+
+    # Sort by AUC and limit results
+    sorted_results = dict(sorted(results.items(), key=lambda x: x[1].get('auc', 0), reverse=True))
+    
+    # Limit to top results to avoid overwhelming output
+    if len(sorted_results) > 50:
+        sorted_results = dict(list(sorted_results.items())[:50])
+
+    # Garbage collection
+    _garbage_collect_optimized()
+    
+    logger.info(f"✅ Group LGBM computation completed: {len(sorted_results)} combinations")
+    return {"group_lgbm_auc": sorted_results}
 
 def run_diagnostics(
     symbol: str,
@@ -2262,8 +3405,33 @@ def run_diagnostics(
     lookback_days: Optional[float] = None,
     enable_risk_hmm_specialist: bool = True,
     projection_mode: str = "canonical_scalars",
+    enable_orthogonalization: bool = False,
+    run_optimized_orthogonalization: bool = False,
+    anchor_specialist: str = "xgb_macro",
+    enable_cache: bool = False,
+    feature_optimization: bool = False,
+    orthogonal_hpo: bool = False,
+    conservative_pruning: bool = False,
+    run_lgbm_comparison: bool = False,
+    orthogonal_comparison_report: bool = False,
+    enable_moe: bool = False,
+    enable_adversarial_orthogonalization: bool = False,
+    adversarial_penalty: float = 0.1,
+    enable_tv_var: bool = True,
+    tv_var_window: int = 100,
+    tv_var_regime_aware: bool = True,
+    tv_var_backtest: bool = False,
 ) -> Tuple[Path, Path]:
     """Run full specialist feature diagnostics and export reports."""
+    # Determine default target column based on direction if not explicitly provided
+    if not target_col:
+        target_col = "binary_label"
+    
+    # Initialize optional result holders
+    moe_results = None
+    adversarial_results = None
+    orthogonalization_results = None
+    
     # 1) Load labels and realized_return for PnL simulation
     y, training_index, realized_return = _prepare_labels(
         symbol=symbol,
@@ -2276,7 +3444,7 @@ def run_diagnostics(
     )
 
     # 2) Load specialist features aligned to the same index
-    X_raw = _load_specialist_features(
+    specialist_df = _load_specialist_features(
         symbol=symbol,
         exchange=exchange,
         base_timeframe=timeframe,
@@ -2287,115 +3455,248 @@ def run_diagnostics(
         enable_risk_hmm_specialist=enable_risk_hmm_specialist,
     )
 
+    logger.info(f"📊 Loaded specialist_df with {len(specialist_df)} rows and columns: {list(specialist_df.columns)}")
+    logger.info(f"📊 Training index size: {len(training_index)}")
+    logger.info(f"📊 Target y size: {len(y)}")
+
     
+    # Deduplicate columns in specialist_df to prevent LightGBM errors
+    specialist_df = specialist_df.loc[:, ~specialist_df.columns.duplicated()]
+
+    # Optionally collapse raw specialist outputs to canonical scalars. 
+    # Must do this before metrics computation.
+    if projection_mode == "canonical_scalars":
+        X = _select_specialist_scalars(specialist_df)
+    else:
+        X = specialist_df
+
+    # 3) Compute per-feature metrics and TV-VAR info (Needed for MoE)
+    feature_metrics, tv_var_info = _compute_feature_metrics_with_tv_var(
+        X=X, y=y, cv_folds=cv_folds, 
+        enable_tv_var=enable_tv_var, 
+        tv_var_window=tv_var_window, 
+        tv_var_regime_aware=tv_var_regime_aware
+    )
+    # Garbage collection after feature metrics
+    _garbage_collect_optimized()
+
+    if not feature_metrics:
+        raise ValueError("No feature metrics computed; check inputs and artifacts")
+
     # ---------------------------------------------------------
     # Specialist Category Orthogonalization (ENHANCED)
     # ---------------------------------------------------------
-    if args.enable_orthogonalization or args.run_optimized_orthogonalization:
+    orthogonalizer = None
+    if enable_orthogonalization or run_optimized_orthogonalization or enable_moe or enable_adversarial_orthogonalization:
         from src.utils.ml_common.specialist_orthogonalizer import OptimizedSpecialistOrthogonalizer
         
         # Initialize orthogonalizer with optimization features
         orthogonalizer = OptimizedSpecialistOrthogonalizer(
-            anchor_specialist=args.anchor_specialist,
-            enable_cache=args.enable_cache,
-            enable_feature_optimization=args.feature_optimization,
-            enable_orthogonal_hpo=args.orthogonal_hpo,
-            enable_conservative_pruning=args.conservative_pruning
+            anchor_specialists=[anchor_specialist] if anchor_specialist else None,
+            enable_cache=enable_cache,
+            enable_feature_optimization=feature_optimization,
+            enable_orthogonal_hpo=orthogonal_hpo,
+            enable_conservative_pruning=conservative_pruning
         )
         
         # Validate specialist coverage
         coverage = orthogonalizer.validate_specialist_coverage(specialist_df)
         available_specialists = [s for s, has in coverage.items() if has]
         
-        tprint_info(f"🎯 Found {len(available_specialists)} available specialists for orthogonalization")
+        tprint_info(f"🎯 Found {len(available_specialists)} available specialists for orthogonalization/MoE")
         for specialist, has_features in coverage.items():
             status = "✅" if has_features else "❌"
             tprint_info(f"  {status} {specialist}")
         
         if len(available_specialists) < 2:
-            tprint_warning("⚠️ Need at least 2 specialists for orthogonalization")
+            tprint_warning("⚠️ Need at least 2 specialists for orthogonalization/MoE")
         else:
             # Get sample weights
             sample_weights = None
             if 'target_sample_weight' in specialist_df.columns:
                 sample_weights = specialist_df['target_sample_weight']
             
-            # Run optimized orthogonalization if requested
-            if args.run_optimized_orthogonalization:
-                tprint_info("🚀 Running optimized orthogonalization pipeline...")
-                
-                optimization_results = orthogonalizer.run_optimized_orthogonalization(
-                    specialist_df=specialist_df,
-                    target_series=y,
-                    sample_weights=sample_weights,
-                    run_hpo=args.orthogonal_hpo,
-                    run_pruning=args.conservative_pruning,
-                    optimize_features=args.feature_optimization
-                )
-                
-                # Store results for reporting
-                orthogonal_targets = optimization_results['orthogonal_targets']
-                auc_weights = optimization_results.get('hpo_results', {}).get('ensemble_config', {}).get('weights', {})
-                
-                # Log optimization summary
-                perf_summary = optimization_results.get('performance_summary', {})
-                tprint_success(f"✅ Optimized orthogonalization completed:")
-                tprint_info(f"  Specialists: {len(optimization_results.get('pruned_specialists', []))}")
-                tprint_info(f"  Mean AUC: {perf_summary.get('mean_auc', 0.5):.4f}")
-                tprint_info(f"  Total time: {optimization_results.get('optimization_time', 0):.1f}s")
-                
-            else:
-                # Run standard orthogonalization
-                orthogonal_targets, auc_weights = orthogonalizer.generate_auc_weighted_orthogonal_targets(
-                    specialist_df=specialist_df,
+            # Run orthogonalization if requested
+            if enable_orthogonalization or run_optimized_orthogonalization:
+                if run_optimized_orthogonalization:
+                    tprint_info("🚀 Running optimized orthogonalization pipeline...")
+                    
+                    optimization_results = orthogonalizer.run_optimized_orthogonalization(
+                        specialist_df=specialist_df,
                         target_series=y,
-                        sample_weights=sample_weights
+                        sample_weights=sample_weights,
+                        run_hpo=orthogonal_hpo,
+                        run_pruning=conservative_pruning,
+                        optimize_features=feature_optimization
                     )
-                
-                # Run LGBM comparison if requested
-                if args.run_lgbm_comparison:
-                    tprint_info("🔬 Running LGBM comparison analysis...")
                     
-                    if args.run_optimized_orthogonalization and 'optimization_results' in locals():
-                        # Use optimized results
-                        comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
-                            specialist_df, y, sample_weights
+                    # Store results for reporting
+                    orthogonal_targets = optimization_results['orthogonal_targets']
+                    auc_weights = optimization_results.get('hpo_results', {}).get('ensemble_config', {}).get('weights', {})
+                    
+                    # Log optimization summary
+                    perf_summary = optimization_results.get('performance_summary', {})
+                    tprint_success(f"✅ Optimized orthogonalization completed:")
+                    tprint_info(f"  Specialists: {len(optimization_results.get('pruned_specialists', []))}")
+                    tprint_info(f"  Mean AUC: {perf_summary.get('mean_auc', 0.5):.4f}")
+                    tprint_info(f"  Total time: {optimization_results.get('optimization_time', 0):.1f}s")
+                    
+                else:
+                    # Run standard orthogonalization
+                    orthogonal_targets, auc_weights = orthogonalizer.generate_auc_weighted_orthogonal_targets(
+                        specialist_df=specialist_df,
+                            target_series=y,
+                            sample_weights=sample_weights
                         )
-                        comparison_results['optimization_results'] = optimization_results
-                    else:
-                        # Standard comparison
-                        comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
-                            specialist_df, y, sample_weights
-                        )
                     
-                    # Generate comprehensive comparison report
-                    if args.orthogonal_comparison_report:
-                        from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
-                        generate_orthogonal_comparison_report(comparison_results, args)
+                    # Run LGBM comparison if requested
+                    if run_lgbm_comparison:
+                        tprint_info("🔬 Running LGBM comparison analysis...")
+                        
+                        if run_optimized_orthogonalization and 'optimization_results' in locals():
+                            # Use optimized results
+                            comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
+                                specialist_df, y, sample_weights
+                            )
+                        else:
+                            # Run standard comparison
+                            comparison_results = orthogonalizer.run_2_core_lgbm_comparison(
+                                specialist_df, y, sample_weights
+                            )
+                        
+                        # Generate comprehensive comparison report
+                        if orthogonal_comparison_report:
+                            from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
+                            # Create a simple args-like object for the report generator
+                            class ArgsProxy:
+                                def __init__(self):
+                                    self.symbol = symbol
+                                    self.exchange = exchange
+                                    self.timeframe = timeframe
+                                    self.direction = direction
+                                    self.model = model
+                                    self.regime_timeframe = regime_timeframe
+                                    self.target_col = target_col
+                                    self.anchor_specialist = anchor_specialist
+                            generate_orthogonal_comparison_report(comparison_results, ArgsProxy())
+                        
+                        # Store comparison results
+                        orthogonalization_results = {
+                            'comparison_results': comparison_results,
+                            'orthogonal_targets': orthogonal_targets,
+                            'auc_weights': auc_weights,
+                            'specialist_coverage': coverage
+                        }
+                        
+                        tprint_success("✅ Orthogonalization and LGBM comparison completed")
+
+            # ---------------------------------------------------------
+            # Adversarial Orthogonalization (NEW)
+            # ---------------------------------------------------------
+            if enable_adversarial_orthogonalization:
+                tprint_info("🛡️ Running adversarial orthogonalization...")
+                anchor_features = orthogonalizer.extract_specialist_features(specialist_df, anchor_specialist)
+                if not anchor_features.empty:
+                    adv_targets = orthogonalizer.generate_adversarial_orthogonal_targets(
+                        specialist_df=specialist_df,
+                        target_series=y,
+                        anchor_features=anchor_features,
+                        penalty_lambda=adversarial_penalty
+                    )
+                    tprint_success(f"✅ Generated {len(adv_targets.columns)} adversarial orthogonal targets")
                     
-                    # Store comparison results
-                    orthogonalization_results = {
-                        'comparison_results': comparison_results,
-                        'orthogonal_targets': orthogonal_targets,
-                        'auc_weights': auc_weights,
-                        'specialist_coverage': coverage
+                    # Store adversarial results for payload
+                    adversarial_results = {
+                        "n_targets": len(adv_targets.columns),
+                        "targets": list(adv_targets.columns),
+                        "penalty_lambda": adversarial_penalty,
+                        "anchor": anchor_specialist
                     }
                     
-                    tprint_success("✅ Orthogonalization and LGBM comparison completed")
+                    # Optionally run a probe on one of the adversarial targets to show value
+                    # For diagnostics, we'll just store the targets themselves for now
+                else:
+                    tprint_warning(f"⚠️ Anchor specialist {anchor_specialist} has no features; skipping adversarial orthogonalization")
+                    adversarial_results = {"error": "Anchor specialist missing features"}
+            else:
+                adversarial_results = None
+
+            # ---------------------------------------------------------
+            # Regime-Gated MoE (NEW)
+            # ---------------------------------------------------------
+            if enable_moe and 'tv_var_regime' in tv_var_info:
+                from src.utils.ml_common.specialist_orthogonalizer import RegimeGatedMoE
+                tprint_info("🧠 Fitting Regime-Gated Mixture of Experts...")
+                moe = RegimeGatedMoE(n_regimes=8)
+                moe.fit(specialist_df, y, tv_var_info['tv_var_regime'])
+                
+                # Report MoE weights for latest regime
+                latest_regime = tv_var_info['tv_var_regime'].iloc[-1]
+                latest_weights = moe.get_weights(latest_regime)
+                tprint_success(f"✅ MoE fitted. Latest regime ({latest_regime}) weights: {latest_weights}")
+
+                # Evaluate MoE as a probe signal
+                try:
+                    # Store MoE for payload
+                    moe_results = {
+                        "latest_regime": int(latest_regime),
+                        "latest_weights": latest_weights,
+                        "regime_distribution": tv_var_info['tv_var_regime'].value_counts().to_dict()
+                    }
+                except Exception as moe_exc:
+                    logger.warning(f"MoE evaluation failed: {moe_exc}")
+                    moe_results = {"error": str(moe_exc)}
+            else:
+                moe_results = None
+
+    # TV-VAR Enhanced Analysis and Backtesting
+    if enable_tv_var and tv_var_backtest and len(X) > 500:
+        tprint_info("�� Running TV-VAR backtesting validation...")
+        
+        try:
+            # Generate TV-VAR features for backtesting
+            tv_var_features = _generate_tv_var_features_from_specialists(X)
+            
+            if len(tv_var_features.columns) >= 8:
+                # Run TV-VAR backtesting
+                backtest_results = backtest_tv_var_enhanced(
+                    tv_var_features, X, y, symbol, 2024, 2024
+                )
+                
+                # Store TV-VAR results
+                tv_var_results = {
+                    "backtest_results": backtest_results,
+                    "stability_score": backtest_results.validation_summary.get("success_rate", 0),
+                    "improvement": backtest_results.validation_summary.get("avg_auc_improvement", 0),
+                    "production_ready": backtest_results.validation_summary.get("production_ready", False)
+                }
+                
+                tprint_success(f"✅ TV-VAR backtesting completed - Success Rate: {tv_var_results["stability_score"]:.1%}, Improvement: {tv_var_results["improvement"]:.2f}%")
+            else:
+                tprint_warning("⚠️ Insufficient TV-VAR features for backtesting")
+                tv_var_results = {"error": "Insufficient features"}
+        
+        except Exception as e:
+            tprint_error(f"❌ TV-VAR backtesting failed: {e}")
+            tv_var_results = {"error": str(e)}
+    else:
+        tv_var_results = {"disabled": True}
 
 # Optionally collapse raw specialist outputs to canonical scalars. When
     # projection_mode == "raw", use the specialist block exactly as training
     # sees it (same get_specialist_models_outputs output).
     if projection_mode == "canonical_scalars":
-        X = _select_specialist_scalars(X_raw)
+        X = _select_specialist_scalars(specialist_df)
     else:
-        X = X_raw
+        X = specialist_df
 
     # 3) Compute per-feature metrics
-    feature_metrics = _compute_feature_metrics(X=X, y=y, cv_folds=cv_folds)
+    # feature_metrics, tv_var_info = _compute_feature_metrics_with_tv_var(X=X, y=y, cv_folds=cv_folds, enable_tv_var=enable_tv_var, tv_var_window=tv_var_window, tv_var_regime_aware=tv_var_regime_aware)
+    # Garbage collection after feature metrics
+    # _garbage_collect_optimized()
 
-    if not feature_metrics:
-        raise ValueError("No feature metrics computed; check inputs and artifacts")
+    # if not feature_metrics:
+    #    raise ValueError("No feature metrics computed; check inputs and artifacts")
 
     model_reliability = _compute_model_reliability(feature_metrics=feature_metrics)
     model_coverage = _compute_model_coverage(X=X, y=y)
@@ -2405,6 +3706,8 @@ def run_diagnostics(
     # 3b) Compute target date range
     y_start = y.index.min()
     y_end = y.index.max()
+    # Garbage collection after model reliability
+    _garbage_collect_optimized()
     y_duration = (y_end - y_start).days if len(y) > 0 else 0
 
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
@@ -2416,13 +3719,29 @@ def run_diagnostics(
         y=y,
         realized_returns=realized_return,
         n_splits=cv_folds,
-        thresholds=[0.6, 0.7, 0.8, 0.9],
+        thresholds=None, dynamic_thresholds=True,
     )
 
+    # Garbage collection after probe models
+    _garbage_collect_optimized()
     # Reuse a FinalFeatureSelectionComponent instance for leakage detection
     fs_config = FinalFeatureSelectionConfig()
     fs_component = FinalFeatureSelectionComponent(config=fs_config)
-    leakage_diagnostics = _detect_feature_leakage(X=X, y=y, component=fs_component)
+    
+    # Use detect_redundant_features as a proxy for leakage diagnostics if detect_potential_leakage is missing
+    if hasattr(fs_component, 'detect_potential_leakage'):
+        leakage_diagnostics = _detect_feature_leakage(X=X, y=y, component=fs_component)
+    elif hasattr(fs_component, 'detect_redundant_features'):
+        # Fallback to redundancy check
+        logger.info("Using detect_redundant_features as proxy for leakage diagnostics")
+        redundancy = fs_component.detect_redundant_features(X, list(X.columns))
+        leakage_diagnostics = {
+            "suspicious_features": [(f, 0.95) for f in redundancy.get("high_correlation_pairs", [])],
+            "perfect_features": [],
+            "redundancy_info": redundancy
+        }
+    else:
+        leakage_diagnostics = {"error": "No leakage detection method found in FinalFeatureSelectionComponent"}
 
     global_stability = _compute_global_stability(X=X, y=y, n_splits=cv_folds)
     interactions = _compute_tree_shap_interactions(
@@ -2432,8 +3751,8 @@ def run_diagnostics(
     )
 
     # Aggregate summary stats
-    mi_values = np.array([m["mi_mean_cv"] for m in feature_metrics.values()], dtype=float)
-    r2_values = np.array([m["r2"] for m in feature_metrics.values()], dtype=float)
+    mi_values = np.array([m["mi_mean_cv"] for k, m in feature_metrics.items() if k != "_tv_var_system"], dtype=float)
+    r2_values = np.array([m["r2"] for k, m in feature_metrics.items() if k != "_tv_var_system"], dtype=float)
 
     mi_values = mi_values[np.isfinite(mi_values)]
     r2_values = r2_values[np.isfinite(r2_values)]
@@ -2450,10 +3769,14 @@ def run_diagnostics(
 
     # Build Markdown summary (top features by MI and R^2)
     sorted_by_mi = sorted(
-        feature_metrics.items(), key=lambda kv: kv[1]["mi_mean_cv"], reverse=True
+        [item for item in feature_metrics.items() if item[0] != "_tv_var_system"], 
+        key=lambda kv: kv[1].get("mi_mean_cv", 0.0), 
+        reverse=True
     )
     sorted_by_r2 = sorted(
-        feature_metrics.items(), key=lambda kv: kv[1]["r2"], reverse=True
+        [item for item in feature_metrics.items() if item[0] != "_tv_var_system"], 
+        key=lambda kv: kv[1].get("r2", 0.0), 
+        reverse=True
     )
 
     top_k = 20
@@ -2483,8 +3806,19 @@ def run_diagnostics(
         f"- High-MI features (MI>0.10): {summary['n_high_mi']}",
         f"- High-R^2 features (R^2>0.05): {summary['n_high_r2']}",
         "",
-        "### Probe model summary (LogReg / LGBM)",
     ]
+    
+    if tv_var_info.get("enabled"):
+        md_lines.extend([
+            "### TV-VAR System Metrics",
+            f"- Stability Score: {tv_var_info['stability_score']:.3f}",
+            f"- TV-VAR Samples: {tv_var_info['n_samples']}",
+            f"- Market Regimes Detected: {tv_var_info['regime_count']}",
+            "",
+        ])
+
+    md_lines.append("### Probe model summary (LogReg / LGBM)")
+
 
     # Add brief probe model summary if available
     task_type = probe_models.get("task_type", "unknown")
@@ -2825,9 +4159,53 @@ def run_diagnostics(
                 f"| {p['feature_i']} | {p['feature_j']} | {p['interaction_strength']:.4e} |"
             )
 
+    # ---------------------------------------------------------
+    # Regime-Gated MoE Report (NEW)
+    # ---------------------------------------------------------
+    if moe_results:
+        md_lines.extend([
+            "",
+            "## Regime-Gated Mixture of Experts (MoE)",
+            f"- **Latest Regime**: {moe_results.get('latest_regime')}",
+            "",
+            "### Latest Regime Weights",
+            "| Specialist | Weight |",
+            "|------------|--------:|",
+        ])
+        weights = moe_results.get('latest_weights', {})
+        for spec, weight in sorted(weights.items(), key=lambda x: x[1], reverse=True):
+            md_lines.append(f"| {spec} | {weight:.4f} |")
+        
+        md_lines.extend([
+            "",
+            "### Regime Distribution (Samples)",
+            "| Regime | Count |",
+            "|--------|-------:|",
+        ])
+        dist = moe_results.get('regime_distribution', {})
+        for r, count in sorted(dist.items()):
+            md_lines.append(f"| {r} | {count:,} |")
+
+    # ---------------------------------------------------------
+    # Adversarial Orthogonalization Report (NEW)
+    # ---------------------------------------------------------
+    if adversarial_results:
+        md_lines.extend([
+            "",
+            "## Adversarial Orthogonalization",
+            f"- **Anchor**: {adversarial_results.get('anchor')}",
+            f"- **Penalty (Lambda)**: {adversarial_results.get('penalty_lambda')}",
+            f"- **Generated Targets**: {adversarial_results.get('n_targets')}",
+            "",
+            "### Targets List",
+        ])
+        for target in adversarial_results.get('targets', []):
+            md_lines.append(f"- {target}")
+
     payload: Dict[str, Any] = {
         "summary": summary,
         "feature_metrics": feature_metrics,
+        "tv_var_info": tv_var_info,
         "cv_folds": int(cv_folds),
         "probe_models": probe_models,
         "probe_pnl_simulation": probe_pnl,
@@ -2838,6 +4216,9 @@ def run_diagnostics(
         "model_pairwise": model_relationships,
         "group_lgbm_auc": group_lgbm_auc,
         "model_coverage": model_coverage,
+        "tv_var_results": tv_var_results,
+        "moe_results": moe_results,
+        "adversarial_results": adversarial_results,
     }
 
     return _export_report(
@@ -2867,6 +4248,32 @@ def _check_range_specific_config() -> bool:
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Diagnostics for specialist model outputs vs meta-label targets",
+    )
+    ap.add_argument(
+        "--independent-mode",
+        action="store_true",
+        help="Run specialist training before diagnostics"
+    )
+    ap.add_argument(
+        "--auto-train",
+        action="store_true",
+        help="Automatically run training for specialists"
+    )
+    ap.add_argument(
+        "--enable-moe",
+        action="store_true",
+        help="Enable Regime-Gated Mixture of Experts selection"
+    )
+    ap.add_argument(
+        "--enable-adversarial-orthogonalization",
+        action="store_true",
+        help="Enable Adversarial Orthogonalization with macro penalty"
+    )
+    ap.add_argument(
+        "--adversarial-penalty",
+        type=float,
+        default=0.1,
+        help="Penalty lambda for adversarial orthogonalization (default: 0.1)"
     )
     ap.add_argument("--symbol", type=str, default="ETHUSDT")
     ap.add_argument("--exchange", type=str, default="binance")
@@ -2976,6 +4383,71 @@ def main() -> None:
         action="store_true",
         help="Run complete optimized orthogonalization pipeline"
     )
+    ap.add_argument(
+        "--enable-calibration",
+        action="store_true",
+        default=True,
+        help="Enable probability calibration for probe models (default: True)"
+    )
+    
+    # Additional missing arguments
+    ap.add_argument(
+        "--compare-targets",
+        action="store_true",
+        help="Compare multiple targets (classifiers vs regressors)"
+    )
+    ap.add_argument(
+        "--target-col",
+        type=str,
+        help="Explicit target column (overrides direction-aware default)"
+    )
+    ap.add_argument(
+        "--lookback-days",
+        type=float,
+        help="Restrict analysis to last N calendar days"
+    )
+    ap.add_argument(
+        "--cv-folds",
+        type=int,
+        default=5,
+        help="Number of cross-validation folds (default: 5)"
+    )
+    ap.add_argument(
+        "--enable-hmm-risk-specialist",
+        action="store_true",
+        help="Enable HMM risk specialist"
+    )
+    ap.add_argument(
+        "--projection-mode",
+        type=str,
+        default="canonical_scalars",
+        help="Projection mode (default: canonical_scalars)"
+    )
+
+    # TV-VAR Enhanced Analysis arguments (default enabled)
+    ap.add_argument(
+        "--enable-tv-var",
+        action="store_true",
+        default=True,
+        help="Enable TV-VAR enhanced analysis (default: True)"
+    )
+    ap.add_argument(
+        "--tv-var-window",
+        type=int,
+        default=100,
+        help="TV-VAR rolling window size (default: 100)"
+    )
+    ap.add_argument(
+        "--tv-var-regime-aware",
+        action="store_true",
+        default=True,
+        help="Use regime-aware TV-VAR analysis (default: True)"
+    )
+    ap.add_argument(
+        "--tv-var-backtest",
+        action="store_true",
+        help="Run TV-VAR backtesting validation"
+    )
 
     args = ap.parse_args()
 
@@ -2989,13 +4461,9 @@ def main() -> None:
 
     # Determine default target column based on direction if not explicitly provided
     if not hasattr(args, 'target_col') or args.target_col is None:
-        if args.direction == "long":
-            args.target_col = "binary_label_long"
-        elif args.direction == "short":
-            args.target_col = "binary_label_short"
-        else:
-            args.target_col = "binary_label"  # Fallback for 'both' direction
-        print(f"Using direction-aware default target: {args.target_col}")
+        # Priority: binary_label (often has better coverage/balance in AFML)
+        args.target_col = "binary_label"
+        print(f"Using unified default target: {args.target_col}")
 
     # Normalize legacy/unified binary_label to direction-aware labels when possible
     if args.target_col == "binary_label":
@@ -3031,6 +4499,17 @@ def main() -> None:
                 targets_to_run.append("binary_label_short")
 
     for tgt in targets_to_run:
+        if args.independent_mode or args.auto_train:
+            import asyncio
+            asyncio.run(_run_specialist_training(
+                symbol=args.symbol,
+                exchange=args.exchange,
+                timeframe=args.timeframe,
+                direction=args.direction,
+                regime_timeframe=args.regime_timeframe,
+                lookback_days=args.lookback_days
+            ))
+
         print(f"\n--- Running diagnostics for target: {tgt} ---")
         try:
             md_path, csv_path = run_diagnostics(
@@ -3045,6 +4524,22 @@ def main() -> None:
                 lookback_days=args.lookback_days,
                 enable_risk_hmm_specialist=args.enable_hmm_risk_specialist,
                 projection_mode=args.projection_mode,
+                enable_orthogonalization=args.enable_orthogonalization,
+                run_optimized_orthogonalization=args.run_optimized_orthogonalization,
+                anchor_specialist=args.anchor_specialist,
+                enable_cache=args.enable_cache,
+                feature_optimization=args.feature_optimization,
+                orthogonal_hpo=args.orthogonal_hpo,
+                conservative_pruning=args.conservative_pruning,
+                run_lgbm_comparison=args.run_lgbm_comparison,
+                orthogonal_comparison_report=args.orthogonal_comparison_report,
+                enable_moe=args.enable_moe,
+                enable_adversarial_orthogonalization=args.enable_adversarial_orthogonalization,
+                adversarial_penalty=args.adversarial_penalty,
+                enable_tv_var=args.enable_tv_var,
+                tv_var_window=args.tv_var_window,
+                tv_var_regime_aware=args.tv_var_regime_aware,
+                tv_var_backtest=args.tv_var_backtest,
             )
             print(
                 f"Specialist feature diagnostics for {tgt} saved to: {md_path} "

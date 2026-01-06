@@ -1,0 +1,1055 @@
+"""
+Causal Targets Module
+
+Implements Double Machine Learning (DML) for computing causal targets
+including treatment effects and causal residuals.
+
+Key Features:
+1. Double Machine Learning for causal effect estimation
+2. CATE (Conditional Average Treatment Effect) computation
+3. Causal residual targets for Chaser system
+4. Treatment effect heterogeneity analysis
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Optional, Any, Union
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.model_selection import KFold, cross_val_predict
+from sklearn.preprocessing import StandardScaler
+import warnings
+from scipy.stats import norm
+import lightgbm as lgb
+try:
+    from lightgbm import LGBMClassifier
+except ImportError:
+    LGBMClassifier = None
+try:
+    from econml.dml import CausalForestDML, DMLOrthoForest
+    from econml.dr import DRLearner
+    ECONML_ORF_AVAILABLE = True
+except ImportError:
+    ECONML_ORF_AVAILABLE = False
+    CausalForestDML = None
+
+# Import tprint functions
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    # Fallback print functions
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+
+class CustomMultiOutputRegressor:
+    """Simple wrapper for MultiOutput training with LGBM"""
+    def __init__(self, base_model_params: Dict[str, Any]):
+        self.base_model_params = base_model_params
+        self.models = []
+        
+    def fit(self, X: Any, y: Any):
+        self.models = []
+        n_outputs = y.shape[1]
+        for i in range(n_outputs):
+            model = lgb.LGBMRegressor(**self.base_model_params)
+            model.fit(X, y[:, i])
+            self.models.append(model)
+        return self
+        
+    def predict(self, X: Any) -> np.ndarray:
+        preds = []
+        for model in self.models:
+            preds.append(model.predict(X))
+        return np.column_stack(preds)
+
+class CausalTargetComputer:
+    """
+    Computes causal targets using Double Machine Learning.
+    
+    Implements DML to estimate treatment effects and create
+    causal residual targets for the Chaser system.
+    """
+    
+    def __init__(
+        self,
+        treatment_model: str = "lgbm",
+        outcome_model: str = "lgbm",
+        n_folds: int = 5,
+        random_state: int = 42,
+        verbose: bool = True
+    ):
+        """
+        Initialize Causal Target Computer.
+        
+        Args:
+            treatment_model: Model for treatment prediction
+            outcome_model: Model for outcome prediction
+            n_folds: Number of cross-validation folds
+            random_state: Random seed
+            verbose: Whether to print progress information
+        """
+        self.treatment_model = treatment_model
+        self.outcome_model = outcome_model
+        self.n_folds = n_folds
+        self.random_state = random_state
+        self.verbose = verbose
+        
+        # Storage for models and results
+        self.treatment_models_ = {}
+        self.outcome_models_ = {}
+        self.causal_effects_ = {}
+        self.cate_estimates_ = None
+        self.residual_targets_ = {}
+        self.refutation_scores_ = None
+        self.causal_effect_frame_ = None
+        
+    def get_guarded_confounders(
+        self,
+        X: pd.DataFrame,
+        treatment_cols: List[str],
+        correlation_threshold: float = 0.85
+    ) -> pd.DataFrame:
+        """
+        Enhanced 2026 Causal Filter:
+        1. Removes Treatment Leakage (T is not in W).
+        2. Implements Temporal Discipline (Pre-Treatment check).
+        3. Handles Multi-collinearity (Denoising W).
+        """
+        # 1. Start with all numeric
+        potential_w = X.select_dtypes(include=[np.number])
+
+        # 2. EXCLUDE the treatment itself and any direct descendants
+        potential_w = potential_w.drop(columns=treatment_cols, errors='ignore')
+
+        # 3. TEMPORAL DISCIPLINE: Only keep features that are ex-ante (historical)
+        # We look for 'lag', 'rolling', or '_w' (rolling window) to identify historical context
+        valid_confounders = [
+            c for c in potential_w.columns
+            if 'lag' in c.lower() or 'rolling' in c.lower() or '_w' in c.lower()
+        ]
+
+        # If filtering removed everything, fall back to potential_w (with warning)
+        # to prevent DML failure, but log it.
+        if not valid_confounders:
+            if self.verbose:
+                tprint_warning("   ⚠️ Guarded selection removed all features! Falling back to all numeric features (potential leakage).")
+            return potential_w
+
+        # 4. DENOISING: Remove redundant confounders
+        w_subset = potential_w[valid_confounders]
+        corr_matrix = w_subset.corr().abs()
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper.columns if any(upper[column] > correlation_threshold)]
+
+        final_w_cols = [c for c in valid_confounders if c not in to_drop]
+
+        if self.verbose:
+            tprint_info(f"   🛡️ Guarded Confounders: Selected {len(final_w_cols)} features (dropped {len(to_drop)} redundant)")
+
+        return X[final_w_cols]
+
+    def _get_model(self, model_type: str, model_name: str):
+        """
+        Get model instance based on name.
+        
+        Args:
+            model_type: Type of model ("treatment" or "outcome")
+            model_name: Model name
+            
+        Returns:
+            Model instance
+        """
+        models = {
+            "linear": LinearRegression(),
+            "ridge": Ridge(alpha=1.0),
+            "lasso": Lasso(alpha=1.0),
+            "random_forest": RandomForestRegressor(
+                n_estimators=100, random_state=self.random_state
+            ),
+            "gradient_boosting": GradientBoostingRegressor(
+                n_estimators=100, random_state=self.random_state
+            ),
+            "lgbm": lgb.LGBMRegressor(
+                n_estimators=100,
+                random_state=self.random_state,
+                importance_type='gain',
+                n_jobs=-1,
+                verbose=-1
+            )
+        }
+        
+        if model_name not in models:
+            raise ValueError(f"Unknown model: {model_name}")
+        
+        return models[model_name]
+    
+    def compute_dml_causal_effects(
+        self,
+        X: pd.DataFrame,
+        treatments: Union[pd.Series, np.ndarray],
+        outcomes: Union[pd.Series, np.ndarray],
+        confounders: Optional[pd.DataFrame] = None,
+        max_features: int = 100,
+        max_samples: int = 10000
+    ) -> Dict[str, Any]:
+        """
+        Compute causal effects using Double Machine Learning.
+        
+        Args:
+            X: Feature matrix
+            treatments: Treatment variable(s)
+            outcomes: Outcome variable(s)
+            confounders: Confounding variables
+            max_features: Maximum number of features to use (for speed)
+            max_samples: Maximum samples to use (for speed)
+            
+        Returns:
+            Dictionary with causal effect estimates
+        """
+        try:
+            if self.verbose:
+                tprint_info("🧮 Computing DML Causal Effects...")
+            
+            # Determine treatment columns to exclude BEFORE converting to numpy
+            treatment_cols = []
+            if isinstance(treatments, pd.Series):
+                if treatments.name:
+                    treatment_cols = [str(treatments.name)]
+            elif isinstance(treatments, pd.DataFrame):
+                treatment_cols = [str(c) for c in treatments.columns]
+
+            # Convert to numpy arrays for downstream math while keeping indices for confounders
+            treatments_array = np.asarray(treatments)
+            outcomes_array = np.asarray(outcomes)
+            
+            if treatments_array.ndim == 1:
+                treatments_array = treatments_array.reshape(-1, 1)
+            if outcomes_array.ndim == 1:
+                outcomes_array = outcomes_array.reshape(-1, 1)
+            
+            # Use X as confounders if not provided, using guarded selection
+            if confounders is None:
+                confounders = self.get_guarded_confounders(X, treatment_cols)
+            else:
+                confounders = pd.concat(
+                    [
+                        self.get_guarded_confounders(X, treatment_cols),
+                        confounders.select_dtypes(include=[np.number])
+                    ],
+                    axis=1
+                )
+                # Deduplicate columns if explicit confounders overlap with X
+                confounders = confounders.loc[:, ~confounders.columns.duplicated()]
+            
+            # Ensure we have some numeric features
+            if confounders.empty:
+                raise ValueError("No numeric features available as confounders")
+            
+            # === SMART FEATURE SUBSAMPLING ===
+            original_feature_count = len(confounders.columns)
+            if len(confounders.columns) > max_features:
+                tprint_info(f"   🔬 Reducing features: {len(confounders.columns)} -> {max_features} (for speed)")
+                
+                # Use variance-based selection (fast)
+                variances = confounders.var(skipna=True).dropna()
+                top_features = variances.nlargest(max_features).index.tolist()
+                confounders = confounders[top_features]
+                
+                tprint_info(f"   ✅ Feature count reduced to {len(confounders.columns)}")
+            
+            # Record the features actually used for modeling
+            used_features = confounders.columns.tolist()
+            
+            # === SMART SAMPLE SUBSAMPLING ===
+            original_sample_count = len(confounders)
+            if len(confounders) > max_samples:
+                tprint_info(f"   🔬 Reducing samples: {len(confounders)} -> {max_samples} (for speed)")
+                
+                # Take most recent samples (tail)
+                sample_indices = confounders.index[-max_samples:]
+                confounders = confounders.loc[sample_indices]
+                treatments_array = treatments_array[-max_samples:]
+                outcomes_array = outcomes_array[-max_samples:]
+                
+                tprint_info(f"   ✅ Sample count reduced to {len(confounders)}")
+            
+            n_samples = len(treatments_array)
+            treatment_width = treatments_array.shape[1]
+            outcome_width = outcomes_array.shape[1]
+            
+            # Initialize cross-validation (reduce folds for speed)
+            effective_folds = min(self.n_folds, 3)  # Max 3 folds for speed
+            kf = KFold(n_splits=effective_folds, shuffle=True, random_state=self.random_state)
+            
+            # Initialize arrays for predictions
+            treatment_pred = np.zeros((n_samples, treatment_width), dtype=float)
+            outcome_pred = np.zeros((n_samples, outcome_width), dtype=float)
+
+            def _reshape_prediction(prediction: Any, expected_width: int) -> np.ndarray:
+                pred_array = np.asarray(prediction)
+                if pred_array.ndim == 1:
+                    pred_array = pred_array.reshape(-1, 1)
+                if pred_array.shape[1] != expected_width:
+                    raise ValueError(
+                        f"Prediction width mismatch: expected {expected_width}, got {pred_array.shape[1]}"
+                    )
+                return pred_array
+            
+            # Cross-validation for out-of-fold predictions
+            for fold, (train_idx, val_idx) in enumerate(kf.split(confounders)):
+                if self.verbose:
+                    tprint_info(f"   Processing fold {fold + 1}/{effective_folds}...")
+                
+                # Split data
+                X_train, X_val = confounders.iloc[train_idx], confounders.iloc[val_idx]
+                
+                T_train, T_val = treatments_array[train_idx], treatments_array[val_idx]
+                Y_train, Y_val = outcomes_array[train_idx], outcomes_array[val_idx]
+                
+                if T_train.shape[1] > 1:
+                    treatment_model = CustomMultiOutputRegressor({
+                        "n_estimators": 50,
+                        "random_state": self.random_state,
+                        "n_jobs": -1,
+                        "verbose": -1
+                    })
+                    treatment_model.fit(X_train, T_train)
+                else:
+                    treatment_model = lgb.LGBMRegressor(
+                        n_estimators=50,
+                        random_state=self.random_state,
+                        n_jobs=-1,
+                        verbose=-1
+                    )
+                    treatment_model.fit(X_train, T_train.ravel())
+                
+                treatment_pred[val_idx] = _reshape_prediction(
+                    treatment_model.predict(X_val),
+                    treatment_width
+                )
+                
+                # Handle outcomes
+                if Y_train.shape[1] > 1:
+                    outcome_model = CustomMultiOutputRegressor({
+                        "n_estimators": 50,
+                        "random_state": self.random_state,
+                        "n_jobs": -1,
+                        "verbose": -1
+                    })
+                    outcome_model.fit(X_train, Y_train)
+                else:
+                    outcome_model = lgb.LGBMRegressor(
+                        n_estimators=50,
+                        random_state=self.random_state,
+                        n_jobs=-1,
+                        verbose=-1
+                    )
+                    outcome_model.fit(X_train, Y_train.ravel())
+
+                outcome_pred[val_idx] = _reshape_prediction(
+                    outcome_model.predict(X_val),
+                    outcome_width
+                )
+                
+                # Store models for last fold
+                if fold == effective_folds - 1:
+                    self.treatment_models_["final"] = treatment_model
+                    self.outcome_models_["final"] = outcome_model
+            
+            # Compute residuals
+            treatment_residuals = treatments_array - treatment_pred
+            outcome_residuals = outcomes_array - outcome_pred
+            
+            # Estimate causal effect using residuals
+            causal_effect_model = LinearRegression()
+            causal_effect_model.fit(treatment_residuals, outcome_residuals.ravel())
+            
+            causal_effect = causal_effect_model.coef_[0]
+            causal_effect_se = np.sqrt(np.var(outcome_residuals - causal_effect * treatment_residuals) / 
+                                      np.var(treatment_residuals) / n_samples)
+            ci_radius = 1.96 * causal_effect_se
+            effect_ci_low = causal_effect - ci_radius
+            effect_ci_high = causal_effect + ci_radius
+            
+            # Compute R-squared (used as simple refutation proxy)
+            y_pred = causal_effect * treatment_residuals
+            r_squared = 1 - np.var(outcome_residuals - y_pred) / np.var(outcome_residuals)
+            refutation_score = float(np.clip(r_squared, 0.0, 1.0))
+            
+            # Compute full-length predictions using final models (for Chaser/residuals)
+            full_treatment_pred = _reshape_prediction(
+                self.treatment_models_["final"].predict(X[used_features]),
+                treatment_width
+            )
+            full_outcome_pred = _reshape_prediction(
+                self.outcome_models_["final"].predict(X[used_features]),
+                outcome_width
+            )
+
+            # Store results
+            self.causal_effects_ = {
+                "causal_effect": causal_effect,
+                "standard_error": causal_effect_se,
+                "r_squared": r_squared,
+                "treatment_residuals": treatment_residuals,
+                "outcome_residuals": outcome_residuals,
+                "treatment_predictions": full_treatment_pred,
+                "outcome_predictions": full_outcome_pred
+            }
+            
+            # Create Layer 4-ready causal effect frame (use original X index)
+            # Handle case where we subsampled
+            if original_sample_count > max_samples:
+                # Create full-length arrays with the computed effect for all samples
+                full_index = X.index
+            else:
+                full_index = confounders.index
+                
+            self.causal_effect_frame_ = pd.DataFrame({
+                "causal_effect_estimate": np.full(len(full_index), causal_effect),
+                "causal_effect_ci_low": np.full(len(full_index), effect_ci_low),
+                "causal_effect_ci_high": np.full(len(full_index), effect_ci_high),
+                "causal_refutation_score": np.full(len(full_index), refutation_score)
+            }, index=full_index)
+            self.refutation_scores_ = self.causal_effect_frame_["causal_refutation_score"]
+            
+            if self.verbose:
+                tprint_success("✅ DML Causal Effects Computed:")
+                tprint_info(f"   - Causal effect: {causal_effect:.6f}")
+                tprint_info(f"   - Standard error: {causal_effect_se:.6f}")
+                tprint_info(f"   - R-squared: {r_squared:.4f}")
+                tprint_info(f"   - Features used: {len(confounders.columns)}/{original_feature_count}")
+                tprint_info(f"   - Samples used: {n_samples}/{original_sample_count}")
+                tprint_info(f"   - Folds: {effective_folds}")
+            
+            return self.causal_effects_
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ DML causal effect computation failed: {e}")
+            raise
+    
+    def compute_cate(
+        self,
+        X: pd.DataFrame,
+        treatments: Union[pd.Series, np.ndarray],
+        outcomes: Union[pd.Series, np.ndarray],
+        confounders: Optional[pd.DataFrame] = None,
+        heterogeneity_features: Optional[List[str]] = None
+    ) -> pd.Series:
+        """
+        Compute Conditional Average Treatment Effects (CATE).
+        
+        Args:
+            X: Feature matrix
+            treatments: Treatment variable
+            outcomes: Outcome variable
+            confounders: Confounding variables
+            heterogeneity_features: Features for effect heterogeneity
+            
+        Returns:
+            CATE estimates
+        """
+        try:
+            if self.verbose:
+                tprint_info("🎯 Computing CATE...")
+            
+            # Use computed causal effects if available
+            if not self.causal_effects_:
+                self.compute_dml_causal_effects(X, treatments, outcomes, confounders)
+            
+            # Select heterogeneity features
+            if heterogeneity_features is None:
+                heterogeneity_features = X.columns.tolist()
+            
+            heterogeneity_data = X[heterogeneity_features].select_dtypes(include=[np.number])
+            
+            if heterogeneity_data.empty:
+                tprint_warning("   No numeric features available for CATE, using X instead")
+                heterogeneity_data = X.select_dtypes(include=[np.number])
+            
+            # Use residuals from DML (these were computed on the subsample)
+            treatment_residuals = self.causal_effects_["treatment_residuals"].ravel()
+            outcome_residuals = self.causal_effects_["outcome_residuals"].ravel()
+            
+            # Ensure residuals have matching lengths
+            if len(treatment_residuals) != len(outcome_residuals):
+                tprint_warning(f"   ⚠️ Residual length mismatch: T={len(treatment_residuals)}, Y={len(outcome_residuals)}")
+                min_len = min(len(treatment_residuals), len(outcome_residuals))
+                treatment_residuals = treatment_residuals[:min_len]
+                outcome_residuals = outcome_residuals[:min_len]
+            
+            # Use the length of residuals to determine the subsample size
+            n_subsample = len(treatment_residuals)
+            
+            # Align heterogeneity data to the same subsample (use tail to match DML logic)
+            X_dml = heterogeneity_data.iloc[-n_subsample:]
+            
+            # Fit heterogeneity model using LGBM (faster, more RAM-efficient)
+            cate_model = lgb.LGBMRegressor(
+                n_estimators=100,
+                random_state=self.random_state,
+                importance_type='gain',
+                n_jobs=-1,
+                verbose=-1
+            )
+            
+            # Predict treatment effects using heterogeneity features
+            # This is a simplified CATE estimation
+            treatment_effects = outcome_residuals / (treatment_residuals + 1e-8)
+            
+            # Filter extreme values for training
+            valid_effects = np.abs(treatment_effects) < 10
+            X_valid = X_dml[valid_effects]
+            effects_valid = treatment_effects[valid_effects]
+            
+            if len(X_valid) > 10:
+                cate_model.fit(X_valid, effects_valid)
+                # Predict for the FULL dataset
+                cate_estimates = cate_model.predict(heterogeneity_data)
+            else:
+                # Fallback to constant effect
+                cate_estimates = np.full(len(X), self.causal_effects_["causal_effect"])
+            
+            cate_series = pd.Series(cate_estimates, index=X.index)
+            self.cate_estimates_ = cate_series
+            
+            if self.verbose:
+                tprint_success("✅ CATE Computed:")
+                tprint_info(f"   - Mean CATE: {cate_estimates.mean():.6f}")
+                tprint_info(f"   - Std CATE: {cate_estimates.std():.6f}")
+                tprint_info(f"   - Range: [{cate_estimates.min():.6f}, {cate_estimates.max():.6f}]")
+            
+            return cate_series
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ CATE computation failed: {e}")
+            return pd.Series(0, index=X.index)
+    
+    def compute_causal_residuals(
+        self,
+        X: pd.DataFrame,
+        treatments: Union[pd.Series, np.ndarray],
+        outcomes: Union[pd.Series, np.ndarray],
+        confounders: Optional[pd.DataFrame] = None
+    ) -> pd.Series:
+        """
+        Compute causal residuals for Chaser targeting.
+        
+        Args:
+            X: Feature matrix
+            treatments: Treatment variable
+            outcomes: Outcome variable
+            confounders: Confounding variables
+            
+        Returns:
+            Causal residual targets
+        """
+        try:
+            if self.verbose:
+                tprint_info("🎯 Computing Causal Residuals for Chaser...")
+            
+            # Compute causal effects if not available
+            if not self.causal_effects_:
+                self.compute_dml_causal_effects(X, treatments, outcomes, confounders)
+            
+            # Get predictions from outcome model
+            outcome_predictions = self.causal_effects_["outcome_predictions"].ravel()
+            
+            # Compute causal residuals
+            if isinstance(outcomes, pd.Series):
+                outcomes_values = outcomes.values
+            else:
+                outcomes_values = outcomes.ravel()
+            
+            causal_residuals = outcomes_values - outcome_predictions
+            
+            # Convert to Series
+            residual_series = pd.Series(causal_residuals, index=X.index)
+            self.residual_targets_ = residual_series
+            
+            if self.verbose:
+                tprint_success("✅ Causal Residuals Computed:")
+                tprint_info(f"   - Mean residual: {causal_residuals.mean():.6f}")
+                tprint_info(f"   - Std residual: {causal_residuals.std():.6f}")
+                tprint_info(f"   - Range: [{causal_residuals.min():.6f}, {causal_residuals.max():.6f}]")
+            
+            return residual_series
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Causal residual computation failed: {e}")
+            return pd.Series(0, index=X.index)
+    
+    def analyze_treatment_effect_heterogeneity(
+        self,
+        X: pd.DataFrame,
+        cate_estimates: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze treatment effect heterogeneity.
+        
+        Args:
+            X: Feature matrix
+            cate_estimates: CATE estimates
+            
+        Returns:
+            Heterogeneity analysis results
+        """
+        try:
+            if self.verbose:
+                tprint_info("📊 Analyzing Treatment Effect Heterogeneity...")
+            
+            if cate_estimates is None:
+                if self.cate_estimates_ is not None and isinstance(self.cate_estimates_, pd.Series):
+                    cate_estimates = self.cate_estimates_
+                else:
+                    return {"error": "No valid CATE estimates available"}
+            
+            # Basic statistics
+            heterogeneity_stats = {
+                "mean_cate": cate_estimates.mean(),
+                "std_cate": cate_estimates.std(),
+                "min_cate": cate_estimates.min(),
+                "max_cate": cate_estimates.max(),
+                "range_cate": cate_estimates.max() - cate_estimates.min(),
+                "positive_effects": (cate_estimates > 0).mean(),
+                "negative_effects": (cate_estimates < 0).mean()
+            }
+            
+            # Feature heterogeneity analysis
+            feature_heterogeneity = {}
+            
+            for feature in X.columns:
+                if X[feature].dtype in ['int64', 'float64']:
+                    # Correlation with CATE
+                    correlation = X[feature].corr(cate_estimates)
+                    feature_heterogeneity[feature] = {
+                        "correlation": correlation,
+                        "abs_correlation": abs(correlation)
+                    }
+            
+            # Sort features by absolute correlation
+            sorted_features = sorted(
+                feature_heterogeneity.items(),
+                key=lambda x: x[1]["abs_correlation"],
+                reverse=True
+            )
+            
+            heterogeneity_analysis = {
+                "overall_stats": heterogeneity_stats,
+                "feature_heterogeneity": dict(sorted_features[:10]),  # Top 10 features
+                "top_heterogeneous_features": [feat for feat, stats in sorted_features[:5]]
+            }
+            
+            if self.verbose:
+                tprint_success("✅ Heterogeneity Analysis Complete:")
+                tprint_info(f"   - Mean CATE: {heterogeneity_stats['mean_cate']:.6f}")
+                tprint_info(f"   - CATE std: {heterogeneity_stats['std_cate']:.6f}")
+                tprint_info(f"   - Positive effects: {heterogeneity_stats['positive_effects']:.2%}")
+                tprint_info(f"   - Top heterogeneous feature: {sorted_features[0][0] if sorted_features else 'None'}")
+            
+            return heterogeneity_analysis
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Heterogeneity analysis failed: {e}")
+            return {"error": str(e)}
+    
+    def compute_orf_causal_metrics(
+        self,
+        X: pd.DataFrame,
+        T: pd.DataFrame,
+        Y: Union[pd.Series, np.ndarray],
+        W: Optional[pd.DataFrame] = None,
+        n_trees: int = 500,
+        min_leaf_size: int = 50, # Increased from 30 for stability
+        max_samples: float = 0.5, # Increased from 0.2 for stability
+        use_fast_approximation: bool = True # Use CausalForestDML instead of DMLOrthoForest
+    ) -> pd.DataFrame:
+        """
+        Compute Orthogonal Random Forest (ORF) Causal Metrics.
+        Uses EconML's CausalForestDML (fast) or DMLOrthoForest (precise).
+        
+        Args:
+            X: Effect Modifiers (Features for heterogeneity)
+            T: Treatment (Continuous or Binary)
+            Y: Outcome
+            W: Confounders (Controls)
+            n_trees: Number of trees in the forest
+            min_leaf_size: Minimum leaf size
+            max_samples: Subsample fraction
+            use_fast_approximation: If True, use CausalForestDML (standard for speed)
+            
+        Returns:
+            DataFrame with [cate, se, p_value, r2_score, density]
+        """
+        if not ECONML_ORF_AVAILABLE:
+            tprint_error("❌ EconML not available. Cannot compute ORF metrics.")
+            return pd.DataFrame()
+            
+        try:
+            if self.verbose:
+                method_name = "CausalForestDML" if use_fast_approximation else "DMLOrthoForest"
+                tprint_info(f"   🌲 Training {method_name} (n_trees={n_trees}, jobs=-1)...")
+
+            # 1. Align Data
+            if isinstance(T, pd.DataFrame):
+                T_val = T.values
+            else:
+                T_val = np.asarray(T).reshape(-1, 1)
+            
+            # Check T cardinality (Binary vs Continuous)
+            is_binary_treatment = len(np.unique(T_val)) <= 2
+
+            if isinstance(Y, pd.Series):
+                Y_val = Y.values
+            else:
+                Y_val = np.asarray(Y)
+
+            # 2. Configure Nuisance Models (Y ~ W, T ~ W)
+            # Critical: Use balanced classifier for T if binary to handle propneisty imbalance
+            if is_binary_treatment and LGBMClassifier is not None:
+                model_t = LGBMClassifier(
+                    n_estimators=100,
+                    max_depth=4,
+                    learning_rate=0.05,
+                    class_weight='balanced', # Crucial for Treatment imbalance
+                    n_jobs=2,
+                    verbose=-1
+                )
+            else:
+                model_t = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=5,
+                    min_samples_leaf=min_leaf_size,
+                    random_state=self.random_state,
+                    n_jobs=2
+                )
+                
+            model_y = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=5,
+                min_samples_leaf=min_leaf_size,
+                random_state=self.random_state,
+                n_jobs=2
+            )
+            
+            # 3. Configure & Fit Causal Model
+            W_val = W.values if W is not None else None
+            
+            if use_fast_approximation:
+                # CausalForestDML (Fast)
+                est = CausalForestDML(
+                    model_y=model_y,
+                    model_t=model_t,
+                    n_estimators=n_trees,
+                    min_samples_leaf=min_leaf_size,
+                    max_samples=max_samples,
+                    subsample_ratio=max_samples, # CausalForest uses ratio
+                    discrete_treatment=is_binary_treatment,
+                    random_state=self.random_state,
+                    n_jobs=2, # Critical for speed
+                    inference=True
+                )
+                # Note: CausalForestDML.fit takes (Y, T, X=X, W=W)
+                est.fit(Y_val, T_val, X=X.values, W=W_val)
+                
+            else:
+                # DMLOrthoForest (Slow, "True" ORF)
+                # Warning: DMLOrthoForest does not support n_jobs=-1 in constructor generally
+                # but backend joblib might.
+                est = DMLOrthoForest(
+                    n_trees=n_trees,
+                    model_Y=model_y,
+                    model_T=model_t,
+                    max_samples=max_samples, 
+                    subsample_ratio=max_samples,
+                    bootstrap=False,
+                    min_samples_leaf=min_leaf_size,
+                    random_state=self.random_state
+                    # n_jobs not supported in DMLOrthoForest constructor (it's slow)
+                )
+                est.fit(Y_val, T_val, X=X.values, W=W_val)
+
+            # 4. Estimate CATE
+            # const_marginal_effect(X) gives CATE for each sample
+            cate_est = est.const_marginal_effect(X.values)
+            
+            if cate_est.ndim > 1 and cate_est.shape[1] == 1:
+                cate_est = cate_est.ravel()
+
+            # 5. Inference (Standard Errors & P-Values)
+            try:
+                # Use BLP (Best Linear Projection) or standard interval if available
+                # CausalForestDML provides effect_interval directly with 'blp' or 'bootstrap'
+                # But here we just get the standard CI
+                te_lower, te_upper = est.const_marginal_effect_interval(X.values, alpha=0.05)
+                se_est = (te_upper - te_lower) / 3.92
+                
+                # Z-score & P-value
+                z_score = cate_est / (se_est + 1e-10)
+                p_values = 2 * (1 - norm.cdf(np.abs(z_score)))
+            except Exception as e_inf:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ ORF inference failed: {e_inf}. Filling SE/P-val with NaNs.")
+                se_est = np.full_like(cate_est, np.nan)
+                p_values = np.full_like(cate_est, np.nan)
+
+            # 6. R-squared / Performance (Proxy)
+            # EconML doesn't give a simple "R2" for CATE. We can calculate the R2 of the final stage residuals?
+            # Or just return key stats. User asked for "R2". 
+            # DML Score = (Y - E[Y|X,W]) - theta(X) * (T - E[T|X,W]) -> minimize this.
+            # We'll use the .score() method if available (returns score on test data).
+            try:
+               r2_score_val = orf.score(Y_val, T_val, X=X.values, W=W_val)
+               # Broadcast simply
+               r2_array = np.full_like(cate_est, r2_score_val)
+            except:
+               r2_array = np.full_like(cate_est, np.nan)
+
+            # 7. Density Score (Sample density in leaf?)
+            # Hard to get directly from fitted object without traversing trees.
+            # Proxy: Just 1.0 or user might imply support? 
+            density_array = np.ones_like(cate_est) 
+
+            # Construct Result DataFrame
+            results_df = pd.DataFrame({
+                "cate": cate_est,
+                "se": se_est if isinstance(se_est, np.ndarray) else np.full_like(cate_est, se_est),
+                "p_value": p_values if isinstance(p_values, np.ndarray) else np.full_like(cate_est, p_values),
+                "r2_score": r2_array,
+                "density": density_array
+            }, index=X.index)
+
+            return results_df
+
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ ORF computation failed: {e}")
+            return pd.DataFrame()
+
+    def create_chaser_targets(
+        self,
+        X: pd.DataFrame,
+        treatments: pd.DataFrame,
+        outcomes: Union[pd.Series, np.ndarray],
+        nuisances: Optional[pd.DataFrame] = None,
+        effect_modifiers: Optional[pd.DataFrame] = None,
+        n_trees: int = 500
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        De Prado 2026 Causal Protocol: Orchestrates 8+ ORF Chasers.
+        
+        Args:
+            X: Effect Modifiers (10 features)
+            treatments: 8 Primary specialist predictions (Treatments)
+            outcomes: Binary outcome (TP hit)
+            nuisances: 30 Regime Confounders (W)
+            
+        Returns:
+            Dictionary of DataFrames containing [CATE, SE, P-Value, R2, Density] per treatment.
+        """
+        if nuisances is None:
+            # Fallback to guarded selection from X if W not provided separately
+            nuisances = self.get_guarded_confounders(X, treatments.columns.tolist())
+            
+        if effect_modifiers is None:
+            # Use X as effect modifiers if not provided
+            effect_modifiers = X
+
+        chaser_results = {}
+        
+        for treatment_col in treatments.columns:
+            tprint_info(f"🎯 Creating Causal Chaser for {treatment_col}...")
+            
+            # Extract single treatment
+            T_single = treatments[[treatment_col]]
+            
+            # Compute ORF Metrics (The Triage)
+            metrics_df = self.compute_orf_causal_metrics(
+                X=effect_modifiers,
+                T=T_single,
+                Y=outcomes,
+                W=nuisances,
+                n_trees=n_trees
+            )
+            
+            if not metrics_df.empty:
+                chaser_results[treatment_col] = metrics_df
+                
+        return chaser_results
+        """
+        Create complete set of targets for Chaser system.
+        
+        Args:
+            X: Feature matrix
+            treatments: Treatment variable
+            outcomes: Outcome variable
+            confounders: Confounding variables
+            include_cate: Whether to include CATE estimates
+            
+        Returns:
+            Dictionary of Chaser targets
+        """
+        try:
+            if self.verbose:
+                tprint_info("🎯 Creating Chaser Targets...")
+            
+            chaser_targets = {}
+            
+            # Primary causal residuals
+            causal_residuals = self.compute_causal_residuals(X, treatments, outcomes, confounders)
+            chaser_targets["causal_residuals"] = causal_residuals
+            
+            # CATE estimates (optional)
+            if include_cate:
+                cate_estimates = self.compute_cate(X, treatments, outcomes, confounders)
+                chaser_targets["cate_estimates"] = cate_estimates
+            
+            # Treatment effect heterogeneity score
+            if self.cate_estimates_ is not None and isinstance(self.cate_estimates_, pd.Series):
+                heterogeneity_score = (self.cate_estimates_ - self.cate_estimates_.mean()) / (self.cate_estimates_.std() + 1e-8)
+                chaser_targets["heterogeneity_score"] = heterogeneity_score
+            
+            # Treatment residuals (for additional analysis)
+            if self.causal_effects_:
+                try:
+                    residuals_raw = self.causal_effects_["treatment_residuals"].ravel()
+                    
+                    # Handle shape mismatch robustly (e.g. if residuals computed on full set vs subset)
+                    if len(residuals_raw) != len(X.index):
+                        tprint_warning(f"⚠️ Shape mismatch in Chaser residuals: {len(residuals_raw)} vs {len(X.index)}")
+                        # Try to align if it's a superset? Or just skip
+                        # Assuming index alignment if possible, otherwise skip to prevent crash
+                        if len(residuals_raw) > len(X.index):
+                             # Maybe slice? Dangerous without knowing order.
+                             # Safer to just skip this optional target.
+                             pass
+                        else:
+                             pass
+                    else:
+                        treatment_residuals = pd.Series(
+                            residuals_raw,
+                            index=X.index
+                        )
+                        chaser_targets["treatment_residuals"] = treatment_residuals
+                except Exception as e_res:
+                    tprint_warning(f"⚠️ Failed to attach treatment residuals: {e_res}")
+            
+            # Add Layer 4-ready causal effect frame columns
+            if self.causal_effect_frame_ is not None:
+                for col in self.causal_effect_frame_.columns:
+                    chaser_targets[col] = self.causal_effect_frame_[col]
+            
+            if self.verbose:
+                tprint_success("✅ Chaser Targets Created:")
+                for target_name, target_data in chaser_targets.items():
+                    tprint_info(f"   - {target_name}: mean={target_data.mean():.6f}, std={target_data.std():.6f}")
+            
+            return chaser_targets
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Chaser target creation failed: {e}")
+            return {}
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of causal target computation.
+        
+        Returns:
+            Summary dictionary
+        """
+        summary = {
+            "treatment_model": self.treatment_model,
+            "outcome_model": self.outcome_model,
+            "n_folds": self.n_folds,
+            "has_causal_effects": len(self.causal_effects_) > 0,
+            "has_cate_estimates": len(self.cate_estimates_) > 0,
+            "has_residual_targets": len(self.residual_targets_) > 0
+        }
+        
+        if self.causal_effects_:
+            summary["causal_effect"] = self.causal_effects_["causal_effect"]
+            summary["causal_effect_se"] = self.causal_effects_["standard_error"]
+            summary["r_squared"] = self.causal_effects_["r_squared"]
+        
+        return summary
+
+# Convenience functions
+def quick_causal_targets(
+    X: pd.DataFrame,
+    treatments: Union[pd.Series, np.ndarray],
+    outcomes: Union[pd.Series, np.ndarray],
+    **kwargs
+) -> Dict[str, pd.Series]:
+    """
+    Quick causal target computation.
+    
+    Args:
+        X: Feature matrix
+        treatments: Treatment variable
+        outcomes: Outcome variable
+        **kwargs: Additional parameters
+        
+    Returns:
+        Dictionary of causal targets
+    """
+    computer = CausalTargetComputer(**kwargs)
+    return computer.create_chaser_targets(X, treatments, outcomes)
+
+def compute_dml_effects(
+    X: pd.DataFrame,
+    treatments: Union[pd.Series, np.ndarray],
+    outcomes: Union[pd.Series, np.ndarray],
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Quick DML causal effect computation.
+    
+    Args:
+        X: Feature matrix
+        treatments: Treatment variable
+        outcomes: Outcome variable
+        **kwargs: Additional parameters
+        
+    Returns:
+        Causal effect estimates
+    """
+    computer = CausalTargetComputer(**kwargs)
+    return computer.compute_dml_causal_effects(X, treatments, outcomes)
+
+def create_residual_targets(
+    X: pd.DataFrame,
+    outcomes: Union[pd.Series, np.ndarray],
+    predictions: Union[pd.Series, np.ndarray],
+    **kwargs
+) -> pd.Series:
+    """
+    Create simple residual targets.
+    
+    Args:
+        X: Feature matrix
+        outcomes: True outcomes
+        predictions: Predicted outcomes
+        **kwargs: Additional parameters
+        
+    Returns:
+        Residual targets
+    """
+    if isinstance(outcomes, pd.Series):
+        outcomes_values = outcomes.values
+    else:
+        outcomes_values = outcomes.ravel()
+    
+    if isinstance(predictions, pd.Series):
+        predictions_values = predictions.values
+    else:
+        predictions_values = predictions.ravel()
+    
+    residuals = outcomes_values - predictions_values
+    return pd.Series(residuals, index=X.index)

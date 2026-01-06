@@ -1,0 +1,967 @@
+"""
+TV-VAR Decision Tree Rules Extractor
+
+This module extracts decision tree rules from TV-VAR batch results for real-time application.
+The decision trees provide interpretable, fast-executing rules that capture the
+complex relationships learned by the TV-VAR system.
+
+Key Features:
+- Decision tree extraction for specialist selection
+- Orthogonalization weight rules
+- Regime detection rules
+- Real-time rule execution engine
+- Rule validation and optimization
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Optional, Any, Union
+from dataclasses import dataclass
+from datetime import datetime
+import logging
+import json
+from pathlib import Path
+import ast
+
+# Try to import sklearn
+try:
+    from sklearn.tree import DecisionTreeRegressor, export_text, plot_tree
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.model_selection import cross_val_score
+    from sklearn.metrics import mean_squared_error, r2_score
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    logging.warning("⚠️ Scikit-learn not available - using simplified rule extraction")
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class DecisionTreeRule:
+    """Structure for a single decision tree rule."""
+    rule_id: str
+    condition: str
+    outcome: float
+    confidence: float
+    support: int
+    feature_importance: Dict[str, float]
+    rule_type: str  # 'specialist_selection', 'orthogonalization', 'regime_detection'
+
+@dataclass
+class RuleSet:
+    """Collection of decision tree rules for a specific purpose."""
+    rules: List[DecisionTreeRule]
+    rule_type: str
+    accuracy: float
+    coverage: float
+    created_at: datetime
+    validation_metrics: Dict[str, float]
+
+class TVVARDecisionTreeRules:
+    """
+    Extract and manage decision tree rules from TV-VAR results.
+    
+    This system converts complex TV-VAR relationships into simple,
+    interpretable decision tree rules for real-time execution.
+    """
+    
+    def __init__(self, 
+                 max_depth: int = 3,
+                 min_samples_leaf: int = 20,
+                 use_random_forest: bool = False):
+        """
+        Initialize decision tree rules extractor.
+        
+        Args:
+            max_depth: Maximum depth of decision trees (for interpretability)
+            min_samples_leaf: Minimum samples per leaf (for robustness)
+            use_random_forest: Use Random Forest for more robust rules
+        """
+        self.max_depth = max_depth
+        self.min_samples_leaf = min_samples_leaf
+        self.use_random_forest = use_random_forest
+        
+        # Storage for extracted rules
+        self.rule_sets = {}
+        
+        # Rule validation history
+        self.validation_history = []
+        
+        logger.info(f"✅ TV-VAR Decision Tree Rules Extractor initialized: max_depth={max_depth}, min_samples_leaf={min_samples_leaf}")
+    
+    def extract_decision_tree_rules(self, 
+                                  features_df: pd.DataFrame,
+                                  time_varying_coeffs: pd.DataFrame,
+                                  regime_assignments: pd.Series,
+                                  specialist_names: Optional[List[str]] = None) -> Dict[str, RuleSet]:
+        """
+        Extract decision tree rules from TV-VAR results.
+        
+        Args:
+            features_df: DataFrame with 8 core features
+            time_varying_coeffs: TV-VAR time-varying coefficients
+            regime_assignments: Regime assignments
+            specialist_names: Names of specialists for rule targeting
+            
+        Returns:
+            Dictionary of rule sets by type
+        """
+        logger.info("🌳 Extracting decision tree rules from TV-VAR results")
+        
+        if not SKLEARN_AVAILABLE:
+            logger.warning("Scikit-learn not available, using simple threshold rules")
+            return self._extract_simple_threshold_rules(features_df, regime_assignments)
+        
+        # Align data
+        aligned_features, aligned_coeffs, aligned_regimes = self._align_data(
+            features_df, time_varying_coeffs, regime_assignments
+        )
+        
+        # Extract different types of rules
+        rule_sets = {}
+        
+        # 1. Specialist Selection Rules
+        rule_sets['specialist_selection'] = self._extract_specialist_selection_rules(
+            aligned_features, aligned_coeffs, aligned_regimes, specialist_names
+        )
+        
+        # 2. Orthogonalization Weight Rules
+        rule_sets['orthogonalization_weights'] = self._extract_orthogonalization_rules(
+            aligned_features, aligned_coeffs, aligned_regimes
+        )
+        
+        # 3. Regime Detection Rules
+        rule_sets['regime_detection'] = self._extract_regime_detection_rules(
+            aligned_features, aligned_regimes
+        )
+        
+        # 4. Risk Management Rules
+        rule_sets['risk_management'] = self._extract_risk_management_rules(
+            aligned_features, aligned_coeffs, aligned_regimes
+        )
+        
+        # Store rule sets
+        self.rule_sets = rule_sets
+        
+        # Validate rules
+        self._validate_all_rules(aligned_features, aligned_regimes)
+        
+        logger.info(f"✅ Extracted {len(rule_sets)} rule sets with total rules: {sum(len(rs.rules) for rs in rule_sets.values())}")
+        
+        return rule_sets
+    
+    def _align_data(self, 
+                   features_df: pd.DataFrame,
+                   time_varying_coeffs: pd.DataFrame,
+                   regime_assignments: pd.Series) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
+        """Align all data to the same time index."""
+        
+        # Find common index
+        min_length = min(len(features_df), len(time_varying_coeffs), len(regime_assignments))
+        
+        # Align data
+        aligned_features = features_df.iloc[-min_length:].copy()
+        aligned_coeffs = time_varying_coeffs.iloc[-min_length:].copy()
+        aligned_regimes = regime_assignments.iloc[-min_length:].copy()
+        
+        # Ensure indices match
+        aligned_features.index = aligned_coeffs.index
+        aligned_regimes.index = aligned_coeffs.index
+        
+        return aligned_features, aligned_coeffs, aligned_regimes
+    
+    def _extract_specialist_selection_rules(self, 
+                                          features_df: pd.DataFrame,
+                                          coeffs_df: pd.DataFrame,
+                                          regimes: pd.Series,
+                                          specialist_names: Optional[List[str]] = None) -> RuleSet:
+        """Extract rules for selecting active specialists."""
+        
+        logger.info("🎯 Extracting specialist selection rules")
+        
+        if specialist_names is None:
+            specialist_names = ['risk_specialist', 'trend_specialist', 'liquidity_specialist', 
+                              'momentum_specialist', 'volatility_specialist']
+        
+        rules = []
+        
+        # Create target variables for each specialist
+        for i, specialist in enumerate(specialist_names):
+            if i < coeffs_df.shape[1]:
+                target = coeffs_df.iloc[:, i]
+                
+                # Train decision tree
+                tree = self._train_decision_tree(features_df, target)
+                
+                # Extract rules from tree
+                specialist_rules = self._extract_rules_from_tree(
+                    tree, features_df, target, specialist, 'specialist_selection'
+                )
+                
+                rules.extend(specialist_rules)
+        
+        # Create rule set
+        rule_set = RuleSet(
+            rules=rules,
+            rule_type='specialist_selection',
+            accuracy=self._calculate_rule_accuracy(rules, features_df),
+            coverage=self._calculate_rule_coverage(rules, features_df),
+            created_at=datetime.now(),
+            validation_metrics=self._calculate_validation_metrics(rules, features_df)
+        )
+        
+        return rule_set
+    
+    def _extract_orthogonalization_rules(self, 
+                                       features_df: pd.DataFrame,
+                                       coeffs_df: pd.DataFrame,
+                                       regimes: pd.Series) -> RuleSet:
+        """Extract rules for orthogonalization weights."""
+        
+        logger.info("⚖️ Extracting orthogonalization weight rules")
+        
+        rules = []
+        
+        # Create target: coefficient variance (proxy for orthogonalization need)
+        coeff_variance = coeffs_df.rolling(window=10).var().iloc[-1]
+        
+        # Handle NaN values
+        coeff_variance = coeff_variance.fillna(coeff_variance.mean())
+        
+        # Train decision tree
+        tree = self._train_decision_tree(features_df, coeff_variance)
+        
+        # Extract rules
+        orthogonalization_rules = self._extract_rules_from_tree(
+            tree, features_df, coeff_variance, 'orthogonalization_weights', 'orthogonalization'
+        )
+        
+        rules.extend(orthogonalization_rules)
+        
+        # Create rule set
+        rule_set = RuleSet(
+            rules=rules,
+            rule_type='orthogonalization_weights',
+            accuracy=self._calculate_rule_accuracy(rules, features_df),
+            coverage=self._calculate_rule_coverage(rules, features_df),
+            created_at=datetime.now(),
+            validation_metrics=self._calculate_validation_metrics(rules, features_df)
+        )
+        
+        return rule_set
+    
+    def _extract_regime_detection_rules(self, 
+                                      features_df: pd.DataFrame,
+                                      regimes: pd.Series) -> RuleSet:
+        """Extract rules for regime detection."""
+        
+        logger.info("🏷️ Extracting regime detection rules")
+        
+        rules = []
+        
+        # Encode regimes as numeric
+        regime_mapping = {
+            'NEUTRAL': 0,
+            'HIGH_VOLATILITY': 1,
+            'LOW_VOLATILITY': 2,
+            'STRESS_REGIME': 3,
+            'TREND_REGIME': 4,
+            'LIQUIDITY_REGIME': 5
+        }
+        
+        target = regimes.map(regime_mapping)
+        
+        # Train decision tree
+        tree = self._train_decision_tree(features_df, target)
+        
+        # Extract rules for each regime
+        for regime_value, regime_name in regime_mapping.items():
+            # Create binary target for this regime
+            binary_target = (target == regime_value).astype(int)
+            
+            if binary_target.sum() > self.min_samples_leaf:  # Only if regime has enough samples
+                regime_tree = self._train_decision_tree(features_df, binary_target)
+                
+                regime_rules = self._extract_rules_from_tree(
+                    regime_tree, features_df, binary_target, regime_name, 'regime_detection'
+                )
+                
+                rules.extend(regime_rules)
+        
+        # Create rule set
+        rule_set = RuleSet(
+            rules=rules,
+            rule_type='regime_detection',
+            accuracy=self._calculate_rule_accuracy(rules, features_df),
+            coverage=self._calculate_rule_coverage(rules, features_df),
+            created_at=datetime.now(),
+            validation_metrics=self._calculate_validation_metrics(rules, features_df)
+        )
+        
+        return rule_set
+    
+    def _extract_risk_management_rules(self, 
+                                     features_df: pd.DataFrame,
+                                     coeffs_df: pd.DataFrame,
+                                     regimes: pd.Series) -> RuleSet:
+        """Extract rules for risk management."""
+        
+        logger.info("🛡️ Extracting risk management rules")
+        
+        rules = []
+        
+        # Create risk targets
+        risk_targets = {
+            'high_risk': (regimes == 'STRESS_REGIME').astype(int),
+            'volatility_risk': (features_df['rv_z_short'] > 1.5).astype(int),
+            'drawdown_risk': (features_df['drawdown_z'] > 2.0).astype(int),
+            'liquidity_risk': (features_df['spread_proxy_z'] > 1.5).astype(int)
+        }
+        
+        for risk_name, risk_target in risk_targets.items():
+            if risk_target.sum() > self.min_samples_leaf:
+                # Train decision tree
+                tree = self._train_decision_tree(features_df, risk_target)
+                
+                # Extract rules
+                risk_rules = self._extract_rules_from_tree(
+                    tree, features_df, risk_target, risk_name, 'risk_management'
+                )
+                
+                rules.extend(risk_rules)
+        
+        # Create rule set
+        rule_set = RuleSet(
+            rules=rules,
+            rule_type='risk_management',
+            accuracy=self._calculate_rule_accuracy(rules, features_df),
+            coverage=self._calculate_rule_coverage(rules, features_df),
+            created_at=datetime.now(),
+            validation_metrics=self._calculate_validation_metrics(rules, features_df)
+        )
+        
+        return rule_set
+    
+    def _train_decision_tree(self, 
+                           features_df: pd.DataFrame, 
+                           target: pd.Series) -> Any:
+        """Train a decision tree for rule extraction."""
+        
+        if self.use_random_forest:
+            tree = RandomForestRegressor(
+                n_estimators=10,
+                max_depth=self.max_depth,
+                min_samples_leaf=self.min_samples_leaf,
+                random_state=42
+            )
+        else:
+            tree = DecisionTreeRegressor(
+                max_depth=self.max_depth,
+                min_samples_leaf=self.min_samples_leaf,
+                random_state=42
+            )
+        
+        # Remove any NaN values
+        valid_mask = ~(features_df.isnull().any(axis=1) | target.isnull())
+        clean_features = features_df[valid_mask]
+        clean_target = target[valid_mask]
+        
+        if len(clean_features) < self.min_samples_leaf * 2:
+            logger.warning(f"Insufficient clean data: {len(clean_features)} samples")
+            # Return a simple tree
+            return DecisionTreeRegressor(max_depth=1, random_state=42).fit(
+                clean_features[:1], clean_target[:1]
+            )
+        
+        tree.fit(clean_features, clean_target)
+        
+        return tree
+    
+    def _extract_rules_from_tree(self, 
+                               tree: Any, 
+                               features_df: pd.DataFrame, 
+                               target: pd.Series,
+                               target_name: str,
+                               rule_type: str) -> List[DecisionTreeRule]:
+        """Extract individual rules from a trained decision tree."""
+        
+        rules = []
+        
+        try:
+            # Get tree structure
+            if self.use_random_forest:
+                # For Random Forest, extract from the first tree
+                tree = tree.estimators_[0]
+            
+            # Get feature names and importances
+            feature_names = list(features_df.columns)
+            
+            if hasattr(tree, 'feature_importances_'):
+                feature_importance = dict(zip(feature_names, tree.feature_importances_))
+            else:
+                feature_importance = {name: 0.0 for name in feature_names}
+            
+            # Extract rules using sklearn's export_text
+            tree_text = export_text(tree, feature_names=feature_names)
+            
+            # Parse tree text to extract individual rules
+            parsed_rules = self._parse_tree_text(tree_text, target_name, rule_type)
+            
+            # Calculate rule statistics
+            for rule_info in parsed_rules:
+                rule = DecisionTreeRule(
+                    rule_id=f"{rule_type}_{target_name}_{len(rules)}",
+                    condition=rule_info['condition'],
+                    outcome=rule_info['outcome'],
+                    confidence=rule_info['confidence'],
+                    support=rule_info['support'],
+                    feature_importance=feature_importance,
+                    rule_type=rule_type
+                )
+                rules.append(rule)
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract rules from tree: {e}")
+            # Create a simple default rule
+            rules.append(DecisionTreeRule(
+                rule_id=f"{rule_type}_{target_name}_default",
+                condition="True",
+                outcome=float(target.mean()),
+                confidence=0.5,
+                support=len(target),
+                feature_importance={name: 0.0 for name in features_df.columns},
+                rule_type=rule_type
+            ))
+        
+        return rules
+    
+    def _parse_tree_text(self, 
+                        tree_text: str, 
+                        target_name: str, 
+                        rule_type: str) -> List[Dict[str, Any]]:
+        """Parse sklearn's tree text to extract individual rules."""
+        
+        rules = []
+        lines = tree_text.split('\n')
+        
+        for line in lines:
+            if '|---' in line and 'value:' in line:
+                try:
+                    # Extract condition and value
+                    parts = line.split('|---')
+                    if len(parts) >= 2:
+                        condition_part = parts[1].strip()
+                        
+                        # Extract value (outcome)
+                        if 'value:' in condition_part:
+                            value_str = condition_part.split('value:')[-1].strip()
+                            outcome = float(value_str.split()[0])
+                            
+                            # Extract condition (remove value part)
+                            condition = condition_part.split('value:')[0].strip()
+                            
+                            # Calculate confidence and support (simplified)
+                            confidence = min(0.9, max(0.1, abs(outcome) / 10.0))
+                            support = max(10, int(100 * confidence))
+                            
+                            rules.append({
+                                'condition': condition if condition else 'True',
+                                'outcome': outcome,
+                                'confidence': confidence,
+                                'support': support
+                            })
+                
+                except Exception as e:
+                    logger.debug(f"Failed to parse rule line: {line}, error: {e}")
+                    continue
+        
+        return rules
+    
+    def _extract_simple_threshold_rules(self, 
+                                      features_df: pd.DataFrame, 
+                                      regimes: pd.Series) -> Dict[str, RuleSet]:
+        """Fallback simple threshold rules when sklearn is not available."""
+        
+        logger.info("🔄 Using simple threshold rules fallback")
+        
+        all_rules = []
+        
+        # Specialist selection rules
+        specialist_rules = [
+            DecisionTreeRule(
+                rule_id="specialist_high_vol",
+                condition="rv_z_short > 1.5 and vol_ratio > 1.2",
+                outcome=0.8,
+                confidence=0.7,
+                support=50,
+                feature_importance={'rv_z_short': 0.5, 'vol_ratio': 0.5},
+                rule_type='specialist_selection'
+            ),
+            DecisionTreeRule(
+                rule_id="specialist_trend",
+                condition="trend_slope_z > 1.0 and trend_strength > 0.7",
+                outcome=0.7,
+                confidence=0.6,
+                support=40,
+                feature_importance={'trend_slope_z': 0.6, 'trend_strength': 0.4},
+                rule_type='specialist_selection'
+            ),
+            DecisionTreeRule(
+                rule_id="specialist_liquidity",
+                condition="volume_z > 1.5 and spread_proxy_z < 0.5",
+                outcome=0.6,
+                confidence=0.6,
+                support=30,
+                feature_importance={'volume_z': 0.5, 'spread_proxy_z': 0.5},
+                rule_type='specialist_selection'
+            )
+        ]
+        
+        all_rules.extend(specialist_rules)
+        
+        # Orthogonalization rules
+        orthogonalization_rules = [
+            DecisionTreeRule(
+                rule_id="orth_high_vol",
+                condition="rv_z_short / (rv_z_long + 0.1)",
+                outcome=0.8,
+                confidence=0.5,
+                support=60,
+                feature_importance={'rv_z_short': 0.7, 'rv_z_long': 0.3},
+                rule_type='orthogonalization'
+            )
+        ]
+        
+        all_rules.extend(orthogonalization_rules)
+        
+        # Regime detection rules
+        regime_rules = [
+            DecisionTreeRule(
+                rule_id="regime_high_vol",
+                condition="rv_z_short > 1.5 and vol_ratio > 1.2",
+                outcome=1.0,
+                confidence=0.8,
+                support=25,
+                feature_importance={'rv_z_short': 0.6, 'vol_ratio': 0.4},
+                rule_type='regime_detection'
+            ),
+            DecisionTreeRule(
+                rule_id="regime_stress",
+                condition="drawdown_z > 2.0 and spread_proxy_z > 1.5",
+                outcome=1.0,
+                confidence=0.9,
+                support=15,
+                feature_importance={'drawdown_z': 0.6, 'spread_proxy_z': 0.4},
+                rule_type='regime_detection'
+            )
+        ]
+        
+        all_rules.extend(regime_rules)
+        
+        # Create rule sets
+        rule_sets = {}
+        
+        for rule_type in ['specialist_selection', 'orthogonalization', 'regime_detection']:
+            type_rules = [r for r in all_rules if r.rule_type == rule_type]
+            
+            rule_sets[rule_type] = RuleSet(
+                rules=type_rules,
+                rule_type=rule_type,
+                accuracy=0.7,  # Estimated
+                coverage=0.8,   # Estimated
+                created_at=datetime.now(),
+                validation_metrics={'mse': 0.1, 'r2': 0.3}  # Estimated
+            )
+        
+        return rule_sets
+    
+    def _calculate_rule_accuracy(self, rules: List[DecisionTreeRule], features_df: pd.DataFrame) -> float:
+        """Calculate overall accuracy of rules."""
+        if not rules:
+            return 0.0
+        
+        # Weighted average of rule confidences
+        total_confidence = sum(rule.confidence * rule.support for rule in rules)
+        total_support = sum(rule.support for rule in rules)
+        
+        return total_confidence / total_support if total_support > 0 else 0.0
+    
+    def _calculate_rule_coverage(self, rules: List[DecisionTreeRule], features_df: pd.DataFrame) -> float:
+        """Calculate coverage of rules (how many samples they apply to)."""
+        if not rules:
+            return 0.0
+        
+        # Simplified coverage calculation
+        total_support = sum(rule.support for rule in rules)
+        max_possible_support = len(features_df) * len(rules)
+        
+        return min(1.0, total_support / max_possible_support)
+    
+    def _calculate_validation_metrics(self, rules: List[DecisionTreeRule], features_df: pd.DataFrame) -> Dict[str, float]:
+        """Calculate validation metrics for rules."""
+        return {
+            'mse': 0.1,  # Placeholder
+            'r2': 0.3,   # Placeholder
+            'mae': 0.2   # Placeholder
+        }
+    
+    def _validate_all_rules(self, features_df: pd.DataFrame, regimes: pd.Series) -> None:
+        """Validate all extracted rules."""
+        
+        validation_results = {}
+        
+        for rule_type, rule_set in self.rule_sets.items():
+            try:
+                # Test rule execution
+                execution_results = self._test_rule_execution(rule_set.rules, features_df)
+                
+                validation_results[rule_type] = {
+                    'execution_success': execution_results['success_rate'],
+                    'avg_execution_time': execution_results['avg_time'],
+                    'error_count': execution_results['error_count']
+                }
+                
+            except Exception as e:
+                logger.warning(f"Rule validation failed for {rule_type}: {e}")
+                validation_results[rule_type] = {'error': str(e)}
+        
+        # Store validation history
+        self.validation_history.append({
+            'timestamp': datetime.now(),
+            'validation_results': validation_results
+        })
+        
+        logger.info(f"✅ Rule validation completed: {len(validation_results)} rule sets validated")
+    
+    def _test_rule_execution(self, rules: List[DecisionTreeRule], features_df: pd.DataFrame) -> Dict[str, float]:
+        """Test rule execution performance."""
+        
+        import time
+        
+        success_count = 0
+        error_count = 0
+        execution_times = []
+        
+        for rule in rules[:10]:  # Test first 10 rules
+            try:
+                start_time = time.time()
+                
+                # Execute rule
+                self._execute_single_rule(rule, features_df.iloc[0])
+                
+                execution_time = time.time() - start_time
+                execution_times.append(execution_time)
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                logger.debug(f"Rule execution error: {e}")
+        
+        return {
+            'success_rate': success_count / len(rules) if rules else 0.0,
+            'avg_time': np.mean(execution_times) if execution_times else 0.0,
+            'error_count': error_count
+        }
+    
+    def _execute_single_rule(self, rule: DecisionTreeRule, features: pd.Series) -> float:
+        """Execute a single rule on given features."""
+        
+        try:
+            # Simple rule evaluation (in practice, use more sophisticated parsing)
+            if 'rv_z_short' in rule.condition and 'vol_ratio' in rule.condition:
+                rv_z_short = features.get('rv_z_short', 0)
+                vol_ratio = features.get('vol_ratio', 0)
+                
+                if '>' in rule.condition and '<' in rule.condition:
+                    # Complex condition
+                    return rule.outcome if (rv_z_short > 1.5 and vol_ratio > 1.2) else 0.0
+                elif '>' in rule.condition:
+                    return rule.outcome if rv_z_short > 1.5 else 0.0
+            
+            return rule.outcome
+            
+        except Exception as e:
+            logger.debug(f"Rule execution failed: {e}")
+            return 0.0
+    
+    def apply_rules_realtime(self, 
+                           current_features: pd.Series, 
+                           rule_type: str) -> Dict[str, float]:
+        """
+        Apply extracted rules in real-time.
+        
+        Args:
+            current_features: Current feature values
+            rule_type: Type of rules to apply
+            
+        Returns:
+            Dictionary of rule outcomes
+        """
+        
+        if rule_type not in self.rule_sets:
+            raise ValueError(f"Rule type '{rule_type}' not available")
+        
+        rule_set = self.rule_sets[rule_type]
+        outcomes = {}
+        
+        for rule in rule_set.rules:
+            try:
+                outcome = self._execute_single_rule(rule, current_features)
+                outcomes[rule.rule_id] = outcome
+                
+            except Exception as e:
+                logger.warning(f"Failed to execute rule {rule.rule_id}: {e}")
+                outcomes[rule.rule_id] = 0.0
+        
+        return outcomes
+    
+    def get_specialist_weights_realtime(self, current_features: pd.Series) -> Dict[str, float]:
+        """Get specialist weights using real-time rules."""
+        
+        specialist_outcomes = self.apply_rules_realtime(current_features, 'specialist_selection')
+        
+        # Convert rule outcomes to specialist weights
+        specialist_weights = {}
+        
+        for rule_id, outcome in specialist_outcomes.items():
+            if 'high_vol' in rule_id.lower():
+                specialist_weights['risk_specialist'] = outcome
+            elif 'trend' in rule_id.lower():
+                specialist_weights['trend_specialist'] = outcome
+            elif 'liquidity' in rule_id.lower():
+                specialist_weights['liquidity_specialist'] = outcome
+        
+        return specialist_weights
+    
+    def get_orthogonalization_weights_realtime(self, current_features: pd.Series) -> Dict[str, float]:
+        """Get orthogonalization weights using real-time rules."""
+        
+        orthogonal_outcomes = self.apply_rules_realtime(current_features, 'orthogonalization_weights')
+        
+        # Convert rule outcomes to weights
+        weights = {}
+        
+        for rule_id, outcome in orthogonal_outcomes.items():
+            weights[rule_id] = outcome
+        
+        return weights
+    
+    def predict_regime_realtime(self, current_features: pd.Series) -> str:
+        """Predict current regime using real-time rules."""
+        
+        regime_outcomes = self.apply_rules_realtime(current_features, 'regime_detection')
+        
+        # Find regime with highest confidence
+        best_regime = 'NEUTRAL'
+        best_confidence = 0.0
+        
+        for rule_id, outcome in regime_outcomes.items():
+            if outcome > best_confidence:
+                best_confidence = outcome
+                if 'high_vol' in rule_id.lower():
+                    best_regime = 'HIGH_VOLATILITY'
+                elif 'stress' in rule_id.lower():
+                    best_regime = 'STRESS_REGIME'
+                elif 'trend' in rule_id.lower():
+                    best_regime = 'TREND_REGIME'
+                elif 'liquidity' in rule_id.lower():
+                    best_regime = 'LIQUIDITY_REGIME'
+        
+        return best_regime
+    
+    def save_rules(self, filepath: str) -> None:
+        """Save extracted rules to file."""
+        
+        try:
+            rules_data = {}
+            
+            for rule_type, rule_set in self.rule_sets.items():
+                rules_data[rule_type] = {
+                    'rules': [
+                        {
+                            'rule_id': rule.rule_id,
+                            'condition': rule.condition,
+                            'outcome': rule.outcome,
+                            'confidence': rule.confidence,
+                            'support': rule.support,
+                            'feature_importance': rule.feature_importance,
+                            'rule_type': rule.rule_type
+                        }
+                        for rule in rule_set.rules
+                    ],
+                    'accuracy': rule_set.accuracy,
+                    'coverage': rule_set.coverage,
+                    'created_at': rule_set.created_at.isoformat(),
+                    'validation_metrics': rule_set.validation_metrics
+                }
+            
+            # Add metadata
+            rules_data['metadata'] = {
+                'max_depth': self.max_depth,
+                'min_samples_leaf': self.min_samples_leaf,
+                'use_random_forest': self.use_random_forest,
+                'created_at': datetime.now().isoformat(),
+                'validation_history': [
+                    {
+                        'timestamp': v['timestamp'].isoformat(),
+                        'validation_results': v['validation_results']
+                    }
+                    for v in self.validation_history
+                ]
+            }
+            
+            with open(filepath, 'w') as f:
+                json.dump(rules_data, f, indent=2)
+            
+            logger.info(f"💾 Rules saved to {filepath}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save rules: {e}")
+    
+    def load_rules(self, filepath: str) -> bool:
+        """Load rules from file."""
+        
+        try:
+            with open(filepath, 'r') as f:
+                rules_data = json.load(f)
+            
+            # Load metadata
+            metadata = rules_data.get('metadata', {})
+            self.max_depth = metadata.get('max_depth', 3)
+            self.min_samples_leaf = metadata.get('min_samples_leaf', 20)
+            self.use_random_forest = metadata.get('use_random_forest', False)
+            
+            # Load validation history
+            self.validation_history = []
+            for v in metadata.get('validation_history', []):
+                self.validation_history.append({
+                    'timestamp': datetime.fromisoformat(v['timestamp']),
+                    'validation_results': v['validation_results']
+                })
+            
+            # Load rule sets
+            self.rule_sets = {}
+            
+            for rule_type, rule_set_data in rules_data.items():
+                if rule_type == 'metadata':
+                    continue
+                
+                rules = []
+                for rule_data in rule_set_data['rules']:
+                    rule = DecisionTreeRule(
+                        rule_id=rule_data['rule_id'],
+                        condition=rule_data['condition'],
+                        outcome=rule_data['outcome'],
+                        confidence=rule_data['confidence'],
+                        support=rule_data['support'],
+                        feature_importance=rule_data['feature_importance'],
+                        rule_type=rule_data['rule_type']
+                    )
+                    rules.append(rule)
+                
+                self.rule_sets[rule_type] = RuleSet(
+                    rules=rules,
+                    rule_type=rule_type,
+                    accuracy=rule_set_data['accuracy'],
+                    coverage=rule_set_data['coverage'],
+                    created_at=datetime.fromisoformat(rule_set_data['created_at']),
+                    validation_metrics=rule_set_data['validation_metrics']
+                )
+            
+            logger.info(f"📂 Rules loaded from {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to load rules: {e}")
+            return False
+    
+    def generate_rules_report(self) -> str:
+        """Generate comprehensive rules report."""
+        
+        report = f"""
+# TV-VAR Decision Tree Rules Report
+
+## Summary
+- **Rule Sets**: {len(self.rule_sets)}
+- **Total Rules**: {sum(len(rs.rules) for rs in self.rule_sets.values())}
+- **Max Depth**: {self.max_depth}
+- **Min Samples Leaf**: {self.min_samples_leaf}
+- **Random Forest**: {self.use_random_forest}
+- **Created**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Rule Set Details
+"""
+        
+        for rule_type, rule_set in self.rule_sets.items():
+            report += f"""
+### {rule_type.replace('_', ' ').title()}
+- **Rules**: {len(rule_set.rules)}
+- **Accuracy**: {rule_set.accuracy:.3f}
+- **Coverage**: {rule_set.coverage:.3f}
+- **Created**: {rule_set.created_at.strftime('%Y-%m-%d %H:%M:%S')}
+
+#### Top Rules by Confidence:
+"""
+            
+            # Sort rules by confidence
+            sorted_rules = sorted(rule_set.rules, key=lambda r: r.confidence, reverse=True)[:5]
+            
+            for rule in sorted_rules:
+                report += f"""
+- **{rule.rule_id}**
+  - Condition: `{rule.condition}`
+  - Outcome: {rule.outcome:.3f}
+  - Confidence: {rule.confidence:.3f}
+  - Support: {rule.support}
+"""
+        
+        report += f"""
+## Validation History
+"""
+        
+        for validation in self.validation_history[-5:]:  # Last 5 validations
+            report += f"""
+- **{validation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}**
+"""
+            for rule_type, results in validation['validation_results'].items():
+                if 'error' in results:
+                    report += f"  - {rule_type}: ERROR - {results['error']}\n"
+                else:
+                    report += f"  - {rule_type}: {results['execution_success']:.2%} success rate\n"
+        
+        return report
+
+# Convenience function for quick rule extraction
+def extract_tv_var_rules(features_df: pd.DataFrame,
+                        coeffs_df: pd.DataFrame,
+                        regimes: pd.Series,
+                        save_path: Optional[str] = None) -> TVVARDecisionTreeRules:
+    """
+    Convenience function for extracting TV-VAR decision tree rules.
+    
+    Args:
+        features_df: DataFrame with 8 core features
+        coeffs_df: TV-VAR coefficients
+        regimes: Regime assignments
+        save_path: Optional path to save rules
+        
+    Returns:
+        TVVARDecisionTreeRules instance
+    """
+    extractor = TVVARDecisionTreeRules()
+    rule_sets = extractor.extract_decision_tree_rules(features_df, coeffs_df, regimes)
+    
+    if save_path:
+        extractor.save_rules(save_path)
+    
+    return extractor
+
+if __name__ == "__main__":
+    # Example usage
+    print("TV-VAR Decision Tree Rules Extractor - Ready for integration")
+    print("Features:")
+    print("- Decision tree extraction for specialist selection")
+    print("- Orthogonalization weight rules")
+    print("- Regime detection rules")
+    print("- Real-time rule execution")
+    print("- Rule validation and optimization")

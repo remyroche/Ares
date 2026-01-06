@@ -59,7 +59,7 @@ from src.training.steps.labeling.label_based_layer_5 import Layer5PositionSizer
 from src.training.steps.labeling.label_based_layer_1 import run_layer1_optimization
 from src.training.steps.labeling.generate_weights_per_label import (
     compute_uniqueness,
-    compute_horizon_consistency,
+    compute_multi_horizon_consistency,
     generate_weights_per_label,
 )
 
@@ -929,7 +929,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             uniq = compute_uniqueness(t1, events_index=t1.index, market_index=market_data.index)
             uniq_arr = uniq.values if isinstance(uniq, pd.Series) else np.asarray(uniq, dtype=float)
 
-            cons = compute_horizon_consistency(close_series.astype(float), horizon=12)
+            cons = compute_multi_horizon_consistency(close_series.astype(float), horizons=[12, 48])
             cons_arr = cons.reindex(t_events).fillna(0.0).values
 
             vol_proxy = vol_aligned.reindex(t_events).fillna(0.0).values

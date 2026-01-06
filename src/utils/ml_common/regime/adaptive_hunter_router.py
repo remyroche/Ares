@@ -10,6 +10,13 @@ from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
 from scipy.special import expit as sigmoid
 from typing import Tuple, Dict, Any, Optional
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
 
 class AdaptiveHunterRouter:
     """
@@ -50,6 +57,7 @@ class AdaptiveHunterRouter:
         Args:
             X: Feature matrix [n_samples, 4] -> [Vol_Intensity, Efficiency, MP_Dist, Wavelet_Entropy]
         """
+        tprint_info("🧠 AdaptiveHunterRouter: Fitting GMM on historical features...")
         X_scaled = self.scaler.fit_transform(X)
         self.gmm = GaussianMixture(
             n_components=self.n_regimes,
@@ -158,6 +166,7 @@ class AdaptiveHunterRouter:
 
     def predict_batch(self, X: pd.DataFrame) -> pd.DataFrame:
         """Run prediction over a full dataframe (batch mode)."""
+        tprint_info(f"🔮 AdaptiveHunterRouter: Predicting batch of {len(X)} samples...")
         results = []
         # Reset state for batch prediction
         self.last_weights = None
@@ -182,6 +191,7 @@ class AdaptiveHunterRouter:
             })
 
         res_df = pd.DataFrame(results, index=X.index)
+        tprint_success(f"✅ AdaptiveHunterRouter: Batch prediction complete. Shape: {res_df.shape}")
 
         # Remap prob_0/1/2 to names
         for idx, name in self.regime_map.items():

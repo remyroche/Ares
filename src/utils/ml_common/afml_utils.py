@@ -2,23 +2,55 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union
 
-def get_daily_vol(close: pd.Series, span: int = 100) -> pd.Series:
-    """Calculate daily volatility (standard deviation of daily returns) as a threshold for barriers."""
-    # Find timestamps exactly 1 day ago
-    prev_day_idx = close.index.searchsorted(close.index - pd.Timedelta(days=1))
-    # Filter out out-of-bounds indices
-    valid_mask = prev_day_idx > 0
+def get_daily_vol(close: pd.Series, span: int = 100, use_volume_time: bool = False) -> pd.Series:
+    """
+    Calculate daily volatility (standard deviation of daily returns) as a threshold for barriers.
     
-    # Calculate returns relative to price ~1 day ago
-    returns = pd.Series(index=close.index, dtype=float)
-    idx_now = close.index[valid_mask]
-    idx_prev = close.index[prev_day_idx[valid_mask] - 1]
-    
-    returns.loc[idx_now] = close.loc[idx_now].values / close.loc[idx_prev].values - 1
-    
-    # Exponential moving average of standard deviation
-    vol = returns.ewm(span=span).std()
-    return vol
+    Args:
+        close: Close price series.
+        span: EWM span.
+        use_volume_time: If True, calculates volatility based on bar count (assuming volume bars)
+                         rather than time-based '1 day' lookback.
+    """
+    if use_volume_time:
+        # If using volume bars, 'daily' volatility concept shifts to 'N-bar' volatility.
+        # Assuming ~96 bars per day (15m approx), a 1-day span is roughly 100 bars.
+        # We calculate std dev of returns directly on the series index (bars).
+        # We want the standard deviation of returns.
+        # Usually daily vol = std(returns) * sqrt(1).
+        # Here we want the vol target for the barrier.
+        # If we use 100-bar EWM Std Dev, it represents the volatility over that window.
+        # We return the EWM standard deviation of percentage returns.
+        returns = close.pct_change()
+        vol = returns.ewm(span=span).std()
+        return vol
+    else:
+        # Find timestamps exactly 1 day ago
+        # Make sure index is DatetimeIndex
+        if not isinstance(close.index, pd.DatetimeIndex):
+             # Fallback to bar-based if index is not time
+             returns = close.pct_change()
+             return returns.ewm(span=span).std()
+
+        try:
+            prev_day_idx = close.index.searchsorted(close.index - pd.Timedelta(days=1))
+            # Filter out out-of-bounds indices
+            valid_mask = prev_day_idx > 0
+
+            # Calculate returns relative to price ~1 day ago
+            returns = pd.Series(index=close.index, dtype=float)
+            idx_now = close.index[valid_mask]
+            idx_prev = close.index[prev_day_idx[valid_mask] - 1]
+
+            returns.loc[idx_now] = close.loc[idx_now].values / close.loc[idx_prev].values - 1
+
+            # Exponential moving average of standard deviation
+            vol = returns.ewm(span=span).std()
+            return vol
+        except Exception:
+             # Fallback to bar-based if searchsorted fails
+             returns = close.pct_change()
+             return returns.ewm(span=span).std()
 
 def get_t_events(close: pd.Series, threshold: Union[float, pd.Series]) -> pd.DatetimeIndex:
     """
@@ -55,17 +87,67 @@ def get_t_events(close: pd.Series, threshold: Union[float, pd.Series]) -> pd.Dat
 def get_vertical_barrier(close: pd.Series, t_events: pd.DatetimeIndex, num_bars: int) -> pd.Series:
     """Returns a Series of timestamps representing the expiration (horizontal barrier)."""
     # Assuming 15m timeframe if not specified, or use the actual timeframe from index frequency
-    delta = pd.Timedelta(minutes=num_bars * 15)
-    t1 = close.index.searchsorted(t_events + delta)
+    # If using volume bars, 'num_bars' refers to number of volume bars, so expiration is simply t_events index + num_bars
     
-    # Create output series indexed by full t_events
-    out = pd.Series(index=t_events, dtype='datetime64[ns]')
+    t1 = pd.Series(index=t_events, dtype='datetime64[ns]')
     
-    # Fill values where indexer is within bounds
-    valid_mask = t1 < close.shape[0]
-    out.iloc[valid_mask] = close.index[t1[valid_mask]]
+    # Vectorized approach or efficient mapping
+    # Since we can't do t_events + integer for DatetimeIndex
+    # We find integer locations
     
-    return out
+    # Get integer locations of events
+    try:
+        # Check if indices are unique
+        if not close.index.is_unique:
+             # Fallback to slower method if duplicates exist
+             for evt in t_events:
+                try:
+                    # Get loc can return slice or array if duplicates, take first/last?
+                    # Generally volume bars should have unique index if timestamps are granular enough or reconstructed.
+                    # Assuming unique for now or taking first.
+                    loc = close.index.get_loc(evt)
+                    if isinstance(loc, (slice, np.ndarray)):
+                        loc = loc.start if isinstance(loc, slice) else loc[0]
+
+                    target = loc + num_bars
+                    if target < len(close):
+                        t1.loc[evt] = close.index[target]
+                except KeyError:
+                    pass
+        else:
+            # Map events to integer locations
+            # Get integer locations of all t_events in close.index
+            # This requires t_events to be subset of close.index
+
+            # Create a map from index to integer position
+            idx_map = pd.Series(np.arange(len(close)), index=close.index)
+            event_ilocs = idx_map.loc[t_events].values
+
+            target_ilocs = event_ilocs + num_bars
+
+            # Filter out-of-bounds
+            valid = target_ilocs < len(close)
+
+            if valid.any():
+                valid_ilocs = target_ilocs[valid]
+                valid_events = t_events[valid]
+
+                t1.loc[valid_events] = close.index[valid_ilocs]
+
+    except Exception:
+        # Fallback loop
+        for evt in t_events:
+            try:
+                loc_idx = close.index.get_loc(evt)
+                if isinstance(loc_idx, (slice, np.ndarray)): # Handle duplicates
+                     loc_idx = loc_idx.start if isinstance(loc_idx, slice) else loc_idx[0]
+                target_idx = loc_idx + num_bars
+                if target_idx < len(close):
+                    t1.loc[evt] = close.index[target_idx]
+            except KeyError:
+                continue
+
+    return t1
 
 def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: List[float], 
                          target: pd.Series, min_ret: float, vertical_barrier: Optional[pd.Series] = None) -> pd.DataFrame:
@@ -73,13 +155,15 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
     Triple Barrier Method: Returns a DataFrame with the time and label of each event.
     pt_sl: [profit_take_factor, stop_loss_factor]
     target: The volatility/target return to scale the barriers.
+
+    Returns DataFrame with columns: ['t1', 'trgt', 'type', 'ret', 'mfe', 'mae']
     """
     # 1. Get vertical barrier if not provided
     if vertical_barrier is None:
         vertical_barrier = pd.Series(index=t_events, data=pd.NaT)
     
     # 2. Get barriers
-    out = pd.DataFrame(index=t_events, columns=['t1', 'trgt', 'type', 'ret'])
+    out = pd.DataFrame(index=t_events, columns=['t1', 'trgt', 'type', 'ret', 'mfe', 'mae'])
     
     # Align target to t_events safely
     aligned_target = target.reindex(t_events, method='ffill')
@@ -106,17 +190,22 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
             window = close.iloc[close.index.get_loc(loc) + 1:]
         else:
             # Window starts from loc + 1 to avoid overlap with features at loc
-            window = close.iloc[close.index.get_loc(loc) + 1 : close.index.get_loc(t1) + 1]
+            try:
+                window = close.iloc[close.index.get_loc(loc) + 1 : close.index.get_loc(t1) + 1]
+            except KeyError:
+                window = close.iloc[close.index.get_loc(loc) + 1:]
             
         if window.empty:
-            out.loc[loc, 't1'] = pd.NaT
-            out.loc[loc, 'type'] = 'none'
-            out.loc[loc, 'ret'] = 0
+            out.loc[loc, ['t1', 'type', 'ret', 'mfe', 'mae']] = [pd.NaT, 'none', 0.0, 0.0, 0.0]
             continue
 
-        # Check which barrier is hit first
+        # Calculate path returns relative to entry
         rets = (window / close.loc[loc] - 1)
         
+        # Calculate MFE and MAE for the window
+        mfe = rets.max()
+        mae = rets.min() # This is typically negative
+
         # Profit take
         hi_idx = rets[rets > pt].index
         # Stop loss
@@ -128,29 +217,53 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
                 out.loc[loc, 't1'] = lo_idx[0]
                 out.loc[loc, 'type'] = 'sl'
                 out.loc[loc, 'ret'] = rets.loc[lo_idx[0]]
+                # MFE/MAE are constrained by the hit point?
+                # Strict implementation: MFE/MAE up to the touch point.
+                # Re-calculate MFE/MAE up to touch time
+                touch_time = lo_idx[0]
+                path_to_touch = rets.loc[:touch_time]
+                out.loc[loc, 'mfe'] = path_to_touch.max()
+                out.loc[loc, 'mae'] = path_to_touch.min()
+
             elif len(lo_idx) == 0:
                 out.loc[loc, 't1'] = hi_idx[0]
                 out.loc[loc, 'type'] = 'pt'
                 out.loc[loc, 'ret'] = rets.loc[hi_idx[0]]
+
+                touch_time = hi_idx[0]
+                path_to_touch = rets.loc[:touch_time]
+                out.loc[loc, 'mfe'] = path_to_touch.max()
+                out.loc[loc, 'mae'] = path_to_touch.min()
+
             else:
                 if hi_idx[0] < lo_idx[0]:
                     out.loc[loc, 't1'] = hi_idx[0]
                     out.loc[loc, 'type'] = 'pt'
                     out.loc[loc, 'ret'] = rets.loc[hi_idx[0]]
+
+                    touch_time = hi_idx[0]
+                    path_to_touch = rets.loc[:touch_time]
+                    out.loc[loc, 'mfe'] = path_to_touch.max()
+                    out.loc[loc, 'mae'] = path_to_touch.min()
                 else:
                     out.loc[loc, 't1'] = lo_idx[0]
                     out.loc[loc, 'type'] = 'sl'
                     out.loc[loc, 'ret'] = rets.loc[lo_idx[0]]
+
+                    touch_time = lo_idx[0]
+                    path_to_touch = rets.loc[:touch_time]
+                    out.loc[loc, 'mfe'] = path_to_touch.max()
+                    out.loc[loc, 'mae'] = path_to_touch.min()
         else:
             # Hit vertical barrier (expiration)
             if not pd.isna(t1):
                 out.loc[loc, 't1'] = t1
                 out.loc[loc, 'type'] = 'expiration'
                 out.loc[loc, 'ret'] = rets.iloc[-1]
+                out.loc[loc, 'mfe'] = mfe
+                out.loc[loc, 'mae'] = mae
             else:
-                out.loc[loc, 't1'] = pd.NaT
-                out.loc[loc, 'type'] = 'none'
-                out.loc[loc, 'ret'] = 0
+                out.loc[loc, ['t1', 'type', 'ret', 'mfe', 'mae']] = [pd.NaT, 'none', 0.0, 0.0, 0.0]
                 
     return out
 
@@ -290,6 +403,46 @@ def get_sample_weights(t1: pd.Series, num_concurrent: pd.Series, returns: pd.Ser
     if weights.sum() > 0:
         weights = weights / weights.sum() * len(weights)
     return weights
+
+def compute_master_weight(uniqueness: np.ndarray, mfe: np.ndarray, mae: np.ndarray,
+                          barrier: np.ndarray, hf_lf_ratio: np.ndarray,
+                          volatility: np.ndarray, raw_return: np.ndarray,
+                          timestamp_index: pd.Index) -> np.ndarray:
+    """
+    The ultimate weight for Causal Random Forest base models.
+    Combines Framework Weights (Path & Noise), Economic Weights, and Temporal Weights.
+    """
+    # 1. Framework Weights (Path & Noise)
+    # C = (MFE - MAE) / barrier
+    barrier_safe = np.where(barrier <= 0, 1e-8, barrier)
+    C = np.clip((mfe - mae) / barrier_safe, 0.0, 1.0) # Cleanliness
+
+    # N = 1.0 - HF/LF Ratio
+    N = 1.0 - np.clip(hf_lf_ratio, 0.0, 1.0)      # Wavelet Clarity
+
+    # U = Uniqueness
+    U = np.clip(uniqueness, 0.0, 1.0)             # Uniqueness
+
+    # 2. Economic Weights (Risk-Adjusted Magnitude)
+    # Weighting by return-to-volatility ratio
+    risk_adj_mag = np.abs(raw_return) / (volatility + 1e-8)
+    # Clip risk adjusted magnitude to reasonable bounds to prevent outliers dominating
+    risk_adj_mag = np.clip(risk_adj_mag, 0.0, 5.0)
+
+    # 3. Temporal Weights (Decay)
+    # Linear decay: most recent = 1.0, oldest = 0.5
+    n_samples = len(timestamp_index)
+    time_decay = np.linspace(0.5, 1.0, n_samples)
+
+    # Combine (Multiplicative)
+    # Multiplicative is 'stricter' - if any factor is 0, the weight is 0.
+    w_final = U * C * N * risk_adj_mag * time_decay
+
+    # Normalize and clip
+    if np.sum(w_final) > 0:
+        w_final = w_final / np.mean(w_final)
+
+    return np.clip(w_final, 0.2, 1.0)
 
 def get_weights_by_uniqueness(t1: pd.Series, close_index: pd.Index) -> pd.Series:
     """Simplified sample weighting based only on uniqueness."""

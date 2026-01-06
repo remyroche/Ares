@@ -6975,17 +6975,14 @@ class LabelBasedLayer2(BaseStep):
                             params['objective'] = focal_lgbm
                             params['metric'] = 'auc'
 
-                        # Phase 4: Bias Initialization (Guardrail)
-                        # Prevents gradient explosion by setting initial probability to prior
-                        from src.training.steps.labeling.focal_loss_utils import get_focal_loss_init_score
-                        init_score_train = get_focal_loss_init_score(y_train)
+                        # Phase 4: Bias Initialization (Guardrail) - DISABLED
+                        # Removed init_score to ensure consistency with predict_proba() which doesn't
+                        # accept init_score for sklearn API, preventing extremely small predictions.
                         
                         clf = lgb.LGBMClassifier(**params)
                         clf.fit(
                             X_train_final, y_train, sample_weight=w_train,
-                            init_score=init_score_train,
                             eval_set=[(X_train_final, y_train)],
-                            eval_init_score=[init_score_train], # Match validation to train for self-test
                             eval_metric='average_precision', # Prioritize PR-AUC
                             callbacks=[lgb.early_stopping(30, verbose=False)]
                         )

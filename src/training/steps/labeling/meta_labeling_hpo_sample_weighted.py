@@ -1129,7 +1129,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             else:
                 # Standard Monolithic Run
-                l2_output = layer2.run(train_data)
+                l2_output = await layer2.run(train_data)
                 tprint_info(f"DEBUG: l2_output keys: {list(l2_output.keys()) if isinstance(l2_output, dict) else 'NOT_A_DICT'}")
 
                 # SAFETY CHECK: Ensure Layer 2 produced valid output

@@ -490,63 +490,26 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
             full_labels.loc[y.index] = y
             
             # 6. Standardized Output and Artifacts
-            output_df = self._create_standardized_output(
-                feature_df, full_labels, final_preds.values, final_probs.values, symbol, exchange, timeframe, direction
-            )
-            
-            artifact_name = f"enhanced_ml_spectral_prediction_{timeframe}"
-            metadata = SpecialistDataInterface.create_standard_metadata(
-                specialist_name="EnhancedMLSpectralStep",
+            result = self.save_specialist_results(
                 config=config,
+                feature_df=feature_df,
+                labels=full_labels,
+                predictions=final_preds.values,
+                probabilities=final_probs.values,
+                model=last_model,
                 metrics=metrics,
-                mi_score=metrics.get('mi_score', 0.0),
-                hsic_score=0.0
+                specialist_name="EnhancedMLSpectralStep"
             )
-            
-            self._save_artifact(data=output_df, artifact_name=artifact_name, artifact_type="data", data_category="predictions", metadata=metadata)
-            
-            try:
-                if self.versioned_store:
-                    self.versioned_store.add_data(output_df, version_name=artifact_name)
-                    tprint_success(f"💾 Saved predictions to versioned store as '{artifact_name}'")
-            except Exception as ve:
-                tprint_warning(f"Versioned store save failed: {ve}")
-            
-            self._save_artifact(data=last_model, artifact_name=f"enhanced_spectral_model_{timeframe}", artifact_type="model", data_category="models", metadata=metadata)
-            
-            # 7. Diagnostics
-            diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
             
             execution_time = time.time() - start_time
+            result["execution_time"] = execution_time
             tprint_success(f"✅ Enhanced Spectral Analysis completed in {execution_time:.2f}s")
-            return {
-                "success": True,
-                "metrics": metrics,
-                "n_samples": len(X),
-                "artifact_name": artifact_name,
-                "diagnostics": diagnostics_result,
-                "execution_time": execution_time
-            }
+
+            return result
             
         except Exception as e:
             self.logger.exception(f"❌ Enhanced Spectral Analysis failed: {e}")
             return {"success": False, "error": str(e)}
-    
-    def _create_standardized_output(self, features: pd.DataFrame, labels: pd.Series,
-                                  predictions: np.ndarray, probabilities: np.ndarray,
-                                  symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:
-        """Create standardized output structure."""
-        output_df = pd.DataFrame(index=features.index)
-        output_df['timestamp'] = features.index
-        output_df['specialist_prediction'] = predictions
-        output_df['specialist_probability'] = probabilities
-        output_df['target_label'] = labels
-        
-        # Add original features for reference
-        for col in features.columns[:20]:  # Limit to first 20 features
-            output_df[f'feature_{col}'] = features[col]
-        
-        return output_df
     
     def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
         """Load market data using BaseStep method."""

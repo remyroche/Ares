@@ -1,7 +1,10 @@
 import logging
+import time
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple, Callable
+from sklearn.metrics import roc_auc_score
+
 from src.utils.ml_common.afml_utils import (
     get_daily_vol, get_t_events, get_vertical_barrier, 
     apply_triple_barrier, get_bins, get_weights_by_uniqueness,
@@ -11,6 +14,9 @@ from src.utils.ml_common.afml_utils import (
 from src.utils.ml_common.wavelet_utils import get_wavelet_features
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error
+from src.utils.tprint import tprint_info, tprint_warning, tprint_success, tprint
+from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
+from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +28,220 @@ class AFMLSpecialistMixin:
     - Sample Uniqueness weighting to handle overlap (Concurrence)
     - Fractional Differentiation for memory preservation
     - Dynamic Volume Bars and Wavelet Features (New)
+    - Standardized Feature Generation and Execution Flow
     """
+
+    def _apply_standard_feature_selection(self, features: pd.DataFrame, max_features: int = 30) -> pd.DataFrame:
+        """
+        Standard manual feature selection to reduce redundancy and keep high-quality features.
+        """
+        if features.empty:
+            return features
+
+        # Remove constant features
+        constant_features = features.columns[features.nunique() <= 1]
+        if len(constant_features) > 0:
+            features = features.drop(columns=constant_features)
+
+        # Manual redundancy reduction - remove highly correlated features
+        correlation_matrix = features.corr().abs()
+        upper_triangle = correlation_matrix.where(
+            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
+        )
+
+        # Find highly correlated pairs (>0.9)
+        to_drop = []
+        for column in upper_triangle.columns:
+            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
+            if not correlated_features.empty:
+                for correlated_feature in correlated_features.index:
+                    if correlated_feature > column:
+                        to_drop.append(correlated_feature)
+
+        # Remove redundant features
+        if to_drop:
+            features = features.drop(columns=list(set(to_drop)))
+
+        # Keep only the most informative features by variance
+        if len(features.columns) > max_features:
+            feature_variances = features.var()
+            top_features = feature_variances.nlargest(max_features).index
+            features = features[top_features]
+
+        return features
+
+    def generate_standard_enhanced_features(
+        self,
+        df: pd.DataFrame,
+        specialist_type: SpecialistType,
+        manual_feature_func: Optional[Callable[[pd.DataFrame, pd.DataFrame], pd.DataFrame]] = None
+    ) -> pd.DataFrame:
+        """
+        Standardized interface for feature generation:
+        1. Pipeline Features (MIOptimizedFeaturePipeline)
+        2. Manual Features (Override)
+        3. Redundancy Reduction
+        """
+        # 1. Pipeline Features
+        pipeline_features = pd.DataFrame(index=df.index)
+        if hasattr(self, 'feature_pipeline'):
+            pipeline_features = self.feature_pipeline.generate_enhanced_features(
+                df, specialist_type.value, {'enhanced_features': True}
+            )
+        else:
+            logger.warning("No feature_pipeline found in self. Skipping pipeline features.")
+
+        # 2. Manual Features
+        manual_features = pd.DataFrame(index=df.index)
+        if manual_feature_func:
+            manual_features = manual_feature_func(df, pipeline_features)
+
+        # 3. Combine
+        combined_features = pd.concat([pipeline_features, manual_features], axis=1)
+
+        # Remove duplicates
+        combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+
+        # 4. Standard Selection/Reduction
+        selected_features = self._apply_standard_feature_selection(combined_features)
+
+        # Clean infinities and NaNs
+        return selected_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    async def execute_standard_specialist_logic(
+        self,
+        config: Dict[str, Any],
+        specialist_type: SpecialistType,
+        manual_feature_func: Optional[Callable[[pd.DataFrame, pd.DataFrame], pd.DataFrame]] = None,
+        filter_type: str = 'price',
+        pt_sl_config_key: Optional[str] = None,
+        default_pt_sl: List[float] = [2.0, 1.0],
+        suffix: str = "enhanced_features"
+    ) -> Dict[str, Any]:
+        """
+        Execute the standard specialist workflow:
+        1. Load Market Data
+        2. Generate Features (Pipeline + Manual)
+        3. Prepare AFML Data (CUSUM, TBM, Weights)
+        4. Train Model (XGB + OOF)
+        5. Save Results & Diagnostics
+        """
+        start_time = time.time()
+        try:
+            symbol = config.get('symbol', 'BTCUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+
+            if hasattr(self, 'set_context'):
+                self.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                    model=self.step_name
+                )
+
+            # Initialize versioned store if available
+            if hasattr(self, 'versioned_store'):
+                _ = self.versioned_store
+
+            # 1. Load Market Data
+            tprint_info(f"🚀 Starting Enhanced {self.step_name} for {symbol} on {exchange}")
+            # Use _load_market_data_with_cache if available (some specialists define it), else generic
+            if hasattr(self, '_load_market_data_with_cache'):
+                df, market_source = self._load_market_data_with_cache(config, timeframe)
+            elif hasattr(self, '_load_market_data'):
+                df = self._load_market_data(symbol, exchange, timeframe)
+                market_source = "loaded"
+            else:
+                 # Fallback to BaseStep logic if exposed, or raise error
+                raise NotImplementedError("Specialist must implement _load_market_data or _load_market_data_with_cache")
+
+            if df is None or len(df) < 1000:
+                return {"success": False, "error": "Insufficient data"}
+
+            # 2. Feature Generation
+            tprint_info(f"🛠️ Generating standard enhanced features for {specialist_type.value}...")
+            feature_df = self.generate_standard_enhanced_features(df, specialist_type, manual_feature_func)
+            tprint_info(f"✅ Features generated: {len(feature_df.columns)} columns")
+
+            # Save feature artifact if not batch run
+            if not config.get("is_batch_run", False) and hasattr(self, '_save_artifact'):
+                feature_df_reset = feature_df.reset_index().rename(columns={feature_df.index.name or "index": "timestamp"})
+                self._save_artifact(
+                    data=feature_df_reset,
+                    artifact_name=f"{self.step_name}_{suffix}",
+                    artifact_type="data",
+                    data_category="features",
+                    metadata={"source": market_source, "enhanced": True}
+                )
+
+            # 3. AFML: Sampling, Labeling, Weighting, Alignment
+            X, y, weights = self.prepare_specialist_data(
+                market_data=df,
+                feature_df=feature_df,
+                config=config,
+                filter_type=filter_type,
+                pt_sl_config_key=pt_sl_config_key,
+                default_pt_sl=default_pt_sl
+            )
+
+            # 4. Centralized purged-CV training
+            tprint_info("🤖 Training model with centralized XGB helper (purged CV & AFML weights)...")
+            training_result = train_specialist_xgb_with_oof(
+                X.fillna(0.0),
+                y.fillna(0.0),
+                sample_weight=weights,
+                n_splits=5,
+            )
+
+            oof_probs = training_result.oof_predictions
+            last_model = training_result.model
+            metrics = training_result.metrics
+
+            # 5. Align results back to full market index
+            # Initialize with NaN
+            final_probs = pd.Series(np.nan, index=df.index)
+
+            valid_oof = oof_probs.dropna()
+            if len(valid_oof) > 0:
+                final_probs.loc[valid_oof.index] = valid_oof.values
+
+            # Ffill probabilities
+            final_probs = final_probs.ffill().fillna(0.5)
+            final_preds = (final_probs >= 0.5).astype(int)
+
+            full_labels = pd.Series(0, index=df.index)
+            full_labels.loc[y.index] = y
+
+            # 6. Save Results & Diagnostics
+            # This handles standardized output, artifacts, and diagnostics via SpecialistDiagnosticsMixinEnhancedV2
+            if hasattr(self, 'save_specialist_results'):
+                result = self.save_specialist_results(
+                    config=config,
+                    feature_df=feature_df,
+                    labels=full_labels,
+                    predictions=final_preds.values,
+                    probabilities=final_probs.values,
+                    model=last_model,
+                    metrics=metrics,
+                    specialist_name=self.__class__.__name__
+                )
+            else:
+                # Fallback if mixin not present
+                result = {"success": True, "metrics": metrics}
+
+            execution_time = time.time() - start_time
+            result["execution_time"] = execution_time
+            tprint_success(f"✅ {self.step_name} completed in {execution_time:.2f}s")
+
+            return result
+
+        except Exception as e:
+            if hasattr(self, 'logger'):
+                self.logger.exception(f"❌ {self.step_name} failed: {e}")
+            return {"success": False, "error": str(e)}
 
     def prepare_specialist_data(
         self,

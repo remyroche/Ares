@@ -38,7 +38,6 @@ from src.training.steps.market_analysis.enhanced_feature_generators import MIOpt
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
 from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -84,37 +83,29 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
-    def _generate_enhanced_smc_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate enhanced SMC features with manual feature engineering."""
+    def _get_smc_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine SMC features, enhanced features, and specific SMC enhancements."""
         # Import original SMC features
-        from src.feature_generation.categories.smc_regime_features import generate_smc_regime_features
-        base_smc_features = generate_smc_regime_features(df, config)
-        
-        # Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'smc_regime', {'enhanced_features': True}
-        )
+        try:
+            from src.feature_generation.categories.smc_regime_features import generate_smc_regime_features
+            # Need config for generate_smc_regime_features.
+            config = {
+                'symbol': self._current_context.get('symbol'),
+                'exchange': self._current_context.get('exchange'),
+                'timeframe': self._current_context.get('timeframe'),
+                'direction': self._current_context.get('direction')
+            }
+            base_smc_features = generate_smc_regime_features(df, config)
+        except ImportError:
+            base_smc_features = pd.DataFrame(index=df.index)
         
         # Manual feature engineering for SMC regime
-        manual_features = self._create_manual_smc_enhanced_features(df, enhanced_features)
+        manual_features = self._create_manual_smc_enhanced_features(df, pipeline_features)
         
         # Combine all features
-        all_features = [base_smc_features, enhanced_features, manual_features]
+        all_features = pd.concat([base_smc_features, manual_features], axis=1)
         
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_smc_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
-        
-        return pd.DataFrame(index=df.index)
+        return all_features
     
     def _create_manual_smc_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create advanced manual enhanced features for SMC regime detection."""
@@ -400,301 +391,21 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
             manual_features['smc_persistence'] = smc_persistence
             
         return manual_features
-    def _apply_manual_smc_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Apply manual feature selection for SMC regime features."""
-        if features.empty:
-            return features
-        
-        # Remove constant features
-        constant_features = features.columns[features.nunique() <= 1]
-        if len(constant_features) > 0:
-            features = features.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant SMC features")
-        
-        # Manual redundancy reduction - remove highly correlated features
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(
-            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-        )
-        
-        # Find highly correlated pairs (>0.9)
-        to_drop = []
-        for column in upper_triangle.columns:
-            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
-            if not correlated_features.empty:
-                # Keep the feature that comes first alphabetically (deterministic)
-                for correlated_feature in correlated_features.index:
-                    if correlated_feature > column:  # Drop the later feature alphabetically
-                        to_drop.append(correlated_feature)
-        
-        # Remove redundant features
-        if to_drop:
-            features = features.drop(columns=list(set(to_drop)))
-            self.logger.info(f"Removed {len(set(to_drop))} redundant SMC features: {list(set(to_drop))}")
-        
-        # Keep only the most informative features (limit to top 30 by variance)
-        if len(features.columns) > 30:
-            feature_variances = features.var()
-            top_features = feature_variances.nlargest(30).index
-            features = features[top_features]
-            self.logger.info(f"Limited SMC features to top 30 by variance")
-        
-        return features
-    
-    def _add_smc_specific_features(self, df: pd.DataFrame, smc_features: pd.DataFrame) -> pd.DataFrame:
-        """Add SMC-specific enhanced features."""
-        features = pd.DataFrame(index=df.index)
-        
-        # Enhanced SMC analysis
-        if 'close' in df.columns:
-            returns = df['close'].pct_change()
-            
-            # SMC-specific enhancements
-            features['smc_volatility_ratio'] = returns.rolling(20).std() / returns.rolling(50).std()
-            features['smc_trend_consistency'] = (returns.rolling(10).mean() > 0).rolling(30).mean()
-            
-        return features
-    
-    def _train_enhanced_smc_model(self, features: pd.DataFrame, labels: pd.Series, 
-                                 config: Dict[str, Any], sample_weight: Optional[pd.Series] = None) -> Tuple[Any, Dict[str, float]]:
-        """Train enhanced SMC model using centralized specialist trainer."""
-        training_result = train_specialist_xgb_with_oof(
-            features.fillna(0.0),
-            labels.fillna(0.0),
-            sample_weight=sample_weight,
-            n_splits=5,
-        )
-        return training_result.model, training_result.metrics
-    
-    def _create_smc_labels(self, df: pd.DataFrame, lookforward: int = 35) -> pd.Series:
-        """Create SMC regime labels based on price efficiency and range utilization."""
-        if 'close' not in df.columns or 'high' not in df.columns or 'low' not in df.columns:
-            # Fallback to simple return-based labels
-            returns = df['close'].pct_change()
-            future_returns = returns.shift(-lookforward)
-            labels = (future_returns > returns.rolling(25).std()).astype(int)
-            return labels
-        
-        # SMC-specific labeling
-        # Calculate price efficiency
-        mid_price = (df['high'] + df['low']) / 2
-        price_efficiency = (df['close'] - mid_price) / mid_price
-        
-        # Calculate future efficiency
-        future_mid_price = (df['high'].shift(-lookforward) + df['low'].shift(-lookforward)) / 2
-        future_efficiency = (df['close'].shift(-lookforward) - future_mid_price) / future_mid_price
-        
-        # Label: positive if efficiency improves and price moves in direction of efficiency
-        efficiency_improvement = future_efficiency > price_efficiency
-        price_direction = (df['close'].shift(-lookforward) > df['close']) == (price_efficiency > 0)
-        
-        labels = (efficiency_improvement & price_direction).astype(int)
-        
-        return labels
-    
-    def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
-        """Generate parameter combinations for optimization."""
-        import itertools
-        import random
-        
-        keys = list(param_grid.keys())
-        values = list(param_grid.values())
-        
-        # Generate all combinations
-        all_combinations = list(itertools.product(*values))
-        
-        # Randomly sample if too many
-        if len(all_combinations) > max_combinations:
-            all_combinations = random.sample(all_combinations, max_combinations)
-        
-        for combination in all_combinations:
-            yield dict(zip(keys, combination))
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute enhanced SMC regime step."""
-        start_time = time.time()
-        metrics: Dict[str, Any] = {}
-        artifacts: List[str] = []
-
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            if not symbol or not exchange:
-                raise ValueError("Config must include 'symbol' and 'exchange'")
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model="enhanced_smc_regime",
-            )
-
-            tprint_info(f"🚀 Starting Enhanced SMC Regime for {symbol} on {exchange}")
-
-            # 1. Load Market Data
-            market_data, market_source = self._load_market_data_with_cache(config, timeframe)
-
-            # 2. Generate Enhanced Features
-            tprint_info("🛠️ Generating Enhanced SMC features...")
-            feature_df = self._generate_enhanced_smc_features(market_data, config)
-            
-            # 3-5. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            X, y, weights = self.prepare_specialist_data(
-                market_data=market_data,
-                feature_df=feature_df,
-                config=config,
-                filter_type='volume',
-                pt_sl_config_key='smc_pt_sl',
-                default_pt_sl=[2.0, 1.0]
-            )
-
-            # 6. Centralized purged-CV training
-            tprint_info("🤖 Training Enhanced SMC model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                metrics = training_result.metrics.copy()
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'n_samples': len(X)
-            })
-
-            # 5. Generate Final Standardized Output (Aligned to full market_data index)
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=market_data.index if 'market_data' in locals() else (df.index if 'df' in locals() else X.index))
-            full_labels.loc[y.index] = y
-
-            standardized_output = self._create_standardized_output(
-                feature_df if 'feature_df' in locals() else (features_df if 'features_df' in locals() else X), 
-                full_labels, final_preds.values, final_probs.values, symbol, exchange, timeframe, direction
-            )
-    
-
-            # 7. Save Artifacts
-            artifact_name = f"enhanced_ml_smc_predictions_{timeframe}"
-            metadata = SpecialistDataInterface.create_standard_metadata(
-                specialist_name="EnhancedMLSMCRegimeStep",
-                config=config,
-                metrics=metrics,
-                mi_score=metrics['mi_score'],
-                hsic_score=0.0
-            )
-            
-            artifact_path = self._save_artifact(
-                data=standardized_output,
-                artifact_name=artifact_name,
-                artifact_type="data",
-                data_category="predictions",
-                metadata=metadata
-            )
-            artifacts.append(artifact_path)
-
-            # 8. Run Enhanced Diagnostics
-            tprint_info("🔍 Running Enhanced Diagnostics...")
-            diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
-            
-            if diagnostics_result.get('success', False):
-                compliance_report = diagnostics_result['compliance_report']
-                ensemble_compatibility = diagnostics_result['ensemble_compatibility']
-                
-                tprint_success(f"✅ Enhanced Diagnostics Complete:")
-                tprint_info(f"   MI Score: {compliance_report['metrics']['mi_score']:.4f}")
-                tprint_info(f"   Requirements Met: {compliance_report['requirements_met']}/3")
-                tprint_info(f"   Ensemble Ready: {ensemble_compatibility['ensemble_ready']}")
-                
-                metrics.update({
-                    'enhanced_mi_score': compliance_report['metrics']['mi_score'],
-                    'enhanced_requirements_met': compliance_report['requirements_met'],
-                    'enhanced_ensemble_ready': ensemble_compatibility['ensemble_ready']
-                })
-
-            # 9. Final Summary
-            execution_time = time.time() - start_time
-            metrics["execution_time"] = execution_time
-            metrics["n_samples"] = len(X)
-
-            tprint_success(f"✅ Enhanced SMC Regime completed in {execution_time:.2f}s")
-            tprint_info(f"📊 Final Metrics: MI={metrics.get('mi_score', 0):.4f}, AUC={metrics.get('auc', 0):.3f}")
-
-            return {
-                "success": True,
-                "metrics": metrics,
-                "n_samples": len(X),
-                "features": list(X.columns),
-                "artifacts": artifacts,
-                "diagnostics": diagnostics_result,
-                "mi_history": self.mi_history,
-                "training_metrics": self.training_metrics,
-                "execution_time": execution_time
-            }
-
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced SMC Regime step failed: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def _create_standardized_output(self, features: pd.DataFrame, labels: pd.Series,
-                                  predictions: np.ndarray, probabilities: np.ndarray,
-                                  symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:
-        """Create standardized output structure."""
-        standardized = pd.DataFrame(index=features.index)
-        standardized['timestamp'] = features.index
-        standardized['specialist_prediction'] = predictions
-        standardized['specialist_probability'] = probabilities
-        standardized['target_label'] = labels
-        
-        # Add original features for reference
-        for col in features.columns[:20]:  # Limit to first 20 features
-            standardized[f'feature_{col}'] = features[col]
-        
-        return standardized
+        """Execute enhanced momentum persistence step."""
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.SMC_REGIME, # Assuming exist or fallback
+            manual_feature_func=self._get_smc_combined_manual_features,
+            filter_type='volume',
+            pt_sl_config_key='smc_pt_sl',
+            default_pt_sl=[2.0, 1.0],
+            suffix="enhanced_smc_features"
+        )
     
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching."""
-        # This would be implemented based on the actual data loading mechanism
-        # Using alternative data loading approach
-            # market_data = self._load_alternative_market_data(config, timeframe)
         market_data, market_source = self.load_market_data_or_fail(
             {**config, "timeframe": timeframe},
             pipeline_state={},

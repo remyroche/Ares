@@ -76,6 +76,7 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, AF
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
+    @property
     def versioned_store(self):
         """Use a specialist-specific versioned store path."""
         if self._versioned_store is None and self.use_versioned_artifacts:
@@ -132,33 +133,13 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, AF
             
         return features
 
-    def _generate_enhanced_features(self, df: pd.DataFrame, specialist_type: SpecialistType = None) -> pd.DataFrame:
-        """Generate Structural Inertia features for Momentum Persistence."""
-        # 1. Structural Inertia focus
+    def _get_momentum_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Generate combined manual features for Momentum Persistence."""
         inertia_features = self._compute_structural_inertia_features(df)
+        manual_features = self._create_manual_enhanced_features(df, pipeline_features)
         
-        # 2. Enhanced features from pipeline
-        enhanced_features = self.feature_pipeline.generate_enhanced_features(
-            df, 'momentum', {'enhanced_features': True}
-        )
-        
-        # Combine all features
-        all_features = [inertia_features, enhanced_features]
-        
-        # Combine all features with manual redundancy reduction
-        if all_features:
-            combined_features = pd.concat(all_features, axis=1)
-            
-            # Manual redundancy reduction and feature selection
-            combined_features = self._apply_manual_feature_selection(combined_features)
-            
-            # Remove duplicates and clean
-            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
-            combined_features = combined_features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            
-            return combined_features
-        return pd.DataFrame(index=df.index)
-    
+        return pd.concat([inertia_features, manual_features], axis=1)
+
     def _create_manual_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
         """Create manual enhanced features to address redundancy and improve poor performers."""
         manual_features = pd.DataFrame(index=df.index)
@@ -248,208 +229,17 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, AF
             
         return manual_features
     
-    def _apply_manual_feature_selection(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Apply manual feature selection to reduce redundancy and keep high-quality features."""
-        if features.empty:
-            return features
-        
-        # Remove constant features
-        constant_features = features.columns[features.nunique() <= 1]
-        if len(constant_features) > 0:
-            features = features.drop(columns=constant_features)
-            self.logger.info(f"Removed {len(constant_features)} constant features")
-        
-        # Manual redundancy reduction - remove highly correlated features
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(
-            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-        )
-        
-        # Find highly correlated pairs (>0.9)
-        to_drop = []
-        for column in upper_triangle.columns:
-            correlated_features = upper_triangle[column][upper_triangle[column] > 0.9]
-            if not correlated_features.empty:
-                for correlated_feature in correlated_features.index:
-                    if correlated_feature > column:
-                        to_drop.append(correlated_feature)
-        
-        # Remove redundant features
-        if to_drop:
-            features = features.drop(columns=list(set(to_drop)))
-            self.logger.info(f"Removed {len(set(to_drop))} redundant features")
-        
-        # Keep only the most informative features
-        if len(features.columns) > 30:
-            feature_variances = features.var()
-            top_features = feature_variances.nlargest(30).index
-            features = features[top_features]
-            self.logger.info(f"Limited to top 30 features by variance")
-        
-        return features
-    
-    def _train_enhanced_momentum_model(self, features: pd.DataFrame, labels: pd.Series, 
-                                       sample_weight: Optional[pd.Series] = None) -> Tuple[Any, Dict[str, float]]:
-        """Train enhanced momentum model with MI optimization and AFML weights."""
-        if len(features) < 100:
-            from sklearn.dummy import DummyClassifier
-            dummy_model = DummyClassifier(strategy="most_frequent", random_state=42)
-            dummy_model.fit(features, labels)
-            return dummy_model, {'auc': 0.5, 'accuracy': 0.5, 'model_type': 'dummy_fallback'}
-        
-        training_result = train_specialist_xgb_with_oof(
-            features.fillna(0.0),
-            labels.fillna(0.0),
-            sample_weight=sample_weight,
-            n_splits=5,
-        )
-        return training_result.model, training_result.metrics
-
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced momentum persistence specialist training with AFML hardening."""
-        start_time = time.time()
-        try:
-            symbol = config.get('symbol', 'BTCUSDT')
-            exchange = config.get('exchange', 'binance')
-            timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'long')
-
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model=self.step_name
-            )
-            
-            self._versioned_store = None
-            _ = self.versioned_store
-            
-            df = self._load_market_data(symbol, exchange, timeframe)
-            if df is None or len(df) < 1000:
-                return {"success": False, "error": "Insufficient data"}
-            
-            # 1. Feature Generation
-            tprint_info("🛠️ Generating enhanced momentum features...")
-            feature_df = self._generate_enhanced_features(df, SpecialistType.MOMENTUM_PERSISTENCE)
-            
-            # 2-4. AFML: Sampling, Labeling, Weighting, Alignment via Helper
-            X, y, weights = self.prepare_specialist_data(
-                market_data=df,
-                feature_df=feature_df,
-                config=config,
-                filter_type='price',
-                pt_sl_config_key='momentum_pt_sl',
-                default_pt_sl=[2.5, 1.0]
-            )
-            
-            # 5. Centralized purged-CV training
-            tprint_info("🤖 Training enhanced momentum model with centralized XGB helper (purged CV & AFML weights)...")
-            training_result = train_specialist_xgb_with_oof(
-                X.fillna(0.0),
-                y.fillna(0.0),
-                sample_weight=weights,
-                n_splits=5,
-            )
-
-            oof_probs = training_result.oof_predictions
-            last_model = training_result.model
-            metrics = training_result.metrics
-            
-            # AFML Audit: Update metrics using full OOF set
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                y_full_true = y.loc[valid_oof.index]
-                y_full_pred_prob = valid_oof.values
-                y_full_pred = (y_full_pred_prob >= 0.5).astype(int)
-                
-                if 'auc' not in metrics:
-                    try:
-                        metrics['auc'] = float(roc_auc_score(y_full_true, y_full_pred_prob))
-                    except Exception:
-                        metrics['auc'] = 0.5
-                if 'mi_score' not in metrics:
-                    try:
-                        metrics['mi_score'] = float(self.compute_binned_mi(y_full_pred_prob, y_full_true.values))
-                    except Exception as e:
-                        self.logger.warning(f"Failed to calculate full OOF metrics: {e}")
-                        metrics['mi_score'] = 0.0
-            else:
-                metrics = {'auc': 0.5, 'mi_score': 0.0}
-                y_full_pred_prob = np.array([])
-                y_full_pred = np.array([])
-
-            metrics.update({
-                'n_features': len(X.columns),
-                'n_samples': len(X),
-            })
-            
-            # 6. Align results back to full market index
-            # AFML FIX: Initialize with NaN instead of 0.5 to allow proper ffilling downstream
-            final_probs = pd.Series(np.nan, index=df.index)
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = y_full_pred_prob
-            
-            # Ffill probabilities so the signal is persistent between events
-            final_probs = final_probs.ffill().fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
-            full_labels = pd.Series(0, index=df.index)
-            full_labels.loc[y.index] = y
-            
-            # 7. Standardized Output and Artifacts
-            output_df = self._create_standardized_output(
-                feature_df, full_labels, final_preds.values, final_probs.values, symbol, exchange, timeframe, direction
-            )
-            
-            artifact_name = f"enhanced_momentum_persistence_prediction_{timeframe}"
-            metadata = SpecialistDataInterface.create_standard_metadata(
-                specialist_name="EnhancedMLMomentumPersistenceStep",
-                config=config,
-                metrics=metrics,
-                mi_score=metrics.get('mi_score', 0.0),
-                hsic_score=0.0
-            )
-            
-            self._save_artifact(data=output_df, artifact_name=artifact_name, artifact_type="data", data_category="predictions", metadata=metadata)
-            
-            try:
-                if self.versioned_store:
-                    self.versioned_store.add_data(output_df, version_name=artifact_name)
-                    tprint_success(f"💾 Saved predictions to versioned store as '{artifact_name}'")
-            except Exception as ve:
-                tprint_warning(f"Versioned store save failed: {ve}")
-            
-            self._save_artifact(data=last_model, artifact_name=f"enhanced_momentum_model_{timeframe}", artifact_type="model", data_category="models", metadata=metadata)
-            
-            # 7. Diagnostics
-            diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
-            
-            tprint_success(f"✅ Enhanced Momentum Persistence completed in {time.time()-start_time:.2f}s")
-            return {
-                "success": True,
-                "metrics": metrics,
-                "n_samples": len(X),
-                "artifact_name": artifact_name,
-                "diagnostics": diagnostics_result
-            }
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced momentum persistence failed: {e}")
-            return {"success": False, "error": str(e)}
-
-    def _create_standardized_output(self, features: pd.DataFrame, labels: pd.Series,
-                                  predictions: np.ndarray, probabilities: np.ndarray,
-                                  symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:
-        """Create standardized output structure."""
-        output_df = pd.DataFrame(index=features.index)
-        output_df['timestamp'] = features.index
-        output_df['specialist_prediction'] = predictions
-        output_df['specialist_probability'] = probabilities
-        output_df['target_label'] = labels
-        for col in features.columns[:20]:
-            output_df[f'feature_{col}'] = features[col]
-        return output_df
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.MOMENTUM_PERSISTENCE,
+            manual_feature_func=self._get_momentum_combined_manual_features,
+            filter_type='price',
+            pt_sl_config_key='momentum_pt_sl',
+            default_pt_sl=[2.5, 1.0],
+            suffix="enhanced_momentum_persistence_features"
+        )
 
     def _load_market_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
         """Load market data using BaseStep method."""

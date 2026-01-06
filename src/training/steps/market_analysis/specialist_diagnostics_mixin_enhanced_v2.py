@@ -28,6 +28,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.feature_selection import mutual_info_regression
 from scipy.stats import spearmanr
 from scipy.spatial.distance import pdist, squareform
+import re
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.versioned_artifacts import VersionedArtifactStore
@@ -73,6 +74,103 @@ class SpecialistDiagnosticsMixinEnhancedV2:
         self.feature_diagnostics = SpecialistFeatureDiagnostics()
         self.logger = logging.getLogger(self.__class__.__name__)
     
+    def _create_standardized_output(self, features: pd.DataFrame, labels: pd.Series,
+                                  predictions: np.ndarray, probabilities: np.ndarray,
+                                  symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:
+        """Create standardized output structure."""
+        output_df = pd.DataFrame(index=features.index)
+        output_df['timestamp'] = features.index
+        output_df['specialist_prediction'] = predictions
+        output_df['specialist_probability'] = probabilities
+        output_df['target_label'] = labels
+        # Save top 20 features for diagnostics
+        for col in features.columns[:20]:
+            output_df[f'feature_{col}'] = features[col]
+        return output_df
+
+    def save_specialist_results(self,
+                              config: Dict[str, Any],
+                              feature_df: pd.DataFrame,
+                              labels: pd.Series,
+                              predictions: np.ndarray,
+                              probabilities: np.ndarray,
+                              model: Any,
+                              metrics: Dict[str, Any],
+                              specialist_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Centralized method to save specialist results, artifacts, and run diagnostics.
+        """
+        if specialist_name is None:
+            specialist_name = self.__class__.__name__
+
+        symbol = config.get('symbol', 'UNKNOWN')
+        exchange = config.get('exchange', 'UNKNOWN')
+        timeframe = config.get('timeframe', 'UNKNOWN')
+        direction = config.get('direction', 'long')
+
+        # 1. Standardized Output
+        output_df = self._create_standardized_output(
+            feature_df, labels, predictions, probabilities,
+            symbol, exchange, timeframe, direction
+        )
+
+        # 2. Metadata
+        metadata = SpecialistDataInterface.create_standard_metadata(
+            specialist_name=specialist_name,
+            config=config,
+            metrics=metrics,
+            mi_score=metrics.get('mi_score', 0.0),
+            hsic_score=metrics.get('hsic_score', 0.0)
+        )
+
+        # 3. Artifact Naming
+        # Convert CamelCase to snake_case for artifact name
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', specialist_name)
+        snake_case_name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+        if snake_case_name.endswith('_step'):
+            snake_case_name = snake_case_name[:-5]
+
+        artifact_name = f"{snake_case_name}_prediction_{timeframe}"
+
+        # 4. Save Data Artifact
+        self._save_artifact(data=output_df, artifact_name=artifact_name,
+                          artifact_type="data", data_category="predictions", metadata=metadata)
+
+        # 5. Versioned Store
+        try:
+            if hasattr(self, 'versioned_store') and self.versioned_store:
+                self.versioned_store.add_data(output_df, version_name=artifact_name)
+                tprint_success(f"💾 Saved predictions to versioned store as '{artifact_name}'")
+        except Exception as ve:
+            tprint_warning(f"Versioned store save failed: {ve}")
+
+        # 6. Save Model Artifact
+        model_artifact_name = f"{snake_case_name}_model_{timeframe}"
+        self._save_artifact(data=model, artifact_name=model_artifact_name,
+                          artifact_type="model", data_category="models", metadata=metadata)
+
+        # 7. Diagnostics
+        diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
+
+        if diagnostics_result.get('success', False):
+             if 'compliance_report' in diagnostics_result:
+                metrics.update({
+                    'enhanced_mi_score': diagnostics_result['compliance_report']['metrics'].get('mi_score', 0.0),
+                    'enhanced_requirements_met': diagnostics_result['compliance_report'].get('requirements_met', False),
+                })
+             if 'ensemble_compatibility' in diagnostics_result:
+                 metrics.update({
+                     'ensemble_ready': diagnostics_result['ensemble_compatibility'].get('ensemble_ready', False),
+                 })
+
+        return {
+            "success": True,
+            "metrics": metrics,
+            "n_samples": len(output_df),
+            "artifact_name": artifact_name,
+            "diagnostics": diagnostics_result
+        }
+
     def _load_self_artifacts_enhanced(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:
         """Load this specialist's own artifacts with enhanced validation."""
         try:

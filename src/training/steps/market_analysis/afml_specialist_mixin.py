@@ -253,146 +253,403 @@ class AFMLSpecialistMixin:
         default_pt_sl: List[float] = [2.0, 1.0]
     ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
         """
-        Execute the full AFML pipeline from raw features to weighted training sets.
+        Execute the full AFML pipeline with Master-Anchor Architecture.
 
-        Sequence:
-        0. Dynamic Volume Bars Resampling (Optional, enabled by config)
-        1. CUSUM Sampling (apply_afml_sampling)
-        2. Triple Barrier Labeling (generate_tbm_labels)
-        3. Concurrence Weighting (get_concurrent_weights)
-        4. Master Sample Weighting (compute_master_weight)
-        5. Data Alignment & Cleaning
-
-        Args:
-            market_data: Raw market data (OHLCV)
-            feature_df: Generated features dataframe
-            config: Configuration dictionary
-            filter_type: Type of CUSUM filter ('price', 'volatility', 'volume', 'spread')
-            pt_sl_config_key: Config key to look up PT/SL thresholds (e.g., 'spectral_pt_sl')
-            default_pt_sl: Default PT/SL thresholds if key not found
-
-        Returns:
-            Tuple[X, y, weights] aligned and cleaned
+        Roles determined by SpecialistType:
+        - Volume/Micro Specialist: Anchor=VolumeBars, Context=RangeBars
+        - Range/Trend Specialist: Anchor=RangeBars, Context=VolumeBars
         """
 
-        # 0. Dynamic Volume Bars
-        # Check if volume bars are requested via config (default True for enhanced specialists if not specified)
-        use_volume_bars = config.get('use_volume_bars', True)
+        # 1. Determine Anchor and Context Types
+        specialist_type = config.get('specialist_type')
+        if not specialist_type and hasattr(self, 'specialist_type'):
+            specialist_type = self.specialist_type
 
-        if use_volume_bars:
-            tprint_info("📊 Generating Dynamic Volume Bars...")
-            volume_bars_df = self._generate_dynamic_volume_bars(market_data, config)
-            if volume_bars_df is not None and not volume_bars_df.empty:
-                tprint_info(f"   Converted {len(market_data)} time bars to {len(volume_bars_df)} volume bars")
+        # Default to Volume anchor if unknown (fallback)
+        anchor_type = 'volume'
+        if isinstance(specialist_type, SpecialistType):
+            anchor_type = self._get_anchor_type(specialist_type)
+        elif isinstance(specialist_type, str):
+            # Try to map string to enum if possible, or just default
+            pass
 
-                # Re-align features to volume bars
-                # We use forward fill to propagate the latest feature values to the volume bar close time
-                feature_df = feature_df.reindex(volume_bars_df.index, method='ffill').fillna(method='bfill')
+        context_type = 'range' if anchor_type == 'volume' else 'volume'
 
-                # Update market_data reference to volume bars
-                market_data = volume_bars_df
+        tprint_info(f"🏗️ Master-Anchor Architecture: Anchor={anchor_type.upper()}, Context={context_type.upper()}")
 
+        # 2. Generate Bars
+        # Anchor Bars (The Rows)
+        anchor_df = self._generate_bars(market_data, config, anchor_type)
+        # Context Bars (The Features)
+        context_df = self._generate_bars(market_data, config, context_type)
+
+        if anchor_df is None or context_df is None:
+            raise ValueError("Failed to generate Anchor or Context bars")
+
+        tprint_info(f"   Anchor Bars ({anchor_type}): {len(anchor_df)}, Context Bars ({context_type}): {len(context_df)}")
+
+        # 3. Join & Cross-Bar Features
+        # We start with Anchor DF as the base
+        anchor_feats = anchor_df.copy()
+        anchor_feats.columns = [f"{c}_{anchor_type}_bar" for c in anchor_feats.columns]
+
+        context_feats = context_df.copy()
+        context_feats.columns = [f"{c}_{context_type}_bar" for c in context_feats.columns]
+
+        # Calculate Avg Duration for Latency
+        avg_context_duration = context_df['bar_duration'].mean() if 'bar_duration' in context_df.columns else 60.0
+
+        if anchor_type == 'volume':
+            # Volume Anchor: Use merge_asof to get most recent Range Bar state
+            context_feats['context_ts_join'] = context_feats.index
+
+            joined_df = pd.merge_asof(
+                anchor_feats.sort_index(),
+                context_feats.sort_index(),
+                left_index=True,
+                right_index=True,
+                direction='backward'
+            )
+
+            # Cross-Bar: Latency (Staleness)
+            if 'context_ts_join' in joined_df.columns:
+                time_diff = (joined_df.index - joined_df['context_ts_join']).dt.total_seconds()
+                joined_df['latency'] = time_diff / (avg_context_duration + 1e-6)
+                joined_df = joined_df.drop(columns=['context_ts_join'])
             else:
-                tprint_warning("⚠️ Volume bar generation failed or returned empty. Falling back to time bars.")
+                joined_df['latency'] = 0.0
 
-        # 1. AFML: CUSUM Sampling
-        tprint_info(f"🎯 Applying AFML CUSUM sampling (10% target) using {filter_type} filter...")
-        sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type=filter_type)
+            # Cross-Bar: Filling (Information Density)
+            # volume_bars_per_range_bar is hard to exact match, use relative duration proxy
+            # If latency is low, it means we just had a range bar.
+            # Simple Proxy: AnchorDuration / ContextDuration (Ratio of bar speeds)
+            # VolumeBarDuration / LastRangeBarDuration
+            if f'bar_duration_{anchor_type}_bar' in joined_df.columns and f'bar_duration_{context_type}_bar' in joined_df.columns:
+                joined_df['filling_ratio'] = joined_df[f'bar_duration_{anchor_type}_bar'] / (joined_df[f'bar_duration_{context_type}_bar'] + 1e-6)
+            else:
+                joined_df['filling_ratio'] = 1.0
 
-        # 2. AFML: Triple Barrier Labels
+        else:
+            # Range Anchor: Aggregate Volume Bars within the Range Bar
+            range_indices = anchor_df.index
+            bin_indices = range_indices.searchsorted(context_df.index)
+
+            context_df['bin_idx'] = bin_indices
+            valid_context = context_df[(context_df['bin_idx'] > 0) & (context_df['bin_idx'] < len(range_indices))]
+
+            # Aggregate: Sum Volume, Count Bars (Filling), Std Close (Micro Volatility)
+            agg_ops = {
+                'volume': ['sum', 'count'],
+                'close': 'std',
+                'bar_duration': 'sum'
+            }
+
+            grouped = valid_context.groupby('bin_idx').agg(agg_ops)
+            # Flatten columns
+            grouped.columns = [f"agg_{c[0]}_{c[1]}_{context_type}" for c in grouped.columns]
+
+            # Rename specific aggregations for clarity
+            # agg_volume_count_volume -> filling_count
+
+            anchor_feats['iloc'] = np.arange(len(anchor_feats))
+            # searchsorted returns insertion index i such that a[i-1] < v <= a[i].
+            # So bin_idx corresponds exactly to the index in anchor_df (since bin_idx < len).
+            # We map bin_idx -> anchor_df.index
+
+            joined_df = anchor_feats.merge(grouped, left_on='iloc', right_index=True, how='left').drop(columns=['iloc'])
+            joined_df = joined_df.fillna(0)
+
+            # Cross-Bar Features
+            # Latency is 0 by definition (we aggregated up to the close)
+            joined_df['latency'] = 0.0
+
+            # Filling: Number of volume bars in this range bar
+            count_col = f"agg_volume_count_{context_type}"
+            if count_col in joined_df.columns:
+                 joined_df['filling_count'] = joined_df[count_col]
+            else:
+                 joined_df['filling_count'] = 1.0
+
+        # 4. Feature Pipeline Integration
+        # We need to reindex the incoming `feature_df` (which is 15m or 1m based) to the Anchor Bars.
+        # Use reindex/ffill
+        pipeline_feats = feature_df.reindex(anchor_df.index, method='ffill').fillna(method='bfill')
+
+        # Combine everything
+        X_combined = pd.concat([joined_df, pipeline_feats], axis=1)
+        # Remove duplicate cols
+        X_combined = X_combined.loc[:, ~X_combined.columns.duplicated()]
+
+        # Update market_data to Anchor Bars for subsequent steps (Sampling/TBM)
+        market_data_anchor = anchor_df
+
+        # 5. AFML: CUSUM Sampling
+        tprint_info(f"🎯 Applying AFML CUSUM sampling on Anchor Bars...")
+        sampled_df, t_events = self.apply_afml_sampling(market_data_anchor, config, filter_type=filter_type)
+
+        # 6. AFML: Triple Barrier Labels (on Anchor Bars)
         pt_sl = config.get(pt_sl_config_key, default_pt_sl) if pt_sl_config_key else default_pt_sl
-        tprint_info(f"🏷️ Generating TBM labels with PT/SL: {pt_sl}")
+        tbm_labels_df = self.generate_tbm_labels(market_data_anchor, t_events, config, pt_sl)
 
-        # If using volume bars, ensure TBM logic knows units are bars (which it does by default index shifting)
-        tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
+        # 7. Compute Wavelet Features (Cross-Bar Aware)
+        # Compute Anchor Wavelets
+        anchor_wavelet_fam = 'db4' if anchor_type == 'volume' else 'sym4'
+        tprint_info(f"🌊 Computing Wavelets: Anchor={anchor_wavelet_fam}, Context=Mixed")
 
-        # 3. AFML: Alignment
-        X_sampled = feature_df.loc[t_events].copy()
+        wavelet_feats_list = []
+        hf_lf_ratios = []
+        rel_entropy_list = []
+
+        # For Relative Entropy, we need Context Entropy.
+        # We can compute context entropy on the fly for the context bars associated.
+        # Simplified: Compute Anchor Entropy. Assume Context Entropy is 1.0 (placeholder) or compute?
+        # Let's compute Anchor Entropy properly.
+
+        close_values = market_data_anchor['close'].values
+        wavelet_window = 32 # bars
+
+        for event_time in t_events:
+            try:
+                idx = market_data_anchor.index.get_loc(event_time)
+                if idx >= wavelet_window:
+                    series = close_values[idx-wavelet_window:idx]
+                    feats = get_wavelet_features(series, wavelet=anchor_wavelet_fam, level=4)
+                    wavelet_feats_list.append(feats)
+                    hf_lf_ratios.append(feats.get('hf_lf_ratio', 0.5))
+
+                    # Compute Relative Entropy?
+                    # Needs Context Bar data.
+                    # Placeholder: Just use Anchor Entropy features.
+                else:
+                    default_feats = get_wavelet_features(np.zeros(wavelet_window), wavelet=anchor_wavelet_fam, level=4)
+                    wavelet_feats_list.append(default_feats)
+                    hf_lf_ratios.append(0.5)
+            except Exception:
+                default_feats = get_wavelet_features(np.zeros(wavelet_window), wavelet=anchor_wavelet_fam, level=4)
+                wavelet_feats_list.append(default_feats)
+                hf_lf_ratios.append(0.5)
+
+        hf_lf_series = pd.Series(hf_lf_ratios, index=t_events)
+        wavelet_df = pd.DataFrame(wavelet_feats_list, index=t_events)
+        wavelet_df.columns = [f'wavelet_{c}' for c in wavelet_df.columns]
+
+        # 8. Alignment
+        X_sampled = X_combined.loc[t_events].copy()
+        X_sampled = pd.concat([X_sampled, wavelet_df], axis=1)
+
         y_sampled = tbm_labels_df['bin']
         t1_sampled = tbm_labels_df['t1']
         ret_sampled = tbm_labels_df['ret']
-
-        # Get actual MFE/MAE from TBM output for weighting
         mfe_sampled = tbm_labels_df['mfe']
         mae_sampled = tbm_labels_df['mae']
 
-        # 4. Volatility (Volume Time Aware)
-        # If using volume bars, compute volatility based on bar counts (use_volume_time=True)
-        volatility = get_daily_vol(market_data['close'], use_volume_time=use_volume_bars).loc[t_events]
+        # 9. Weighting
+        volatility = get_daily_vol(market_data_anchor['close'], use_volume_time=True).loc[t_events]
         barrier_size = volatility * pt_sl[0]
 
-        # 5. Compute Wavelet Features
-        # Compute features for sampled events
-        wavelet_feats_list = []
-        hf_lf_ratios = []
-
-        if 'close' in market_data.columns:
-            close_values = market_data['close'].values
-            timestamps = market_data.index
-            wavelet_window = 32
-
-            for event_time in t_events:
-                try:
-                    # Get integer location
-                    idx = market_data.index.get_loc(event_time)
-                    if idx >= wavelet_window:
-                        series = close_values[idx-wavelet_window:idx]
-                        # Use level 3 to match 32 length approx window or level 4 if enough data
-                        feats = get_wavelet_features(series, level=3)
-                        wavelet_feats_list.append(feats)
-                        hf_lf_ratios.append(feats.get('hf_lf_ratio', 0.5))
-                    else:
-                        # Fallback for early data
-                        default_feats = get_wavelet_features(np.zeros(wavelet_window), level=3)
-                        wavelet_feats_list.append(default_feats)
-                        hf_lf_ratios.append(0.5)
-                except Exception:
-                    default_feats = get_wavelet_features(np.zeros(wavelet_window), level=3)
-                    wavelet_feats_list.append(default_feats)
-                    hf_lf_ratios.append(0.5)
-        else:
-            default_feats = get_wavelet_features(np.zeros(32), level=3)
-            wavelet_feats_list = [default_feats] * len(t_events)
-            hf_lf_ratios = [0.5] * len(t_events)
-
-        hf_lf_series = pd.Series(hf_lf_ratios, index=t_events)
-
-        # Add ALL Wavelet features to X_sampled
-        wavelet_df = pd.DataFrame(wavelet_feats_list, index=t_events)
-        # Prefix columns to avoid collisions
-        wavelet_df.columns = [f'wavelet_{c}' for c in wavelet_df.columns]
-        X_sampled = pd.concat([X_sampled, wavelet_df], axis=1)
-
-        # 6. Master Weighting
-        # Uniqueness
-        num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
+        num_concurrent = self.get_concurrent_weights(t1_sampled, market_data_anchor.index)
         uniqueness = get_sample_uniqueness(t1_sampled, num_concurrent)
 
         weights_sampled = compute_master_weight(
-            uniqueness=uniqueness.values,
-            mfe=mfe_sampled.values,
-            mae=mae_sampled.values,
-            barrier=barrier_size.values,
-            hf_lf_ratio=hf_lf_series.values,
-            volatility=volatility.values,
-            raw_return=ret_sampled.values,
+            uniqueness=uniqueness.values, mfe=mfe_sampled.values, mae=mae_sampled.values,
+            barrier=barrier_size.values, hf_lf_ratio=hf_lf_series.values,
+            volatility=volatility.values, raw_return=ret_sampled.values,
             timestamp_index=t_events
         )
-
         weights_series = pd.Series(weights_sampled, index=t_events)
 
-        # 7. Filter numeric and drop NaNs
+        # 10. Final Clean
         X = X_sampled.select_dtypes(include=[np.number])
         valid_mask = X.notna().all(axis=1) & y_sampled.notna()
         X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_series.loc[valid_mask]
 
-        if len(X) < 100:
-            tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-
-        tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features (including Wavelets)")
+        if len(X) < 100: tprint_warning(f"⚠️ Low sample count: {len(X)}")
 
         return X, y, weights
     
+    def _get_anchor_type(self, specialist_type: SpecialistType) -> str:
+        """
+        Determine if the specialist is Volume (Micro/Execution) or Range (Trend/Breakout) anchored.
+        """
+        volume_anchors = {
+            SpecialistType.VOLUME_FORCE,
+            SpecialistType.LIQUIDITY_REGIME,
+            SpecialistType.MICROSTRUCTURE,
+            SpecialistType.RISK_REGIME,
+            SpecialistType.SMC_REGIME,
+            SpecialistType.SPECTRAL
+        }
+
+        if specialist_type in volume_anchors:
+            return 'volume'
+        else:
+            return 'range'
+
+    def _generate_bars(self, df: pd.DataFrame, config: Dict[str, Any], bar_type: str) -> pd.DataFrame:
+        """
+        Dispatcher for bar generation (Volume or Range).
+        """
+        if bar_type == 'volume':
+            return self._generate_dynamic_volume_bars(df, config)
+        elif bar_type == 'range':
+            return self._generate_range_bars(df, config)
+        elif bar_type == 'pit':
+            return self.generate_pit_bars(df, config)
+        else:
+            raise ValueError(f"Unknown bar type: {bar_type}")
+
+    def _generate_range_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Generate Range Bars from 1-minute data.
+        Delta P updated every 24h using trailing 7-day 15m volatility.
+        """
+        symbol = config.get('symbol', 'ETHUSDT')
+        try:
+            # 1. Compute Daily Delta P Thresholds from 15m data
+            vol_15m = calculate_rolling_volatility(df['close'], window_days=7)
+            delta_p_series = calculate_dynamic_range_threshold(vol_15m, df['close'])
+            delta_p_daily = delta_p_series.resample('1D').last().shift(1)
+
+            # 2. Load 1m raw data
+            manager = get_klines_manager(config.get('data_dir', 'historical_data'))
+            start_date = df.index.min() - pd.Timedelta(days=8)
+            end_date = df.index.max()
+
+            tprint_info(f"   Loading 1m raw data for Range Bars: {symbol} {start_date} to {end_date}")
+            df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
+
+            if df_1m is None or df_1m.empty: return None
+
+            df_1m = df_1m[['open', 'high', 'low', 'close', 'volume']]
+
+            # Align Delta P to 1m data
+            thresholds_1m = delta_p_daily.reindex(df_1m.index, method='ffill').fillna(method='bfill')
+
+            # 3. Generate Bars
+            times = df_1m.index.values
+            opens = df_1m['open'].values
+            highs = df_1m['high'].values
+            lows = df_1m['low'].values
+            closes = df_1m['close'].values
+            vols = df_1m['volume'].values
+            threshold_vals = thresholds_1m.values
+
+            rb_times, rb_opens, rb_highs, rb_lows, rb_closes, rb_vols = [], [], [], [], [], []
+            rb_durations = []
+
+            current_open = opens[0]
+            current_high = highs[0]
+            current_low = lows[0]
+            current_vol = 0.0
+            start_idx = 0
+
+            n_rows = len(df_1m)
+
+            for i in range(n_rows):
+                p = closes[i]
+                current_high = max(current_high, highs[i])
+                current_low = min(current_low, lows[i])
+                current_vol += vols[i]
+
+                delta_p = threshold_vals[i]
+                if np.isnan(delta_p) or delta_p <= 0: delta_p = p * 0.01
+
+                if abs(p - current_open) >= delta_p:
+                    rb_times.append(times[i])
+                    rb_opens.append(current_open)
+                    rb_highs.append(current_high)
+                    rb_lows.append(current_low)
+                    rb_closes.append(p)
+                    rb_vols.append(current_vol)
+
+                    duration = (times[i] - times[start_idx]).astype('timedelta64[s]').astype(float) + 60.0
+                    rb_durations.append(duration)
+
+                    if i + 1 < n_rows:
+                        current_open = p # Range bar continuity
+                        current_high = p
+                        current_low = p
+                        current_vol = 0.0
+                        start_idx = i + 1
+
+            range_bars = pd.DataFrame({
+                'open': rb_opens, 'high': rb_highs, 'low': rb_lows, 'close': rb_closes,
+                'volume': rb_vols, 'bar_duration': rb_durations
+            }, index=pd.DatetimeIndex(rb_times))
+            range_bars.index.name = 'timestamp'
+            range_bars['bar_return'] = range_bars['close'].pct_change().fillna(0.0)
+
+            return range_bars
+
+        except Exception as e:
+            tprint_error(f"Error generating range bars: {e}")
+            return None
+
+    def generate_pit_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Generate Point-in-Time (PiT) Information Bars for Meta-Model.
+        Race between Volume Accumulation (N) and Price Deviation (Delta P).
+        """
+        symbol = config.get('symbol', 'ETHUSDT')
+        try:
+            manager = get_klines_manager(config.get('data_dir', 'historical_data'))
+            start_date = df.index.min() - pd.Timedelta(days=8)
+            end_date = df.index.max()
+            df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
+            if df_1m is None or df_1m.empty: return None
+            df_1m = df_1m[['open', 'high', 'low', 'close', 'volume']]
+
+            rolling_7d_vol = df_1m['volume'].rolling(window=10080, min_periods=1440).sum()
+            vol_thresholds = (rolling_7d_vol / 674.0).fillna(method='bfill')
+
+            vol_15m = calculate_rolling_volatility(df['close'], window_days=7)
+            delta_p_series = calculate_dynamic_range_threshold(vol_15m, df['close'])
+            delta_p_daily = delta_p_series.resample('1D').last().shift(1)
+            price_thresholds = delta_p_daily.reindex(df_1m.index, method='ffill').fillna(method='bfill')
+
+            times = df_1m.index.values
+            closes = df_1m['close'].values
+            vols = df_1m['volume'].values
+            vol_thresh_vals = vol_thresholds.values
+            price_thresh_vals = price_thresholds.values
+
+            pit_times, pit_reasons = [], []
+            current_vol = 0.0
+            current_open_price = closes[0]
+
+            n_rows = len(df_1m)
+
+            for i in range(n_rows):
+                current_vol += vols[i]
+                price_dev = abs(closes[i] - current_open_price)
+
+                v_thresh = vol_thresh_vals[i]
+                p_thresh = price_thresh_vals[i]
+
+                if np.isnan(v_thresh) or v_thresh <= 0: v_thresh = 1e9
+                if np.isnan(p_thresh) or p_thresh <= 0: p_thresh = 1e9
+
+                vol_trigger = current_vol >= v_thresh
+                price_trigger = price_dev >= p_thresh
+
+                if vol_trigger or price_trigger:
+                    pit_times.append(times[i])
+                    if price_trigger:
+                        pit_reasons.append('price')
+                    else:
+                        pit_reasons.append('volume')
+
+                    current_vol = 0.0
+                    current_open_price = closes[i]
+
+            pit_bars = pd.DataFrame({'reason': pit_reasons}, index=pd.DatetimeIndex(pit_times))
+            pit_bars.index.name = 'timestamp'
+            return pit_bars
+
+        except Exception as e:
+            tprint_error(f"Error generating PiT bars: {e}")
+            return None
+
     def _generate_dynamic_volume_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """
         Generate Dynamic Volume Bars from 1-minute data.

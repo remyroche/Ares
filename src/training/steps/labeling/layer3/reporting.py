@@ -86,6 +86,11 @@ def _generate_layer3_meta_report(
         lines.append("## Geometry Performance Summary\n")
         if geometry_metrics:
             metric_df = pd.DataFrame(geometry_metrics)
+            # Add regime column if available
+            if 'regime' not in metric_df.columns and 'id' in metric_df.columns:
+                # Try to extract regime from ID
+                metric_df['regime'] = metric_df['id'].apply(lambda x: x.split('_')[-1] if '_' in str(x) else 'Global')
+
             metric_df = metric_df.sort_values('score', ascending=False)
             lines.append(_safe_to_markdown(metric_df) + "\n\n")
             tprint_info(f"📊 Geometry metrics: {len(metric_df)} geometries")
@@ -94,8 +99,19 @@ def _generate_layer3_meta_report(
             tprint_warning("⚠️ No geometry metrics available")
 
         # 2. Alpha Head Performance
-        lines.append("## Alpha Head Performance\n")
-        if 'alpha_metrics' in models:
+        lines.append("## Alpha Head Performance (MoE)\n")
+        if 'alpha_models' in models and isinstance(models['alpha_models'], dict):
+            # MoE mode
+            alpha_dict = models['alpha_models']
+            regimes = list(alpha_dict.keys())
+            lines.append(f"**Regime Experts**: {', '.join(regimes)}\n\n")
+
+            if 'alpha_metrics' in models:
+                alpha_metrics = models['alpha_metrics']
+                lines.append(f"- **Global IC (Soft Gated)**: {alpha_metrics.get('final_ic', 'N/A'):.4f}\n\n")
+
+        elif 'alpha_metrics' in models:
+            # Single mode
             alpha_metrics = models['alpha_metrics']
             lines.append(f"- **Final IC**: {alpha_metrics.get('final_ic', 'N/A'):.4f}\n")
             lines.append(f"- **Selected Models**: {', '.join(alpha_metrics.get('selected_models', []))}\n")
@@ -112,8 +128,18 @@ def _generate_layer3_meta_report(
             tprint_warning("⚠️ Alpha metrics not available")
 
         # 3. Probability Head Performance
-        lines.append("## Probability Head Performance\n")
-        if 'prob_metrics' in models:
+        lines.append("## Probability Head Performance (MoE)\n")
+        if 'prob_models' in models and isinstance(models['prob_models'], dict):
+            # MoE mode
+            prob_dict = models['prob_models']
+            lines.append(f"**Regime Experts**: {', '.join(prob_dict.keys())}\n\n")
+
+            if 'prob_metrics' in models:
+                prob_metrics = models['prob_metrics']
+                lines.append(f"- **Global AUC (Soft Gated)**: {prob_metrics.get('final_auc', 'N/A'):.4f}\n\n")
+
+        elif 'prob_metrics' in models:
+            # Single mode
             prob_metrics = models['prob_metrics']
             lines.append(f"- **Final AUC**: {prob_metrics.get('final_auc', 'N/A'):.4f}\n")
             lines.append(f"- **Final LogLoss**: {prob_metrics.get('final_logloss', 'N/A'):.4f}\n")
@@ -218,32 +244,49 @@ def _generate_feature_importance_report(
         
         importance_data = []
         
-        # Extract feature importances from models
-        if 'alpha_models' in models:
-            tprint_info(f"📊 Analyzing {len(models['alpha_models'])} alpha models...")
-            for i, model in enumerate(models['alpha_models']):
+        # Helper to extract importance from a list of models
+        def extract_from_list(model_list, head_name, regime_name='Global'):
+            count = 0
+            for i, model in enumerate(model_list):
                 if hasattr(model, 'feature_importances_'):
+                    count += 1
                     for j, importance in enumerate(model.feature_importances_):
                         if j < len(meta_features):
                             importance_data.append({
                                 'feature': meta_features[j],
                                 'importance': importance,
-                                'model': f'alpha_model_{i}',
-                                'head': 'alpha'
+                                'model': f'{head_name}_{regime_name}_{i}',
+                                'head': head_name,
+                                'regime': regime_name
                             })
+            return count
+
+        # Extract feature importances from models (handling MoE dicts)
+        if 'alpha_models' in models:
+            alpha_models = models['alpha_models']
+            if isinstance(alpha_models, dict):
+                # MoE Dict
+                total = 0
+                for regime, m_list in alpha_models.items():
+                    total += extract_from_list(m_list, 'alpha', regime)
+                tprint_info(f"📊 Analyzed {total} alpha models across {len(alpha_models)} regimes...")
+            else:
+                # Single list
+                count = extract_from_list(alpha_models, 'alpha')
+                tprint_info(f"📊 Analyzed {count} alpha models...")
         
         if 'prob_models' in models:
-            tprint_info(f"🎯 Analyzing {len(models['prob_models'])} probability models...")
-            for i, model in enumerate(models['prob_models']):
-                if hasattr(model, 'feature_importances_'):
-                    for j, importance in enumerate(model.feature_importances_):
-                        if j < len(meta_features):
-                            importance_data.append({
-                                'feature': meta_features[j],
-                                'importance': importance,
-                                'model': f'prob_model_{i}',
-                                'head': 'probability'
-                            })
+            prob_models = models['prob_models']
+            if isinstance(prob_models, dict):
+                # MoE Dict
+                total = 0
+                for regime, m_list in prob_models.items():
+                    total += extract_from_list(m_list, 'prob', regime)
+                tprint_info(f"🎯 Analyzed {total} probability models across {len(prob_models)} regimes...")
+            else:
+                # Single list
+                count = extract_from_list(prob_models, 'prob')
+                tprint_info(f"🎯 Analyzed {count} probability models...")
         
         if importance_data:
             importance_df = pd.DataFrame(importance_data)

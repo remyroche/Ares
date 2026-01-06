@@ -5686,13 +5686,28 @@ class LabelBasedLayer2(BaseStep):
         target_signals_per_day: float = 7.5,
         causal_surprise_threshold: float = 1.8
     ) -> Tuple[List[GeometryTrial], List[str]]:
-        """Step 2: Orthogonal Label Generation & Selection."""
-        tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization...")
+        """Step 2: Orthogonal Label Generation & Selection (Regime-Conditional)."""
+        tprint_info(">>> Layer 2: Step 2 - Orthogonal Optimization (Regime-Conditional)...")
         import time
         start_time = time.time()
-        start_memory = self._get_memory_usage() if hasattr(self, "_get_memory_usage") else 0.0
+
+        # Check for regime labels
+        regime_col = 'regime_label'
+        regimes = ['Global'] # Default if no regimes
+
+        if regime_col in df.columns:
+            # Use top 3 regimes + Global if needed, or just unique regimes
+            unique_regimes = df[regime_col].unique().tolist()
+            # Filter out noise if any
+            unique_regimes = [r for r in unique_regimes if isinstance(r, str) and r != "Unknown"]
+            regimes = unique_regimes
+            tprint_info(f"   🏷️  Regime-Conditional Mode: Optimization per regime {regimes}")
+        else:
+            tprint_info("   🌍 Global Mode: No regime tags found")
     
-        # 1. Generate & Filter
+        # 1. Generate Global Candidates (Definitions & Events)
+        # We generate candidates globally to ensure continuity of indicators,
+        # then evaluate them conditionally per regime.
         ortho_geoms = orthogonal_label_generation(
             df, 
             signal_weights=self.signal_weights, 
@@ -5703,111 +5718,117 @@ class LabelBasedLayer2(BaseStep):
             target_signals_per_day=target_signals_per_day,
             causal_surprise_threshold=causal_surprise_threshold
         )
-        tprint_info(f"🔍 Orthogonal Label Generation: Returned {len(ortho_geoms)} candidates")
+        tprint_info(f"🔍 Orthogonal Label Generation: Returned {len(ortho_geoms)} global candidates")
 
-        # === Cache Population for consistency in OOF Analytics ===
+        # === Cache Population ===
         if not hasattr(self, '_orthogonal_cache'):
             self._orthogonal_cache = {}
-        
-        # Consistent hash with _fetch_orthogonal_candidate_events
         df_hash = hash(str(df.shape) + str(df.iloc[0].name) + str(df.iloc[-1].name))
-        
-        # Store events (ortho_geoms are OutputGeometry objects)
         self._orthogonal_cache[df_hash] = {og.family: og.events for og in ortho_geoms}
-        tprint_info(f"✅ Populated orthogonal cache with {len(ortho_geoms)} geometries for hash {df_hash}")
+        tprint_info(f"✅ Populated orthogonal cache with {len(ortho_geoms)} geometries")
 
         if not ortho_geoms:
             tprint_error("Layer 2: No orthogonal geometries selected.")
             return [], []
 
-        # 2. Group by Family
-        family_map = defaultdict(list)
-        for i, og in enumerate(ortho_geoms):
-            # Score
-            score = og.purity if og.purity is not None else 1.0
-            # Params
-            params = og.params.copy()
-            if 'horizon' not in params: params['horizon'] = 120
+        production_geometries = []
+
+        # 2. Iterate Regimes
+        for regime in regimes:
+            tprint_info(f"   👉 Optimizing for Regime: {regime}")
             
-            # DEBUG: Check if we are creating duplicates here
-            # tprint_info(f"DEBUG: Processing ortho_geom {i}: Family={og.family}, UUID={og.name}_{i}, Params={params}") # Too verbose
+            # Determine regime mask (all True if Global)
+            if regime == 'Global':
+                regime_mask = pd.Series(True, index=df.index)
+            else:
+                regime_mask = df[regime_col] == regime
             
-            gt = GeometryTrial(
-                family=og.family,
-                params=params,
-                final_score=score * 100.0,
-                learnability=og.auc,
-                robust_magnitude=0.0,
-                stability=1.0,
-                balance=1.0,
-                raw_metrics=og.metrics,
-                uuid=f"{og.name}_{i}",
-                events=og.events,
-                selected_features=None
-            )
-            # Attach labels for probe training (Deleted before return to save memory)
-            gt.labels = og.labels
-            if self.preserve_candidate_labels and og.labels is not None:
+            # Filter valid events for this regime
+            # We will pass a filtered dataframe or handle filtering inside the race?
+            # _select_best_geometry_via_race uses `cand.events` to build features.
+            # We should create Regime-Specific GeometryTrial objects where `events` are filtered.
+
+            # Group global candidates by Family
+            family_map = defaultdict(list)
+
+            for i, og in enumerate(ortho_geoms):
+                # Filter events to regime
+                regime_events = og.events[og.events.isin(df[regime_mask].index)]
+
+                if len(regime_events) < 20: # Skip if too few events in this regime
+                    continue
+
+                # Filter labels corresponding to these events
+                if og.labels is not None:
+                    if isinstance(og.labels, pd.Series):
+                        regime_labels = og.labels.reindex(regime_events)
+                    else:
+                        # Reconstruct series to filter
+                        full_series = pd.Series(og.labels, index=og.events)
+                        regime_labels = full_series.reindex(regime_events)
+                else:
+                    regime_labels = None
+
+                # Create Regime-Specific Candidate
+                gt = GeometryTrial(
+                    family=og.family,
+                    params=og.params.copy(),
+                    final_score=(og.purity if og.purity else 1.0) * 100.0,
+                    learnability=og.auc,
+                    robust_magnitude=0.0,
+                    stability=1.0,
+                    balance=1.0,
+                    raw_metrics=og.metrics,
+                    uuid=f"{og.name}_{i}_{regime}", # Unique ID per regime
+                    events=regime_events,
+                    selected_features=None
+                )
+                gt.labels = regime_labels
+                gt.regime = regime # Tag
+
+                family_map[og.family].append(gt)
+
+            # 3. Select Best via Race/Probe (Per Regime)
+            regime_winners = []
+
+            for family, cands in family_map.items():
+                if not cands: continue
+
+                tprint_info(f"      {family}: {len(cands)} candidates -> Selection...")
+                winners = self._select_best_geometry_via_race(cands, df, top_k=10) # Reduced top_k for speed
+                tprint_info(f"          {regime} Winners: {len(winners)}")
+                regime_winners.extend(winners)
+
+                # Tier 2 (Diversity)
+                remaining = [c for c in cands if c not in winners and getattr(c, 'filtering_status', 'UNKNOWN') == 'PASSED']
                 try:
-                    backup_series = og.labels.copy() if hasattr(og.labels, 'copy') else pd.Series(og.labels, index=og.events)
-                    self._geometry_label_backups[gt.uuid] = backup_series
+                    tier2 = self._select_tier2_candidates(winners, remaining, df)
+                    if tier2:
+                        regime_winners.extend(tier2)
+                        tprint_info(f"          + {len(tier2)} Tier-2")
                 except Exception:
                     pass
-            family_map[og.family].append(gt)
 
-        # 3. Select Best via Race/Probe
-        production_geometries = []
-        tprint_info("🏆 Running Geometry Selection Race...")
-        
-        for family, cands in family_map.items():
-            tprint_info(f"   {family}: {len(cands)} candidates -> Selection...")
-            winners = self._select_best_geometry_via_race(cands, df)
-            tprint_info(f"       Tier-1 winners: {len(winners)}")
-            production_geometries.extend(winners)
+            # 3.5 Cross-Family Diversity (Per Regime)
+            regime_winners = self._enforce_cross_family_diversity(regime_winners, max_similarity=0.90)
             
-            remaining = [c for c in cands if c not in winners]
-            # Filter out candidates that never got evaluated (learnability=0.5 default)
-            # FIX: Only consider candidates that passed the gates (as per user request)
-            remaining_passed = [
-                c for c in remaining 
-                if getattr(c, 'filtering_status', 'UNKNOWN') == 'PASSED'
-            ]
-            tprint_info(f"      ➕ Remaining candidates for Tier-2: {len(remaining)} total, {len(remaining_passed)} passed gates")
+            # 3.6 Structural Quota (Per Regime)
+            regime_winners = self._enforce_family_representation(regime_winners)
             
-            # --- Tier 2 Selection (Diversity Enhancement) ---
-            # Attempt to select 1-2 additional orthogonal candidates if available
-            try:
-                tier2_candidates = self._select_tier2_candidates(
-                    winners, 
-                    remaining_passed,  # Only candidates that passed gates
-                    df
-                )
-                if tier2_candidates:
-                    tprint_info(f"   ✨ Added {len(tier2_candidates)} Tier-2 candidates for {family} (Orthogonal)")
-                    production_geometries.extend(tier2_candidates)
-            except Exception as e:
-                tprint_warning(f"   ⚠️ Tier 2 selection failed for {family}: {e}")
-
-        # 3.5 CROSS-FAMILY DIVERSITY FILTER
-        # Remove highly redundant geometries (Jaccard > 90%)
-        production_geometries = self._enforce_cross_family_diversity(
-            production_geometries, max_similarity=0.90
-        )
-        
-        # 3.6 STRUCTURAL FAMILY QUOTA ENFORCEMENT
-        # Ensure minimum representation from VOLATILITY, FLOW, RELAXATION, SLOPE, FRAGILITY
-        production_geometries = self._enforce_family_representation(
-            production_geometries
-        )
+            # Add to global list
+            production_geometries.extend(regime_winners)
 
         self.selected_geometries = production_geometries
     
-        # 4. Feature Selection (Optional) on Union
-        # We need a union events_df to run global feature selection
+        # 4. Feature Selection (Global Union of Events)
+        # We need to run feature selection. Since geometries are regime-specific,
+        # we could run it per geometry on its regime events.
+        # However, `_run_titan_rfe_for_geometry` uses `gt.events` which we correctly filtered above.
+        # So we can just iterate the list.
+
+        # Select global probe features based on Union of all events
         union_events = self._construct_union_events_df(df, production_geometries)
         X_events_full = self._build_geometry_independent_event_features(df, union_events)
-    
-        # Select global probe features based on Union
         self._global_probe_features = self._select_global_probe_features(X_events_full)
     
         # 5. Per-Geometry Titan RFE (Adaptive)
@@ -5817,12 +5838,13 @@ class LabelBasedLayer2(BaseStep):
                 selected_feats = self._run_titan_rfe_for_geometry(df, gt)
                 if selected_feats:
                     gt.selected_features = selected_feats
-                    tprint_success(f"   ✅ {gt.uuid}: Selected {len(selected_feats)} features")
+                    # tprint_success(f"   ✅ {gt.uuid}: Selected {len(selected_feats)} features")
                 else:
                     tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set.")
             except Exception as e:
                 tprint_error(f"   ❌ {gt.uuid}: Feature selection failed: {e}")
     
+
         # 6. Build Layer-12 Model-Ready Output (if available)
         self._layer12_output = None
         if LAYER12_AVAILABLE:

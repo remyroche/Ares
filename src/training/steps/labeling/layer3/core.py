@@ -838,6 +838,20 @@ def layer3_analyst_lgbm(
     
     # Train models
     training_start_time = datetime.now()
+
+    # Inject regime label if available in df (for MoE)
+    regime_col = 'regime_label'
+    if regime_col in df.columns:
+        X[regime_col] = df[regime_col]
+        # Also inject probabilities for soft gating
+        prob_cols = [c for c in df.columns if c.startswith('prob_') and c != 'prob_oof']
+        if prob_cols:
+            for c in prob_cols:
+                X[c] = df[c]
+            tprint_info(f"   🏷️  Injected regime label + {len(prob_cols)} probs into feature matrix for MoE")
+        else:
+            tprint_info(f"   🏷️  Injected regime label into feature matrix for MoE")
+
     model_results = train_dual_head_models(
         X, y_alpha_valid, y_prob_valid, w_alpha_aligned, w_prob_aligned, splits, cfg, cfg.get('fast_mode', False)
     )

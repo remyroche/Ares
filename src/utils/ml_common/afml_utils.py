@@ -470,3 +470,43 @@ def frac_diff_fixed(series: pd.Series, d: float, threshold: float = 1e-5) -> pd.
     for i in range(len(w), series.shape[0]):
         res[series.index[i]] = np.dot(w.T, series.iloc[i-len(w)+1:i+1])[0]
     return pd.Series(res)
+
+def calculate_rolling_volatility(prices_15min: pd.Series, window_days: int = 7) -> pd.Series:
+    """
+    Compute rolling volatility for range bar threshold calculation.
+    Target frequency for sigma is 15-minute.
+
+    Args:
+        prices_15min: 15-minute close prices
+        window_days: Rolling window in days (default 7)
+
+    Returns:
+        Rolling standard deviation of log returns
+    """
+    log_rets = np.log(prices_15min / prices_15min.shift(1))
+    # 15m bars per day = 96 (approx, assuming 24h market).
+    # If index is datetime, we can use string offset, but window int is safer for arrays.
+    # 24 * 4 = 96 bars/day.
+    window_size = 96 * window_days
+
+    # Calculate rolling std
+    vol = log_rets.rolling(window=window_size, min_periods=96).std()
+    return vol
+
+def calculate_dynamic_range_threshold(volatility: pd.Series, current_price: pd.Series, k: float = None) -> pd.Series:
+    """
+    Compute dynamic Range Bar threshold (Delta P).
+    Delta P = k * sigma_15 * P
+
+    Args:
+        volatility: Rolling 15m volatility
+        current_price: Current 15m close price
+        k: Scale factor. If None, uses Brownian motion approx sqrt(2/pi) ~ 0.8
+
+    Returns:
+        Series of Delta P thresholds
+    """
+    if k is None:
+        k = np.sqrt(2 / np.pi)
+
+    return k * volatility * current_price

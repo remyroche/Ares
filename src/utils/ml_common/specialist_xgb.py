@@ -10,7 +10,7 @@ from sklearn.feature_selection import mutual_info_regression
 from sklearn.linear_model import Ridge
 from sklearn.metrics import average_precision_score, roc_auc_score
 from src.utils.purged_kfold import PurgedKFoldTime
-
+from src.utils.tprint import tprint_info
 
 DEFAULT_XGB_PARAMS: Dict[str, Any] = {
     "objective": "binary:logistic",
@@ -57,15 +57,8 @@ def _build_params(y: pd.Series, params_override: Optional[Dict[str, Any]] = None
 
 
 def _determine_monotonic_constraints(X: pd.DataFrame, y: pd.Series, threshold: float = 0.03) -> Tuple[Optional[Dict[str, int]], List[str]]:
-    """
-    Train a Ridge regression to determine monotonic constraints.
-    Returns:
-        - constraints_dict: Map of feature -> direction (1, -1, 0)
-        - strong_features: List of features with |coef| > threshold
-    """
-    # Simple Ridge
+    tprint_info("   [XGB] Determining Monotonic Constraints via Ridge...")
     model = Ridge(alpha=1.0)
-    # Fill NA for linear model
     X_clean = X.fillna(0.0)
     model.fit(X_clean, y)
 
@@ -79,6 +72,7 @@ def _determine_monotonic_constraints(X: pd.DataFrame, y: pd.Series, threshold: f
         else:
             constraints[feat] = 0
 
+    tprint_info(f"   [XGB] Found {len(strong_features)} strong monotonic features.")
     return constraints, strong_features
 
 def _fit_single_model(
@@ -93,15 +87,7 @@ def _fit_single_model(
     params = _build_params(y, params_override)
     early_stopping_rounds = params.pop("early_stopping_rounds", 40)
 
-    # Apply monotonic constraints if provided
-    # XGBoost expects a tuple/list of constraints corresponding to feature order, OR a dict mapped to feature_names if using DMatrix (which sklearn wrapper handles internally usually via feature_names_in_)
-    # Actually, sklearn API `monotone_constraints` usually takes a dict or list.
-    # Safe way: pass dict to `monotone_constraints` param in fit? No, it's a constructor param.
     if monotonic_constraints:
-        # Construct constraint list based on X columns order
-        # (1: increasing, 0: no constraint, -1: decreasing)
-        # Note: XGBoost >= 1.3.0 supports dict for monotone_constraints if input is dataframe
-        # But to be safe and compatible, let's map it.
         params["monotone_constraints"] = tuple(monotonic_constraints.get(c, 0) for c in X.columns)
 
     model = xgb.XGBClassifier(**params)
@@ -129,24 +115,16 @@ def train_specialist_xgb_with_oof(
     params_override: Optional[Dict[str, Any]] = None,
     apply_monotonic_constraints: bool = True
 ) -> XGBTrainingResult:
-    """
-    Train a specialist-grade XGB classifier with time-series CV OOF tracking.
-    Now includes Ridge-based Monotonic Constraints.
-    """
+    tprint_info(f"   [XGB] Training with OOF (Splits: {n_splits})...")
     X = X.copy()
     y = y.astype(float).copy()
 
     if sample_weight is not None:
         sample_weight = sample_weight.astype(float)
 
-    # Phase E: Feature enhancements (Ridge + Monotonic)
     mono_constraints = None
     if apply_monotonic_constraints:
         mono_constraints, strong_feats = _determine_monotonic_constraints(X, y)
-        # Optionally we could filter X to only strong_feats?
-        # The prompt says: "Keep only the features that explain 95% of the gains" -> This implies pruning.
-        # But Phase E says: "Before training... train Ridge. Select strong features... and apply monotonic constraints".
-        # Let's apply constraints to all, but only non-zero for strong ones.
 
     splitter = PurgedKFoldTime(
         n_splits=n_splits,
@@ -173,7 +151,7 @@ def train_specialist_xgb_with_oof(
         oof_probs.iloc[val_idx] = fold_probs
         last_model = model
 
-    # Final fit
+    tprint_info("   [XGB] Training Final Model on Full Data...")
     final_model = _fit_single_model(
         X.fillna(0.0),
         y,

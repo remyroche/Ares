@@ -5,8 +5,9 @@ from typing import Dict, Any, List, Optional, Tuple, Union
 from src.utils.ml_common.afml_utils import (
     get_daily_vol, get_t_events, get_vertical_barrier, 
     apply_triple_barrier, get_bins, get_weights_by_uniqueness,
-    frac_diff_fixed
+    frac_diff_fixed, get_sample_weights
 )
+from src.utils.tprint import tprint_info, tprint_warning
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,67 @@ class AFMLSpecialistMixin:
     - Sample Uniqueness weighting to handle overlap (Concurrence)
     - Fractional Differentiation for memory preservation
     """
+
+    def prepare_specialist_data(
+        self,
+        market_data: pd.DataFrame,
+        feature_df: pd.DataFrame,
+        config: Dict[str, Any],
+        filter_type: str = 'price',
+        pt_sl_config_key: Optional[str] = None,
+        default_pt_sl: List[float] = [2.0, 1.0]
+    ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
+        """
+        Execute the full AFML pipeline from raw features to weighted training sets.
+
+        Sequence:
+        1. CUSUM Sampling (apply_afml_sampling)
+        2. Triple Barrier Labeling (generate_tbm_labels)
+        3. Concurrence Weighting (get_concurrent_weights)
+        4. Sample Weighting (get_sample_weights)
+        5. Data Alignment & Cleaning
+
+        Args:
+            market_data: Raw market data (OHLCV)
+            feature_df: Generated features dataframe
+            config: Configuration dictionary
+            filter_type: Type of CUSUM filter ('price', 'volatility', 'volume', 'spread')
+            pt_sl_config_key: Config key to look up PT/SL thresholds (e.g., 'spectral_pt_sl')
+            default_pt_sl: Default PT/SL thresholds if key not found
+
+        Returns:
+            Tuple[X, y, weights] aligned and cleaned
+        """
+        # 1. AFML: CUSUM Sampling
+        tprint_info(f"🎯 Applying AFML CUSUM sampling (10% target) using {filter_type} filter...")
+        sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type=filter_type)
+
+        # 2. AFML: Triple Barrier Labels
+        pt_sl = config.get(pt_sl_config_key, default_pt_sl) if pt_sl_config_key else default_pt_sl
+        tprint_info(f"🏷️ Generating TBM labels with PT/SL: {pt_sl}")
+        tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
+
+        # 3. AFML: Alignment and Uniqueness Weighting
+        X_sampled = feature_df.loc[t_events]
+        y_sampled = tbm_labels_df['bin']
+        t1_sampled = tbm_labels_df['t1']
+        ret_sampled = tbm_labels_df['ret']
+
+        # 4. AFML Hardening: Sample Weighting (u_bar * |return|)
+        num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
+        weights_sampled = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
+
+        # 5. Filter numeric and drop NaNs
+        X = X_sampled.select_dtypes(include=[np.number])
+        valid_mask = X.notna().all(axis=1) & y_sampled.notna()
+        X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_sampled.loc[valid_mask]
+
+        if len(X) < 100:
+            tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
+
+        tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+
+        return X, y, weights
     
     def apply_afml_sampling(self, df: pd.DataFrame, config: Dict[str, Any], filter_type: str = 'price') -> Tuple[pd.DataFrame, pd.DatetimeIndex]:
         """

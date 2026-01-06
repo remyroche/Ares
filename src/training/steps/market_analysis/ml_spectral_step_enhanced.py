@@ -425,35 +425,15 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
             tprint_info("🛠️ Generating enhanced spectral features...")
             feature_df = self._generate_enhanced_features(market_data)
             
-            # 2. AFML: CUSUM Sampling
-            # Spectral analysis targets cyclical shifts, best sampled on volatility energy
-            tprint_info("🎯 Applying AFML CUSUM sampling (10% target)...")
-            sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type='volatility')
-            
-            # 3. AFML: Triple Barrier Labels
-            # Spectral focus: Success = Full cycle completion (2.5σ), SL = Cycle break (1.0σ)
-            pt_sl = config.get('spectral_pt_sl', [2.5, 1.0])
-            tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
-            
-            # 4. AFML: Alignment and Uniqueness Weighting
-            X_sampled = feature_df.loc[t_events]
-            y_sampled = tbm_labels_df['bin']
-            t1_sampled = tbm_labels_df['t1']
-            ret_sampled = tbm_labels_df['ret']
-            
-            # AFML Hardening: Sample Weighting (u_bar * |return|)
-            num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
-            weights_sampled = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
-            
-            # Filter numeric and drop NaNs
-            X = X_sampled.select_dtypes(include=[np.number])
-            valid_mask = X.notna().all(axis=1) & y_sampled.notna()
-            X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_sampled.loc[valid_mask]
-            
-            if len(X) < 100:
-                tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-            
-            tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+            # 2-4. AFML: Sampling, Labeling, Weighting, Alignment via Helper
+            X, y, weights = self.prepare_specialist_data(
+                market_data=market_data,
+                feature_df=feature_df,
+                config=config,
+                filter_type='volatility',
+                pt_sl_config_key='spectral_pt_sl',
+                default_pt_sl=[2.5, 1.0]
+            )
             
             # 5. Centralized purged-CV training
             tprint_info("🤖 Training enhanced spectral model with centralized XGB helper (purged CV & AFML weights)...")

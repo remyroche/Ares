@@ -561,36 +561,16 @@ class EnhancedMLPathRegimeStep(AFMLSpecialistMixin, SpecialistDiagnosticsMixinEn
                 )
                 artifacts.append(features_path)
 
-            # 3. Generate Labels
+            # 3. AFML: Sampling, Labeling, Weighting, Alignment via Helper
             tprint_info("🎯 Generating Enhanced Path Regime labels with Triple Barrier Method...")
-            
-            # AFML UPDATE: Apply CUSUM Sampling (Volatility-based for Path Regime to differentiate from Meso)
-            sampled_df, t_events = self.apply_afml_sampling(market_data, config, filter_type='volatility')
-            
-            # AFML UPDATE: Generate Triple Barrier Labels
-            # Path Geometry focus: Success = High efficiency continuation, SL = Efficiency breakdown
-            pt_sl = config.get('path_regime_pt_sl', [2.0, 1.0])
-            tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
-            
-            # Align features and labels
-            X_sampled = feature_df.loc[t_events]
-            y_sampled = tbm_labels_df['bin']
-            t1_sampled = tbm_labels_df['t1']
-            ret_sampled = tbm_labels_df['ret']
-            
-            # AFML UPDATE: Calculate AFML Sample Weights (u_bar * |return|)
-            num_concurrent = self.get_concurrent_weights(t1_sampled, market_data.index)
-            weights_sampled = get_sample_weights(t1_sampled, num_concurrent, ret_sampled)
-            
-            # Remove non-numeric columns and align
-            X = X_sampled.select_dtypes(include=[np.number])
-            valid_mask = X.notna().all(axis=1) & y_sampled.notna()
-            X, y, weights = X.loc[valid_mask], y_sampled.loc[valid_mask], weights_sampled.loc[valid_mask]
-
-            if len(X) < 100:
-                tprint_warning(f"⚠️ Low sample count after AFML filtering: {len(X)}")
-            
-            tprint_info(f"📊 Training Data (AFML Sampled): {len(X)} samples, {len(X.columns)} features")
+            X, y, weights = self.prepare_specialist_data(
+                market_data=market_data,
+                feature_df=feature_df,
+                config=config,
+                filter_type='volatility',
+                pt_sl_config_key='path_regime_pt_sl',
+                default_pt_sl=[2.0, 1.0]
+            )
 
             # 4. Train Enhanced Model with centralized specialist trainer
             tprint_info("🤖 Training Enhanced Path Regime model with centralized XGB helper (purged CV & AFML weights)...")

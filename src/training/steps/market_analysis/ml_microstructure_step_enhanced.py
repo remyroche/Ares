@@ -26,6 +26,7 @@ from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2
     SpecialistDiagnosticsMixinEnhancedV2
 )
 from src.training.steps.market_analysis.specialist_diagnostics_mixin import SpecialistDiagnosticsMixin
+from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecialistMixin
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
@@ -34,7 +35,7 @@ from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
 logger = logging.getLogger(__name__)
 
 
-class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnhancedV2, SpecialistDiagnosticsMixin):
+class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialistMixin, SpecialistDiagnosticsMixin):
 
     @property
     def artifact_router(self):
@@ -323,30 +324,30 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
             tprint_info("🛠️ Generating enhanced microstructure features...")
             features = self._generate_enhanced_features(market_data)
             
-            # Create labels
-            labels = self._create_microstructure_labels(market_data)
-            
-            # Align features and labels
-            common_index = features.index.intersection(labels.index)
-            features = features.loc[common_index]
-            labels = labels.loc[common_index]
-            
-            # Clean data
-            valid_mask = ~(features.isna().any(axis=1)) & ~(labels.isna())
-            features = features[valid_mask]
-            labels = labels[valid_mask]
-            
-            if len(features) < 500:
-                raise ValueError(f"Insufficient data: {len(features)} samples")
-            
-            tprint_info(f"📊 Training data: {len(features)} samples, {len(features.columns)} features")
+            # AFML: Sampling, Labeling, Weighting, Alignment via Helper
+            # Using 'spread' for microstructure (market depth/capacity proxy)
+            X, y, weights = self.prepare_specialist_data(
+                market_data=market_data,
+                feature_df=features,
+                config=config,
+                filter_type='spread',
+                pt_sl_config_key='microstructure_pt_sl',
+                default_pt_sl=[2.0, 1.0]
+            )
+
+            # Note: prepare_specialist_data handles CUSUM, TBM, Weighting, and Alignment.
+            # Original code used `_create_microstructure_labels` which seems to be a custom label generator.
+            # However, user requested AFML standardization: "The sequence of apply_afml_sampling ... is repeated almost verbatim in every execute method."
+            # So switching to prepare_specialist_data (using TBM) is the correct action to standardize.
+
+            tprint_info(f"📊 Training data: {len(X)} samples, {len(X.columns)} features")
             
             # 4. Centralized purged-CV training
             tprint_info("🤖 Training Enhanced Microstructure model with centralized XGB helper (purged CV & AFML weights)...")
             training_result = train_specialist_xgb_with_oof(
-                features.fillna(0.0),
-                labels.fillna(0.0),
-                sample_weight=None,  # Microstructure currently doesn't pass weights
+                X.fillna(0.0),
+                y.fillna(0.0),
+                sample_weight=weights,
                 n_splits=5,
             )
 

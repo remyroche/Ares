@@ -276,21 +276,21 @@ class AFMLSpecialistMixin:
         """
 
         # 0. Dynamic Volume Bars
-        # Check if volume bars are requested via config (default True for enhanced specialists if not specified)
-        use_volume_bars = config.get('use_volume_bars', True)
+        # Check if dollar bars are requested via config (default True for enhanced specialists if not specified)
+        use_dollar_bars = config.get('use_dollar_bars', True)
 
-        if use_volume_bars:
+        if use_dollar_bars:
             tprint_info("📊 Generating Dynamic Volume Bars...")
-            volume_bars_df = self._generate_dynamic_volume_bars(market_data, config)
-            if volume_bars_df is not None and not volume_bars_df.empty:
-                tprint_info(f"   Converted {len(market_data)} time bars to {len(volume_bars_df)} volume bars")
+            dollar_bars_df = self._generate_dynamic_dollar_bars(market_data, config)
+            if dollar_bars_df is not None and not dollar_bars_df.empty:
+                tprint_info(f"   Converted {len(market_data)} time bars to {len(dollar_bars_df)} dollar bars")
 
-                # Re-align features to volume bars
+                # Re-align features to dollar bars
                 # We use forward fill to propagate the latest feature values to the volume bar close time
-                feature_df = feature_df.reindex(volume_bars_df.index, method='ffill').fillna(method='bfill')
+                feature_df = feature_df.reindex(dollar_bars_df.index, method='ffill').fillna(method='bfill')
 
-                # Update market_data reference to volume bars
-                market_data = volume_bars_df
+                # Update market_data reference to dollar bars
+                market_data = dollar_bars_df
 
             else:
                 tprint_warning("⚠️ Volume bar generation failed or returned empty. Falling back to time bars.")
@@ -303,7 +303,7 @@ class AFMLSpecialistMixin:
         pt_sl = config.get(pt_sl_config_key, default_pt_sl) if pt_sl_config_key else default_pt_sl
         tprint_info(f"🏷️ Generating TBM labels with PT/SL: {pt_sl}")
 
-        # If using volume bars, ensure TBM logic knows units are bars (which it does by default index shifting)
+        # If using dollar bars, ensure TBM logic knows units are bars (which it does by default index shifting)
         tbm_labels_df = self.generate_tbm_labels(market_data, t_events, config, pt_sl)
 
         # 3. AFML: Alignment
@@ -317,8 +317,8 @@ class AFMLSpecialistMixin:
         mae_sampled = tbm_labels_df['mae']
 
         # 4. Volatility (Volume Time Aware)
-        # If using volume bars, compute volatility based on bar counts (use_volume_time=True)
-        volatility = get_daily_vol(market_data['close'], use_volume_time=use_volume_bars).loc[t_events]
+        # If using dollar bars, compute volatility based on bar counts (use_dollar_time=True)
+        volatility = get_daily_vol(market_data['close'], use_dollar_time=use_dollar_bars).loc[t_events]
         barrier_size = volatility * pt_sl[0]
 
         # 5. Compute Wavelet Features
@@ -393,10 +393,10 @@ class AFMLSpecialistMixin:
 
         return X, y, weights
     
-    def _generate_dynamic_volume_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    def _generate_dynamic_dollar_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """
-        Generate Dynamic Volume Bars from 1-minute data.
-        N = 1/674th of trailing 7-day volume sum.
+        Generate Dynamic Dollar Bars from 1-minute data.
+        N = 1/674th of trailing 7-day dollar volume sum.
         """
         symbol = config.get('symbol', 'ETHUSDT')
         # Load 1m raw data
@@ -408,36 +408,35 @@ class AFMLSpecialistMixin:
             start_date = df.index.min() - pd.Timedelta(days=8) # 7 days buffer for initial rolling
             end_date = df.index.max()
 
-            tprint_info(f"   Loading 1m raw data for Volume Bars: {symbol} {start_date} to {end_date}")
+            tprint_info(f"   Loading 1m raw data for Dollar Bars: {symbol} {start_date} to {end_date}")
             df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
 
             if df_1m is None or df_1m.empty:
-                tprint_error("   ❌ Failed to load 1m data for volume bars")
+                tprint_error("   ❌ Failed to load 1m data for dollar bars")
                 return None
 
             # Filter columns
             df_1m = df_1m[['open', 'high', 'low', 'close', 'volume']]
 
-            # Calculate Rolling 7-day Volume Sum
+            # Calculate Quote Volume (Dollar Volume)
+            # Using VWAP approximation (O+H+L+C)/4 * Volume or simply Close * Volume
+            # Standard dollar bars use Close * Volume or VWAP * Volume.
+            # Using (High + Low + Close) / 3 * Volume for slightly better accuracy on 1m
+            typical_price = (df_1m['high'] + df_1m['low'] + df_1m['close']) / 3.0
+            df_1m['quote_volume'] = typical_price * df_1m['volume']
+
+            # Calculate Rolling 7-day Dollar Volume Sum
             # 1m bars per 7 days = 7 * 1440 = 10080
-            rolling_7d_vol = df_1m['volume'].rolling(window=10080, min_periods=1440).sum()
+            rolling_7d_dollar_vol = df_1m['quote_volume'].rolling(window=10080, min_periods=1440).sum()
 
             # Dynamic Threshold N
-            # N = Volume7d / 674
-            dynamic_N = rolling_7d_vol / 674.0
+            # N = DollarVolume7d / 674
+            # This targets roughly the same frequency (1/50th of daily volume)
+            dynamic_N = rolling_7d_dollar_vol / 674.0
             dynamic_N = dynamic_N.fillna(method='bfill') # Fill initial
 
             # Generate Bars
-            # Iterating through 1m bars to construct volume bars
-            # This is slow in pure Python. We use a vectorized approach or optimized loop.
-            # Optimized Loop:
-
-            # Pre-compute cumulative volume
-            df_1m['cum_vol'] = df_1m['volume'].cumsum()
-
-            # We can't easily vectorize dynamic threshold because threshold changes with time.
-            # However, N changes slowly.
-            # Let's iterate.
+            # Iterating through 1m bars to construct dollar bars
 
             # Extract numpy arrays for speed
             times = df_1m.index.values
@@ -446,6 +445,7 @@ class AFMLSpecialistMixin:
             lows = df_1m['low'].values
             closes = df_1m['close'].values
             vols = df_1m['volume'].values
+            quote_vols = df_1m['quote_volume'].values
             thresholds = dynamic_N.values
 
             vb_times = []
@@ -454,7 +454,9 @@ class AFMLSpecialistMixin:
             vb_lows = []
             vb_closes = []
             vb_vols = []
+            vb_quote_vols = []
 
+            current_dollar_vol = 0.0
             current_vol = 0.0
             current_open = opens[0]
             current_high = highs[0]
@@ -464,16 +466,18 @@ class AFMLSpecialistMixin:
             n_rows = len(df_1m)
 
             for i in range(n_rows):
-                vol = vols[i]
-                current_vol += vol
+                dollar_vol = quote_vols[i]
+                current_dollar_vol += dollar_vol
+                current_vol += vols[i]
+
                 current_high = max(current_high, highs[i])
                 current_low = min(current_low, lows[i])
 
                 target_n = thresholds[i]
                 if np.isnan(target_n) or target_n <= 0:
-                    target_n = 10000.0 # Fallback
+                    target_n = 10000000.0 # Fallback $10M
 
-                if current_vol >= target_n:
+                if current_dollar_vol >= target_n:
                     # Bar complete
                     vb_times.append(times[i])
                     vb_opens.append(current_open)
@@ -481,8 +485,10 @@ class AFMLSpecialistMixin:
                     vb_lows.append(current_low)
                     vb_closes.append(closes[i])
                     vb_vols.append(current_vol)
+                    vb_quote_vols.append(current_dollar_vol)
 
                     # Reset
+                    current_dollar_vol = 0.0
                     current_vol = 0.0
                     if i + 1 < n_rows:
                         current_open = opens[i+1]
@@ -490,19 +496,20 @@ class AFMLSpecialistMixin:
                         current_low = lows[i+1]
 
             # Construct DataFrame
-            volume_bars = pd.DataFrame({
+            dollar_bars = pd.DataFrame({
                 'open': vb_opens,
                 'high': vb_highs,
                 'low': vb_lows,
                 'close': vb_closes,
-                'volume': vb_vols
+                'volume': vb_vols,
+                'quote_volume': vb_quote_vols
             }, index=pd.DatetimeIndex(vb_times))
 
-            volume_bars.index.name = 'timestamp'
-            return volume_bars
+            dollar_bars.index.name = 'timestamp'
+            return dollar_bars
 
         except Exception as e:
-            tprint_error(f"Error generating volume bars: {e}")
+            tprint_error(f"Error generating dollar bars: {e}")
             return None
 
     def apply_afml_sampling(self, df: pd.DataFrame, config: Dict[str, Any], filter_type: str = 'price') -> Tuple[pd.DataFrame, pd.DatetimeIndex]:
@@ -512,14 +519,14 @@ class AFMLSpecialistMixin:
         Supports: 'price', 'volatility', 'volume', 'spread'
         """
         # Determine if we are using volume time for volatility calc
-        # Usually assume yes if this mixin is active with volume bars
+        # Usually assume yes if this mixin is active with dollar bars
         # But here we default to standard get_daily_vol (time based) unless we override
         # We should use the same logic as prepare_specialist_data
-        use_volume_bars = config.get('use_volume_bars', True)
+        use_dollar_bars = config.get('use_dollar_bars', True)
 
         if filter_type == 'price':
             series = df['close']
-            threshold_base = get_daily_vol(series, use_volume_time=use_volume_bars)
+            threshold_base = get_daily_vol(series, use_dollar_time=use_dollar_bars)
         elif filter_type == 'volatility':
             # Log-volatility returns
             vol = df['close'].pct_change().rolling(20).std().fillna(0)
@@ -538,7 +545,7 @@ class AFMLSpecialistMixin:
             threshold_base = series.rolling(100).std()
         else:
             series = df['close']
-            threshold_base = get_daily_vol(series, use_volume_time=use_volume_bars)
+            threshold_base = get_daily_vol(series, use_dollar_time=use_dollar_bars)
             
         threshold_base = threshold_base.fillna(method='bfill').fillna(method='ffill')
         
@@ -596,11 +603,11 @@ class AFMLSpecialistMixin:
         close = df['close']
 
         # Volatility: use volume time awareness if configured
-        use_volume_bars = config.get('use_volume_bars', True)
-        vol = get_daily_vol(close, use_volume_time=use_volume_bars)
+        use_dollar_bars = config.get('use_dollar_bars', True)
+        vol = get_daily_vol(close, use_dollar_time=use_dollar_bars)
         vol = vol.fillna(method='bfill').fillna(method='ffill')
         
-        # Lookforward: If volume bars, this is number of bars. If time bars, also bars (but roughly time)
+        # Lookforward: If dollar bars, this is number of bars. If time bars, also bars (but roughly time)
         lookforward = config.get('lookforward_bars', 35)
         vertical_barrier = get_vertical_barrier(close, t_events, lookforward)
         

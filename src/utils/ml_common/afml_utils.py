@@ -2,18 +2,18 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union
 
-def get_daily_vol(close: pd.Series, span: int = 100, use_volume_time: bool = False) -> pd.Series:
+def get_daily_vol(close: pd.Series, span: int = 100, use_dollar_time: bool = False) -> pd.Series:
     """
     Calculate daily volatility (standard deviation of daily returns) as a threshold for barriers.
     
     Args:
         close: Close price series.
         span: EWM span.
-        use_volume_time: If True, calculates volatility based on bar count (assuming volume bars)
+        use_dollar_time: If True, calculates volatility based on bar count (assuming dollar bars)
                          rather than time-based '1 day' lookback.
     """
-    if use_volume_time:
-        # If using volume bars, 'daily' volatility concept shifts to 'N-bar' volatility.
+    if use_dollar_time:
+        # If using dollar bars, 'daily' volatility concept shifts to 'N-bar' volatility.
         # Assuming ~96 bars per day (15m approx), a 1-day span is roughly 100 bars.
         # We calculate std dev of returns directly on the series index (bars).
         # We want the standard deviation of returns.
@@ -87,7 +87,7 @@ def get_t_events(close: pd.Series, threshold: Union[float, pd.Series]) -> pd.Dat
 def get_vertical_barrier(close: pd.Series, t_events: pd.DatetimeIndex, num_bars: int) -> pd.Series:
     """Returns a Series of timestamps representing the expiration (horizontal barrier)."""
     # Assuming 15m timeframe if not specified, or use the actual timeframe from index frequency
-    # If using volume bars, 'num_bars' refers to number of volume bars, so expiration is simply t_events index + num_bars
+    # If using dollar bars, 'num_bars' refers to number of dollar bars, so expiration is simply t_events index + num_bars
     
     t1 = pd.Series(index=t_events, dtype='datetime64[ns]')
     
@@ -103,7 +103,7 @@ def get_vertical_barrier(close: pd.Series, t_events: pd.DatetimeIndex, num_bars:
              for evt in t_events:
                 try:
                     # Get loc can return slice or array if duplicates, take first/last?
-                    # Generally volume bars should have unique index if timestamps are granular enough or reconstructed.
+                    # Generally dollar bars should have unique index if timestamps are granular enough or reconstructed.
                     # Assuming unique for now or taking first.
                     loc = close.index.get_loc(evt)
                     if isinstance(loc, (slice, np.ndarray)):

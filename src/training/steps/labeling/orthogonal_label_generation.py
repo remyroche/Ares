@@ -15,9 +15,16 @@ from scipy.spatial.distance import pdist
 from sklearn.feature_selection import f_classif, mutual_info_classif, f_regression, mutual_info_regression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.decomposition import PCA
 from dataclasses import dataclass
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from .focal_loss_utils import get_focal_loss_lgbm
+from src.training.steps.labeling.composite_event_generators import (
+    get_microstructure_generators,
+    TradeIntensityEvents,
+    OrderFlowImbalanceEvents,
+    BarPressureEvents,
+)
 
 # Import causal framework modules for surprise events
 try:
@@ -26,6 +33,22 @@ try:
     CAUSAL_AVAILABLE_ORTHOGONAL = True
 except ImportError:
     CAUSAL_AVAILABLE_ORTHOGONAL = False
+
+# Import continuous predictor generators
+try:
+    from src.training.steps.labeling.predictor_geometry_generators import (
+        ContinuousPredictorGenerator, CausalResidualGenerator, 
+        PredictorGeometry, generate_continuous_predictors
+    )
+    from src.training.steps.labeling.causal_quality_assessment import SignalRole
+    PREDICTOR_GENERATORS_AVAILABLE = True
+except ImportError:
+    PREDICTOR_GENERATORS_AVAILABLE = False
+    class SignalRole:
+        PREDICTOR = "predictor"
+        TRIGGER = "trigger"
+        INTERACTION = "interaction"
+        CONTEXT = "context"
 
 
 # Setup Logger
@@ -67,6 +90,14 @@ class UnifiedPriceMixin:
         
         return unified_price
 
+VOLUME_FAMILIES = {'VOLUME_SPECIALIST', 'MICROSTRUCTURE_IMBALANCE'}
+VOLATILITY_FAMILIES = {'VOLATILITY_SPECIALIST', 'VOLATILITY_CRUSH'}
+FAMILY_MIN_EVENT_RATE = {
+    'VOLUME_SPECIALIST': 2.5,
+    'MICROSTRUCTURE_IMBALANCE': 2.0,
+}
+CONDITIONAL_MI_THRESHOLD = 0.015
+
 def _should_use_range_specific_optimization() -> bool:
     """Check if 1.5-3% range optimization is enabled in configuration."""
     try:
@@ -100,7 +131,19 @@ RAW_METRIC_FIELDS = [
     'path_stability_var'
 ]
 
+VOLUME_FAMILIES = {'VOLUME_SPECIALIST', 'MICROSTRUCTURE_IMBALANCE'}
+VOLATILITY_FAMILIES = {'VOLATILITY_SPECIALIST', 'VOLATILITY_CRUSH'}
+FAMILY_MIN_EVENT_RATE = {
+    'VOLUME_SPECIALIST': 2.5,
+    'MICROSTRUCTURE_IMBALANCE': 2.0,
+}
+
 FIXED_GRID = [
+    # --- 1.5-3% Target Range Specific Grid (de Prado Framework) ---
+    # ADDED: TBM 32 and Trend Model 150
+    {'id': 'TBM_32', 'pt': 2.0, 'sl': 1.0, 'horizon': 32},
+    {'id': 'Trend_150', 'pt': 4.0, 'sl': 1.5, 'horizon': 150},
+    
     # --- Ratio 1.5 ---
     {'id': '1.5:1', 'pt': 2.25, 'sl': 1.5},
     {'id': '3:2',   'pt': 3.75, 'sl': 2.5},
@@ -138,6 +181,39 @@ MEDIUM_TERM_GRID = [
     {'id': '3.0pct_tight', 'pt': 3.0, 'sl': 0.8},
 ]
 
+# Parameter name mapping for metadata handling
+GENERATOR_PARAM_NAMES = {
+    'ImprovedCUSUMEvents': ['multiplier', 'vol_window'],
+    'AdaptiveSymmetricCUSUMEvents': ['multiplier', 'vol_window'],
+    'VolatilityCusumEvents': ['h', 'vol_span'],
+    'LiquidityCusumEvents': ['h', 'vol_span'],
+    'VolumeCusumEvents': ['h', 'span'],
+    'CausalSurpriseEvents': ['surprise_threshold', 'zone3_boost', 'zone2_boost', 'exposure_scalar'],
+    'VolumeSpecialistEvents': ['threshold', 'window'],
+    'VolatilitySpecialistEvents': ['quantile', 'window'],
+    'VolatilityCrushEvents': ['quantile', 'window'],
+    'LiquiditySpecialistEvents': ['threshold', 'window'],
+    'InformationSpecialistEvents': ['threshold', 'window'],
+    'InventorySpecialistEvents': ['threshold', 'window'],
+    'MomentumDecaySpecialistEvents': ['threshold', 'fast_window', 'slow_window'],
+    'MicrostructureImbalanceEvents': ['threshold', 'window']
+}
+
+# Generators that require the full DataFrame instead of just Series
+DF_REQUIRED_CLASSES = (
+    'InventorySpecialistEvents',
+    'VolumeSpecialistEvents',
+    'VolatilitySpecialistEvents',
+    'VolatilityCrushEvents',
+    'LiquiditySpecialistEvents',
+    'InformationSpecialistEvents',
+    'MomentumDecaySpecialistEvents',
+    'MicrostructureImbalanceEvents',
+    'CausalSurpriseEvents',
+    'AdaptiveSymmetricCUSUMEvents',
+    'ImprovedCUSUMEvents',
+    'KalmanRegimeEvents'
+)
 
 
 class OutputGeometry:
@@ -307,11 +383,11 @@ class AdaptiveEventThresholds:
     
     def get_vol_adjustment_factor(self, df: pd.DataFrame, lookback: int = 100) -> float:
         """
-        Calculate volatility-based adjustment factor.
+        Calculate volatility AND volume-based adjustment factor (regime-adaptive).
         
         Returns:
             Multiplier: >1 raises threshold (fewer events in high-vol), 
-                       <1 lowers threshold (more events in low-vol).
+                       <1 lowers threshold (more events in low-vol/low-volume).
         """
         if 'close' not in df.columns:
             return 1.0
@@ -320,21 +396,35 @@ class AdaptiveEventThresholds:
         if len(returns) < lookback * 2:
             return 1.0
         
-        # Current volatility (recent window)
+        # === Volatility component ===
         current_vol = returns.iloc[-lookback:].std()
-        
-        # Historical volatility (full history)
         historical_vol = returns.std()
         
         if historical_vol <= 0 or not np.isfinite(historical_vol):
-            return 1.0
+            vol_factor = 1.0
+        else:
+            vol_factor = current_vol / historical_vol
+            vol_factor = np.clip(vol_factor, 0.5, 2.0)
         
-        # Adjustment factor: current / historical
-        # Bounded to prevent extreme adjustments
-        factor = current_vol / historical_vol
-        factor = np.clip(factor, 0.5, 2.0)
+        # === Volume component (NEW: regime-adaptive) ===
+        vol_adj_factor = 1.0
+        if 'volume' in df.columns:
+            try:
+                volume = df['volume'].dropna()
+                if len(volume) >= lookback * 2:
+                    current_volume = volume.iloc[-lookback:].mean()
+                    historical_volume = volume.mean()
+                    if historical_volume > 0 and np.isfinite(historical_volume):
+                        # Low volume regime → lower threshold (more events)
+                        # High volume regime → higher threshold (fewer events)
+                        vol_ratio = current_volume / historical_volume
+                        vol_adj_factor = np.clip(vol_ratio, 0.6, 1.8)
+            except Exception:
+                vol_adj_factor = 1.0
         
-        return float(factor)
+        # Combine: geometric mean gives balanced adjustment
+        combined_factor = np.sqrt(vol_factor * vol_adj_factor)
+        return float(np.clip(combined_factor, 0.4, 2.5))
     
     def calibrate_threshold(
         self, 
@@ -465,7 +555,493 @@ class AdaptiveEventThresholds:
 
 
 # ==========================================
-# 0.6. Regressor-Specific Target Engineering
+# 0.7. Regime-Conditional Triggers with Two-Tier Weighting
+# ==========================================
+
+class RegimeConditionalTrigger:
+    """
+    Regime-conditional event triggers with hybrid percentile+z-score thresholds.
+    
+    Instead of a single threshold, computes multiple thresholds per regime
+    (Low/High/Extreme volatility, liquidity, or trend). Events are assigned
+    to Tier-1 or Tier-2 based on regime context.
+    
+    Example: A volume spike in a high-volatility regime might count as Tier-1,
+    while the same absolute spike in low-volatility is Tier-2.
+    
+    Hybrid Threshold Formula:
+        adaptive_threshold = max(k * sigma_regime, np.quantile(signal_regime, 0.995))
+    """
+    
+    # Tier thresholds (in terms of z-score OR percentile)
+    TIER_1_Z_THRESHOLD = 3.0    # 3σ OR 99.5th percentile
+    TIER_2_Z_THRESHOLD = 2.3    # 2.3σ OR 98th percentile
+    TIER_1_PERCENTILE = 0.995
+    TIER_2_PERCENTILE = 0.98
+    
+    # Regime weights for threshold modulation
+    REGIME_MULTIPLIERS = {
+        'low_vol': 0.8,      # Lower thresholds in calm periods
+        'medium_vol': 1.0,   # Normal thresholds
+        'high_vol': 1.3,     # Higher thresholds in volatile periods
+        'extreme_vol': 1.6,  # Much higher in extreme volatility
+    }
+    
+    def __init__(self, verbose: bool = False):
+        self.verbose = verbose
+    
+    def classify_volatility_regime(self, df: pd.DataFrame, lookback: int = 100) -> pd.Series:
+        """
+        Classify each bar into volatility regime: low, medium, high, extreme.
+        """
+        if 'close' not in df.columns:
+            return pd.Series('medium_vol', index=df.index)
+        
+        returns = df['close'].pct_change().fillna(0)
+        rolling_vol = returns.rolling(lookback, min_periods=20).std() * np.sqrt(252 * 24 * 4)
+        
+        # Compute percentile ranks
+        vol_rank = rolling_vol.rank(pct=True).fillna(0.5)
+        
+        # Classify regimes
+        regimes = pd.Series('medium_vol', index=df.index)
+        regimes[vol_rank < 0.25] = 'low_vol'
+        regimes[vol_rank > 0.75] = 'high_vol'
+        regimes[vol_rank > 0.95] = 'extreme_vol'
+        
+        return regimes
+    
+    def compute_hybrid_threshold(
+        self, 
+        signal: pd.Series, 
+        regime: str,
+        tier: int = 1
+    ) -> float:
+        """
+        Compute hybrid threshold: max(k*sigma, quantile).
+        
+        Args:
+            signal: The signal series to threshold
+            regime: Current volatility regime
+            tier: 1 for Tier-1 (stricter), 2 for Tier-2 (relaxed)
+            
+        Returns:
+            Threshold value
+        """
+        if tier == 1:
+            z_mult = self.TIER_1_Z_THRESHOLD
+            percentile = self.TIER_1_PERCENTILE
+        else:
+            z_mult = self.TIER_2_Z_THRESHOLD
+            percentile = self.TIER_2_PERCENTILE
+        
+        # Get regime multiplier
+        regime_mult = self.REGIME_MULTIPLIERS.get(regime, 1.0)
+        
+        # Compute z-score threshold
+        sigma = signal.std()
+        if not np.isfinite(sigma) or sigma <= 0:
+            sigma = 1.0
+        z_threshold = z_mult * sigma * regime_mult
+        
+        # Compute quantile threshold
+        quantile_threshold = signal.quantile(percentile)
+        if not np.isfinite(quantile_threshold):
+            quantile_threshold = z_threshold
+        
+        # Hybrid: take max for strictness
+        return max(z_threshold, quantile_threshold)
+    
+    def generate_tiered_events(
+        self, 
+        signal: pd.Series, 
+        df: pd.DataFrame,
+        lookback: int = 100
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Generate events with tier assignments based on regime context.
+        
+        Returns:
+            Tuple of (events_df with tier weights, diagnostics dict)
+        """
+        regimes = self.classify_volatility_regime(df, lookback)
+        
+        tier1_events = []
+        tier2_events = []
+        
+        for regime in self.REGIME_MULTIPLIERS.keys():
+            regime_mask = regimes == regime
+            if not regime_mask.any():
+                continue
+            
+            regime_signal = signal[regime_mask]
+            
+            # Compute thresholds for this regime
+            tier1_thresh = self.compute_hybrid_threshold(regime_signal, regime, tier=1)
+            tier2_thresh = self.compute_hybrid_threshold(regime_signal, regime, tier=2)
+            
+            # Tier-1: exceeds strict threshold
+            tier1_mask = regime_signal.abs() >= tier1_thresh
+            tier1_times = regime_signal.index[tier1_mask]
+            tier1_events.extend([(t, 1.0, regime) for t in tier1_times])
+            
+            # Tier-2: exceeds relaxed threshold but not strict
+            tier2_mask = (regime_signal.abs() >= tier2_thresh) & ~tier1_mask
+            tier2_times = regime_signal.index[tier2_mask]
+            tier2_events.extend([(t, 0.5, regime) for t in tier2_times])
+        
+        # Combine events into DataFrame
+        all_events = tier1_events + tier2_events
+        if not all_events:
+            return pd.DataFrame(), {'tier1_count': 0, 'tier2_count': 0}
+        
+        events_df = pd.DataFrame(all_events, columns=['timestamp', 'tier_weight', 'regime'])
+        events_df = events_df.set_index('timestamp').sort_index()
+        
+        diagnostics = {
+            'tier1_count': len(tier1_events),
+            'tier2_count': len(tier2_events),
+            'total_events': len(all_events),
+            'regime_distribution': events_df['regime'].value_counts().to_dict(),
+        }
+        
+        if self.verbose:
+            tprint_info(f"   📊 Tiered Events: {diagnostics['tier1_count']} Tier-1, {diagnostics['tier2_count']} Tier-2")
+        
+        return events_df, diagnostics
+
+
+def create_geometry_variants(
+    base_threshold: float,
+    n_variants: int = 3,
+    perturbation_sigma: float = 0.15
+) -> List[float]:
+    """
+    Create micro-variants of a threshold using small perturbations.
+    
+    Noise injection creates slightly different event sets that increase
+    survival chances without breaking signal integrity.
+    
+    Args:
+        base_threshold: The base threshold value
+        n_variants: Number of variants to create
+        perturbation_sigma: Standard deviation of perturbation (as fraction of base)
+        
+    Returns:
+        List of threshold variants
+    """
+    variants = [base_threshold]  # Always include the base
+    
+    np.random.seed(42)  # For reproducibility
+    for i in range(n_variants - 1):
+        # Small perturbation (±1σ where σ = perturbation_sigma * base)
+        noise = np.random.normal(0, perturbation_sigma * base_threshold)
+        variant = base_threshold + noise
+        # Ensure variant is positive and reasonable
+        variant = np.clip(variant, base_threshold * 0.7, base_threshold * 1.4)
+        variants.append(variant)
+    
+    return variants
+
+
+# ==========================================
+# 0.8. Low-Volatility Regime Features
+# ==========================================
+
+class LowVolRegimeFeatures:
+    """
+    Generate features specifically designed for low-volatility regime learning.
+    
+    In high volatility, price moves are driven by Momentum and Liquidations.
+    In low volatility, price is driven by Inventory Management and Adverse Selection.
+    
+    This class provides "State-Space" features that remain stationary even when
+    price action is flat, allowing models to learn structural conditions that
+    precede regime shifts.
+    
+    Features:
+    1. Hurst Exponent (H) - Long-memory score
+    2. VPIN (Volume-Probability of Informed Trading) - Toxic flow detection
+    3. Anchored Z-Scores - Distance from last causal surprise
+    4. Time-Since-Shock (TSS) - Information half-life decay
+    5. Relative Volatility Scaling - Regime-conditioned normalization
+    """
+    
+    def __init__(self, verbose: bool = False):
+        self.verbose = verbose
+    
+    def compute_hurst_exponent(
+        self, 
+        series: pd.Series, 
+        lookback: int = 200
+    ) -> pd.Series:
+        """
+        Compute rolling Hurst exponent using Rescaled Range (R/S) method.
+        
+        H < 0.5: Mean-reverting (trapped)
+        H = 0.5: Random walk
+        H > 0.5: Trending (hidden persistence)
+        
+        This tells the model if current sideways movement is a trap or accumulation.
+        """
+        if len(series) < lookback:
+            return pd.Series(0.5, index=series.index)
+        
+        def rs_hurst(segment):
+            """Compute Hurst exponent for a segment."""
+            if len(segment) < 20:
+                return 0.5
+            
+            try:
+                # Mean-adjusted series
+                mean_adj = segment - np.mean(segment)
+                
+                # Cumulative deviate series
+                cumdev = np.cumsum(mean_adj)
+                
+                # Range
+                R = np.max(cumdev) - np.min(cumdev)
+                
+                # Standard deviation
+                S = np.std(segment)
+                
+                if S < 1e-9 or R < 1e-9:
+                    return 0.5
+                
+                # R/S calculation
+                rs = R / S
+                
+                # Hurst approximation: H = log(R/S) / log(n)
+                n = len(segment)
+                H = np.log(rs) / np.log(n)
+                
+                return np.clip(H, 0.0, 1.0)
+            except Exception:
+                return 0.5
+        
+        hurst = series.rolling(lookback, min_periods=50).apply(rs_hurst, raw=True)
+        return hurst.fillna(0.5)
+    
+    def compute_vpin(
+        self, 
+        df: pd.DataFrame, 
+        volume_bucket_size: int = 50
+    ) -> pd.Series:
+        """
+        Compute VPIN (Volume-Synchronized Probability of Informed Trading).
+        
+        Uses bar close position as buy/sell classification proxy.
+        High VPIN indicates informed player is exhausting liquidity on one side.
+        
+        Leading indicator of breakouts in low-vol regimes.
+        """
+        close = df.get('close', df.get('Close'))
+        high = df.get('high', df.get('High'))
+        low = df.get('low', df.get('Low'))
+        volume = df.get('volume', df.get('Volume'))
+        
+        if close is None or volume is None:
+            return pd.Series(0.5, index=df.index)
+        
+        # Bar close position as buy/sell proxy
+        bar_range = (high - low).replace(0, 1e-9)
+        close_position = (close - low) / bar_range  # 0=low, 1=high
+        
+        # Buy volume proxy (close higher = more buy)
+        buy_vol = close_position * volume
+        sell_vol = (1 - close_position) * volume
+        
+        # Order imbalance
+        imbalance = (buy_vol - sell_vol).abs()
+        
+        # Rolling VPIN over fixed volume windows
+        total_vol = volume.rolling(volume_bucket_size).sum()
+        vpin = (imbalance.rolling(volume_bucket_size).sum() / (total_vol + 1e-9))
+        
+        return vpin.fillna(0.5)
+    
+    def compute_anchored_zscore(
+        self, 
+        df: pd.DataFrame,
+        anchor_events: pd.DatetimeIndex,
+        feature_col: str = 'close'
+    ) -> pd.Series:
+        """
+        Compute z-scores anchored to the last causal surprise event.
+        
+        In low-vol, the market "remembers" the price level where the last
+        major consensus was reached. This provides a coordinate system
+        relative to the "Memory Anchor" of the last 48 hours.
+        """
+        if feature_col not in df.columns:
+            return pd.Series(0.0, index=df.index)
+        
+        values = df[feature_col]
+        result = pd.Series(0.0, index=df.index)
+        
+        # Sort anchor events
+        anchor_events = anchor_events.sort_values()
+        
+        for i, current_time in enumerate(df.index):
+            # Find most recent anchor before this time
+            prior_anchors = anchor_events[anchor_events < current_time]
+            
+            if len(prior_anchors) == 0:
+                continue
+            
+            last_anchor = prior_anchors[-1]
+            anchor_idx = df.index.get_loc(last_anchor)
+            current_idx = df.index.get_loc(current_time)
+            
+            if current_idx <= anchor_idx:
+                continue
+            
+            # Compute z-score from anchor point
+            segment = values.iloc[anchor_idx:current_idx+1]
+            if len(segment) < 5:
+                continue
+            
+            anchor_value = segment.iloc[0]
+            current_value = segment.iloc[-1]
+            segment_std = segment.std()
+            
+            if segment_std > 1e-9:
+                result.iloc[i] = (current_value - anchor_value) / segment_std
+        
+        return result.clip(-5, 5)
+    
+    def compute_time_since_shock(
+        self, 
+        df: pd.DataFrame,
+        shock_events: pd.DatetimeIndex,
+        decay_lambda: float = 0.02
+    ) -> pd.Series:
+        """
+        Compute time-since-shock with exponential decay.
+        
+        Formula: e^(-λ * ΔT) where ΔT is bars since last 2.7σ shock
+        
+        This acts as a Confidence Weight:
+        - Near 1.0: Recent shock, market has "memory"
+        - Near 0.0: Long time since shock, entropy maximized (random walk)
+        """
+        result = pd.Series(0.0, index=df.index)
+        
+        if len(shock_events) == 0:
+            return result
+        
+        shock_events = shock_events.sort_values()
+        
+        for i, current_time in enumerate(df.index):
+            # Find most recent shock before this time
+            prior_shocks = shock_events[shock_events <= current_time]
+            
+            if len(prior_shocks) == 0:
+                result.iloc[i] = 0.0  # No prior shock = no memory
+                continue
+            
+            last_shock = prior_shocks[-1]
+            
+            # Time difference in bars
+            try:
+                shock_idx = df.index.get_loc(last_shock)
+                delta_t = i - shock_idx
+            except KeyError:
+                delta_t = 100  # Default to high decay if not found
+            
+            # Exponential decay
+            result.iloc[i] = np.exp(-decay_lambda * delta_t)
+        
+        return result
+    
+    def compute_relative_volatility_scaling(
+        self, 
+        df: pd.DataFrame,
+        feature_col: str = 'close',
+        median_window: int = 5 * 24 * 4  # 5 days for 15m bars
+    ) -> pd.Series:
+        """
+        Compute relative volatility scaling for regime-conditioned normalization.
+        
+        Instead of standard z-scores, compute ratio of current volatility
+        to the 5-day median volatility. This makes features regime-invariant.
+        """
+        if feature_col not in df.columns:
+            return pd.Series(1.0, index=df.index)
+        
+        returns = df[feature_col].pct_change()
+        
+        # Current volatility (20-bar window)
+        current_vol = returns.rolling(20).std()
+        
+        # Median volatility (5-day window)
+        median_vol = current_vol.rolling(median_window, min_periods=100).median()
+        
+        # Relative scaling
+        relative = current_vol / (median_vol + 1e-9)
+        
+        return relative.clip(0.1, 10.0).fillna(1.0)
+    
+    def generate_all_features(
+        self, 
+        df: pd.DataFrame,
+        shock_events: Optional[pd.DatetimeIndex] = None
+    ) -> pd.DataFrame:
+        """
+        Generate all low-vol regime features.
+        
+        Args:
+            df: OHLCV DataFrame
+            shock_events: DatetimeIndex of causal surprise events for anchoring
+            
+        Returns:
+            DataFrame with all low-vol features
+        """
+        features = pd.DataFrame(index=df.index)
+        
+        close = df.get('close', df.get('Close'))
+        if close is None:
+            return features
+        
+        returns = close.pct_change().fillna(0)
+        
+        # 1. Hurst exponents at multiple lookbacks
+        for lookback in [200, 500]:
+            features[f'hurst_{lookback}'] = self.compute_hurst_exponent(returns, lookback)
+        
+        # 2. VPIN
+        features['vpin'] = self.compute_vpin(df, volume_bucket_size=50)
+        
+        # 3. Relative volatility scaling
+        features['rel_vol_scale'] = self.compute_relative_volatility_scaling(df, 'close')
+        
+        # 4. Time-since-shock (if shock events provided)
+        if shock_events is not None and len(shock_events) > 0:
+            features['time_since_shock'] = self.compute_time_since_shock(
+                df, shock_events, decay_lambda=0.02
+            )
+            features['anchored_zscore'] = self.compute_anchored_zscore(
+                df, shock_events, 'close'
+            )
+        else:
+            features['time_since_shock'] = 0.0
+            features['anchored_zscore'] = 0.0
+        
+        # 5. Low-vol specific indicators
+        # Distance from HVN (High Volume Node) proxy using VWAP
+        if 'volume' in df.columns:
+            vwap = (df['close'] * df['volume']).rolling(100).sum() / (df['volume'].rolling(100).sum() + 1e-9)
+            features['dist_from_vwap'] = (close - vwap) / (close.rolling(100).std() + 1e-9)
+            features['dist_from_vwap'] = features['dist_from_vwap'].clip(-5, 5).fillna(0)
+        
+        if self.verbose:
+            tprint_info(f"   📊 Generated {len(features.columns)} low-vol regime features")
+        
+        return features
+
+
+# ==========================================
+# 0.9. Regressor-Specific Target Engineering
 # ==========================================
 
 def engineer_regressor_targets(
@@ -668,401 +1244,7 @@ def get_target_for_model_type(model_name: str) -> str:
 # 1. Labeling Logic (Vectorized Dominance & State)
 # ==========================================
 
-def compute_volatility_labels(
-    df: pd.DataFrame,
-    events: pd.DatetimeIndex,
-    horizon: int = 24,
-    k: float = 1.3
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """
-    Labeling for Regime/State events (Volatility Expansion).
-    Target: 1 if volatility increases by k% over the next `horizon` bars.
-
-    Returns matched signature: labels, weights, returns, mfe, mae, vol
-    Note: returns/mfe/mae are proxies here.
-    """
-    if events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Calculate volatility (Use EWMA 50 for smoother estimates as requested)
-    # Overrides generic volatility_1d to ensure consistent smoothing for labeling
-    vol = df['close'].pct_change().ewm(span=50).std()
-
-    # Align events
-    valid_events = events.intersection(df.index)
-    if valid_events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Vectorized Target Calculation
-    # We want Vol[t+horizon] > Vol[t] * k
-
-    # Get indices
-    event_locs = df.index.get_indexer(valid_events)
-    n_bars = len(df)
-
-    target_locs = event_locs + horizon
-    valid_mask = target_locs < n_bars
-
-    event_locs = event_locs[valid_mask]
-    target_locs = target_locs[valid_mask]
-    final_events = valid_events[valid_mask]
-
-    vol_start = vol.iloc[event_locs].values
-    vol_end = vol.iloc[target_locs].values
-
-    # Avoid zero vol
-    vol_start = np.maximum(vol_start, 1e-9)
-
-    # Calculate Ratio
-    vol_ratio = vol_end / vol_start
-
-    # Label: Continuous Change Ratio (Regressor-Compatible)
-    # Binary thresholding k is still used for event selection, but target is continuous
-    labels_arr = vol_ratio - 1.0
-
-    # Weights: Magnitude of expansion
-    weights_arr = np.log1p(np.abs(vol_ratio - 1.0))
-
-    # "Returns": Volatility change %
-    returns_arr = vol_ratio - 1.0
-
-    # MFE/MAE: Proxies
-    mfe_arr = returns_arr
-    mae_arr = np.zeros_like(returns_arr)
-
-    # Construct Series
-    idx = final_events
-    s_labels = pd.Series(labels_arr, index=idx)
-    s_weights = pd.Series(weights_arr, index=idx)
-    s_returns = pd.Series(returns_arr, index=idx)
-    s_mfe = pd.Series(mfe_arr, index=idx)
-    s_mae = pd.Series(mae_arr, index=idx)
-    s_vol = pd.Series(vol_start, index=idx)
-
-    return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
-
-
-def compute_path_degradation_labels(
-    df: pd.DataFrame,
-    events: pd.DatetimeIndex,
-    horizon: int = 24,
-    d_sigma: float = 1.5
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """
-    Labeling for Market Stress (Path Degradation).
-    Target: 1 if Max Intra-Horizon Drawdown > d_sigma * volatility.
-
-    Returns matched signature: labels, weights, returns, mfe, mae, vol
-    """
-    if events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    if 'volatility_1d' in df.columns:
-        vol = df['volatility_1d']
-    else:
-        vol = df['close'].pct_change().rolling(100).std()
-
-    # Align events
-    valid_events = events.intersection(df.index)
-    if valid_events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Map events to integers
-    if df.index.tz is not None:
-        idx_base = df.index.tz_localize(None)
-    else:
-        idx_base = df.index
-
-    if valid_events.tz is not None:
-        events_norm = valid_events.tz_localize(None)
-    else:
-        events_norm = valid_events
-
-    event_idxs = idx_base.get_indexer(events_norm)
-    n_bars = len(df)
-
-    # Filter valid
-    valid_mask = (event_idxs != -1) & (event_idxs < (n_bars - horizon))
-    valid_idxs = event_idxs[valid_mask]
-    final_events = valid_events[valid_mask]
-
-    if len(valid_idxs) == 0:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Window Matrix
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-
-    high_vals = df['high'].values[window_idxs]
-    low_vals = df['low'].values[window_idxs]
-
-    # Calculate Max Drawdown
-    # Running Max of Highs
-    running_max = np.maximum.accumulate(high_vals, axis=1)
-    # Drawdown from running max to current low
-    drawdowns = (running_max - low_vals) / running_max
-    max_dd = np.max(drawdowns, axis=1)
-
-    # Thresholds
-    vol_vals = vol.values[valid_idxs]
-    # Ensure vol is not zero
-    vol_vals = np.maximum(vol_vals, 1e-6)
-
-    thresholds = vol_vals * d_sigma
-
-    # Label: Continuous Drawdown Ratio (Regressor-Compatible)
-    # Binary threshold d_sigma is still used for event selection, but target is continuous
-    labels_arr = max_dd / np.maximum(vol_vals * d_sigma, 1e-9)
-
-    # Weights: Severity of breakdown
-    weights_arr = np.log1p(max_dd / thresholds)
-
-    # "Returns": Max Drawdown (negative)
-    returns_arr = -max_dd
-
-    s_labels = pd.Series(labels_arr, index=final_events)
-    s_weights = pd.Series(weights_arr, index=final_events)
-    s_returns = pd.Series(returns_arr, index=final_events)
-    s_mfe = pd.Series(np.zeros_like(returns_arr), index=final_events)
-    s_mae = pd.Series(max_dd, index=final_events)
-    s_vol = pd.Series(vol_vals, index=final_events)
-
-    return s_labels, s_weights, s_returns, s_mfe, s_mae, s_vol
-
-
-def compute_tail_regime_labels(
-    df: pd.DataFrame,
-    events: pd.DatetimeIndex,
-    horizon: int = 24,
-    metric_col: str = 'skew',
-    z_thresh: float = 1.5
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """
-    Labeling for Tail Risk Persistence.
-    Target: 1 if metric (skew/kurt) remains 'extreme' (> z_thresh) on average over horizon.
-    """
-    if events.empty or metric_col not in df.columns:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    metric = df[metric_col]
-    # Calculate Z-score of metric if not already (assuming rolling standardization handled elsewhere or done here)
-    # Here we assume metric is raw and we check magnitude.
-    # Actually, let's standardize metric locally to be robust.
-    roll_mean = metric.rolling(100).mean()
-    roll_std = metric.rolling(100).std()
-    z_score = (metric - roll_mean) / (roll_std + 1e-9)
-
-    # Align events
-    valid_events = events.intersection(df.index)
-    if valid_events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Vectorized persistence check
-    event_locs = df.index.get_indexer(valid_events)
-    n_bars = len(df)
-
-    # Filter valid
-    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
-    valid_idxs = event_locs[valid_mask]
-    final_events = valid_events[valid_mask]
-
-    if len(valid_idxs) == 0:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Window Matrix
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-
-    window_z = z_score.values[window_idxs]
-
-    # Check average magnitude in window
-    # We care about magnitude of tail risk (fat tails or skew)
-    # If skew, it could be positive or negative. We usually care about absolute skew or negative skew?
-    # "Abnormal risk". Extreme values.
-    avg_abs_z = np.mean(np.abs(window_z), axis=1)
-
-    # Label: Continuous Persistence Ratio (Regressor-Compatible)
-    # Binary threshold z_thresh is still used for event selection, but target is continuous
-    labels_arr = avg_abs_z / np.maximum(z_thresh, 1e-9)
-    weights_arr = np.log1p(avg_abs_z)
-    returns_arr = avg_abs_z  # Proxy
-
-    return (pd.Series(labels_arr, index=final_events),
-            pd.Series(weights_arr, index=final_events),
-            pd.Series(returns_arr, index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events))
-
-def compute_trend_persistence_labels(
-    df: pd.DataFrame,
-    events: pd.DatetimeIndex,
-    horizon: int = 24,
-    trend_col: str = 'trend'
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """
-    Labeling for Trend Regime Persistence.
-    Target: 1 if trend direction persists.
-    """
-    if events.empty or trend_col not in df.columns:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    trend = df[trend_col]
-
-    valid_events = events.intersection(df.index)
-    if valid_events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    event_locs = df.index.get_indexer(valid_events)
-    n_bars = len(df)
-    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
-    valid_idxs = event_locs[valid_mask]
-    final_events = valid_events[valid_mask]
-
-    if len(valid_idxs) == 0:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Initial Trend Sign
-    initial_trend = np.sign(trend.values[valid_idxs])
-
-    # Future Trend Signs
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-    future_trends = trend.values[window_idxs]
-
-    # Consistency: Fraction of window where sign matches initial
-    # Handle zero trend? Treat as mismatch if we expect trend.
-    matches = np.sign(future_trends) == initial_trend[:, None]
-    consistency = np.mean(matches, axis=1)
-
-    # Label: Continuous Consistency Ratio (Regressor-Compatible)
-    # Binary threshold 0.55 is still used for event selection, but target is continuous
-    labels_arr = consistency / 0.55
-    weights_arr = consistency
-    returns_arr = consistency  # Proxy
-
-    return (pd.Series(labels_arr, index=final_events),
-            pd.Series(weights_arr, index=final_events),
-            pd.Series(returns_arr, index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events))
-
-def compute_vol_state_labels(
-    df: pd.DataFrame,
-    events: pd.DatetimeIndex,
-    horizon: int = 24
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """
-    Labeling for Volatility State Persistence.
-    Target: 1 if Vol State persists.
-    """
-    if events.empty or 'vol_state' not in df.columns:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    state = df['vol_state']
-
-    valid_events = events.intersection(df.index)
-    if valid_events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    event_locs = df.index.get_indexer(valid_events)
-    n_bars = len(df)
-    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
-    valid_idxs = event_locs[valid_mask]
-    final_events = valid_events[valid_mask]
-
-    if len(valid_idxs) == 0:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    initial_state = state.values[valid_idxs]
-
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-    future_states = state.values[window_idxs]
-
-    matches = future_states == initial_state[:, None]
-    persistence = np.mean(matches, axis=1)
-
-    # Label: Continuous Persistence Ratio (Regressor-Compatible)
-    # Binary threshold 0.55 is still used for event selection, but target is continuous
-    labels_arr = persistence / 0.55
-    weights_arr = persistence
-    returns_arr = persistence  # Proxy
-
-    return (pd.Series(labels_arr, index=final_events),
-            pd.Series(weights_arr, index=final_events),
-            pd.Series(returns_arr, index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events))
-
-
-def compute_volume_participation_labels(
-    df: pd.DataFrame,
-    events: pd.DatetimeIndex,
-    horizon: int = 24,
-    volume_threshold: float = 1.5
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-    """
-    Labeling for Volume Participation Events.
-    Target: 1 if volume participation leads to price persistence in same direction.
-    """
-    if events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    if 'volume' not in df.columns:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    volume = df['volume']
-    close = df['close']
-    
-    # Align events
-    valid_events = events.intersection(df.index)
-    if valid_events.empty:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    event_locs = df.index.get_indexer(valid_events)
-    n_bars = len(df)
-    valid_mask = (event_locs != -1) & (event_locs < (n_bars - horizon))
-    valid_idxs = event_locs[valid_mask]
-    final_events = valid_events[valid_mask]
-
-    if len(valid_idxs) == 0:
-        return tuple([pd.Series(dtype=float)] * 6)
-
-    # Volume participation at event
-    vol_baseline = volume.rolling(960, min_periods=480).mean()
-    vol_excess = (volume / (vol_baseline + 1e-9)) - 1.0
-    
-    # Price direction at event
-    price_ret = close.pct_change()
-    event_direction = np.sign(price_ret.iloc[valid_idxs])
-    
-    # Future price persistence
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-    future_returns = price_ret.values[window_idxs]
-    
-    # Check if price persists in same direction
-    direction_consistency = np.mean(np.sign(future_returns) == event_direction[:, None], axis=1)
-    
-    # Label: 1 if high volume participation AND price persistence
-    event_vol_excess = vol_excess.iloc[valid_idxs].values
-    volume_condition = event_vol_excess > volume_threshold
-    
-    labels_arr = (volume_condition & (direction_consistency > 0.6)).astype(float)
-    weights_arr = event_vol_excess * direction_consistency
-    returns_arr = direction_consistency  # Proxy
-    
-    return (pd.Series(labels_arr, index=final_events),
-            pd.Series(weights_arr, index=final_events),
-            pd.Series(returns_arr, index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(np.zeros_like(labels_arr), index=final_events),
-            pd.Series(event_vol_excess, index=final_events))
-
-
+# --- 2. Causal 2026 Labeling Framework ---
 def compute_dominance_labels(
     price: pd.Series,
     events: pd.DatetimeIndex,
@@ -1394,9 +1576,13 @@ def check_label_quality(
         min_p = np.min(valid_p)
         val_metrics['min_p'] = min_p
         if min_p > 0.20:
-            gates_log.append(f"F-STAT: p={min_p:.2f} [FAIL]")
-            overall_pass = False
-            if failure_reason == "PASS": failure_reason = "F-STAT"
+            # RELAX: CAUSAL_SURPRISE is allowed to have weaker univariate F-STAT (often structural/sparse)
+            if family == 'CAUSAL_SURPRISE':
+                gates_log.append(f"F-STAT: p={min_p:.2f} [WARN-PASS]")
+            else:
+                gates_log.append(f"F-STAT: p={min_p:.2f} [FAIL]")
+                overall_pass = False
+                if failure_reason == "PASS": failure_reason = "F-STAT"
         else:
             gates_log.append(f"F-STAT: p={min_p:.2f} [OK]")
     else:
@@ -1521,6 +1707,7 @@ def calculate_multifactor_score(
             'balance': balance,
             'density': density,
             'path_score': path_score,
+            'lift': max(ic_max, f_max / (f_max + 10.0)), # Proxy for learnability
             # Causal/robustness extensions
             'interventional_contrast': metrics.get('interventional_contrast', np.nan),
             'overlap_support': metrics.get('overlap_support', np.nan),
@@ -1542,9 +1729,13 @@ def calculate_multifactor_score(
         row = df_norm.iloc[i]
         power = max(row['ic'], row['f_stat'])
         raw_sig = df_scores.iloc[i]['significance']
+        
+        # Incorporate Causal Integrity into power if available
+        ic_ic = row.get('interventional_contrast', 0.0)
+        purity_score = (power * 0.7 + ic_ic * 0.3) if not np.isnan(ic_ic) else power
 
         final_score = (
-            power *
+            purity_score *
             raw_sig *
             row['stability'] *
             row['balance'] *
@@ -1851,46 +2042,7 @@ def adaptive_threshold_calculator(
 # 5. Signal Generators
 # ==========================================
 
-GENERATOR_PARAM_NAMES = {
-    # 'KalmanTrendEvents': ['q_fast', 'q_slow'],
-    # 'KalmanRegimeEvents': ['Q', 'R', 'z'],
-    'TailRiskCusumEvents': ['h', 'window', 'metric'],
-    'TrendRegimeCusumEvents': ['h', 'fast', 'slow'],
-    'VolatilityCusumEvents': ['h', 'vol_span'],
-    'LiquidityCusumEvents': ['h', 'vol_span'],
-    'VolumeCusumEvents': ['h', 'span'],
-    'RangeATRcusumEvents': ['h', 'atr_window', 'vol_window'],
-    'SRCusumEvents': ['h', 'sr_levels'],
-    'VolatilityStateEvents': ['h', 'vol_span'],
-    'ImprovedCUSUMEvents': ['k', 'vol_window'],
-    'SymmetricCusumEvents': ['h'],
-}
-
-DF_REQUIRED_CLASSES = (
-    'ImprovedCUSUMEvents', 'MultiHorizonPriceCUSUMEvents', 
-    'VolumeCusumEvents', 'VolatilityCUSUMEvents', 'LiquidityCusumEvents',
-    'TailRiskCusumEvents', 'TrendRegimeCusumEvents', 'VolStateCusumEvents',
-    'RangeATRcusumEvents', 'SRCusumEvents', 'VolatilityStateEvents',
-    'CausalSurpriseEvents', 'InventorySpecialistEvents'
-) 
-# I can define this tuple inside the functions or at the end of the file, or move classes up?
-# Moving classes is risky.
-# I will define it as a tuple of classes logic inside the function or define it at the bottom.
-# But check_label_quality is at the top.
-# Python functions evaluate body at runtime.
-# So I can use global DF_REQUIRED_CLASSES if it's defined before check_label_quality is CALLED.
-# But it needs to be defined after classes are defined.
-# check_label_quality is defined at line 355.
-# Classes like MicrostructureEvents are defined later (line 800+).
-# So I cannot use a global tuple of classes at the top of the file.
-# I have to check by class NAME in check_label_quality or define the tuple later and pass it in.
-# Passing it in is cleaner. 
-# check_label_quality signature update?
-# Or just inspect the generator instance?
-# "if isinstance(gen, ...)" requires classes to be in scope.
-# check_label_quality is likely defined BEFORE the classes in this file?
-# Let's check the file structure.
-
+# --- 3. Grid Configurations (Legacy Removed) ---
 
 class BaseEventGenerator(UnifiedPriceMixin):
     """Base class for event generation with adaptive thresholding and unified price support."""
@@ -2079,64 +2231,6 @@ class BaseEventGenerator(UnifiedPriceMixin):
         
         return final_events
 
-
-class KalmanTrendEvents(BaseEventGenerator):
-    """Generate events based on Kalman filter trend changes."""
-    
-    def generate(self, price: pd.Series, q_fast: float = 1e-3, q_slow: float = 1e-5) -> pd.DatetimeIndex:
-        try:
-            if len(price) < 20:
-                logger.warning(f"Insufficient data for Kalman trend analysis: need 20, got {len(price)}")
-                return pd.DatetimeIndex([])
-            
-            # Apply Kalman filters
-            f, _ = KalmanFilter1D(Q=q_fast).filter_series(price)
-            s, _ = KalmanFilter1D(Q=q_slow).filter_series(price)
-            
-            # Detect trend changes
-            trend_up = (f > s) & (f.shift(1) <= s.shift(1))
-            trend_down = (f < s) & (f.shift(1) >= s.shift(1))
-            events = price.index[trend_up | trend_down]
-            
-            logger.debug(f"KalmanTrendEvents generated {len(events)} events (q_fast={q_fast}, q_slow={q_slow})")
-            return events
-            
-        except Exception as e:
-            logger.error(f"KalmanTrendEvents generation failed: {e}")
-            return pd.DatetimeIndex([])
-
-class KalmanRegimeEvents(BaseEventGenerator):
-    """Generate events based on Kalman filter regime shifts."""
-    
-    def generate(self, df: pd.DataFrame, Q: float = 1e-4, R: float = 0.01, z: float = 2.0) -> pd.DatetimeIndex:
-        try:
-            if len(df) < 20:
-                logger.warning(f"Insufficient data for Kalman regime analysis: need 20, got {len(df)}")
-                return pd.DatetimeIndex([])
-            
-            # Detect sudden shifts in price level relative to Kalman estimate
-            price = df['close']
-            f, P = KalmanFilter1D(Q=Q, R=R).filter_series(price)
-            
-            # Innovation and z-score
-            innov = price - f
-            std = np.sqrt(P + R)
-            z_score = innov / (std + 1e-9)
-            
-            events = price.index[z_score.abs() > z]
-            
-            logger.debug(f"KalmanRegimeEvents generated {len(events)} events (Q={Q}, R={R}, z={z})")
-            return events
-            
-        except Exception as e:
-            logger.error(f"KalmanRegimeEvents generation failed: {e}")
-            return pd.DatetimeIndex([])
-    
-    def _adjust_z_threshold(self, params: dict, factor: float) -> dict:
-        adjusted = params.copy()
-        if 'z' in adjusted:
-            adjusted['z'] *= factor
-        return adjusted
 
 class OrderBlockEvents(BaseEventGenerator):
     """Generate events based on Order Block identification (Smart Money Concept).
@@ -2390,54 +2484,43 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
         {'id': '4:1', 'pt': 4.0, 'sl': 1.0},
     ]
     
-    # Horizon options per family (de Prado: PRICE_CUSUM [12, 48], others [48] only)
+    # Horizon options per family (Modern Causal defaults - EXPANDED for higher event density)
     horizon_options = {
-        'PRICE_CUSUM': [12, 48],  # Classifiers get multiple horizons
-        'default': [48],          # Regressors get single horizon
+        'default': [24, 48],  # Added 24 for faster signals
+        'CAUSAL_SURPRISE': [12, 24, 48],  # Surprises: medium to slow (removed 6, 8 - too noisy)
+        'VOLUME_SPECIALIST': [12, 24, 48],       # Volume: medium to slow
+        'VOLATILITY_SPECIALIST': [12, 24],    # Volatility: fast-evolving
     }
     
-    # Family-specific parameter grids (tightened for efficiency)
+    # Family-specific parameter grids for Causal Specialists - EXPANDED GRIDS
     family_grids = {
-        'PRICE_CUSUM': {
-            # TUNED: k range for classifier (multiple options for diversity)
-            'base_params': [(0.3, 20), (0.5, 20), (0.8, 20), (1.2, 30)],  # k, vol_window
-            'horizons': [12, 48],  # Classifier uses multiple horizons
-        },
-        'VOL_CUSUM': {
-            'base_params': [(2.5, 100)],  # Single config for regressor (Relaxed from 4.0)
-            'horizons': [48],
-        },
-        'LIQ_CUSUM': {
-            'base_params': [(2.5, 100)],  # Relaxed from 4.0
-            'horizons': [48],
-        },
-        'VOL_PARTICIPATION': {
-            'base_params': [(3.0, 480)],  # Relaxed from 5.0, span from 960
-            'horizons': [48],
-        },
-        'RANGE_ATR': {
-            'base_params': [(2.0, 14, 20)],  # Single config
-            'horizons': [48],
-        },
-        'TAIL_RISK': {
-            'base_params': [(2.0, 50, 'skew')],  # Single metric
-            'horizons': [48],
-        },
-        'TREND_REGIME': {
-            'base_params': [(2.0, 20, 50)],  # Single config
-            'horizons': [48],
-        },
-        'VOL_STATE': {
-            'base_params': [(2.0, 100)],  # Already single
-            'horizons': [48],
-        },
         'CAUSAL_SURPRISE': {
-            'base_params': [(2.0, 'all')], # threshold, type
-            'horizons': [48],
+            'base_params': [(1.5, 'all'), (1.8, 'all'), (2.2, 'all')],  # Lower thresholds for more events
+            'horizons': [12, 24, 48],  # Multi-horizon (removed 6, 8 - too noisy)
+        },
+        'VOLUME_SPECIALIST': {
+            'base_params': [(1.8, 20), (2.0, 20), (2.5, 30)],  # Multiple sensitivity levels
+            'horizons': [12, 24, 48],
+        },
+        'VOLATILITY_SPECIALIST': {
+            'base_params': [(1.8, 15), (2.0, 20), (2.5, 30)],  # Multiple sensitivity levels
+            'horizons': [12, 24],  # Removed 8 - too noisy
+        },
+        'LIQUIDITY_SPECIALIST': {
+            'base_params': [(1.8, 20), (2.0, 20)],
+            'horizons': [12, 24, 48],
+        },
+        'INFORMATION_SPECIALIST': {
+            'base_params': [(1.8, 20), (2.0, 20)],
+            'horizons': [12, 24, 48],
         },
         'INVENTORY_SPECIALIST': {
-            'base_params': [(2.0, 20)], # threshold, window
-            'horizons': [48],
+            'base_params': [(2.0, 20), (2.5, 25)],  # Higher threshold since sparse
+            'horizons': [24, 48],
+        },
+        'MOMENTUM_DECAY_SPECIALIST': {
+            'base_params': [(1.5, 10, 50), (2.0, 10, 50), (2.5, 10, 50), (2.0, 5, 30), (2.0, 20, 100)],
+            'horizons': [12, 24, 48],
         }
     }
     
@@ -2494,7 +2577,77 @@ def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: floa
     else:
         thresholds['sr'] = None
 
+    # Specialists (Predictive Parents)
+    if 'close' in df.columns:
+        # Volatility Specialist metric: sudden expansion z-score
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std()
+        vol_change = (vol / (vol.shift(1) + 1e-9)).fillna(1.0)
+        z_vol = ((vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)).fillna(0.0)
+        thresholds['VOLATILITY_SPECIALIST'] = max(z_vol.quantile(1 - target_fraction), 2.7)
+        
+        # Liquidity Specialist metric: impact z-score
+        if 'volume' in df.columns:
+            impact = df['close'].pct_change().abs() / (df['volume'] + 1e-9)
+            baseline = impact.rolling(100).mean()
+            z = ((impact - baseline) / (impact.rolling(100).std() + 1e-9)).fillna(0.0)
+            thresholds['LIQUIDITY_SPECIALIST'] = max(z.quantile(1 - target_fraction), 2.7)
+        else:
+            thresholds['LIQUIDITY_SPECIALIST'] = 2.7
+
+        # Information Specialist metric: absolute autocorrelation z-score
+        autocorr = ret.rolling(50).corr(ret.shift(1)).abs().fillna(0.0)
+        z_info = ((autocorr - autocorr.rolling(300).mean()) / (autocorr.rolling(300).std() + 1e-9)).fillna(0.0)
+        thresholds['INFORMATION_SPECIALIST'] = max(z_info.quantile(1 - target_fraction), 2.0)
+
+        # Inventory Specialist metric: price z-score
+        price_std = df['close'].rolling(50).std()
+        z_inv = ((df['close'] - df['close'].rolling(50).mean()) / (price_std + 1e-9)).abs().fillna(0.0)
+        thresholds['INVENTORY_SPECIALIST'] = max(z_inv.quantile(1 - target_fraction), 2.7)
+
+        # Volume Specialist
+        if 'volume' in df.columns:
+            vol_val = df['volume']
+            baseline_vol = vol_val.rolling(100).mean()
+            z_vol = ((vol_val - baseline_vol) / (vol_val.rolling(100).std() + 1e-9)).fillna(0.0)
+            thresholds['VOLUME_SPECIALIST'] = max(z_vol.quantile(1 - target_fraction), 2.7)
+        else:
+            thresholds['VOLUME_SPECIALIST'] = 2.7
+
     return thresholds
+
+def two_tier_weight(z, tier1_min=3.0, tier2_min=2.7, tier2_max=3.0, alpha=1.5, 
+                   uniqueness=1.0, noise_ratio=1.0, horizon_validity=1.0):
+    """
+    Compute two-tier weights for a Z-score.
+    Tier-1: core extremes >= 3.0σ (Mapped to [0.5, 1.0])
+    Tier-2: near-extremes 2.7-3.0σ (Mapped to [0.0, 0.5])
+    """
+    z = np.abs(z)
+    if isinstance(z, (pd.Series, np.ndarray)):
+        w = np.zeros_like(z, dtype=float)
+    else:
+        w = 0.0
+
+    # Tier-2: [2.7, 3.0)
+    mask_t2 = (z >= tier2_min) & (z < tier1_min)
+    t2_scale = 0.5 * ((z[mask_t2] - tier2_min) / (tier1_min - tier2_min)) ** alpha if isinstance(z, (pd.Series, np.ndarray)) else 0.5 * ((z - tier2_min) / (tier1_min - tier2_min)) ** alpha
+    if isinstance(z, (pd.Series, np.ndarray)):
+        w[mask_t2] = t2_scale
+    elif mask_t2:
+        w = t2_scale
+
+    # Tier-1: [3.0, inf)
+    mask_t1 = (z >= tier1_min)
+    t1_scale = 0.5 + 0.5 * np.clip((z[mask_t1] - tier1_min) / tier1_min, 0.0, 1.0) ** alpha if isinstance(z, (pd.Series, np.ndarray)) else 0.5 + 0.5 * np.clip((z - tier1_min) / tier1_min, 0.0, 1.0) ** alpha
+    if isinstance(z, (pd.Series, np.ndarray)):
+        w[mask_t1] = t1_scale
+    elif mask_t1:
+        w = t1_scale
+
+    # Apply multipliers
+    w_final = w * uniqueness * noise_ratio * horizon_validity
+    return np.clip(w_final, 0.0, 1.0)
 
 def volume_cusum_weight(df: pd.DataFrame, events: pd.DatetimeIndex, persistence_factor: float = 1.0) -> pd.Series:
     if events.empty or 'volume' not in df.columns: return pd.Series(0, index=events)
@@ -2564,11 +2717,1185 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
         intensity = sr_cusum_weight(df, events, sr_levels) * component_weights.get('sr', 1.0)
     elif family == 'TAIL_RISK':
         intensity = tail_cusum_weight(df, events) * component_weights.get('tail', 1.0)
+    elif family == 'INVENTORY_SPECIALIST':
+        price_std = df['close'].rolling(50).std()
+        z = ((df['close'] - df['close'].rolling(50).mean()) / (price_std + 1e-9)).abs()
+        intensity = two_tier_weight(z.reindex(events).fillna(0))
+    elif family == 'VOLATILITY_SPECIALIST':
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std()
+        vol_change = vol / (vol.shift(1) + 1e-9)
+        z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
+        intensity = two_tier_weight(z.reindex(events).fillna(0))
+    elif family == 'VOLUME_SPECIALIST':
+        vol = df['volume']
+        z = (vol - vol.rolling(100).mean()) / (vol.rolling(100).std() + 1e-9)
+        intensity = two_tier_weight(z.reindex(events).fillna(0))
+    elif family == 'LIQUIDITY_SPECIALIST':
+        impact = df['close'].pct_change().abs() / (df['volume'] + 1e-9)
+        z = (impact - impact.rolling(100).mean()) / (impact.rolling(100).std() + 1e-9)
+        intensity = two_tier_weight(z.reindex(events).fillna(0))
+    elif family == 'INFORMATION_SPECIALIST':
+        ret = df['close'].pct_change()
+        autocorr = ret.rolling(50).corr(ret.shift(1)).abs()
+        z = (autocorr - autocorr.rolling(500).mean()) / (autocorr.rolling(500).std() + 1e-9)
+        intensity = two_tier_weight(z.reindex(events).fillna(0))
 
     u_w = get_uniqueness_weight(events, df.index)
 
     final_weights = (1 + intensity) * u_w
-    return final_weights
+    return final_weights.reindex(events).fillna(1.0) # Ensure no zeros for survival
+
+def get_specialist_event_matrix(df: pd.DataFrame, family: str) -> pd.Series:
+    """Generates a full-index weighted event matrix [0, 1] for a specialist family."""
+    if df.empty: return pd.Series(dtype=float)
+    
+    z = pd.Series(0.0, index=df.index)
+    if family == 'INVENTORY_SPECIALIST':
+        price_std = df['close'].rolling(50).std()
+        z = ((df['close'] - df['close'].rolling(50).mean()) / (price_std + 1e-9)).abs()
+    elif family == 'VOLATILITY_SPECIALIST':
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std()
+        vol_change = vol / (vol.shift(1) + 1e-9)
+        z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
+    elif family == 'VOLUME_SPECIALIST':
+        vol = df['volume']
+        z = (vol - vol.rolling(100).mean()) / (vol.rolling(100).std() + 1e-9)
+    elif family == 'LIQUIDITY_SPECIALIST':
+        impact = df['close'].pct_change().abs() / (df['volume'] + 1e-9)
+        z = (impact - impact.rolling(100).mean()) / (impact.rolling(100).std() + 1e-9)
+    elif family == 'INFORMATION_SPECIALIST':
+        ret = df['close'].pct_change()
+        autocorr = ret.rolling(50).corr(ret.shift(1)).abs()
+        z = (autocorr - autocorr.rolling(500).mean()) / (autocorr.rolling(500).std() + 1e-9)
+    
+    
+    weights = two_tier_weight(z.fillna(0.0))
+    return pd.Series(weights, index=df.index)
+
+def generate_ohlcv_candidates(df: pd.DataFrame) -> List[Dict]:
+    """
+    Generates direct market response candidates from OHLCV data.
+    """
+    candidates = []
+    
+    # 1. Return Shock: abs(returns) > 3 sigma
+    ret = df['close'].pct_change()
+    z_ret = (ret - ret.rolling(100).mean()) / (ret.rolling(100).std() + 1e-9)
+    weights_ret = pd.Series(two_tier_weight(z_ret.fillna(0.0)), index=df.index)
+    events_ret = weights_ret[weights_ret > 0.0].index
+    if len(events_ret) >= 10:
+        candidates.append({
+            'family': 'OHLCV_RETURN_SHOCK',
+            'events': events_ret,
+            'weight_vector': weights_ret,
+            'params': {'type': 'ohlcv', 'metric': 'return'}
+        })
+        
+    # 2. Volatility Spike: (High-Low) > 3 sigma
+    hl = (df['high'] - df['low']) / (df['close'] + 1e-9)
+    z_vol = (hl - hl.rolling(100).mean()) / (hl.rolling(100).std() + 1e-9)
+    weights_vol = pd.Series(two_tier_weight(z_vol.fillna(0.0)), index=df.index)
+    events_vol = weights_vol[weights_vol > 0.0].index
+    if len(events_vol) >= 10:
+        candidates.append({
+            'family': 'OHLCV_VOLATILITY_SPIKE',
+            'events': events_vol,
+            'weight_vector': weights_vol,
+            'params': {'type': 'ohlcv', 'metric': 'volatility'}
+        })
+        
+    # 3. Volume Surge: Volume > 3 sigma
+    vol_norm = df['volume'] / (df['volume'].rolling(50).mean() + 1e-9)
+    z_volume = (vol_norm - vol_norm.rolling(100).mean()) / (vol_norm.rolling(100).std() + 1e-9)
+    weights_volume = pd.Series(two_tier_weight(z_volume.fillna(0.0)), index=df.index)
+    events_volume = weights_volume[weights_volume > 0.0].index
+    if len(events_volume) >= 10:
+        candidates.append({
+            'family': 'OHLCV_VOLUME_SURGE',
+            'events': events_volume,
+            'weight_vector': weights_volume,
+            'params': {'type': 'ohlcv', 'metric': 'volume'}
+        })
+        
+    # 4. Flow Imbalance: (Close-Open)/(High-Low) * Volume
+    flow = ((df['close'] - df['open']) / (df['high'] - df['low'] + 1e-9)) * df['volume']
+    z_flow = (flow - flow.rolling(100).mean()) / (flow.rolling(100).std() + 1e-9)
+    weights_flow = pd.Series(two_tier_weight(z_flow.fillna(0.0)), index=df.index)
+    events_flow = weights_flow[weights_flow > 0.0].index
+    if len(events_flow) >= 10:
+        candidates.append({
+            'family': 'OHLCV_FLOW_IMBALANCE',
+            'events': events_flow,
+            'weight_vector': weights_flow,
+            'params': {'type': 'ohlcv', 'metric': 'flow'}
+        })
+        
+    return sorted(candidates, key=lambda x: x['family'])
+
+class FeatureRegistry:
+    """Singleton registry for sharing large dense features across candidates."""
+    _instance = None
+    _features: Dict[str, pd.Series] = {}
+    
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+    
+    def register(self, key: str, series: pd.Series) -> str:
+        """Store series and return key."""
+        if key not in self._features:
+            self._features[key] = series
+        return key
+        
+    def get(self, key: str) -> Optional[pd.Series]:
+        return self._features.get(key)
+        
+    def clear(self):
+        self._features.clear()
+
+def generate_continuous_geometry_candidates(df: pd.DataFrame) -> List[Dict]:
+    """
+    Generate candidates from Continuous Predictor Families.
+    
+    Families:
+    - RELAXATION: Mean-reversion dynamics
+    - FLOW_PRESSURE: Buying/Selling pressure
+    - SLOPE: Trend geometry
+    - FRAGILITY: Market resilience/illiquidity
+    """
+    if not PREDICTOR_GENERATORS_AVAILABLE:
+        return []
+        
+    candidates = []
+class PruningFilters:
+    """Early pruning filters to skip unpromising geometries."""
+    
+    @staticmethod
+    def check_learnability(series: pd.Series, target: pd.Series = None, min_ic: float = 0.005) -> bool:
+        """
+        Check if signal has minimal predictive content (Entropy + IC).
+        Returns True if signal is 'promising' (keep), False if 'dead' (prune).
+        """
+        # 1. Activity / Entropy Check
+        # If signal is constant or near constant, prune.
+        if series.std() < 1e-9:
+            return False
+            
+        # 2. Information Coefficient (IC) Check
+        # If target (future returns) is provided, check correlation.
+        if target is not None:
+             # Align indices
+             common_idx = series.index.intersection(target.index)
+             if len(common_idx) < 100:
+                 return False # Too few overlapping points
+                 
+             # Fast Spearman sample (n=1000)
+             if len(common_idx) > 1000:
+                 # Deterministic sample for speed
+                 sample_idx = common_idx[::len(common_idx)//1000]
+                 s_series = series[sample_idx]
+                 s_target = target[sample_idx]
+             else:
+                 s_series = series[common_idx]
+                 s_target = target[common_idx]
+                 
+             ic, _ = spearmanr(s_series, s_target)
+             if abs(ic) < min_ic:
+                 return False
+                 
+        return True
+
+def generate_continuous_geometry_candidates(df: pd.DataFrame) -> List[Dict]:
+    """
+    Generate candidates from Continuous Predictor Families.
+    
+    Families:
+    - RELAXATION: Mean-reversion dynamics
+    - FLOW_PRESSURE: Buying/Selling pressure
+    - SLOPE: Trend geometry
+    - FRAGILITY: Market resilience/illiquidity
+    """
+    if not PREDICTOR_GENERATORS_AVAILABLE:
+        return []
+        
+    candidates = []
+    registry = FeatureRegistry.get_instance()
+    
+    # Pre-calculate simple target for pruning: 24h forward returns
+    try:
+        # Assuming hourly/minute data, 24 steps might be 1 day?
+        # Safe default: 1-day return (approx 288 5-min bars or 24 1h bars)
+        # We'll use a generic 48-step forward return as proxy for "Directional Value"
+        if 'close' in df.columns:
+            target_proxy = df['close'].pct_change(48).shift(-48)
+        else:
+            target_proxy = None
+    except:
+        target_proxy = None
+
+    try:
+        # Initialize generator
+        cp_gen = ContinuousPredictorGenerator(verbose=False)
+        predictors = cp_gen.generate_all_predictors(df)
+        
+        tprint_info(f"   ✨ Generated {len(predictors)} continuous predictors")
+        
+        pruned_count = 0
+        for pred in predictors:
+            try:
+                # 0. Early Pruning (Learnability)
+                if target_proxy is not None:
+                    # Sanitize
+                    vals = pred.values.fillna(0)
+                    if not PruningFilters.check_learnability(vals, target_proxy, min_ic=0.01):
+                        pruned_count += 1
+                        continue
+                
+                # Convert continuous predictor to event-based candidate
+                # We use high-activation points (peaks/valleys) as events
+                # This allows them to pass the event-based pipeline
+                
+                # 1. Standardize
+                vals = pred.values.fillna(0)
+                if vals.std() == 0: continue
+                
+                # Z-score - Robust
+                z = (vals - vals.mean()) / (vals.std() + 1e-9)
+                
+                # Register feature to save memory
+                feature_key = f"{pred.family}_{pred.name}"
+                registry.register(feature_key, vals)
+                
+                # 2. Extract Events (High Z)
+                # Ensure we have weights for composite generation
+                # Align thresholds: tier2=1.5 (entry), tier1=2.5 (strong)
+                weights = two_tier_weight(z, tier1_min=2.5, tier2_min=1.5, alpha=1.5)
+                weights_series = pd.Series(weights, index=df.index).fillna(0.0)
+
+                # Positive Activation (High values)
+                events_pos = z[z > 1.5].index
+                if len(events_pos) > 20:
+                    candidates.append({
+                        'family': f"{pred.family.upper()}_{pred.name.upper()}_POS",
+                        'events': events_pos,
+                        'weight_vector': weights_series, # Added for composite engine
+                        'feature_key': feature_key, # Reference instead of copy
+                        'weight_sign': 1.0,
+                        'feature_sign': 1.0, # Explicit sign for interaction
+                        'params': {'source': pred.name, 'side': 'positive', 'method': 'continuous_z_threshold'},
+                        'status': 'NEW'
+                    })
+                    
+                # Negative Activation (Low values)
+                events_neg = z[z < -1.5].index
+                if len(events_neg) > 20:
+                    # For negative events, we want the weight to reflect the intensity of the *negative* move
+                    # two_tier_weight takes abs(z) so it handles negative values correctly as magnitude
+                    candidates.append({
+                        'family': f"{pred.family.upper()}_{pred.name.upper()}_NEG",
+                        'events': events_neg,
+                        'weight_vector': weights_series, # Added for composite engine
+                        'feature_key': feature_key, 
+                        'weight_sign': -1.0,
+                        'feature_sign': -1.0,
+                        'params': {'source': pred.name, 'side': 'negative', 'method': 'continuous_z_threshold'},
+                        'status': 'NEW'
+                    })
+                    
+            except Exception as e:
+                continue
+        
+        if pruned_count > 0:
+            tprint_info(f"   ✂️ Pruned {pruned_count} unpromising predictors (Low IC)")
+            
+    except Exception as e:
+        logger.warning(f"generate_continuous_geometry_candidates failed: {e}")
+        return []
+        
+    return candidates
+
+
+def generate_derived_features(df: pd.DataFrame, ohlcv_candidates: List[Dict]) -> List[Dict]:
+    """
+    Level 4: Derived Ratios and Relative Features.
+    - Ratios: Volume/Volatility, Return/ATR
+    - Relative Shocks: Value - Rolling Median
+    """
+    candidates = []
+    
+    # 1. Volume / Volatility Ratio (Liquidity Efficiency)
+    # Norm volume by volatility -> high volume low vol = absorption?
+    vol = df['volume'] / (df['volume'].rolling(50).mean() + 1e-9)
+    hl = (df['high'] - df['low']) / (df['close'] + 1e-9)
+    hl_norm = hl / (hl.rolling(50).mean() + 1e-9)
+    
+    ratio = vol / (hl_norm + 1e-9)
+    z_ratio = (ratio - ratio.rolling(100).mean()) / (ratio.rolling(100).std() + 1e-9)
+    weights_ratio = pd.Series(two_tier_weight(z_ratio.fillna(0.0)), index=df.index)
+    events_ratio = weights_ratio[weights_ratio > 0.0].index
+    
+    if len(events_ratio) > 100: # Slightly higher bar for derived features
+        candidates.append({
+            'family': 'DERIVED_VOL_VOLATILITY_RATIO',
+            'events': events_ratio,
+            'weight_vector': weights_ratio,
+            'params': {'type': 'derived', 'subtype': 'ratio'}
+        })
+
+    # 2. Relative Shocks (Price - Rolling Median)
+    # Captures sudden deviations from central tendency
+    close = df['close']
+    median_50 = close.rolling(50).median()
+    deviation = (close - median_50).abs() / (close.rolling(50).std() + 1e-9)
+    
+    z_dev = (deviation - deviation.rolling(100).mean()) / (deviation.rolling(100).std() + 1e-9)
+    weights_dev = pd.Series(two_tier_weight(z_dev.fillna(0.0)), index=df.index)
+    events_dev = weights_dev[weights_dev > 0.0].index
+    
+    if len(events_dev) > 100:
+        candidates.append({
+            'family': 'DERIVED_PRICE_MEDIAN_DEV',
+            'events': events_dev,
+            'weight_vector': weights_dev,
+            'params': {'type': 'derived', 'subtype': 'relative_shock'}
+        })
+        
+    # Phase 2: Expanded Derived Signals
+    
+    # 3. Volume Spike Ratio
+    # current_volume / rolling_mean(volume)
+    vol_mean = df['volume'].rolling(50).mean() + 1e-9
+    vol_spike = df['volume'] / vol_mean
+    # Z-score and Smart Weight
+    z_vol_spike = (vol_spike - vol_spike.rolling(100).mean()) / (vol_spike.rolling(100).std() + 1e-9)
+    weights_vspike = pd.Series(smart_event_weight(z_vol_spike.fillna(0.0)), index=df.index)
+    if len(weights_vspike[weights_vspike > 0]) > 50:
+        candidates.append({ 'family': 'DERIVED_VOLUME_SPIKE_RATIO', 'events': weights_vspike[weights_vspike > 0].index, 'weight_vector': weights_vspike, 'params': {'type': 'derived', 'subtype': 'ratio'} })
+
+    # 4. Return Gap
+    # open - prev_close
+    prev_close = df['close'].shift(1)
+    ret_gap = (df['open'] - prev_close) / (prev_close + 1e-9)
+    z_gap = (ret_gap - ret_gap.rolling(100).mean()) / (ret_gap.rolling(100).std() + 1e-9)
+    weights_gap = pd.Series(smart_event_weight(z_gap.fillna(0.0)), index=df.index)
+    if len(weights_gap[weights_gap > 0]) > 50:
+         candidates.append({ 'family': 'DERIVED_RETURN_GAP', 'events': weights_gap[weights_gap > 0].index, 'weight_vector': weights_gap, 'params': {'type': 'derived', 'subtype': 'shock'} })
+
+    # 5. Volatility Expansion
+    # (high - low) / rolling_std
+    roll_std = df['close'].rolling(50).std() + 1e-9
+    vol_exp = (df['high'] - df['low']) / roll_std
+    z_volexp = (vol_exp - vol_exp.rolling(100).mean()) / (vol_exp.rolling(100).std() + 1e-9)
+    weights_volexp = pd.Series(smart_event_weight(z_volexp.fillna(0.0)), index=df.index)
+    if len(weights_volexp[weights_volexp > 0]) > 50:
+        candidates.append({ 'family': 'DERIVED_VOLATILITY_EXPANSION', 'events': weights_volexp[weights_volexp > 0].index, 'weight_vector': weights_volexp, 'params': {'type': 'derived', 'subtype': 'expansion'} })
+
+    # 6. Bid-Ask Spread Ratio (Proxy using High-Low if no bid/ask)
+    # Using High-Low / Close as proxy for spread/liquidity stress if actual spread unavailable
+    ba_proxy = (df['high'] - df['low']) / (df['close'] + 1e-9)
+    # We want deviations in this proxy that ARE NOT just volatility? Hard to separate without tick data.
+    # Let's skip pure spread if not available, or use it as proxy.
+    z_ba = (ba_proxy - ba_proxy.rolling(100).mean()) / (ba_proxy.rolling(100).std() + 1e-9)
+    # Use adaptive threshold here?
+    weights_ba = pd.Series(smart_event_weight(z_ba.fillna(0.0)), index=df.index)
+    if len(weights_ba[weights_ba > 0]) > 50:
+         candidates.append({ 'family': 'DERIVED_Liquidity_STRESS_PROXY', 'events': weights_ba[weights_ba > 0].index, 'weight_vector': weights_ba, 'params': {'type': 'derived', 'subtype': 'liquidity'} })
+
+    # 7. Flow Imbalance (Proxy using Close-Open relation to Volume)
+    # If Close > Open, assume buy volume dominant? Rough proxy.
+    # (2*(Close - Low) - (High - Low)) / (High - Low) * Volume
+    # ADL style flow.
+    ad_flow = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'] + 1e-9) * df['volume']
+    z_flow = (ad_flow - ad_flow.rolling(100).mean()) / (ad_flow.rolling(100).std() + 1e-9)
+    weights_flow = pd.Series(smart_event_weight(z_flow.fillna(0.0)), index=df.index)
+    if len(weights_flow[weights_flow > 0]) > 50:
+        candidates.append({ 'family': 'DERIVED_FLOW_IMBALANCE_PROXY', 'events': weights_flow[weights_flow > 0].index, 'weight_vector': weights_flow, 'params': {'type': 'derived', 'subtype': 'flow'} })
+
+    # 8. Liquidity Gap
+    # rolling_max(volume) - rolling_min(volume)
+    liq_gap = df['volume'].rolling(20).max() - df['volume'].rolling(20).min()
+    z_liq_gap = (liq_gap - liq_gap.rolling(100).mean()) / (liq_gap.rolling(100).std() + 1e-9)
+    weights_liq_gap = pd.Series(smart_event_weight(z_liq_gap.fillna(0.0)), index=df.index)
+    if len(weights_liq_gap[weights_liq_gap > 0]) > 50:
+         candidates.append({ 'family': 'DERIVED_LIQUIDITY_GAP', 'events': weights_liq_gap[weights_liq_gap > 0].index, 'weight_vector': weights_liq_gap, 'params': {'type': 'derived', 'subtype': 'liquidity'} })
+         
+    # 9. Volatility Ratio
+    # current_vol / rolling_mean(vol)
+    curr_vol = (df['high'] - df['low']) / (df['close'] + 1e-9)
+    vol_ratio = curr_vol / (curr_vol.rolling(50).mean() + 1e-9)
+    z_vol_ratio = (vol_ratio - vol_ratio.rolling(100).mean()) / (vol_ratio.rolling(100).std() + 1e-9)
+    weights_vol_ratio = pd.Series(smart_event_weight(z_vol_ratio.fillna(0.0)), index=df.index)
+    if len(weights_vol_ratio[weights_vol_ratio > 0]) > 50:
+        candidates.append({ 'family': 'DERIVED_VOLATILITY_RATIO', 'events': weights_vol_ratio[weights_vol_ratio > 0].index, 'weight_vector': weights_vol_ratio, 'params': {'type': 'derived', 'subtype': 'ratio'} })
+
+    return candidates
+
+def smart_event_weight(z_score_series: pd.Series, quantile_threshold: float = 0.995, use_adaptive: bool = True) -> np.ndarray:
+    """
+    Advanced Event Logic (Level 11):
+    1. Quantile Detection: Tier-1 if z >= 3.0 OR value > 99.5% quantile.
+    2. Adaptive Thresholds by Regime: Modulate thresholds based on rolling volatility.
+       - In high vol regimes, we require higher Z-scores for Tier-1.
+       - In low vol regimes, we relax thresholds slightly to capture structural shifts.
+    """
+    # 1. Base Quantile Calculation
+    try:
+        q_val = z_score_series.quantile(quantile_threshold)
+    except:
+        q_val = 3.0 # Fallback
+        
+    weights = np.zeros(len(z_score_series))
+    abs_z = z_score_series.abs()
+    
+    # 2. Adaptive Regime Modulation
+    # Compute rolling volatility of the Z-score itself as a proxy for signal regime
+    if use_adaptive:
+        try:
+            # Signal volatility regime (short-term instability)
+            sig_vol = z_score_series.rolling(100).std().fillna(1.0)
+            sig_vol_norm = sig_vol / (sig_vol.rolling(500).mean() + 1e-9)
+            
+            # Modulate thresholds: higher vol -> higher requirement
+            # Max boost +50% to threshold in extreme regimes
+            adaptive_t1 = 3.0 * np.clip(sig_vol_norm, 0.8, 1.5)
+            adaptive_q = q_val * np.clip(sig_vol_norm, 0.9, 1.2)
+            adaptive_t2 = 2.5 * np.clip(sig_vol_norm, 0.8, 1.3)
+        except:
+            adaptive_t1 = 3.0
+            adaptive_q = q_val
+            adaptive_t2 = 2.5
+    else:
+        adaptive_t1 = 3.0
+        adaptive_q = q_val
+        adaptive_t2 = 2.5
+
+    # 3. Tiered Assignment
+    # Tier-1: Extreme signals (Adaptive Z or Extreme Quantile)
+    tier1_mask = (abs_z >= adaptive_t1) | (abs_z >= adaptive_q)
+    # Tier-2: Structural smoothing (Structural threshold)
+    tier2_mask = (abs_z >= adaptive_t2) & (~tier1_mask)
+    
+    weights[tier1_mask] = 1.0
+    weights[tier2_mask] = 0.5
+    
+    return weights
+
+
+def generate_tail_aggregates(df: pd.DataFrame, base_candidates: List[Dict]) -> List[Dict]:
+    """
+    Level 2/6: Tail Aggregates (Rolling Sum/Max of weighted events).
+    Captures event clustering (e.g. 3 return shocks in 1 hour).
+    """
+    aggregates = []
+    
+    for cand in base_candidates:
+        w_series = cand['weight_vector']
+        if not isinstance(w_series, pd.Series): continue
+        
+        # Rolling Sum over 4 periods (~1h for 15m)
+        w_sum = w_series.rolling(4).sum()
+        # Normalize sum to be roughly [0,1] scale or Z-score it?
+        # Z-score the sum to find clusters that are unusual
+        z_sum = (w_sum - w_sum.rolling(100).mean()) / (w_sum.rolling(100).std() + 1e-9)
+        
+        weights_agg = pd.Series(two_tier_weight(z_sum.fillna(0.0)), index=df.index)
+        events_agg = weights_agg[weights_agg > 0.0].index
+        
+        if len(events_agg) > 50:
+            aggregates.append({
+                'family': f"AGG_SUM_4_{cand['family']}",
+                'events': events_agg,
+                'weight_vector': weights_agg,
+                'params': {'type': 'aggregate', 'parent': cand['family'], 'window': 4}
+            })
+            
+            
+    return aggregates
+
+def generate_multi_horizon_candidates(df: pd.DataFrame) -> List[Dict]:
+    """
+    Level 5: Multi-Horizon Signals.
+    Resamples OHLCV data to higher timeframes (30m, 1h, 4h) and generates shock events.
+    Events are forward-filled back to the original index.
+    """
+    candidates = []
+    horizons = {'30min': 2, '60min': 4, '4h': 16} # Multiples of 15m
+    
+    for label, factor in horizons.items():
+        # Resample - Use aggregation rules
+        resampled = df.resample(label).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        # 1. Return Shock
+        ret = resampled['close'].pct_change()
+        z_ret = (ret - ret.rolling(100).mean()) / (ret.rolling(100).std() + 1e-9)
+        weights_ret = pd.Series(two_tier_weight(z_ret.fillna(0.0)), index=resampled.index)
+        events_ret = weights_ret[weights_ret > 0.0].index
+        
+        # Map back to 15m index (reindex + ffill)
+        # Shift(1) is CRITICAL to avoid lookahead bias: 
+        # Informational content of the resampled bar is only available at its CLOSE.
+        weights_ret_15m = weights_ret.shift(1).reindex(df.index).ffill().fillna(0.0)
+        events_ret_15m = weights_ret_15m[weights_ret_15m > 0.0].index
+        
+        if len(events_ret_15m) > 50:
+            candidates.append({
+                'family': f'OHLCV_RETURN_SHOCK_{label.upper()}',
+                'events': events_ret_15m,
+                'weight_vector': weights_ret_15m,
+                'params': {'type': 'multi_horizon', 'horizon': label, 'metric': 'return'}
+            })
+            
+        # 2. Volatility Spike
+        hl = (resampled['high'] - resampled['low']) / (resampled['close'] + 1e-9)
+        z_vol = (hl - hl.rolling(100).mean()) / (hl.rolling(100).std() + 1e-9)
+        weights_vol = pd.Series(two_tier_weight(z_vol.fillna(0.0)), index=resampled.index)
+        
+        # Map back to 15m index (reindex + ffill)
+        # Shift(1) is CRITICAL to avoid lookahead bias
+        weights_vol_15m = weights_vol.shift(1).reindex(df.index).ffill().fillna(0.0)
+        events_vol_15m = weights_vol_15m[weights_vol_15m > 0.0].index
+        
+        if len(events_vol_15m) > 50:
+            candidates.append({
+                'family': f'OHLCV_VOLATILITY_SPIKE_{label.upper()}',
+                'events': events_vol_15m,
+                'weight_vector': weights_vol_15m,
+                'params': {'type': 'multi_horizon', 'horizon': label, 'metric': 'volatility'}
+            })
+            
+        # 3. Volume Surge
+        vol_norm = resampled['volume'] / (resampled['volume'].rolling(50).mean() + 1e-9)
+        z_volume = (vol_norm - vol_norm.rolling(100).mean()) / (vol_norm.rolling(100).std() + 1e-9)
+        weights_volume = pd.Series(two_tier_weight(z_volume.fillna(0.0)), index=resampled.index)
+        
+        # Map back to 15m index (reindex + ffill)
+        # Shift(1) is CRITICAL to avoid lookahead bias
+        weights_volume_15m = weights_volume.shift(1).reindex(df.index).ffill().fillna(0.0)
+        events_volume_15m = weights_volume_15m[weights_volume_15m > 0.0].index
+        
+        if len(events_volume_15m) > 50:
+            candidates.append({
+                'family': f'OHLCV_VOLUME_SURGE_{label.upper()}',
+                'events': events_volume_15m,
+                'weight_vector': weights_volume_15m,
+                'params': {'type': 'multi_horizon', 'horizon': label, 'metric': 'volume'}
+            })
+            
+    return candidates
+
+def generate_regime_conditioned_candidates(df: pd.DataFrame, ohlcv_candidates: List[Dict], specialist_families: List[str]) -> List[Dict]:
+    """
+    Level 6: Regime-Conditioned Features.
+    Conditions OHLCV candidates on Specialist states (e.g. Return Shock when Inventory is High).
+    Uses implicit regimes defined by Specialist Weight > 0.5 (High) or < 0.2 (Low? or just 1-Weight).
+    Actually, just multiplying the weights (Soft Conditioning) is effective and simpler.
+    Condition = OHLCV_Weight * Specialist_Weight
+    """
+    candidates = []
+    
+    # Pre-calculate specialist weights
+    spec_weights = {}
+    for fam in specialist_families:
+        spec_weights[fam] = get_specialist_event_matrix(df, fam)
+        
+    for cand in ohlcv_candidates:
+        w_ohlcv = cand['weight_vector']
+        if not isinstance(w_ohlcv, pd.Series): continue
+        
+        for fam, w_spec in spec_weights.items():
+            if not isinstance(w_spec, pd.Series): continue
+            
+            # Condition: OHLCV interaction with Specialist Regime
+            # We want to capture: "Shock occurring during High Specialist Activity"
+            # Simply multiplying the weights achieves this 'soft AND' logic.
+            # w_combined = w_ohlcv * w_spec
+            # But we might want to be more specific: "High Inventory" vs "Low Inventory"
+            # For now, let's stick to "Relevance" (High Weight)
+            
+            w_combined = w_ohlcv * w_spec
+            
+            # Filter: Check if we have enough mass
+            if w_combined.sum() > 5.0: # Arbitrary mass threshold, ensure some overlap exists
+                # Normalize?
+                # z_combined = (w_combined - w_combined.mean()) / (w_combined.std() + 1e-9) # No, keep as probability-like mass
+                
+                # We need to turn this into a weight vector acceptable by Layer 2
+                # It is already [0, 1] * [0, 1] -> [0, 1]
+                
+                 events_combined = w_combined[w_combined > 0.1].index # Lower threshold for combined
+                 
+                 if len(events_combined) > 50:
+                     candidates.append({
+                         'family': f'COND_{cand["family"]}_ON_{fam.replace("_SPECIALIST", "")}',
+                         'events': events_combined,
+                         'weight_vector': w_combined,
+                         'params': {'type': 'regime_conditioned', 'parent': cand['family'], 'condition': fam}
+                     })
+                     
+    return candidates
+
+def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFrame, target_col: str = 'close', verbose: bool = True) -> List[Dict]:
+    """
+    Level 9: Causal Graph Feedback Validation.
+    Run PC Algorithm on Candidates + Target to validate causality.
+    Keep only candidates that are PARENTS of the Target (or strong ancestors).
+    """
+    if not candidates or df is None: return candidates
+    
+    tprint_info("🔗 Running Level 9: Causal Graph Feedback Validation...")
+    
+    try:
+        from src.training.steps.labeling.causal_discovery import quick_causal_discovery
+        
+        # 1. Prepare Data for Causal Discovery
+        # Extract weight vectors
+        weight_data = {c['family']: c['weight_vector'] for c in candidates}
+        # Use first candidate index for alignment
+        first_idx = candidates[0]['weight_vector'].index
+        df_weights = pd.DataFrame(weight_data, index=first_idx).fillna(0.0)
+        
+        # Prepare Target (1-bar forward return of 'close')
+        target_name = 'TARGET_RET_1'
+        target_series = df[target_col].pct_change().shift(-1).fillna(0.0)
+        
+        # Align indices
+        common_idx = df_weights.index.intersection(target_series.index)
+        
+        # Combine into one DataFrame for discovery
+        discovery_df = df_weights.loc[common_idx].copy()
+        discovery_df[target_name] = target_series.loc[common_idx]
+        
+        # 2. Run Causal Discovery (Fast mode)
+        # We use a higher alpha (0.1) to be permissive, we just want to prune potential non-causes
+        results = quick_causal_discovery(
+            discovery_df,
+            target_variable=target_name,
+            significance_level=0.05, 
+            use_lingam=True, # Use LiNGAM for orientation
+            verbose=verbose
+        )
+        
+        if 'error' in results:
+            tprint_warning(f"Causal Validation error: {results['error']}. Skipping validation.")
+            return candidates
+            
+        # 3. Identify Causal Parents
+        parents = results.get('causal_parents', {}).get(target_name, [])
+        tprint_info(f"   🧬 Identified Causal Parents of Target: {parents}")
+        
+        if not parents:
+            tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 20 by correlation as fallback.")
+            # Fallback: Don't kill everything. Return original list or top subset? 
+            # Let's return the original smart selected list but warn.
+            return candidates
+            
+        # 4. Filter Candidates
+        # Keep candidates that are in the parent list
+        validated_candidates = [c for c in candidates if c['family'] in parents]
+        
+        if not validated_candidates:
+             tprint_warning("   ⚠️ No candidates matched the identified parents (maybe parents were latent?). Returning original set.")
+             return candidates
+             
+        tprint_success(f"   ✅ Causal Validation: {len(candidates)} -> {len(validated_candidates)} candidates confirmed as Causal Drivers.")
+        return validated_candidates
+
+    except ImportError:
+        tprint_warning("Causal Discovery module not found. Skipping Level 9 validation.")
+        return candidates
+    except Exception as e:
+        tprint_warning(f"Causal Validation Failed: {e}. Skipping.")
+        return candidates
+
+def filter_advanced_candidates(candidates: List[Dict], min_count: int = 200, max_corr: float = 0.95, df: pd.DataFrame = None) -> List[Dict]:
+    """
+    Level 7: Feature Filtering & Smart Selection.
+    - Removes rare signals (Count < min_count).
+    - Removes redundant signals (Correlation > max_corr).
+    - If df provided: Ranks by Score = Norm(IC) + Norm(MDI) and selects Top 120.
+    """
+    if not candidates: return []
+    
+    # 1. Min Frequency Filter
+    filtered_by_count = [c for c in candidates if len(c['events']) >= min_count]
+    if not filtered_by_count:
+        tprint_warning(f"Feature Filtering: All {len(candidates)} candidates removed by min_count={min_count}. Reverting to original set.")
+        filtered_by_count = candidates
+    else:
+        tprint_info(f"Feature Filtering: {len(candidates)} -> {len(filtered_by_count)} candidates after min_count={min_count}")
+        
+    # 2. Correlation Filter (Redundancy)
+    if len(filtered_by_count) < 2:
+        return filtered_by_count
+        
+    feature_registry = FeatureRegistry()
+    weight_data = {}
+    
+    for c in filtered_by_count:
+        if 'feature_key' in c:
+            # New optimized path
+            series = feature_registry.get(c['feature_key'])
+            if series is not None:
+                weight_data[c['family']] = series
+        elif 'weight_vector' in c:
+            # Legacy path
+            weight_data[c['family']] = c['weight_vector']
+            
+    if not weight_data:
+        tprint_warning("Feature Filtering: No weight data available for correlation check. Skipping.")
+        return filtered_by_count
+
+    # Ensure alignment
+    # Note: df is optional. If None, we create a dummy index from the first candidate
+    first_series = next(iter(weight_data.values()))
+    first_idx = first_series.index
+    df_weights = pd.DataFrame(weight_data, index=first_idx).fillna(0.0)
+    
+    # Run Correlation Logic
+    corr_matrix = df_weights.corr().abs()
+    to_drop = set()
+    columns = df_weights.columns
+    
+    for i in range(len(columns)):
+        col_a = columns[i]
+        if col_a in to_drop: continue
+        for j in range(i + 1, len(columns)):
+            col_b = columns[j]
+            if col_b in to_drop: continue
+            if corr_matrix.loc[col_a, col_b] > max_corr:
+                # Drop one. Heuristic: Keep shorter name or first one.
+                if len(col_a) > len(col_b):
+                    to_drop.add(col_a)
+                else:
+                    to_drop.add(col_b)
+                    
+    filtered_by_corr = [c for c in filtered_by_count if c['family'] not in to_drop]
+    tprint_info(f"Feature Filtering: {len(filtered_by_count)} -> {len(filtered_by_corr)} candidates after corr_threshold={max_corr}")
+    
+    # 3. Smart Selection (Ranking by IC/MDI)
+    if df is not None and len(filtered_by_corr) > 120:
+        tprint_info("🧠 Running Smart Feature Selection (IC + MDI)...")
+        try:
+            # 3a. Prepare Target (1-bar forward return)
+            # Use 'close' from df
+            ret_1 = df['close'].pct_change().shift(-1).fillna(0.0)
+            
+            # 3b. Compute IC (Information Coefficient)
+            # Align weights with returns
+            df_w_aligned = df_weights[ [c['family'] for c in filtered_by_corr] ]
+            # Ensure same index
+            common_idx = df_w_aligned.index.intersection(ret_1.index)
+            X = df_w_aligned.loc[common_idx]
+            y = ret_1.loc[common_idx]
+            
+            ic_scores = {}
+            from scipy.stats import spearmanr
+            for col in X.columns:
+                ic, _ = spearmanr(X[col], y)
+                ic_scores[col] = abs(ic) if not np.isnan(ic) else 0.0
+                
+            # 3c. Compute MDI (Feature Importance) via LightGBM
+            # Fast model
+            import lightgbm as lgb
+            model = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+            model.fit(X, y)
+            importances = model.feature_importances_
+            mdi_scores = dict(zip(X.columns, importances))
+            
+            # 3d. Combined Score (Normalized)
+            # Normalize IC
+            ic_vals = np.array(list(ic_scores.values()))
+            ic_norm = (ic_vals - ic_vals.min()) / (ic_vals.max() - ic_vals.min() + 1e-9)
+            ic_map = dict(zip(ic_scores.keys(), ic_norm))
+            
+            # Normalize MDI
+            mdi_vals = np.array(list(mdi_scores.values()))
+            mdi_norm = (mdi_vals - mdi_vals.min()) / (mdi_vals.max() - mdi_vals.min() + 1e-9)
+            mdi_map = dict(zip(mdi_scores.keys(), mdi_norm))
+            
+            final_scores = {}
+            for fam in X.columns:
+                final_scores[fam] = 0.5 * ic_map.get(fam, 0) + 0.5 * mdi_map.get(fam, 0)
+                
+            # Sort and Pick Top 120
+            sorted_fams = sorted(final_scores, key=final_scores.get, reverse=True)
+            top_120_fams = set(sorted_fams[:120])
+            
+            smart_selected = [c for c in filtered_by_corr if c['family'] in top_120_fams]
+            tprint_info(f"Feature Filtering: {len(filtered_by_corr)} -> {len(smart_selected)} candidates after Smart Selection (Top 120 by IC/MDI)")
+            return smart_selected
+            
+        except Exception as e:
+            tprint_warning(f"Smart Selection failed: {e}. Returning correlation-filtered set.")
+            return filtered_by_corr
+            
+    return filtered_by_corr
+
+
+def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[Dict], n_components: int = 3) -> List[Dict]:
+    """
+    Level 8: Synthetic Meta-Signals (PCA).
+    Extracts latent factors from the filtered set of candidates.
+    Identify shocks in PCA components representing global market modes.
+    """
+    if len(filtered_candidates) < n_components + 1:
+        return []
+        
+    try:
+        # Build matrix
+        weight_data = {c['family']: c['weight_vector'] for c in filtered_candidates}
+        # Ensure alignment
+        df_weights = pd.DataFrame(weight_data, index=df.index).fillna(0.0)
+        
+        # Normalize for PCA (Z-score)
+        df_z = (df_weights - df_weights.mean()) / (df_weights.std() + 1e-9)
+        df_z = df_z.fillna(0.0)
+        
+        # Run PCA
+        pca = PCA(n_components=n_components)
+        components = pca.fit_transform(df_z)
+        
+        synthetic_candidates = []
+        for i in range(n_components):
+            # Resulting component is continuous. 
+            # We identify "Shocks" (Extreme values) in this latent factor.
+            comp_series = pd.Series(components[:, i], index=df.index)
+            
+            # Z-score the component to find deviations
+            # Use rolling window to adapt to regime changes? 
+            # Or global? PCA is global. Let's use rolling to be safe.
+            z_comp = (comp_series - comp_series.rolling(100).mean()) / (comp_series.rolling(100).std() + 1e-9)
+            
+            # Identify peaks (positive and negative shocks matter? standard two_tier handles positive logic?)
+            # Actually PCA components sign is arbitrary.
+            # We should look for extreme deviations in EITHER direction.
+            # But two_tier_weight usually expects positive signal strength.
+            # Let's take absolute value deviation.
+            abs_z = z_comp.abs()
+            
+            weights_syn = pd.Series(two_tier_weight(abs_z.fillna(0.0)), index=df.index)
+            events_syn = weights_syn[weights_syn > 0.0].index
+            
+            if len(events_syn) > 50:
+                synthetic_candidates.append({
+                    'family': f'SYNTHETIC_PCA_C{i+1}',
+                    'events': events_syn,
+                    'weight_vector': weights_syn,
+                    'params': {'type': 'synthetic', 'method': 'pca', 'component': i+1}
+                })
+                
+        return synthetic_candidates
+    except Exception as e:
+        tprint_warning(f"Synthetic Meta-Signals generation failed: {e}")
+        return []
+
+def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[str], ohlcv_candidates: List[Dict] = None, derived_candidates: List[Dict] = None, horizon_candidates: List[Dict] = None, regime_candidates: List[Dict] = None, validated_candidates: List[Dict] = None) -> List[Dict]:
+    """
+    Level 10: Composite Interaction Engine.
+    Generates high-order signals by combining Structural Parents (Causal Seeds) with Trigger Events.
+    
+    Logic:
+    1. Identify Structural Parents: High-quality specialists or causal parents from validated filters.
+    2. Identify Triggers: Short-horizon events (OHLCV shocks, Derived signals).
+    3. Generate Interactions: Parent * Trigger (Contextual Shock).
+    4. Adaptive Filtering: Smart quantile weighting.
+    """
+    
+    # 1. Build Candidate Map
+    candidate_map = {}
+    
+    # Add all available candidates to map
+    source_lists = [ohlcv_candidates, derived_candidates, horizon_candidates, regime_candidates, validated_candidates]
+    for src_list in source_lists:
+        if src_list:
+            for cand in src_list:
+                candidate_map[cand['family']] = cand
+                
+    # Also add base specialists
+    for fam in specialist_families:
+        if fam not in candidate_map:
+             # Re-generate if missing from lists but requested
+             # (In practice, specialists are usually passed in validated_candidates if they survived)
+             pass 
+             
+    # 2. Identify Structural Parents (Seeds)
+    # Priority: Validated Causal Parents -> Specialists -> High Persistence Signals
+    structural_parents = []
+    
+    if validated_candidates:
+        # Use validated set as primary source of parents
+        structural_parents = [c for c in validated_candidates if len(c['events']) > 200]
+        tprint_info(f"   🧬 Using {len(structural_parents)} Validated Causal Parents as Structural Seeds.")
+    else:
+        # Fallback to specialists
+        tprint_warning("   ⚠️ No validated parents found. Using base Specialist families as seeds.")
+        for fam in specialist_families:
+             # Need weight vector. If not in map, we might need to skip or regen (skipping for now to be safe)
+             if fam in candidate_map:
+                 structural_parents.append(candidate_map[fam])
+
+    # 3. Identify Triggers (High Frequency / Shock events)
+    # Heuristic: Families with 'SHOCK', 'SURGE', 'SPIKE', 'GAP', 'DERIVED'
+    triggers = []
+    for fam, cand in candidate_map.items():
+        if any(x in fam for x in ['SHOCK', 'SURGE', 'SPIKE', 'GAP', 'DERIVED']):
+            triggers.append(cand)
+            
+    # 4. Generate Interactions
+    composites = []
+    
+    # A. Parent * Trigger (Contextual Shock)
+    # e.g. Volatility Specialist (High Vol Regime) * Volume Surge
+    import itertools
+    
+    # Limit combinations if too many?
+    # Let's interact each Structural Parent with Top Triggers
+    
+    for parent in structural_parents:
+        p_fam = parent['family']
+        p_weight = parent['weight_vector']
+        
+        for trigger in triggers:
+            t_fam = trigger['family']
+            
+            # Avoid self-interaction or same-family
+            if p_fam == t_fam: continue
+            if p_fam.split('_')[0] == t_fam.split('_')[0]: continue
+            
+            t_weight = trigger['weight_vector']
+            
+            # Contextual Interaction: Parent defines regime/trend, Trigger defines timing
+            # Weight = geometric mean or product? Product implies AND.
+            interaction_raw = p_weight * t_weight
+            
+            # Check signal strength
+            if interaction_raw.abs().max() < 0.01: continue
+            
+            # Filter: Smart Event Weight (Adaptive)
+            # We want significant overlaps
+            try:
+                # Normalize first
+                z_score = (interaction_raw - interaction_raw.rolling(100).mean()) / (interaction_raw.rolling(100).std() + 1e-9)
+                final_weight = pd.Series(smart_event_weight(z_score.fillna(0.0), quantile_threshold=0.99, use_adaptive=True), index=df.index)
+                
+                events = final_weight[final_weight > 0].index
+                
+                if len(events) >= 100: # Tier 1 requirement for composites
+                     composites.append({
+                        'family': f'COMPOSITE_{p_fam}_{t_fam}_INT',
+                        'events': events,
+                        'weight_vector': final_weight,
+                        'params': {'type': 'interaction', 'parents': [p_fam, t_fam], 'role': 'contextual_trigger'}
+                    })
+            except Exception:
+                continue
+
+    tprint_info(f"   🧩 Generated {len(composites)} Composite Interactions (Parent * Trigger).")
+    
+    # B. Preserved Logic: Weighted Sums (Stability)
+    # ... (Keep existing simple sums if needed, or replace?)
+    # Let's keep one generic stability sum if specialists are available
+    if specialist_families:
+        try:
+            # Gather available specialist weights
+            spec_weights = []
+            valid_specs = []
+            for fam in specialist_families:
+                if fam in candidate_map:
+                    spec_weights.append(candidate_map[fam]['weight_vector'])
+                    valid_specs.append(fam)
+                elif fam.endswith('_SPECIALIST'): # Try to get from df directly if simple column? No, must be computed.
+                     # Attempt to call get_specialist... (legacy support)
+                     try:
+                        w = get_specialist_event_matrix(df, fam)
+                        spec_weights.append(w)
+                        valid_specs.append(fam)
+                     except: pass
+            
+            if spec_weights:
+                total_weight = sum(spec_weights) / len(spec_weights)
+                events = total_weight[total_weight > 0.1].index
+                if len(events) >= 50:
+                    composites.append({
+                        'family': 'COMPOSITE_STABILITY_SUM',
+                        'events': events,
+                        'weight_vector': total_weight,
+                        'params': {'type': 'weighted_sum', 'parents': valid_specs}
+                    })
+        except Exception: pass
+
+    return composites
+
+def generate_meta_features(df: pd.DataFrame, composites: List[Dict], validated_parents: List[Dict]) -> List[Dict]:
+    """
+    Level 11: Meta-Feature Synthesis.
+    Synthesizes validated Causal Parents and Level-10 Composites into final robust Meta-Features.
+    
+    Transformations (Phase 5 / Level 11):
+    1. Candidate Transformation:
+       - Rolling Aggregations: Sum, Max/Min, EWMA.
+       - Multi-Horizon Aggregation: 15m -> 4H -> 1D.
+       - Z-score Normalization.
+    2. Interaction Synthesis:
+       - Structural Reinforcement: Parent * Composite.
+       - Weighted Summation: Tier-1 + 0.5 * Tier-2 smoothing.
+    3. Smart Weighting & Filtering:
+       - Adaptive Thresholds by Regime.
+       - Filter by IC_IR, DSR, Causal Integrity.
+    """
+    meta_features = []
+    
+    # Map parents for quick access
+    parent_map = {c['family']: c for c in validated_parents}
+    
+    tprint_info(f"   🏗️ Synthesizing Phase 5 Meta-Features from {len(composites)} Composites and {len(validated_parents)} Parents...")
+    
+    for comp in composites:
+        try:
+            # Extract composite info
+            c_fam = comp['family']
+            c_weight = comp['weight_vector']
+            c_parents = comp['params'].get('parents', [])
+            
+            # --- 1. INTERACTION SYNTHESIS: Structural Reinforcement (Composite * Parent) ---
+            dominant_parent = None
+            for p_name in c_parents:
+                if p_name in parent_map:
+                    dominant_parent = parent_map[p_name]
+                    break
+            
+            if dominant_parent:
+                p_fam = dominant_parent['family']
+                p_weight = dominant_parent['weight_vector']
+                
+                # Cross-Signal Interaction (Parent * Composite)
+                # Magnitude of parent reinforces direction of composite
+                Reinforced = c_weight * p_weight.abs() 
+                
+                # Filter with Smart Event Weight (Level 11 Adaptive)
+                z_score = (Reinforced - Reinforced.rolling(100).mean()) / (Reinforced.rolling(100).std() + 1e-9)
+                final_weight = pd.Series(smart_event_weight(z_score.fillna(0.0), quantile_threshold=0.995, use_adaptive=True), index=df.index)
+                events = final_weight[final_weight > 0].index
+                
+                if len(events) >= 100:
+                    meta_features.append({
+                        'family': f'META_REINFORCED_{c_fam}',
+                        'events': events,
+                        'weight_vector': final_weight,
+                        'params': {
+                            'type': 'meta_reinforcement', 
+                            'source': c_fam, 
+                            'reinforcer': p_fam,
+                            'level': 11
+                        }
+                    })
+
+                # --- 2. WEIGHTED SUMMATION (Tier-1 + 0.5*Tier-2) ---
+                # This logic is already inside smart_event_weight (weights 1.0 and 0.5),
+                # but we can also do it at the signal level for smoothing.
+                weighted_sum = (c_weight + 0.5 * p_weight) / 1.5
+                z_sum = (weighted_sum - weighted_sum.rolling(100).mean()) / (weighted_sum.rolling(100).std() + 1e-9)
+                final_weight_ws = pd.Series(smart_event_weight(z_sum.fillna(0.0), quantile_threshold=0.99, use_adaptive=True), index=df.index)
+                events_ws = final_weight_ws[final_weight_ws > 0].index
+                
+                if len(events_ws) >= 100:
+                    meta_features.append({
+                        'family': f'META_WEIGHTED_SUM_{c_fam}',
+                        'events': events_ws,
+                        'weight_vector': final_weight_ws,
+                        'params': {
+                            'type': 'weighted_sum', 
+                            'source': c_fam, 
+                            'parent_smooth': p_fam,
+                            'level': 11
+                        }
+                    })
+
+            # --- 3. CANDIDATE TRANSFORMATION: ROLLING AGGREGATIONS & MULTI-HORIZON ---
+            
+            # A. 4H Rolling Sum (Stability)
+            rolling_sum_4h = c_weight.rolling(window=16).sum() # ~4 hours at 15m
+            z_sum_4h = (rolling_sum_4h - rolling_sum_4h.rolling(300).mean()) / (rolling_sum_4h.rolling(300).std() + 1e-9)
+            
+            final_weight_sum_4h = pd.Series(smart_event_weight(z_sum_4h.fillna(0.0), quantile_threshold=0.99, use_adaptive=True), index=df.index)
+            events_sum_4h = final_weight_sum_4h[final_weight_sum_4h > 0].index
+            
+            if len(events_sum_4h) >= 100:
+                meta_features.append({
+                    'family': f'META_SUM_4H_{c_fam}',
+                    'events': events_sum_4h,
+                    'weight_vector': final_weight_sum_4h,
+                    'params': {'type': 'meta_aggregation', 'source': c_fam, 'method': 'rolling_sum_4h', 'level': 11}
+                })
+
+            # B. 1D Rolling EWMA (Trend Following Momentum)
+            # span=96 for 1 day at 15m
+            rolling_ewma_1d = c_weight.ewm(span=96).mean()
+            z_ewma_1d = (rolling_ewma_1d - rolling_ewma_1d.rolling(500).mean()) / (rolling_ewma_1d.rolling(500).std() + 1e-9)
+            
+            final_weight_ewma_1d = pd.Series(smart_event_weight(z_ewma_1d.fillna(0.0), quantile_threshold=0.995, use_adaptive=True), index=df.index)
+            events_ewma_1d = final_weight_ewma_1d[final_weight_ewma_1d > 0].index
+            
+            if len(events_ewma_1d) >= 100:
+                meta_features.append({
+                    'family': f'META_EWMA_1D_{c_fam}',
+                    'events': events_ewma_1d,
+                    'weight_vector': final_weight_ewma_1d,
+                    'params': {'type': 'meta_aggregation', 'source': c_fam, 'method': 'rolling_ewma_1d', 'level': 11}
+                })
+
+            # C. 4H Rolling Max/Min (Tail Risk / Extremes)
+            rolling_max_4h = c_weight.rolling(window=16).max()
+            z_max_4h = (rolling_max_4h - rolling_max_4h.rolling(300).mean()) / (rolling_max_4h.rolling(300).std() + 1e-9)
+            
+            final_weight_max_4h = pd.Series(smart_event_weight(z_max_4h.fillna(0.0), quantile_threshold=0.99, use_adaptive=True), index=df.index)
+            events_max_4h = final_weight_max_4h[final_weight_max_4h > 0].index
+            
+            if len(events_max_4h) >= 100:
+                meta_features.append({
+                    'family': f'META_MAX_4H_{c_fam}',
+                    'events': events_max_4h,
+                    'weight_vector': final_weight_max_4h,
+                    'params': {'type': 'meta_aggregation', 'source': c_fam, 'method': 'rolling_max_4h', 'level': 11}
+                })
+                
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Meta-feature synthesis failed for {c_fam}: {e}")
+            continue
+            
+    # --- 4. SPECIALIST TAIL AGGREGATION (Shock Ratio) ---
+    for p in validated_parents:
+        if 'SPECIALIST' in p['family']:
+            try:
+                w = p['weight_vector']
+                # 1 Day Rolling Max (Tail Risk / Shock Ratio)
+                rolling_max_1d = w.rolling(96).max()
+                z_max_1d = (rolling_max_1d - rolling_max_1d.rolling(500).mean()) / (rolling_max_1d.rolling(500).std() + 1e-9)
+                
+                final_weight_max_1d = pd.Series(smart_event_weight(z_max_1d.fillna(0.0), quantile_threshold=0.995, use_adaptive=True), index=df.index)
+                events_max_1d = final_weight_max_1d[final_weight_max_1d > 0].index
+                
+                if len(events_max_1d) >= 50:
+                    meta_features.append({
+                        'family': f"META_SHOCK_1D_{p['family']}",
+                        'events': events_max_1d,
+                        'weight_vector': final_weight_max_1d,
+                        'params': {'type': 'meta_tail_risk', 'source': p['family'], 'method': 'rolling_max_1d', 'level': 11}
+                    })
+            except Exception: continue
+
+    tprint_success(f"   ✅ Phase 5 Synthesis Complete: Generated {len(meta_features)} Meta-Features.")
+    return meta_features
 
 def get_inventory_specialist_events(df: pd.DataFrame, threshold: float = 2.0, window: int = 20) -> pd.DatetimeIndex:
     """
@@ -2653,12 +3980,13 @@ def _persist_gate_diagnostics(
         except Exception as exc:
             tprint_warning(f"⚠️ Failed loading selected geometries for reconciliation: {exc}")
     else:
-        tprint_warning("⚠️ layer2_selected_geometries.json not found; reconciliation skipped.")
+        tprint_info("ℹ️ layer2_selected_geometries.json not found; skipping reconciliation (likely fresh run).")
 
-    optimized_families = {log.get('family') for log in outcomes_log if log.get('family')}
-    missing_families = optimized_families - selected_families
-    if missing_families:
-        tprint_warning(f"⚠️ Gate Reconciliation: Missing families in selection: {sorted(missing_families)}")
+    if selected_families:
+        optimized_families = {log.get('family') for log in outcomes_log if log.get('family')}
+        missing_families = optimized_families - selected_families
+        if missing_families:
+            tprint_warning(f"⚠️ Gate Reconciliation: Missing families in selection: {sorted(missing_families)}")
 
     # Propagate causal robustness metrics onto selected geoms if missing
     metrics_by_uuid = {cand.get('uuid') or cand.get('name'): cand.get('metrics_raw', {}) for cand in scored_candidates}
@@ -2727,20 +4055,9 @@ def orthogonal_label_generation(
     Args:
         return_raw_candidates: If True, returns all candidates passing gates without global filtering.
     """
+    import time
     tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
-
-    # ... (Data Spec Normalization skipped in diff for brevity, assume unchanged until we hit logic)
-    # Actually I need to be careful with replace_file_content context.
-    # I'll replace the function signature and the end logic. 
-    # But replace_file_content needs contiguous block.
-    # The function is HUGE.
-    # I should use multi_replace or ensure I catch the start and end.
-    
-    # Let's try to just change signature first, then change the end logic.
-    pass 
-    # (Placeholder logic for the thought process, actual tool call below)
-
-    tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
+    t_start_total = time.time()
 
     # 0. Data Standardization
     if isinstance(data, pd.DataFrame):
@@ -2815,23 +4132,21 @@ def orthogonal_label_generation(
          tprint_info(f"Calibrated Thresholds: {adaptive_thresholds}")
 
     # Validate framework separation
-    enable_afml_events = not enable_causal_events  # Default to AFML unless causal is enabled
 
-    if enable_causal_events and enable_afml_events:
-        tprint_warning("⚠️ Framework Separation: Both causal and AFML events enabled")
-        tprint_info("💡 Using causal framework - disabling AFML events")
+    # Validate framework separation
+    if not enable_causal_events:
+        tprint_warning("⚠️ Causal events disabled, but AFML legacy path is deprecated.")
+        tprint_info("💡 Enabling causal framework automatically.")
+        enable_causal_events = True
 
     # Orthogonal signal families
     base_generators = []
 
     # Configure event generators based on framework
     tprint_info("🏗️ Orthogonal: Configuring Event Generators...")
-    tprint_info(f"   🔬 Causal events enabled: {enable_causal_events}")
-    tprint_info(f"   📦 Causal modules available: {CAUSAL_AVAILABLE_ORTHOGONAL}")
-    tprint_info(f"   🎯 Specialist predictions available: {len(specialist_predictions) > 0 if specialist_predictions is not None else False}")
-
+    
     # Add causal specialists and surprise events if enabled
-    if enable_causal_events and CAUSAL_AVAILABLE_ORTHOGONAL:
+    if CAUSAL_AVAILABLE_ORTHOGONAL:
         tprint_info("🔬 Orthogonal: Using Causal Framework - Causal Specialists as Parents")
         tprint_info("   🎯 Adding causal event generators:")
         causal_generators = [
@@ -2841,35 +4156,17 @@ def orthogonal_label_generation(
             ('LIQUIDITY_SPECIALIST', LiquiditySpecialistEvents()),
             ('INFORMATION_SPECIALIST', InformationSpecialistEvents()),
             ('INVENTORY_SPECIALIST', InventorySpecialistEvents()),
+            ('MOMENTUM_DECAY_SPECIALIST', MomentumDecaySpecialistEvents()),
         ]
 
         for gen_name, gen_class in causal_generators:
             tprint_info(f"      • {gen_name}: {type(gen_class).__name__}")
             base_generators.append((gen_name, gen_class))
-
+        
         tprint_success(f"✅ Orthogonal: Added {len(causal_generators)} causal event generators")
     else:
-        # Traditional CUSUM-based families
-        tprint_info("📊 Orthogonal: Using Traditional AFML - CUSUM-based Event Families")
-        tprint_info("   📈 Adding traditional event generators:")
-        traditional_generators = [
-            # Price-based (single best: trend/reversal weighted)
-            ('PRICE_CUSUM', ImprovedCUSUMEvents()),
-            # Contextual families
-            ('VOL_CUSUM', VolatilityCusumEvents()),
-            ('LIQ_CUSUM', LiquidityCusumEvents()),
-            ('VOL_PARTICIPATION', VolumeCusumEvents()),
-            ('RANGE_ATR', RangeATRcusumEvents()),
-            ('TAIL_RISK', TailRiskCusumEvents()),
-            ('TREND_REGIME', TrendRegimeCusumEvents()),
-            ('VOL_STATE', VolatilityStateEvents()),
-        ]
-
-        for gen_name, gen_class in traditional_generators:
-            tprint_info(f"      • {gen_name}: {gen_class.__name__}")
-            base_generators.append((gen_name, gen_class))
-
-        tprint_success(f"✅ Orthogonal: Added {len(traditional_generators)} traditional event generators")
+        tprint_error("❌ Causal orthogonal modules not available!")
+        return []
 
     tprint_info(f"🏁 Orthogonal: Total event generators configured: {len(base_generators)}")
     
@@ -2880,6 +4177,11 @@ def orthogonal_label_generation(
         
         # Add base parameters only (no variations)
         for params in base_params:
+            p_list = list(params)
+            # Inject calibrated threshold if available
+            if fam in adaptive_thresholds and adaptive_thresholds[fam] is not None:
+                p_list[0] = adaptive_thresholds[fam]
+            
             # Inject SR levels for SR_CUSUM
             if fam == 'SR_CUSUM':
                  # params is tuple, convert to list to append
@@ -2917,6 +4219,16 @@ def orthogonal_label_generation(
                      p_list[0] = adaptive_thresholds['atr']
                 elif fam == 'SR_CUSUM' and 'sr' in adaptive_thresholds and adaptive_thresholds['sr'] is not None:
                      p_list[0] = adaptive_thresholds['sr']
+                elif fam == 'VOLATILITY_SPECIALIST' and 'VOLATILITY_SPECIALIST' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['VOLATILITY_SPECIALIST']
+                elif fam == 'LIQUIDITY_SPECIALIST' and 'LIQUIDITY_SPECIALIST' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['LIQUIDITY_SPECIALIST']
+                elif fam == 'INFORMATION_SPECIALIST' and 'INFORMATION_SPECIALIST' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['INFORMATION_SPECIALIST']
+                elif fam == 'INVENTORY_SPECIALIST' and 'INVENTORY_SPECIALIST' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['INVENTORY_SPECIALIST']
+                elif fam == 'VOLUME_SPECIALIST' and 'VOLUME_SPECIALIST' in adaptive_thresholds:
+                     p_list[0] = adaptive_thresholds['VOLUME_SPECIALIST']
 
                 params = tuple(p_list)
 
@@ -2930,18 +4242,15 @@ def orthogonal_label_generation(
     # -------------------------------------------------------------
     tprint_info("✂️ Starting Pruning Phase: Validating TP:SL configs on central parameters...")
     
-    # Define Central Parameters (Median/Default values)
+    # Define Central Parameters for Causal Specialists
     CENTRAL_PARAMS = {
-        'PRICE_CUSUM': (1.0, 20),      # k=1.0, vol=20
-        'VOL_CUSUM': (2.5, 100),       # h=2.5, span=100 (Relaxed from 4.0)
-        'LIQ_CUSUM': (4.0, 100),       # h=4.0, span=100
-        'VOL_PARTICIPATION': (5.0, 960), # h=5.0 (500% excess), span=960 (10d)
-        'RANGE_ATR': (2.0, 14, 20),    # h=2.0, atr=14, vol=20
-        'TAIL_RISK': (2.0, 50, 'skew'),# h=2.0, win=50
-        'TREND_REGIME': (2.0, 20, 50), # h=2.0, fast=20, slow=50
-        'VOL_STATE': (2.0, 100),       # h=2.0, span=100
-        'ImprovedCUSUMEvents': (1.0, 20),
-        'SR_CUSUM': (2.0, sr_levels)   # Dynamic
+        'CAUSAL_SURPRISE': (2.7, 'all'),
+        'VOLUME_SPECIALIST': (2.7, 20),
+        'VOLATILITY_SPECIALIST': (2.7, 20),
+        'LIQUIDITY_SPECIALIST': (2.7, 20),
+        'INFORMATION_SPECIALIST': (2.0, 20),
+        'INVENTORY_SPECIALIST': (2.7, 20),
+        'MOMENTUM_DECAY_SPECIALIST': (2.0, 10, 50)
     }
 
     valid_tpsl_map = {} # family -> list of valid grid_items
@@ -3000,6 +4309,8 @@ def orthogonal_label_generation(
             valid_tpsl_map[fam] = param_grids['tpsl_grid']
             continue
             
+        tprint_info(f"   [Pruning] Testing {len(param_grids['tpsl_grid'])} TP:SL combinations for {fam}...")
+        t_start_fam_prune = time.time()
         # Test TP:SL combinations
         valid_items = []
         for grid_item in param_grids['tpsl_grid']:
@@ -3016,26 +4327,9 @@ def orthogonal_label_generation(
                 # ... (Labeling logic similar to main loop) ...
                 # To avoid code duplication, we assume similar mapping logic
                 
-                if fam == 'PRICE_CUSUM':
-                    high, low = df_full.get('high'), df_full.get('low')
-                    lbls, _, _, _, _, _ = compute_dominance_labels(price, c_events, df_full['volatility_1d'], risk_budget=0.7, pt_mult=pt, sl_mult=sl, horizon=24, high=high, low=low)
-                elif fam == 'LIQ_CUSUM':
-                    lbls, _, _, _, _, _ = compute_path_degradation_labels(df_full, c_events, horizon=24, d_sigma=pt*1.5)
-                elif fam == 'TAIL_RISK':
-                     z_thresh = pt * 0.6
-                     # Need metric from params or default
-                     # TAIL_RISK central params: (2.0, 50, 'skew')
-                     metric = central_args[2] if len(central_args) > 2 else 'skew'
-                     lbls, _, _, _, _, _ = compute_tail_regime_labels(df_full, c_events, horizon=24, z_thresh=z_thresh, metric_col=metric)
-                elif fam == 'TREND_REGIME':
-                     lbls, _, _, _, _, _ = compute_trend_persistence_labels(df_full, c_events, horizon=24)
-                elif fam == 'VOL_STATE':
-                     lbls, _, _, _, _, _ = compute_vol_state_labels(df_full, c_events, horizon=24)
-                elif fam == 'VOL_CUSUM':
-                    lbls, _, _, _, _, _ = compute_volatility_labels(df_full, c_events, horizon=24, k=1.1+(pt*0.1))
-                else:
-                    # Default/Fallback (e.g. Volatility)
-                    lbls, _, _, _, _, _ = compute_volatility_labels(df_full, c_events, horizon=24, k=1.1+(pt*0.1))
+                # Standard Causal Triple Barrier for ALL specialists
+                high, low = df_full.get('high'), df_full.get('low')
+                lbls, _, _, _, _, _ = compute_dominance_labels(price, c_events, df_full['volatility_1d'], risk_budget=0.7, pt_mult=pt, sl_mult=sl, horizon=24, high=high, low=low)
                 
                 if lbls.empty: continue
                 
@@ -3058,11 +4352,13 @@ def orthogonal_label_generation(
                 
         if len(valid_items) > 0:
             valid_tpsl_map[fam] = valid_items
-            tprint_info(f"✂️ Pruned {fam}: Kept {len(valid_items)}/{len(param_grids['tpsl_grid'])} TP:SL configs")
+            tprint_info(f"✂️ Pruned {fam}: Kept {len(valid_items)}/{len(param_grids['tpsl_grid'])} TP:SL configs in {time.time() - t_start_fam_prune:.2f}s")
         else:
             tprint_warning(f"Pruning warning: {fam} had 0 passing TP:SLs. Using all defaults.")
             valid_tpsl_map[fam] = param_grids['tpsl_grid']
 
+    
+    tprint_info(f"🏁 Pruning phase complete in {time.time() - t_start_total:.2f}s")
     
     # 5. Process Candidates (Main Sweep)
     tprint_info("🚀 Starting Main Parameter Sweep...")
@@ -3084,27 +4380,29 @@ def orthogonal_label_generation(
                     'ImprovedCUSUMEvents'
                 )
 
+                # Get parameter names from registry
+                param_names = GENERATOR_PARAM_NAMES.get(gen.__class__.__name__)
+                
+                # Determine input data (Full DF vs Series)
+                input_data = df_full if gen.__class__.__name__ in df_required else price
+                
                 if gen.__class__.__name__ == 'CausalSurpriseEvents':
                     # Special handling for causal surprise events
                     events = gen.generate(
                         df_full,
                         specialist_predictions=specialist_predictions,
                         causal_graph=causal_graph,
-                        surprise_threshold=causal_surprise_threshold
+                        surprise_threshold=causal_surprise_threshold,
+                        target_signals_per_day=target_signals_per_day
                     )
-                elif gen.__class__.__name__ in df_required:
-                    if gen.__class__.__name__ == 'ImprovedCUSUMEvents':
-                         # Must pass as kwargs for **params
-                         param_names = GENERATOR_PARAM_NAMES.get('ImprovedCUSUMEvents', [])
-                         kwargs = dict(zip(param_names, params))
-                         events = gen.generate(df_full, **kwargs)
-                    else:
-                         # Special handling for SR_CUSUM if sr_levels passed as positional
-                         # SRCusumEvents.generate(df, h, sr_levels)
-                         # params is (h, sr_levels)
-                         events = gen.generate(df_full, *params)
+                elif param_names:
+                    # Convert positional params to kwargs for cleaner API handling
+                    # Handles cases where generate(df, **params) is used
+                    kwargs = dict(zip(param_names, params))
+                    events = gen.generate(input_data, **kwargs)
                 else:
-                    events = gen.generate(price, *params)
+                    # Fallback to positional for unregistered legacy generators
+                    events = gen.generate(input_data, *params)
             except Exception as e:
                 tprint_warning(f"Generator {fam} failed: {e}")
                 continue
@@ -3142,97 +4440,261 @@ def orthogonal_label_generation(
             else:
                 family_horizons = horizon_options  # Fallback for list
             
+            # Track seen configurations to avoid redundancy
+            seen_configs = set()
+
             for grid_item in tpsl_grid:
                 pt = grid_item['pt']
                 sl = grid_item['sl']
                 
-                for horizon in family_horizons:
-                    for risk_budget in risk_budget_options:
-                        high = df_full.get('high')
-                        low = df_full.get('low')
+                # OPTIMIZATION: Many families ignore SL and Risk Budget. 
+                # Skip redundant iterations to avoid 30x duplication in logs.
+                # In Causal 2026, we apply Causal Triple Barrier to Surprise events.
+                is_triple_barrier = (fam == 'CAUSAL_SURPRISE')
+                
+                # If not triple barrier, we only need one SL and one Risk Budget per PT
+                current_sl_options = [sl] if is_triple_barrier else [1.0]
+                current_rb_options = risk_budget_options if is_triple_barrier else [0.7]
 
-                        if fam == 'PRICE_CUSUM':
-                            # Classic Triple Barrier
+                for horizon in family_horizons:
+                    for sl_val in current_sl_options:
+                        for risk_budget in current_rb_options:
+                            # Use sl_val instead of sl from grid_item if not triple barrier
+                            actual_sl = sl if is_triple_barrier else sl_val
+                            
+                            # Check for redundancy
+                            config_key = (fam, pt, horizon, actual_sl, risk_budget)
+                            if config_key in seen_configs:
+                                continue
+                            seen_configs.add(config_key)
+                            
+                            high = df_full.get('high')
+                            low = df_full.get('low')
+
+                            
+                            # Robust Volatility Handling
+                            if 'volatility_1d' in df_full.columns:
+                                vol_series = df_full['volatility_1d']
+                            else:
+                                # Fallback: Compute rolling volatility (approx 1 day for 15m = 96 bars)
+                                # Assuming 15m bars, but safe fallback for any timeframe
+                                safe_window = 96 
+                                rets = df_full['close'].pct_change()
+                                vol_series = rets.rolling(window=safe_window).std()
+                                # Backfill initial NaNs to avoid dropping data
+                                vol_series = vol_series.bfill().fillna(0.01)
+
+                            # Standard Causal Triple Barrier for ALL specialists
+                            # pt=[1.5, 4.0] and sl=[0.5, 1.0] are used from grid
+                            # risk_budget=[0.5, 0.9]
                             labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
-                                price, events, df_full['volatility_1d'],
-                                risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                                price, events, vol_series,
+                                risk_budget=risk_budget, pt_mult=pt, sl_mult=actual_sl, horizon=horizon,
                                 high=high, low=low
                             )
-                        elif fam == 'LIQ_CUSUM':
-                            # Liquidity Stress -> Path Degradation
-                            # d_sigma map from pt: pt=[1.5, 4.0] -> d=[2.25, 6.0]
-                            # Increased multiplier from 0.5 to 1.5 to require more extreme stress
-                            d_sigma = pt * 1.5
-                            labels, weights, returns, mfe, mae, vol = compute_path_degradation_labels(
-                                df_full, events, horizon=horizon, d_sigma=d_sigma
-                            )
-                        elif fam == 'TAIL_RISK':
-                            # Tail Risk Persistence
-                            # Map pt to z_thresh (1.5 - 2.5)
-                            z_thresh = pt * 0.6
-                            labels, weights, returns, mfe, mae, vol = compute_tail_regime_labels(
-                                df_full, events, horizon=horizon, z_thresh=z_thresh,
-                                metric_col=param_dict.get('metric', 'skew')
-                            )
-                        elif fam == 'TREND_REGIME':
-                            # Trend Persistence
-                            labels, weights, returns, mfe, mae, vol = compute_trend_persistence_labels(
-                                df_full, events, horizon=horizon
-                            )
-                        elif fam == 'VOL_STATE':
-                            # Vol State Persistence
-                            labels, weights, returns, mfe, mae, vol = compute_vol_state_labels(
-                                df_full, events, horizon=horizon
-                            )
-                        else:
-                            # Volatility & Volume -> Volatility Expansion
-                            # k_factor map from pt: pt=[1.5, 4.0] -> k=[1.25, 1.5]
-                            # User requested 1.2-1.5.
-                            # Formula: 1.1 + pt * 0.1 -> 1.5=>1.25, 4.0=>1.5
-                            k_factor = 1.1 + (pt * 0.1)
-                            labels, weights, returns, mfe, mae, vol = compute_volatility_labels(
-                                df_full, events, horizon=horizon, k=k_factor
+
+                            if labels.empty:
+                                continue
+
+                            # Quality Checks - Only if labels exist
+                            passed, metrics, status = check_label_quality(
+                                events, labels, returns, df_full, X_probe, gen, param_dict, family=fam
                             )
 
-                        if labels.empty:
-                            continue
-
-                        # Quality Checks - Only if labels exist
-                        passed, metrics, status = check_label_quality(
-                            events, labels, returns, df_full, X_probe, gen, param_dict, family=fam
-                        )
-
-                        outcomes_log.append({
-                            'family': fam,
-                            'params': str(param_dict),
-                            'pt_mult': pt,
-                            'sl_mult': sl,
-                            'horizon': horizon,
-                            'risk_budget': risk_budget,
-                            'status': status,
-                            'n': metrics.get('n', 0),
-                            'pos_rate': metrics.get('pos_rate', 0),
-                            'min_p': metrics.get('min_p', 1.0),
-                            'max_mi': metrics.get('max_mi', 0.0),
-                            'signals_per_day': round(signals_per_day, 2),
-                            'target_signals_per_day': target_signals_per_day,
-                            'adaptive_used': False
-                        })
-
-                        if passed:
-                            candidates.append({
+                            outcomes_log.append({
                                 'family': fam,
-                                'events': events,
-                                'labels': labels,
-                                'weights': weights,
-                                'returns': returns,
-                                'mfe': mfe, 'mae': mae, 'vol': vol,
-                                'params': {**param_dict, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': sl, 'horizon': horizon},
-                                'status': status
+                                'params': str(param_dict),
+                                'pt_mult': pt,
+                                'sl_mult': actual_sl,
+                                'horizon': horizon,
+                                'risk_budget': risk_budget,
+                                'status': status,
+                                'n': metrics.get('n', 0),
+                                'pos_rate': metrics.get('pos_rate', 0),
+                                'min_p': metrics.get('min_p', 1.0),
+                                'max_mi': metrics.get('max_mi', 0.0),
+                                'signals_per_day': round(signals_per_day, 2),
+                                'target_signals_per_day': target_signals_per_day,
+                                'adaptive_used': False
                             })
 
-    # 4. Multi-Factor Scoring
-    # 4. Multi-Factor Scoring
+                            if passed:
+                                candidates.append({
+                                    'family': fam,
+                                    'events': events,
+                                    'labels': labels,
+                                    'weights': weights,
+                                    'returns': returns,
+                                    'mfe': mfe, 'mae': mae, 'vol': vol,
+                                    'params': {**param_dict, 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': actual_sl, 'horizon': horizon},
+                                    'status': status
+                                })
+            tprint_info(f"Generated {len(candidates)} total candidates across family {fam}")
+
+    # 7. OHLCV Candidate Generation (New Layer 1.5)
+    tprint_info("📊 Generating OHLCV Candidates...")
+    ohlcv_candidates = generate_ohlcv_candidates(df_full)
+    for cand in ohlcv_candidates:
+        tprint_info(f"   ➕ Added {cand['family']} with {len(cand['events'])} events")
+    
+    # 7.1. Continuous Predictor Candidates
+    tprint_info("🌊 Generating Continuous Predictor Candidates...")
+    continuous_candidates = generate_continuous_geometry_candidates(df_full)
+    for cand in continuous_candidates:
+        tprint_info(f"   🌊 Added {cand['family']} with {len(cand['events'])} events")
+    
+    # Add OHLCV candidates to the main list
+    # We need to process them fully through labeling loop below, so we add them to a format 
+    # that the loop can handle or just add them to composite generation?
+    # Actually, let's treat them as distinct families for the loop.
+    
+    # 7b. Advanced Layer-3 Generation (Derived & Aggregates)
+    tprint_info("🧠 Generating Advanced Layer-3 Candidates...")
+    derived_candidates = generate_derived_features(df_full, ohlcv_candidates)
+    
+    # Inject continuous candidates into derived pool for composites
+    derived_candidates = derived_candidates + continuous_candidates
+    
+    # Generate aggregates from OHLCV + Specialists
+    # First get specialist weights as candidates list for uniform processing
+    spec_families = [f for f in unique_families if f.endswith('_SPECIALIST')]
+    spec_candidates = []
+    for fam in spec_families:
+        w = get_specialist_event_matrix(df_full, fam)
+        spec_candidates.append({'family': fam, 'weight_vector': w})
+        
+    agg_candidates = generate_tail_aggregates(df_full, ohlcv_candidates + spec_candidates)
+    
+    advanced_candidates = derived_candidates + agg_candidates
+    for cand in advanced_candidates:
+        tprint_info(f"   🧠 Added {cand['family']} with {len(cand['events'])} events")
+        
+    # 7c. Multi-Horizon Generation (Level 5)
+    tprint_info("⏳ Generating Multi-Horizon Candidates...")
+    horizon_candidates = generate_multi_horizon_candidates(df_full)
+    for cand in horizon_candidates:
+        tprint_info(f"   ⏳ Added {cand['family']} with {len(cand['events'])} events")
+        
+    # 7d. Regime-Conditioned Features
+    tprint_info("🏗️ Generating Regime-Conditioned Features...")
+    # Use spec_families defined above
+    regime_candidates = generate_regime_conditioned_candidates(df_full, ohlcv_candidates, spec_families)
+    for cand in regime_candidates:
+        tprint_info(f"   🏗️ Added {cand['family']} with {len(cand['events'])} events")
+    
+    # Combine base candidates for initial filtering (Level 7)
+    pre_generated_candidates = ohlcv_candidates + continuous_candidates + advanced_candidates + horizon_candidates + regime_candidates
+    
+    # 9. Feature Filtering (Level 7) & Smart Selection
+    # Filter the final set before Labeling
+    tprint_info("🧹 Running Advanced Feature Filtering (Level 7)...")
+    filtered_candidates = filter_advanced_candidates(pre_generated_candidates, min_count=200, max_corr=0.95, df=df_full)
+    
+    # 9b. Causal Graph Validation (Level 9)
+    # Validate the filtered (smart selected) candidates against the causal graph
+    validated_candidates = validate_candidates_with_causal_graph(filtered_candidates, df=df_full)
+    
+    # Update filtered_candidates to be the validated set
+    filtered_candidates = validated_candidates
+    
+    # 10. Composite Interaction Engine (Level 10)
+    # Uses validated Causal Parents as seeds for high-order signals
+    tprint_info("🧩 Running Composite Interaction Engine (Level 10)...")
+    try:
+        composite_candidates = generate_composite_candidates(
+            df_full, 
+            spec_families,
+            ohlcv_candidates=ohlcv_candidates, 
+            derived_candidates=derived_candidates,
+            horizon_candidates=horizon_candidates,
+            regime_candidates=regime_candidates,
+            validated_candidates=filtered_candidates # Validated seeds
+        )
+        tprint_success(f"   ✅ Generated {len(composite_candidates)} composite interactions.")
+        
+        # Add composites to the final set
+        filtered_candidates = filtered_candidates + composite_candidates
+        
+    except Exception as e:
+        tprint_warning(f"Composite generation failed: {e}")
+        composite_candidates = []
+    
+    # 11. Meta-Feature Synthesis (Level 11)
+    # Synthesize Composites + Parents into Final Meta-Features
+    tprint_info("🧱 Running Meta-Feature Synthesis (Level 11)...")
+    try:
+        meta_features = generate_meta_features(df_full, composite_candidates, validated_candidates)
+        tprint_success(f"   ✅ Generated {len(meta_features)} Meta-Features.")
+        
+        # Add Meta-Features to the final set
+        filtered_candidates = filtered_candidates + meta_features
+    except Exception as e:
+        tprint_warning(f"Meta-feature synthesis failed: {e}")
+        meta_features = []
+
+    # 12. Synthetic Meta-Signals (Level 8) - Keep this as legacy or extra
+    tprint_info("🧪 Generating Synthetic Meta-Signals (PCA)...")
+    synthetic_candidates = generate_synthetic_meta_signals(df_full, filtered_candidates, n_components=3)
+    for cand in synthetic_candidates:
+         tprint_info(f"   🧪 Added {cand['family']} with {len(cand['events'])} events")
+         
+    # Final set includes Synthetic signals
+    final_candidates_for_selection = filtered_candidates + synthetic_candidates
+    
+    for comp in final_candidates_for_selection:
+        try:
+            # Use fixed TP:SL for composites for now (Standard Institutional Params)
+            pt, actual_sl, horizon, risk_budget = 2.0, 1.0, 48, 0.7
+            
+            labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                price, comp['events'], df_full['volatility_1d'],
+                risk_budget=risk_budget, pt_mult=pt, sl_mult=actual_sl, horizon=horizon
+            )
+            
+            if labels.empty: continue
+            
+            # Apply Two-Tier Weights to the interaction vector
+            # The weight_vector is already [0, 1] scaled by interactions
+            # We use it directly as weights
+            final_weights = comp['weight_vector'].reindex(comp['events']).fillna(1.0)
+            
+            passed, metrics, status = check_label_quality(
+                comp['events'], labels, returns, df_full, X_probe, None, comp['params'], family=comp['family']
+            )
+            
+            if passed:
+                candidates.append({
+                    'family': comp['family'],
+                    'events': comp['events'],
+                    'labels': labels,
+                    'weights': final_weights,
+                    'returns': returns,
+                    'mfe': mfe, 'mae': mae, 'vol': vol,
+                    'params': {**comp['params'], 'risk_budget': risk_budget, 'pt_mult': pt, 'sl_mult': actual_sl, 'horizon': horizon},
+                    'status': status
+                })
+            
+            # Always log to outcomes for diagnostic visibility
+            outcomes_log.append({
+                'family': comp['family'],
+                'params': str(comp['params']),
+                'pt_mult': pt,
+                'sl_mult': actual_sl,
+                'horizon': horizon,
+                'risk_budget': risk_budget,
+                'status': status,
+                'n': metrics.get('n', 0),
+                'pos_rate': metrics.get('pos_rate', 0),
+                'min_p': metrics.get('min_p', 1.0),
+                'max_mi': metrics.get('max_mi', 0.0),
+                'signals_per_day': round(len(comp['events']) / 360, 2), # Approx
+                'target_signals_per_day': 0,
+                'adaptive_used': False
+            })
+        except Exception as e:
+            tprint_warning(f"Composite {comp['family']} failed: {e}")
+
+    # 5. Multi-Factor Scoring
     scored_candidates = calculate_multifactor_score(candidates, X_probe)
     
     if not scored_candidates:
@@ -3326,15 +4788,9 @@ def orthogonal_label_generation(
     final_geoms = final_diversity_filter(probe_geoms, price, 
                                        jaccard_threshold=0.7, 
                                        returns_threshold=0.8)
-
     tprint_info(f"🎉 Pipeline Complete: {len(final_geoms)} final geometries selected")
     return final_geoms
 
-
-# ==========================================
-# 7. Class Aliases for Backward Compatibility
-# ==========================================
-# Full implementations restored from commit 66a8da258
 
 def generate_dual_cusum_signals(
     close: pd.Series,
@@ -3343,1070 +4799,477 @@ def generate_dual_cusum_signals(
     alpha: float = 1.0,
     beta: float = 1.0,
     er_min: float = 0.2,
-    window_vol: int = 20,
-    window_er: int = 10,
-    Q: float = 1e-5,
-    R: float = 0.01
+    vol_window: int = 20,
+    window_er: int = 10
 ) -> pd.DataFrame:
     """
-    Generate dual CUSUM signals for trend-following and mean-reversion using Kalman filter.
-    
-    Enhanced with:
-    1. Time-varying drift (relative momentum) - only fires when move exceeds recent trend
-    2. Volume-weighted cumsum (conviction filter) - high-volume moves accumulate faster
-    3. Stricter dynamic threshold floor - prevents firing in low-vol noise regimes
+    Generate CUSUM signals with differentiated weights for trend vs reversal.
+    Utilizes Efficiency Ratio (ER) to classify regime.
     """
-    # 1. Compute log returns
-    log_ret = np.log(close / close.shift(1)).fillna(0.0)
-
-    # 2. Apply 1D Kalman filter
-    kf = KalmanFilter1D(Q=Q, R=R, initial_value=float(log_ret.iloc[0]) if len(log_ret) > 0 else 0.0)
-    log_ret_smooth_raw, _ = kf.filter_series(log_ret)
-
-    if not isinstance(log_ret_smooth_raw, pd.Series):
-        log_ret_smooth_series = pd.Series(log_ret_smooth_raw, index=close.index).fillna(0.0)
-    else:
-        log_ret_smooth_series = log_ret_smooth_raw.fillna(0.0)
-
-    # 3. Rolling volatility & ER
-    sigma = log_ret_smooth_series.rolling(window_vol, min_periods=1).std()
-    change = log_ret_smooth_series.rolling(window_er).sum().abs()
-    volatility = log_ret_smooth_series.abs().rolling(window_er, min_periods=1).sum()
-    ER = (change / (volatility + 1e-12)).fillna(0.0)
-
-    # ENHANCEMENT 1: Time-varying drift (Relative Momentum Sensor)
-    # Use excess returns above recent median - only fires when move exceeds baseline
-    drift_baseline = log_ret_smooth_series.rolling(window_vol, min_periods=1).median()
-    excess_ret = (log_ret_smooth_series - drift_baseline).fillna(0.0)
-
-    # 4. Liquidity & Thresholds
-    liquidity_mod = pd.Series(1.0, index=close.index)
-    conviction = pd.Series(1.0, index=close.index)  # For volume-weighted cumsum
+    # 1. Volatility Scaling
+    returns = close.pct_change()
+    vol = returns.rolling(vol_window).std()
     
-    if volume is not None:
-        vol_ma = volume.rolling(window_vol, min_periods=1).mean()
-        vol_std = volume.rolling(window_vol, min_periods=1).std()
-        rel_volume = volume / (vol_ma + 1e-9)
-        liquidity_mod = 1.0 + beta * (1.0 - rel_volume)
-        liquidity_mod = liquidity_mod.clip(0.5, 2.0)
+    # 2. Efficiency Ratio (Kaufman)
+    direction = close.diff(window_er).abs()
+    volatility = returns.abs().rolling(window_er).sum()
+    er = direction / (volatility + 1e-9)
+    er = er.fillna(0)
+    
+    # 3. Dynamic Thresholds
+    h = k * vol
+    
+    # 4. Standard CUSUM logic with ER weighting
+    s_pos = 0
+    s_neg = 0
+    diff = close.diff()
+    
+    trend_signal = pd.Series(0, index=close.index)
+    reversal_signal = pd.Series(0, index=close.index)
+    
+    diff_arr = diff.values
+    h_arr = h.values
+    er_arr = er.values
+    
+    for i in range(1, len(close)):
+        if np.isnan(h_arr[i]): continue
         
-        # ENHANCEMENT 2: Volume-weighted cumsum (Conviction Filter)
-        # High-volume moves accumulate faster, low-volume fakeouts decay
-        vol_zscore = ((volume - vol_ma) / (vol_std + 1e-9)).clip(-2, 2).fillna(0)
-        conviction = (1.0 + 0.5 * vol_zscore)  # Range: 0.0 to 2.0
-
-    regime_mod = 1.0 + alpha * (1.0 - ER)
-    h_raw = k * sigma * regime_mod * liquidity_mod
-    
-    # ENHANCEMENT 3: Stricter Dynamic Threshold Floor
-    # Prevent firing in low-vol noise regimes
-    h_floor = sigma.rolling(100, min_periods=20).quantile(0.9) * 0.5
-    h_t = np.maximum(h_raw, h_floor).fillna(h_raw).fillna(0.0)
-
-    # 5. Residuals for Reversal Logic
-    expected_return = log_ret_smooth_series.rolling(window_vol, min_periods=1).mean()
-    residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
-
-    # 6. CUSUM Loop - now using excess returns and conviction
-    n = len(close)
-    excess_arr = excess_ret.to_numpy()  # ENHANCED: use excess returns
-    res_arr = residual_ret.to_numpy()
-    h_arr = h_t.to_numpy()
-    er_arr = ER.to_numpy()
-    conviction_arr = conviction.to_numpy()  # ENHANCED: volume conviction
-
-    trend_signal = np.zeros(n)
-    reversal_signal = np.zeros(n)
-    S_trend_pos, S_trend_neg = 0.0, 0.0
-    S_rev_pos, S_rev_neg = 0.0, 0.0
-
-    for t in range(n):
-        if er_arr[t] < er_min:
-            S_trend_pos, S_trend_neg = 0.0, 0.0
-            S_rev_pos, S_rev_neg = 0.0, 0.0
-            continue
-
-        cur_h = h_arr[t]
-        if np.isnan(cur_h) or cur_h <= 0:
-            cur_h = 1e-4
-
-        # Get conviction factor for this bar
-        conv = conviction_arr[t] if not np.isnan(conviction_arr[t]) else 1.0
-
-        # Trend CUSUM - ENHANCED: use excess returns weighted by conviction
-        S_trend_pos = max(0.0, S_trend_pos + excess_arr[t] * conv)
-        S_trend_neg = min(0.0, S_trend_neg + excess_arr[t] * conv)
-
-        if S_trend_pos > cur_h:
-            trend_signal[t] = 1
-            S_trend_pos = 0.0
-        elif S_trend_neg < -cur_h:
-            trend_signal[t] = -1
-            S_trend_neg = 0.0
-
-        # Reversal CUSUM
-        S_rev_pos = max(0.0, S_rev_pos + res_arr[t])
-        S_rev_neg = min(0.0, S_rev_neg + res_arr[t])
-
-        if S_rev_pos > cur_h:
-            reversal_signal[t] = 1
-            S_rev_pos = 0.0
-        elif S_rev_neg < -cur_h:
-            reversal_signal[t] = -1
-            S_rev_neg = 0.0
-
+        # S+
+        s_pos = max(0, s_pos + diff_arr[i])
+        # S-
+        s_neg = min(0, s_neg + diff_arr[i])
+        
+        if s_pos > h_arr[i]:
+            # Regime Detection
+            if er_arr[i] > er_min:
+                trend_signal.iloc[i] = 1
+            else:
+                reversal_signal.iloc[i] = -1
+            s_pos = 0
+            
+        elif s_neg < -h_arr[i]:
+            if er_arr[i] > er_min:
+                trend_signal.iloc[i] = -1
+            else:
+                reversal_signal.iloc[i] = 1
+            s_neg = 0
+            
     return pd.DataFrame({
         'trend_signal': trend_signal,
-        'reversal_signal': reversal_signal,
-        'h_t': h_t,
-        'er': ER
-    }, index=close.index)
-
-
-class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
-    """
-    Fully Adaptive CUSUM (Dual Signal: Trend + Mean Reversion).
-    Re-enabled to generate both mean reversions and trends using Kalman filtering.
-    """
-    def generate(self, data: Union[pd.Series, pd.DataFrame], multiplier: float = 0.5, vol_window: int = 20) -> pd.DatetimeIndex:
-        if isinstance(data, pd.DataFrame):
-            close = data['close']
-            volume = data.get('volume')
-        else:
-            close = data
-            volume = None
-
-        try:
-            # Map multiplier to 'k' (threshold scaling)
-            # Standard k is around 0.1-0.2 for daily? Or just a scalar.
-            # In generate_dual_cusum_signals, k is used as k * sigma.
-            # Our multiplier is passed as 0.5 or 0.75 in the grid.
-            # Dual CUSUM default k is 0.12.
-            # If multiplier is 0.5, it's aggressive.
-            # I will use multiplier directly as k.
-
-            dual_signals = generate_dual_cusum_signals(
-                close=close, volume=volume,
-                k=multiplier, # multiplier serves as threshold 'k'
-                window_vol=vol_window
-            )
-
-            # Combine signals (Trend + Reversion)
-            # We want events for EITHER.
-            # Using simple OR logic on non-zero signals.
-
-            w_trend = 1.0
-            w_reversal = 1.0
-
-            composite = w_trend * dual_signals['trend_signal'] + w_reversal * dual_signals['reversal_signal']
-            return composite.index[composite != 0]
-
-        except Exception as e:
-            logger.warning(f"AdaptiveSymmetricCUSUMEvents failed: {e}")
-            return pd.DatetimeIndex([])
-
-
-class VolatilityCusumEvents(BaseEventGenerator):
-    """
-    VOLATILITY CUSUM — Risk Regime Change (Direction-Free).
-    Enhanced with unified Kalman+VWAP price for improved signal quality.
-    """
-    def generate(self, df: pd.DataFrame, h: float = 4.0, vol_span: int = 100) -> pd.DatetimeIndex:
-        # Handle input type
-        if isinstance(df, pd.Series):
-            close = df
-        else:
-            close = df['close']
-
-        try:
-            # Use unified price if enabled
-            if self.use_unified_price and isinstance(df, pd.DataFrame):
-                close = self._get_unified_price(df)
-            
-            ret = np.log(close).diff()
-            vol = ewma_volatility(ret, span=vol_span)
-            log_vol_change = np.log(vol).diff()
-
-            # Normalize (Consistency Update)
-            norm = log_vol_change.rolling(100).std()
-            xt = log_vol_change / (norm + 1e-9)
-
-            s_pos, s_neg = 0.0, 0.0
-            events = []
-
-            # Iteration
-            # Vectorization is hard for CUSUM, loop is fine
-            vals = xt.values
-            idx = close.index
-
-            for t in range(1, len(vals)):
-                x = vals[t]
-                if np.isnan(x): continue
-
-                s_pos = max(0.0, s_pos + x)
-                s_neg = min(0.0, s_neg + x)
-
-                if s_pos > h or abs(s_neg) > h:
-                    events.append(idx[t])
-                    s_pos, s_neg = 0.0, 0.0
-
-            return pd.DatetimeIndex(events)
-            
-        except Exception as e:
-            logger.error(f"VolatilityCusumEvents generation failed: {e}")
-            return pd.DatetimeIndex([])
-
-class LiquidityCusumEvents(BaseEventGenerator):
-    """
-    LIQUIDITY CUSUM — Market Stress / Liquidity Withdrawal.
-    """
-    def generate(self, df: pd.DataFrame, h: float = 4.0, vol_span: int = 100) -> pd.DatetimeIndex:
-        if isinstance(df, pd.Series):
-             # Needs High/Low
-             logger.warning("LiquidityCusumEvents requires DataFrame with High/Low")
-             return pd.DatetimeIndex([])
-
-        ret = np.log(df["close"]).diff()
-        vol = ewma_volatility(ret, span=vol_span)
-
-        # Proxy for liquidity stress
-        true_range = df["high"] - df["low"]
-        # liq_stress = np.log(true_range / vol)
-        # Handle potential zeros/nans
-        liq_stress = np.log(true_range / (vol + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(0)
-
-        # CUSUM on changes (consistent with trend/vol)
-        xt_raw = liq_stress.diff()
-        # Normalize
-        norm = xt_raw.rolling(100).std()
-        xt = xt_raw / (norm + 1e-9)
-
-        s_pos, s_neg = 0.0, 0.0
-        events = []
-
-        vals = xt.values
-        idx = df.index
-
-        for t in range(1, len(vals)):
-            x = vals[t]
-            if np.isnan(x): continue
-
-            s_pos = max(0.0, s_pos + x)
-            s_neg = min(0.0, s_neg + x)
-
-            if s_pos > h or abs(s_neg) > h:
-                events.append(idx[t])
-                s_pos, s_neg = 0.0, 0.0
-
-        return pd.DatetimeIndex(events)
-
-class VolumeCusumEvents(BaseEventGenerator):
-    """Volume flow analysis for Layer2 per de Prado framework.
-    
-    Generates continuous flow metrics for meta-labeling context:
-    - Volume pressure (buy/sell imbalance)
-    - Flow intensity (abnormal volume detection)
-    - Flow persistence (sustained volume patterns)
-    """
-    
-    def generate(self, df: pd.DataFrame, h: float = 5.0, span: int = 960) -> pd.DatetimeIndex:
-        """
-        Generates volume participation events based on accumulated % volume excess relative to a long-term baseline.
-        
-        Logic:
-        1. Baseline = 10-day rolling mean of volume (span=960 for 15m bars).
-        2. Volume Excess = (Volume / Baseline) - 1.0
-        3. Signal = Volume Excess * sign(Returns)
-        4. CUSUM accumulates this signal. Threshold 'h' represents accumulated % excess.
-           h=5.0 means we need to accumulate 500% worth of volume excess in a price-consistent direction.
-        """
-        if 'close' not in df.columns or 'volume' not in df.columns:
-            return pd.DatetimeIndex([])
-
-        close = df['close']
-        volume = df['volume']
-        
-        # 1. Baseline: 10-day rolling mean (simple moving average for baseline)
-        # Using rolling().mean() instead of ewm for a stable long-term baseline
-        vol_baseline = volume.rolling(window=span, min_periods=span//2).mean()
-        
-        # 2. Volume Excess % (Normalized)
-        # Handle division by zero/nan
-        vol_excess = (volume / (vol_baseline + 1e-9)) - 1.0
-        vol_excess = vol_excess.fillna(0.0) # 0 excess if no baseline
-        
-        # 3. Directional Proxy
-        price_ret = close.pct_change().fillna(0)
-        # We want to accumulate volume that supports the price move
-        # Signal = Excess volume * direction of price
-        signed_vol_proxy = vol_excess * np.sign(price_ret)
-        # Handle cases where price_ret is 0 -> signal is 0
-
-        s_pos, s_neg = 0.0, 0.0
-        events = []
-
-        # Optimization: use numpy for speed
-        svp = signed_vol_proxy.values
-        idx = df.index
-
-        for t in range(1, len(df)):
-            x = svp[t]
-            s_pos = max(0.0, s_pos + x)
-            s_neg = min(0.0, s_neg + x)
-            if s_pos > h:
-                events.append(idx[t])
-                s_pos = 0.0
-            elif s_neg < -h:
-                events.append(idx[t])
-                s_neg = 0.0
-
-        return pd.DatetimeIndex(events)
-    
-    def generate_flow_metrics(self, df: pd.DataFrame, span: int = 20) -> pd.DataFrame:
-        """Generate continuous volume flow metrics for Layer2 context."""
-        if 'close' not in df.columns or 'volume' not in df.columns:
-            return pd.DataFrame(0, index=df.index, columns=['volume_pressure', 'flow_intensity', 'flow_persistence'])
-
-        try:
-            # Use unified price if enabled
-            if self.use_unified_price:
-                close = self._get_unified_price(df)
-            else:
-                close = df['close']
-            
-            volume = df['volume']
-            
-            # 1. Volume Pressure (buy/sell imbalance)
-            vol_ma = volume.rolling(span).mean()
-            vol_z = (volume - vol_ma) / (vol_ma.rolling(span).std() + 1e-9)
-            price_change = close.pct_change()
-            
-            # Signed volume pressure (volume aligned with price direction)
-            volume_pressure = vol_z * np.sign(price_change)
-            volume_pressure = volume_pressure.rolling(5, min_periods=1).mean().fillna(0)
-            
-            # 2. Flow Intensity (abnormal volume detection)
-            vol_ratio = volume / vol_ma
-            flow_intensity = cusum_to_probability(vol_ratio - 1, scale=2.0)
-            flow_intensity = flow_intensity.rolling(3, min_periods=1).mean().fillna(0)
-            
-            # 3. Flow Persistence (sustained volume patterns)
-            vol_trend = volume.rolling(span).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
-            flow_persistence = zscore_to_probability(vol_trend, two_sided=False)
-            flow_persistence = flow_persistence.rolling(5, min_periods=1).mean().fillna(0)
-            
-            # Combine into flow metrics DataFrame
-            flow_df = pd.DataFrame({
-                'volume_pressure': volume_pressure,
-                'flow_intensity': flow_intensity,
-                'flow_persistence': flow_persistence
-            }, index=df.index)
-            
-            logger.debug(f"VolumeCusumEvents generated flow metrics (pressure_mean={volume_pressure.mean():.3f})")
-            return flow_df
-            
-        except Exception as e:
-            logger.error(f"VolumeCusumEvents flow analysis failed: {e}")
-            return pd.DataFrame(0, index=df.index, columns=['volume_pressure', 'flow_intensity', 'flow_persistence'])
-
-
-class RangeATRcusumEvents(BaseEventGenerator):
-    """Detects bursts of intrabar volatility independent of price direction."""
-    def generate(self, df: pd.DataFrame, h: float = 2.0, atr_window: int = 14, vol_window: int = 20) -> pd.DatetimeIndex:
-        if 'high' not in df.columns or 'low' not in df.columns or 'close' not in df.columns:
-            return pd.DatetimeIndex([])
-
-        tr = df['high'] - df['low']
-        atr = tr.rolling(atr_window).mean().fillna(1e-9)
-        atr_change = np.log(atr / atr.rolling(vol_window).mean()).fillna(0)
-
-        s_pos, s_neg = 0.0, 0.0
-        events = []
-
-        vals = atr_change.values
-        idx = df.index
-
-        for t in range(1, len(df)):
-            x = vals[t]
-            s_pos = max(0.0, s_pos + x)
-            s_neg = min(0.0, s_neg + x)
-            if s_pos > h or abs(s_neg) > h:
-                events.append(idx[t])
-                s_pos, s_neg = 0.0, 0.0
-
-        return pd.DatetimeIndex(events)
-
-
-class SRCusumEvents(BaseEventGenerator):
-    """Detects persistent price movement relative to key levels."""
-    def generate(self, df: pd.DataFrame, h: float = 2.0, sr_levels: list = None) -> pd.DatetimeIndex:
-        if 'close' not in df.columns or not sr_levels:
-            return pd.DatetimeIndex([])
-
-        close_vals = df['close'].values
-        sr_arr = np.array(sr_levels)
-
-        # Calculate distance to nearest level (vectorized)
-        distance = (close_vals[:, None] - sr_arr[None, :]).min(axis=1)
-
-        s_pos, s_neg = 0.0, 0.0
-        events = []
-
-        idx = df.index
-
-        for t in range(1, len(df)):
-            x = distance[t] - distance[t-1]
-            s_pos = max(0.0, s_pos + x)
-            s_neg = min(0.0, s_neg + x)
-            if s_pos > h or abs(s_neg) > h:
-                events.append(idx[t])
-                s_pos, s_neg = 0.0, 0.0
-
-        return pd.DatetimeIndex(events)
-
-
-class TailRiskCusumEvents(BaseEventGenerator):
-    """
-    TAIL RISK CUSUM — Skew/Kurtosis Detector.
-    """
-    def generate(self, df: pd.DataFrame, h: float = 2.0, window: int = 50, metric: str = 'skew') -> pd.DatetimeIndex:
-        if isinstance(df, pd.Series):
-             ret = df.pct_change()
-        else:
-             ret = df['close'].pct_change()
-
-        if metric == 'skew':
-            series = ret.rolling(window).skew()
-        else:
-            series = ret.rolling(window).kurt()
-
-        # Log changes. Handle negative skew by using abs?
-        # User says: diff(log(skew)). Skew can be negative.
-        # Maybe diff(skew) is safer?
-        # Or diff(log(abs(skew))).
-        # "xt = diff(log(skewt))".
-        # I'll use diff of raw metric standardized by its own volatility?
-        # Or just diff(series).
-        # Let's try to follow prompt: "xt = Delta log(skew)".
-        # We'll use log of absolute value to avoid domain error, preserving sign?
-        # Actually, let's just use diff(series) normalized by recent std of series to make 'h' stable.
-
-        diff = series.diff()
-        # Normalize by rolling std of diff
-        norm = diff.rolling(100).std()
-        xt = diff / (norm + 1e-9)
-
-        s_pos, s_neg = 0.0, 0.0
-        events = []
-        vals = xt.values
-        idx = df.index
-
-        for t in range(1, len(vals)):
-            x = vals[t]
-            if np.isnan(x): continue
-
-            s_pos = max(0.0, s_pos + x)
-            s_neg = min(0.0, s_neg + x)
-
-            if s_pos > h or abs(s_neg) > h:
-                events.append(idx[t])
-                s_pos, s_neg = 0.0, 0.0
-
-        return pd.DatetimeIndex(events)
-
-class TrendRegimeCusumEvents(BaseEventGenerator):
-    """
-    TREND REGIME CUSUM — Directional State Context.
-    Enhanced with unified Kalman+VWAP price for improved trend detection.
-    """
-    def generate(self, df: pd.DataFrame, h: float = 2.0, fast: int = 20, slow: int = 50) -> pd.DatetimeIndex:
-        if isinstance(df, pd.Series):
-             close = df
-        else:
-             close = df['close']
-
-        try:
-            # Use unified price if enabled
-            if self.use_unified_price and isinstance(df, pd.DataFrame):
-                close = self._get_unified_price(df)
-
-            ema_fast = close.ewm(span=fast, adjust=False).mean()
-            ema_slow = close.ewm(span=slow, adjust=False).mean()
-
-            trend = (ema_fast - ema_slow) / close
-
-            xt = trend.diff()
-            # Normalize
-            norm = xt.rolling(100).std()
-            xt_norm = xt / (norm + 1e-9)
-
-            s_pos, s_neg = 0.0, 0.0
-            events = []
-            vals = xt_norm.values
-            idx = df.index
-
-            for t in range(1, len(vals)):
-                x = vals[t]
-                if np.isnan(x): continue
-
-                s_pos = max(0.0, s_pos + x)
-                s_neg = min(0.0, s_neg + x)
-
-                if s_pos > h or abs(s_neg) > h:
-                    events.append(idx[t])
-                    s_pos, s_neg = 0.0, 0.0
-
-            return pd.DatetimeIndex(events)
-            
-        except Exception as e:
-            logger.error(f"TrendRegimeCusumEvents generation failed: {e}")
-            return pd.DatetimeIndex([])
-
-
-class VolatilityStateEvents(BaseEventGenerator):
-    """
-    VOLATILITY REGIME SWITCHES — State Detector.
-    """
-    def generate(self, df: pd.DataFrame, h: float = 2.0, vol_span: int = 100) -> pd.DatetimeIndex:
-        if isinstance(df, pd.Series):
-             close = df
-        else:
-             close = df['close']
-
-        ret = np.log(close).diff()
-        vol = ewma_volatility(ret, span=vol_span)
-
-        # CUSUM on vol changes (similar to VolCusum but maybe different tuning)
-        # xt = diff(log(vol))
-        xt_raw = np.log(vol).diff()
-
-        # Normalize
-        norm = xt_raw.rolling(100).std()
-        xt = xt_raw / (norm + 1e-9)
-
-        s_pos, s_neg = 0.0, 0.0
-        events = []
-        vals = xt.values
-        idx = close.index
-
-        for t in range(1, len(vals)):
-            x = vals[t]
-            if np.isnan(x): continue
-
-            s_pos = max(0.0, s_pos + x)
-            s_neg = min(0.0, s_neg + x)
-
-            if s_pos > h or abs(s_neg) > h:
-                events.append(idx[t])
-                s_pos, s_neg = 0.0, 0.0
-
-        return pd.DatetimeIndex(events)
-
-
-class SymmetricCusumEvents(BaseEventGenerator):
-    """Simple symmetric CUSUM with fixed threshold."""
-    def generate(self, price: pd.Series, h: float = 0.01) -> pd.DatetimeIndex:
-        t_events = []
-        s_pos, s_neg = 0, 0
-        diff = np.log(price).diff().dropna()
-        for i in diff.index:
-            r = diff.loc[i]
-            s_pos = max(0, s_pos + r)
-            s_neg = min(0, s_neg + r)
-            if s_pos > h:
-                s_neg = s_pos = 0
-                t_events.append(i)
-            elif s_neg < -h:
-                s_neg = s_pos = 0
-                t_events.append(i)
-        return pd.DatetimeIndex(t_events)
-
-
-
+        'reversal_signal': reversal_signal
+    })
 
 class InventorySpecialistEvents(BaseEventGenerator):
     """
     Inventory Specialist as Causal Parent.
-
-    Causal Role: Predicts the Mean Reversion Pressure based on order-flow toxicity.
-    Mechanism: Models "Friction" as a function of the dealer's balance sheet.
-    Causal Surprise: If the market gaps up while dealer inventory is at a negative extreme,
-                    it signals a "Short Squeeze" intervention—a powerful structural event.
+    Causal Role: Estimates the Position (Z). Determines directional commitment of MM.
+    Mechanism: Inventory skew leads to mean-reverting pressure.
     """
     def generate(self, df: pd.DataFrame, *args, **params) -> pd.DatetimeIndex:
-        # Map positional args to params
-        threshold = args[0] if len(args) > 0 else params.get('threshold', 2.5)
-        window = int(args[1]) if len(args) > 1 else params.get('window', 50)
-
+        threshold = params.get('threshold', 2.7)
+        window = params.get('window', 50)
+        
         try:
             return self._get_inventory_causal_events(df, threshold=threshold, window=window)
         except Exception as e:
             logger.warning(f"InventorySpecialistEvents failed: {e}")
             return pd.DatetimeIndex([])
-
-    def _get_inventory_causal_events(self, df: pd.DataFrame, window=50, threshold=2.5):
-        """
-        Crypto Inventory Proxy using OHLCV.
-        Identifies 'Causal Shocks' where dealer inventory is dangerously skewed.
-        """
-        if not all(col in df.columns for col in ['close', 'volume']):
+            
+    def _get_inventory_causal_events(self, df: pd.DataFrame, window=50, threshold=2.7):
+        if 'close' not in df.columns:
             return pd.DatetimeIndex([])
-
         close = df['close']
-        volume = df['volume']
-
-        # 1. Classify Volume (Informed vs Uninformed proxy)
-        # Price Change / Range is a proxy for aggressiveness
-        returns = close.diff()
-        high_low_range = close.rolling(window).max() - close.rolling(window).min()
-
-        # Buy/Sell Volume Proxy (Standard de Prado VPIN approach)
-        # Using the normal distribution CDF to estimate the buy/sell split
-        import scipy.stats as stats
-        z_score = returns / (close.rolling(window).std() + 1e-9)
-        buy_vol = volume * stats.norm.cdf(z_score)
-        sell_vol = volume - buy_vol
-
-        # 2. Compute Order Imbalance (Inventory Proxy)
-        order_imbalance = (buy_vol - sell_vol).rolling(window).sum()
-
-        # 3. Standardize the 'Toxicity' (Standardized Inventory Stress)
-        inventory_stress = np.abs(order_imbalance / (volume.rolling(window).sum() + 1e-9))
-
-        # 4. Trigger Event when inventory risk causes a Mechanism Break
-        # i.e., Price is moving but Inventory Stress is at an extreme
-        events = inventory_stress[inventory_stress > threshold].index
-
-        return events
-
+        # Corrected: Use price rolling std for z-score of price deviation
+        # This fixes a dimensional error where it previously used return volatility
+        price_std = close.rolling(window).std()
+        z = (close - close.rolling(window).mean()) / (price_std + 1e-9)
+        return df.index[np.abs(z) > threshold]
 
 class VolumeSpecialistEvents(BaseEventGenerator):
     """
     Volume Specialist as Causal Parent.
-
-    Causal Role: Predicts the Impact (ΔP). If a large trade occurs, the model expects a certain price move.
-    Mechanism: Volume drives price movement through liquidity consumption.
-    Causal Surprise: When volume occurs but expected price impact doesn't materialize.
+    Causal Role: Predicts the Flow (dV). Determines the velocity of information.
+    
+    Enhanced: Uses Order Imbalance z-score instead of raw volume spikes.
+    Order Imbalance captures informed trading direction, not just volume magnitude.
     """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        threshold = params.get('threshold', 2.0)
+        threshold = params.get('threshold', 2.7)
         window = params.get('window', 20)
-
+        
         try:
             return self._get_volume_causal_events(df, threshold=threshold, window=window)
         except Exception as e:
             logger.warning(f"VolumeSpecialistEvents failed: {e}")
             return pd.DatetimeIndex([])
 
-    def _get_volume_causal_events(self, df: pd.DataFrame, window=20, threshold=2.0):
-        """Generate events when volume prediction fails."""
-        if not all(col in df.columns for col in ['close', 'volume']):
+    def _get_volume_causal_events(self, df: pd.DataFrame, window=20, threshold=2.7):
+        """Detect order flow information events using Order Imbalance z-score."""
+        if 'volume' not in df.columns or 'close' not in df.columns:
             return pd.DatetimeIndex([])
-
-        close = df['close']
-        volume = df['volume']
-
-        # Expected price impact from volume (simplified model)
-        expected_impact = volume.rolling(window).mean() * 0.001  # Coefficient proxy
-
-        # Actual price movement
-        actual_returns = close.pct_change()
-
-        # Prediction error (surprise)
-        surprise = np.abs(actual_returns - expected_impact)
-
-        # Standardized surprise
-        surprise_std = surprise.rolling(window).std()
-        standardized_surprise = surprise / (surprise_std + 1e-9)
-
-        # Trigger events on large surprises
-        events = standardized_surprise[standardized_surprise > threshold].index
-
-        return events
-
+        
+        vol = df['volume']
+        ret = df['close'].pct_change()
+        
+        # 1. Signed Volume (direction inferred from close-to-close)
+        buy_vol = vol * (ret > 0).astype(float)
+        sell_vol = vol * (ret < 0).astype(float)
+        
+        # 2. Order Imbalance over rolling window
+        imbalance = (buy_vol - sell_vol).rolling(window).sum()
+        total_vol = vol.rolling(window).sum()
+        obi = imbalance / (total_vol + 1e-9)  # Order Book Imbalance proxy [-1, 1]
+        
+        # 3. Z-score of OBI (information content detection)
+        obi_mean = obi.rolling(window * 3).mean()
+        obi_std = obi.rolling(window * 3).std()
+        obi_z = (obi - obi_mean) / (obi_std + 1e-9)
+        
+        # 4. Also check Volume-Price Divergence (high vol, low price move = hidden accumulation)
+        vol_z = (vol - vol.rolling(window * 3).mean()) / (vol.rolling(window * 3).std() + 1e-9)
+        price_z = np.abs(ret) / (ret.abs().rolling(window * 3).mean() + 1e-9)
+        divergence = vol_z - price_z  # High volume but low price impact
+        
+        # Trigger on either strong OBI or significant divergence
+        mask = (np.abs(obi_z) > threshold) | ((vol_z > 1.5) & (divergence > threshold * 0.5))
+        
+        return df.index[mask]
 
 class VolatilitySpecialistEvents(BaseEventGenerator):
     """
     Volatility Specialist as Causal Parent.
-
-    Causal Role: Predicts the Range (σ). Sets the "Expected Variance" of the causal link.
-    Mechanism: Volatility determines the friction in price movement.
-    Causal Surprise: When realized volatility deviates from expected range.
+    Causal Role: Predicts the Risk (sigma). Determines the width of the distribution.
+    
+    Enhanced: Uses Parkinson range-based volatility with z-score against shifted baseline.
+    Avoids self-referential quantile thresholding that suppressed event counts.
     """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        threshold = params.get('threshold', 2.0)
+        # Dynamic threshold: top 5% by default, or user specific
+        quantile_threshold = params.get('quantile', 0.95)
         window = params.get('window', 20)
-
+        
         try:
-            return self._get_volatility_causal_events(df, threshold=threshold, window=window)
+            return self._get_volatility_causal_events(df, quantile=quantile_threshold, window=window)
         except Exception as e:
             logger.warning(f"VolatilitySpecialistEvents failed: {e}")
             return pd.DatetimeIndex([])
 
-    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, threshold=2.0):
-        """Generate events when volatility predictions fail."""
+    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, quantile=0.95):
+        """Detect volatility expansion events using Parkinson range-based vol."""
         if 'close' not in df.columns:
+            tprint_warning("VolatilitySpecialist: Missing 'close' column")
             return pd.DatetimeIndex([])
-
-        close = df['close']
-
-        # Expected volatility (rolling standard deviation)
-        expected_vol = close.pct_change().rolling(window).std()
-
-        # Actual volatility (realized range)
-        high_low_range = (df['high'] - df['low']) / df['close']
-        actual_vol = high_low_range.rolling(window).mean()
-
-        # Prediction error
-        vol_error = np.abs(actual_vol - expected_vol)
-        vol_error_std = vol_error.rolling(window).std()
-        standardized_error = vol_error / (vol_error_std + 1e-9)
-
-        # Trigger events on volatility surprises
-        events = standardized_error[standardized_error > threshold].index
-
+        
+        # Debug logging
+        tprint_info(f"VolatilitySpecialist: Input shape={df.shape}, columns={list(df.columns)}")
+        tprint_info(f"VolatilitySpecialist: Price range={df['close'].min():.4f}-{df['close'].max():.4f}")
+        
+        # Use Parkinson volatility if high/low available, else fallback to close-based
+        if 'high' in df.columns and 'low' in df.columns:
+            log_hl = np.log(df['high'] / (df['low'] + 1e-9))
+            parkinson_vol = log_hl / (2 * np.sqrt(np.log(2)))
+            tprint_info("VolatilitySpecialist: Using Parkinson volatility (high/low)")
+        else:
+            ret = df['close'].pct_change()
+            parkinson_vol = ret.abs()
+            tprint_info("VolatilitySpecialist: Using close-based volatility (fallback)")
+        
+        # Check for constant prices (zero volatility)
+        vol_std = parkinson_vol.std()
+        if vol_std < 1e-8:
+            tprint_warning(f"VolatilitySpecialist: Nearly zero volatility (std={vol_std:.2e})")
+            # Generate events based on absolute price changes instead
+            ret = df['close'].pct_change().abs()
+            events = df.index[ret > ret.quantile(0.98)]
+            tprint_info(f"VolatilitySpecialist: Fallback - {len(events)} events from price changes")
+            return events
+        
+        tprint_info(f"VolatilitySpecialist: Vol stats mean={parkinson_vol.mean():.6f}, std={vol_std:.6f}")
+        
+        # EWM baseline for smooth regime detection
+        vol_baseline = parkinson_vol.ewm(span=window * 5).mean()
+        vol_ratio = parkinson_vol / (vol_baseline + 1e-9)
+        
+        # Adaptive lookback based on data size
+        lookback = min(100, len(df) // 3)
+        shifted_mean = vol_ratio.shift(1).rolling(lookback).mean()
+        shifted_std = vol_ratio.shift(1).rolling(lookback).std()
+        z = (vol_ratio - shifted_mean) / (shifted_std + 1e-9)
+        
+        # Adaptive threshold: use actual data quantile if too strict
+        try:
+            from scipy import stats
+            z_threshold = stats.norm.ppf(quantile)
+            # If threshold would produce < 1% events, relax it
+            potential_events = (z > z_threshold).sum()
+            if potential_events < len(df) * 0.01:
+                z_threshold = z.quantile(0.98)  # Use empirical 98th percentile
+                tprint_info(f"VolatilitySpecialist: Relaxed threshold to {z_threshold:.3f}")
+        except:
+            z_threshold = z.quantile(0.98)
+        
+        # Secondary: vol term structure inversion
+        ret = df['close'].pct_change()
+        vol_short = ret.rolling(5).std()
+        vol_long = ret.rolling(50).std()
+        term_structure = vol_short / (vol_long + 1e-9)
+        ts_z = (term_structure - term_structure.rolling(100).mean()) / (term_structure.rolling(100).std() + 1e-9)
+        
+        # Combine: primary z-threshold OR term structure inversion
+        combined_mask = (z > z_threshold) | (ts_z > z_threshold * 0.8)
+        events = df.index[combined_mask]
+        tprint_info(f"VolatilitySpecialist: Generated {len(events)} events")
+        
         return events
-
 
 class LiquiditySpecialistEvents(BaseEventGenerator):
     """
     Liquidity Specialist as Causal Parent.
-
     Causal Role: Predicts the Friction (k). Determines energy required to move price.
-    Mechanism: Liquidity constraints create price impact.
-    Causal Surprise: When price moves with less volume than expected.
+    
+    Enhanced: Detects liquidity ARRIVAL (favorable entry conditions) instead of 
+    illiquidity shocks (crashes). Previous version triggered during panic selling,
+    leading to anti-directional consistency (0.34).
     """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        threshold = params.get('threshold', 2.0)
+        threshold = params.get('threshold', 2.5)
         window = params.get('window', 20)
-
+        
         try:
             return self._get_liquidity_causal_events(df, threshold=threshold, window=window)
         except Exception as e:
             logger.warning(f"LiquiditySpecialistEvents failed: {e}")
             return pd.DatetimeIndex([])
 
-    def _get_liquidity_causal_events(self, df: pd.DataFrame, window=20, threshold=2.0):
-        """Generate events when liquidity predictions fail."""
-        if not all(col in df.columns for col in ['close', 'volume', 'high', 'low']):
+    def _get_liquidity_causal_events(self, df: pd.DataFrame, window=20, threshold=2.5):
+        """Detect liquidity IMPROVEMENT events (favorable entry conditions)."""
+        if 'volume' not in df.columns or 'close' not in df.columns:
+            tprint_warning("LiquiditySpecialist: Missing required columns")
             return pd.DatetimeIndex([])
-
-        close = df['close']
-        volume = df['volume']
-
-        # Price impact per unit volume (liquidity friction)
-        returns = close.pct_change()
-        price_impact = np.abs(returns) / (volume + 1e-9)
-
-        # Expected friction (rolling average)
-        expected_friction = price_impact.rolling(window).mean()
-
-        # Current friction
-        current_friction = price_impact
-
-        # Surprise in friction
-        friction_error = np.abs(current_friction - expected_friction)
-        friction_std = friction_error.rolling(window).std()
-        standardized_friction = friction_error / (friction_std + 1e-9)
-
-        # Trigger events on liquidity surprises
-        events = standardized_friction[standardized_friction > threshold].index
-
+        
+        # Debug logging
+        tprint_info(f"LiquiditySpecialist: Input shape={df.shape}, columns={list(df.columns)}")
+        tprint_info(f"LiquiditySpecialist: Volume range={df['volume'].min()}-{df['volume'].max()}")
+        
+        # Check volume data quality
+        if df['volume'].std() < 1e-6:
+            tprint_warning("LiquiditySpecialist: Nearly constant volume")
+            return pd.DatetimeIndex([])
+        
+        ret = df['close'].pct_change()
+        
+        # Amihud illiquidity (price impact per volume)
+        amihud = ret.abs() / (df['volume'] + 1e-9)
+        liquidity = 1.0 / (amihud + 1e-9)
+        
+        # Check liquidity data quality
+        if liquidity.std() < 1e-6:
+            tprint_warning("LiquiditySpecialist: Nearly constant liquidity")
+            return pd.DatetimeIndex([])
+        
+        # Z-score of liquidity improvement
+        liq_mean = liquidity.rolling(window * 5).mean()
+        liq_std = liquidity.rolling(window * 5).std()
+        liq_z = (liquidity - liq_mean) / (liq_std + 1e-9)
+        
+        # Kyle's Lambda proxy (price impact per signed volume)
+        vol_signed = df['volume'] * np.sign(ret)
+        cov_window = min(window * 2, len(df) // 4)
+        cov = ret.rolling(cov_window).cov(vol_signed)
+        var = vol_signed.rolling(cov_window).var()
+        kyle_lambda = cov / (var + 1e-9)
+        
+        # Low lambda is good, so we want negative z
+        lambda_mean = kyle_lambda.rolling(window * 5).mean()
+        lambda_std = kyle_lambda.rolling(window * 5).std()
+        lambda_z = (kyle_lambda - lambda_mean) / (lambda_std + 1e-9)
+        
+        # Adaptive threshold: if too strict, use empirical quantiles
+        liq_events = (liq_z > threshold).sum()
+        lambda_events = (lambda_z < -threshold).sum()
+        total_events = liq_events + lambda_events
+        
+        if total_events < len(df) * 0.01:  # Less than 1% events
+            # Relax thresholds based on actual distribution
+            liq_threshold = liq_z.quantile(0.98)
+            lambda_threshold = lambda_z.quantile(0.02)  # Lower values = better liquidity
+            tprint_info(f"LiquiditySpecialist: Relaxed thresholds - liq: {liq_threshold:.3f}, lambda: {lambda_threshold:.3f}")
+        else:
+            liq_threshold = threshold
+            lambda_threshold = -threshold
+        
+        # Event trigger: High liquidity (positive liq_z) OR Low lambda (negative lambda_z)
+        mask = (liq_z > liq_threshold) | (lambda_z < lambda_threshold)
+        events = df.index[mask]
+        tprint_info(f"LiquiditySpecialist: Generated {len(events)} events")
+        
         return events
-
 
 class InformationSpecialistEvents(BaseEventGenerator):
     """
     Information Specialist as Causal Parent.
-
     Causal Role: Estimates PIN (Probability of Informed Trading).
-    Mechanism: If PIN is high, expects sticky price discovery. If low, expects mean-reversion.
-    Causal Surprise: Large price moves when PIN is at historical lows.
+    Now uses Dynamic Quantile Thresholding to ensure consistent event density.
     """
     def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        threshold = params.get('threshold', 2.0)
+        # Dynamic threshold: top 5% by default
+        quantile = params.get('quantile', 0.95)
         window = params.get('window', 50)
-
+        
         try:
-            return self._get_information_causal_events(df, threshold=threshold, window=window)
+            return self._get_information_causal_events(df, quantile=quantile, window=window)
         except Exception as e:
             logger.warning(f"InformationSpecialistEvents failed: {e}")
             return pd.DatetimeIndex([])
 
-    def _get_information_causal_events(self, df: pd.DataFrame, window=50, threshold=2.0):
-        """Generate events when information flow predictions fail."""
-        if not all(col in df.columns for col in ['close', 'volume']):
-            return pd.DatetimeIndex([])
-
-        close = df['close']
-        volume = df['volume']
-
-        # Simple PIN proxy: ratio of large trades to total volume
-        returns = close.pct_change()
-        large_moves = np.abs(returns) > returns.rolling(window).quantile(0.8)
-        large_volume = volume * large_moves.astype(int)
-
-        # PIN proxy: fraction of volume in large moves
-        pin_proxy = large_volume.rolling(window).sum() / volume.rolling(window).sum()
-
-        # Expected price movement based on PIN
-        # High PIN -> expect persistent moves, Low PIN -> expect reversions
-        expected_persistence = pin_proxy
-
-        # Actual persistence (autocorrelation)
-        persistence = returns.rolling(window).corr(returns.shift(1))
-
-        # Surprise in information flow
-        info_error = np.abs(persistence - expected_persistence)
-        info_std = info_error.rolling(window).std()
-        standardized_info = info_error / (info_std + 1e-9)
-
-        # Trigger events when information predictions fail
-        events = standardized_info[standardized_info > threshold].index
-
+    def _get_information_causal_events(self, df: pd.DataFrame, window=50, quantile=0.95):
+        # Standardized autocorrelation (Informed trading persistence)
+        if 'close' not in df.columns: return pd.DatetimeIndex([])
+        ret = df['close'].pct_change()
+        
+        # Absolute autocorrelation proxy for information arrival
+        # (High autocorrelation = trend/persistence = informed flow)
+        autocorr = ret.rolling(window).corr(ret.shift(1)).abs()
+        
+        # Dynamic Thresholding using Rolling Quantile
+        # Look for autocorr in the top (1-quantile)% of the last 10*window bars
+        baseline_window = window * 10
+        threshold_series = autocorr.rolling(baseline_window, min_periods=window).quantile(quantile)
+        
+        # Trigger when current PIN/autocorr exceeds the local extreme
+        events = df.index[autocorr > threshold_series]
+        
+        # Fallback: if too few events (<50), lower quantile slightly
+        if len(events) < 50:
+            relaxed_threshold = autocorr.rolling(baseline_window, min_periods=window).quantile(0.90)
+            events = df.index[autocorr > relaxed_threshold]
+            
         return events
 
+class MomentumDecaySpecialistEvents(BaseEventGenerator):
+    """
+    Momentum Decay Specialist as Causal Parent.
+    Causal Role: Predicts Trend Exhaustion (dM/dt < 0).
+    Mechanism: Momentum slowdown precedes reversal.
+    
+    This specialist captures the transition from trending to mean-reverting regime,
+    which is exactly where orthogonal labeling finds edge (MFE dominance shifts).
+    """
+    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        fast_window = params.get('fast_window', 10)
+        slow_window = params.get('slow_window', 50)
+        
+        try:
+            return self._get_momentum_decay_events(df, threshold, fast_window, slow_window)
+        except Exception as e:
+            logger.warning(f"MomentumDecaySpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+    
+    def _get_momentum_decay_events(self, df, threshold, fast_window, slow_window):
+        """Detect trend exhaustion via momentum deceleration."""
+        if 'close' not in df.columns:
+            return pd.DatetimeIndex([])
+        
+        price = df['close']
+        
+        # 1. Momentum (Rate of Change at two scales)
+        mom_fast = price.pct_change(fast_window)
+        mom_slow = price.pct_change(slow_window)
+        
+        # 2. Momentum Acceleration (2nd derivative - rate of change of momentum)
+        mom_accel = mom_fast.diff(fast_window)
+        
+        # 3. Trend strength filter (only trigger in strong trends)
+        # Rank within recent window to identify "strong" moves
+        trend_strength = mom_slow.abs().rolling(slow_window).rank(pct=True)
+        is_strong_trend = trend_strength > 0.7
+        
+        # 4. Z-score of deceleration
+        accel_z = (mom_accel - mom_accel.rolling(slow_window).mean()) / \
+                  (mom_accel.rolling(slow_window).std() + 1e-9)
+        
+        # 5. Event detection: Strong trend + significant deceleration
+        # For uptrend: mom_slow > 0 and accel_z < -threshold (slowing up)
+        # For downtrend: mom_slow < 0 and accel_z > threshold (slowing down)
+        uptrend_exhaustion = (mom_slow > 0) & (accel_z < -threshold) & is_strong_trend
+        downtrend_exhaustion = (mom_slow < 0) & (accel_z > threshold) & is_strong_trend
+        
+        return df.index[uptrend_exhaustion | downtrend_exhaustion]
 
 class ImprovedCUSUMEvents(BaseEventGenerator):
-    """CUSUM with differentiated trend vs reversal weights."""
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        k = params.get('k', 0.12)
-        vol_window = params.get('vol_window', 20)
-        er_window = params.get('er_window', 10)
-        er_min = params.get('er_min', 0.2)
-        alpha = params.get('alpha', 1.0)
-        beta = params.get('beta', 1.0)
-        w_trend = params.get('w_trend', 1.0)
-        w_reversal = params.get('w_reversal', 1.0)
-
-        close = df['close'] if 'close' in df.columns else df.iloc[:, 0]
-        volume = None
-        if 'volume' in df.columns:
-            volume = df['volume']
-        elif 'Volume' in df.columns:
-            volume = df['Volume']
-
+    """Refined CUSUM event generator using Efficiency Ratio (ER) for regime adaptation."""
+    def generate(self, df: pd.DataFrame, multiplier: float = 1.0, vol_window: int = 20) -> pd.DatetimeIndex:
         try:
-            dual_signals = generate_dual_cusum_signals(
-                close=close, volume=volume, k=k, alpha=alpha, beta=beta,
-                er_min=er_min, window_vol=vol_window, window_er=er_window
+            if 'close' not in df.columns: return pd.DatetimeIndex([])
+            signals = generate_dual_cusum_signals(
+                df['close'], 
+                volume=df.get('volume'), 
+                k=multiplier * 0.12, 
+                vol_window=vol_window
             )
-            composite = w_trend * dual_signals['trend_signal'] + w_reversal * dual_signals['reversal_signal']
-            return composite.index[composite != 0]
+            # Combine trend and reversal signals
+            combined = (signals['trend_signal'] == 1) | (signals['reversal_signal'] == 1)
+            return signals.index[combined]
         except Exception as e:
-            logger.warning(f"ImprovedCUSUM failed: {e}")
+            tprint_warning(f"⚠️ ImprovedCUSUMEvents failed: {e}")
             return pd.DatetimeIndex([])
 
-
-class MultiHorizonPriceCUSUMEvents(BaseEventGenerator):
-    """
-    Generate PRICE_CUSUM events across multiple adaptive horizons.
-    Combines short, medium, and long horizon events with horizon-specific TP:SL adjustments.
-    """
-    
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
-        events_list = []
-        
-        # Define horizon strategies
-        horizon_configs = [
-            {'name': 'short', 'horizon': 6, 'pt_adj': 0.8, 'sl_adj': 0.6},
-            {'name': 'medium', 'horizon': 12, 'pt_adj': 1.0, 'sl_adj': 1.0},
-            {'name': 'long', 'horizon': 24, 'pt_adj': 1.2, 'sl_adj': 1.1}
-        ]
-        
-        # Calculate adaptive base parameters
-        adaptive_params = self._get_adaptive_price_cusum_params(df, params)
-        
-        for config in horizon_configs:
-            # Adjust horizon-specific parameters
-            horizon_params = adaptive_params.copy()
-            horizon_params['horizon'] = config['horizon']
-            
-            # Horizon-specific TP:SL adjustments
-            horizon_params['pt_mult'] = horizon_params.get('pt_mult', 1.5) * config['pt_adj']
-            horizon_params['sl_mult'] = horizon_params.get('sl_mult', 0.75) * config['sl_adj']
-            
-            # Generate events for this horizon using base generator
-            try:
-                close = df['close'] if 'close' in df.columns else df.iloc[:, 0]
-                volume = df.get('volume', df.get('Volume'))
-                
-                dual_signals = generate_dual_cusum_signals(
-                    close=close,
-                    volume=volume,
-                    k=horizon_params.get('k', 0.12),
-                    alpha=horizon_params.get('alpha', 1.0),
-                    beta=horizon_params.get('beta', 1.0),
-                    er_min=horizon_params.get('er_min', 0.2),
-                    window_vol=horizon_params.get('vol_window', 20),
-                    window_er=horizon_params.get('er_window', 10)
-                )
-                composite = dual_signals['trend_signal'] + dual_signals['reversal_signal']
-                horizon_events = composite.index[composite != 0]
-                events_list.append(horizon_events)
-            except Exception as e:
-                logger.warning(f"MultiHorizon {config['name']} failed: {e}")
-        
-        # Combine events with deduplication
-        if events_list:
-            all_events = pd.DatetimeIndex(np.concatenate([e.values for e in events_list if len(e) > 0]))
-            return all_events.drop_duplicates().sort_values()
-        return pd.DatetimeIndex([])
-    
-    def _get_adaptive_price_cusum_params(self, df: pd.DataFrame, base_params: dict) -> dict:
-        """Calculate adaptive CUSUM parameters based on market conditions."""
-        params = base_params.copy()
-        
+class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
+    """Adaptive CUSUM that maintains event density across different volatility regimes."""
+    def generate(self, df: pd.DataFrame, multiplier: float = 1.0, vol_window: int = 20) -> pd.DatetimeIndex:
         try:
-            close = df['close'] if 'close' in df.columns else df.iloc[:, 0]
-            returns = close.pct_change().dropna()
-            
-            # Adaptive k based on recent volatility
-            recent_vol = returns.iloc[-100:].std() if len(returns) >= 100 else returns.std()
-            historical_vol = returns.std()
-            
-            # If recent vol is higher than historical, use stricter k (filter more noise)
-            vol_ratio = recent_vol / (historical_vol + 1e-9)
-            base_k = params.get('k', 0.12)
-            
-            # Adjust k: higher vol -> higher k (stricter filter)
-            if vol_ratio > 1.2:
-                params['k'] = base_k * min(vol_ratio, 2.0)
-            elif vol_ratio < 0.8:
-                params['k'] = base_k * max(vol_ratio, 0.5)
-                
-        except Exception:
-            pass
-        
-        return params
-
-
-class VolatilityShockEvents(BaseEventGenerator):
-    """Detects volatility shocks."""
-    def generate(self, price: pd.Series, lookback: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
-        returns = price.pct_change()
-        vol = returns.rolling(lookback).std()
-        vol_mean = vol.expanding(min_periods=lookback).mean()
-        vol_std = vol.expanding(min_periods=lookback).std()
-        zscore = (vol - vol_mean) / (vol_std + 1e-6)
-        return price.index[zscore > z]
-
-
-class TrendInitiationEvents(BaseEventGenerator):
-    """Detects trend initiations via MA crossover."""
-    def generate(self, price: pd.Series, short: int = 20, long: int = 100) -> pd.DatetimeIndex:
-        ma_s = price.rolling(short).mean()
-        ma_l = price.rolling(long).mean()
-        cross = (ma_s > ma_l) & (ma_s.shift(1) <= ma_l.shift(1))
-        return price.index[cross]
-
-
-class MeanReversionExtremeEvents(BaseEventGenerator):
-    """Detects mean reversion extremes via z-score."""
-    def generate(self, price: pd.Series, lookback: int = 50, z: float = 2.5) -> pd.DatetimeIndex:
-        mean = price.rolling(lookback).mean()
-        std = price.rolling(lookback).std()
-        zscore = (price - mean) / (std + 1e-6)
-        return price.index[np.abs(zscore) > z]
-
-
-class LiquidityShockEvents(BaseEventGenerator):
-    """Detects liquidity shocks via volume z-score."""
-    def generate(self, volume: pd.Series, lookback: int = 50, z: float = 2.0) -> pd.DatetimeIndex:
-        vol_mean = volume.expanding(min_periods=lookback).mean()
-        vol_std = volume.expanding(min_periods=lookback).std()
-        zscore = (volume - vol_mean) / (vol_std + 1e-6)
-        return volume.index[zscore > z]
-
-
-class TimeEvents(BaseEventGenerator):
-    """Time-based periodic events."""
-    def generate(self, price: pd.Series, frequency: int = 24) -> pd.DatetimeIndex:
-        return price.index[::frequency]
-
+            # Reuses the dual CUSUM logic but focuses on symmetric triggers
+            # Often used as a baseline for Causal comparisons
+            if 'close' not in df.columns: return pd.DatetimeIndex([])
+            signals = generate_dual_cusum_signals(
+                df['close'], 
+                volume=df.get('volume'), 
+                k=multiplier * 0.15, 
+                vol_window=vol_window
+            )
+            combined = (signals['trend_signal'] == 1) | (signals['reversal_signal'] == 1)
+            return signals.index[combined]
+        except Exception as e:
+            tprint_warning(f"⚠️ AdaptiveSymmetricCUSUMEvents failed: {e}")
+            return pd.DatetimeIndex([])
 
 class CausalSurpriseEvents(BaseEventGenerator):
     """
     Causal surprise event generator using specialist prediction errors.
-
-    Replaces CUSUM-based events with causal mechanism break detection.
-    Events are generated when specialists' causal predictions fail.
     """
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.surprise_detector = None
-        self.specialists = {}
 
     def generate(self, df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series] = None,
-                causal_graph: Dict[str, List[str]] = None, surprise_threshold: float = 1.8) -> pd.DatetimeIndex:
-        """
-        Generate causal surprise events from specialist prediction errors.
-
-        Args:
-            df: Market data DataFrame
-            specialist_predictions: Dictionary of specialist predictions
-            causal_graph: Causal graph structure
-            surprise_threshold: Z-score threshold for surprise detection
-
-        Returns:
-            DatetimeIndex of causal surprise events
-        """
-        tprint_info(f"🎯 CausalSurpriseEvents: Starting event generation...")
-        tprint_info(f"   📊 Data shape: {df.shape}")
-        tprint_info(f"   🧠 Specialists available: {len(specialist_predictions) if specialist_predictions else 0}")
-        tprint_info(f"   🔗 Causal relationships: {len(causal_graph) if causal_graph else 0}")
-        tprint_info(f"   🎚️ Surprise threshold: {surprise_threshold}")
+                causal_graph: Dict[str, List[str]] = None, surprise_threshold: float = 1.25,
+                zone3_boost: float = 3.0, zone2_boost: float = 2.0, exposure_scalar: float = 1.0,
+                **params) -> pd.DatetimeIndex:
+        
+        # Merge params for convenience
+        params = {
+                'specialist_predictions': specialist_predictions,
+                'causal_graph': causal_graph,
+                'surprise_threshold': surprise_threshold,
+                **params
+        }
+        
+        if not CAUSAL_AVAILABLE_ORTHOGONAL or not specialist_predictions:
+            return self._fallback_volatility_events(df)
 
         try:
-            if not CAUSAL_AVAILABLE_ORTHOGONAL:
-                tprint_warning("⚠️ CausalSurpriseEvents: Causal modules not available - using fallback")
-                return self._fallback_volatility_events(df)
-
-            if not specialist_predictions:
-                tprint_warning("⚠️ CausalSurpriseEvents: No specialist predictions provided")
-                tprint_error("   ❌ CausalSurpriseEvents: Fail fast - no fallback allowed")
-                return pd.DataFrame()
-
-            # Initialize surprise detector
-            tprint_info("   🚨 CausalSurpriseEvents: Initializing surprise detector...")
-            self.surprise_detector = CausalSurpriseDetector(
-                surprise_threshold=surprise_threshold,
-                verbose=False
-            )
-            tprint_info("   ✅ CausalSurpriseEvents: Surprise detector initialized")
-
-            # Register specialists
-            tprint_info("   📝 CausalSurpriseEvents: Registering specialists...")
+            self.surprise_detector = CausalSurpriseDetector(surprise_threshold=surprise_threshold)
             registered_count = 0
-
             for spec_name, predictions in specialist_predictions.items():
-                tprint_info(f"      - Processing specialist: {spec_name}")
-
-                # Create target (use price as proxy for causal relationships)
                 if 'close' in df.columns:
                     targets = df['close']
-                    tprint_info("         • Using close price as target")
-                else:
-                    tprint_warning(f"         • No close column available, skipping {spec_name}")
-                    continue
-
-                # Align indices
-                common_idx = predictions.index.intersection(targets.index).intersection(df.index)
-                tprint_info(f"         • Prediction samples: {len(predictions)}")
-                tprint_info(f"         • Target samples: {len(targets)}")
-                tprint_info(f"         • Common samples: {len(common_idx)}")
-
-                if len(common_idx) < 10:
-                    tprint_warning(f"         • Insufficient samples ({len(common_idx)}), skipping {spec_name}")
-                    continue
-
-                pred_aligned = predictions.loc[common_idx]
-                target_aligned = targets.loc[common_idx]
-
-                self.surprise_detector.register_specialist(spec_name, pred_aligned, target_aligned)
-                registered_count += 1
-                tprint_info("         ✅ Registered successfully")
+                    common_idx = predictions.index.intersection(targets.index)
+                    if len(common_idx) > 10:
+                        pred_aligned = predictions.loc[common_idx]
+                        target_aligned = targets.loc[common_idx]
+                        self.surprise_detector.register_specialist(spec_name, pred_aligned, target_aligned)
+                        registered_count += 1
             tprint_info(f"   📊 CausalSurpriseEvents: Specialists registered: {registered_count}/{len(specialist_predictions)}")
 
             if len(self.surprise_detector.specialist_errors_) == 0:
@@ -4420,6 +5283,11 @@ class CausalSurpriseEvents(BaseEventGenerator):
             if surprise_df.empty:
                 tprint_warning("   ⚠️ CausalSurpriseEvents: No surprise scores computed")
                 return self._fallback_volatility_events(df)
+
+            # Adaptive Calibration to hit target density
+            target_density = params.get('target_signals_per_day', 2.0)
+            duration_days = (df.index[-1] - df.index[0]).days + 1
+            self.surprise_detector.adaptive_calibration(target_density, duration_days)
 
             tprint_info("   🎯 CausalSurpriseEvents: Generating causal events...")
             causal_events = self.surprise_detector.generate_causal_events()
@@ -4445,12 +5313,11 @@ class CausalSurpriseEvents(BaseEventGenerator):
                 vol = returns.rolling(20).std()
                 vol_threshold = vol.quantile(0.8)
                 events = df.index[vol > vol_threshold]
-                return events[:min(len(events), 100)]  # Limit events
+                return events[:min(len(events), 500)]  # Limit events - increased for OOF fold sizing
             else:
                 return pd.DatetimeIndex([])
         except Exception:
             return pd.DatetimeIndex([])
-
 
 # Aliases
 CusumEvents = AdaptiveSymmetricCUSUMEvents

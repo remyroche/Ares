@@ -79,7 +79,7 @@ from src.utils.versioned_artifacts.temporal_splits import (
 from src.utils.ml_common.standardized_xgb_trainer import (
     StandardizedXGBTrainer,
     XGBTrainingConfig,
-    XGBTrainingResults,
+    SpecialistTrainingResults,
 )
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     ClusterQualityAssessor,

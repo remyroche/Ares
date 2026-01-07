@@ -14,6 +14,13 @@ except ImportError:
 from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
 from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
 from src.utils.feature_common.atr_normalization import atr_normalize, should_use_atr_normalization, calculate_atr
+from src.utils.numba_funcs import jit # assuming it's exported there or use global import
+try:
+    from numba import njit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    from src.utils.numba_funcs import jit as njit
+    NUMBA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +67,63 @@ class KalmanFilter1D:
 
     def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
         """
-        Filter entire time series.
-
-        Returns:
-            Tuple of (filtered_series, variance_series)
+        Filter entire time series. (Numba Optimized)
         """
+        if NUMBA_AVAILABLE:
+            filtered, variances = _numba_kalman_filter(
+                series.values.astype(np.float64),
+                self.Q,
+                self.R,
+                self.x
+            )
+            return pd.Series(filtered, index=series.index), pd.Series(variances, index=series.index)
+        else:
+            filtered = []
+            variances = []
+            for val in series:
+                f, v = self.update(val)
+                filtered.append(f)
+                variances.append(v)
+            return pd.Series(filtered, index=series.index), pd.Series(variances, index=series.index)
+
+@njit
+def _numba_kalman_filter(data, Q, R, initial_value):
+    n = len(data)
+    filtered = np.zeros(n, dtype=np.float64)
+    variances = np.zeros(n, dtype=np.float64)
+    
+    x = initial_value
+    P = 1.0
+    
+    for i in range(n):
+        val = data[i]
+        if np.isnan(val):
+            filtered[i] = np.nan
+            variances[i] = np.nan
+        else:
+            # Predict
+            x_prior = x
+            P_prior = P + Q
+            
+            # Update
+            K = P_prior / (P_prior + R)
+            x = x_prior + K * (val - x_prior)
+            P = (1 - K) * P_prior
+            
+            filtered[i] = x
+            variances[i] = P
+            
+    return filtered, variances
+
+    def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+        """
+        Filter entire time series. (Numba Optimized)
+        """
+        if NUMBA_AVAILABLE:
+            filtered, variances = _numba_kalman_filter(series.values, self.Q, self.R, self.x)
+            return pd.Series(filtered, index=series.index), pd.Series(variances, index=series.index)
+        
+        # Fallback
         filtered = []
         variances = []
 

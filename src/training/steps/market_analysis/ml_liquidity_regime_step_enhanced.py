@@ -39,10 +39,6 @@ from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
     TemporalSplitConfig,
 )
-from src.utils.ml_common.standardized_xgb_trainer import (
-    StandardizedXGBTrainer,
-    XGBTrainingConfig,
-)
 from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import (
     SpecialistDiagnosticsMixinEnhancedV2
 )
@@ -50,7 +46,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 from src.utils.data_loader import DataLoader
 
 logger = logging.getLogger(__name__)

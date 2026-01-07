@@ -30,7 +30,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -198,10 +198,10 @@ class EnhancedMLMicrostructureStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMix
         return manual_features
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute enhanced momentum persistence step."""
+        """Execute enhanced microstructure step."""
         return await self.execute_standard_specialist_logic(
             config=config,
-            specialist_type=SpecialistType.MICROSTRUCTURE_REGIME, # Assuming exist or fallback
+            specialist_type=SpecialistType.MICROSTRUCTURE,
             manual_feature_func=self._get_micro_combined_manual_features,
             filter_type='spread',
             pt_sl_config_key='microstructure_pt_sl',

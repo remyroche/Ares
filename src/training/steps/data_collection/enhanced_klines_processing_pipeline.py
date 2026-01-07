@@ -12,7 +12,10 @@ Features:
 - Comprehensive gap detection and filling
 - Data resampling capabilities (1m, 5m, 15m, 30m, 1h for data older than 3 days)
 - OHLCV data validation and formatting
+from src.utils.numba_funcs import (_numba_detect_gaps_vectorized, _numba_fill_gaps_vectorized, 
+                                  _numba_ohlc_resample_vectorized, _numba_verify_data_quality)
 - Duplicate detection and handling
+from src.utils.numba_funcs import NUMBA_AVAILABLE
 - Comprehensive quality assurance and validation using src/utils/data/quality/
 - Advanced data quality scoring and assessment
 - Statistical distribution validation
@@ -78,6 +81,7 @@ if TYPE_CHECKING:
         QualityAlertManager = Any
 
 import asyncio
+import numpy as np
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -2240,7 +2244,7 @@ class EnhancedKlinesProcessingPipeline:
             df_with_timestamp = self._ensure_timestamp_column(df)
 
             # Detect gaps
-            gaps = self._detect_gaps(df_with_timestamp, interval, max_gap_minutes)
+            gaps = self._detect_gaps_vectorized(df_with_timestamp, interval, max_gap_minutes)
 
             if not gaps:
                 result.success = True
@@ -2274,7 +2278,7 @@ class EnhancedKlinesProcessingPipeline:
             filled_ranges = [(g.start_time, g.end_time) for g in gaps if g.priority == 1]
 
             # Post-fill gap recheck on base interval
-            post_gaps_base = self._detect_gaps(filled_data, interval, max_gap_minutes)
+            post_gaps_base = self._detect_gaps_vectorized(filled_data, interval, max_gap_minutes)
 
             # Post-fill validation on primary (15m) interval
             post_gaps_15m: List[GapInfo] = []
@@ -2285,7 +2289,7 @@ class EnhancedKlinesProcessingPipeline:
                     self.default_resampling_config
                 )
                 if not resampled_for_validation.empty:
-                    post_gaps_15m = self._detect_gaps(
+                    post_gaps_15m = self._detect_gaps_vectorized(
                         resampled_for_validation,
                         self.primary_validation_interval,
                         max(max_gap_minutes, 15)
@@ -2423,6 +2427,159 @@ class EnhancedKlinesProcessingPipeline:
 
         return gaps
 
+    def _detect_gaps_vectorized(
+        self,
+        df: pd.DataFrame,
+        interval: str,
+        max_gap_minutes: int,
+        expected_start: Optional[datetime] = None,
+        expected_end: Optional[datetime] = None
+    ) -> List[GapInfo]:
+        """
+        Vectorized gap detection using Numba for improved performance.
+        """
+        gaps = []
+
+        # Calculate expected interval in minutes
+        interval_minutes = self._interval_to_minutes(interval)
+        if interval_minutes is None:
+            return gaps
+
+        # Ensure we have a symbol for GapInfo
+        symbol = self.current_symbol or (df[symbol].iloc[0] if not df.empty and symbol in df.columns else UNKNOWN)
+
+        if df.empty:
+            if expected_start and expected_end:
+                # Entire range is missing
+                gaps.append(GapInfo(
+                    start_time=expected_start,
+                    end_time=expected_end,
+                    duration_minutes=int((expected_end - expected_start).total_seconds() / 60),
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                ))
+            return gaps
+
+    def _verify_data_quality_vectorized(self, df: pd.DataFrame) -> Dict[str, int]:
+        """
+        Vectorized data quality verification using Numba for improved performance.
+        """
+        if df.empty:
+            return {"ohlc_issues": 0, "volume_issues": 0, "price_issues": 0}
+        
+        quality_issues = {"ohlc_issues": 0, "volume_issues": 0, "price_issues": 0}
+        
+        # Use vectorized quality check for large datasets
+        if len(df) > 1000 and NUMBA_AVAILABLE:
+            try:
+                # Extract OHLCV arrays
+                opens = df["open"].values.astype(np.float64)
+                highs = df["high"].values.astype(np.float64)
+                lows = df["low"].values.astype(np.float64)
+                closes = df["close"].values.astype(np.float64)
+                volumes = df["volume"].values.astype(np.float64)
+                
+                # Use Numba for vectorized quality check
+                ohlc_issues, volume_issues, price_issues = _numba_verify_data_quality(
+                    opens, highs, lows, closes, volumes
+                )
+                
+                quality_issues = {
+                    "ohlc_issues": int(ohlc_issues),
+                    "volume_issues": int(volume_issues),
+                    "price_issues": int(price_issues)
+                }
+                
+                return quality_issues
+                
+            except Exception as e:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ Vectorized quality check failed, using fallback: {e}")
+        
+        # Fallback to standard quality checks
+        # Check OHLC consistency
+        ohlc_mask = (df["high"] < df["low"]) | (df["open"] > df["high"]) | (df["open"] < df["low"]) | (df["close"] > df["high"]) | (df["close"] < df["low"])
+        quality_issues["ohlc_issues"] = ohlc_mask.sum()
+        
+        # Check volume issues
+        volume_mask = df["volume"] < 0
+        quality_issues["volume_issues"] = volume_mask.sum()
+        
+        # Check price issues (zero, negative, extreme values)
+        price_mask = (df["open"] <= 0) | (df["high"] <= 0) | (df["low"] <= 0) | (df["close"] <= 0)
+        quality_issues["price_issues"] = price_mask.sum()
+        
+        # Check for extreme price movements
+        if len(df) > 1:
+            price_changes = df["close"].pct_change().abs()
+            extreme_moves = price_changes > 0.5  # > 50% move
+            quality_issues["price_issues"] += extreme_moves.sum()
+        
+        return quality_issues
+
+        df_sorted = df_normalized.sort_index()
+
+        # Use vectorized gap detection for large datasets
+        if len(df_sorted) > 1000 and NUMBA_AVAILABLE:
+            try:
+                # Convert timestamps to nanoseconds for Numba
+                timestamps_ns = df_sorted.index.view(np.int64).values
+                
+                # Detect gaps using vectorized Numba function
+                gap_durations = _numba_detect_gaps_vectorized(timestamps_ns, interval_minutes)
+                
+                # Convert gap durations to GapInfo objects
+                for i, duration in enumerate(gap_durations):
+                    if duration > max_gap_minutes and i > 0:
+                        gap_start = df_sorted.index[i-1] + timedelta(minutes=interval_minutes)
+                        gap_end = df_sorted.index[i]
+                        
+                        gaps.append(GapInfo(
+                            start_time=gap_start,
+                            end_time=gap_end,
+                            duration_minutes=int(duration),
+                            symbol=symbol,
+                            interval=interval,
+                            priority=1 if duration >= interval_minutes else 2
+                        ))
+                
+                # Check boundary gaps
+                if expected_start:
+                    expected_start_utc = self._ensure_utc_timestamp(expected_start)
+                    actual_start_utc = df_sorted.index[0]
+                    if (actual_start_utc - expected_start_utc).total_seconds() / 60 > max_gap_minutes:
+                        gaps.append(GapInfo(
+                            start_time=expected_start_utc,
+                            end_time=actual_start_utc,
+                            duration_minutes=int((actual_start_utc - expected_start_utc).total_seconds() / 60),
+                            symbol=symbol,
+                            interval=interval,
+                            priority=1
+                        ))
+                
+                if expected_end:
+                    expected_end_utc = self._ensure_utc_timestamp(expected_end)
+                    actual_end_utc = df_sorted.index[-1]
+                    if (expected_end_utc - actual_end_utc).total_seconds() / 60 > max_gap_minutes:
+                        gaps.append(GapInfo(
+                            start_time=actual_end_utc,
+                            end_time=expected_end_utc,
+                            duration_minutes=int((expected_end_utc - actual_end_utc).total_seconds() / 60),
+                            symbol=symbol,
+                            interval=interval,
+                            priority=1
+                        ))
+                
+                return gaps
+                
+            except Exception as e:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ Vectorized gap detection failed, falling back to standard method: {e}")
+                
+        # Fallback to standard gap detection
+        return self._detect_gaps_vectorized(df, interval, max_gap_minutes, expected_start, expected_end)
+
     def _detect_missing_in_processed_15m(
         self,
         symbol: str,
@@ -2435,16 +2592,9 @@ class EnhancedKlinesProcessingPipeline:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=years * 365)
 
-            df_15m = self.klines_manager.read_data(
-                symbol=symbol,
-                interval="15m",
-                start_date=start_date,
-                end_date=end_date,
-                data_type="processed",
-            )
 
             # Use refined _detect_gaps with boundary checks
-            gaps = self._detect_gaps(
+            gaps = self._detect_gaps_vectorized(
                 df_15m if df_15m is not None else pd.DataFrame(),
                 "15m", 
                 self.config.max_gap_minutes,
@@ -3624,13 +3774,27 @@ class EnhancedKlinesProcessingPipeline:
                     data_type="processed"
                 )
                 
-                gaps = self._detect_gaps(
-                    df if df is not None else pd.DataFrame(),
-                    interval,
-                    self.config.max_gap_minutes,
-                    expected_start=start_date,
-                    expected_end=end_date
-                )
+                # Fix: Handle missing timestamp column by using DatetimeIndex directly
+                if df is not None and not df.empty:
+                    # Ensure DataFrame has proper datetime index
+                    if not isinstance(df.index, pd.DatetimeIndex):
+                        if "timestamp" in df.columns:
+                            df = df.set_index("timestamp")
+                        elif "timestamp_ms" in df.columns:
+                            df = df.set_index(pd.to_datetime(df["timestamp_ms"], unit="ms"))
+                        else:
+                            # Use index as-is if it is already datetime-like
+                            df.index = pd.to_datetime(df.index)
+                    
+                    gaps = self._detect_gaps_vectorized(
+                        df,
+                        interval,
+                        self.config.max_gap_minutes,
+                        expected_start=start_date,
+                        expected_end=end_date
+                    )
+                else:
+                    gaps = []
                 all_gaps[interval] = gaps
                 
                 if self.enable_logging:
@@ -3952,7 +4116,11 @@ if __name__ == "__main__":
             # Create exchange interface (prefer factory + dispatcher)
             print(f"🔗 Connecting to {args.exchange.upper()}...")
             exchange_interface = None
-            if EXCHANGE_INTERFACE_AVAILABLE and ExchangeInterface is not None:
+            # Fix: Guard against ExchangeInterface being None
+            if not EXCHANGE_INTERFACE_AVAILABLE or ExchangeInterface is None:
+                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
+                print()
+            else:
                 dispatcher = None
                 if create_exchange_dispatcher is not None and ExchangeConfig is not None:
                     try:
@@ -4009,9 +4177,6 @@ if __name__ == "__main__":
                     tprint_warning(f"⚠️ Connection warning: {e}")
                     tprint_info("📝 Continuing with existing/local data only...")
                     exchange_interface = None
-            else:
-                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
-            print()
             
             # Process data
             print(f"🚀 Starting data collection and processing...")

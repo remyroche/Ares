@@ -1,0 +1,4 @@
+regime,samples,pos_rate,alpha_ic,prob_auc
+Quiet,172,0.0,-0.4045181511380278,
+Trending,169,0.0,-0.29430411217741537,
+Chaos,159,0.0,-0.3036183424886554,

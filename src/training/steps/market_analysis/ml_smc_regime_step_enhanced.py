@@ -37,7 +37,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -226,15 +226,19 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
                 manual_features[f'full_confirmed_down_{window}d'] = full_confirmed_down
             
             # 4. Multi-Timeframe SMC Alignment (15m, 1h, 4h simulation)
-            # Simulate higher timeframes by resampling
+            # Optimization: Only resample if enough data and use faster resampling
             def resample_to_timeframe(df, timeframe_minutes):
-                """Resample OHLCV data to higher timeframe."""
-                resampled = pd.DataFrame()
-                resampled['open'] = df['close'].resample(f'{timeframe_minutes}T').first()
-                resampled['high'] = df['high'].resample(f'{timeframe_minutes}T').max()
-                resampled['low'] = df['low'].resample(f'{timeframe_minutes}T').min()
-                resampled['close'] = df['close'].resample(f'{timeframe_minutes}T').last()
-                resampled['volume'] = df['volume'].resample(f'{timeframe_minutes}T').sum()
+                """Resample OHLCV data to higher timeframe efficiently."""
+                if len(df) < timeframe_minutes:
+                    return pd.DataFrame()
+                
+                resampled = df.resample(f'{timeframe_minutes}T').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
                 return resampled
             
             # Create 1h (60min) and 4h (240min) data
@@ -347,18 +351,20 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
                 # Wyckoff accumulation/distribution patterns
                 price_range = high - low
                 range_ma = price_range.rolling(window).mean()
+                vol_ma = volume.rolling(window).mean()
                 
                 # Accumulation (narrowing range, volume accumulation)
-                accumulation_signal = (price_range < range_ma * 0.7) & (volume > volume.rolling(window).mean() * 1.2)
+                accumulation_signal = (price_range < range_ma * 0.7) & (volume > vol_ma * 1.2)
                 manual_features[f'accumulation_signal_{window}d'] = accumulation_signal.astype(int)
                 
                 # Distribution (widening range, volume distribution)
-                distribution_signal = (price_range > range_ma * 1.3) & (volume < volume.rolling(window).mean() * 0.8)
+                distribution_signal = (price_range > range_ma * 1.3) & (volume < vol_ma * 0.8)
                 manual_features[f'distribution_signal_{window}d'] = distribution_signal.astype(int)
                 
                 # Smart money entry/exit patterns
-                smart_entry = (close > close.rolling(window).mean()) & (volume > volume.rolling(window).mean() * 1.5)
-                smart_exit = (close < close.rolling(window).mean()) & (volume > volume.rolling(window).mean() * 1.5)
+                close_ma = close.rolling(window).mean()
+                smart_entry = (close > close_ma) & (volume > vol_ma * 1.5)
+                smart_exit = (close < close_ma) & (volume > vol_ma * 1.5)
                 
                 manual_features[f'smart_entry_{window}d'] = smart_entry.astype(int)
                 manual_features[f'smart_exit_{window}d'] = smart_exit.astype(int)

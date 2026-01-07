@@ -21,15 +21,19 @@ import pickle
 import json
 from pathlib import Path
 
-# Try to import advanced libraries
+from sklearn.tree import DecisionTreeRegressor, export_text
+
+# Try to import advanced libraries (optional)
 try:
     from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
     from scipy.linalg import block_diag
-    from sklearn.tree import DecisionTreeRegressor, export_text
-    STATSMODELS_AVAILABLE = True
+    UKF_AVAILABLE = True
 except ImportError:
-    STATSMODELS_AVAILABLE = False
-    logging.warning("⚠️ Advanced libraries not available - using simplified implementations")
+    UKF_AVAILABLE = False
+    logging.warning("⚠️ Advanced UKF libraries not available - using simplified implementations")
+
+# Alias for backward compatibility with existing code paths
+STATSMODELS_AVAILABLE = UKF_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +164,7 @@ class TVVARSystem:
             time_varying_coeffs = self._fit_unscented_kalman_filter(lagged_data, regime_assignments, initial_params)
         else:
             # Fallback to rolling window VAR
-            time_varying_coeffs = self._fit_rolling_window_var(lagged_data, regime_assignments, initial_params)
+            time_varying_coeffs = self._fit_rolling_window_var(features_df, regime_assignments, initial_params)
         
         # Extract specialist relationships
         specialist_relationships = self._extract_specialist_relationships(time_varying_coeffs, regime_assignments)
@@ -349,9 +353,9 @@ class TVVARSystem:
         return coeff_df
     
     def _fit_rolling_window_var(self, 
-                               lagged_data: pd.DataFrame,
+                               features_df: pd.DataFrame,
                                regime_assignments: pd.Series,
-                               initial_params: Optional[np.ndarray] = None) -> pd.DataFrame:
+                               initial_params: Optional[Any] = None) -> pd.DataFrame:
         """
         Fallback rolling window VAR implementation.
         
@@ -361,11 +365,32 @@ class TVVARSystem:
         
         from statsmodels.tsa.vector_ar.var_model import VAR
         
-        n_features = len(lagged_data.columns) // self.n_lags
+        # IMPORTANT: fit VAR on the *raw* core feature dataframe.
+        # If we fit on an already-lagged dataframe (cols = n_features*n_lags),
+        # statsmodels treats each lag column as an endogenous variable, which
+        # produces a (n_features*n_lags)^2 coefficient vector. That then
+        # mismatches our expected n_features^2 layout (e.g. 256 vs 64).
+        var_data = features_df.copy()
+        original_index = var_data.index
+        var_data.index = pd.RangeIndex(start=0, stop=len(var_data))
+
+        n_features = int(len(var_data.columns))
         coefficient_estimates = []
+
+        initial_vec: Optional[np.ndarray] = None
+        if initial_params is not None:
+            try:
+                if isinstance(initial_params, pd.DataFrame) and len(initial_params) > 0:
+                    initial_vec = np.asarray(initial_params.iloc[-1].values, dtype=float)
+                elif isinstance(initial_params, pd.Series):
+                    initial_vec = np.asarray(initial_params.values, dtype=float)
+                else:
+                    initial_vec = np.asarray(initial_params, dtype=float).reshape(-1)
+            except Exception:
+                initial_vec = None
         
-        for i in range(self.window_size, len(lagged_data)):
-            window_data = lagged_data.iloc[i-self.window_size:i]
+        for i in range(self.window_size, len(var_data)):
+            window_data = var_data.iloc[i-self.window_size:i]
             
             try:
                 # Fit VAR on window
@@ -381,15 +406,15 @@ class TVVARSystem:
                 # Use previous coefficients or initial params
                 if coefficient_estimates:
                     coefficient_estimates.append(coefficient_estimates[-1])
-                elif initial_params is not None:
-                    coefficient_estimates.append(initial_params.flatten())
+                elif initial_vec is not None:
+                    coefficient_estimates.append(initial_vec)
                 else:
                     coefficient_estimates.append(np.zeros(n_features * n_features))
         
         # Convert to DataFrame
         coeff_df = pd.DataFrame(
             coefficient_estimates,
-            index=lagged_data.index[self.window_size:],
+            index=original_index[self.window_size:],
             columns=[f"coeff_{i}" for i in range(n_features * n_features)]
         )
         
@@ -552,9 +577,11 @@ class TVVARSystem:
             # Calculate trend consistency
             coeff_trends = time_varying_coeffs.rolling(window=50).mean()
             trend_consistency = 1.0 - coeff_trends.diff().abs().mean()
+            # Reduce to a scalar
+            trend_consistency_val = float(trend_consistency.mean())
             
             # Combine into stability score (0-1 scale)
-            stability_score = (1.0 - coeff_volatility.mean()) * 0.6 + trend_consistency * 0.4
+            stability_score = (1.0 - float(coeff_volatility.mean())) * 0.6 + trend_consistency_val * 0.4
             
             return float(np.clip(stability_score, 0.0, 1.0))
             
@@ -684,23 +711,50 @@ class TVVARSystem:
     def _apply_coefficient_orthogonalization(self, 
                                            features_df: pd.DataFrame, 
                                            coefficients: pd.DataFrame) -> pd.DataFrame:
-        """Apply orthogonalization using TV-VAR coefficients."""
-        
+        """
+        Apply orthogonalization using TV-VAR coefficients.
+        Fixed to handle dimension mismatch between VAR core features and full feature set.
+        """
         # Use latest coefficients for orthogonalization
         latest_coeffs = coefficients.iloc[-1].values
         
-        # Reshape into matrix and apply to features
-        n_features = len(features_df.columns)
-        if len(latest_coeffs) >= n_features * n_features:
-            coeff_matrix = latest_coeffs[:n_features * n_features].reshape(n_features, n_features)
+        # Core features used for VAR
+        core_features = [
+            'rv_z_short', 'rv_z_long', 'vol_ratio',
+            'volume_z', 'spread_proxy_z',
+            'trend_slope_z', 'trend_strength', 'drawdown_z'
+        ]
+        
+        # Check if we can apply to core features only
+        available_core = [c for c in core_features if c in features_df.columns]
+        
+        if len(available_core) == len(core_features):
+            # Reshape into matrix
+            n = len(core_features)
+            coeff_matrix = latest_coeffs[:n*n].reshape(n, n)
             
-            # Apply orthogonalization transformation
-            orthogonalized = features_df @ coeff_matrix.T
+            # Apply only to core features
+            orthogonalized = features_df.copy()
+            core_data = features_df[core_features].values
+            transformed_core = core_data @ coeff_matrix.T
             
+            # Update core features in the copy
+            orthogonalized[core_features] = transformed_core
+            
+            # For remaining features, apply a mean-regime adjustment (optional enhancement)
             return orthogonalized
-        else:
-            logger.warning("Insufficient coefficients for orthogonalization")
-            return features_df
+        
+        # Fallback if core features aren't present: attempt heuristic mapping
+        n_features = len(features_df.columns)
+        n_coeffs = len(latest_coeffs)
+        
+        # If the model was actually trained on this features_df (n*n == n_coeffs)
+        if n_coeffs == n_features * n_features:
+            coeff_matrix = latest_coeffs.reshape(n_features, n_features)
+            return features_df @ coeff_matrix.T
+            
+        logger.warning(f"⚠️ TV-VAR dimension mismatch: {n_coeffs} coeffs vs {n_features} features. Returning original.")
+        return features_df
     
     def get_regime_specific_weights(self, current_regime: str) -> Dict[str, float]:
         """Get regime-specific specialist weights from TV-VAR results."""

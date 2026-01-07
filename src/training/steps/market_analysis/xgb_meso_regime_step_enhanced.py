@@ -38,7 +38,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -162,8 +162,20 @@ class EnhancedXGBMesoRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
             # Meso cycle analysis
             for window in [10, 20, 50]:
                 # Cycle detection using autocorrelation
-                cycle_strength = returns.rolling(window).apply(lambda x: x.autocorr())
-                features[f'meso_cycle_strength_{window}'] = cycle_strength
+                # Optimization: use precomputed autocorr logic with step=5
+                step_autocorr = 5
+                autocorr_vals = np.full(len(df), np.nan)
+                rets_vals = returns.values
+                
+                for i in range(window, len(df), step_autocorr):
+                    window_data = rets_vals[i-window:i]
+                    if len(window_data) > 1:
+                        s1 = window_data[1:]
+                        s2 = window_data[:-1]
+                        if np.std(s1) > 0 and np.std(s2) > 0:
+                            autocorr_vals[i] = np.corrcoef(s1, s2)[0, 1]
+                
+                features[f'meso_cycle_strength_{window}'] = pd.Series(autocorr_vals, index=df.index).ffill().fillna(0.0)
                 
                 # Cycle phase
                 cycle_phase = np.arctan2(returns.rolling(window).mean(), returns.rolling(window).std())
@@ -176,11 +188,15 @@ class EnhancedXGBMesoRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
             # Meso extreme analysis
             for window in [40,60,80]:
                 # Extreme returns
-                extreme_returns = returns.rolling(window).apply(lambda x: (x.abs() > x.std() * 1.5).sum())
+                # Optimization: Vectorized thresholding
+                roll_std = returns.rolling(window).std()
+                extreme_returns = (returns.abs() > roll_std * 1.5).rolling(window).sum()
                 features[f'meso_extreme_returns_{window}'] = extreme_returns
                 
                 # Tail risk
-                tail_risk = returns.rolling(window).apply(lambda x: (x < x.quantile(0.1)).mean())
+                # Optimization: Vectorized rolling quantile
+                q10 = returns.rolling(window).quantile(0.1)
+                tail_risk = (returns < q10).rolling(window).mean()
                 features[f'meso_tail_risk_{window}'] = tail_risk
                 
                 # Volatility clustering

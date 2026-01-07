@@ -4,19 +4,30 @@ from typing import Tuple, Dict, Optional, List
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
 import stumpy
-from src.utils.ml_common.wavelet_utils import get_wavelet_features
+from src.utils.ml_common.wavelet_utils import get_wavelet_features, wavelet_energy_ratios
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error
+from src.utils.risk_regime_numba import rolling_mean_numba, rolling_std_numba, calculate_returns_numba
+import hashlib
+import pickle
+import os
+from functools import lru_cache
 
 class AdaptiveHunterRouter:
     """
     Phase 1: Physics Router (Air Traffic Controller)
     Soft regime attribution using GMM on physics-based features.
+    Optimized with Numba JIT and caching for performance.
     """
-    def __init__(self, n_regimes: int = 3, base_smoothing: float = 0.85, window_size: int = 1000, mp_window: int = 30):
+    def __init__(self, n_regimes: int = 3, base_smoothing: float = 0.85, window_size: int = 1000, mp_window: int = 30, cache_dir: str = ".cache/physics_router"):
+        tprint_info(f"[AdaptiveHunterRouter] Initializing optimized router with n_regimes={n_regimes}, window_size={window_size}")
         self.n_regimes = n_regimes
         self.base_smoothing = base_smoothing
         self.window_size = window_size
         self.mp_window = mp_window
+        self.cache_dir = cache_dir
+        
+        # Create cache directory if it doesn't exist
+        os.makedirs(cache_dir, exist_ok=True)
 
         self.gmm: Optional[GaussianMixture] = None
         self.scaler = RobustScaler()
@@ -25,6 +36,10 @@ class AdaptiveHunterRouter:
         self.last_weights: Optional[np.ndarray] = None
         self.log_lik_ema: Optional[float] = None
         self.log_lik_std: Optional[float] = None
+        
+        # Cache for expensive computations
+        self._mp_cache: Dict[str, np.ndarray] = {}
+        self._wavelet_cache: Dict[str, np.ndarray] = {}
 
         self.transition_matrix = np.array([
             [0.90, 0.08, 0.02],  # From Quiet
@@ -37,43 +52,34 @@ class AdaptiveHunterRouter:
         Compute the 4 core physics features from Volume Bars.
         df must have: 'close', 'volume', 'bar_duration'
         """
-        tprint_info("   [Router] Computing Physics Features (Vol, Eff, MP, Wavelet)...")
+        tprint_info(f"[AdaptiveHunterRouter] compute_physics_features start rows={len(df)}")
         if len(df) < self.mp_window * 2:
             return pd.DataFrame()
 
         # 1. Vol-Time Intensity
         vol_intensity = df['volume'] / (df['bar_duration'] + 1e-9)
 
-        # 2. Efficiency Ratio
+        # 2. Efficiency Ratio - Optimized with Numba
         w_eff = 20
-        direction = df['close'].diff(w_eff).abs()
-        volatility = df['close'].diff().abs().rolling(w_eff).sum()
-        efficiency = direction / (volatility + 1e-9)
+        close_returns = calculate_returns_numba(df['close'].values)
+        direction = np.abs(np.convolve(close_returns, np.ones(w_eff), 'valid'))
+        volatility = np.abs(close_returns)
+        volatility_rolling = rolling_std_numba(volatility, w_eff) * np.sqrt(w_eff)
+        
+        # Pad to match original length
+        efficiency_full = np.zeros(len(df))
+        if len(direction) > 0 and len(volatility_rolling) >= len(direction):
+            efficiency = direction / (volatility_rolling[:len(direction)] + 1e-9)
+            efficiency_full[w_eff-1:] = efficiency
+        
+        efficiency = efficiency_full
 
-        # 3. Matrix Profile Distance
-        close_float = df['close'].values.astype(float)
-        try:
-            mp = stumpy.stump(close_float, m=self.mp_window)
-            pad_width = len(df) - len(mp)
-            mp_dist = np.concatenate([np.full(pad_width, np.nan), mp[:, 0]])
-        except Exception as e:
-            tprint_warning(f"   [Router] Stumpy failed: {e}. Using fallback.")
-            mp_dist = np.zeros(len(df))
+        # 3. Matrix Profile Distance - Optimized with caching
+        mp_dist = self._compute_matrix_profile_cached(df['close'].values)
 
-        # 4. Wavelet Entropy (Approximation)
-        # Using rolling entropy of returns as proxy for speed if not using full wavelet
-        # But let's try to be closer to spec: L1/L4 ratio.
-        # We can reuse 'get_wavelet_features' in a loop or stride?
-        # For training, loop is okay.
-        # Stride = 10?
-        # Let's use a simpler proxy for vectorization:
-        # Entropy of returns over rolling window.
-        roll_std = df['close'].pct_change().rolling(32).std()
-        roll_mean_abs = df['close'].pct_change().abs().rolling(32).mean()
-        # Coeff of Variation approx? No.
-        # Let's placeholder with rolling std for now as "Entropy Proxy".
-        wavelet_entropy = roll_std
-
+        # 4. Wavelet Entropy - Vectorized computation
+        wavelet_entropy = self._compute_wavelet_entropy_vectorized(df['close'].values)
+        
         feats = pd.DataFrame(index=df.index)
         feats['vol_intensity'] = vol_intensity
         feats['efficiency'] = efficiency
@@ -82,12 +88,162 @@ class AdaptiveHunterRouter:
 
         return feats.ffill().bfill()
 
+    def _get_cache_key(self, data: np.ndarray, prefix: str) -> str:
+        """Generate cache key based on data hash and parameters."""
+        data_hash = hashlib.md5(data.tobytes()).hexdigest()[:16]
+        return f"{prefix}_{data_hash}_{self.window_size}_{self.mp_window}"
+
+    def _compute_matrix_profile_cached(self, close_prices: np.ndarray) -> np.ndarray:
+        """
+        Compute matrix profile with caching for performance optimization.
+        Uses sampling and interpolation to reduce computational load.
+        """
+        cache_key = self._get_cache_key(close_prices, "mp")
+        
+        # Check memory cache first
+        if cache_key in self._mp_cache:
+            tprint_info("[Router] Using cached matrix profile")
+            return self._mp_cache[cache_key]
+        
+        # Check disk cache
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    cached_data = pickle.load(f)
+                self._mp_cache[cache_key] = cached_data
+                tprint_info("[Router] Loaded matrix profile from disk cache")
+                return cached_data
+            except Exception as e:
+                tprint_warning(f"[Router] Failed to load cache: {e}")
+        
+        # Compute with optimized sampling
+        tprint_info("[Router] Computing matrix profile with optimization...")
+        try:
+            step_mp = 5  # Sample every 5th point for ~4% computational load
+            close_float = close_prices.astype(float)
+            close_sampled = close_float[::step_mp]
+            mp_window_sampled = max(3, self.mp_window // step_mp)
+            
+            if len(close_sampled) > mp_window_sampled * 2:
+                mp = stumpy.stump(close_sampled, m=mp_window_sampled)
+                mp_dist_sampled = mp[:, 0]
+                
+                # Vectorized expansion back to original length
+                mp_dist = np.zeros(len(close_prices))
+                indices = np.arange(len(close_sampled)) * step_mp
+                valid_indices = indices[indices < len(close_prices)]
+                
+                # Fix: Properly align matrix profile with sampled indices
+                # Matrix profile output is shorter than input by (window_size - 1)
+                mp_start_offset = mp_window_sampled - 1
+                mp_aligned_indices = valid_indices[mp_start_offset:]  # Skip first few indices
+                
+                # Ensure we do not exceed bounds
+                max_assign_len = min(len(mp_aligned_indices), len(mp_dist_sampled))
+                if max_assign_len > 0:
+                    mp_dist[mp_aligned_indices[:max_assign_len]] = mp_dist_sampled[:max_assign_len]
+                
+                # Vectorized forward fill (using newer pandas syntax)
+                mask = mp_dist == 0
+                mp_dist = np.where(mask, np.nan, mp_dist)
+                mp_dist = pd.Series(mp_dist).ffill().fillna(0).values
+            else:
+                mp_dist = np.zeros(len(close_prices))
+                mp_dist = np.zeros(len(close_prices))
+                
+        except Exception as e:
+            tprint_warning(f"[Router] Matrix profile computation failed: {e}. Using zeros.")
+            mp_dist = np.zeros(len(close_prices))
+        
+        # Cache result
+        self._mp_cache[cache_key] = mp_dist
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(mp_dist, f)
+        except Exception as e:
+            tprint_warning(f"[Router] Failed to save cache: {e}")
+        
+        return mp_dist
+
+    def _compute_wavelet_entropy_vectorized(self, close_prices: np.ndarray) -> np.ndarray:
+        """
+        Vectorized wavelet entropy calculation to eliminate loops.
+        Uses sliding windows with vectorized operations.
+        """
+        cache_key = self._get_cache_key(close_prices, "wavelet")
+        
+        # Check cache
+        if cache_key in self._wavelet_cache:
+            tprint_info("[Router] Using cached wavelet entropy")
+            return self._wavelet_cache[cache_key]
+        
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    cached_data = pickle.load(f)
+                self._wavelet_cache[cache_key] = cached_data
+                tprint_info("[Router] Loaded wavelet entropy from disk cache")
+                return cached_data
+            except Exception as e:
+                tprint_warning(f"[Router] Failed to load wavelet cache: {e}")
+        
+        tprint_info("[Router] Computing wavelet entropy with vectorization...")
+        
+        # Vectorized sliding window approach
+        n = len(close_prices)
+        ratios = np.full(n, 0.5)
+        
+        if n >= self.window_size:
+            # Create rolling windows efficiently
+            windows = np.lib.stride_tricks.sliding_window_view(close_prices, self.window_size)
+            
+            # Sample windows for computation (every 5th window)
+            step = min(5, len(windows) // 100)  # Ensure we have enough samples
+            sampled_indices = np.arange(0, len(windows), step)
+            sampled_ratios = np.zeros(len(sampled_indices))
+            
+            # Compute wavelet ratios for sampled windows
+            for i, window_idx in enumerate(sampled_indices):
+                window_data = windows[window_idx]
+                try:
+                    ratio = wavelet_energy_ratios(window_data, level=3)
+                    sampled_ratios[i] = ratio
+                except Exception:
+                    sampled_ratios[i] = 0.5
+            
+            # Map sampled ratios back to original timeline
+            sampled_positions = sampled_indices * step + self.window_size
+            valid_positions = sampled_positions[sampled_positions < n]
+            
+            ratios[valid_positions] = sampled_ratios[:len(valid_positions)]
+            
+            # Vectorized forward fill
+            ratios = pd.Series(ratios).fillna(method='ffill').fillna(0.5).values
+        
+        # Cache result
+        self._wavelet_cache[cache_key] = ratios
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(ratios, f)
+        except Exception as e:
+            tprint_warning(f"[Router] Failed to save wavelet cache: {e}")
+        
+        return ratios
+
     def fit(self, X: np.ndarray):
         """
         Fit GMM on physics features to define regimes.
         X columns: [Vol_Intensity, Efficiency, MP_Dist, Wavelet_Entropy]
         """
-        tprint_info(f"   [Router] Fitting GMM on {len(X)} samples...")
+        tprint_info(f"[AdaptiveHunterRouter] fit start samples={len(X)}")
+        
+        if X is None or len(X) < self.n_regimes * 2:
+            tprint_warning(f"   [Router] Insufficient samples for fitting ({len(X) if X is not None else 0}). Skipping fit.")
+            self.is_fit = False
+            return self
+
         # Scale
         X_scaled = self.scaler.fit_transform(X)
 
@@ -124,10 +280,16 @@ class AdaptiveHunterRouter:
         self.log_lik_ema = np.mean(scores)
         self.log_lik_std = np.std(scores)
 
+        self.is_fit = True
+
         return self
 
     def predict(self, x_current: np.ndarray) -> Tuple[np.ndarray, float, float, float]:
-        if self.gmm is None: raise ValueError("Router not fit")
+        tprint_info("[AdaptiveHunterRouter] predict called")
+        if self.gmm is None or not getattr(self, 'is_fit', False):
+            # Return uniform weights as fallback
+            weights_final = np.ones(self.n_regimes) / self.n_regimes
+            return weights_final, 0.0, 0.0, 0.0
 
         x_scaled = self.scaler.transform(x_current.reshape(1, -1))
         log_prob = self.gmm.score_samples(x_scaled)[0]

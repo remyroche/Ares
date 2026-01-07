@@ -18,6 +18,8 @@ from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import KFold, cross_val_predict
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
 import warnings
 from scipy.stats import norm
 
@@ -41,9 +43,9 @@ class CausalTargetComputer:
     
     def __init__(
         self,
-        treatment_model: str = "random_forest",
-        outcome_model: str = "random_forest",
-        n_folds: int = 5,
+        treatment_model: str = "ridge",
+        outcome_model: str = "ridge",
+        n_folds: int = 3,
         random_state: int = 42,
         verbose: bool = True
     ):
@@ -71,6 +73,7 @@ class CausalTargetComputer:
         self.residual_targets_ = {}
         self.refutation_scores_ = None
         self.causal_effect_frame_ = None
+        self.large_dataset_threshold = 50000
         
     def _get_model(self, model_type: str, model_name: str):
         """
@@ -84,14 +87,23 @@ class CausalTargetComputer:
             Model instance
         """
         models = {
-            "linear": LinearRegression(),
-            "ridge": Ridge(alpha=1.0),
-            "lasso": Lasso(alpha=1.0),
+            "linear": Pipeline([
+                ('imputer', SimpleImputer(strategy='median')),
+                ('model', LinearRegression())
+            ]),
+            "ridge": Pipeline([
+                ('imputer', SimpleImputer(strategy='median')),
+                ('model', Ridge(alpha=1.0))
+            ]),
+            "lasso": Pipeline([
+                ('imputer', SimpleImputer(strategy='median')),
+                ('model', Lasso(alpha=1.0))
+            ]),
             "random_forest": RandomForestRegressor(
-                n_estimators=100, random_state=self.random_state
+                n_estimators=50, random_state=self.random_state  # Reduced from 100
             ),
             "gradient_boosting": GradientBoostingRegressor(
-                n_estimators=100, random_state=self.random_state
+                n_estimators=50, random_state=self.random_state  # Reduced from 100
             )
         }
         
@@ -99,6 +111,40 @@ class CausalTargetComputer:
             raise ValueError(f"Unknown model: {model_name}")
         
         return models[model_name]
+    
+    def _optimize_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize memory usage by downcasting numeric columns.
+        
+        Args:
+            df: DataFrame to optimize
+            
+        Returns:
+            Memory-optimized DataFrame
+        """
+        try:
+            # Make a copy to avoid modifying original
+            df_optimized = df.copy()
+            
+            # Downcast float columns
+            for col in df_optimized.select_dtypes(include=['float64']).columns:
+                df_optimized[col] = pd.to_numeric(df_optimized[col], downcast='float')
+            
+            # Downcast integer columns
+            for col in df_optimized.select_dtypes(include=['int64']).columns:
+                df_optimized[col] = pd.to_numeric(df_optimized[col], downcast='integer')
+            
+            if self.verbose:
+                original_memory = df.memory_usage(deep=True).sum() / 1024**2  # MB
+                optimized_memory = df_optimized.memory_usage(deep=True).sum() / 1024**2  # MB
+                reduction = (original_memory - optimized_memory) / original_memory * 100
+                tprint_info(f"   Memory optimized: {original_memory:.1f}MB → {optimized_memory:.1f}MB ({reduction:.1f}% reduction)")
+            
+            return df_optimized
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   Memory optimization failed: {e}")
+            return df
     
     def compute_dml_causal_effects(
         self,
@@ -148,9 +194,45 @@ class CausalTargetComputer:
             if confounders.empty:
                 raise ValueError("No numeric features available as confounders")
             
+            # Apply memory optimization
+            confounders = self._optimize_memory(confounders)
+            
             n_samples = len(treatments_array)
             treatment_width = treatments_array.shape[1]
             outcome_width = outcomes_array.shape[1]
+            
+            # Stratified subsampling for large datasets
+            if n_samples > self.large_dataset_threshold:
+                if self.verbose:
+                    tprint_info(f"   Large dataset detected ({n_samples:,} samples), applying stratified subsampling...")
+                
+                # Create strata based on first treatment quantiles for representative sampling
+                # We use only the first column [:, 0] to ensure indices mapped to rows (axis 0)
+                treatment_quantiles = pd.qcut(treatments_array[:, 0], q=10, labels=False, duplicates='drop')
+                
+                # Sample within each stratum
+                sample_size_per_stratum = min(self.large_dataset_threshold // 10, n_samples // 10)
+                sample_indices = []
+                
+                for stratum in range(10):
+                    stratum_indices = np.where(treatment_quantiles == stratum)[0]
+                    if len(stratum_indices) > 0:
+                        n_sample = min(len(stratum_indices), sample_size_per_stratum)
+                        sampled_indices = np.random.choice(stratum_indices, size=n_sample, replace=False)
+                        sample_indices.extend(sampled_indices)
+                
+                # Convert to arrays and shuffle
+                sample_indices = np.array(sample_indices)
+                np.random.shuffle(sample_indices)
+                
+                # Apply sampling
+                treatments_array = treatments_array[sample_indices]
+                outcomes_array = outcomes_array[sample_indices]
+                confounders = confounders.iloc[sample_indices]
+                
+                n_samples = len(treatments_array)
+                if self.verbose:
+                    tprint_info(f"   Subsampled to {n_samples:,} samples ({len(sample_indices)} strata)")
             
             # Initialize cross-validation
             kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)

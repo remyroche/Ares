@@ -377,47 +377,73 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     
     return df
 
-def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_predictions: pd.Series, fast_mode: bool = False):
+def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.Series, fast_mode: bool = False) -> pd.DataFrame:
     """
-    Multi-stage filtering to reduce CMI computations.
-    
-    Stages:
-    1. Variance filter (remove low-variance features)
-    2. Correlation filter (remove highly correlated features) - vectorized
-    3. Fast MI proxy (top 50%) - skipped in fast mode
-    4. Full CMI (top 20%) - skipped in fast mode
+    Apply hierarchical feature selection:
+    1. Low variance filter
+    2. High correlation filter (redundancy reduction)
+    3. Conditional importance filter (CMI proxy)
     """
-    # Stage 1: Variance filter - vectorized
-    var_mask = X.var() > 1e-6
-    X_filtered = X.loc[:, var_mask]
+    tprint_info(f"📊 Running Hierarchical Filtering ({len(X.columns)} features)...")
     
-    if fast_mode or len(X_filtered.columns) <= 50:
-        # Skip expensive correlation filtering in fast mode or with few features
-        return X_filtered
+    # 1. Variance Filter
+    variances = X.var()
+    low_var_cols = variances[variances < 1e-6].index
+    if len(low_var_cols) > 0:
+        X = X.drop(columns=low_var_cols)
+        tprint_info(f"   📉 Variance: Removed {len(low_var_cols)} constant/low-variance features.")
+        
+    if X.empty: return X
+    
+    # 2. Correlation Filter (Redundancy)
+    if not fast_mode and len(X.columns) > 1:
+        corr_matrix = X.corr().abs()
+        target_corr = []
+        for c in X.columns:
+            try:
+                c_val = np.corrcoef(X[c], y)[0,1]
+                target_corr.append(abs(c_val) if not np.isnan(c_val) else 0.0)
+            except:
+                target_corr.append(0.0)
+        target_corr = np.array(target_corr)
+        
+        keep_mask = select_features_by_correlation_jit(corr_matrix.values, target_corr, threshold=0.95)
+        keep_cols = X.columns[keep_mask]
+        X = X[keep_cols]
+        tprint_info(f"   📉 Redundancy: Reduced to {len(X.columns)} uncorrelated features.")
+        
+    # 3. Conditional Importance (CMI Proxy)
+    if not fast_mode and len(X.columns) > 20:
+        from .utils import fast_cmi_proxy
+        X, _ = fast_cmi_proxy(X, (y > 0.5).astype(int), base_avg, top_percentile=0.7)
+        tprint_info(f"   📉 CMI: Selected top {len(X.columns)} features.")
+        
+    return X
 
-    # Stage 2: Correlation filter - vectorized for speed
-    if len(X_filtered.columns) > 1:
-        # Use numpy corrcoef for better performance than pandas corr()
-        X_values = X_filtered.values.T  # Transpose for corrcoef (features x samples)
-        corr_matrix = np.abs(np.corrcoef(X_values))
-        np.fill_diagonal(corr_matrix, 0)  # Don't correlate with self
-
-        # Find highly correlated pairs efficiently
-        high_corr_mask = corr_matrix > 0.9
-        high_corr_pairs = np.where(high_corr_mask)
-
-        # Vectorized target correlation calculation using numpy
-        y_values = y.values if hasattr(y, 'values') else y
-        X_values = X_filtered.values
-        target_corr = np.abs(np.array([np.corrcoef(X_values[:, i], y_values)[0, 1]
-                                      for i in range(X_values.shape[1])]))
-
-        # Use JIT-compiled feature selection for better performance
-        features_to_keep_mask = select_features_by_correlation_jit(corr_matrix, target_corr, 0.9)
-        features_to_keep_indices = np.where(features_to_keep_mask)[0]
-
-        # Convert indices back to column names
-        cols_to_keep = [X_filtered.columns[i] for i in features_to_keep_indices]
-        X_filtered = X_filtered[cols_to_keep]
-
-    return X_filtered
+def apply_layer3_feature_selection(X: pd.DataFrame, y: pd.Series, base_predictions: pd.DataFrame, fast_mode: bool = False) -> pd.DataFrame:
+    """
+    [DE PRADO 2026] Complete Layer 3 Feature Selection Suite.
+    1. SSFI Pruning (for disagreement features)
+    2. Hierarchical Filtering (Variance + Correlation)
+    """
+    tprint_info(f"🔍 Layer 3: Running Feature Selection ({len(X.columns)} features)...")
+    initial_cols = list(X.columns)
+    
+    # 1. SSFI Pruning
+    disagreement_cols = [c for c in X.columns if c.endswith('_disagreement')]
+    if disagreement_cols:
+        from src.feature_generation.categories.layer3_specific_features import _apply_ssfi_pruning
+        pruned_ssfi = _apply_ssfi_pruning(X, y, disagreement_cols)
+        X = X.drop(columns=pruned_ssfi)
+        tprint_info(f"   📉 SSFI: Removed {len(pruned_ssfi)} uninformative disagreement features.")
+        
+    # 2. Hierarchical Filtering
+    # We use the mean of base predictions as a proxy for 'base_predictions' series
+    base_avg = base_predictions.mean(axis=1) if isinstance(base_predictions, pd.DataFrame) else base_predictions
+    X = hierarchical_feature_filtering(X, y, base_avg, fast_mode)
+    
+    final_cols = list(X.columns)
+    removed = set(initial_cols) - set(final_cols)
+    tprint_success(f"✅ Feature Selection Complete: {len(initial_cols)} -> {len(final_cols)} (-{len(removed)})")
+    
+    return X

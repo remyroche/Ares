@@ -12,15 +12,47 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-def load_layer0_params() -> dict:
-    """Load optimized Kalman+VWAP parameters from Layer0 summary."""
+def load_layer0_params(df: Optional[pd.DataFrame] = None, outcomes_dir: str = 'outcomes') -> dict:
+    """Load optimized Kalman+VWAP parameters from Layer0 summary, running if missing."""
     try:
         # Find latest Layer0 summary
-        layer0_files = glob.glob("outcomes/layer0_summary_*.csv")
-        layer0_json_files = glob.glob("outcomes/layer0_summary_*.json")
+        layer0_files = glob.glob(f"{outcomes_dir}/layer0_summary_*.csv")
+        layer0_json_files = glob.glob(f"{outcomes_dir}/layer0_summary_*.json")
         layer0_files.extend(layer0_json_files)
+        
         if not layer0_files:
-            logger.warning(f"No Layer0 summary found in outcomes/, checked {len(glob.glob('outcomes/layer0_summary_*'))} files")
+            logger.warning(f"No Layer0 summary found in {outcomes_dir}/")
+            
+            if df is not None:
+                logger.info("🚀 Auto-Running Layer 0 optimization...")
+                try:
+                    from src.training.steps.labeling.label_based_layer_0 import run_layer0_kalman_vwap
+                    from pathlib import Path
+                    
+                    # Minimal config for auto-run
+                    config = {
+                        "execution_mode": "light",
+                        "layer0_n_trials": 20, 
+                        "run_timestamp": "auto_run"
+                    }
+                    
+                    # Run Layer 0
+                    out_path = Path(outcomes_dir)
+                    run_layer0_kalman_vwap(
+                        symbol="AUTO", timeframe="15m", 
+                        market_data=df, config=config, 
+                        outcomes_dir=out_path
+                    )
+                    
+                    # Retry loading
+                    layer0_files = glob.glob(f"{outcomes_dir}/layer0_summary_*.csv")
+                    if layer0_files:
+                        logger.info("✅ Layer 0 auto-run successful, loading parameters")
+                        return load_layer0_params(outcomes_dir=outcomes_dir)
+                        
+                except Exception as e:
+                    logger.error(f"Layer 0 auto-run failed: {e}")
+
             logger.warning("No Layer0 summary found, using defaults")
             return {
                 'kalman_Q': 1e-4, 
@@ -46,9 +78,9 @@ def load_layer0_params() -> dict:
         # Load based on file type
         if latest_file.endswith('.csv'):
             import pandas as pd
-            df = pd.read_csv(latest_file)
-            if len(df) > 0:
-                summary = df.iloc[0].to_dict()
+            df_params = pd.read_csv(latest_file)
+            if len(df_params) > 0:
+                summary = df_params.iloc[0].to_dict()
             else:
                 summary = {}
         else:
@@ -415,6 +447,12 @@ class UnifiedPriceMixin:
         """Get cached unified price or generate new one."""
         if not self.use_unified_price:
             return df['close']
+        
+        # Reload params with df if they are likely defaults/empty to trigger auto-run
+        # We check if Q is the default 1e-4 AND R is defaults 0.01 to suspect defaults
+        params = self._layer0_params
+        if params.get('kalman_Q') == 1e-4 and params.get('kalman_R') == 0.01:
+             self._layer0_params = load_layer0_params(df=df)
         
         # Check cache validity (avoid re-computation)
         current_time = df.index[-1] if len(df) > 0 else None

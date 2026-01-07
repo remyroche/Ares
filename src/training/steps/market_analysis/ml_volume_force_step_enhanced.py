@@ -44,7 +44,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 from src.utils.versioned_artifacts import VersionedArtifactStore
 
 logger = logging.getLogger(__name__)
@@ -152,11 +152,13 @@ class EnhancedMLVolumeForceStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
             
             log_volume = np.log1p(volume)
             try:
-                fd_vol = self.apply_fractional_diff(log_volume, d=0.45)
+                from src.utils.ml_common.afml_utils import frac_diff_fixed
+                fd_vol = frac_diff_fixed(log_volume, d=0.45)
                 manual_features['frac_diff_log_volume_norm'] = (fd_vol - fd_vol.rolling(100).mean()) / (fd_vol.rolling(100).std() + 1e-8)
             except Exception as e:
-                self.logger.warning(f"Fractional differentiation failed for log_volume: {e}")
-                manual_features['frac_diff_log_volume_norm'] = log_volume.diff().rolling(20).mean()
+                self.logger.warning(f"Fractional differentiation failed, using price returns: {e}")
+                # Use price returns as default fallback per user preference
+                manual_features['frac_diff_log_volume_norm'] = returns.rolling(20).mean()
             
             volume_ma_long = volume.rolling(200).mean()
             manual_features['volume_impulse_ratio'] = (volume - volume.rolling(5).mean()) / (volume_ma_long + 1e-8)

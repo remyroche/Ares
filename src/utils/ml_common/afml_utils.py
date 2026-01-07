@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union
+from src.utils.tprint import tprint_info
 
 def get_daily_vol(close: pd.Series, span: int = 100, use_volume_time: bool = False) -> pd.Series:
     """
@@ -12,6 +13,7 @@ def get_daily_vol(close: pd.Series, span: int = 100, use_volume_time: bool = Fal
         use_volume_time: If True, calculates volatility based on bar count (assuming volume bars)
                          rather than time-based '1 day' lookback.
     """
+    tprint_info(f"[afml_utils] get_daily_vol span={span} use_volume_time={use_volume_time}")
     if use_volume_time:
         returns = close.pct_change()
         vol = returns.ewm(span=span).std()
@@ -38,20 +40,28 @@ def get_daily_vol(close: pd.Series, span: int = 100, use_volume_time: bool = Fal
 
 def get_t_events(close: pd.Series, threshold: Union[float, pd.Series]) -> pd.DatetimeIndex:
     """
-    CUSUM Filter: Returns a DatetimeIndex of events where cumulative returns exceed a threshold.
+    Vectorized CUSUM Filter: Returns a DatetimeIndex of events where cumulative returns exceed a threshold.
     """
-    t_events, s_pos, s_neg = [], 0, 0
-    diff = close.pct_change().fillna(0)
+    tprint_info(f"[afml_utils] get_t_events (Vectorized) start threshold_type={'series' if isinstance(threshold, pd.Series) else 'scalar'}")
     
+    diff = close.pct_change().fillna(0)
     if isinstance(threshold, pd.Series):
         threshold_series = threshold.reindex(diff.index, method='ffill').fillna(method='bfill')
+        threshold_vals = threshold_series.values
     else:
-        threshold_series = pd.Series(threshold, index=diff.index)
+        threshold_vals = np.full(len(diff), threshold)
     
-    for i in diff.index[1:]:
-        s_pos = max(0, s_pos + diff.loc[i])
-        s_neg = min(0, s_neg + diff.loc[i])
-        thresh = abs(threshold_series.loc[i])
+    diff_vals = diff.values
+    t_events = []
+    s_pos, s_neg = 0, 0
+    
+    # We still need a loop for the logic of CUSUM, but we use NumPy arrays 
+    # and avoid Pandas index lookups which are very slow in a loop.
+    # For ~20k rows, this will be very fast.
+    for i in range(1, len(diff_vals)):
+        s_pos = max(0, s_pos + diff_vals[i])
+        s_neg = min(0, s_neg + diff_vals[i])
+        thresh = abs(threshold_vals[i])
         if np.isnan(thresh) or thresh == 0: continue
             
         if s_neg < -thresh:
@@ -61,10 +71,11 @@ def get_t_events(close: pd.Series, threshold: Union[float, pd.Series]) -> pd.Dat
             s_pos = 0
             t_events.append(i)
             
-    return pd.DatetimeIndex(t_events)
+    return close.index[t_events]
 
 def get_vertical_barrier(close: pd.Series, t_events: pd.DatetimeIndex, num_bars: int) -> pd.Series:
     """Returns a Series of timestamps representing the expiration (horizontal barrier)."""
+    tprint_info(f"[afml_utils] get_vertical_barrier num_events={len(t_events)} num_bars={num_bars}")
     t1 = pd.Series(index=t_events, dtype='datetime64[ns]')
     
     try:
@@ -107,6 +118,7 @@ def get_vertical_barrier(close: pd.Series, t_events: pd.DatetimeIndex, num_bars:
 def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: List[float], 
                          target: pd.Series, min_ret: float, vertical_barrier: Optional[pd.Series] = None) -> pd.DataFrame:
     """Triple Barrier Method."""
+    tprint_info(f"[afml_utils] apply_triple_barrier events={len(t_events)}")
     if vertical_barrier is None:
         vertical_barrier = pd.Series(index=t_events, data=pd.NaT)
     
@@ -189,40 +201,107 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
     return out
 
 def get_bins(triple_barrier_events: pd.DataFrame, close: pd.Series) -> pd.DataFrame:
+    tprint_info(f"[afml_utils] get_bins rows={len(triple_barrier_events)}")
     out = triple_barrier_events.copy()
     out['bin'] = (out['type'] == 'pt').astype(int)
     return out
 
 def get_num_concurrent_events(close_index: pd.Index, t1: pd.Series) -> pd.Series:
-    t1 = t1.fillna(close_index[-1])
-    count = pd.Series(0, index=close_index)
-    for i, j in t1.items():
-        count.loc[i:j] += 1
-    return count
+    """
+    Vectorized calculation of concurrent events.
+    """
+    tprint_info(f"[afml_utils] get_num_concurrent_events (Vectorized) index_len={len(close_index)} events={len(t1)}")
+    if len(close_index) == 0 or len(t1) == 0:
+        return pd.Series(0, index=close_index)
+    
+    # Fill missing t1 with last index
+    t1_filled = t1.fillna(close_index[-1])
+    
+    # Use searchsorted to find integer indices
+    starts = close_index.searchsorted(t1_filled.index)
+    ends = close_index.searchsorted(t1_filled.values)
+    
+    # Create a difference array for efficient range updates
+    diff = np.zeros(len(close_index) + 1)
+    for s, e in zip(starts, ends):
+        diff[s] += 1
+        diff[e + 1] -= 1
+        
+    count = np.cumsum(diff)[:-1]
+    return pd.Series(count, index=close_index)
 
 def get_sample_uniqueness(t1: pd.Series, num_concurrent: pd.Series) -> pd.Series:
-    unq = pd.Series(index=t1.index, dtype=float)
-    for i, j in t1.items():
-        if pd.isna(j): 
-            j = num_concurrent.index[-1]
-        unq.loc[i] = (1.0 / num_concurrent.loc[i:j]).mean()
-    return unq
+    """
+    Vectorized calculation of sample uniqueness.
+    """
+    tprint_info(f"[afml_utils] get_sample_uniqueness (Vectorized) events={len(t1)}")
+    if len(t1) == 0 or len(num_concurrent) == 0:
+        return pd.Series(dtype=float)
+    
+    # Fill missing t1 with last index
+    t1_filled = t1.fillna(num_concurrent.index[-1])
+    
+    # Get integer positions
+    starts = num_concurrent.index.searchsorted(t1_filled.index)
+    ends = num_concurrent.index.searchsorted(t1_filled.values)
+    
+    # Pre-calculate 1/num_concurrent
+    inv_concurrent = 1.0 / num_concurrent.values
+    cum_inv = np.cumsum(inv_concurrent)
+    
+    # Uniqueness is mean of (1/num_concurrent) over [i, j]
+    # Mean = (CumSum[j] - CumSum[i-1]) / (j - i + 1)
+    unq_vals = np.zeros(len(t1))
+    for idx, (s, e) in enumerate(zip(starts, ends)):
+        if s > 0:
+            window_sum = cum_inv[e] - cum_inv[s-1]
+        else:
+            window_sum = cum_inv[e]
+        unq_vals[idx] = window_sum / (e - s + 1)
+        
+    return pd.Series(unq_vals, index=t1.index)
 
-def compute_structural_inertia(series: pd.Series, window: int = 20) -> pd.Series:
-    def get_slope_stat(s):
-        if len(s) < window: return 0.0
+def compute_structural_inertia(series: pd.Series, window: int = 20, step: int = 1) -> pd.Series:
+    """
+    Compute Structural Inertia (Slope / SE) with optional sampling for performance.
+    """
+    tprint_info(f"[afml_utils] compute_structural_inertia window={window} step={step}")
+    
+    if step <= 1:
+        def get_slope_stat(s):
+            if len(s) < window: return 0.0
+            x = np.arange(len(s))
+            y = s.values
+            slope, intercept = np.polyfit(x, y, 1)
+            y_pred = slope * x + intercept
+            residuals = y - y_pred
+            sse = np.sum(residuals**2)
+            if len(s) <= 2: return slope
+            se_slope = np.sqrt(sse / (len(s) - 2)) / np.sqrt(np.sum((x - np.mean(x))**2) + 1e-8)
+            return slope / (se_slope + 1e-8)
+        return series.rolling(window=window).apply(get_slope_stat)
+    
+    # Sampled approach for performance
+    res = np.full(len(series), np.nan)
+    vals = series.values
+    for i in range(window, len(series), step):
+        s = vals[i-window:i]
         x = np.arange(len(s))
-        y = s.values
+        y = s
         slope, intercept = np.polyfit(x, y, 1)
         y_pred = slope * x + intercept
         residuals = y - y_pred
         sse = np.sum(residuals**2)
-        if len(s) <= 2: return slope
-        se_slope = np.sqrt(sse / (len(s) - 2)) / np.sqrt(np.sum((x - np.mean(x))**2) + 1e-8)
-        return slope / (se_slope + 1e-8)
-    return series.rolling(window=window).apply(get_slope_stat)
+        if len(s) > 2:
+            se_slope = np.sqrt(sse / (len(s) - 2)) / np.sqrt(np.sum((x - np.mean(x))**2) + 1e-8)
+            res[i] = slope / (se_slope + 1e-8)
+        else:
+            res[i] = slope
+            
+    return pd.Series(res, index=series.index).ffill().fillna(0.0)
 
 def compute_efficiency_ratio(series: pd.Series, window: int = 20) -> pd.Series:
+    tprint_info(f"[afml_utils] compute_efficiency_ratio window={window}")
     net_change = (series - series.shift(window)).abs()
     total_travel = series.diff().abs().rolling(window=window).sum()
     return net_change / (total_travel + 1e-8)
@@ -234,7 +313,9 @@ def compute_hunter_weight(uniqueness: np.ndarray, mfe: np.ndarray, mae: np.ndarr
     wi = clip(u^0.3 * sigma(cleanliness) * sigma(1 - wavelet_noise), 0.2, 1.0)
     """
     def sigmoid(x, beta=10.0, offset=0.5):
-        return 1.0 / (1.0 + np.exp(-beta * (x - offset)))
+        # Ensure x is a numpy array of floats for vectorization
+        x_arr = np.asarray(x, dtype=float)
+        return 1.0 / (1.0 + np.exp(-beta * (x_arr - offset)))
 
     # 1. Uniqueness component
     u_comp = np.power(np.clip(uniqueness, 0.0, 1.0), 0.3)
@@ -273,6 +354,7 @@ def compute_master_weight(uniqueness: np.ndarray, mfe: np.ndarray, mae: np.ndarr
     return compute_hunter_weight(uniqueness, mfe, mae, barrier, noise_ratio)
 
 def seq_bootstrap(t1: pd.Series, close_index: pd.Index, num_samples: Optional[int] = None) -> List[pd.Timestamp]:
+    tprint_info(f"[afml_utils] seq_bootstrap num_samples={num_samples if num_samples else len(t1)}")
     if num_samples is None:
         num_samples = len(t1)
     phi = []
@@ -298,6 +380,7 @@ def seq_bootstrap(t1: pd.Series, close_index: pd.Index, num_samples: Optional[in
     return phi
 
 def get_sample_weights(t1: pd.Series, num_concurrent: pd.Series, returns: pd.Series) -> pd.Series:
+    tprint_info(f"[afml_utils] get_sample_weights events={len(t1)}")
     unq = get_sample_uniqueness(t1, num_concurrent)
     abs_ret = returns.abs().reindex(unq.index).fillna(0)
     weights = unq * abs_ret
@@ -307,11 +390,13 @@ def get_sample_weights(t1: pd.Series, num_concurrent: pd.Series, returns: pd.Ser
 
 def get_weights_by_uniqueness(t1: pd.Series, close_index: pd.Index) -> pd.Series:
     """Simplified sample weighting based only on uniqueness."""
+    tprint_info(f"[afml_utils] get_weights_by_uniqueness events={len(t1)}")
     num_concurrent = get_num_concurrent_events(close_index, t1)
     unq = get_sample_uniqueness(t1, num_concurrent)
     return unq
 
 def get_frac_diff_weights(d: float, size: int) -> np.ndarray:
+    tprint_info(f"[afml_utils] get_frac_diff_weights size={size}")
     w = [1.0]
     for k in range(1, size):
         w_k = -w[-1] / k * (d - k + 1)
@@ -319,23 +404,86 @@ def get_frac_diff_weights(d: float, size: int) -> np.ndarray:
     return np.array(w[::-1]).reshape(-1, 1)
 
 def frac_diff_fixed(series: pd.Series, d: float, threshold: float = 1e-5) -> pd.Series:
-    w = get_frac_diff_weights(d, 100)
+    """
+    Vectorized Fractional Differentiation using convolution.
+    """
+    tprint_info(f"[afml_utils] frac_diff_fixed len={len(series)} d={d}")
+    # Weights for the fixed-window fractional differentiation
+    # We use a maximum of 100 weights for performance
+    w = get_frac_diff_weights(d, min(len(series), 100))
     w_sum = np.cumsum(abs(w))
     w_sum /= w_sum[-1]
     skip = (w_sum > threshold).argmax()
-    w = w[skip:]
-    res = {}
-    for i in range(len(w), series.shape[0]):
-        res[series.index[i]] = np.dot(w.T, series.iloc[i-len(w)+1:i+1])[0]
-    return pd.Series(res)
+    w = w[skip:].flatten()
+    
+    # Convolution for vectorization
+    # Note: np.convolve(mode='valid') produces len(series) - len(w) + 1 results
+    vals = series.values
+    # Reverse weights for convolution
+    w_rev = w[::-1]
+    res_vals = np.convolve(vals, w_rev, mode='valid')
+    
+    # Reconstruct series with correct index alignment
+    # The first (len(w)-1) values are NaN because we don't have enough history
+    res = pd.Series(np.nan, index=series.index)
+    res.iloc[len(w)-1:] = res_vals
+    return res.ffill().fillna(0.0)
+
+def compute_spectral_energy(series: pd.Series, window: int = 100, step: int = 5) -> pd.DataFrame:
+    """
+    Compute spectral energy features using FFT and Power Spectral Density.
+    Optimization: Added sampling step to avoid slow per-row FFT.
+    """
+    tprint_info(f"[afml_utils] compute_spectral_energy window={window} step={step}")
+    
+    def _get_spectral_stats(x):
+        if len(x) < window or np.std(x) == 0:
+            return [0.0, 0.0, 0.0]
+            
+        # 1. FFT
+        fft_vals = np.fft.rfft(x - np.mean(x))
+        psd = np.abs(fft_vals)**2
+        psd_norm = psd / (np.sum(psd) + 1e-9)
+        
+        # 2. Energy bands
+        mid = len(psd) // 4
+        energy_lf = np.sum(psd[:mid])
+        energy_hf = np.sum(psd[mid:])
+        
+        # 3. Spectral Entropy
+        entropy = -np.sum(psd_norm * np.log(psd_norm + 1e-9))
+        
+        return [energy_hf, energy_lf, entropy]
+
+    features = pd.DataFrame(index=series.index)
+    hf_energy = np.full(len(series), np.nan)
+    lf_energy = np.full(len(series), np.nan)
+    entropy_vals = np.full(len(series), np.nan)
+    
+    vals = series.values
+    # Only compute every 'step' rows
+    for i in range(window, len(vals), step):
+        x = vals[i-window+1:i+1]
+        stats = _get_spectral_stats(x)
+        hf_energy[i] = stats[0]
+        lf_energy[i] = stats[1]
+        entropy_vals[i] = stats[2]
+            
+    features['energy_hf'] = pd.Series(hf_energy, index=series.index).ffill().fillna(0.0)
+    features['energy_lf'] = pd.Series(lf_energy, index=series.index).ffill().fillna(0.0)
+    features['spectral_entropy'] = pd.Series(entropy_vals, index=series.index).ffill().fillna(0.0)
+    
+    return features
 
 def calculate_rolling_volatility(prices_15min: pd.Series, window_days: int = 28) -> pd.Series:
+    tprint_info(f"[afml_utils] calculate_rolling_volatility window_days={window_days}")
     log_rets = np.log(prices_15min / prices_15min.shift(1))
     window_size = 96 * window_days
     vol = log_rets.rolling(window=window_size, min_periods=96).std()
     return vol
 
 def calculate_dynamic_range_threshold(volatility: pd.Series, current_price: pd.Series, k: float = None) -> pd.Series:
+    tprint_info(f"[afml_utils] calculate_dynamic_range_threshold k={k}")
     if k is None:
         k = np.sqrt(2 / np.pi)
     return k * volatility * current_price

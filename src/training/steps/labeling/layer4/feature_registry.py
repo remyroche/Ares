@@ -22,19 +22,21 @@ LAYER4_FEATURE_PATTERNS = {
         'relative_strength_ma', 'relative_strength_short', 'efficiency_ratio'
     ],
     'technical': [
-        'adx_proxy', 'choppiness_index', 'variance_ratio', 'slope_short'
+        # Removed: adx_proxy, choppiness_index, variance_ratio, slope_short
+        # Keeping essential technical features only
     ],
     'structural': [
-        'drawdown_from_peak', 'distance_from_trough', 'is_near_peak', 'is_near_trough',
-        'drawdown_regime_severe', 'drawdown_regime_moderate', 'drawdown_regime_mild', 'drawdown_regime_none'
+        # Removed: drawdown_from_peak, distance_from_trough, is_near_peak, is_near_trough
+        # Removed: drawdown_regime_severe, drawdown_regime_moderate, drawdown_regime_mild, drawdown_regime_none
+        # Keeping essential structural features only
     ],
     'model': [
         'prediction_dispersion', 'confidence_gap', 'uncertainty', 'prediction_range',
         'avg_divergence', 'max_confidence', 'disagreement_rate', 'snr_internal', 'snr_consensus'
     ],
     'time': [
-        'hour_of_day', 'day_of_week', 'hour_sin', 'hour_cos', 
-        'is_session_start', 'is_session_end', 'is_weekend'
+        'hour_sin', 'hour_cos',  # Keeping cyclical time features only
+        # Removed: hour_of_day, day_of_week, is_session_start, is_session_end, is_weekend
     ],
     'layer3_inputs': [
         'meta_prob_', 'ensemble_prob', 'max_base_prob', 'min_base_prob',

@@ -64,6 +64,10 @@ class EnhancedLayer3Reporter:
         self._generate_model_ensemble_report(models, meta_features)
         self._generate_prediction_confidence_report(df, target_col)
         
+        # New sections per de Prado framework
+        self._generate_regime_performance_report(df, target_col)
+        self._generate_structural_feature_report(df, meta_features, target_col)
+        
         tprint_success(f"✅ Enhanced Layer 3 reports saved to {self.outcomes_dir}")
     
     def _generate_meta_report(self, df: pd.DataFrame, geometry_metrics: List[Dict[str, Any]], 
@@ -326,12 +330,12 @@ class EnhancedLayer3Reporter:
 
             # Alpha ensemble analysis
             lines.append("## Alpha Head Ensemble\n")
-            if 'alpha_models' in models:
+            if 'alpha_models' in models and len(models['alpha_models']) > 0:
                 alpha_models = models['alpha_models']
                 lines.append(f"- **Number of Models**: {len(alpha_models)}\n")
                 
                 # Feature importance consensus
-                if alpha_models and hasattr(alpha_models[0], 'feature_importances_'):
+                if hasattr(alpha_models[0], 'feature_importances_'):
                     consensus_importance = np.zeros(len(meta_features))
                     for model in alpha_models:
                         if hasattr(model, 'feature_importances_'):
@@ -350,12 +354,12 @@ class EnhancedLayer3Reporter:
 
             # Probability ensemble analysis
             lines.append("## Probability Head Ensemble\n")
-            if 'prob_models' in models:
+            if 'prob_models' in models and len(models['prob_models']) > 0:
                 prob_models = models['prob_models']
                 lines.append(f"- **Number of Models**: {len(prob_models)}\n")
                 
                 # Feature importance consensus
-                if prob_models and hasattr(prob_models[0], 'feature_importances_'):
+                if hasattr(prob_models[0], 'feature_importances_'):
                     consensus_importance = np.zeros(len(meta_features))
                     for model in prob_models:
                         if hasattr(model, 'feature_importances_'):
@@ -599,6 +603,90 @@ class EnhancedLayer3Reporter:
                 return category
         return 'other'
     
+    def _generate_regime_performance_report(self, df: pd.DataFrame, target_col: str) -> None:
+        """Generate per-regime performance report."""
+        try:
+            if 'regime_label' not in df.columns or target_col not in df.columns:
+                return
+
+            lines = ["# Per-Regime Performance Report\n\n"]
+            lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+            regimes = df['regime_label'].unique()
+            regime_metrics = []
+
+            from sklearn.metrics import roc_auc_score
+            from scipy.stats import spearmanr
+
+            for regime in regimes:
+                mask = df['regime_label'] == regime
+                regime_df = df[mask]
+                
+                if len(regime_df) < 5: # Minimal threshold
+                    continue
+                
+                metrics = {
+                    'regime': regime, 
+                    'samples': len(regime_df),
+                    'pos_rate': (regime_df[target_col] > 0.5).mean()
+                }
+                
+                if 'meta_alpha' in df.columns:
+                    ic, _ = spearmanr(regime_df[target_col], regime_df['meta_alpha'])
+                    metrics['alpha_ic'] = ic
+                
+                if 'meta_prob' in df.columns:
+                    y_true = (regime_df[target_col] > 0.5).astype(int)
+                    if len(y_true.unique()) > 1:
+                        metrics['prob_auc'] = roc_auc_score(y_true, regime_df['meta_prob'])
+                    else:
+                        metrics['prob_auc'] = np.nan
+                
+                regime_metrics.append(metrics)
+
+            if regime_metrics:
+                reg_df = pd.DataFrame(regime_metrics)
+                lines.append(self._safe_to_markdown(reg_df) + "\n\n")
+                reg_df.to_csv(self.outcomes_dir / f"layer3_regime_performance_{self.ts}.csv", index=False)
+
+            report_path = self.outcomes_dir / f"layer3_regime_report_{self.ts}.md"
+            report_path.write_text("".join(lines))
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate regime report: {e}")
+
+    def _generate_structural_feature_report(self, df: pd.DataFrame, meta_features: List[str], target_col: str) -> None:
+        """Generate structural feature impact report (Anchor and Drift)."""
+        try:
+            anchor_features = [f for f in meta_features if 'anchor_' in f or 'stability' in f]
+            if not anchor_features or target_col not in df.columns:
+                return
+
+            lines = ["# Structural Feature Analysis (Anchor and Drift)\n\n"]
+            lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+            from scipy.stats import spearmanr
+            impacts = []
+            for f in anchor_features:
+                if f in df.columns:
+                    corr, p = spearmanr(df[f], df[target_col])
+                    impacts.append({
+                        'feature': f, 
+                        'correlation': corr, 
+                        'p_value': p,
+                        'type': 'drift' if 'stability' in f else 'anchor'
+                    })
+
+            if impacts:
+                impact_df = pd.DataFrame(impacts).sort_values('correlation', key=abs, ascending=False)
+                lines.append("## Anchor/Drift Feature Impacts\n")
+                lines.append(self._safe_to_markdown(impact_df) + "\n\n")
+                impact_df.to_csv(self.outcomes_dir / f"layer3_structural_impacts_{self.ts}.csv", index=False)
+
+            report_path = self.outcomes_dir / f"layer3_structural_report_{self.ts}.md"
+            report_path.write_text("".join(lines))
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate structural report: {e}")
+
     def _fast_expected_calibration_error(self, y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
         """Fast Expected Calibration Error calculation."""
         bin_boundaries = np.linspace(0, 1, n_bins + 1)

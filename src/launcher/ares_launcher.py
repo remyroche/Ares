@@ -119,6 +119,19 @@ STATIC_STEP_MAPPING = {
     'sr_clustering': 'market_analysis',
     'sr_detection': 'market_analysis',
     'sr_parameter_optimization': 'market_analysis',
+    'enhanced_ml_momentum_persistence_step': 'market_analysis',
+    'enhanced_ml_smc_regime_step': 'market_analysis',
+    'enhanced_ml_volatility_burst_step': 'market_analysis',
+    'enhanced_ml_volume_force_step': 'market_analysis',
+    'enhanced_ml_reversion_regime_step': 'market_analysis',
+    'enhanced_xgb_macro_regime_step': 'market_analysis',
+    'enhanced_ml_liquidity_regime_step': 'market_analysis',
+    'enhanced_ml_path_regime_step': 'market_analysis',
+    'enhanced_ml_risk_regime_step': 'market_analysis',
+    'enhanced_xgb_meso_regime_step': 'market_analysis',
+    'enhanced_ml_microstructure_step': 'market_analysis',
+    'enhanced_ml_candlestick_step': 'market_analysis',
+    'enhanced_ml_spectral_step': 'market_analysis',
     
     # Model training steps
     'analyst_base_training': 'model_training',
@@ -170,7 +183,8 @@ def import_step_package_for_step(step_name: str) -> bool:
             
         elif any(step_name.startswith(prefix) for prefix in [
             'rolling_hmm_regime_discovery', 'hmm_macro_regime', 'xgb_meso_regime',
-            'regime_clustering', 'sr_clustering', 'sr_detection', 'sr_parameter_optimization'
+            'regime_clustering', 'sr_clustering', 'sr_detection', 'sr_parameter_optimization',
+            'enhanced_ml_', 'enhanced_xgb_'
         ]):
             import src.training.steps.market_analysis
             return True
@@ -556,6 +570,7 @@ Examples:
     # Labeling HPO integration (used by feature_generation_meta_labeling_step)
     parser.add_argument(
         '--enable-labeling-hpo-params',
+        '--enable-labeling-hpo',
         action='store_true',
         help='Use latest meta-labeling HPO best-params when running feature_generation_meta_labeling_step'
     )
@@ -1158,31 +1173,6 @@ async def main():
     if getattr(args, 'alpha_enable_hpo', False):
         config['alpha_enable_hpo'] = True
 
-    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
-    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
-    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
-        config["enable_labeling_hpo_params"] = True
-    
-    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
-    if getattr(args, "enable_hpo", False):
-        config["enable_hpo"] = True
-        config["risk_enable_hpo"] = True
-    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
-    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
-        config["enable_labeling_hpo_params"] = True
-    
-    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
-    if getattr(args, "enable_hpo", False):
-        config["enable_hpo"] = True
-        config["risk_enable_hpo"] = True
-    # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
-    if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
-        config["enable_labeling_hpo_params"] = True
-    
-    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
-    if getattr(args, "enable_hpo", False):
-        config["enable_hpo"] = True
-        config["risk_enable_hpo"] = True
     # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
     if getattr(args, "enable_labeling_hpo_params", False) or getattr(args, "labeling_hpo_use_best_params", False):
         config["enable_labeling_hpo_params"] = True

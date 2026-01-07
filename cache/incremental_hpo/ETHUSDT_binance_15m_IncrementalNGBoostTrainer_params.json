@@ -1,6 +1,0 @@
-{
-  "learning_rate": 0.012253970422027765,
-  "n_estimators": 468,
-  "minibatch_frac": 0.13401148950702252,
-  "base_learner_max_depth": 3
-}

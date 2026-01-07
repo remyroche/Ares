@@ -1,6 +1,0 @@
-family,uuid,final_score,learnability,robust_magnitude,stability,balance,kappa,horizon,sl_mult,pt_mult,alpha,beta
-PRICE_CUSUM,"PRICE_CUSUM_{'k': 0.3, 'vol_window': 20, 'risk_budget': 1.0, 'pt_mult': 2.0, 'sl_mult': 0.8, 'horizon': 12}_4",100.0,0.0,0.0,1.0,1.0,N/A,12,0.8,2.0,N/A,N/A
-VOL_CUSUM,"VOL_CUSUM_{'h': 0.0987432507266417, 'vol_span': 100, 'risk_budget': 0.4, 'pt_mult': 1.5, 'sl_mult': 0.75, 'horizon': 48}_57",100.0,0.0,0.0,1.0,1.0,N/A,48,0.75,1.5,N/A,N/A
-LIQ_CUSUM,"LIQ_CUSUM_{'h': 4.0, 'vol_span': 100, 'risk_budget': 0.4, 'pt_mult': 1.5, 'sl_mult': 0.75, 'horizon': 48}_87",100.0,0.0,0.0,1.0,1.0,N/A,48,0.75,1.5,N/A,N/A
-VOL_PARTICIPATION,"VOL_PARTICIPATION_{'h': 0.9799224017963301, 'span': 960, 'risk_budget': 0.4, 'pt_mult': 1.5, 'sl_mult': 0.75, 'horizon': 48}_117",100.0,0.0,0.0,1.0,1.0,N/A,48,0.75,1.5,N/A,N/A
-RANGE_ATR,"RANGE_ATR_{'h': 0.4114596074359135, 'atr_window': 14, 'vol_window': 20, 'risk_budget': 0.4, 'pt_mult': 1.5, 'sl_mult': 0.75, 'horizon': 48}_147",100.0,0.0,0.0,1.0,1.0,N/A,48,0.75,1.5,N/A,N/A

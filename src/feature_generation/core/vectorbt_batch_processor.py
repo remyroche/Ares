@@ -90,9 +90,26 @@ class BatchProcessingConfig:
     def __post_init__(self):
         if self.max_workers is None:
             self.max_workers = min(cpu_count() if PARALLEL_AVAILABLE else 4, 8)
-        if self.enable_gpu and True:
-            self.enable_gpu = False
-            logger.warning("GPU not available, disabling GPU optimizations")
+        
+        # Proper GPU detection instead of unconditional disabling
+        if self.enable_gpu:
+            # Check for M1 GPU availability
+            try:
+                from src.utils.hardware.m1_gpu_utils import M1GPUManager
+                gpu_manager = M1GPUManager()
+                if gpu_manager.mps_available and gpu_manager.is_m1:
+                    # GPU available - keep enabled
+                    logger.info(f"✅ M1 GPU acceleration available: {gpu_manager.m1_generation}")
+                else:
+                    # GPU not available - disable gracefully
+                    self.enable_gpu = False
+                    logger.info("ℹ️ GPU acceleration not available on this system")
+            except Exception as e:
+                # Fallback - disable GPU if detection fails
+                self.enable_gpu = False
+                logger.debug(f"GPU detection failed, disabling: {e}")
+        else:
+            logger.debug("GPU acceleration disabled by configuration")
 
 class BatchProcessor(ABC):
     """Abstract base class for batch processors."""

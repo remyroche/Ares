@@ -42,7 +42,7 @@ from src.utils.versioned_artifacts.temporal_splits import (
 from src.utils.ml_common.standardized_xgb_trainer import (
     StandardizedXGBTrainer,
     XGBTrainingConfig,
-    XGBTrainingResults,
+    SpecialistTrainingResults,
 )
 
 logger = logging.getLogger(__name__)

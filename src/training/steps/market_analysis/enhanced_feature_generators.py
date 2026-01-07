@@ -502,122 +502,6 @@ class MIOptimizedFeatureGenerator:
         """
         features = pd.DataFrame(index=df.index)
         
-        if 'close' in df.columns:
-            close = df['close']
-            returns = close.pct_change()
-            
-            # Regime detection using multiple timeframes
-            for window in [5, 10, 20, 50]:
-                ma = close.rolling(window).mean()
-                features[f'price_above_ma_{window}'] = (close > ma).astype(int)
-                features[f'ma_slope_{window}'] = ma.pct_change(window)
-                features[f'returns_std_{window}'] = returns.rolling(window).std()
-                
-            # Volatility regime
-            vol_short = returns.rolling(5).std()
-            vol_long = returns.rolling(20).std()
-            features['volatility_regime'] = (vol_short > vol_long).astype(int)
-            features['volatility_ratio_regime'] = vol_short / (vol_long + 1e-8)
-            
-            # Trend regime
-            trend_short = returns.rolling(5).mean()
-            trend_long = returns.rolling(20).mean()
-            features['trend_regime'] = (trend_short > trend_long).astype(int)
-            features['trend_strength_regime'] = abs(trend_short - trend_long)
-            
-        return features
-    
-    @staticmethod
-    def add_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add market microstructure features.
-        
-        Args:
-            df: Input DataFrame with OHLCV data
-            
-        Returns:
-            DataFrame with microstructure features
-        """
-        features = pd.DataFrame(index=df.index)
-        
-        if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
-            # Price efficiency features
-            features['price_efficiency'] = (df['close'] - df['open']) / (df['high'] - df['low'] + 1e-8)
-            features['body_ratio'] = abs(df['close'] - df['open']) / (df['high'] - df['low'] + 1e-8)
-            features['upper_shadow'] = (df['high'] - df[['open', 'close']].max(axis=1)) / (df['high'] - df['low'] + 1e-8)
-            features['lower_shadow'] = (df[['open', 'close']].min(axis=1) - df['low']) / (df['high'] - df['low'] + 1e-8)
-            
-            # Intraday patterns
-            features['doji_pattern'] = (abs(df['close'] - df['open']) / (df['high'] - df['low'] + 1e-8) < 0.1).astype(int)
-            features['engulfing_pattern'] = ((df['close'] > df['open']) & (df['close'].shift(1) < df['open'].shift(1))).astype(int)
-            
-        return features
-
-class MIOptimizedFeatureGenerator:
-    """Generate features specifically optimized for MI improvement."""
-    
-    @staticmethod
-    def add_target_aligned_features(df: pd.DataFrame, target_col: str = 'target_long') -> pd.DataFrame:
-        """
-        Add features specifically aligned with target prediction.
-        
-        Args:
-            df: Input DataFrame with OHLCV data
-            target_col: Target column name
-            
-        Returns:
-            DataFrame with target-aligned features
-        """
-        features = pd.DataFrame(index=df.index)
-        
-        if 'close' in df.columns and 'high' in df.columns and 'low' in df.columns:
-            close = df['close']
-            high = df['high']
-            low = df['low']
-            volume = df.get('volume', pd.Series(1, index=df.index))
-            
-            # Price momentum features
-            returns = close.pct_change()
-            features['momentum_5'] = returns.rolling(5).mean()
-            features['momentum_10'] = returns.rolling(10).mean()
-            features['momentum_20'] = returns.rolling(20).mean()
-            
-            # Volatility features
-            features['volatility_5'] = returns.rolling(5).std()
-            features['volatility_10'] = returns.rolling(10).std()
-            features['volatility_ratio'] = features['volatility_5'] / (features['volatility_10'] + 1e-8)
-            
-            # Price position features
-            features['high_low_ratio'] = high / (low + 1e-8)
-            features['close_position'] = (close - low) / (high - low + 1e-8)
-            
-            # Volume features
-            features['volume_ma_ratio'] = volume / (volume.rolling(20).mean() + 1e-8)
-            features['volume_price_trend'] = (volume * returns).rolling(5).sum()
-            
-            # Trend features
-            features['trend_strength'] = abs(returns.rolling(20).mean())
-            features['trend_consistency'] = (returns > 0).rolling(10).mean()
-            
-            # Mean reversion features
-            features['mean_reversion_signal'] = (close - close.rolling(20).mean()) / (close.rolling(20).std() + 1e-8)
-            features['reversion_potential'] = -abs(features['mean_reversion_signal'])
-            
-        return features
-
-    @staticmethod
-    def add_regime_features(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add market regime detection features.
-        
-        Args:
-            df: Input DataFrame with OHLCV data
-            
-        Returns:
-            DataFrame with regime features
-        """
-        features = pd.DataFrame(index=df.index)
-        
         if 'close' in df.columns and 'volume' in df.columns:
             close = df['close']
             volume = df.get('volume', pd.Series(1, index=df.index))
@@ -641,7 +525,7 @@ class MIOptimizedFeatureGenerator:
             features['regime_consistency'] = (features['trend_regime'] + features['vol_regime'] + features['volume_regime']) / 3
             
         return features
-
+    
     @staticmethod
     def add_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
         """

@@ -419,11 +419,73 @@ class OptimizedWaveletDecomposition:
             }
             
             return validation_metrics
-            
         except Exception as e:
             if self.verbose:
                 tprint_warning(f"   ⚠️ Vectorized decomposition validation failed: {e}")
             return {'reconstruction_mse': float('inf'), 'reconstruction_correlation': 0.0}
+
+    def denoise_signal_vectorized(
+        self,
+        signal: np.ndarray,
+        threshold_method: str = 'visushrink',
+        threshold_mode: str = 'soft',
+        sigma_est: str = 'mad'
+    ) -> np.ndarray:
+        """
+        Denoise signal using wavelet thresholding.
+        
+        Args:
+            signal: Input signal
+            threshold_method: 'visushrink' (universal) or 'bayes'
+            threshold_mode: 'soft' or 'hard'
+            sigma_est: 'mad' (Median Absolute Deviation) or 'std'
+            
+        Returns:
+            Denoised signal
+        """
+        try:
+            # 1. Decompose
+            coeffs = pywt.wavedec(signal, self.wavelet, level=self.max_level)
+            
+            # 2. Estimate Noise Sigma from d1 (finest scale)
+            d1 = coeffs[-1]
+            if sigma_est == 'mad':
+                sigma = np.median(np.abs(d1 - np.median(d1))) / 0.6745
+            else:
+                sigma = np.std(d1)
+                
+            # 3. Determine Threshold
+            if threshold_method == 'visushrink':
+                thresh = sigma * np.sqrt(2 * np.log(len(signal)))
+            else:
+                thresh = sigma # Default/Simple
+                
+            # 4. Thresholding (Soft/Hard) on Detail Coefficients
+            # (Keep approximation coeffs [0] unchanged)
+            new_coeffs = [coeffs[0]]
+            for i in range(1, len(coeffs)):
+                new_coeffs.append(pywt.threshold(coeffs[i], thresh, mode=threshold_mode))
+                
+            # 5. Reconstruct
+            denoised = pywt.waverec(new_coeffs, self.wavelet)
+            
+            # Trim/Pad to match original length
+            if len(denoised) > len(signal):
+                denoised = denoised[:len(signal)]
+            elif len(denoised) < len(signal):
+                padded = np.zeros_like(signal)
+                padded[:len(denoised)] = denoised
+                # Fill tail?
+                padded[len(denoised):] = denoised[-1] 
+                denoised = padded
+                
+            return denoised
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"⚠️ Wavelet Denoising failed: {e}")
+            return signal # Fallback to original
+
 
 
 # Convenience functions for quick usage

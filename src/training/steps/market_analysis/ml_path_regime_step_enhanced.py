@@ -42,7 +42,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -219,9 +219,23 @@ class EnhancedMLPathRegimeStep(AFMLSpecialistMixin, SpecialistDiagnosticsMixinEn
             
             # 7. Advanced path patterns
             # Path cyclical patterns (using rolling autocorrelation) - FIXED: removed global leak
+            # Optimization: Only compute every 5th row to reduce CPU load
             try:
                 # Rolling autocorrelation over 50 bars with lag 5
-                manual_features['enhanced_path_cyclical_strength'] = returns.rolling(50).apply(lambda x: x.autocorr(lag=5) if len(x) > 5 else 0.0, raw=False)
+                step_autocorr = 5
+                autocorr_vals = np.full(len(df), np.nan)
+                rets_vals = returns.values
+                
+                for i in range(50, len(df), step_autocorr):
+                    window_data = rets_vals[i-50:i]
+                    # Manual autocorr calculation for lag 5
+                    if len(window_data) > 5:
+                        s1 = window_data[5:]
+                        s2 = window_data[:-5]
+                        if np.std(s1) > 0 and np.std(s2) > 0:
+                            autocorr_vals[i] = np.corrcoef(s1, s2)[0, 1]
+                
+                manual_features['enhanced_path_cyclical_strength'] = pd.Series(autocorr_vals, index=df.index).ffill().fillna(0.0)
             except Exception:
                 manual_features['enhanced_path_cyclical_strength'] = 0.0
             

@@ -1,6 +1,0 @@
-{
-  "model_id": "ETHUSDT_binance_15m_sr_labeling_xgb_hpo_hpo",
-  "last_training_time": "2025-12-05T23:53:07.119153",
-  "model_type": "xgb",
-  "retrain_interval_days": 5
-}

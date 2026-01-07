@@ -36,7 +36,7 @@ from src.utils.versioned_artifacts.temporal_splits import (
     TemporalSplitConfig,
 )
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import (
     SpecialistDiagnosticsMixinEnhancedV2
 )
@@ -174,8 +174,20 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeci
             # Macro cycle analysis
             for window in [20, 50, 100]:
                 # Cycle detection using autocorrelation
-                cycle_strength = returns.rolling(window).apply(lambda x: x.autocorr())
-                features[f'cycle_strength_{window}'] = cycle_strength
+                # Optimization: use precomputed autocorr logic with step=5
+                step_autocorr = 5
+                autocorr_vals = np.full(len(df), np.nan)
+                rets_vals = returns.values
+                
+                for i in range(window, len(df), step_autocorr):
+                    window_data = rets_vals[i-window:i]
+                    if len(window_data) > 1:
+                        s1 = window_data[1:]
+                        s2 = window_data[:-1]
+                        if np.std(s1) > 0 and np.std(s2) > 0:
+                            autocorr_vals[i] = np.corrcoef(s1, s2)[0, 1]
+                
+                features[f'cycle_strength_{window}'] = pd.Series(autocorr_vals, index=df.index).ffill().fillna(0.0)
                 
                 # Cycle phase
                 cycle_phase = np.arctan2(returns.rolling(window).mean(), returns.rolling(window).std())
@@ -188,11 +200,15 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeci
             # Macro extreme analysis - Increased lookback
             for window in [50, 100, 200]:
                 # Extreme returns
-                extreme_returns = returns.rolling(window).apply(lambda x: (x.abs() > x.std() * 2).sum())
+                # Optimization: Vectorized thresholding
+                roll_std = returns.rolling(window).std()
+                extreme_returns = (returns.abs() > roll_std * 2).rolling(window).sum()
                 features[f'extreme_returns_{window}'] = extreme_returns
                 
                 # Tail risk
-                tail_risk = returns.rolling(window).apply(lambda x: (x < x.quantile(0.05)).mean())
+                # Optimization: Vectorized rolling quantile
+                q05 = returns.rolling(window).quantile(0.05)
+                tail_risk = (returns < q05).rolling(window).mean()
                 features[f'tail_risk_{window}'] = tail_risk
                 
                 # Volatility clustering

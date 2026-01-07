@@ -1,9 +1,0 @@
-metric,count,pct
-n_rows_input,4971,1.0
-realized_return_nan,3333,0.6704888352444176
-target_nan,3333,0.6704888352444176
-filtered_by_labeled_mask,3333,0.6704888352444176
-all_geo_preds_missing,1682,0.3383625025145846
-volatility_1d_missing,0,0.0
-trend_regime_missing,0,0.0
-vol_regime_missing,0,0.0

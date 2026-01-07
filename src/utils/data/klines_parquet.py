@@ -160,16 +160,25 @@ class KlinesParquetManager:
                     # First, clean the timestamp column by removing NaN and infinite values
                     timestamp_series = df['timestamp'].copy()
 
-                    # Remove NaN and infinite values
+                    # Remove NaN and infinite values only if we don't have a valid index
                     valid_mask = pd.notna(timestamp_series) & np.isfinite(timestamp_series)
                     if not valid_mask.all():
                         invalid_count = len(timestamp_series) - valid_mask.sum()
-                        self.logger.warning(f"⚠️ Found {invalid_count} invalid timestamps in dataframe, removing them")
-                        timestamp_series = timestamp_series[valid_mask]
-                        df = df[valid_mask]
-
-                    # Try to convert timestamps to datetime using seconds first
-                    timestamp_col = pd.to_datetime(timestamp_series, unit='s')
+                        self.logger.warning(f"⚠️ Found {invalid_count} invalid timestamps in 'timestamp' column")
+                        
+                        # If we have a valid DatetimeIndex, prefer it over the 'timestamp' column
+                        if isinstance(df.index, pd.DatetimeIndex) and not df.index.isna().any():
+                            self.logger.info("✅ Using valid DatetimeIndex instead of 'timestamp' column")
+                            timestamp_col = df.index
+                        else:
+                            # Only remove rows if we have no other choice
+                            self.logger.warning(f"🗑️ Removing {invalid_count} rows with invalid timestamps")
+                            timestamp_series = timestamp_series[valid_mask]
+                            df = df[valid_mask]
+                            timestamp_col = pd.to_datetime(timestamp_series, unit='s')
+                    else:
+                        # Try to convert timestamps to datetime using seconds first
+                        timestamp_col = pd.to_datetime(timestamp_series, unit='s')
                 except (OverflowError, FloatingPointError):
                     # If overflow occurs, try with milliseconds
                     try:
@@ -708,6 +717,17 @@ class KlinesParquetManager:
                         combined_df.index = pd.to_numeric(combined_df.index, errors='coerce')
                     except Exception as e2:
                         self.logger.warning(f"Could not convert index to numeric either: {e2}")
+                
+                # Fix timestamp column if it has too many NaT values but index is valid
+                if 'timestamp' in combined_df.columns and isinstance(combined_df.index, pd.DatetimeIndex):
+                    timestamp_series = combined_df['timestamp']
+                    valid_mask = pd.notna(timestamp_series)
+                    valid_pct = valid_mask.sum() / len(timestamp_series) * 100 if len(timestamp_series) > 0 else 0
+                    
+                    if valid_pct < 50:
+                        # Reconstruct timestamp from the valid DatetimeIndex
+                        self.logger.info(f"🔧 Reconstructing 'timestamp' column from DatetimeIndex (was {valid_pct:.1f}% valid)")
+                        combined_df['timestamp'] = combined_df.index.astype('int64') // 10**9  # Convert to Unix seconds
 
             combined_df = combined_df.sort_index()
 
@@ -851,8 +871,19 @@ class KlinesParquetManager:
 
                         # Remove NaN and infinite values
                         valid_mask = pd.notna(timestamp_series) & np.isfinite(timestamp_series)
-                        if not valid_mask.all():
-                            invalid_count = len(timestamp_series) - valid_mask.sum()
+                        invalid_count = len(timestamp_series) - valid_mask.sum()
+                        invalid_pct = invalid_count / len(timestamp_series) * 100 if len(timestamp_series) > 0 else 0
+                        
+                        # If >50% of timestamps are invalid, the timestamp column is unreliable
+                        # Fall back to using the index which is already a valid DatetimeIndex
+                        if invalid_pct > 50:
+                            self.logger.warning(
+                                f"⚠️ Found {invalid_count:,} invalid timestamps ({invalid_pct:.1f}%) in 'timestamp' column. "
+                                f"Falling back to index-based filtering (index range: {combined_df.index.min()} to {combined_df.index.max()})"
+                            )
+                            # Skip timestamp column filtering, will use index below
+                            timestamp_col = None
+                        elif not valid_mask.all():
                             invalid_indices = timestamp_series.index[~valid_mask].tolist()
 
                             # Get sample of invalid values for debugging
@@ -879,9 +910,12 @@ class KlinesParquetManager:
                             timestamp_series = timestamp_series[valid_mask]
                             combined_df = combined_df[valid_mask]
                             self.logger.info(f"🔧 After cleaning invalid timestamps: {len(combined_df):,} records (removed {invalid_count:,})")
-
-                        # Try to convert timestamps to datetime using seconds first
-                        timestamp_col = pd.to_datetime(timestamp_series, unit='s')
+                        
+                        if timestamp_col is None and len(combined_df) > 0:
+                            # Still need to set timestamp_col if we have valid data
+                            if valid_mask.sum() > 0:
+                                # Try to convert timestamps to datetime using seconds first
+                                timestamp_col = pd.to_datetime(timestamp_series, unit='s')
                     except (OverflowError, FloatingPointError):
                         # If overflow occurs, try with milliseconds
                         try:

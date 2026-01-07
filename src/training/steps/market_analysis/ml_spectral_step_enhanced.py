@@ -13,7 +13,6 @@ import os
 import time
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 import logging
@@ -33,7 +32,7 @@ from src.utils.ml_common.afml_utils import (
     frac_diff_fixed, compute_spectral_energy, get_sample_weights
 )
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 from src.utils.versioned_artifacts import VersionedArtifactStore
 from src.training.steps.base_step import BaseStep
 from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import (
@@ -187,7 +186,7 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
         """Execute enhanced spectral analysis specialist with AFML hardening."""
         return await self.execute_standard_specialist_logic(
             config=config,
-            specialist_type=SpecialistType.SPECTRAL_ENERGY, # Assuming this exists or falls back
+            specialist_type=SpecialistType.SPECTRAL,
             manual_feature_func=self._get_spectral_combined_manual_features,
             filter_type='volatility',
             pt_sl_config_key='spectral_pt_sl',

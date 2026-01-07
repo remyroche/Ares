@@ -13,11 +13,25 @@ import pandas as pd
 import math
 import itertools
 from scipy.stats import entropy
-from typing import List
+from typing import List, Dict, Tuple, Optional, Any
+from src.utils.causal_refiner_utils import (
+    cluster_specialists_by_correlation,
+    denoise_covariance,
+    get_spectral_stability,
+    find_max_eigenvalue
+)
+from sklearn.decomposition import PCA
+from sklearn.mixture import GaussianMixture
+from sklearn.preprocessing import RobustScaler
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 
 from src.feature_generation.categories.ensemble_disagreement import (
     calculate_ensemble_disagreement_features,
 )
+from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
+
+
+
 
 def shrink(x, n, prior, k=50):
     """
@@ -331,6 +345,48 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
 
     return features
 
+
+
+def _apply_ssfi_pruning(X: pd.DataFrame, y: pd.Series, disagreement_cols: List[str]) -> List[str]:
+    """
+    [DE PRADO 2026] SSFI Pruning (Stacked Single Feature Importance).
+    Purges disagreement features that don't have OOS predictive power.
+    """
+    import lightgbm as lgb
+    from sklearn.metrics import roc_auc_score
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    pruned_cols = []
+    tprint_info(f"🛡️ Running SSFI Pruning on {len(disagreement_cols)} disagreement features...")
+    
+    for col in disagreement_cols:
+        if col not in X.columns: continue
+        
+        # Single feature importance test
+        tscv = TimeSeriesSplit(n_splits=3)
+        scores = []
+        
+        for train_idx, val_idx in tscv.split(X):
+            X_train, X_val = X[col].iloc[train_idx].values.reshape(-1, 1), X[col].iloc[val_idx].values.reshape(-1, 1)
+            y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+            
+            if len(np.unique(y_train)) < 2: continue
+            
+            model = lgb.LGBMClassifier(n_estimators=50, max_depth=2, random_state=42, verbose=-1)
+            model.fit(X_train, y_train)
+            preds = model.predict_proba(X_val)[:, 1]
+            scores.append(roc_auc_score(y_val, preds))
+            
+        avg_auc = np.mean(scores) if scores else 0.5
+        
+        if avg_auc > 0.51: # Small threshold above random
+            tprint_info(f"   ✅ Keeping {col} (SSFI AUC: {avg_auc:.4f})")
+        else:
+            tprint_info(f"   🗑️  Pruning {col} (SSFI AUC: {avg_auc:.4f})")
+            pruned_cols.append(col)
+            
+    return pruned_cols
+
 def generate_layer3_features(
     df: pd.DataFrame,
     base_model_cols: List[str],
@@ -384,6 +440,34 @@ def generate_layer3_features(
                 pass
     except Exception:
         pass
+
+    # 0. Integrate Layer 2 Regime Context (Alignment)
+    try:
+        # Pass through Regime Probabilities
+        for col in ['prob_Quiet', 'prob_Trending', 'prob_Chaos']:
+            if col in df_out.columns:
+                df_out[f"regime_{col}"] = df_out[col].fillna(0.0)
+        
+        # One-Hot Encode Regime Label if present
+        if 'regime_label' in df_out.columns:
+            # Check if likely categorical strings or ints
+            if df_out['regime_label'].dtype == object or isinstance(df_out['regime_label'].iloc[0], str):
+                dummies = pd.get_dummies(df_out['regime_label'], prefix='regime_is')
+                for col in dummies.columns:
+                    df_out[col] = dummies[col].astype(float)
+            else:
+                # Assuming Int (0,1,2)
+                # Map 0->Quiet, 1->Trending, 2->Chaos (Standard Map)
+                # Or just OHE the ints
+                dummies = pd.get_dummies(df_out['regime_label'], prefix='regime_id')
+                for col in dummies.columns:
+                    df_out[col] = dummies[col].astype(float)
+                    
+        # Also clean up old regime columns if they exist but aren't useful raw
+        # (We keep them for now as they might include probability columns)
+
+    except Exception as e:
+         tprint_warning(f"⚠️ Regime alignment failed: {e}")
 
     # 1. Ensemble Probability
     # Use existing if provided (e.g. from ensemble_disagreement), else calculate fallback
@@ -525,19 +609,19 @@ def generate_layer3_features(
     #     df_out['candle_shape'] = 0.0
     #     df_out['candle_shape_4'] = 0.0
 
-    # DISABLED: Regime Features (from GateModel logic)
-    # regime_feats = _compute_gate_regime_features(df_out)
-    # for col in regime_feats.columns:
-    #     df_out[col] = regime_feats[col]
+    # ENABLED: Regime Features (from GateModel logic)
+    regime_feats = _compute_gate_regime_features(df_out)
+    for col in regime_feats.columns:
+        df_out[col] = regime_feats[col]
 
-    # DISABLED: Cross-Timeframe Momentum Agreement
-    # try:
-    #     if all(c in df_out.columns for c in ['close']):
-    #         mom_feats = _compute_cross_tf_momentum_agreement(df_out)
-    #         for col in mom_feats.columns:
-    #             df_out[col] = mom_feats[col]
-    # except Exception:
-    #     pass
+    # ENABLED: Cross-Timeframe Momentum Agreement
+    try:
+        if all(c in df_out.columns for c in ['close']):
+            mom_feats = _compute_cross_tf_momentum_agreement(df_out)
+            for col in mom_feats.columns:
+                df_out[col] = mom_feats[col]
+    except Exception:
+        pass
 
     # 4. Price-Denoised Features (from Layer0)
     try:
@@ -606,5 +690,23 @@ def generate_layer3_features(
             df_out['price_position_in_range'] = (close - roll_min) / (range_len + 1e-8)
     except Exception:
         pass
+
+    # 11. [DE PRADO 2026] Anchor and Drift Features
+    try:
+        tprint_info("⚓ Generating Anchor and Drift Features...")
+        ad_feats, regime_map = _compute_anchor_and_drift_features(df_out, base_model_cols)
+        for col in ad_feats.columns:
+            df_out[col] = ad_feats[col]
+            
+        # Use the first anchor's active regime as the global regime label if not present
+        if 'regime_label' not in df_out.columns:
+            anchor_regime_cols = [c for c in ad_feats.columns if 'active_regime' in c]
+            if anchor_regime_cols:
+                # Use the dynamic regime map from the router for absolute consistency with Layer 2
+                df_out['regime_label'] = ad_feats[anchor_regime_cols[0]].map(regime_map)
+            
+        # SSFI Pruning is handled in feature_engineering.py during the training phase
+    except Exception as e:
+        tprint_warning(f"⚠️ Anchor and Drift features failed: {e}")
 
     return df_out

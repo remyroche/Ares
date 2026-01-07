@@ -25,7 +25,7 @@ from src.utils.ml_common.afml_utils import (
     frac_diff_fixed, get_sample_weights
 )
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 from src.utils.versioned_artifacts import VersionedArtifactStore
 from src.training.steps.base_step import BaseStep
 from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2 import (
@@ -80,6 +80,7 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
+    @property
     def versioned_store(self):
         """Use a specialist-specific versioned store path."""
         if self._versioned_store is None and self.use_versioned_artifacts:

@@ -257,15 +257,28 @@ class SpectralSpecialists:
             if self.verbose:
                 tprint_info("📊 Extracting raw specialist signals...")
             
+            # Early data validation
+            self._validate_input_data(df)
+            
             specialist_signals = {}
             configs = specialist_configs or {}
             
-            # Helper to safely extract and add signal
+            # Helper to safely extract and add signal with validation
             def _add_signal(name, extraction_func):
                 if name in self.priority_specialists:
-                    signal = extraction_func(df, configs.get(name, {}))
-                    if signal is not None:
-                        specialist_signals[name] = signal
+                    try:
+                        signal = extraction_func(df, configs.get(name, {}))
+                        if signal is not None:
+                            # Validate signal quality
+                            signal_quality = self._validate_signal_quality(signal, name)
+                            if signal_quality['is_degenerate']:
+                                tprint_warning(f"⚠️ {name} signal is degenerate: {signal_quality['issue']}")
+                                # Still include but with warning
+                            specialist_signals[name] = signal
+                            if self.verbose:
+                                tprint_info(f"      - {name}: mean={signal_quality['mean']:.6f}, std={signal_quality['std']:.6f}, nan%={signal_quality['nan_pct']:.2f}%")
+                    except Exception as e:
+                        tprint_error(f"❌ {name} extraction failed: {e}")
             
             _add_signal('inventory_specialist', self._extract_inventory_signal)
             _add_signal('volume_specialist', self._extract_volume_signal)
@@ -285,6 +298,9 @@ class SpectralSpecialists:
                 tprint_success(f"   ✅ Extracted {len(specialist_signals)} specialist signals:")
                 for name, signal in specialist_signals.items():
                     tprint_info(f"      - {name}: {len(signal)} samples")
+                
+                # Overall signal quality report
+                self._log_signal_quality_summary(specialist_signals)
             
             self._last_extracted_specialists = list(specialist_signals.keys())
             
@@ -294,6 +310,89 @@ class SpectralSpecialists:
             if self.verbose:
                 tprint_error(f"❌ Specialist signal extraction failed: {e}")
             return {}
+
+    def _validate_input_data(self, df: pd.DataFrame):
+        """Validate input dataframe for common issues."""
+        if df.empty:
+            raise ValueError("Input dataframe is empty")
+        
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+        
+        # Check for non-finite values
+        for col in required_cols:
+            non_finite_count = df[col].isna().sum() + np.isinf(df[col]).sum()
+            if non_finite_count > 0:
+                tprint_warning(f"⚠️ {col} contains {non_finite_count} non-finite values")
+        
+        # Check data quality
+        if len(df) < 100:
+            tprint_warning(f"⚠️ Small dataset: {len(df)} rows may cause unreliable signals")
+        
+        # Check price consistency
+        price_cols = ['open', 'high', 'low', 'close']
+        for i in range(len(df)):
+            if not (df.iloc[i]['low'] <= df.iloc[i]['open'] <= df.iloc[i]['high'] and
+                    df.iloc[i]['low'] <= df.iloc[i]['close'] <= df.iloc[i]['high']):
+                tprint_warning(f"⚠️ Price inconsistency detected at index {i}")
+                break
+
+    def _validate_signal_quality(self, signal: pd.Series, name: str) -> Dict[str, Any]:
+        """Validate signal quality and detect degenerate cases."""
+        quality = {
+            'mean': signal.mean(),
+            'std': signal.std(),
+            'nan_pct': signal.isna().sum() / len(signal) * 100,
+            'is_degenerate': False,
+            'issue': None
+        }
+        
+        # Check for zero variance (constant signal)
+        if quality['std'] < 1e-10:
+            quality['is_degenerate'] = True
+            quality['issue'] = 'Zero variance (constant signal)'
+        
+        # Check for excessive NaN values
+        elif quality['nan_pct'] > 50:
+            quality['is_degenerate'] = True
+            quality['issue'] = f'High NaN percentage: {quality["nan_pct"]:.1f}%'
+        
+        # Check for extreme values
+        elif np.abs(signal).max() > 1e6:
+            quality['is_degenerate'] = True
+            quality['issue'] = 'Extreme values detected'
+        
+        # Check for very small signal magnitude
+        elif np.abs(signal).max() < 1e-8:
+            quality['is_degenerate'] = True
+            quality['issue'] = 'Signal magnitude too small'
+        
+        return quality
+
+    def _log_signal_quality_summary(self, specialist_signals: Dict[str, pd.Series]):
+        """Log comprehensive signal quality summary."""
+        if not specialist_signals:
+            tprint_error("❌ No specialist signals to validate")
+            return
+        
+        tprint_info("📊 Signal Quality Summary:")
+        
+        degenerate_count = 0
+        for name, signal in specialist_signals.items():
+            quality = self._validate_signal_quality(signal, name)
+            status = "✅ OK" if not quality['is_degenerate'] else "❌ DEGENERATE"
+            tprint_info(f"   {name}: {status} (std={quality['std']:.2e}, nan%={quality['nan_pct']:.1f}%)")
+            if quality['is_degenerate']:
+                degenerate_count += 1
+                tprint_warning(f"      Issue: {quality['issue']}")
+        
+        if degenerate_count > 0:
+            tprint_error(f"❌ {degenerate_count}/{len(specialist_signals)} specialist signals are degenerate")
+            tprint_error("   This will cause zero resonance in spectral analysis")
+        else:
+            tprint_success("✅ All specialist signals have acceptable quality")
 
     def generate_specialist_event_dataset(
         self,

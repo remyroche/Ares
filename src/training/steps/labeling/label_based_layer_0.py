@@ -13,6 +13,12 @@ from src.training.steps.labeling.multi_label_voting_utils import (
     compute_volume_weighted_kalman_smoothed_price_and_volatility,
 )
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, OptimizationConfig
+try:
+    from src.training.steps.labeling.optimized_wavelet_decomposition import OptimizedWaveletDecomposition
+    WAVELET_AVAILABLE = True
+except ImportError:
+    WAVELET_AVAILABLE = False
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning
 
 
 DEFAULT_RANDOM_SEED = 42
@@ -235,6 +241,57 @@ def run_layer0_kalman_vwap(
     volume_series = opt_data.get("volume", None)
     if isinstance(volume_series, pd.Series):
         volume_series = pd.to_numeric(volume_series, errors="coerce")
+        
+    # --- WAVELET DENOISING INTEGRATION ---
+    if config.get("use_wavelets", True) and WAVELET_AVAILABLE:
+        try:
+            tprint_info("🌊 Running Wavelet Denoising (Soft Threshold, Median, Clip)...")
+            decomposer = OptimizedWaveletDecomposition(verbose=False)
+            close_vals = close_series.to_numpy(dtype=float)
+            
+            # 1. Wavelet Soft Thresholding
+            denoised_wavelet = decomposer.denoise_signal_vectorized(
+                close_vals, 
+                threshold_method='visushrink', 
+                threshold_mode='soft'
+            )
+            
+            # 2. Median Filtering
+            try:
+                from scipy.signal import medfilt
+                denoised_median = medfilt(denoised_wavelet, kernel_size=3)
+            except ImportError:
+                denoised_median = denoised_wavelet # Fallback
+            
+            # 3. Outlier Clipping (Robust z-score via MAD)
+            # Use Pandas rolling for efficiency
+            s_denoised = pd.Series(denoised_median)
+            # Rolling MAD (approximated as 0.6745 * abs(x - median))
+            roll_med = s_denoised.rolling(window=5, min_periods=1, center=True).median()
+            roll_abs_dev = (s_denoised - roll_med).abs()
+            roll_mad = roll_abs_dev.rolling(window=5, min_periods=1, center=True).median()
+            # Sigma ~ 1.4826 * MAD
+            roll_sigma = 1.4826 * roll_mad
+            
+            # Robust 5-sigma clip
+            limit_upper = roll_med + 5 * roll_sigma
+            limit_lower = roll_med - 5 * roll_sigma
+            
+            denoised_final = s_denoised.clip(lower=limit_lower, upper=limit_upper).to_numpy()
+            
+            # Store in market_data
+            if len(denoised_final) == len(market_data):
+                market_data['wavelet_close'] = denoised_final
+                market_data['wavelet_noise'] = close_vals - denoised_final
+                tprint_success("✅ Advanced Denoising complete (Wavelet+Median+Clip).")
+            else:
+                tprint_warning("⚠️ Wavelet output length mismatch, skipping assignment.")
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Wavelet Denoising failed: {e}")
+    elif config.get("use_wavelets", False) and not WAVELET_AVAILABLE:
+        tprint_warning("⚠️ Wavelet requested but module not available.")
+
 
     if bundle_path is None:
         bundle_path = outcomes_dir / "layer0_kalman_bundle.joblib"

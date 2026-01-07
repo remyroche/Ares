@@ -1,0 +1,3 @@
+stumpy>=1.12.0
+iisignature>=0.24
+econml>=0.16.0

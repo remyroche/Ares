@@ -85,7 +85,7 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
 from src.utils.ml_common.standardized_xgb_trainer import (
     StandardizedXGBTrainer,
     XGBTrainingConfig,
-    XGBTrainingResults,
+    SpecialistTrainingResults,
 )
 
 logger = logging.getLogger(__name__)
@@ -1908,7 +1908,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         config: Dict[str, Any],
         market_data: pd.DataFrame,
         direction: str = "long"
-    ) -> XGBTrainingResults:
+    ) -> SpecialistTrainingResults:
         """Train XGBoost with OOF predictions using standardized trainer.
 
         This replaces the old _train_xgb_student method with proper OOF predictions.
@@ -1922,7 +1922,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             direction: Trading direction (long/short)
 
         Returns:
-            XGBTrainingResults with OOF predictions, models, and metadata
+            SpecialistTrainingResults with OOF predictions, models, and metadata
         """
         # Create model ID
         symbol = config.get("symbol", "ETHUSDT")

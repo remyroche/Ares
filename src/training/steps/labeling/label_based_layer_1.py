@@ -58,6 +58,141 @@ except ImportError:
     OptimizedWaveletDecomposition = None
 
 
+def build_layer1_probe_features(
+    close_series: pd.Series,
+    market_data: pd.DataFrame,
+    t_events: pd.DatetimeIndex,
+    event_consistency: Optional[np.ndarray] = None,
+) -> pd.DataFrame:
+    """
+    Construct the shared probe feature matrix used by both the main (predictive CV)
+    probe and the secondary confident-learning probe.
+
+    Feature set (≈13 columns):
+        - Momentum: ret1, ret3, ret6
+        - Volatility: vol20, rel_vol (vol20/vol100)
+        - Oscillators: rsi14, stochastic %K
+        - Trend/Deviation: Bollinger %B, trend deviation, efficiency ratio
+        - Wavelet noise proxies: wavelet_d1_vol, wavelet_d2_vol
+        - Consistency proxy: event_consistency (if available)
+    """
+
+    close = close_series.astype(float)
+
+    ret1 = close.pct_change(1).reindex(t_events)
+    ret3 = close.pct_change(3).reindex(t_events)
+    ret6 = close.pct_change(6).reindex(t_events)
+
+    vol20_raw = close.pct_change().rolling(20).std()
+    vol100_raw = close.pct_change().rolling(100).std()
+    vol20 = vol20_raw.reindex(t_events)
+    rel_vol = (vol20_raw / (vol100_raw + 1e-9)).reindex(t_events)
+
+    rsi_feat = pd.Series(50.0, index=t_events)
+    try:
+        delta = close.diff()
+        gain = delta.clip(lower=0.0)
+        loss = -delta.clip(upper=0.0)
+        avg_gain = gain.rolling(window=14, min_periods=1).mean()
+        avg_loss = loss.rolling(window=14, min_periods=1).mean()
+        rs = avg_gain / (avg_loss + 1e-9)
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+        rsi_feat = rsi.reindex(t_events)
+    except Exception:
+        pass
+
+    bb_pct_b_feat = pd.Series(0.0, index=t_events)
+    try:
+        bb_ma = close.rolling(window=20).mean()
+        bb_std = close.rolling(window=20).std()
+        bb_pct_b = (close - bb_ma) / (2 * bb_std + 1e-9)
+        bb_pct_b_feat = bb_pct_b.reindex(t_events)
+    except Exception:
+        pass
+
+    stoch_k_feat = pd.Series(0.5, index=t_events)
+    try:
+        if 'high' in market_data.columns and 'low' in market_data.columns:
+            high_roll = market_data['high'].rolling(14).max()
+            low_roll = market_data['low'].rolling(14).min()
+        else:
+            high_roll = close.rolling(14).max()
+            low_roll = close.rolling(14).min()
+        stoch_k = (close - low_roll) / (high_roll - low_roll + 1e-9)
+        stoch_k_feat = stoch_k.reindex(t_events)
+    except Exception:
+        pass
+
+    er_feat = pd.Series(0.5, index=t_events)
+    try:
+        change = close.diff(10).abs()
+        path = close.diff(1).abs().rolling(10).sum()
+        er = change / (path + 1e-9)
+        er_feat = er.reindex(t_events)
+    except Exception:
+        pass
+
+    trend_feat = pd.Series(0.0, index=t_events)
+    try:
+        sma50 = close.rolling(window=50).mean()
+        trend_dev = (close - sma50) / (sma50 + 1e-9)
+        trend_feat = trend_dev.reindex(t_events)
+    except Exception:
+        pass
+
+    wavelet_d1_feat = pd.Series(0.0, index=t_events)
+    wavelet_d2_feat = pd.Series(0.0, index=t_events)
+    if OptimizedWaveletDecomposition is not None:
+        try:
+            wavelet_engine = OptimizedWaveletDecomposition(
+                wavelet='db4',
+                scales=['d1', 'd2'],
+                max_level=2,
+                verbose=False,
+            )
+            decomp = wavelet_engine.decompose_signal_vectorized(close.values)
+            if 'd1' in decomp:
+                d1_series = pd.Series(decomp['d1'], index=close.index)
+                d1_vol = d1_series.rolling(window=20).std()
+                wavelet_d1_feat = d1_vol.reindex(t_events).fillna(0.0)
+            if 'd2' in decomp:
+                d2_series = pd.Series(decomp['d2'], index=close.index)
+                d2_vol = d2_series.rolling(window=20).std()
+                wavelet_d2_feat = d2_vol.reindex(t_events).fillna(0.0)
+        except Exception as e_wav:
+            tprint_warning(f"⚠️ Wavelet feature generation failed: {e_wav}")
+
+    if event_consistency is not None and len(event_consistency) == len(t_events):
+        cons_feat = pd.Series(event_consistency, index=t_events).fillna(0.5)
+    else:
+        cons_feat = pd.Series(0.5, index=t_events)
+
+    feature_df = (
+        pd.DataFrame(
+            {
+                "ret1": ret1,
+                "ret3": ret3,
+                "ret6": ret6,
+                "vol20": vol20,
+                "rel_vol": rel_vol,
+                "rsi14": rsi_feat,
+                "bb_pct_b": bb_pct_b_feat,
+                "stoch_k": stoch_k_feat,
+                "er": er_feat,
+                "trend_dev": trend_feat,
+                "wavelet_d1_vol": wavelet_d1_feat,
+                "wavelet_d2_vol": wavelet_d2_feat,
+                "consistency": cons_feat,
+            },
+            index=t_events,
+        )
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+
+    return feature_df
+
+
 def safe_layer1_objective(
     weights: np.ndarray,
     returns: np.ndarray,
@@ -325,32 +460,24 @@ def run_layer1_optimization(
         )
 
         y_cl = (np.asarray(returns_arr, dtype=float) > 0.0).astype(int)
-        if int(np.unique(y_cl).size) >= 2:
-                close_ret_1 = close_series.pct_change(1)
-                close_ret_3 = close_series.pct_change(3)
-                close_ret_6 = close_series.pct_change(6)
-                vol_20 = close_series.pct_change().rolling(20).std()
-                feat_df = pd.DataFrame(
-                    {
-                        "ret1": close_ret_1.reindex(t_events),
-                        "ret3": close_ret_3.reindex(t_events),
-                        "ret6": close_ret_6.reindex(t_events),
-                        "vol20": vol_20.reindex(t_events),
-                    },
-                    index=t_events,
-                ).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        if int(np.unique(y_cl).size) >= 2 and shared_probe_features is not None:
+            feat_df = shared_probe_features.reindex(t_events).replace(
+                [np.inf, -np.inf], np.nan
+            ).fillna(0.0)
 
-                pred_probs = get_cross_val_pred_probs(
-                    feat_df.values,
-                    y_cl,
-                    model=None,
-                    n_splits=3,
-                    random_state=42,
-                )
-                cl_quality_scores = compute_label_quality_scores(y_cl, pred_probs, method="self_confidence")
-                cl_quality_scores = np.asarray(cl_quality_scores, dtype=float)
-                cl_quality_scores = np.where(np.isfinite(cl_quality_scores), cl_quality_scores, 1.0)
-                cl_quality_scores = np.clip(cl_quality_scores, 0.0, 1.0)
+            pred_probs = get_cross_val_pred_probs(
+                feat_df.values,
+                y_cl,
+                model=None,
+                n_splits=3,
+                random_state=42,
+            )
+            cl_quality_scores = compute_label_quality_scores(
+                y_cl, pred_probs, method="self_confidence"
+            )
+            cl_quality_scores = np.asarray(cl_quality_scores, dtype=float)
+            cl_quality_scores = np.where(np.isfinite(cl_quality_scores), cl_quality_scores, 1.0)
+            cl_quality_scores = np.clip(cl_quality_scores, 0.0, 1.0)
     except Exception:
         cl_quality_scores = None
 
@@ -437,12 +564,29 @@ def run_layer1_optimization(
 
     try:
         cons_series = compute_multi_horizon_consistency(close_series, horizons=[12, 48])
-        event_consistency = cons_series.reindex(t_events).replace([np.inf, -np.inf], np.nan).fillna(0.5).values
+        event_consistency = (
+            cons_series.reindex(t_events)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.5)
+            .values
+        )
         event_consistency = np.asarray(event_consistency, dtype=float)
         if event_consistency.shape[0] != returns_arr.shape[0]:
             event_consistency = None
     except Exception:
         event_consistency = None
+
+    shared_probe_features: Optional[pd.DataFrame] = None
+    try:
+        shared_probe_features = build_layer1_probe_features(
+            close_series=close_series,
+            market_data=market_data,
+            t_events=t_events,
+            event_consistency=event_consistency,
+        )
+    except Exception as e_probe:
+        tprint_warning(f"⚠️ Layer 1 probe feature generation failed: {e_probe}")
+        shared_probe_features = None
 
     try:
         objective_mode_local = str(objective_mode or "predictive_cv").strip().lower()
@@ -457,130 +601,16 @@ def run_layer1_optimization(
         try:
             y_proxy_arr = (np.asarray(returns_arr, dtype=float) > 0.0).astype(int)
 
-            close = close_series.astype(float)
-
-            # 1. Returns (Momentum)
-            ret1 = close.pct_change(1).reindex(t_events)
-            ret3 = close.pct_change(3).reindex(t_events)
-            ret6 = close.pct_change(6).reindex(t_events)
-
-            # 2. Volatility (Risk)
-            vol20 = close.pct_change().rolling(20).std()
-            vol100 = close.pct_change().rolling(100).std()
-            rel_vol = (vol20 / (vol100 + 1e-9)).reindex(t_events)
-            vol20 = vol20.reindex(t_events)
-
-            # Wavelet-based Noise Features (Robust Quality)
-            wavelet_d1_feat = pd.Series(0.0, index=t_events)
-            wavelet_d2_feat = pd.Series(0.0, index=t_events)
-
-            if OptimizedWaveletDecomposition is not None:
-                try:
-                    # Decompose signal
-                    wavelet_engine = OptimizedWaveletDecomposition(
-                        wavelet='db4',
-                        scales=['d1', 'd2'],
-                        max_level=2,
-                        verbose=False
-                    )
-
-                    # We use log-returns or prices. Prices are safer for shape, but returns are stationary.
-                    # Decomposition works on price usually.
-                    decomp = wavelet_engine.decompose_signal_vectorized(close.values)
-
-                    # Compute rolling energy (volatility) of components
-                    if 'd1' in decomp:
-                        d1_series = pd.Series(decomp['d1'], index=close.index)
-                        # d1 represents high-freq noise/micro-structure
-                        d1_vol = d1_series.rolling(window=20).std()
-                        wavelet_d1_feat = d1_vol.reindex(t_events).fillna(0.0)
-
-                    if 'd2' in decomp:
-                        d2_series = pd.Series(decomp['d2'], index=close.index)
-                        # d2 represents dealer flow / short-term cycles
-                        d2_vol = d2_series.rolling(window=20).std()
-                        wavelet_d2_feat = d2_vol.reindex(t_events).fillna(0.0)
-
-                except Exception as e_wav:
-                    tprint_warning(f"⚠️ Wavelet feature generation failed: {e_wav}")
-
-            # Consistency Features
-            cons_feat = pd.Series(0.5, index=t_events)
-            if event_consistency is not None:
-                cons_feat = pd.Series(event_consistency, index=t_events).fillna(0.5)
-
-            # 3. RSI-14 (Oscillator)
-            try:
-                delta = close.diff()
-                gain = delta.clip(lower=0.0)
-                loss = -delta.clip(upper=0.0)
-                avg_gain = gain.rolling(window=14, min_periods=1).mean()
-                avg_loss = loss.rolling(window=14, min_periods=1).mean()
-                rs = avg_gain / (avg_loss + 1e-9)
-                rsi = 100.0 - (100.0 / (1.0 + rs))
-            except Exception:
-                rsi_feat = pd.Series(50.0, index=t_events)
-
-            # 4. Bollinger Bands %B (Trend/Mean Rev)
-            try:
-                bb_ma = close.rolling(window=20).mean()
-                bb_std = close.rolling(window=20).std()
-                bb_pct_b = (close - bb_ma) / (2 * bb_std + 1e-9)
-                bb_pct_b_feat = bb_pct_b.reindex(t_events)
-            except Exception:
-                bb_pct_b_feat = pd.Series(0.0, index=t_events)
-
-            # 5. Stochastic %K (Range Position)
-            try:
-                # Use High/Low if available, else roll close
-                if 'high' in market_data.columns and 'low' in market_data.columns:
-                    high_roll = market_data['high'].rolling(14).max()
-                    low_roll = market_data['low'].rolling(14).min()
-                else:
-                    high_roll = close.rolling(14).max()
-                    low_roll = close.rolling(14).min()
-
-                stoch_k = (close - low_roll) / (high_roll - low_roll + 1e-9)
-                stoch_k_feat = stoch_k.reindex(t_events)
-            except Exception:
-                stoch_k_feat = pd.Series(0.5, index=t_events)
-
-            # 6. Efficiency Ratio (Trend Quality)
-            try:
-                change = close.diff(10).abs()
-                path = close.diff(1).abs().rolling(10).sum()
-                er = change / (path + 1e-9)
-                er_feat = er.reindex(t_events)
-            except Exception:
-                er_feat = pd.Series(0.5, index=t_events)
-
-            # 7. Trend Strength (SMA Deviation)
-            try:
-                sma50 = close.rolling(window=50).mean()
-                trend_dev = (close - sma50) / (sma50 + 1e-9)
-                trend_feat = trend_dev.reindex(t_events)
-            except Exception:
-                trend_feat = pd.Series(0.0, index=t_events)
+            if shared_probe_features is None:
+                shared_probe_features = build_layer1_probe_features(
+                    close_series=close_series,
+                    market_data=market_data,
+                    t_events=t_events,
+                    event_consistency=event_consistency,
+                )
 
             X_df_proxy = (
-                pd.DataFrame(
-                    {
-                        "ret1": ret1,
-                        "ret3": ret3,
-                        "ret6": ret6,
-                        "vol20": vol20,
-                        "rel_vol": rel_vol,
-                        "rsi14": rsi_feat,
-                        "bb_pct_b": bb_pct_b_feat,
-                        "stoch_k": stoch_k_feat,
-                        "er": er_feat,
-                        "trend_dev": trend_feat,
-                        "wavelet_d1_vol": wavelet_d1_feat,
-                        "wavelet_d2_vol": wavelet_d2_feat,
-                        "consistency": cons_feat,
-                    },
-                    index=t_events,
-                )
+                shared_probe_features.reindex(t_events)
                 .replace([np.inf, -np.inf], np.nan)
                 .fillna(0.0)
             )
@@ -747,6 +777,24 @@ def run_layer1_optimization(
                 )
         except Exception:
             pass
+
+    default_params = {
+        'mag_compression': 1.0,
+        'learn_slope': 1.0,
+        'learn_center': 0.5,
+        'uniq_intensity': 1.0,
+        'quality_intensity': 1.0,
+        'quality_floor': 0.0,
+        'exp_mag': 1.0,
+        'exp_learn': 1.0,
+        'exp_uniq': 1.0,
+        'exp_cross': 1.0,
+        'downside_multiplier': 1.0,
+        'mag_clip_pct': 0.99,
+        'time_decay_halflife': 1.0,
+        'committee_agreement_alpha': 1.0,
+        'committee_mag_clip': 3.0,
+    }
 
     search_space: Dict[str, Dict[str, Any]] = {
         # --- A. INFORMATION HANDLING (Magnitude & Uniqueness) ---

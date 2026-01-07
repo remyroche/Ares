@@ -494,7 +494,12 @@ class ResonanceDetector:
                 tprint_info(f"   - Average resonance: {avg_resonance:.3f}")
                 tprint_info(f"   - Cache hits: Coherence={len(self._coherence_cache)}, Phase={len(self._phase_cache)}")
                 tprint_info(f"   - Processing method: {'Parallel' if self.enable_parallel else 'Sequential'}")
-                self._log_resonance_sanity(all_resonances)
+                
+                # Compute coherence and phase summaries for diagnostics
+                coherence_summary = {'mean_coherence': np.mean([r.get('coherence', 0) for r in all_resonances.values()])} if all_resonances else {}
+                phase_summary = {'mean_phase': np.mean([r.get('phase', 0) for r in all_resonances.values()])} if all_resonances else {}
+                
+                self._log_resonance_sanity(all_resonances, coherence_summary, phase_summary)
             
             return all_resonances
             
@@ -517,6 +522,71 @@ class ResonanceDetector:
                 seen.add(name)
                 specialist_names.append(name)
         return specialist_names
+    
+    def _log_resonance_sanity(self, all_resonances: Dict[str, float], 
+                          coherence_summary: Optional[Dict] = None, 
+                          phase_summary: Optional[Dict] = None):
+        """
+        Log comprehensive resonance diagnostics for debugging zero resonance issues.
+        
+        Args:
+            all_resonances: Dictionary of resonance scores
+            coherence_summary: Optional coherence statistics
+            phase_summary: Optional phase statistics
+        """
+        if not all_resonances:
+            tprint_error("❌ CRITICAL: No resonance scores computed")
+            return
+            
+        # Basic statistics
+        resonance_values = list(all_resonances.values())
+        mean_resonance = np.mean(resonance_values)
+        std_resonance = np.std(resonance_values)
+        max_resonance = np.max(resonance_values)
+        min_resonance = np.min(resonance_values)
+        
+        tprint_info(f"📊 Resonance Diagnostics:")
+        tprint_info(f"   - Total pairs: {len(all_resonances)}")
+        tprint_info(f"   - Mean resonance: {mean_resonance:.6f}")
+        tprint_info(f"   - Std resonance: {std_resonance:.6f}")
+        tprint_info(f"   - Max resonance: {max_resonance:.6f}")
+        tprint_info(f"   - Min resonance: {min_resonance:.6f}")
+        tprint_info(f"   - Zero resonance count: {sum(1 for v in resonance_values if abs(v) < 1e-10)}")
+        
+        # Check for degenerate case
+        if max_resonance < 1e-6:
+            tprint_error("❌ CRITICAL: All resonance values effectively zero!")
+            tprint_error("   Possible causes:")
+            tprint_error("   1. Spectral components are constant/flat")
+            tprint_error("   2. No variance in specialist signals")
+            tprint_error("   3. Coherence calculation failed")
+            tprint_error("   4. Phase alignment issues")
+            
+            # Log sample spectral component stats if available
+            if hasattr(self, '_last_spectral_components'):
+                tprint_error("   Spectral component statistics:")
+                for name, component in list(self._last_spectral_components.items())[:3]:
+                    tprint_error(f"     {name}: mean={np.mean(component):.6f}, std={np.std(component):.6f}")
+        
+        # Log coherence and phase summaries if provided
+        if coherence_summary:
+            tprint_info(f"📈 Coherence Summary:")
+            for key, value in coherence_summary.items():
+                tprint_info(f"   - {key}: {value:.4f}")
+                
+        if phase_summary:
+            tprint_info(f"🔄 Phase Summary:")
+            for key, value in phase_summary.items():
+                tprint_info(f"   - {key}: {value:.4f}")
+        
+        # Alert on zero resonance
+        if mean_resonance < 1e-6:
+            tprint_warning("⚠️  Resonance effectively zero - forcing NEUTRAL_REGIME")
+            tprint_warning("   This indicates specialists are not providing meaningful signals")
+            tprint_warning("   Consider:")
+            tprint_warning("   - Checking specialist feature engineering")
+            tprint_warning("   - Verifying input data quality")
+            tprint_warning("   - Adjusting spectral decomposition parameters")
     
     def clear_cache(self):
         """Clear all caches to free memory."""

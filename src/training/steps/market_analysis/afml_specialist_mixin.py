@@ -4,12 +4,14 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from sklearn.metrics import roc_auc_score
+from src.utils.numba_funcs import _numba_generate_dollar_bars, _numba_generate_range_bars
 
 from src.utils.ml_common.afml_utils import (
     get_daily_vol, get_t_events, get_vertical_barrier, 
     apply_triple_barrier, get_bins, get_weights_by_uniqueness,
     frac_diff_fixed, get_sample_weights, compute_master_weight, compute_hunter_weight,
-    get_sample_uniqueness, get_num_concurrent_events
+    get_sample_uniqueness, get_num_concurrent_events,
+    calculate_rolling_volatility, calculate_dynamic_range_threshold
 )
 from src.utils.ml_common.wavelet_utils import get_wavelet_features
 from src.utils.ml_common.physics_router import AdaptiveHunterRouter
@@ -18,7 +20,7 @@ from src.training.steps.market_analysis.offline_causal_discovery import OfflineC
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +33,15 @@ class AFMLSpecialistMixin:
     - Phase 0: Hunter Weighting (Uniqueness * Cleanliness * Wavelet * Router)
     - Phase 3/E: Monotonic Constraints via Ridge
     """
+    
+    # Class-level cache for expensive feature generation
+    _PHYSICS_CACHE = {}
+    _ROUTER_CACHE = {}  # Cache for fitted routers
+    _ANARCHY_CACHE = {}
+    _BAR_CACHE = {}
 
     def _apply_standard_feature_selection(self, features: pd.DataFrame, max_features: int = 30) -> pd.DataFrame:
+        tprint_info(f"[{self.__class__.__name__}] Starting _apply_standard_feature_selection with {features.shape[1] if not features.empty else 0} features")
         if features.empty: return features
 
         # Causal Pruning Integration (Phase 3 Offline Loading)
@@ -64,17 +73,28 @@ class AFMLSpecialistMixin:
         if len(constant_features) > 0:
             features = features.drop(columns=constant_features)
 
-        correlation_matrix = features.corr().abs()
-        upper_triangle = correlation_matrix.where(np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool))
-        to_drop = []
-        for column in upper_triangle.columns:
-            if any(upper_triangle[column] > 0.9):
-                to_drop.append(column)
+        if features.empty: return features
+
+        # Optimization: If dataset is large, use a subset for correlation check
+        # Correlation is usually stable enough on 10k samples
+        if len(features) > 10000:
+            corr_data = features.sample(n=10000, random_state=42)
+        else:
+            corr_data = features
+
+        correlation_matrix = corr_data.corr().abs()
+        
+        # Optimized vectorized detection of high correlation
+        upper = correlation_matrix.where(np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper.columns if any(upper[column] > 0.9)]
+        
         if to_drop:
+            tprint_info(f"   [Selection] Dropping {len(to_drop)} highly correlated features")
             features = features.drop(columns=to_drop)
 
         if len(features.columns) > max_features:
-            feature_variances = features.var()
+            # Use variance but avoid recomputing if possible
+            feature_variances = corr_data.var()
             top_features = feature_variances.nlargest(max_features).index
             features = features[top_features]
 
@@ -86,6 +106,7 @@ class AFMLSpecialistMixin:
         specialist_type: SpecialistType,
         manual_feature_func: Optional[Callable[[pd.DataFrame, pd.DataFrame], pd.DataFrame]] = None
     ) -> pd.DataFrame:
+        tprint_info(f"[{self.__class__.__name__}] generate_standard_enhanced_features start specialist={specialist_type.name}")
         pipeline_features = pd.DataFrame(index=df.index)
         if hasattr(self, 'feature_pipeline'):
             pipeline_features = self.feature_pipeline.generate_enhanced_features(
@@ -148,13 +169,15 @@ class AFMLSpecialistMixin:
         suffix: str = "enhanced_features"
     ) -> Dict[str, Any]:
         start_time = time.time()
+        tprint_info(f"[{self.__class__.__name__}] execute_standard_specialist_logic start specialist={specialist_type.name}")
         try:
             symbol = config.get('symbol', 'BTCUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
+            cache_key = (symbol, exchange, timeframe)
 
             # 1. Load Market Data
-            tprint_info(f"🚀 Starting Hunter Specialist {self.step_name} for {symbol}")
+            tprint_info(f"   [Phase 1/6] Loading Market Data...")
             if hasattr(self, '_load_market_data_with_cache'):
                 df, market_source = self._load_market_data_with_cache(config, timeframe)
             elif hasattr(self, '_load_market_data'):
@@ -167,15 +190,23 @@ class AFMLSpecialistMixin:
                 return {"success": False, "error": "Insufficient data"}
 
             # 2. Feature Generation (Conditioned)
+            tprint_info(f"   [Phase 2/6] Generating Conditioned Features...")
             feature_df = self.generate_standard_enhanced_features(df, specialist_type, manual_feature_func)
 
-            # Phase 6: Add Anarchy Features
-            tprint_info("   Adding Anarchy Features (IF + Path Sig)...")
-            anarchy_detector = AnarchyDetector()
-            anarchy_features = anarchy_detector.generate_anarchy_features(df)
+            # Phase 6: Add Anarchy Features (with Caching)
+            tprint_info(f"   [Phase 3/6] Adding Anarchy Features (IF + Path Sig)...")
+            if cache_key in self._ANARCHY_CACHE:
+                tprint_info("   [Cache] Using cached Anarchy features")
+                anarchy_features = self._ANARCHY_CACHE[cache_key]
+            else:
+                anarchy_detector = AnarchyDetector()
+                anarchy_features = anarchy_detector.generate_anarchy_features(df)
+                self._ANARCHY_CACHE[cache_key] = anarchy_features
+            
             feature_df = pd.concat([feature_df, anarchy_features], axis=1)
 
             # 3. AFML & Hunter Prep
+            tprint_info(f"   [Phase 4/6] AFML & Hunter Preparation (Bars, Physics, Sampling)...")
             X, y, weights = self.prepare_specialist_data(
                 market_data=df,
                 feature_df=feature_df,
@@ -185,26 +216,29 @@ class AFMLSpecialistMixin:
                 default_pt_sl=default_pt_sl
             )
 
-            # 4. Centralized Training (with Monotonic Constraints)
-            tprint_info("🤖 Training Hunter Model (XGB + Monotonic Ridge)...")
-            training_result = train_specialist_xgb_with_oof(
+            # 4. Centralized Training
+            tprint_info(f"   [Phase 5/6] Training ExtraTrees Model...")
+            training_result = train_specialist_model_with_oof(
                 X.fillna(0.0),
                 y.fillna(0.0),
                 sample_weight=weights,
                 n_splits=5,
-                apply_monotonic_constraints=True
+                params_override=config.get('params_override', {})
             )
 
             # 5. Output Construction
+            tprint_info(f"   [Phase 6/6] Finalizing Output & Aligning Probs...")
             oof_probs = training_result.oof_predictions
-            final_probs = pd.Series(np.nan, index=df.index)
-            valid_oof = oof_probs.dropna()
-            if len(valid_oof) > 0:
-                final_probs.loc[valid_oof.index] = valid_oof.values
-            final_probs = final_probs.ffill().fillna(0.5)
+            # Align oof_probs (bar-based) to df.index (15m-based)
+            final_probs = oof_probs.reindex(df.index, method='ffill').fillna(0.5)
             final_preds = (final_probs >= 0.5).astype(int)
+            
+            # Labels also need to be aligned to df.index
             full_labels = pd.Series(0, index=df.index)
-            full_labels.loc[y.index] = y
+            # y is indexed by t_events, which are part of anchor_df index
+            # Align y to df.index
+            y_aligned = y.reindex(df.index, method='ffill').fillna(0).astype(int)
+            full_labels.update(y_aligned)
 
             # 6. Save
             if hasattr(self, 'save_specialist_results'):
@@ -226,6 +260,7 @@ class AFMLSpecialistMixin:
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.exception(f"❌ {self.step_name} failed: {e}")
+            tprint_error(f"[{self.__class__.__name__}] execute_standard_specialist_logic failed: {e}")
             return {"success": False, "error": str(e)}
 
     def prepare_specialist_data(
@@ -237,29 +272,52 @@ class AFMLSpecialistMixin:
         pt_sl_config_key: Optional[str] = None,
         default_pt_sl: List[float] = [2.0, 1.0]
     ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
+        tprint_info(f"[{self.__class__.__name__}] prepare_specialist_data start filter={filter_type}")
+        symbol = config.get('symbol', 'BTCUSDT')
+        exchange = config.get('exchange', 'binance')
+        timeframe = config.get('timeframe', '15m')
+        cache_key_base = (symbol, exchange, timeframe)
 
         # 1. Determine Anchor
         specialist_type = config.get('specialist_type', self.specialist_type if hasattr(self, 'specialist_type') else SpecialistType.VOLUME_FORCE)
         anchor_type = self._get_anchor_type(specialist_type)
-        context_type = 'range' if anchor_type == 'volume' else 'volume'
+        # Use dollar as context for range, and range as context for dollar
+        context_type = 'range' if anchor_type == 'dollar' else 'dollar'
 
-        # 2. Generate Bars
-        anchor_df = self._generate_bars(market_data, config, anchor_type)
-        context_df = self._generate_bars(market_data, config, context_type)
+        # 2. Generate Bars (with Caching)
+        tprint_info(f"      [Sub-Phase 4.1] Generating {anchor_type} & {context_type} bars...")
+        cache_key_anchor = (*cache_key_base, anchor_type)
+        cache_key_context = (*cache_key_base, context_type)
+
+        if cache_key_anchor in self._BAR_CACHE:
+            tprint_info(f"      [Cache] Using cached anchor_df ({anchor_type})")
+            anchor_df = self._BAR_CACHE[cache_key_anchor]
+        else:
+            anchor_df = self._generate_bars(market_data, config, anchor_type)
+            self._BAR_CACHE[cache_key_anchor] = anchor_df
+
+        if cache_key_context in self._BAR_CACHE:
+            tprint_info(f"      [Cache] Using cached context_df ({context_type})")
+            context_df = self._BAR_CACHE[cache_key_context]
+        else:
+            context_df = self._generate_bars(market_data, config, context_type)
+            self._BAR_CACHE[cache_key_context] = context_df
+        
+        if anchor_df is None or anchor_df.empty:
+            tprint_error(f"      [Prepare] anchor_df ({anchor_type}) is empty!")
+            return pd.DataFrame(), pd.Series(), pd.Series()
+        
+        tprint_info(f"      [Prepare] anchor_df: {len(anchor_df)} rows, context_df: {len(context_df) if context_df is not None else 0} rows")
 
         # 3. Join & Cross-Bar Features
-        # (Simplified join logic from previous - assume implemented in _join_bars helper or inline)
-        # Using concise logic to save token space in replacement
         anchor_feats = anchor_df.add_suffix(f"_{anchor_type}_bar")
-        context_feats = context_df.add_suffix(f"_{context_type}_bar")
-
-        if anchor_type == 'volume':
+        if context_df is not None and not context_df.empty:
+            context_feats = context_df.add_suffix(f"_{context_type}_bar")
             context_feats['context_ts_join'] = context_feats.index
             joined_df = pd.merge_asof(anchor_feats.sort_index(), context_feats.sort_index(), left_index=True, right_index=True, direction='backward')
             joined_df = joined_df.drop(columns=['context_ts_join'])
         else:
-            # Range anchor logic (simplified for brevity)
-            joined_df = anchor_feats # Placeholder
+            joined_df = anchor_feats
 
         pipeline_feats = feature_df.reindex(anchor_df.index, method='ffill').fillna(method='bfill')
         X_combined = pd.concat([joined_df, pipeline_feats], axis=1)
@@ -267,80 +325,95 @@ class AFMLSpecialistMixin:
         market_data_anchor = anchor_df
 
         # 4. AFML Sampling & Labeling
+        tprint_info(f"      [Sub-Phase 4.2] AFML CUSUM Sampling ({filter_type})...")
         sampled_df, t_events = self.apply_afml_sampling(market_data_anchor, config, filter_type=filter_type)
+        if len(t_events) == 0:
+            tprint_error(f"      [Prepare] t_events is empty after sampling!")
+            return pd.DataFrame(), pd.Series(), pd.Series()
+            
+        tprint_info(f"      [Prepare] sampled events: {len(t_events)}")
+        
+        tprint_info(f"      [Sub-Phase 4.3] Generating TBM Labels...")
         pt_sl = config.get(pt_sl_config_key, default_pt_sl) if pt_sl_config_key else default_pt_sl
         tbm_labels_df = self.generate_tbm_labels(market_data_anchor, t_events, config, pt_sl)
+        
+        if tbm_labels_df.empty or 'bin' not in tbm_labels_df.columns:
+            tprint_error(f"      [Prepare] tbm_labels_df is empty or missing 'bin'!")
+            return pd.DataFrame(), pd.Series(), pd.Series()
 
-        # 5. Physics Router (Phase 1)
-        # Calculate physics features on anchor_df
-        router = AdaptiveHunterRouter()
-        physics_feats = router.compute_physics_features(market_data_anchor)
-        # Fit router on the sampled events to define regimes?
-        # Or usually fit on history. We fit on current data for "Seeding" simulation.
-        router.fit(physics_feats.values) # In production this would load a pre-fit model
+        train_regime_label = config.get('train_regime_label', None)
+        regime_at_event: Optional[pd.Series] = None
 
-        # Get Regime Weights for t_events
-        # We iterate or vectorize predict.
-        # Vectorized predict is harder with stateful router, but let's just get the weights
-        # using the static GMM probability for now as the base weight, ignoring transition for batch training speed.
-        # Phase 3 says: "Sample weights from Phase 0 * Router Weight"
+        # 5. Physics Router (Phase 1) (with Caching)
+        tprint_info(f"      [Sub-Phase 4.4] Physics Router (Matrix Profile + Wavelet)...")
+        # Physics features are tied to anchor_df (which is already specific to anchor_type)
+        if cache_key_anchor in self._ROUTER_CACHE:
+            tprint_info(f"      [Cache] Using cached fitted Router for {anchor_type}")
+            router = self._ROUTER_CACHE[cache_key_anchor]
+            physics_feats = self._PHYSICS_CACHE[cache_key_anchor]
+        else:
+            router = AdaptiveHunterRouter()
+            physics_feats = router.compute_physics_features(market_data_anchor)
+            if not physics_feats.empty:
+                router.fit(physics_feats.values)
+                self._ROUTER_CACHE[cache_key_anchor] = router
+                self._PHYSICS_CACHE[cache_key_anchor] = physics_feats
+            else:
+                tprint_warning("      [Prepare] physics_feats is empty, router will use uniform weights")
 
-        # Get GMM probabilities for the regime of this specialist?
-        # The specialist usually hunts in ALL regimes or SPECIFIC?
-        # "Each specialist only sees the data in its regime bucket".
-        # BUT this is a "Specialist Mixin" for a specific signal (e.g. Volume Force).
-        # Volume Force might have 3 sub-models (Quiet, Trend, Chaos).
-        # Here we train ONE model.
-        # If we train ONE model for Volume Force, we should weight by "Is this bar relevant?"
-        # Or we assume this IS the "Volume Force (Universal)" specialist.
-        # Let's assume Universal for now, but apply the Hunter Weight formula.
-
-        # If we wanted to train a "Trending Volume Force" specialist, we would weight by w_trending.
-        # Let's check config for 'target_regime'.
-        target_regime = config.get('target_regime', None) # 'Quiet', 'Trending', 'Chaos' or None (Global)
-
+        target_regime = config.get('target_regime', None) 
         regime_weights_series = pd.Series(1.0, index=t_events)
-        if target_regime:
-            # Predict weights
-            # This is slow, so maybe just use GMM probability
-            X_phys = physics_feats.loc[t_events].values
-            X_phys_scaled = router.scaler.transform(X_phys)
-            probs = router.gmm.predict_proba(X_phys_scaled)
+        
+        if target_regime and not physics_feats.empty and getattr(router, 'is_fit', False):
+            try:
+                events_present = t_events.intersection(physics_feats.index)
+                if not events_present.empty:
+                    X_phys = physics_feats.loc[events_present].values
+                    X_phys_scaled = router.scaler.transform(X_phys)
+                    probs = router.gmm.predict_proba(X_phys_scaled)
+                    rev_map = {v: k for k, v in router.regime_map.items()}
+                    regime_idx = rev_map.get(target_regime, 0)
+                    regime_weights_series.loc[events_present] = probs[:, regime_idx]
+            except Exception as e:
+                tprint_warning(f"   [Prepare] Regime weighting failed: {e}")
 
-            # Find index of target regime
-            # router.regime_map is {0: 'Quiet', ...}
-            # reverse map
-            rev_map = {v: k for k, v in router.regime_map.items()}
-            regime_idx = rev_map.get(target_regime, 0)
-
-            regime_weights_series = pd.Series(probs[:, regime_idx], index=t_events)
+        if train_regime_label and not physics_feats.empty and getattr(router, 'is_fit', False):
+            try:
+                X_phys_all = physics_feats.values
+                X_phys_scaled = router.scaler.transform(X_phys_all)
+                cluster_ids = router.gmm.predict(X_phys_scaled)
+                labels = [router.regime_map.get(int(i), str(i)) for i in cluster_ids]
+                label_series = pd.Series(labels, index=physics_feats.index)
+                regime_at_event = label_series.reindex(t_events, method='ffill')
+            except Exception as e:
+                tprint_warning(f"   [Prepare] Regime filter assignment failed: {e}")
+                regime_at_event = None
 
         # 6. Wavelet Features & Hunter Weighting (Phase 0)
-        # Compute Wavelets
-        anchor_wavelet_fam = 'db4' if anchor_type == 'volume' else 'sym4'
-        # ... (Same wavelet logic as before) ...
-        # Simplified for replacement:
+        anchor_wavelet_fam = 'db4' if anchor_type == 'dollar' else 'sym4'
         wavelet_vals = []
         close_vals = market_data_anchor['close'].values
         for evt in t_events:
-            idx = market_data_anchor.index.get_loc(evt)
-            if idx > 32:
-                s = close_vals[idx-32:idx]
-                feat = get_wavelet_features(s, wavelet=anchor_wavelet_fam)
-                wavelet_vals.append(feat['hf_lf_ratio'])
-            else:
+            try:
+                idx = market_data_anchor.index.get_loc(evt)
+                if idx > 32:
+                    s = close_vals[idx-32:idx]
+                    feat = get_wavelet_features(s, wavelet=anchor_wavelet_fam)
+                    wavelet_vals.append(feat['hf_lf_ratio'])
+                else:
+                    wavelet_vals.append(0.5)
+            except Exception:
                 wavelet_vals.append(0.5)
 
         hf_lf_series = pd.Series(wavelet_vals, index=t_events)
-        noise_ratio = hf_lf_series / (1.0 + hf_lf_series) # approximate
+        noise_ratio = hf_lf_series / (1.0 + hf_lf_series) 
 
-        # Calc Master/Hunter Weight
         volatility = get_daily_vol(market_data_anchor['close'], use_volume_time=True).loc[t_events]
         barrier_size = volatility * pt_sl[0]
+        
         num_concurrent = self.get_concurrent_weights(tbm_labels_df['t1'], market_data_anchor.index)
         uniqueness = get_sample_uniqueness(tbm_labels_df['t1'], num_concurrent)
 
-        # Use compute_hunter_weight
         base_weights = compute_hunter_weight(
             uniqueness=uniqueness.values,
             mfe=tbm_labels_df['mfe'].values,
@@ -349,12 +422,10 @@ class AFMLSpecialistMixin:
             wavelet_noise=noise_ratio.values
         )
 
-        # Combine with Regime Weight
-        final_weights = base_weights * regime_weights_series.values
+        final_weights = base_weights * regime_weights_series.loc[t_events].values
         weights_series = pd.Series(final_weights, index=t_events)
 
         # 7. Final Clean
-        # Add wavelet features to X
         wavelet_df = pd.DataFrame({'wavelet_noise': noise_ratio}, index=t_events)
         X_sampled = pd.concat([X_combined.loc[t_events], wavelet_df], axis=1)
 
@@ -362,82 +433,97 @@ class AFMLSpecialistMixin:
         valid_mask = X.notna().all(axis=1) & tbm_labels_df['bin'].notna()
         X, y, w = X.loc[valid_mask], tbm_labels_df['bin'].loc[valid_mask], weights_series.loc[valid_mask]
 
+        if train_regime_label and regime_at_event is not None:
+            try:
+                r = regime_at_event.reindex(X.index)
+                keep = r == str(train_regime_label)
+                X, y, w = X.loc[keep], y.loc[keep], w.loc[keep]
+            except Exception:
+                pass
+        
+        tprint_info(f"   [Prepare] Final data: X={X.shape}, y={len(y)}, w={len(w)}")
         return X, y, w
 
     def _get_anchor_type(self, specialist_type: SpecialistType) -> str:
-        volume_anchors = {SpecialistType.VOLUME_FORCE, SpecialistType.LIQUIDITY_REGIME, SpecialistType.MICROSTRUCTURE, SpecialistType.RISK_REGIME, SpecialistType.SMC_REGIME, SpecialistType.SPECTRAL}
-        return 'volume' if specialist_type in volume_anchors else 'range'
+        tprint_info(f"[{self.__class__.__name__}] _get_anchor_type for {specialist_type.name}")
+        # Phase 1: All volume-based specialists now use dollar bars
+        volume_anchors = {
+            SpecialistType.VOLUME_FORCE, SpecialistType.LIQUIDITY_REGIME, 
+            SpecialistType.MICROSTRUCTURE, SpecialistType.RISK_REGIME, 
+            SpecialistType.SMC_REGIME, SpecialistType.SPECTRAL
+        }
+        return 'dollar' if specialist_type in volume_anchors else 'range'
 
     def _generate_bars(self, df: pd.DataFrame, config: Dict[str, Any], bar_type: str) -> pd.DataFrame:
-        if bar_type == 'volume': return self._generate_dynamic_volume_bars(df, config)
+        tprint_info(f"[{self.__class__.__name__}] _generate_bars type={bar_type}")
+        if bar_type == 'dollar': return self._generate_dynamic_dollar_bars(df, config)
         elif bar_type == 'range': return self._generate_range_bars(df, config)
         elif bar_type == 'pit': return self.generate_pit_bars(df, config)
         else: raise ValueError(f"Unknown bar type: {bar_type}")
 
-    def _generate_dynamic_volume_bars(self, df, config):
-        # ... (Previous implementation preserved, omitted for brevity in this block update) ...
-        # Assume usage of original logic or reload if needed.
-        # Since I'm overwriting the file, I must include the implementation.
-        # Re-using the implementation from the read_file content earlier.
-
-        symbol = config.get('symbol', 'ETHUSDT')
+    def _generate_dynamic_dollar_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """
+        Phase 1: Dynamic Dollar (USDT) bars (Vectorized).
+        Threshold is adaptive based on 7-day rolling dollar volume.
+        """
+        tprint_info(f"[{self.__class__.__name__}] _generate_dynamic_dollar_bars (Vectorized) start")
+        symbol = config.get('symbol', 'BTCUSDT')
         try:
             manager = get_klines_manager(config.get('data_dir', 'historical_data'))
             start_date = df.index.min() - pd.Timedelta(days=8)
             end_date = df.index.max()
+            
             df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
             if df_1m is None or df_1m.empty: return None
-            df_1m = df_1m[['open', 'high', 'low', 'close', 'volume']]
-            rolling_28d_vol = df_1m['volume'].rolling(window=40320, min_periods=5760).sum()
-            dynamic_N = rolling_28d_vol / 674.0
-            dynamic_N = dynamic_N.fillna(method='bfill')
-
-            # Vectorized loop (condensed)
-            # ... (Implementation similar to before)
-            # For robustness, let's just return None to signal I need to copy the full code?
-            # No, I must provide full code.
-
-            # Optimized Loop
-            df_1m['cum_vol'] = df_1m['volume'].cumsum()
-            times = df_1m.index.values
-            opens = df_1m['open'].values
+            
+            # Ensure 'quote_volume' is present and valid
+            # Ensure 'quote_volume' is present and valid (handle mostly empty columns)
+            if 'quote_volume' not in df_1m.columns or df_1m['quote_volume'].count() < 0.5 * len(df_1m):
+                df_1m['quote_volume'] = df_1m['volume'] * df_1m['close']
+            
+            df_1m['quote_volume'] = df_1m['quote_volume'].fillna(0.0)
+            
+            # Adaptive threshold using 30-day (monthly) rolling mean volume * 15 (for ~96 bars/day = 15 min avg)
+            # Using 30-day rolling mean per user request for stability
+            # 43200 = 30 days * 24 hours * 60 minutes
+            rolling_30d_mean = df_1m['quote_volume'].rolling(window=43200, min_periods=1440).mean()
+            
+            # Threshold = rolling mean * 15 (minutes per bar at 96 bars/day)
+            dynamic_threshold = (rolling_30d_mean * 15.0).ffill().bfill().values
+            
+            # Vectorized bar generation using Numba
+            vols = df_1m['quote_volume'].values
+            closes = df_1m['close'].values
             highs = df_1m['high'].values
             lows = df_1m['low'].values
-            closes = df_1m['close'].values
-            vols = df_1m['volume'].values
-            thresholds = dynamic_N.values
+            opens = df_1m['open'].values
+            times = df_1m.index.values # datetime64[ns]
 
-            vb_times, vb_opens, vb_highs, vb_lows, vb_closes, vb_vols = [],[],[],[],[],[]
-            current_vol, current_open, current_high, current_low = 0.0, opens[0], highs[0], lows[0]
-            n_rows = len(df_1m)
+            # Use Numba-optimized generation
+            out_times, out_opens, out_highs, out_lows, out_closes, out_vols = _numba_generate_dollar_bars(
+                 times, opens, highs, lows, closes, vols, dynamic_threshold
+            )
+            
+            if len(out_times) == 0:
+                 return None
 
-            for i in range(n_rows):
-                vol = vols[i]
-                current_vol += vol
-                current_high = max(current_high, highs[i])
-                current_low = min(current_low, lows[i])
-                target_n = thresholds[i]
-                if np.isnan(target_n) or target_n <= 0: target_n = 10000.0
+            res_df = pd.DataFrame({
+                'open': out_opens, 'high': out_highs, 'low': out_lows, 
+                'close': out_closes, 'volume': out_vols
+            }, index=pd.DatetimeIndex(out_times))
+            
+            res_df['bar_duration'] = res_df.index.to_series().diff().dt.total_seconds().fillna(60.0)
+            return res_df
+        except Exception as e:
+            tprint_error(f"   [DollarBars] Failed: {e}")
+            return None
 
-                if current_vol >= target_n:
-                    vb_times.append(times[i])
-                    vb_opens.append(current_open)
-                    vb_highs.append(current_high)
-                    vb_lows.append(current_low)
-                    vb_closes.append(closes[i])
-                    vb_vols.append(current_vol)
-                    current_vol = 0.0
-                    if i + 1 < n_rows:
-                        current_open = opens[i+1]
-                        current_high = highs[i+1]
-                        current_low = lows[i+1]
-
-            return pd.DataFrame({'open': vb_opens, 'high': vb_highs, 'low': vb_lows, 'close': vb_closes, 'volume': vb_vols}, index=pd.DatetimeIndex(vb_times))
-        except Exception: return None
-
-    def _generate_range_bars(self, df, config):
-        # ... (Re-implementing simplified) ...
-        symbol = config.get('symbol', 'ETHUSDT')
+    def _generate_range_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """
+        Phase 1: Dynamic Range bars using volatility-adaptive thresholds (Optimized).
+        """
+        tprint_info(f"[{self.__class__.__name__}] _generate_range_bars start")
+        symbol = config.get('symbol', 'BTCUSDT')
         try:
             vol_15m = calculate_rolling_volatility(df['close'], window_days=28)
             delta_p_series = calculate_dynamic_range_threshold(vol_15m, df['close'])
@@ -449,7 +535,7 @@ class AFMLSpecialistMixin:
             df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
             if df_1m is None: return None
 
-            thresholds_1m = delta_p_daily.reindex(df_1m.index, method='ffill').fillna(method='bfill')
+            thresholds_1m = delta_p_daily.reindex(df_1m.index, method='ffill').bfill().values
 
             times = df_1m.index.values
             opens = df_1m['open'].values
@@ -457,67 +543,57 @@ class AFMLSpecialistMixin:
             lows = df_1m['low'].values
             closes = df_1m['close'].values
             vols = df_1m['volume'].values
-            threshold_vals = thresholds_1m.values
-
-            rb_times, rb_opens, rb_highs, rb_lows, rb_closes, rb_vols, rb_durations = [],[],[],[],[],[],[]
-            current_open, current_high, current_low, current_vol = opens[0], highs[0], lows[0], 0.0
-            start_idx = 0
-            n_rows = len(df_1m)
-
-            for i in range(n_rows):
-                p = closes[i]
-                current_high = max(current_high, highs[i])
-                current_low = min(current_low, lows[i])
-                current_vol += vols[i]
-                delta_p = threshold_vals[i]
-                if np.isnan(delta_p) or delta_p <= 0: delta_p = p * 0.01
-
-                if abs(p - current_open) >= delta_p:
-                    rb_times.append(times[i])
-                    rb_opens.append(current_open)
-                    rb_highs.append(current_high)
-                    rb_lows.append(current_low)
-                    rb_closes.append(p)
-                    rb_vols.append(current_vol)
-                    rb_durations.append((times[i] - times[start_idx]).astype('timedelta64[s]').astype(float) + 60.0)
-
-                    if i + 1 < n_rows:
-                        current_open = p; current_high = p; current_low = p; current_vol = 0.0; start_idx = i + 1
-
-            return pd.DataFrame({'open': rb_opens, 'high': rb_highs, 'low': rb_lows, 'close': rb_closes, 'volume': rb_vols, 'bar_duration': rb_durations}, index=pd.DatetimeIndex(rb_times))
-        except Exception: return None
-
-    # (Other helper methods apply_afml_sampling etc. are same as imported or base class, but since Mixin overrides, we must include them)
-    # Re-using the logic from previous read_file output for completeness.
-    def apply_afml_sampling(self, df, config, filter_type='price'):
-        # ... (Same as before) ...
-        use_volume_bars = config.get('use_volume_bars', True)
-        if filter_type == 'price':
-            threshold_base = get_daily_vol(df['close'], use_volume_time=use_volume_bars)
-        else:
-            threshold_base = get_daily_vol(df['close'], use_volume_time=use_volume_bars) # Simplified fallback
-        
-        target_rate = config.get('afml_target_sampling_rate', 0.10)
-        # Binary search logic ...
-        # (Assuming correct import of get_t_events handles the logic,
-        # but the mixin previously had the search logic inside. I will reinstate it briefly.)
-        best_events = df.index[::10] # Dummy fallback for brevity in this massive file write
-        
-        # Proper implementation
-        low, high = 1e-6, 1000000.0
-        target_count = int(len(df) * target_rate)
-        threshold_base = threshold_base.fillna(method='bfill')
-        
-        for _ in range(15):
-            mid = (low + high) / 2
-            t_events = get_t_events(df['close'], threshold_base * mid)
-            if len(t_events) > target_count: low = mid
-            else: high = mid
-            best_events = t_events
             
+            # Use Numba-optimized generation
+            out_times, out_opens, out_highs, out_lows, out_closes, out_vols, out_durations = _numba_generate_range_bars(
+                times, opens, highs, lows, closes, vols, thresholds_1m
+            )
+
+            if len(out_times) == 0:
+                 return None
+
+            return pd.DataFrame({'open': out_opens, 'high': out_highs, 'low': out_lows, 'close': out_closes, 'volume': out_vols, 'bar_duration': out_durations}, index=pd.DatetimeIndex(out_times))
+        except Exception as e:
+            tprint_error(f"   [RangeBars] Failed: {e}")
+            return None
+
+    def apply_afml_sampling(self, df, config, filter_type='price'):
+        tprint_info(f"[{self.__class__.__name__}] apply_afml_sampling start filter={filter_type}")
+        
+        use_volume_bars = config.get('use_volume_bars', True)
+        threshold_base = get_daily_vol(df['close'], use_volume_time=use_volume_bars)
+        
+        target_rate = config.get('afml_target_sampling_rate', 0.20) # Increased target rate
+        low, high = 1e-8, 1.0
+        target_count = int(len(df) * target_rate)
+        threshold_base = threshold_base.fillna(method='bfill').fillna(method='ffill')
+        
+        best_events = df.index[::5] # Default fallback 20%
+        
+        # Optimization: Reduce search iterations and exit early if within 5% of target count
+        if len(df) > 10:
+            for _ in range(8):
+                mid = (low + high) / 2
+                t_events = get_t_events(df['close'], threshold_base * mid)
+                count = len(t_events)
+                
+                if count > target_count:
+                    low = mid
+                    best_events = t_events
+                else:
+                    high = mid
+                
+                # Early exit if within 5% of target
+                if abs(count - target_count) / max(1, target_count) < 0.05:
+                    tprint_info(f"      [Sampling] Early exit: within 5% of target ({count}/{target_count})")
+                    best_events = t_events
+                    break
+        
+        tprint_info(f"[{self.__class__.__name__}] apply_afml_sampling finished with {len(best_events)} events")
         return df.loc[best_events], best_events
 
     def generate_tbm_labels(self, df, t_events, config, pt_sl):
+        tprint_info(f"[{self.__class__.__name__}] generate_tbm_labels start events={len(t_events)}")
         # Delegate to utility
         vol = get_daily_vol(df['close'], use_volume_time=config.get('use_volume_bars', True))
         vb = get_vertical_barrier(df['close'], t_events, config.get('lookforward_bars', 35))
@@ -525,4 +601,5 @@ class AFMLSpecialistMixin:
         return get_bins(tbm, df['close'])
 
     def get_concurrent_weights(self, t1, idx):
+        tprint_info(f"[{self.__class__.__name__}] get_concurrent_weights start samples={len(t1)}")
         return get_weights_by_uniqueness(t1, idx)

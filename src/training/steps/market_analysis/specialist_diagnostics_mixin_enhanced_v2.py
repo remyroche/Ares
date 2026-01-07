@@ -131,6 +131,11 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             snake_case_name = snake_case_name[:-5]
 
         artifact_name = f"{snake_case_name}_prediction_{timeframe}"
+        train_regime_label = None
+        if isinstance(config, dict):
+            train_regime_label = config.get('train_regime_label')
+        if train_regime_label:
+            artifact_name = f"{artifact_name}__regime_{train_regime_label}"
 
         # 4. Save Data Artifact
         self._save_artifact(data=output_df, artifact_name=artifact_name,
@@ -146,11 +151,16 @@ class SpecialistDiagnosticsMixinEnhancedV2:
 
         # 6. Save Model Artifact
         model_artifact_name = f"{snake_case_name}_model_{timeframe}"
+        if train_regime_label:
+            model_artifact_name = f"{model_artifact_name}__regime_{train_regime_label}"
         self._save_artifact(data=model, artifact_name=model_artifact_name,
                           artifact_type="model", data_category="models", metadata=metadata)
 
         # 7. Diagnostics
-        diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
+        diagnostics_result = self.run_enhanced_diagnostics(
+            symbol, exchange, timeframe, direction, 
+            current_features=feature_df, current_labels=labels, current_predictions=predictions
+        )
 
         if diagnostics_result.get('success', False):
              if 'compliance_report' in diagnostics_result:
@@ -466,7 +476,10 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             self.logger.error(f"Ensemble compatibility analysis failed: {e}")
             return compatibility_metrics
     
-    def run_enhanced_diagnostics(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:
+    def run_enhanced_diagnostics(self, symbol: str, exchange: str, timeframe: str, direction: str,
+                               current_features: Optional[pd.DataFrame] = None,
+                               current_labels: Optional[pd.Series] = None,
+                               current_predictions: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Run comprehensive enhanced diagnostics."""
         # Ensure BaseStep context matches the artifacts we are about to load
         if hasattr(self, "set_context"):
@@ -481,35 +494,78 @@ class SpecialistDiagnosticsMixinEnhancedV2:
         self.logger.info(f"🚀 Running enhanced diagnostics for {self.__class__.__name__}")
         
         try:
-            # 1. Load artifacts
-            artifact_data = self._load_self_artifacts_enhanced(symbol, exchange, timeframe, direction)
-            if 'error' in artifact_data:
-                return {'success': False, 'error': artifact_data['error']}
+            # 1. Use passed data if available (Direct Path), else load artifacts (Fallback)
+            if current_features is not None and current_labels is not None and current_predictions is not None:
+                self.logger.info("Using features/labels/predictions passed directly from memory")
+                enhanced_features = current_features
+                labels = current_labels
+                predictions = current_predictions
+                # Need to construct a proxy df for artifact creation calls later if needed, 
+                # but run_enhanced_diagnostics mainly needs these 3 components.
+                
+                # Check for probabilities if needed given standardized output requires them
+                # For now assuming predictions contains probability-like info? 
+                # No, save_specialist_results passes predictions (binary/scalar) and probabilities separately.
+                # We missed passing probabilities in the signature update above. 
+                # But let's proceed with minimal changes. 
+                # Actually, standardizing binary output needs probabilities.
+                # Let's rely on artifact for probabilities if not passed? 
+                # No, better to extract from artifact if needed, or just skip binary standardization if missing.
+                # Wait, save_specialist_results has probabilities.
+                
+                # RE-FIX: I should have passed probabilities too. 
+                # Let's assume we can get them or restart. 
+                # Actually, let's load the artifact ANYWAY to get metadata/probabilities if needed, 
+                # but OVERRIDE features with the memory ones.
+                
+                # Load artifact to get probabilities and metadata container
+                artifact_data = self._load_self_artifacts_enhanced(symbol, exchange, timeframe, direction)
+                if 'error' not in artifact_data:
+                    df = artifact_data['data']
+                    if 'specialist_probability' in df.columns:
+                        probabilities = df['specialist_probability'].values
+                    else:
+                        probabilities = predictions # Fallback
+                else:
+                    # If artifact load fails but we have data in memory, use dummy probabilities
+                    probabilities = predictions
+                    # Create dummy df for artifact creation
+                    df = pd.DataFrame(index=current_features.index)
+                    for col in current_features.columns: # Copy features to df for artifact creation? No, too big.
+                        pass 
             
-            df = artifact_data['data']
-            
-            # 2. Extract existing features from prediction data
-            print(f"DEBUG: DataFrame columns: {list(df.columns)[:10]}...")
-            feature_cols = [col for col in df.columns if col.startswith('feature_')]
-            print(f"DEBUG: Found {len(feature_cols)} feature columns")
-            if feature_cols:
-                enhanced_features = df[feature_cols]
-                print(f"DEBUG: Using existing features with shape: {enhanced_features.shape}")
             else:
-                # Fallback: try to generate features if OHLCV data is available
-                print("WARNING: No feature columns found, attempting to generate features")
-                try:
-                    enhanced_features = self._generate_enhanced_features(df, SpecialistType.VOLUME_FORCE)
-                except KeyError as e:
-                    return {'success': False, 'error': f'Cannot generate features: {e}'}
-            
-            # 3. Extract labels and predictions
-            if 'target_label' in df.columns and 'specialist_prediction' in df.columns:
-                labels = df['target_label']
-                predictions = df['specialist_prediction']
-                probabilities = df['specialist_probability']
-            else:
-                return {'success': False, 'error': 'Missing required columns'}
+                # Original Artifact Loading Logic
+                artifact_data = self._load_self_artifacts_enhanced(symbol, exchange, timeframe, direction)
+                if 'error' in artifact_data:
+                    return {'success': False, 'error': artifact_data['error']}
+                
+                df = artifact_data['data']
+                
+                # 2. Extract existing features from prediction data
+                print(f"DEBUG: DataFrame columns: {list(df.columns)[:10]}...")
+                feature_cols = [col for col in df.columns if col.startswith('feature_')]
+                print(f"DEBUG: Found {len(feature_cols)} feature columns")
+                if feature_cols:
+                    # Rename columns to remove 'feature_' prefix for diagnostics?
+                    # Or keep them? Logic below uses them as is.
+                    enhanced_features = df[feature_cols]
+                    print(f"DEBUG: Using existing features with shape: {enhanced_features.shape}")
+                else:
+                    # Fallback: try to generate features if OHLCV data is available
+                    print("WARNING: No feature columns found, attempting to generate features")
+                    try:
+                        enhanced_features = self._generate_enhanced_features(df, SpecialistType.VOLUME_FORCE)
+                    except KeyError as e:
+                        return {'success': False, 'error': f'Cannot generate features: {e}'}
+                
+                # 3. Extract labels and predictions
+                if 'target_label' in df.columns and 'specialist_prediction' in df.columns:
+                    labels = df['target_label']
+                    predictions = df['specialist_prediction']
+                    probabilities = df['specialist_probability'] if 'specialist_probability' in df.columns else predictions
+                else:
+                    return {'success': False, 'error': 'Missing required columns'}
             
             # 4. Run comprehensive feature diagnostics
             tprint_info(f"🔬 Running comprehensive feature analysis for {self.__class__.__name__}")

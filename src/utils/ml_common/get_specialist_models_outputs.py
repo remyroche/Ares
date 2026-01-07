@@ -1623,23 +1623,32 @@ def get_enhanced_specialist_models_outputs(
     artifact_router = VersionedArtifactStore(Path("versioned_artifacts") / f"{symbol}_{exchange}_{timeframe}_{direction}_{model}")
     blocks = []
     
-    # Enhanced specialist mappings
+    # Enhanced specialist step keys.
+    # Artifact names are derived from the step name to match the naming used by
+    # SpecialistDiagnosticsMixinEnhancedV2.save_specialist_results:
+    #   {snake_case_name}_prediction_{timeframe}
     enhanced_specialists = {
-        "enhanced_ml_momentum_persistence_step": f"enhanced_ml_momentum_predictions_{timeframe}",
-        "enhanced_ml_smc_regime_step": f"enhanced_ml_smc_predictions_{timeframe}",
-        "enhanced_ml_volatility_burst_step": f"enhanced_ml_volatility_burst_predictions_{timeframe}",
-        "enhanced_ml_volume_force_step": f"enhanced_ml_volume_force_predictions_{timeframe}",
-        "enhanced_ml_breakout_bounce_regime_step": f"enhanced_ml_breakout_bounce_predictions_{timeframe}",
-        "enhanced_xgb_macro_regime_step": f"enhanced_xgb_macro_predictions_{timeframe}",
-        "enhanced_ml_liquidity_regime_step": f"enhanced_ml_liquidity_predictions_{timeframe}",
-        "enhanced_ml_path_regime_step": f"enhanced_ml_path_regime_predictions_{timeframe}",
-        "enhanced_ml_risk_regime_step": f"enhanced_ml_risk_predictions_{timeframe}",
-        "enhanced_xgb_meso_regime_step": f"enhanced_xgb_meso_predictions_{timeframe}",
-        "enhanced_ml_microstructure_step": f"enhanced_ml_microstructure_predictions_{timeframe}",
-        "enhanced_ml_spectral_step": f"enhanced_ml_spectral_predictions_{timeframe}",
+        "enhanced_ml_momentum_persistence_step": None,
+        "enhanced_ml_smc_regime_step": None,
+        "enhanced_ml_volatility_burst_step": None,
+        "enhanced_ml_volume_force_step": None,
+        "enhanced_ml_breakout_bounce_regime_step": None,
+        "enhanced_xgb_macro_regime_step": None,
+        "enhanced_ml_liquidity_regime_step": None,
+        "enhanced_ml_path_regime_step": None,
+        "enhanced_ml_risk_regime_step": None,
+        "enhanced_xgb_meso_regime_step": None,
+        "enhanced_ml_microstructure_step": None,
+        "enhanced_ml_spectral_step": None,
+        "enhanced_ml_candlestick_step": None,
+        "enhanced_ml_reversion_regime_step": None,
     }
+
+    load_regime_label = None
+    if isinstance(config, dict):
+        load_regime_label = config.get("load_regime_label") or config.get("train_regime_label")
     
-    for step_name, artifact_name in enhanced_specialists.items():
+    for step_name, _unused in enhanced_specialists.items():
         try:
             # Enhanced specialists use their own versioned stores
             # Try to find the correct store path by matching the suffix
@@ -1683,11 +1692,16 @@ def get_enhanced_specialist_models_outputs(
                 "step_name": step_name,
             }
             
+            # Expected artifact base name used by Enhanced specialists.
+            base_name = step_name.replace("_step", "")
+            artifact_name = f"{base_name}_prediction_{timeframe}"
+
             # Try to load enhanced specialist predictions
             # Try multiple possible artifact names
             specialist_data = None
             possible_art_names = [
                 artifact_name,
+                f"{artifact_name}__regime_{load_regime_label}" if load_regime_label else None,
                 artifact_name.replace('_predictions_', '_prediction_'),
                 artifact_name.replace('_prediction_', '_predictions_'),
                 "enhanced_predictions_with_confidence",
@@ -1695,6 +1709,8 @@ def get_enhanced_specialist_models_outputs(
                 f"{step_name.replace('enhanced_', '')}_features",
                 f"{step_name.replace('enhanced_', '').replace('_step', '')}_features",
             ]
+
+            possible_art_names = [x for x in possible_art_names if x]
             
             for art_n in possible_art_names:
                 try:

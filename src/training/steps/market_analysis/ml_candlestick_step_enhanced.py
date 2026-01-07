@@ -10,11 +10,10 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import logging
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 from datetime import datetime, timedelta
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -26,14 +25,16 @@ from src.training.steps.market_analysis.specialist_diagnostics_mixin_enhanced_v2
     SpecialistDiagnosticsMixinEnhancedV2
 )
 from src.training.steps.market_analysis.specialist_diagnostics_mixin import SpecialistDiagnosticsMixin
+from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecialistMixin
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
 
-class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnhancedV2, SpecialistDiagnosticsMixin):
+class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialistMixin, SpecialistDiagnosticsMixin):
 
     @property
     def artifact_router(self):
@@ -146,14 +147,8 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
         # Basic candlestick features
         candlestick_features = self._compute_enhanced_structural_optimized_horizon_optimized_candlestick_features(df)
         
-        # Skip heavy enhanced feature pipeline for performance
-        enhanced_features = pd.DataFrame(index=df.index)
-        
-        # Manual feature engineering (limited)
-        manual_features = self._create_manual_candlestick_enhanced_features(df, enhanced_features)
-        
         # Combine features
-        all_features = pd.concat([candlestick_features, enhanced_features, manual_features], axis=1)
+        all_features = pd.concat([candlestick_features], axis=1)
         
         # Remove duplicate columns
         all_features = all_features.loc[:, ~all_features.columns.duplicated()]
@@ -164,7 +159,7 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
         
         return all_features
     
-    def _create_manual_candlestick_enhanced_features(self, df: pd.DataFrame, enhanced_features: pd.DataFrame) -> pd.DataFrame:
+    def _create_manual_candlestick_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create manual enhanced features for candlestick pattern analysis."""
         manual_features = pd.DataFrame(index=df.index)
         
@@ -448,121 +443,39 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
         
         return mi_metrics
     
-    def _optimize_hyperparameters_for_mi(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
-        """Optimize hyperparameters specifically for MI improvement."""
-        best_params = {}
-        best_mi = 0.0
+    def _train_enhanced_candlestick_model(self, features: pd.DataFrame, labels: pd.Series) -> Tuple[ExtraTreesClassifier, Dict[str, float]]:
+        """Train enhanced candlestick model with ExtraTrees and specified parameters."""
         
-        # Parameter grid for MI optimization
-        # Parameter grid for MI-focused optimization
-        param_grid = {
-            "n_estimators": [200, 300, 500],
-            "max_depth": [4, 6],
-            "learning_rate": [0.03, 0.07, 0.1],
-            "subsample": [0.8, 0.9],
-            "colsample_bytree": [0.8, 0.9],
-            "gamma": [0, 0.1, 0.2],
-            "reg_alpha": [0.1, 0.5, 1.0],
-            "reg_lambda": [2, 5, 10],
-            "min_child_weight": [20, 40]
+        tprint_info("🤖 Training ExtraTrees specialist model...")
+        
+        # User-specified parameters for ExtraTrees
+        n_features = features.shape[1]
+        max_features = int(np.log2(n_features)) if n_features > 1 else 1
+        
+        params = {
+            "n_estimators": 1000,
+            "max_features": max_features,
+            "min_samples_leaf": 0.02,
+            "max_depth": None, # controlled by min_samples_leaf
+            "class_weight": "balanced_subsample",
+            "criterion": "entropy",
+            "n_jobs": -1,
+            "random_state": 42
         }
         
-        # Time series split for validation
-        tscv = TimeSeriesSplit(n_splits=3)
-        
-        for params in self._generate_param_combinations(param_grid, max_combinations=20):
-            mi_scores = []
-            
-            for train_idx, val_idx in tscv.split(X):
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-                
-                # Train model with current parameters
-                model = lgb.LGBMClassifier(
-                    objective='binary',
-                    random_state=42,
-                    verbose=-1,
-                    **params
-                )
-                
-                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], 
-                         callbacks=[lgb.early_stopping(20), lgb.log_evaluation(0)])
-                
-                # Compute MI
-                val_pred = model.predict_proba(X_val)[:, 1]
-                mi_score = mutual_info_regression(
-                    val_pred.reshape(-1, 1), y_val.values
-                )[0]
-                mi_scores.append(mi_score)
-            
-            avg_mi = np.mean(mi_scores)
-            
-            if avg_mi > best_mi:
-                best_mi = avg_mi
-                best_params = params.copy()
-                
-                tprint_info(f"🔥 New best MI: {avg_mi:.4f} with params: {params}")
-        
-        tprint_success(f"✅ Best hyperparameters found: MI = {best_mi:.4f}")
-        return best_params, best_mi
-    
-
-    def _generate_param_combinations(self, param_grid: Dict[str, List], max_combinations: int = 20):
-        """Generate parameter combinations for optimization."""
-        import itertools
-        import random
-        
-        keys = list(param_grid.keys())
-        values = list(param_grid.values())
-        
-        # Generate all combinations
-        all_combinations = list(itertools.product(*values))
-        
-        # Randomly sample if too many
-        if len(all_combinations) > max_combinations:
-            all_combinations = random.sample(all_combinations, max_combinations)
-        
-        for combination in all_combinations:
-            yield dict(zip(keys, combination))
-    
-    def _train_enhanced_candlestick_model(self, features: pd.DataFrame, labels: pd.Series) -> Tuple[lgb.LGBMClassifier, Dict[str, float]]:
-        """Train enhanced momentum model with MI optimization."""
-        
-        # Optimize hyperparameters for MI
-        tprint_info("🔧 Optimizing hyperparameters for MI improvement...")
-        best_params, best_mi = self._optimize_hyperparameters_for_mi(features, labels)
-        
-        # Time series split for final training
+        # Time series split for evaluation
         n_splits = 5
-        split_idx = len(features) // (n_splits + 1)
+        tscv = TimeSeriesSplit(n_splits=n_splits)
         
-        models = []
         mi_scores = []
         auc_scores = []
         
-        for i in range(n_splits):
-            train_start = i * split_idx
-            train_end = (i + 2) * split_idx
-            val_end = (i + 3) * split_idx
+        for train_idx, val_idx in tscv.split(features):
+            X_train, X_val = features.iloc[train_idx], features.iloc[val_idx]
+            y_train, y_val = labels.iloc[train_idx], labels.iloc[val_idx]
             
-            if val_end > len(features):
-                break
-            
-            X_train = features.iloc[train_start:train_end]
-            y_train = labels.iloc[train_start:train_end]
-            X_val = features.iloc[train_end:val_end]
-            y_val = labels.iloc[train_end:val_end]
-            
-            # Train model with optimized parameters
-            model = lgb.LGBMClassifier(
-                objective='binary',
-                random_state=42 + i,
-                verbose=-1,
-                **best_params
-            )
-            
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], 
-                     callbacks=[lgb.early_stopping(20), lgb.log_evaluation(0)])
+            model = ExtraTreesClassifier(**params)
+            model.fit(X_train, y_train)
             
             # Evaluate
             val_pred = model.predict_proba(X_val)[:, 1]
@@ -574,22 +487,22 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
             mi_scores.append(mi_score)
             
             # Compute AUC
-            auc = roc_auc_score(y_val, val_pred)
+            try:
+                auc = roc_auc_score(y_val, val_pred)
+            except Exception:
+                auc = 0.5
             auc_scores.append(auc)
-            
-            models.append(model)
             
             # Store training metrics
             self.training_metrics.append({
-                'fold': i,
                 'mi_score': mi_score,
                 'auc_score': auc,
-                'n_features': len(X_train.columns)
+                'n_features': n_features
             })
         
-        # Select best model based on MI
-        best_idx = np.argmax(mi_scores)
-        best_model = models[best_idx]
+        # Final model on full data
+        final_model = ExtraTreesClassifier(**params)
+        final_model.fit(features, labels)
         
         metrics = {
             'mi_score': np.mean(mi_scores),
@@ -598,126 +511,35 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
             'auc_std': np.std(auc_scores),
             'best_mi': np.max(mi_scores),
             'best_auc': np.max(auc_scores),
-            'n_features': len(features.columns),
-            'optimization_params': best_params
+            'n_features': n_features,
+            'optimization_params': params
         }
         
-        return best_model, metrics
+        return final_model, metrics
     
+    def _get_candlestick_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
+        """Combine candlestick features and manual enhancements."""
+        # 1. Base Candlestick Features
+        candlestick_features = self._generate_enhanced_features(df)
+        
+        # 2. Manual Features
+        manual_features = self._create_manual_candlestick_enhanced_features(df)
+        
+        # Apply manual feature selection
+        combined = pd.concat([candlestick_features, manual_features], axis=1)
+        return self._apply_manual_candlestick_feature_selection(combined)
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute enhanced momentum persistence step."""
-        try:
-            symbol = str(config.get("symbol", "ETHUSDT"))
-            exchange = str(config.get("exchange", "binance"))
-            timeframe = str(config.get("timeframe", "15m"))
-            direction = str(config.get("direction", "long"))
-
-            # Set context for artifact saving - MUST BE DONE FIRST
-            self._current_context = {
-                'symbol': symbol,
-                'exchange': exchange,
-                'timeframe': timeframe,
-                'direction': direction,
-                'model': 'enhanced_ml_candlestick_step'
-            }
-
-            tprint_info(f"🚀 Starting Enhanced Candlestick Pattern for {symbol}")
-
-            # Load market data
-            market_data = self._load_market_data(config, timeframe)
-            
-            # Generate enhanced features
-            tprint_info("🛠️ Generating enhanced momentum features...")
-            features = self._generate_enhanced_features(market_data)
-            
-            # Create labels
-            labels = self._create_candlestick_labels(market_data)
-            
-            # Align features and labels
-            common_index = features.index.intersection(labels.index)
-            features = features.loc[common_index]
-            labels = labels.loc[common_index]
-            
-            # Clean data
-            valid_mask = ~(features.isna().any(axis=1)) & ~(labels.isna())
-            features = features[valid_mask]
-            labels = labels[valid_mask]
-            
-            if len(features) < 500:
-                raise ValueError(f"Insufficient data: {len(features)} samples")
-            
-            tprint_info(f"📊 Training data: {len(features)} samples, {len(features.columns)} features")
-            
-            # Train enhanced model
-            tprint_info("🤖 Training enhanced momentum model with MI optimization...")
-            model, metrics = self._train_enhanced_candlestick_model(features, labels)
-            
-            # Generate predictions
-            predictions = model.predict(features)
-            probabilities = model.predict_proba(features)[:, 1]
-            
-            # Create standardized output
-            output_df = self._create_standardized_output(
-                features, labels, predictions, probabilities, symbol, exchange, timeframe, direction
-            )
-            
-            # Save artifacts
-            artifact_name = f"enhanced_ml_candlestick_prediction_{timeframe}"
-            metadata = SpecialistDataInterface.create_standard_metadata(
-                specialist_name="EnhancedMLCandlestickStep",
-                config=config,
-                metrics=metrics,
-                mi_score=metrics['mi_score'],
-                hsic_score=0.0  # Not computed for this implementation
-            )
-            
-            artifact_path = self._save_artifact(
-                data=output_df,
-                artifact_name=artifact_name,
-                artifact_type="data",
-                data_category="predictions",
-                metadata=metadata
-            )
-            
-            # Run enhanced diagnostics
-            diagnostics_result = self.run_enhanced_diagnostics(symbol, exchange, timeframe, direction)
-            
-            # Final summary
-            tprint_success(f"✅ Enhanced Candlestick Pattern completed:")
-            tprint_info(f"   MI Score: {metrics['mi_score']:.4f} (target: >0.02)")
-            tprint_info(f"   AUC: {metrics['auc']:.3f}")
-            tprint_info(f"   Features: {metrics['n_features']}")
-            
-            return {
-                "success": True,
-                "metrics": metrics,
-                "n_samples": len(output_df),
-                "features": list(features.columns),
-                "artifact_name": artifact_name,
-                "diagnostics": diagnostics_result,
-                "mi_history": self.mi_history,
-                "training_metrics": self.training_metrics
-            }
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Enhanced Candlestick Pattern step failed: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def _create_standardized_output(self, features: pd.DataFrame, labels: pd.Series,
-                                  predictions: np.ndarray, probabilities: np.ndarray,
-                                  symbol: str, exchange: str, timeframe: str, direction: str) -> pd.DataFrame:
-        """Create standardized output structure."""
-        output_df = pd.DataFrame(index=features.index)
-        output_df['timestamp'] = features.index
-        output_df['specialist_prediction'] = predictions
-        output_df['specialist_probability'] = probabilities
-        output_df['target_label'] = labels
-        
-        # Add original features for reference
-        for col in features.columns[:20]:  # Limit to first 20 features
-            output_df[f'feature_{col}'] = features[col]
-        
-        return output_df
+        """Execute enhanced candlestick step."""
+        return await self.execute_standard_specialist_logic(
+            config=config,
+            specialist_type=SpecialistType.CANDLESTICK,
+            manual_feature_func=self._get_candlestick_combined_manual_features,
+            filter_type='price',
+            pt_sl_config_key='candlestick_pt_sl',
+            default_pt_sl=[2.0, 1.0],
+            suffix="enhanced_candlestick_features"
+        )
     
     def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
         """Load market data using BaseStep method."""

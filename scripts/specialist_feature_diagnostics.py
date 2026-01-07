@@ -767,9 +767,15 @@ async def _run_specialist_training(
     regime_timeframe: str,
     lookback_days: Optional[float] = None,
     selected_specialists: Optional[list[str]] = None,
+    train_per_regime: bool = False,
+    regime_labels: Optional[list[str]] = None,
 ) -> None:
     """Run training for all (or selected) specialist models sequentially."""
     logger.info("🚀 Starting specialist model training sequence")
+    tprint_info(
+        f"🚀 [Specialists] Training kickoff for {symbol}-{exchange}-{timeframe}-{direction} "
+        f"(regime_tf={regime_timeframe}, lookback={lookback_days or 'full'})"
+    )
 
     # Order matters: some steps might depend on artifacts from others,
     # though ideally they should be independent or use shared feature generation.
@@ -790,6 +796,26 @@ async def _run_specialist_training(
     
     specialist_steps = selected_specialists if selected_specialists else default_specialist_steps_enhanced
 
+    # Defensive registry hydration: some enhanced steps can fail to register
+    # due to import-order/circular-import issues. If a step is missing, we
+    # attempt a targeted import and explicit registration before skipping.
+    import importlib
+
+    step_import_map: Dict[str, Tuple[str, str]] = {
+        "enhanced_xgb_meso_regime_step": (
+            "src.training.steps.market_analysis.xgb_meso_regime_step_enhanced",
+            "EnhancedXGBMesoRegimeStep",
+        ),
+        "enhanced_ml_microstructure_step": (
+            "src.training.steps.market_analysis.ml_microstructure_step_enhanced",
+            "EnhancedMLMicrostructureStep",
+        ),
+        "enhanced_ml_spectral_step": (
+            "src.training.steps.market_analysis.ml_spectral_step_enhanced",
+            "EnhancedMLSpectralStep",
+        ),
+    }
+
     config_base = {
         "symbol": symbol,
         "exchange": exchange,
@@ -802,43 +828,89 @@ async def _run_specialist_training(
     if lookback_days:
         config_base["lookback_days"] = lookback_days
 
-    for step_key in specialist_steps:
+    if train_per_regime and not regime_labels:
+        regime_labels = ["Quiet", "Trending", "Chaos"]
+
+    for idx, step_key in enumerate(specialist_steps, start=1):
         # Verify registry key and handle potential aliases (e.g. missing _step suffix)
         try:
-             if not step_registry.is_registered(step_key):
-                 if step_registry.is_registered(step_key + "_step"):
-                     step_key = step_key + "_step"
-                 else:
-                     logger.warning(f"⚠️ Step '{step_key}' not found in registry. Skipping.")
-                     continue
+            if not step_registry.is_registered(step_key):
+                # Attempt targeted import + explicit register for known enhanced steps
+                mapping = step_import_map.get(step_key)
+                if mapping is not None:
+                    module_name, class_name = mapping
+                    try:
+                        mod = importlib.import_module(module_name)
+                        StepCls = getattr(mod, class_name, None)
+                        if StepCls is not None and not step_registry.is_registered(step_key):
+                            step_registry.register(step_key, StepCls)
+                    except Exception as exc:
+                        logger.warning(
+                            "⚠️ Failed to auto-register %s from %s: %s",
+                            step_key,
+                            module_name,
+                            exc,
+                        )
+
+                # Alias fallback
+                if step_registry.is_registered(step_key + "_step"):
+                    step_key = step_key + "_step"
+                else:
+                    logger.warning(f"⚠️ Step '{step_key}' not found in registry. Skipping.")
+                    continue
         except Exception:
              logger.warning(f"⚠️ Error checking registry for '{step_key}'. Skipping.")
              continue
 
+        progress_tag = f"[{idx}/{len(specialist_steps)}]"
+        tprint_info(f"▶️ {progress_tag} Running {step_key} …")
         logger.info(f"▶️ Running {step_key}...")
         try:
             StepClass = step_registry.get_step(step_key)
             step_instance = StepClass(step_name=step_key)
 
             # Run the step (per-step overrides allowed)
-            step_config = dict(config_base)
-            if step_key == "ml_liquidity_regime_step":
-                # LiquidityClusterQualityAssessor is useful, but the generic
-                # ClusterQualityAssessor can be extremely slow on long histories
-                # and is not needed for this diagnostics pipeline.
-                step_config.setdefault("liquidity_quality_skip_generic_cluster_assessor", True)
-                step_config.setdefault("liquidity_quality_fast_mode", True)
+            def _build_step_config() -> Dict[str, Any]:
+                step_config = dict(config_base)
+                if step_key == "ml_liquidity_regime_step":
+                    step_config.setdefault("liquidity_quality_skip_generic_cluster_assessor", True)
+                    step_config.setdefault("liquidity_quality_fast_mode", True)
+                return step_config
 
-            result = await step_instance.run(step_config)
+            if train_per_regime and regime_labels:
+                for rlab in regime_labels:
+                    step_config = _build_step_config()
+                    step_config["train_regime_label"] = rlab
+                    result = await step_instance.run(step_config)
 
-            if result.get("success"):
-                logger.info(f"✅ {step_key} completed successfully.")
+                    if result.get("success"):
+                        msg = f"{progress_tag} {step_key} ({rlab}) completed successfully."
+                        logger.info(f"✅ {msg}")
+                        tprint_success(f"✅ {msg}")
+                    else:
+                        err = result.get("error")
+                        msg = f"{progress_tag} {step_key} ({rlab}) failed: {err}"
+                        logger.error(f"❌ {msg}")
+                        tprint_error(f"❌ {msg}")
             else:
-                logger.error(f"❌ {step_key} failed: {result.get('error')}")
+                step_config = _build_step_config()
+                result = await step_instance.run(step_config)
+
+                if result.get("success"):
+                    msg = f"{progress_tag} {step_key} completed successfully."
+                    logger.info(f"✅ {msg}")
+                    tprint_success(f"✅ {msg}")
+                else:
+                    err = result.get("error")
+                    msg = f"{progress_tag} {step_key} failed: {err}"
+                    logger.error(f"❌ {msg}")
+                    tprint_error(f"❌ {msg}")
         except Exception as exc:
             logger.error(f"❌ Exception running {step_key}: {exc}")
+            tprint_error(f"❌ {progress_tag} Exception in {step_key}: {exc}")
 
     logger.info("🏁 Specialist model training sequence finished.")
+    tprint_success("🏁 All requested specialist trainings finished.")
 
 
 def _ensure_outcomes_dir() -> Path:
@@ -1114,6 +1186,7 @@ def _load_specialist_features(
     model: str,
     training_index: pd.DatetimeIndex,
     enable_risk_hmm_specialist: bool,
+    load_regime_label: Optional[str] = None,
 ) -> pd.DataFrame:
     """Load specialist model outputs aligned to training_index.
 
@@ -1135,6 +1208,7 @@ def _load_specialist_features(
         "timeframe": base_timeframe,
         "regime_timeframe": regime_timeframe,
         "direction": direction,
+        "model": model,
         "execution_mode": "full",  # Ensure full dataset usage
         # Mirror training behavior: include the optional HMM risk specialist
         # only when explicitly enabled so diagnostics can match the exact
@@ -1144,12 +1218,18 @@ def _load_specialist_features(
         # and collapse to scalars locally via _select_specialist_scalars,
         # so that we can choose alternative MR scalars when dense series are
         # effectively constant over the evaluation window.
-        # Canonical scalar projection enabled to reflect simplified feature set
-        # (merged Liquidity and selected Volume Force)
-        "use_canonical_specialist_scalars": True,
+        # IMPORTANT: keep raw per-specialist feature blocks at load-time.
+        # Diagnostics can optionally collapse to scalars later via projection_mode,
+        # but orthogonalization/coverage checks need access to the full blocks.
+        "use_canonical_specialist_scalars": False,
     }
 
-    # Try enhanced specialists first
+    if load_regime_label:
+        specialist_config["load_regime_label"] = load_regime_label
+
+    specialist_frames: list[pd.DataFrame] = []
+
+    # Load enhanced specialists (best-effort)
     enhanced_specialist_df = get_enhanced_specialist_models_outputs(
         symbol=specialist_config.get("symbol", "ETHUSDT"),
         exchange=specialist_config.get("exchange", "binance"),
@@ -1160,24 +1240,28 @@ def _load_specialist_features(
         config=specialist_config,
         strict=False,
     )
-
-    # Initialize specialist_df
-    specialist_df = None
-
-    # Try enhanced specialists first
     if enhanced_specialist_df is not None and not enhanced_specialist_df.empty:
-        specialist_df = enhanced_specialist_df
+        specialist_frames.append(enhanced_specialist_df)
         step.logger.info("Using enhanced specialist outputs")
 
-    # Fall back to original specialists if enhanced not available or failed
-    if specialist_df is None or specialist_df.empty:
-        specialist_df = get_specialist_models_outputs(
-            artifact_router=step.artifact_router,
-            training_index=training_index,
-            config=specialist_config,
-            logger=step.logger,
-            strict=False,
-        )
+    # Also load classic specialists so diagnostics sees full coverage even when
+    # enhanced artifacts are only partially available.
+    classic_specialist_df = get_specialist_models_outputs(
+        artifact_router=step.artifact_router,
+        training_index=training_index,
+        config=specialist_config,
+        logger=step.logger,
+        strict=False,
+    )
+    if classic_specialist_df is not None and not classic_specialist_df.empty:
+        specialist_frames.append(classic_specialist_df)
+
+    specialist_df: Optional[pd.DataFrame]
+    if specialist_frames:
+        specialist_df = pd.concat(specialist_frames, axis=1)
+        specialist_df = specialist_df.loc[:, ~specialist_df.columns.duplicated()].copy()
+    else:
+        specialist_df = None
 
     if specialist_df is None or specialist_df.empty:
         raise ValueError(
@@ -1244,6 +1328,9 @@ def _compute_feature_metrics(
     # 1. Smart Feature Pruning
     X_original = X.copy()
     X, pruned_features, pruning_info = _enhanced_smart_feature_pruning(X, y, correlation_threshold=0.7, use_clustering=True)
+    if X.shape[1] == 0 and X_original.shape[1] > 0:
+        logger.warning("⚠️ Smart pruning removed all features; falling back to unpruned feature set")
+        X = X_original.copy()
     
     # 2. Align and clean
     common_index = X.index.intersection(y.index)
@@ -1825,6 +1912,103 @@ def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
         cols = list(X.columns)
 
     # ------------------------------------------------------------------
+    # SMC: prefer enhanced probability
+    # ------------------------------------------------------------------
+    smc_cols = [c for c in cols if "smc" in c.lower()]
+    prob_col = next((c for c in cols if "smc" in c.lower() and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["smc_score"] = X[prob_col]
+        smc_keep = {"smc_score"}
+        smc_drop = [c for c in smc_cols if c not in smc_keep]
+        X = X.drop(columns=smc_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Volatility Burst: prefer enhanced probability
+    # ------------------------------------------------------------------
+    vol_burst_cols = [c for c in cols if "volatility_burst" in c.lower()]
+    prob_col = next((c for c in cols if "volatility_burst" in c.lower() and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["volatility_burst_score"] = X[prob_col]
+        vol_burst_keep = {"volatility_burst_score"}
+        vol_burst_drop = [c for c in vol_burst_cols if c not in vol_burst_keep]
+        X = X.drop(columns=vol_burst_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Volume Force: prefer enhanced probability
+    # ------------------------------------------------------------------
+    vol_force_cols = [c for c in cols if "volume_force" in c.lower() or "vol_force" in c.lower()]
+    prob_col = next((c for c in cols if ("volume_force" in c.lower() or "vol_force" in c.lower()) and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["volume_force_score"] = X[prob_col]
+        vol_force_keep = {"volume_force_score"}
+        vol_force_drop = [c for c in vol_force_cols if c not in vol_force_keep]
+        X = X.drop(columns=vol_force_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Macro/Meso Regime: prefer enhanced probability
+    # ------------------------------------------------------------------
+    macro_meso_cols = [c for c in cols if "macro" in c.lower() or "meso" in c.lower()]
+    for prefix in ["macro", "meso"]:
+        prob_col = next((c for c in cols if prefix in c.lower() and c.endswith("_specialist_probability")), None)
+        if prob_col:
+            X[f"{prefix}_regime_score"] = X[prob_col]
+            prefix_cols = [c for c in cols if prefix in c.lower() and c != f"{prefix}_regime_score"]
+            X = X.drop(columns=prefix_cols, errors="ignore")
+            cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Path/Risk: prefer enhanced probability
+    # ------------------------------------------------------------------
+    path_cols = [c for c in cols if "path" in c.lower()]
+    prob_col = next((c for c in cols if "path" in c.lower() and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["path_score"] = X[prob_col]
+        path_keep = {"path_score"}
+        path_drop = [c for c in path_cols if c not in path_keep]
+        X = X.drop(columns=path_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Microstructure/Spectral: prefer enhanced probability
+    # ------------------------------------------------------------------
+    for prefix in ["microstructure", "spectral"]:
+        prob_col = next((c for c in cols if prefix in c.lower() and c.endswith("_specialist_probability")), None)
+        if prob_col:
+            X[f"{prefix}_score"] = X[prob_col]
+            prefix_cols = [c for c in cols if prefix in c.lower() and c != f"{prefix}_score"]
+            X = X.drop(columns=prefix_cols, errors="ignore")
+            cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Candlestick: prefer enhanced probability
+    # ------------------------------------------------------------------
+    candle_cols = [c for c in cols if "candlestick" in c.lower()]
+    prob_col = next((c for c in cols if "candlestick" in c.lower() and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["candlestick_score"] = X[prob_col]
+        candle_keep = {"candlestick_score"}
+        candle_drop = [c for c in candle_cols if c not in candle_keep]
+        X = X.drop(columns=candle_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Reversion: prefer enhanced probability
+    # ------------------------------------------------------------------
+    reversion_cols = [c for c in cols if "reversion" in c.lower()]
+    prob_col = next((c for c in cols if "reversion" in c.lower() and c.endswith("_specialist_probability")), None)
+    if prob_col:
+        X["reversion_score"] = X[prob_col]
+        reversion_keep = {"reversion_score"}
+        reversion_drop = [c for c in reversion_cols if c not in reversion_keep]
+        X = X.drop(columns=reversion_drop, errors="ignore")
+        cols = list(X.columns)
+        X = X.drop(columns=mom_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
     # Path: prefer dedicated risk-style scalar if present
     # ------------------------------------------------------------------
     path_cols = [c for c in cols if c.startswith("path_") or c.startswith("enhanced_ml_path_")]
@@ -2194,7 +2378,6 @@ def _compute_probe_models(
     if uniq.size == 0:
         result["error"] = "No valid target samples for probe models"
         return result
-
     # Check if target is binary (subset of {0, 1})
     is_binary = False
     if len(uniq) <= 2:
@@ -2397,6 +2580,151 @@ def _compute_probe_models(
             result["lgbm"] = {"error": "lightgbm not available"}
 
     return result
+
+
+def _compute_per_regime_probe_models(
+    X: pd.DataFrame,
+    y: pd.Series,
+    regimes: pd.Series,
+    *,
+    n_splits: int = 5,
+    min_samples: int = 400,
+) -> Dict[str, Any]:
+    try:
+        if not isinstance(regimes, pd.Series):
+            return {"error": "regimes is not a pandas Series"}
+
+        common_index = X.index.intersection(y.index).intersection(regimes.index)
+        if len(common_index) == 0:
+            return {"error": "No overlapping index between X/y/regimes"}
+
+        Xc = X.loc[common_index].copy().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        yc = y.loc[common_index].astype(float)
+        rc = regimes.loc[common_index]
+
+        mask = ~yc.isna() & ~rc.isna()
+        Xc = Xc.loc[mask]
+        yc = yc.loc[mask]
+        rc = rc.loc[mask]
+
+        if len(Xc) < min_samples:
+            return {
+                "error": f"Insufficient samples for per-regime probes: {len(Xc)} < {min_samples}",
+                "n_samples": int(len(Xc)),
+            }
+
+        uniq_target = np.unique(yc.values[~np.isnan(yc.values)])
+        is_binary = len(uniq_target) <= 2 and set(uniq_target).issubset({0.0, 1.0})
+
+        per_regime: Dict[str, Any] = {}
+        for regime_val in sorted(pd.unique(rc)):
+            idx = rc.index[rc == regime_val]
+            if len(idx) < min_samples:
+                per_regime[str(regime_val)] = {
+                    "n_samples": int(len(idx)),
+                    "error": f"Insufficient samples (<{min_samples})",
+                }
+                continue
+
+            Xr = Xc.loc[idx]
+            yr = yc.loc[idx]
+
+            if len(Xr) < max(100, n_splits * 25):
+                per_regime[str(regime_val)] = {
+                    "n_samples": int(len(Xr)),
+                    "error": "Too few samples for requested CV folds",
+                }
+                continue
+
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+
+            if is_binary:
+                y_bin = (yr > 0.5).astype(int)
+                pos_frac = float(y_bin.mean())
+
+                logreg_aucs: list[float] = []
+                lgbm_aucs: list[float] = []
+
+                for train_idx, test_idx in tscv.split(Xr):
+                    X_tr, X_te = Xr.iloc[train_idx], Xr.iloc[test_idx]
+                    y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
+
+                    if y_tr.nunique() < 2 or y_te.nunique() < 2:
+                        continue
+
+                    try:
+                        pipe = Pipeline(
+                            [
+                                ("scaler", StandardScaler()),
+                                (
+                                    "clf",
+                                    LogisticRegression(
+                                        max_iter=300,
+                                        solver="lbfgs",
+                                        class_weight="balanced",
+                                    ),
+                                ),
+                            ]
+                        )
+                        pipe.fit(X_tr, y_tr)
+                        p_te = pipe.predict_proba(X_te)[:, 1]
+                        auc = roc_auc_score(y_te.values, p_te)
+                        if np.isfinite(auc):
+                            logreg_aucs.append(float(auc))
+                    except Exception:
+                        pass
+
+                    try:
+                        import lightgbm as lgb  # type: ignore
+
+                        clf = lgb.LGBMClassifier(
+                            objective="binary",
+                            n_estimators=100,
+                            learning_rate=0.05,
+                            num_leaves=8,
+                            max_depth=3,
+                            min_child_samples=100,
+                            reg_alpha=5.0,
+                            reg_lambda=5.0,
+                            subsample=0.6,
+                            colsample_bytree=0.6,
+                            random_state=42,
+                            n_jobs=1,
+                            verbose=-1,
+                        )
+                        clf.fit(X_tr, y_tr)
+                        p_te = clf.predict_proba(X_te)[:, 1]
+                        auc = roc_auc_score(y_te.values, p_te)
+                        if np.isfinite(auc):
+                            lgbm_aucs.append(float(auc))
+                    except Exception:
+                        pass
+
+                per_regime[str(regime_val)] = {
+                    "n_samples": int(len(Xr)),
+                    "pos_frac": float(pos_frac),
+                    "logreg_auc_mean": float(np.mean(logreg_aucs)) if logreg_aucs else float("nan"),
+                    "logreg_auc_std": float(np.std(logreg_aucs)) if logreg_aucs else float("nan"),
+                    "lgbm_auc_mean": float(np.mean(lgbm_aucs)) if lgbm_aucs else float("nan"),
+                    "lgbm_auc_std": float(np.std(lgbm_aucs)) if lgbm_aucs else float("nan"),
+                    "n_folds_used": int(max(len(logreg_aucs), len(lgbm_aucs))),
+                }
+            else:
+                per_regime[str(regime_val)] = {
+                    "n_samples": int(len(Xr)),
+                    "task_type": "regression",
+                    "note": "per-regime regression probes not implemented",
+                }
+
+        return {
+            "task_type": "binary_classification" if is_binary else "regression",
+            "n_regimes": int(len(per_regime)),
+            "min_samples": int(min_samples),
+            "per_regime": per_regime,
+        }
+
+    except Exception as exc:
+        return {"error": str(exc)}
 
 # Add this after the _compute_probe_models function definition
 
@@ -3421,6 +3749,7 @@ def run_diagnostics(
     tv_var_window: int = 100,
     tv_var_regime_aware: bool = True,
     tv_var_backtest: bool = False,
+    load_regime_label: Optional[str] = None,
 ) -> Tuple[Path, Path]:
     """Run full specialist feature diagnostics and export reports."""
     # Determine default target column based on direction if not explicitly provided
@@ -3453,6 +3782,7 @@ def run_diagnostics(
         model=model,
         training_index=training_index,
         enable_risk_hmm_specialist=enable_risk_hmm_specialist,
+        load_regime_label=load_regime_label,
     )
 
     logger.info(f"📊 Loaded specialist_df with {len(specialist_df)} rows and columns: {list(specialist_df.columns)}")
@@ -3671,7 +4001,10 @@ def run_diagnostics(
                     "production_ready": backtest_results.validation_summary.get("production_ready", False)
                 }
                 
-                tprint_success(f"✅ TV-VAR backtesting completed - Success Rate: {tv_var_results["stability_score"]:.1%}, Improvement: {tv_var_results["improvement"]:.2f}%")
+                tprint_success(
+                    f"✅ TV-VAR backtesting completed - Success Rate: {tv_var_results['stability_score']:.1%}, "
+                    f"Improvement: {tv_var_results['improvement']:.2f}%"
+                )
             else:
                 tprint_warning("⚠️ Insufficient TV-VAR features for backtesting")
                 tv_var_results = {"error": "Insufficient features"}
@@ -3712,6 +4045,19 @@ def run_diagnostics(
 
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
     probe_models = _compute_probe_models(X=X, y=y, n_splits=cv_folds)
+
+    per_regime_probe_models: Dict[str, Any] = {}
+    try:
+        tv_regime = tv_var_info.get("tv_var_regime") if isinstance(tv_var_info, dict) else None
+        if isinstance(tv_regime, pd.Series):
+            per_regime_probe_models = _compute_per_regime_probe_models(
+                X=X,
+                y=y,
+                regimes=tv_regime,
+                n_splits=cv_folds,
+            )
+    except Exception as exc:
+        per_regime_probe_models = {"error": str(exc)}
     
     # 4b) Compute probe model trading PnL simulation
     probe_pnl = _compute_probe_model_pnl(
@@ -3863,6 +4209,49 @@ def run_diagnostics(
             [
                 _fmt_probe_reg("Linear Regression (Ridge)", linear_summary),
                 _fmt_probe_reg("LightGBM Regressor", lgbm_summary),
+            ]
+        )
+
+    # Per-regime probe diagnostics (only when regime labels exist)
+    if isinstance(per_regime_probe_models, dict) and per_regime_probe_models and "per_regime" in per_regime_probe_models:
+        md_lines.extend(
+            [
+                "",
+                "### Per-regime probe models (TimeSeriesSplit within each regime)",
+                "",
+                "| Regime | n_samples | pos_frac | LogReg AUC | LGBM AUC |",
+                "|--------|----------:|---------:|----------:|---------:|",
+            ]
+        )
+        per_reg = per_regime_probe_models.get("per_regime", {})
+        for regime_name, stats in sorted(per_reg.items(), key=lambda kv: kv[0]):
+            if not isinstance(stats, dict):
+                continue
+            n_samples = stats.get("n_samples")
+            pos_frac = stats.get("pos_frac")
+            lr_auc = stats.get("logreg_auc_mean")
+            lgbm_auc = stats.get("lgbm_auc_mean")
+
+            if "error" in stats:
+                md_lines.append(
+                    f"| {regime_name} | {int(n_samples) if n_samples is not None else 0} |  |  |  |"
+                )
+                continue
+
+            md_lines.append(
+                "| "
+                + f"{regime_name} | "
+                + f"{int(n_samples) if n_samples is not None else 0} | "
+                + f"{float(pos_frac) if pos_frac is not None else float('nan'):.3f} | "
+                + f"{float(lr_auc) if lr_auc is not None else float('nan'):.3f} | "
+                + f"{float(lgbm_auc) if lgbm_auc is not None else float('nan'):.3f} |"
+            )
+    elif isinstance(per_regime_probe_models, dict) and per_regime_probe_models.get("error"):
+        md_lines.extend(
+            [
+                "",
+                "### Per-regime probe models",
+                f"- Unavailable: {per_regime_probe_models.get('error')}",
             ]
         )
 
@@ -4208,6 +4597,7 @@ def run_diagnostics(
         "tv_var_info": tv_var_info,
         "cv_folds": int(cv_folds),
         "probe_models": probe_models,
+        "per_regime_probe_models": per_regime_probe_models,
         "probe_pnl_simulation": probe_pnl,
         "leakage_diagnostics": leakage_diagnostics,
         "stability_metrics": global_stability,
@@ -4258,6 +4648,21 @@ def main() -> None:
         "--auto-train",
         action="store_true",
         help="Automatically run training for specialists"
+    )
+    ap.add_argument(
+        "--train-per-regime",
+        action="store_true",
+        help="Train specialists separately for each GMM router regime (Quiet/Trending/Chaos)"
+    )
+    ap.add_argument(
+        "--regime-labels",
+        type=str,
+        help="Comma-separated regime labels to train (default: Quiet,Trending,Chaos)"
+    )
+    ap.add_argument(
+        "--load-regime-label",
+        type=str,
+        help="Load regime-suffixed specialist artifacts for a single regime label"
     )
     ap.add_argument(
         "--enable-moe",
@@ -4501,13 +4906,18 @@ def main() -> None:
     for tgt in targets_to_run:
         if args.independent_mode or args.auto_train:
             import asyncio
+            regime_labels = None
+            if getattr(args, "regime_labels", None):
+                regime_labels = [s.strip() for s in str(args.regime_labels).split(",") if s.strip()]
             asyncio.run(_run_specialist_training(
                 symbol=args.symbol,
                 exchange=args.exchange,
                 timeframe=args.timeframe,
                 direction=args.direction,
                 regime_timeframe=args.regime_timeframe,
-                lookback_days=args.lookback_days
+                lookback_days=args.lookback_days,
+                train_per_regime=bool(getattr(args, "train_per_regime", False)),
+                regime_labels=regime_labels,
             ))
 
         print(f"\n--- Running diagnostics for target: {tgt} ---")
@@ -4540,6 +4950,7 @@ def main() -> None:
                 tv_var_window=args.tv_var_window,
                 tv_var_regime_aware=args.tv_var_regime_aware,
                 tv_var_backtest=args.tv_var_backtest,
+                load_regime_label=getattr(args, "load_regime_label", None),
             )
             print(
                 f"Specialist feature diagnostics for {tgt} saved to: {md_path} "

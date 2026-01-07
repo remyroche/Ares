@@ -39,7 +39,7 @@ from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecial
 from src.training.steps.market_analysis.enhanced_feature_generators import MIOptimizedFeaturePipeline
 from src.training.steps.market_analysis.specialist_interface import SpecialistDataInterface
 from src.training.steps.market_analysis.specialist_data_standard import SpecialistType
-from src.utils.ml_common.specialist_xgb import train_specialist_xgb_with_oof
+from src.utils.ml_common.specialist_xgb import train_specialist_model_with_oof
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +126,9 @@ class EnhancedMLMomentumPersistenceStep(SpecialistDiagnosticsMixinEnhancedV2, AF
         close_fd = close_fd.reindex(df.index).fillna(method='ffill').fillna(0)
         
         # Calculate Structural Inertia (Slope / SE) on FD series
+        # Optimization: use step=5 to speed up rolling regressions
         for window in [20, 40, 60]:
-            features[f'structural_inertia_{window}'] = compute_structural_inertia(close_fd, window=window)
+            features[f'structural_inertia_{window}'] = compute_structural_inertia(close_fd, window=window, step=5)
             # Acceleration of inertia
             features[f'inertia_accel_{window}'] = features[f'structural_inertia_{window}'].diff()
             

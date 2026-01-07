@@ -437,13 +437,15 @@ def create_optimized_triple_barrier_labeling(
         # Extract and convert HPO parameters to triple barrier settings
         if 'profit_thr_base' in hpo_params:
             profit_take = float(hpo_params['profit_thr_base'])
+            # Ensure minimum profit take (USER REQUEST: 1%)
+            profit_take = max(0.01, profit_take)
             tprint(f"  ✓ profit_take_multiplier: {profit_take:.4f} ({profit_take*100:.2f}%)", "INFO")
 
         if 'stop_to_profit_ratio' in hpo_params and 'profit_thr_base' in hpo_params:
             stop_ratio = float(hpo_params['stop_to_profit_ratio'])
             stop_loss = profit_take * stop_ratio
-            # Ensure minimum stop loss
-            stop_loss = max(0.0005, stop_loss)
+            # Ensure minimum stop loss (USER REQUEST: 0.5%)
+            stop_loss = max(0.005, stop_loss)
             tprint(f"  ✓ stop_loss_multiplier: {stop_loss:.4f} ({stop_loss*100:.2f}%) [ratio: {stop_ratio:.2f}]", "INFO")
 
         if 'horizon_bars' in hpo_params:
@@ -456,8 +458,13 @@ def create_optimized_triple_barrier_labeling(
                     timeframe_minutes = int(timeframe[:-1])
                 except:
                     pass
-            time_barrier = min(horizon_bars * timeframe_minutes, 240)  # Cap at 4 hours
-            tprint(f"  ✓ time_barrier_minutes: {time_barrier} (from horizon_bars={horizon_bars})", "INFO")
+            
+            # User Constraint: 12-48 bars (for 15m this is 180-720 minutes)
+            # We enforce bars range first, then convert to time
+            horizon_bars = max(12, min(horizon_bars, 48))
+            
+            time_barrier = horizon_bars * timeframe_minutes
+            tprint(f"  ✓ time_barrier_minutes: {time_barrier} (from horizon_bars={horizon_bars} [12-48 range enforced])", "INFO")
 
         # Use horizon_bars as max_lookahead directly
         if 'horizon_bars' in hpo_params:

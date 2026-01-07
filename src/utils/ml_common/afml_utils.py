@@ -329,7 +329,7 @@ def frac_diff_fixed(series: pd.Series, d: float, threshold: float = 1e-5) -> pd.
         res[series.index[i]] = np.dot(w.T, series.iloc[i-len(w)+1:i+1])[0]
     return pd.Series(res)
 
-def calculate_rolling_volatility(prices_15min: pd.Series, window_days: int = 7) -> pd.Series:
+def calculate_rolling_volatility(prices_15min: pd.Series, window_days: int = 28) -> pd.Series:
     log_rets = np.log(prices_15min / prices_15min.shift(1))
     window_size = 96 * window_days
     vol = log_rets.rolling(window=window_size, min_periods=96).std()

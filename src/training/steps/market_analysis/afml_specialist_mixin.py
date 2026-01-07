@@ -388,8 +388,8 @@ class AFMLSpecialistMixin:
             df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
             if df_1m is None or df_1m.empty: return None
             df_1m = df_1m[['open', 'high', 'low', 'close', 'volume']]
-            rolling_7d_vol = df_1m['volume'].rolling(window=10080, min_periods=1440).sum()
-            dynamic_N = rolling_7d_vol / 674.0
+            rolling_28d_vol = df_1m['volume'].rolling(window=40320, min_periods=5760).sum()
+            dynamic_N = rolling_28d_vol / 674.0
             dynamic_N = dynamic_N.fillna(method='bfill')
 
             # Vectorized loop (condensed)
@@ -439,7 +439,7 @@ class AFMLSpecialistMixin:
         # ... (Re-implementing simplified) ...
         symbol = config.get('symbol', 'ETHUSDT')
         try:
-            vol_15m = calculate_rolling_volatility(df['close'], window_days=7)
+            vol_15m = calculate_rolling_volatility(df['close'], window_days=28)
             delta_p_series = calculate_dynamic_range_threshold(vol_15m, df['close'])
             delta_p_daily = delta_p_series.resample('1D').last().shift(1)
 

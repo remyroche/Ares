@@ -339,3 +339,115 @@ def calculate_dynamic_range_threshold(volatility: pd.Series, current_price: pd.S
     if k is None:
         k = np.sqrt(2 / np.pi)
     return k * volatility * current_price
+
+try:
+    from statsmodels.tsa.stattools import adfuller
+    STATSMODELS_AVAILABLE = True
+except ImportError:
+    STATSMODELS_AVAILABLE = False
+    adfuller = None
+
+def get_weights_ffd(d: float, thres: float, lim: Optional[int] = None) -> np.ndarray:
+    """
+    Get weights for fractional differentiation using Fixed Width Window (FFD) method.
+    The window size is determined dynamically where weights drop below threshold.
+    """
+    w, k = [1.], 1
+    while True:
+        w_k = -w[-1] / k * (d - k + 1)
+        if abs(w_k) < thres:
+            break
+        w.append(w_k)
+        k += 1
+        if lim and k >= lim:
+            break
+    w = np.array(w[::-1]).reshape(-1, 1)
+    return w
+
+def frac_diff_ffd(series: pd.Series, d: float, thres: float = 1e-4) -> pd.Series:
+    """
+    Apply fractional differentiation using FFD method to preserve memory.
+    """
+    # 1) Compute weights for the longest series
+    w = get_weights_ffd(d, thres)
+    width = len(w) - 1
+
+    # 2) Apply weights to values
+    # Loop implementation is robust for Series
+    df = series.to_frame()
+    output = {}
+
+    series_f = df.iloc[:, 0].fillna(method='ffill')
+
+    # Pre-compute valid indices to loop over
+    # We need a window of size `len(w)`
+    if len(series_f) < width + 1:
+        return pd.Series(dtype=float)
+
+    values = series_f.values
+    indices = series_f.index
+    w_flat = w.flatten()
+
+    # Vectorized stride trick or simple loop.
+    # For simplicity and correctness with DatetimeIndex alignment:
+    for i in range(width, len(values)):
+        # Window of prices
+        window = values[i-width:i+1]
+        # Skip if any NaN in window (though ffill helps)
+        if np.isnan(window).any():
+            continue
+
+        # Dot product: sum(w * window)
+        # w is reversed in get_weights_ffd so it aligns with [t-width ... t]
+        # Actually standard implementation expects w to be applied such that:
+        # y_t = w_0*x_t + w_1*x_{t-1} ...
+        # My get_weights_ffd returns w[::-1], so w[0] is w_k (smallest), w[-1] is w_0 (1.0).
+        # So if window is [x_{t-k} ... x_t], then dot product works directly.
+        val = np.dot(window, w_flat)
+        output[indices[i]] = val
+
+    return pd.Series(output).sort_index()
+
+def optimize_fractional_differentiation(series: pd.Series, d_min: float = 0.0, d_max: float = 1.0,
+                                      step: float = 0.1, threshold: float = 1e-4,
+                                      p_val_thresh: float = 0.05) -> Tuple[float, pd.Series]:
+    """
+    Find the minimum differentiation order 'd' that makes the series stationary (ADF test).
+    Returns (best_d, best_series).
+    """
+    if not STATSMODELS_AVAILABLE:
+        # Fallback to standard 1st diff if statsmodels missing
+        return 1.0, series.diff().dropna()
+
+    best_d = 1.0
+    best_series = series.diff().dropna()
+
+    # Generate range of d values
+    ds = np.arange(d_min, d_max + step/2, step)
+
+    for d in ds:
+        # Skip d ~ 0 as it's likely non-stationary prices
+        if d < 1e-3: continue
+
+        try:
+            diff_series = frac_diff_ffd(series, d, thres=threshold).dropna()
+
+            # ADF requires some length
+            if len(diff_series) < 20:
+                continue
+
+            # Run Augmented Dickey-Fuller test
+            # Returns: adf_stat, pvalue, usedlag, nobs, critical_values, icbest
+            res = adfuller(diff_series.values, maxlag=1, regression='c', autolag=None)
+            p_val = res[1]
+
+            # If p-value is low enough, reject null hypothesis (Unit Root) -> Stationary
+            if p_val < p_val_thresh:
+                best_d = d
+                best_series = diff_series
+                return float(best_d), best_series
+
+        except Exception:
+            continue
+
+    return float(best_d), best_series

@@ -40,6 +40,7 @@ from src.training.steps.labeling.generate_weights_per_label import (
     compute_uniqueness_weights,
     _coerce_numeric_array,
 )
+from src.utils.ml_common.afml_utils import optimize_fractional_differentiation
 
 # Import Layer0 unified price generation
 try:
@@ -562,6 +563,22 @@ def run_layer1_optimization(
             except Exception:
                 trend_feat = pd.Series(0.0, index=t_events)
 
+            # 8. Fractional Differentiation (Optimal Stationary Trend)
+            try:
+                # Find minimal d for stationarity
+                opt_d, frac_diff_series = optimize_fractional_differentiation(
+                    close_series,
+                    d_min=0.0,
+                    d_max=1.0,
+                    step=0.1,
+                    threshold=1e-4
+                )
+                tprint_info(f"   [Layer1] Optimal Fractional Differentiation d={opt_d:.2f}")
+                frac_diff_feat = frac_diff_series.reindex(t_events)
+            except Exception as e_frac:
+                tprint_warning(f"   ⚠️ Fractional differentiation failed: {e_frac}")
+                frac_diff_feat = pd.Series(0.0, index=t_events)
+
             X_df_proxy = (
                 pd.DataFrame(
                     {
@@ -575,6 +592,7 @@ def run_layer1_optimization(
                         "stoch_k": stoch_k_feat,
                         "er": er_feat,
                         "trend_dev": trend_feat,
+                        "frac_diff_opt": frac_diff_feat,
                         "wavelet_d1_vol": wavelet_d1_feat,
                         "wavelet_d2_vol": wavelet_d2_feat,
                         "consistency": cons_feat,

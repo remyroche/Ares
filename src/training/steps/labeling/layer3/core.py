@@ -16,7 +16,7 @@ from scipy.special import expit
 
 from .geometry_system import generate_geometries_adaptive
 from .model_training import train_dual_head_models
-from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient
+from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
 from .enhanced_reporting import EnhancedLayer3Reporter
 
 # Import CausalFeatureSieve
@@ -244,15 +244,25 @@ def layer3_analyst_lgbm(
     ret_series = net_returns.reindex(df.index)
     vol_series = ret_series.rolling(24).std().fillna(0.001)
 
-    # 12-bar targets (standard)
-    y_alpha_12 = calculate_alpha_target(ret_series.values, vol_series.values)
+    # 12-bar targets (Studentized HAR-Residual)
+    tprint_info("🎯 Calculating Studentized HAR-Residual Target (12-bar)")
+    y_alpha_12_series = calculate_studentized_har_target(ret_series, vol_series)
+    y_alpha_12 = y_alpha_12_series.values
     y_prob_12 = (ret_series.values > 0).astype(np.int32)
     
-    # 48-bar targets (long horizon)
+    # 48-bar targets (Studentized HAR-Residual)
     if 'close' in df.columns:
         ret_48 = df['close'].shift(-48) / df['close'] - 1
         vol_48 = ret_series.rolling(48).std().fillna(0.001)
-        y_alpha_48 = (ret_48.fillna(0) / (vol_48 + 1e-9)).values
+
+        tprint_info("🎯 Calculating Studentized HAR-Residual Target (48-bar)")
+        # Note: We align NaN handling with original logic
+        y_alpha_48_series = calculate_studentized_har_target(
+            ret_48.fillna(0),
+            vol_48.fillna(0)
+        )
+        y_alpha_48 = y_alpha_48_series.values
+
         y_prob_48 = (ret_48.fillna(0) > 0).astype(np.int32)
     else:
         y_alpha_48 = y_alpha_12 * 1.5

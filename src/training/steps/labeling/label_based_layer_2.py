@@ -4154,325 +4154,186 @@ class LabelBasedLayer2(BaseStep):
 
     def _run_causal_denoising_pipeline(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Execute the modern causal Layer 2 pipeline.
+        Execute the modern causal Layer 2 pipeline with PER-REGIME differentiation.
         """
         try:
-            tprint_info("🚀 Causal Layer 2 Pipeline: Starting modern De Prado framework...")
+            tprint_info("🚀 Causal Layer 2 Pipeline: Starting Regime-Conditional Framework...")
             
-            # 0. Initialize causal components & feature precomputation
-            tprint_info("🔧 Step 0: Initializing causal components & features...")
+            # 0. Initialize causal components & feature precomputation (Global)
+            tprint_info("🔧 Step 0: Initializing global components & features...")
             df = self._validate_inputs(df)
             df = self.f_precompute_geometry_base_features(df)
+            # Initialize components globally first (load modules)
             self._initialize_causal_components(df)
-            tprint_success("   ✅ Causal components and features initialized")
 
-            # 1. Causal Discovery: Build DAG for causal relationships
-            tprint_info("🔍 Step 1: Running causal discovery...")
-            causal_graph = self._run_causal_discovery(df)
-            if not causal_graph:
-                error_msg = "   ❌ Causal discovery failed; aborting Layer 2 causal pipeline"
-                tprint_error(error_msg)
-                raise RuntimeError(error_msg.strip())
-            tprint_success(f"   ✅ Causal discovery complete: {len(causal_graph)} variables")
+            # Ensure regimes are generated
+            if 'vol_regime' not in df.columns:
+                tprint_info("   🧠 Generating missing regime labels...")
+                self._generate_regimes(df)
+                if 'vol_regime' not in df.columns and hasattr(self, 'regime_labels'):
+                    df['vol_regime'] = self.regime_labels
 
-            # 2. Causal Specialists: Create and train specialists
-            tprint_info("🧠 Step 2: Initializing causal specialists...")
+            # Initialize global containers
+            merged_features = pd.DataFrame(index=df.index)
+            merged_events = pd.DataFrame()
+            merged_specialist_preds = {}
+            merged_graph = {}
+            regime_artifacts = {}
             
-            # Use AEDL if enabled (Domain Specialists)
-            if self.enable_aedl:
-                tprint_info("   🧠 Using Spectral AEDL for specialist initialization...")
-                specialist_predictions = {}
-                try:
-                    aedl_results = self._run_aedl_pipeline(df, "close", causal_graph=causal_graph)
-                    if not isinstance(aedl_results, dict):
-                        raise RuntimeError("AEDL pipeline returned an invalid payload")
-                    if 'error' in aedl_results:
-                        raise RuntimeError(aedl_results['error'])
-                    specialist_predictions = aedl_results.get('specialist_signals') or {}
-                    if not specialist_predictions:
-                        raise RuntimeError("AEDL pipeline produced zero specialist signals")
-                    # Store AEDL results for later only when signals exist
-                    self._aedl_results_cache = aedl_results
-                    tprint_success(f"   ✅ AEDL specialists extracted: {len(specialist_predictions)}")
-                except Exception as e:
-                    tprint_error(f"   ❌ AEDL initialization failed: {e}")
-                    tprint_info("   🔄 Falling back to traditional causal specialists...")
-                    specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+            # Get unique regimes
+            if 'vol_regime' in df.columns:
+                regimes = df['vol_regime'].dropna().unique().tolist()
             else:
-                # Use Graph Edge Specialists
-                specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                tprint_warning("   ⚠️ No regime labels found. Defaulting to 'Global'.")
+                regimes = ['Global']
+                df['vol_regime'] = 'Global'
+
+            tprint_info(f"   🔄 Detected Regimes: {regimes}")
+
+            # === REGIME LOOP ===
+            for regime in regimes:
+                tprint_info(f"\n👉 Processing Regime: {regime}...")
                 
-            # Store for OOF analytics phase
-            self._causal_specialist_predictions = specialist_predictions
-            if not specialist_predictions:
-                tprint_warning("   ⚠️ No specialist predictions available")
-            else:
-                tprint_success(f"   ✅ Specialists trained: {len(specialist_predictions)} predictions")
-
-            # 3. Causal Surprise Events: Generate events from specialist prediction errors
-            tprint_info("🎯 Step 3: Generating causal surprise events...")
-            causal_events_df = self._generate_causal_surprise_events(df, specialist_predictions)
-            if causal_events_df is None or len(causal_events_df) == 0:
-                tprint_error("   ❌ Layer 2: No causal events generated - FAIL FAST")
-                raise RuntimeError("Aborting Layer 2: No causal events generated")
-            else:
-                tprint_success(f"   ✅ Causal events generated: {len(causal_events_df)} events")
-
-            # 4. Causal Feature Engineering: Denoise and adjust features using causal relationships
-            tprint_info("🔧 Step 4: Applying causal feature engineering...")
-            
-            # 4a. Augment Dataframe with Spectral/Specialist Features for Denoising
-            tprint_info("   ➕ Augmenting data for denoising (OHLCV + Specialists)...")
-            enriched_df = df.copy()
-            
-            # Add specialist predictions (high-level signals)
-            spec_cols = []
-            if specialist_predictions:
-                 for name, series in specialist_predictions.items():
-                     col_name = f"spec_{name}"
-                     enriched_df[col_name] = series
-                     spec_cols.append(col_name)
-            
-            # Add spectral components (finer-grained) if available from AEDL
-            spectral_cols = []
-            if hasattr(self, '_aedl_results_cache') and self._aedl_results_cache:
-                components = self._aedl_results_cache.get('spectral_components', {})
-                # Filter for high variance to avoid noise
-                for name, comp in components.items():
-                    if isinstance(comp, (pd.Series, np.ndarray)):
-                        var = np.var(comp)
-                        if var > 1e-4: # Low variance filter
-                            col_name = f"spectral_{name}"
-                            # Ensure length match
-                            if len(comp) == len(enriched_df):
-                                enriched_df[col_name] = comp
-                                spectral_cols.append(col_name)
-            
-            tprint_info(f"   📊 Enriched Matrix: {len(df.columns)} base + {len(spec_cols)} spec + {len(spectral_cols)} spectral")
-
-            # 4b. Augment Causal Graph
-            # Assume OHLCV (Market State) are parents of Specialists/Spectral (Derived State)
-            # This allows specialists to be denoised conditional on Market State
-            augmented_graph = causal_graph.copy()
-            market_nodes = [c for c in df.columns if c in augmented_graph]
-            
-            # --- USER REQUEST: FORCE OHLCV DENOISING (Time-Flow Logic) ---
-            # Enforce: Open, High, Low -> Close (Time flow)
-            # Enforce: Close, Open -> Volume (Information flow)
-            
-            # 1. Enforce Close parents
-            ohl_parents = [c for c in ['open', 'high', 'low'] if c in df.columns]
-            if 'close' in df.columns and ohl_parents:
-                # Remove any existing edges starting FROM close to these parents (avoid cycle)
-                # And remove any existing parents of close that might conflict or be redundant
-                # Actually, simply setting the parents overrides previous discovery for 'close' node
-                augmented_graph['close'] = ohl_parents
+                # Slice Data
+                regime_mask = df['vol_regime'] == regime
+                df_regime = df[regime_mask].copy()
                 
-                # Check for reverse edges in other parts of the graph
-                for node, parents in list(augmented_graph.items()):
-                    if node == 'close': continue
-                    # If close was a parent of open/high/low, remove it to break cycle
-                    if 'close' in parents and node in ohl_parents:
-                        augmented_graph[node] = [p for p in parents if p != 'close']
+                if len(df_regime) < 50:
+                    tprint_warning(f"   ⚠️ Skipping {regime} - insufficient samples ({len(df_regime)})")
+                    continue
 
-            # 2. Enforce Volume parents
-            vol_parents = [c for c in ['close', 'open'] if c in df.columns]
-            if 'volume' in df.columns and vol_parents:
-                augmented_graph['volume'] = vol_parents
-                # Remove reverse
-                for node, parents in list(augmented_graph.items()):
-                    if node == 'volume': continue
-                    if 'volume' in parents and node in vol_parents:
-                         augmented_graph[node] = [p for p in parents if p != 'volume']
+                # 1. Regime-Specific Causal Discovery
+                tprint_info(f"   🔍 [{regime}] Causal Discovery...")
+                regime_graph = self._run_causal_discovery(df_regime)
 
-            # -------------------------------------------------------------
+                # Store with prefix
+                for parent, children in regime_graph.items():
+                    prefixed_parent = f"{regime}_{parent}"
+                    prefixed_children = [f"{regime}_{c}" for c in children]
+                    merged_graph[prefixed_parent] = prefixed_children
 
-            for target_col in spec_cols + spectral_cols:
-                # Use discovered causal graph parents if available, otherwise use market nodes
-                if target_col in causal_graph and causal_graph[target_col]:
-                    parents = causal_graph[target_col]
-                elif market_nodes:
-                    # Fallback to market nodes (from causal discovery)
-                    parents = market_nodes[:3]  # Limit to top 3
-                else:
-                    # Last resort: basic OHLCV
-                    parents = [p for p in ['close', 'volume'] if p in df.columns]
-                
-                if parents:
-                    augmented_graph[target_col] = parents
+                # 2. Regime-Specific Specialist Training
+                tprint_info(f"   🧠 [{regime}] Training Specialists...")
+                # Note: We pass the RAW regime graph, not prefixed, as column names in df_regime match keys
+                regime_specs = self._initialize_causal_specialists(df_regime, regime_graph)
 
-            tprint_info(f"   🔗 Augmented Graph: {len(causal_graph)} -> {len(augmented_graph)} nodes")
-            tprint_info(f"      • Market nodes (from discovery): {market_nodes[:5]}..." if len(market_nodes) > 5 else f"      • Market nodes: {market_nodes}")
-            if 'close' in augmented_graph:
-                tprint_info(f"      • Close parents: {augmented_graph['close']}")
-            if 'volume' in augmented_graph:
-                tprint_info(f"      • Volume parents: {augmented_graph['volume']}")
-            # Log sample specialist parents
-            sample_specs = [c for c in spec_cols if c in augmented_graph][:3]
-            for spec in sample_specs:
-                tprint_info(f"      • {spec} parents: {augmented_graph[spec]}")
+                # Enrich df_regime with specialist predictions before Engineering
+                # This matches the original pipeline where engineering runs on "enriched" data
+                df_regime_enriched = df_regime.copy()
+                for name, series in regime_specs.items():
+                    col_name = f"spec_{name}"
+                    df_regime_enriched[col_name] = series
 
-            # 4c. Run Engineering on Enriched Data
-            engineered_df, causal_metadata = self._apply_causal_feature_engineering(enriched_df, augmented_graph)
+                # Prefix and merge predictions (for artifacts)
+                for spec_name, pred_series in regime_specs.items():
+                    global_name = f"{regime}_{spec_name}"
+                    merged_specialist_preds[global_name] = pred_series
+
+                # 3. Regime-Specific Surprise Events
+                tprint_info(f"   🎯 [{regime}] Detecting Surprise Events...")
+                regime_events = self._generate_causal_surprise_events(df_regime, regime_specs)
+
+                if not regime_events.empty:
+                    # Add regime tag
+                    regime_events['detection_regime'] = regime
+                    merged_events = pd.concat([merged_events, regime_events])
+
+                # 4. Regime-Specific Feature Engineering
+                tprint_info(f"   🔧 [{regime}] Feature Engineering...")
+                if self.causal_engineering_enabled and regime_graph:
+                    # Apply engineering on enriched dataframe
+                    eng_regime_df, _ = self._apply_causal_feature_engineering(df_regime_enriched, regime_graph)
+
+                    # Identify columns to merge: New Features AND Base Features used in Graph
+                    # This ensures 'Quiet_close' exists in final_df if the graph refers to it
+                    new_cols = [c for c in eng_regime_df.columns if c not in df_regime.columns]
+
+                    # Find base columns (like 'close', 'volume') that appear in the regime graph
+                    graph_nodes = set(regime_graph.keys()) | {n for children in regime_graph.values() for n in children}
+                    base_cols_needed = [c for c in df_regime.columns if c in graph_nodes]
+
+                    cols_to_merge = list(set(new_cols + base_cols_needed))
+
+                    if cols_to_merge:
+                        prefixed_data = eng_regime_df[cols_to_merge].add_prefix(f"{regime}_")
+                        merged_features = merged_features.combine_first(prefixed_data)
+
+                # Store artifacts
+                regime_artifacts[regime] = {
+                    'graph': regime_graph,
+                    'specialists_count': len(regime_specs),
+                    'events_count': len(regime_events)
+                }
+
+            # === POST-LOOP AGGREGATION ===
+            tprint_info("\n🔗 Aggregating Regime Results...")
             
-            if engineered_df is None:
-                error_msg = "   ❌ Causal feature engineering failed; aborting Layer 2 causal pipeline"
-                tprint_error(error_msg)
-                raise RuntimeError(error_msg.strip())
-            tprint_success(f"   ✅ Causal engineering complete: {len(engineered_df.columns)} features")
+            # Fill NaNs in merged features with 0 (Regime-Specific features are 0 outside their regime)
+            merged_features = merged_features.fillna(0.0)
+            tprint_success(f"   ✅ Global Feature Matrix: {merged_features.shape}")
 
-            # 5. Causal Targets: Compute treatment effects and causal residuals
-            tprint_info("🎯 Step 5: Computing causal targets...")
-            causal_targets_df = self._compute_causal_targets(engineered_df, causal_events_df, specialist_predictions)
-            if causal_targets_df is None or len(causal_targets_df.columns) == 0:
-                tprint_warning("   ⚠️ No causal targets computed")
-            else:
-                tprint_success(f"   ✅ Causal targets computed: {len(causal_targets_df.columns)} target types")
+            # Merge engineered features back into main DF
+            final_df = df.join(merged_features, how='left').fillna(0.0)
 
-            # 6. IRM Training: Train base models with invariance penalty
+            # Store Global State
+            self.causal_graph = merged_graph # Composite graph
+            self._causal_specialist_predictions = merged_specialist_preds
+
+            pipeline_results = {
+                "causal_graph": merged_graph,
+                "specialist_predictions": merged_specialist_preds,
+                "causal_events": merged_events,
+                "engineered_df": final_df,
+                "regime_artifacts": regime_artifacts,
+                "causal_metadata": {"regime_mode": True, "regimes": list(regime_artifacts.keys())}
+            }
+
+            # 5. Causal Targets (Global using Merged Events/Specialists)
+            tprint_info("🎯 Step 5: Computing causal targets (Global)...")
+            causal_targets_df = self._compute_causal_targets(final_df, merged_events, merged_specialist_preds)
+            pipeline_results["causal_targets"] = causal_targets_df
+
+            # 6. IRM Training (Global with Regime Features)
             tprint_info("🧠 Step 6: Training causal models with IRM...")
+            # Note: _train_causal_models needs to be robust to composite graph/specialists
             causal_geometries, causal_selected_features = self._train_causal_models(
-                engineered_df, causal_targets_df, causal_events_df, 
-                causal_graph=causal_graph, specialist_predictions=specialist_predictions
+                final_df, causal_targets_df, merged_events,
+                causal_graph=merged_graph, specialist_predictions=merged_specialist_preds
             )
-            if not causal_geometries:
-                error_msg = "   ❌ Causal model training failed; aborting Layer 2 causal pipeline"
-                tprint_error(error_msg)
-                raise RuntimeError(error_msg.strip())
-            tprint_success(f"   ✅ Causal models trained: {len(causal_geometries)} geometries")
+            pipeline_results["selected_trials"] = [asdict(t) for t in causal_geometries]
 
             # 7. Causal Validation: Run causal-aware OOF analytics
             tprint_info("📊 Step 7: Running causal OOF analytics...")
             causal_oof_results = self._run_causal_oof_analytics(
-                engineered_df, causal_events_df, causal_geometries, causal_targets_df
+                final_df, merged_events, causal_geometries, causal_targets_df
             )
-            if not causal_oof_results:
-                tprint_error("   ❌ Causal OOF analytics failed")
-            else:
-                tprint_success("   ✅ Causal OOF analytics complete")
+            if causal_oof_results:
+                pipeline_results.update(causal_oof_results)
 
             # 8. Report
             tprint_info("📋 Step 8: Generating causal framework reports...")
-            self._generate_causal_reports(engineered_df, causal_events_df, causal_geometries, causal_oof_results)
+            self._generate_causal_reports(final_df, merged_events, causal_geometries, causal_oof_results)
 
-            results = {
-                **causal_oof_results,
-                "events_df": causal_events_df,
-                "selected_trials": [asdict(t) for t in causal_geometries],
-                "causal_graph": causal_graph,
-                "causal_metadata": causal_metadata,
-                "specialist_predictions": specialist_predictions,
-                "causal_targets": causal_targets_df,
-                "framework_type": "modern_de_prado_causal"
-            }
+            tprint_success("✅ Regime-Conditional Layer 2 Pipeline Complete")
 
             # Persist artifacts (Synchronous call)
-            # Use defaults from self.kwargs if available, or generic defaults
             sym = self.kwargs.get('symbol', 'UNKNOWN') if hasattr(self, 'kwargs') else 'UNKNOWN'
             exch = self.kwargs.get('exchange', 'UNKNOWN') if hasattr(self, 'kwargs') else 'UNKNOWN'
             tf = self.kwargs.get('timeframe', '15m') if hasattr(self, 'kwargs') else '15m'
             
             try:
-                self._save_artifacts(results, sym, exch, tf, 'long')
+                self._save_artifacts(pipeline_results, sym, exch, tf, 'long')
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to save causal artifacts: {e}")
 
-            tprint_success("🎉 Causal Layer 2 Pipeline: Complete modern De Prado framework executed!")
+            pipeline_results['denoised_df'] = final_df
+            return pipeline_results
 
-            # Step 9: AEDL Framework (Use cached if available)
-            if self.enable_aedl:
-                try:
-                    if self.verbose:
-                        tprint_info(">>> Step 9: Finalizing AEDL Framework...")
-                    
-                    if hasattr(self, '_aedl_results_cache'):
-                         results['aedl_framework'] = self._aedl_results_cache
-                         aedl_results = self._aedl_results_cache
-                    else:
-                         aedl_results = self._run_aedl_pipeline(df, "close")
-                         results['aedl_framework'] = aedl_results
-                    
-                    if 'rsv_info' in aedl_results:
-                        self.layer3_rsv_data = aedl_results['rsv_info']
-                    
-                    if self.verbose:
-                        tprint_success("✅ AEDL Framework complete")
-                except Exception as e:
-                    if self.verbose:
-                        tprint_error(f"❌ AEDL Framework failed: {e}")
-                    results['aedl_framework'] = {'error': str(e)}
-
-            # Step 10: Spectral Chaser (REPLACE existing Layer 2.5)
-            if hasattr(self, 'spectral_chaser_enabled') and self.spectral_chaser_enabled:
-                try:
-                    if self.verbose:
-                        tprint_info(">>> Step 10: Running Spectral Chaser...")
-                    
-                    # Retrieve causal anchor and residuals from computed targets
-                    y_residuals = pd.Series()
-                    causal_anchor_predictions = None
-
-                    if causal_targets_df is not None and not causal_targets_df.empty:
-                        # Extract residuals
-                        # We must align residuals to the main DataFrame 'df' for Spectral Chaser
-                        if 'residual_targets' in causal_targets_df.columns:
-                            y_res = causal_targets_df['residual_targets']
-                            # Align to df index, fill missing with 0 (since they are residuals)
-                            y_residuals = y_res.reindex(df.index).fillna(0)
-                        
-                        # Extract anchor predictions
-                        if 'causal_anchor_predictions' in causal_targets_df.columns:
-                            c_anch = causal_targets_df['causal_anchor_predictions']
-                            # Align
-                            c_anch_aligned = c_anch.reindex(df.index).fillna(0)
-                            causal_anchor_predictions = c_anch_aligned.values
-                            
-                    # Fallback or check validity
-                    if y_residuals.empty or causal_anchor_predictions is None:
-                        tprint_warning("   ⚠️ Spectral Chaser: Missing input targets, attempting partial fallback...")
-                        if causal_anchor_predictions is None:
-                            causal_anchor_predictions = self._get_causal_anchor_predictions() if hasattr(self, '_get_causal_anchor_predictions') else np.zeros(len(df))
-                        
-                        if y_residuals.empty:
-                            y_residuals = pd.Series(0.0, index=df.index)
-                    
-                    if len(causal_anchor_predictions) != len(df):
-                        # Final alignment check for anchor
-                        tprint_warning(f"   ⚠️ Re-aligning anchor for Spectral Chaser: {len(causal_anchor_predictions)} -> {len(df)}")
-                        new_anchor = np.zeros(len(df))
-                        min_len = min(len(causal_anchor_predictions), len(df))
-                        new_anchor[:min_len] = causal_anchor_predictions[:min_len]
-                        causal_anchor_predictions = new_anchor
-                    
-                    if self.verbose:
-                        tprint_info(f"   🔍 Spectral Chaser Debug: df={len(df)}, y_residuals={len(y_residuals)}, anchor={len(causal_anchor_predictions) if causal_anchor_predictions is not None else 'None'}")
-                        
-                    # Retrieve causal sample weights (ZoneScore weighted) if available
-                    sample_weight = None
-                    if causal_targets_df is not None and 'sample_weight' in causal_targets_df.columns:
-                        sample_weight = causal_targets_df['sample_weight'].reindex(df.index).fillna(1.0)
-
-                    # Inject continuous features (Continuous Framework)
-                    if causal_targets_df is not None:
-                        continuous_cols = [c for c in causal_targets_df.columns if c.startswith('surprise_') or 'zone_score' in c]
-                        if continuous_cols:
-                            df = df.copy()
-                            for col in continuous_cols:
-                                df[col] = causal_targets_df[col].reindex(df.index).fillna(0)
-
-                    chaser_results = self._run_spectral_chaser(
-                        df, y_residuals, causal_anchor_predictions, sample_weight=sample_weight
-                    ) if hasattr(self, '_run_spectral_chaser') else {}
-                    results['spectral_chaser'] = chaser_results
-                    if self.verbose:
-                        tprint_success("✅ Spectral Chaser complete")
-                except Exception as e:
-                    if self.verbose:
-                        tprint_error(f"❌ Spectral Chaser failed: {e}")
-                    results['spectral_chaser'] = {'error': str(e)}
-
-            results['denoised_df'] = df
-            return results
+        except Exception as e:
+            tprint_error(f"❌ Causal pipeline failed: {e}")
+            import traceback
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+            raise
 
         except Exception as e:
             tprint_error(f"❌ Causal Layer 2 Pipeline failed: {e}")

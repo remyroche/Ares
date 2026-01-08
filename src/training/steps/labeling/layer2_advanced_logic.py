@@ -775,3 +775,36 @@ def get_new_expert_diagnostics(
             diag[f"{name}_score_conf_corr"] = 0.0
     
     return diag
+
+@njit
+def calculate_innovation_jit(arr: np.ndarray, window: int = 20) -> np.ndarray:
+    """
+    Calculate feature innovation proxy: Z-scored Delta.
+    Innovation = ((Xt - Xt-1) - RollingMean(DeltaX)) / RollingStd(DeltaX)
+    """
+    n = len(arr)
+    innov = np.zeros(n, dtype=np.float64)
+    delta = np.zeros(n, dtype=np.float64)
+
+    # 1. Calculate Delta (Xt - Xt-1)
+    for i in range(1, n):
+        delta[i] = arr[i] - arr[i-1]
+
+    # Delta at index 0 is 0.0 by default from zeros init
+
+    # 2. Rolling Mean and Std of Delta using existing JIT helpers
+    # Note: rolling_mean_jit computes mean of [i-window+1 : i+1]
+
+    d_mean = rolling_mean_jit(delta, window)
+    d_std = rolling_std_jit(delta, window)
+
+    # 3. Z-score
+    # d_mean/d_std will be NaN for i < window-1
+    for i in range(n):
+        if i >= window - 1 and not np.isnan(d_std[i]) and d_std[i] > 1e-9:
+            innov[i] = (delta[i] - d_mean[i]) / d_std[i]
+        else:
+            # Fallback for startup period or zero variance
+            innov[i] = 0.0
+
+    return innov

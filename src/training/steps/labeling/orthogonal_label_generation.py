@@ -3395,9 +3395,25 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
         
         if not parents:
             tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 20 by correlation as fallback.")
-            # Fallback: Don't kill everything. Return original list or top subset? 
-            # Let's return the original smart selected list but warn.
-            return candidates
+
+            # Fallback: Top 20 by correlation
+            try:
+                # Calculate correlation with target
+                correlations = discovery_df.corrwith(discovery_df[target_name]).abs()
+                # Drop target itself
+                correlations = correlations.drop(target_name, errors='ignore')
+
+                # Get Top 20
+                top_20_families = set(correlations.nlargest(20).index)
+
+                # Filter candidates
+                fallback_candidates = [c for c in candidates if c['family'] in top_20_families]
+
+                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates by correlation.")
+                return fallback_candidates
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Fallback correlation failed: {e}. Returning original set.")
+                return candidates
             
         # 4. Filter Candidates
         # Keep candidates that are in the parent list
@@ -3635,7 +3651,7 @@ def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[st
     if validated_candidates:
         # Use validated set as primary source of parents
         structural_parents = [c for c in validated_candidates if len(c['events']) > 200]
-        tprint_info(f"   🧬 Using {len(structural_parents)} Validated Causal Parents as Structural Seeds.")
+        tprint_info(f"   🧬 Using {len(structural_parents)} Structural Seeds (Validated or Fallback).")
     else:
         # Fallback to specialists
         tprint_warning("   ⚠️ No validated parents found. Using base Specialist families as seeds.")

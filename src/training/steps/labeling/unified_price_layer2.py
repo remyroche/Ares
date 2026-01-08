@@ -16,9 +16,14 @@ def load_layer0_params(df: Optional[pd.DataFrame] = None, outcomes_dir: str = 'o
     """Load optimized Kalman+VWAP parameters from Layer0 summary, running if missing."""
     try:
         # Find latest Layer0 summary
-        layer0_files = glob.glob(f"{outcomes_dir}/layer0_summary_*.csv")
-        layer0_json_files = glob.glob(f"{outcomes_dir}/layer0_summary_*.json")
+        layer0_files = glob.glob(f"{outcomes_dir}/**/layer0_summary_*.csv", recursive=True)
+        layer0_json_files = glob.glob(f"{outcomes_dir}/**/layer0_summary_*.json", recursive=True)
         layer0_files.extend(layer0_json_files)
+
+        # Sort by modification time to get the most recent
+        if layer0_files:
+            import os
+            layer0_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
         
         if not layer0_files:
             logger.warning(f"No Layer0 summary found in {outcomes_dir}/")
@@ -45,7 +50,7 @@ def load_layer0_params(df: Optional[pd.DataFrame] = None, outcomes_dir: str = 'o
                     )
                     
                     # Retry loading
-                    layer0_files = glob.glob(f"{outcomes_dir}/layer0_summary_*.csv")
+                    layer0_files = glob.glob(f"{outcomes_dir}/**/layer0_summary_*.csv", recursive=True)
                     if layer0_files:
                         logger.info("✅ Layer 0 auto-run successful, loading parameters")
                         return load_layer0_params(outcomes_dir=outcomes_dir)

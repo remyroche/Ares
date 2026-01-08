@@ -1,0 +1,33 @@
+{
+  "config": {
+    "n_components": 4,
+    "n_neighbors": 3,
+    "subsample_size": 10450,
+    "wavelet": "db4",
+    "n_permutations": 100,
+    "fracdiff_config": {
+      "max_d": 0.8,
+      "min_d": 0.0,
+      "adf_threshold": 0.01,
+      "method": "binary_search",
+      "tolerance": 0.01
+    },
+    "har_windows": [
+      1,
+      5,
+      22
+    ],
+    "shock_window": 50
+  },
+  "data_shape": [
+    104508,
+    9
+  ],
+  "features_shape": [
+    142619,
+    2
+  ],
+  "performance_score": 0.0,
+  "data_hash": "e7135120f78eb689905caa078b52ed4e",
+  "saved_at": "2026-01-08T21:42:21.561093"
+}

@@ -71,10 +71,14 @@ try:
     from .meta_labeling_hpo_sample_weighted import (
         MetaLabelingHPOSampleWeightedStep,
     )
+    from .train_specialists_with_gmm_step import (
+        TrainSpecialistsWithGMMStep,
+    )
     # Alias for backward compatibility
     MetaLabelingHPOExperimentStep = MetaLabelingHPOSampleWeightedStep
 except Exception:
     MetaLabelingHPOSampleWeightedStep = None
+    TrainSpecialistsWithGMMStep = None
     # Fallback to original if sample-weighted version fails
     try:
         from .meta_labeling_hpo_experiment_step import (
@@ -218,6 +222,9 @@ try:
     if GlobalMetaLabelingHPOSampleWeightedStep is not None:
         step_registry.register('global_meta_labeling_hpo_sample_weighted', GlobalMetaLabelingHPOSampleWeightedStep)
     
+    # Register train specialists with GMM step
+    if TrainSpecialistsWithGMMStep is not None:
+        step_registry.register('train_specialists_with_gmm', TrainSpecialistsWithGMMStep)
     
     # Register label-based layer 2 step
     try:

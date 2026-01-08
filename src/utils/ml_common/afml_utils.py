@@ -245,20 +245,34 @@ def get_sample_uniqueness(t1: pd.Series, num_concurrent: pd.Series) -> pd.Series
     starts = num_concurrent.index.searchsorted(t1_filled.index)
     ends = num_concurrent.index.searchsorted(t1_filled.values)
     
-    # Pre-calculate 1/num_concurrent
-    inv_concurrent = 1.0 / num_concurrent.values
+    # Pre-calculate 1/num_concurrent, handle zeros
+    concurrent_vals = num_concurrent.values
+    concurrent_vals = np.where(concurrent_vals == 0, 1, concurrent_vals)  # Avoid division by zero
+    inv_concurrent = 1.0 / concurrent_vals
     cum_inv = np.cumsum(inv_concurrent)
     
     # Uniqueness is mean of (1/num_concurrent) over [i, j]
     # Mean = (CumSum[j] - CumSum[i-1]) / (j - i + 1)
     unq_vals = np.zeros(len(t1))
     for idx, (s, e) in enumerate(zip(starts, ends)):
+        if e >= len(cum_inv) or s > e:
+            unq_vals[idx] = 0.0  # Invalid range
+            continue
+
         if s > 0:
             window_sum = cum_inv[e] - cum_inv[s-1]
         else:
             window_sum = cum_inv[e]
-        unq_vals[idx] = window_sum / (e - s + 1)
-        
+
+        window_size = e - s + 1
+        if window_size > 0:
+            unq_vals[idx] = window_sum / window_size
+        else:
+            unq_vals[idx] = 0.0
+
+    # Handle any remaining NaN or inf values
+    unq_vals = np.nan_to_num(unq_vals, nan=0.0, posinf=0.0, neginf=0.0)
+
     return pd.Series(unq_vals, index=t1.index)
 
 def compute_structural_inertia(series: pd.Series, window: int = 20, step: int = 1) -> pd.Series:
@@ -384,8 +398,16 @@ def get_sample_weights(t1: pd.Series, num_concurrent: pd.Series, returns: pd.Ser
     unq = get_sample_uniqueness(t1, num_concurrent)
     abs_ret = returns.abs().reindex(unq.index).fillna(0)
     weights = unq * abs_ret
+
+    # Handle NaN and inf values
+    weights = weights.replace([np.inf, -np.inf], np.nan).fillna(0)
+
     if weights.sum() > 0:
         weights = weights / weights.sum() * len(weights)
+
+    # Final cleanup - ensure no NaN values remain
+    weights = weights.fillna(0)
+
     return weights
 
 def get_weights_by_uniqueness(t1: pd.Series, close_index: pd.Index) -> pd.Series:

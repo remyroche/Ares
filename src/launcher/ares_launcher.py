@@ -87,6 +87,7 @@ STATIC_STEP_MAPPING = {
     'winning_feature_set_selector': 'labeling',
     'meta_gated_backtest': 'labeling',
     'snr_diagnostics': 'labeling',
+    'train_specialists_with_gmm': 'labeling',
     'generate_weights_per_label': 'labeling',
     'label_based_layer_0': 'labeling',
     'label_based_layer_1': 'labeling',

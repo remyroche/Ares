@@ -110,6 +110,11 @@ logger = system_logger.getChild("specialist_feature_diagnostics")
 OUTCOMES_DIR = Path("outcomes")
 _LAYER0_PARAMS_CACHE: Optional[Dict[str, Any]] = None
 
+# RMI score cache: key = (data_hash, feature_name) -> RMI score
+# This avoids recomputing RMI for the same feature across multiple cluster evaluations
+_RMI_SCORE_CACHE: Dict[Tuple[str, str], float] = {}
+_RMI_CACHE_DATA_HASH: Optional[str] = None  # Track data hash to invalidate on new data
+
 
 def _load_latest_layer0_params() -> Dict[str, Any]:
     """Load (and cache) the most recent Layer0 smoothing parameters."""
@@ -238,21 +243,414 @@ def _get_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
         return f"{x_hash}_{y_hash}"
     except Exception:
         return f"{X.shape}_{len(y)}"
+
+
+# ============================================================================
+# Residualization Utilities for Enhanced Feature Selection
+# ============================================================================
+
+def _residualize_target(y: pd.Series, lag: int = 1) -> pd.Series:
+    """
+    Residualize target: y_t - y_{t-1}.
+    
+    Removes autocorrelation from target to focus on innovation component.
+    
+    Args:
+        y: Target series
+        lag: Number of periods for differencing (default=1)
+    
+    Returns:
+        Differenced target series (length reduced by lag)
+    """
+    return y.diff(lag).dropna()
+
+
+def _residualize_feature(x: pd.Series, lag: int = 1) -> pd.Series:
+    """
+    Residualize feature: X_t on X_{t-1} (OLS residuals).
+    
+    Computes residuals from AR(1) regression to remove autocorrelation.
+    
+    Args:
+        x: Feature series
+        lag: Number of periods for lagged regressor (default=1)
+    
+    Returns:
+        Residualized feature series (same length, NaN for first lag periods)
+    """
+    x_lagged = x.shift(lag)
+    valid_mask = ~(x.isna() | x_lagged.isna())
+    
+    if valid_mask.sum() < 10:
+        logger.debug(f"Insufficient data for residualization ({valid_mask.sum()} valid), returning original")
+        return x  # Fallback to raw if insufficient data
+    
+    # Simple OLS: X_t = α + β·X_{t-1} + ε
+    X_design = np.column_stack([np.ones(valid_mask.sum()), x_lagged[valid_mask].values])
+    coeffs, _, _, _ = np.linalg.lstsq(X_design, x[valid_mask].values, rcond=None)
+    
+    residuals = x.copy()
+    residuals[valid_mask] = x[valid_mask].values - X_design @ coeffs
+    return residuals
+
+
+def _compute_innovation_zscore(x: pd.Series, window: int = 20) -> pd.Series:
+    """
+    Z-scored Delta as proxy for innovation.
+    
+    Innovation ≈ (X_t - X_{t-1} - RollingMean(ΔX)) / RollingStd(ΔX)
+    
+    Args:
+        x: Feature series (ideally already residualized)
+        window: Rolling window for mean/std computation
+    
+    Returns:
+        Z-scored innovation series
+    """
+    delta = x.diff(1)
+    rolling_mean = delta.rolling(window=window, min_periods=1).mean()
+    rolling_std = delta.rolling(window=window, min_periods=1).std()
+    # Avoid division by zero
+    rolling_std = rolling_std.replace(0, 1e-8)
+    rolling_std = rolling_std.fillna(1e-8)
+    
+    innovation = (delta - rolling_mean) / rolling_std
+    return innovation.fillna(0)
+
+
+def _batch_residualize_features_vectorized(X: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+    """
+    Vectorized batch AR(1) residualization for all features.
+    
+    Computes residuals from AR(1) regression for all features simultaneously
+    using matrix operations instead of per-column loops.
+    
+    Args:
+        X: Feature DataFrame
+        lag: Number of periods for lagged regressor (default=1)
+    
+    Returns:
+        DataFrame of residualized features (same shape, NaN for first lag rows)
+    """
+    # Get values as numpy array for fast operations
+    X_vals = X.values.astype(np.float64)
+    n_samples, n_features = X_vals.shape
+    
+    if n_samples < lag + 10:
+        logger.debug("Insufficient samples for batch residualization, returning raw")
+        return X.copy()
+    
+    # Create lagged version: X_{t-1}
+    X_lagged = np.roll(X_vals, lag, axis=0)
+    X_lagged[:lag, :] = np.nan  # First lag rows are invalid
+    
+    # Valid mask: rows where both current and lagged are valid
+    valid_mask = ~(np.isnan(X_vals) | np.isnan(X_lagged))
+    
+    # Initialize residuals with NaN
+    residuals = np.full_like(X_vals, np.nan)
+    
+    # Process each feature (vectorized within feature, loop over features)
+    # This is still O(n_features) but each iteration is fully vectorized
+    for j in range(n_features):
+        col_valid = valid_mask[:, j]
+        if col_valid.sum() < 10:
+            residuals[:, j] = X_vals[:, j]  # Fallback to raw
+            continue
+        
+        # Design matrix: [1, X_{t-1}] for this column
+        X_design = np.column_stack([
+            np.ones(col_valid.sum()),
+            X_lagged[col_valid, j]
+        ])
+        y_col = X_vals[col_valid, j]
+        
+        # Solve OLS: (X'X)^{-1} X'y using lstsq
+        coeffs, _, _, _ = np.linalg.lstsq(X_design, y_col, rcond=None)
+        
+        # Compute residuals for valid rows
+        residuals[col_valid, j] = y_col - X_design @ coeffs
+    
+    return pd.DataFrame(residuals, index=X.index, columns=X.columns)
+
+
+def _batch_innovation_zscore_vectorized(X: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    """
+    Vectorized batch innovation z-score computation for all features.
+    
+    Computes z-scored deltas for all features simultaneously using
+    pandas vectorized rolling operations.
+    
+    Args:
+        X: Feature DataFrame (ideally already residualized)
+        window: Rolling window for mean/std computation
+    
+    Returns:
+        DataFrame of z-scored innovations
+    """
+    # Compute deltas for all columns at once
+    deltas = X.diff(1)
+    
+    # Rolling mean and std (vectorized across all columns)
+    rolling_mean = deltas.rolling(window=window, min_periods=1).mean()
+    rolling_std = deltas.rolling(window=window, min_periods=1).std()
+    
+    # Avoid division by zero
+    rolling_std = rolling_std.replace(0, 1e-8)
+    rolling_std = rolling_std.fillna(1e-8)
+    
+    # Compute innovation z-scores
+    innovations = (deltas - rolling_mean) / rolling_std
+    
+    return innovations.fillna(0)
+
+
+def _double_residualize_features(
+    X: pd.DataFrame, 
+    y: pd.Series,
+    innovation_window: int = 20
+) -> Tuple[pd.DataFrame, pd.Series, Dict[str, Any]]:
+    """
+    Apply double residualization to features and target (OPTIMIZED).
+    
+    Steps:
+    1. Residualize target (y_t - y_{t-1})
+    2. Batch residualize all features using vectorized matrix operations
+    3. Compute vectorized Z-scored innovation for all features
+    
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        innovation_window: Window size for rolling stats in innovation
+    
+    Returns:
+        Tuple of (X_residualized, y_residualized, info_dict)
+    """
+    import time
+    start_time = time.perf_counter()
+    
+    logger.info(f"🔄 Starting vectorized double residualization: {X.shape[1]} features, window={innovation_window}")
+    
+    original_len = len(X)
+    info = {
+        "original_samples": original_len,
+        "n_features": X.shape[1],
+        "innovation_window": innovation_window,
+    }
+    
+    # Step 1: Residualize target (already fast - simple diff)
+    y_residual = _residualize_target(y, lag=1)
+    
+    # Step 2: Batch residualize all features (VECTORIZED)
+    X_residualized = _batch_residualize_features_vectorized(X, lag=1)
+    
+    # Step 3: Batch compute innovation z-scores (VECTORIZED)
+    X_innovation = _batch_innovation_zscore_vectorized(X_residualized, window=innovation_window)
+    
+    # Align indices after differencing
+    common_idx = X_innovation.index.intersection(y_residual.index)
+    # Drop rows with any NaN
+    valid_mask = ~(X_innovation.loc[common_idx].isna().any(axis=1) | y_residual.loc[common_idx].isna())
+    common_idx = common_idx[valid_mask.loc[common_idx]]
+    
+    X_out = X_innovation.loc[common_idx].copy()
+    y_out = y_residual.loc[common_idx].copy()
+    
+    elapsed = time.perf_counter() - start_time
+    info["after_alignment"] = len(X_out)
+    info["samples_lost"] = original_len - len(X_out)
+    info["elapsed_seconds"] = elapsed
+    
+    logger.info(
+        f"✅ Vectorized residualization complete: {len(X_out)} samples, {len(X_out.columns)} features "
+        f"(lost {info['samples_lost']} samples, took {elapsed:.3f}s)"
+    )
+    
+    return X_out, y_out, info
+
+
+
+def _compute_data_hash_for_rmi(X: pd.DataFrame, y: pd.Series) -> str:
+    """Compute a hash for RMI cache invalidation based on data shape and samples."""
+    try:
+        # Use shape + first/last values for efficient hashing
+        x_sample = f"{X.shape}_{X.iloc[0].sum():.6f}_{X.iloc[-1].sum():.6f}" if len(X) > 0 else "empty"
+        y_sample = f"{len(y)}_{y.iloc[0]:.6f}_{y.iloc[-1]:.6f}" if len(y) > 0 else "empty"
+        return hashlib.md5(f"{x_sample}_{y_sample}".encode()).hexdigest()[:16]
+    except Exception:
+        return f"{X.shape}_{len(y)}_{id(X)}"
+
+
+def _compute_single_feature_rmi(
+    X: pd.DataFrame,
+    y_arr: np.ndarray,
+    feature: str,
+    other_features: List[str],
+    n_neighbors: int = 3,
+    n_subsamples: int = 5,
+    subsample_fraction: float = 0.8
+) -> float:
+    """
+    Compute RMI for a single feature (helper for caching).
+    
+    Residualizes the feature against other cluster features and computes
+    MI with target on subsamples.
+    """
+    from sklearn.linear_model import LinearRegression
+    
+    try:
+        if other_features:
+            X_others = X[other_features].values
+            X_feat = X[feature].values
+            
+            # Remove effect of other features via OLS
+            valid_mask = ~(np.isnan(X_feat) | np.any(np.isnan(X_others), axis=1) | np.isnan(y_arr))
+            
+            if valid_mask.sum() < 20:
+                return 0.0
+            
+            lr = LinearRegression()
+            lr.fit(X_others[valid_mask], X_feat[valid_mask])
+            residual = X_feat.copy()
+            residual[valid_mask] = X_feat[valid_mask] - lr.predict(X_others[valid_mask])
+        else:
+            residual = X[feature].values
+            valid_mask = ~(np.isnan(residual) | np.isnan(y_arr))
+        
+        # Subsample MI computation for robustness
+        mi_estimates = []
+        n_valid = valid_mask.sum()
+        
+        for i in range(n_subsamples):
+            sample_size = max(20, int(n_valid * subsample_fraction))
+            if sample_size > n_valid:
+                sample_size = n_valid
+            
+            # Get indices of valid samples
+            valid_indices = np.where(valid_mask)[0]
+            # Use deterministic seed for reproducibility + caching
+            rng = np.random.RandomState(42 + i)
+            sampled_indices = rng.choice(valid_indices, sample_size, replace=False)
+            
+            try:
+                mi = mutual_info_regression(
+                    residual[sampled_indices].reshape(-1, 1),
+                    y_arr[sampled_indices],
+                    n_neighbors=n_neighbors,
+                    random_state=42 + i
+                )[0]
+                mi_estimates.append(mi)
+            except Exception:
+                continue
+        
+        return float(np.mean(mi_estimates)) if mi_estimates else 0.0
+        
+    except Exception as e:
+        logger.debug(f"RMI computation failed for {feature}: {e}")
+        return 0.0
+
+
+def _select_best_feature_from_cluster_rmi(
+    X: pd.DataFrame, 
+    y: pd.Series,
+    features: List[str],
+    n_neighbors: int = 3,
+    n_subsamples: int = 5,
+    subsample_fraction: float = 0.8
+) -> str:
+    """
+    Select the best feature from a cluster using Residual Mutual Information (RMI).
+    
+    OPTIMIZED: Uses caching to avoid recomputing RMI for the same feature
+    when it appears in multiple cluster evaluations.
+    
+    For each feature:
+    1. Check cache for precomputed RMI score
+    2. If not cached, compute residual against other cluster features
+    3. Compute MI between residual and target on subsamples
+    4. Cache the result
+    
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        features: List of features in the cluster
+        n_neighbors: Number of neighbors for MI estimation (default=3)
+        n_subsamples: Number of bootstrap subsamples for RMI
+        subsample_fraction: Fraction of data to use in each subsample
+    
+    Returns:
+        Best feature name (highest RMI)
+    """
+    global _RMI_SCORE_CACHE, _RMI_CACHE_DATA_HASH
+    
+    if len(features) == 1:
+        return features[0]
+    
+    # Compute data hash to detect new data
+    data_hash = _compute_data_hash_for_rmi(X, y)
+    
+    # Invalidate cache if data changed
+    if _RMI_CACHE_DATA_HASH != data_hash:
+        logger.debug(f"RMI cache invalidated (new data hash: {data_hash})")
+        _RMI_SCORE_CACHE.clear()
+        _RMI_CACHE_DATA_HASH = data_hash
+    
+    rmi_scores = {}
+    y_arr = y.values if hasattr(y, 'values') else np.array(y)
+    cache_hits = 0
+    
+    for feature in features:
+        other_features = [f for f in features if f != feature]
+        # Create a cache key that includes the cluster context
+        # (same feature in different clusters may have different "other_features")
+        cluster_key = tuple(sorted(other_features)) if other_features else ("solo",)
+        cache_key = (data_hash, feature, cluster_key)
+        
+        if cache_key in _RMI_SCORE_CACHE:
+            rmi_scores[feature] = _RMI_SCORE_CACHE[cache_key]
+            cache_hits += 1
+        else:
+            # Compute RMI
+            rmi = _compute_single_feature_rmi(
+                X, y_arr, feature, other_features,
+                n_neighbors, n_subsamples, subsample_fraction
+            )
+            rmi_scores[feature] = rmi
+            _RMI_SCORE_CACHE[cache_key] = rmi
+    
+    if cache_hits > 0:
+        logger.debug(f"RMI cache hits: {cache_hits}/{len(features)}")
+    
+    # Select feature with highest RMI
+    if not rmi_scores:
+        return features[0]  # Fallback to first feature
+    
+    best_feature = max(rmi_scores, key=rmi_scores.get)
+    logger.debug(f"RMI scores for cluster: {rmi_scores}, selected: {best_feature}")
+    
+    return best_feature
+
+
 def _correlation_clustering_feature_selection(
     X: pd.DataFrame, 
+    y: pd.Series = None,
     correlation_threshold: float = 0.7,
-    method: str = "hierarchical"
+    method: str = "hierarchical",
+    use_rmi: bool = True
 ) -> Tuple[pd.DataFrame, List[str], Dict[str, Any]]:
     """
     Advanced correlation clustering for feature redundancy removal.
     
     Uses hierarchical clustering to group correlated features and selects
-    the best representative from each cluster based on variance and MI scores.
+    the best representative from each cluster based on RMI (Residual MI) scores
+    when use_rmi=True, otherwise falls back to variance/entropy-based selection.
     
     Args:
         X: Feature DataFrame
+        y: Target Series (required when use_rmi=True)
         correlation_threshold: Correlation threshold for clustering
         method: Clustering method ('hierarchical', 'spectral', 'ward')
+        use_rmi: Whether to use RMI-based cluster representative selection
     
     Returns:
         Tuple of (filtered DataFrame, removed_features, clustering_info)
@@ -331,7 +729,10 @@ def _correlation_clustering_feature_selection(
             }
         else:
             # Multiple features in cluster - select best one
-            best_feature = _select_best_feature_from_cluster(X, features_in_cluster)
+            if use_rmi and y is not None:
+                best_feature = _select_best_feature_from_cluster_rmi(X, y, features_in_cluster)
+            else:
+                best_feature = _select_best_feature_from_cluster(X, features_in_cluster)
             selected_features.append(best_feature)
             
             # Remove other features
@@ -467,13 +868,18 @@ def _enhanced_smart_feature_pruning(
     y: pd.Series, 
     variance_threshold: float = 1e-8, 
     correlation_threshold: float = 0.7,
-    use_clustering: bool = True
+    use_clustering: bool = True,
+    apply_residualization: bool = True,
+    innovation_window: int = 20,
+    use_rmi: bool = True
 ) -> Tuple[pd.DataFrame, List[str], Dict[str, Any]]:
     """
-    Enhanced smart feature pruning with correlation clustering.
+    Enhanced smart feature pruning with residualization and correlation clustering.
     
-    Combines variance filtering with advanced correlation clustering
-    for more intelligent feature selection.
+    Combines:
+    1. Double residualization (target + features) for innovation extraction
+    2. Variance filtering
+    3. Hierarchical correlation clustering with RMI-based representative selection
     
     Args:
         X: Feature DataFrame
@@ -481,6 +887,9 @@ def _enhanced_smart_feature_pruning(
         variance_threshold: Variance threshold for filtering
         correlation_threshold: Correlation threshold for clustering
         use_clustering: Whether to use clustering or simple filtering
+        apply_residualization: Whether to apply double residualization
+        innovation_window: Window size for rolling stats in innovation z-score
+        use_rmi: Whether to use RMI for cluster representative selection
     
     Returns:
         Tuple of (filtered DataFrame, removed_features, pruning_info)
@@ -488,11 +897,36 @@ def _enhanced_smart_feature_pruning(
     logger.info(f"🔍 Starting enhanced smart feature pruning: {X.shape[1]} features")
     
     original_features = list(X.columns)
+    original_len = len(X)
     removed_features = []
     pruning_info = {
         "original_count": len(original_features),
+        "original_samples": original_len,
         "steps": []
     }
+    
+    # Step 0: Double residualization (if enabled)
+    if apply_residualization:
+        try:
+            X, y, residual_info = _double_residualize_features(X, y, innovation_window)
+            pruning_info["steps"].append({
+                "step": "residualization",
+                "innovation_window": innovation_window,
+                "samples_before": residual_info["original_samples"],
+                "samples_after": residual_info["after_alignment"],
+                "samples_lost": residual_info["samples_lost"],
+            })
+            logger.info(
+                f"🔄 Residualization complete: {len(X)} samples, {len(X.columns)} features "
+                f"(lost {residual_info['samples_lost']} samples)"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Residualization failed: {e}, continuing with raw features")
+            pruning_info["steps"].append({
+                "step": "residualization",
+                "status": "skipped",
+                "error": str(e)
+            })
     
     # Step 1: Variance filtering
     feature_variances = X.var()
@@ -509,11 +943,11 @@ def _enhanced_smart_feature_pruning(
         })
         logger.info(f"🗑️  Removed {len(low_variance_features)} low-variance features")
     
-    # Step 2: Correlation clustering
+    # Step 2: Correlation clustering with RMI-based selection
     if len(X.columns) > 1:
         if use_clustering:
             X_corr, corr_removed, corr_info = _correlation_clustering_feature_selection(
-                X, correlation_threshold, method="hierarchical"
+                X, y, correlation_threshold, method="hierarchical", use_rmi=use_rmi
             )
         else:
             X_corr, corr_removed, corr_info = _simple_correlation_filtering(
@@ -525,17 +959,20 @@ def _enhanced_smart_feature_pruning(
             "step": "correlation_clustering" if use_clustering else "correlation_filtering",
             "removed": corr_removed,
             "threshold": correlation_threshold,
+            "use_rmi": use_rmi,
             "info": corr_info,
             "remaining": len(X_corr.columns)
         })
         
         X = X_corr
-        logger.info(f"🗑️  Removed {len(corr_removed)} correlated features")
+        logger.info(f"🗑️  Removed {len(corr_removed)} correlated features (RMI={use_rmi})")
     
     # Final summary
     pruning_info["final_count"] = len(X.columns)
+    pruning_info["final_samples"] = len(X)
     pruning_info["total_removed"] = len(removed_features)
-    pruning_info["reduction_ratio"] = len(removed_features) / len(original_features)
+    pruning_info["reduction_ratio"] = len(removed_features) / max(len(original_features), 1)
+    pruning_info["residualized"] = apply_residualization
     
     logger.info(
         f"✅ Enhanced pruning completed: {len(X.columns)} features remaining "
@@ -544,6 +981,7 @@ def _enhanced_smart_feature_pruning(
     )
     
     return X, removed_features, pruning_info
+
 
 
 @lru_cache(maxsize=128)

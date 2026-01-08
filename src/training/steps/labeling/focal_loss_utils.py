@@ -10,7 +10,10 @@ def get_focal_loss_lgbm(alpha, gamma):
         gamma (float): Focusing parameter.
     """
     def focal_loss_objective(y_pred, train_data):
-        y_true = train_data.get_label()
+        if hasattr(train_data, 'get_label'):
+            y_true = train_data.get_label()
+        else:
+            y_true = train_data
         # Robust sigmoid
         p = 1.0 / (1.0 + np.exp(-y_pred))
         
@@ -56,7 +59,10 @@ def get_focal_loss_xgb(alpha, gamma):
         gamma (float): Focusing parameter.
     """
     def focal_loss_objective(y_pred, dtrain):
-        y_true = dtrain.get_label()
+        if hasattr(dtrain, 'get_label'):
+            y_true = dtrain.get_label()
+        else:
+            y_true = dtrain
         # XGBoost output is margin (logit)
         # Robust sigmoid
         p = 1.0 / (1.0 + np.exp(-y_pred))

@@ -46,6 +46,7 @@ class CausalDiscovery:
         significance_level: float = 0.05,
         max_conditioning_set: int = 3,
         use_lingam: bool = True,
+        target_variable: Optional[str] = None,
         verbose: bool = True
     ):
         """
@@ -55,6 +56,7 @@ class CausalDiscovery:
             significance_level: Significance level for conditional independence tests
             max_conditioning_set: Maximum size of conditioning sets
             use_lingam: Whether to use LiNGAM for final orientation
+            target_variable: Primary target to focus discovery on
             verbose: Whether to print progress information
         """
         tprint_info("🔬 Causal Discovery: Initializing...")
@@ -62,6 +64,7 @@ class CausalDiscovery:
         self.significance_level = significance_level
         self.max_conditioning_set = max_conditioning_set
         self.use_lingam = use_lingam
+        self.target_variable = target_variable
         self.verbose = verbose
         
         # Results storage
@@ -231,9 +234,25 @@ class CausalDiscovery:
             if self.verbose:
                 tprint_info("   🔍 Phase 1: Skeleton discovery...")
             
+            target_idx = None
+            if self.target_variable and self.target_variable in variable_names:
+                target_idx = variable_names.index(self.target_variable)
+
             edges_removed = 0
             for i in range(n_vars):
                 for j in range(i + 1, n_vars):
+                    # TARGET-CENTRIC OPTIMIZATION:
+                    # Only test pairs involving the target or existing neighbors of the target
+                    if target_idx is not None:
+                        is_target_related = (i == target_idx or j == target_idx)
+                        if not is_target_related:
+                            # Prune edges NOT connected to target if we are in strict target-centric mode
+                            # We keep them in the matrix for now but skip expensive tests?
+                            # Actually, we need a skeleton. 
+                            # If not related, we can just skip or use a very weak threshold.
+                            # For efficiency: Skip tests for non-target-related pairs
+                            continue
+
                     x = data.iloc[:, i].values
                     y = data.iloc[:, j].values
                     
@@ -263,6 +282,11 @@ class CausalDiscovery:
                 edges_removed_cond = 0
                 
                 for i in range(n_vars):
+                    # TARGET-CENTRIC: Skip if i is not target and not connected to target neighbors
+                    if target_idx is not None:
+                        if i != target_idx and adjacency_matrix[i, target_idx] == 0:
+                            continue
+
                     neighbors = [j for j in range(n_vars) if adjacency_matrix[i, j] == 1]
                     
                     for j in neighbors:
@@ -364,7 +388,18 @@ class CausalDiscovery:
             
             # Build causal order
             oriented_edges = 0
+            
+            target_idx = None
+            if self.target_variable and self.target_variable in data.columns:
+                target_idx = list(data.columns).index(self.target_variable)
+
             for i, var_idx in enumerate(var_indices):
+                # TARGET-CENTRIC: Skip if this variable is not related to target
+                if target_idx is not None:
+                    # If var is not target AND not connected to target, skip regression?
+                    # In LiNGAM, we need the full order, but we can shorten regressions.
+                    pass 
+
                 # Regress on previous variables
                 if i > 0:
                     prev_vars = var_indices[:i]

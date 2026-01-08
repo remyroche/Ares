@@ -367,12 +367,13 @@ class CausalFeatureEngineering:
                 tprint_error(f"❌ Causal imputation failed: {e}")
             return data
     
-    def causal_feature_transformation(self, data: pd.DataFrame) -> pd.DataFrame:
+    def causal_feature_transformation(self, data: pd.DataFrame, max_features: int = 100) -> pd.DataFrame:
         """
         Apply causal feature transformations.
         
         Args:
             data: Input data
+            max_features: Maximum new features to create (optimization)
             
         Returns:
             Transformed data
@@ -384,33 +385,56 @@ class CausalFeatureEngineering:
             if not self.causal_models_:
                 self.learn_causal_relationships(data)
             
+            # Optimization: Skip if too many models - transformation is expensive
+            if len(self.causal_models_) > 30:
+                tprint_info(f"   📉 Optimization: Limiting to top 30 models for transformation (had {len(self.causal_models_)})")
+                # Take models with best scores
+                sorted_models = sorted(self.causal_models_.items(), 
+                                       key=lambda x: x[1].get('score', 0), reverse=True)[:30]
+                models_to_process = dict(sorted_models)
+            else:
+                models_to_process = self.causal_models_
+            
             transformed_data = data.copy()
+            features_added = 0
             
             # Create causal interaction features
-            for target_var, model_info in self.causal_models_.items():
+            for target_var, model_info in models_to_process.items():
+                if features_added >= max_features:
+                    break
+                    
                 if target_var not in data.columns:
                     continue
                 
                 parents = model_info['parents']
                 
-                # Create parent-target interactions
-                for parent in parents[:3]:  # Limit to top 3 parents
+                # Create parent-target interactions (limit to top 2 parents only)
+                for parent in parents[:2]:  # Reduced from 3 to 2
+                    if features_added >= max_features:
+                        break
                     if parent in data.columns:
                         interaction_name = f"{target_var}_x_{parent}_causal"
-                        interaction = data[target_var] * data[parent]
-                        transformed_data[interaction_name] = interaction
+                        # Direct vectorized multiplication
+                        transformed_data[interaction_name] = (
+                            data[target_var].fillna(0).values * 
+                            data[parent].fillna(0).values
+                        )
+                        features_added += 1
                 
-                # Create causal residual features
-                if len(parents) > 0:
+                # Create causal residual features (only for top models)
+                if len(parents) > 0 and features_added < max_features and model_info.get('score', 0) > 0.1:
                     model = model_info['model']
-                    X_parents = data[parents].fillna(data[parents].mean())
-                    predicted = model.predict(X_parents)
-                    residual = data[target_var] - predicted
-                    transformed_data[f"{target_var}_causal_residual"] = residual
+                    try:
+                        X_parents = data[parents].fillna(0)
+                        predicted = model.predict(X_parents)
+                        residual = data[target_var].fillna(0) - predicted
+                        transformed_data[f"{target_var}_causal_residual"] = residual
+                        features_added += 1
+                    except Exception:
+                        pass  # Skip on error, don't log each failure
             
             if self.verbose:
-                n_transformed = len(transformed_data.columns) - len(data.columns)
-                tprint_success(f"✅ Causal transformation complete: {n_transformed} new features")
+                tprint_success(f"✅ Causal transformation complete: {features_added} new features")
             
             return transformed_data
             
@@ -418,6 +442,7 @@ class CausalFeatureEngineering:
             if self.verbose:
                 tprint_error(f"❌ Causal feature transformation failed: {e}")
             return data
+
     
     def apply_causal_engineering(
         self,

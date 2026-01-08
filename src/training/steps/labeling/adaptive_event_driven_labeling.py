@@ -311,13 +311,17 @@ class AdaptiveEventDrivenLabeling:
     
     def get_structural_breakouts(
         self,
-        phase_threshold: float = 0.1
+        phase_threshold: float = None,
+        use_quantile_approach: bool = True,
+        min_coverage_percent: float = 2.0
     ) -> Dict[str, Any]:
         """
         Identify structural breakouts based on phase lead-lag analysis.
         
         Args:
-            phase_threshold: Phase difference threshold for breakout detection
+            phase_threshold: Phase difference threshold for breakout detection (ignored if use_quantile_approach=True)
+            use_quantile_approach: Whether to use 2% quantile approach for guaranteed coverage
+            min_coverage_percent: Minimum percentage of time periods to identify as breakouts
             
         Returns:
             Dictionary with structural breakout signals
@@ -334,6 +338,10 @@ class AdaptiveEventDrivenLabeling:
             diagnostics: Dict[str, Dict[str, Any]] = {}
             
             specialist_names = list(self.spectral_specialists.priority_specialists)
+            
+            # Collect all phase series for quantile calculation if using quantile approach
+            all_phase_values = []
+            phase_series_by_specialist = {}
             
             for specialist_name in specialist_names:
                 # Check d1-d3 phase relationship (micro leading macro = breakout)
@@ -367,28 +375,61 @@ class AdaptiveEventDrivenLabeling:
                     if phase_series is None or not isinstance(phase_series, np.ndarray):
                         phase_series = np.full_like(self.spectral_components[d1_key], phase_summary, dtype=float)
                     
-                    # Breakout signal: micro leading macro
-                    breakout_mask = phase_series > phase_threshold
-                    phase_coverage = float(np.mean(breakout_mask.astype(float))) if len(breakout_mask) else 0.0
+                    # Store phase series for quantile calculation
+                    phase_series_by_specialist[specialist_name] = phase_series
+                    all_phase_values.extend(phase_series[~np.isnan(phase_series)].tolist())
+            
+            # Calculate quantile-based threshold if enabled
+            if use_quantile_approach and all_phase_values:
+                # Get threshold for top (100 - min_coverage_percent)% values
+                quantile_threshold = np.percentile(all_phase_values, 100 - min_coverage_percent)
+                if self.verbose:
+                    tprint_info(f"   🎯 Using {min_coverage_percent}% quantile approach: threshold={quantile_threshold:.4f}")
+            else:
+                # Use fixed threshold
+                quantile_threshold = phase_threshold if phase_threshold is not None else 0.1
+                if self.verbose:
+                    tprint_info(f"   📐 Using fixed threshold: {quantile_threshold:.4f}")
+            
+            # Process each specialist with calculated threshold
+            for specialist_name in specialist_names:
+                if specialist_name not in phase_series_by_specialist:
+                    continue
                     
-                    diagnostics[specialist_name] = {
-                        "var_d1": var_d1,
-                        "var_d3": var_d3,
-                        "phase_summary": float(phase_summary),
-                        "phase_threshold": phase_threshold,
-                        "phase_coverage": phase_coverage,
-                        "sample_count": int(len(phase_series))
-                    }
-                    
-                    if self.verbose:
-                        tprint_info(
-                            f"      • {specialist_name}: var(d1)={var_d1:.3e}, var(d3)={var_d3:.3e}, "
-                            f"phase={phase_summary:.3f}, coverage>{phase_threshold:.2f}={phase_coverage:.2%}"
-                        )
-                    
-                    # Only register actual breakouts
-                    if np.any(breakout_mask):
-                        breakout_signals[f'{specialist_name}_d1_d3_breakout'] = breakout_mask
+                phase_series = phase_series_by_specialist[specialist_name]
+                
+                # Get variance info for diagnostics
+                d1_key = f'{specialist_name}_d1'
+                d3_key = f'{specialist_name}_d3'
+                var_d1 = float(np.var(self.spectral_components[d1_key])) if d1_key in self.spectral_components else 0.0
+                var_d3 = float(np.var(self.spectral_components[d3_key])) if d3_key in self.spectral_components else 0.0
+                phase_summary = float(np.nanmean(phase_series))
+                
+                # Breakout signal: use quantile threshold
+                breakout_mask = phase_series > quantile_threshold
+                phase_coverage = float(np.mean(breakout_mask.astype(float))) if len(breakout_mask) else 0.0
+                
+                diagnostics[specialist_name] = {
+                    "var_d1": var_d1,
+                    "var_d3": var_d3,
+                    "phase_summary": float(phase_summary),
+                    "phase_threshold": quantile_threshold,
+                    "phase_coverage": phase_coverage,
+                    "sample_count": int(len(phase_series)),
+                    "quantile_used": use_quantile_approach,
+                    "min_coverage_percent": min_coverage_percent if use_quantile_approach else None
+                }
+                
+                if self.verbose:
+                    method_str = f"{min_coverage_percent}% quantile" if use_quantile_approach else f"fixed"
+                    tprint_info(
+                        f"      • {specialist_name}: var(d1)={var_d1:.3e}, var(d3)={var_d3:.3e}, "
+                        f"phase={phase_summary:.3f}, coverage>{quantile_threshold:.3f}={phase_coverage:.2%} ({method_str})"
+                    )
+                
+                # Only register actual breakouts
+                if np.any(breakout_mask):
+                    breakout_signals[f'{specialist_name}_d1_d3_breakout'] = breakout_mask
             
             # Combine breakout signals
             structural_breakouts = {
@@ -401,10 +442,16 @@ class AdaptiveEventDrivenLabeling:
             self.structural_breakout_diagnostics = diagnostics
             
             if self.verbose:
-                tprint_success(f"   ✅ Structural breakouts identified:")
+                method_desc = f"{min_coverage_percent}% quantile" if use_quantile_approach else f"fixed threshold ({quantile_threshold:.3f})"
+                tprint_success(f"   ✅ Structural breakouts identified ({method_desc}):")
                 tprint_info(f"      - Breakout signals: {len(breakout_signals)}")
                 tprint_info(f"      - Dominant specialist: {structural_breakouts['dominant_breakout_specialist']}")
                 tprint_info(f"      - Breakout strength: {structural_breakouts['breakout_strength']:.3f}")
+                if use_quantile_approach:
+                    total_periods = sum(len(mask) for mask in breakout_signals.values())
+                    total_breakouts = sum(np.sum(mask) for mask in breakout_signals.values())
+                    actual_coverage = (total_breakouts / total_periods * 100) if total_periods > 0 else 0
+                    tprint_info(f"      - Actual coverage: {actual_coverage:.1f}% (target: {min_coverage_percent}%)")
             
             return structural_breakouts
             
@@ -412,6 +459,18 @@ class AdaptiveEventDrivenLabeling:
             if self.verbose:
                 tprint_error(f"❌ Structural breakout identification failed: {e}")
             return {'error': str(e)}
+    
+    def get_structural_breakouts_2percent(self) -> Dict[str, Any]:
+        """
+        Convenience method to get structural breakouts with guaranteed 2% coverage.
+        
+        Returns:
+            Dictionary with structural breakout signals using 2% quantile approach
+        """
+        return self.get_structural_breakouts(
+            use_quantile_approach=True,
+            min_coverage_percent=2.0
+        )
     
     def _find_dominant_breakout(self, breakout_signals: Dict[str, np.ndarray]) -> str:
         """Find the specialist with strongest breakout signal."""

@@ -2959,6 +2959,30 @@ files = [
 all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2)"]
 
 [[package]]
+name = "iisignature"
+version = "0.24"
+description = "Iterated integral signature calculations"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "iisignature-0.24-cp35-cp35m-win32.whl", hash = "sha256:01ef1af1112a173329d0f7b160cc1da6458303a1d85ffaf70367e6f6d75b5f1e"},
+    {file = "iisignature-0.24-cp35-cp35m-win_amd64.whl", hash = "sha256:aa7d3c033b71fb14c66ef361084ec7792a60586aa569e9cb7db8419a03ba4bb5"},
+    {file = "iisignature-0.24-cp36-cp36m-win32.whl", hash = "sha256:0770ae52ec4280b524153afa44f268b21924cabd6cbb5a95d86370121f417abc"},
+    {file = "iisignature-0.24-cp36-cp36m-win_amd64.whl", hash = "sha256:d86c5f7e700870bedae06024ecbe384176cef9052e9496330a2b73a76ec34d1e"},
+    {file = "iisignature-0.24-cp37-cp37m-win32.whl", hash = "sha256:574c06376ca414187ff76812ddbf5e607bd9ae1583e0c62ba9904ded1389ed04"},
+    {file = "iisignature-0.24-cp37-cp37m-win_amd64.whl", hash = "sha256:b26348ec96f25932f2154f81039b7fa3028b6a33e25ebc3c5c43cc9f2694edcb"},
+    {file = "iisignature-0.24-cp38-cp38-win32.whl", hash = "sha256:e99c58e07016693d5a10a519dbc62444fd4b216dac23c5a74d71c51784d72288"},
+    {file = "iisignature-0.24-cp38-cp38-win_amd64.whl", hash = "sha256:ae10a1f77e40f1eae79e2372386d95fd6c88f4ef7d4ee915885b3bb518b4e489"},
+    {file = "iisignature-0.24-cp39-cp39-win32.whl", hash = "sha256:b35ffd09d9d56de86a8293aade71ebff8f69e7146dc8d1da40523e47b4da35a6"},
+    {file = "iisignature-0.24-cp39-cp39-win_amd64.whl", hash = "sha256:98bfbf29930b9e59dd4bffbe9cd9a605907a08df4fbe2356ae33368e51f27c35"},
+    {file = "iisignature-0.24.tar.gz", hash = "sha256:0b9314c6e8b80487faf323191fb35986ad4226e86b0c67cf0a3b2939b695b9c6"},
+]
+
+[package.dependencies]
+numpy = ">1.7"
+
+[[package]]
 name = "imageio"
 version = "2.37.2"
 description = "Read and write images and video across all major formats. Supports scientific and volumetric data."
@@ -8049,6 +8073,26 @@ develop = ["colorama", "cython (>=3.0.10)", "cython (>=3.0.10,<4)", "flake8", "i
 docs = ["ipykernel", "jupyter_client", "matplotlib", "nbconvert", "nbformat", "numpydoc", "pandas-datareader", "sphinx"]
 
 [[package]]
+name = "stumpy"
+version = "1.13.0"
+description = "A powerful and scalable library that can be used for a variety of time series data mining tasks"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "stumpy-1.13.0-py3-none-any.whl", hash = "sha256:c61b04402a328266009a9c0f63f739a28c708bf974d8c64efdf571e688a5c67a"},
+    {file = "stumpy-1.13.0.tar.gz", hash = "sha256:f29d3da980412150e7b029ab0cd8e7b132adcbf1c66ef7a4d35d564808bfba8a"},
+]
+
+[package.dependencies]
+numba = ">=0.57.1"
+numpy = ">=1.21"
+scipy = ">=1.10"
+
+[package.extras]
+ci = ["black (>=22.1.0)", "coverage (>=4.5.3)", "dask (>=1.2.2)", "distributed (>=1.28.1)", "flake8 (>=3.7.7)", "flake8-docstrings (>=1.5.0)", "isort (>=5.11.0)", "pandas (>=0.20.0)", "pytest (>=4.4.1)", "tbb (>=2019.5) ; platform_system == \"Linux\""]
+
+[[package]]
 name = "sympy"
 version = "1.14.0"
 description = "Computer algebra system (CAS) in Python"
@@ -9244,4 +9288,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.12"
-content-hash = "555633f62989fe6f0d5101c0efc0d4645ae2fed266f50c6a9e350fc25080a476"
+content-hash = "091c3cb313307d935da837452135937b3d216a94161997724a40ed9531a73eaf"

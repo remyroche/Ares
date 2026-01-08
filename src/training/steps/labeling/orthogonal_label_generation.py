@@ -341,6 +341,256 @@ def ewma_volatility(returns, span=100):
 
 
 # ==========================================
+# 0.4.5. RMI Feature Reduction (Optimization)
+# ==========================================
+
+def calculate_residual_mi(feature_df: pd.DataFrame, target_series: pd.Series, 
+                          lag: int = 1, n_neighbors: int = 3, 
+                          subsample_size: int = 10000) -> pd.Series:
+    """
+    Calculates the Residual Mutual Information (RMI) proxy for a set of features.
+    Used to reduce composite features to the most informative subset.
+    
+    Args:
+        feature_df: DataFrame of features (e.g., composite candidates).
+        target_series: The target (e.g., 1-bar forward returns).
+        lag: Number of lags of the target to use for residualization.
+        n_neighbors: Number of neighbors for MI estimation.
+        subsample_size: Max samples for efficiency.
+    
+    Returns:
+        Series of RMI scores sorted descending.
+    """
+    from sklearn.linear_model import LinearRegression
+    from sklearn.feature_selection import mutual_info_regression
+    from sklearn.preprocessing import StandardScaler
+    
+    # 1. Prepare Target Residuals (The 'Innovation')
+    # Use a simple AR(lag) model to strip out serial correlation
+    y = target_series.values.reshape(-1, 1)
+    
+    # Create lagged target matrix
+    y_lags = np.hstack([target_series.shift(i).values.reshape(-1, 1) for i in range(1, lag + 1)])
+    
+    # Valid indices (drop NaNs from shifting)
+    valid_idx = ~np.isnan(y_lags).any(axis=1)
+    y_clean = y[valid_idx]
+    y_lags_clean = y_lags[valid_idx]
+    
+    # Fit AR model and get residuals
+    model = LinearRegression()
+    model.fit(y_lags_clean, y_clean)
+    y_pred = model.predict(y_lags_clean)
+    residuals = (y_clean - y_pred).flatten()
+    
+    # 2. Align Features with Residuals
+    X = feature_df.iloc[valid_idx].values
+    
+    # 3. Subsample if too large (efficiency)
+    if len(residuals) > subsample_size:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(len(residuals), size=subsample_size, replace=False)
+        X = X[idx]
+        residuals = residuals[idx]
+    
+    # Standardize to ensure KNN distance is meaningful
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Handle any NaNs/Infs in scaled data
+    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # 4. Calculate Mutual Information
+    mi_scores = mutual_info_regression(
+        X_scaled, 
+        residuals, 
+        discrete_features=False, 
+        n_neighbors=n_neighbors,
+        random_state=42
+    )
+    
+    return pd.Series(mi_scores, index=feature_df.columns).sort_values(ascending=False)
+
+
+def filter_composites_by_rmi(df: pd.DataFrame, composites: List[Dict], 
+                              target_col: str = 'close', 
+                              top_k: int = 500) -> List[Dict]:
+    """
+    Filter composites using Residual Mutual Information.
+    Reduces from ~1800 composites to top_k by RMI score.
+    
+    Args:
+        df: DataFrame with price data.
+        composites: List of composite candidate dicts with 'weight_vector'.
+        target_col: Column to use for target.
+        top_k: Number of top composites to keep.
+    
+    Returns:
+        Filtered list of composites.
+    """
+    if len(composites) <= top_k:
+        return composites
+    
+    tprint_info(f"   📉 Running RMI reduction: {len(composites)} → {top_k} composites...")
+    
+    try:
+        # Build feature matrix from weight vectors
+        weight_data = {}
+        valid_composites = []
+        for c in composites:
+            if 'weight_vector' in c and c['weight_vector'] is not None:
+                weight_data[c['family']] = c['weight_vector']
+                valid_composites.append(c)
+        
+        if not weight_data:
+            tprint_warning("   ⚠️ No weight vectors available for RMI filtering.")
+            return composites
+        
+        # Build DataFrame
+        weights_df = pd.DataFrame(weight_data, index=df.index).fillna(0.0)
+        
+        # Target: 1-bar forward return
+        target = df[target_col].pct_change().shift(-1).fillna(0.0)
+        
+        # Calculate RMI scores
+        rmi_scores = calculate_residual_mi(weights_df, target, lag=1, n_neighbors=3)
+        
+        # Get top_k families
+        top_families = set(rmi_scores.head(top_k).index.tolist())
+        
+        # Filter composites
+        filtered = [c for c in valid_composites if c['family'] in top_families]
+        
+        tprint_success(f"   ✅ RMI reduction complete: {len(composites)} → {len(filtered)} composites")
+        return filtered
+        
+    except Exception as e:
+        tprint_warning(f"   ⚠️ RMI filtering failed: {e}. Returning original set.")
+        return composites
+
+
+# ==========================================
+# 0.4.6. Layer 2 Price Processing Pipeline
+# ==========================================
+
+def apply_layer2_price_processing(df: pd.DataFrame, 
+                                   price_col: str = 'close',
+                                   vol_window: int = 20,
+                                   fracdiff_d: float = 0.4,
+                                   wavelet: str = 'db4',
+                                   wavelet_level: int = 2) -> pd.DataFrame:
+    """
+    Apply de Prado-compliant price processing at the end of Layer 2.
+    
+    Pipeline:
+    1. Log-Returns (eliminates price level non-stationarity)
+    2. Vol-Adjusted (GARCH-style normalization for regime invariance)
+    3. FracDiff (fractional differentiation to preserve memory while ensuring stationarity)
+    4. Wavelet Denoising (removes high-frequency noise)
+    
+    Args:
+        df: DataFrame with price data.
+        price_col: Column name for price.
+        vol_window: Window for volatility estimation.
+        fracdiff_d: Fractional differentiation order (0.3-0.5 typical).
+        wavelet: Wavelet family for denoising.
+        wavelet_level: Decomposition level.
+    
+    Returns:
+        DataFrame with processed price features added.
+    """
+    import pywt
+    
+    result = df.copy()
+    price = df[price_col]
+    
+    tprint_info("   🔧 Applying Layer 2 Price Processing Pipeline...")
+    
+    # 1. Log-Returns
+    log_price = np.log(price.replace(0, np.nan))
+    log_returns = log_price.diff().fillna(0)
+    result['log_returns'] = log_returns
+    
+    # 2. Vol-Adjusted Returns
+    vol = log_returns.rolling(vol_window).std()
+    vol = vol.replace(0, np.nan).fillna(vol.median())
+    vol_adjusted_returns = log_returns / (vol + 1e-9)
+    result['vol_adjusted_returns'] = vol_adjusted_returns.clip(-10, 10)
+    
+    # 3. Fractional Differentiation (FracDiff)
+    try:
+        fracdiff_series = _apply_fracdiff(log_price.fillna(method='ffill'), d=fracdiff_d)
+        result['fracdiff_price'] = fracdiff_series
+    except Exception as e:
+        tprint_warning(f"   ⚠️ FracDiff failed: {e}. Skipping.")
+        result['fracdiff_price'] = log_returns  # Fallback to log returns
+    
+    # 4. Wavelet Denoising
+    try:
+        denoised = _wavelet_denoise(vol_adjusted_returns.fillna(0).values, 
+                                     wavelet=wavelet, level=wavelet_level)
+        result['wavelet_denoised_returns'] = pd.Series(denoised, index=df.index)
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Wavelet denoising failed: {e}. Skipping.")
+        result['wavelet_denoised_returns'] = vol_adjusted_returns
+    
+    tprint_success("   ✅ Price processing complete: log_returns, vol_adjusted, fracdiff, wavelet_denoised")
+    
+    return result
+
+
+def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
+    """
+    Apply fractional differentiation using fixed-width window.
+    
+    Uses the approach from AFML Ch. 5:
+    (1-B)^d = sum_{k=0}^{inf} C(d,k) * (-B)^k
+    where C(d,k) = d*(d-1)*...*(d-k+1) / k!
+    """
+    # Calculate weights
+    def _get_weights(d: float, size: int, threshold: float) -> np.ndarray:
+        w = [1.0]
+        for k in range(1, size):
+            w_k = -w[-1] * (d - k + 1) / k
+            if abs(w_k) < threshold:
+                break
+            w.append(w_k)
+        return np.array(w)
+    
+    # Get weights
+    w = _get_weights(d, len(series), threshold)
+    width = len(w)
+    
+    # Apply convolution
+    result = np.full(len(series), np.nan)
+    for i in range(width - 1, len(series)):
+        result[i] = np.dot(w, series.iloc[i - width + 1:i + 1].values[::-1])
+    
+    return pd.Series(result, index=series.index)
+
+
+def _wavelet_denoise(signal: np.ndarray, wavelet: str = 'db4', level: int = 2) -> np.ndarray:
+    """
+    Apply wavelet denoising using soft thresholding.
+    """
+    import pywt
+    
+    # Decompose
+    coeffs = pywt.wavedec(signal, wavelet, level=level)
+    
+    # Estimate noise level from finest detail coefficients
+    sigma = np.median(np.abs(coeffs[-1])) / 0.6745
+    threshold = sigma * np.sqrt(2 * np.log(len(signal)))
+    
+    # Apply soft thresholding to detail coefficients
+    denoised_coeffs = [coeffs[0]]  # Keep approximation
+    for c in coeffs[1:]:
+        denoised_coeffs.append(pywt.threshold(c, threshold, mode='soft'))
+    
+    # Reconstruct
+    return pywt.waverec(denoised_coeffs, wavelet)[:len(signal)]
+
+# ==========================================
 # 0.5. Dynamic Event Frequency Adaptation
 # ==========================================
 
@@ -1553,8 +1803,12 @@ def check_label_quality(
         else:
             gates_log.append(f"Jaccard: {jaccard:.2f} [OK]")
             
+            
     except Exception as e:
-        gates_log.append(f"Jaccard: ERR [WARN]")
+        # Graceful failure for Jaccard
+        logger.debug(f"Jaccard calculation failed for {family}: {e}")
+        val_metrics['jaccard'] = 0.0
+        gates_log.append(f"Jaccard: 0.00 (CalcFail) [WARN]")
 
     # 4. ANOVA Gate
     X = probe_features.loc[labels.index]
@@ -3602,52 +3856,67 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
         df_z = (df_weights - df_weights.mean()) / (df_weights.std() + 1e-9)
         df_z = df_z.fillna(0.0)
         
-        # --- 1. Marchenko-Pastur Denoising ---
-        # Calculate correlation matrix
-        corr_matrix = df_z.corr()
+        # --- 1. Marchenko-Pastur Denoising (Skip for large feature sets) ---
+        # Skip for >500 features - TruncatedSVD handles noise via truncation
+        n_features = df_z.shape[1]
+        
+        if n_features > 500:
+            tprint_info(f"   📉 Skipping MP denoising for {n_features} features - using TruncatedSVD directly")
+            df_z_denoised = df_z
+        else:
+            corr_matrix = df_z.corr()
+            eigenvalues, eigenvectors = np.linalg.eigh(corr_matrix.values)
+            idx = np.argsort(eigenvalues)[::-1]
+            eigenvalues = eigenvalues[idx]
+            eigenvectors = eigenvectors[:, idx]
 
-        # Get eigenvalues/vectors
-        eigenvalues, eigenvectors = np.linalg.eigh(corr_matrix.values)
+            T, N = df_z.shape
+            q = T / N
+            mp_evals, _ = marcenko_pastur_distribution(q, sigma=1.0)
+            lambda_max = mp_evals[-1]
+            n_signal = np.sum(eigenvalues > lambda_max)
+            if n_signal < 1: n_signal = 1
 
-        # Sort desc
-        idx = np.argsort(eigenvalues)[::-1]
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
+            tprint_info(f"   🧬 MP Denoising: {n_signal} signal components (q={q:.2f}, λ_max={lambda_max:.2f})")
 
-        # Determine Signal Threshold (Lambda Max)
-        T, N = df_z.shape
-        q = T / N
-        mp_evals, _ = marcenko_pastur_distribution(q, sigma=1.0)
-        lambda_max = mp_evals[-1]
+            V_signal = eigenvectors[:, :n_signal]
+            df_z_denoised = df_z @ V_signal @ V_signal.T
+            df_z_denoised = pd.DataFrame(df_z_denoised, index=df_z.index, columns=df_z.columns)
 
-        # Count signal eigenvalues
-        n_signal = np.sum(eigenvalues > lambda_max)
-        if n_signal < 1: n_signal = 1
 
-        tprint_info(f"   🧬 MP Denoising: {n_signal} signal components found (q={q:.2f}, λ_max={lambda_max:.2f})")
-
-        # Signal Reconstruction (Filter out noise components)
-        # X_clean = X @ V_signal @ V_signal.T
-        # This keeps the data in the ORIGINAL basis but removes noise variance
-        V_signal = eigenvectors[:, :n_signal]
-        df_z_denoised = df_z @ V_signal @ V_signal.T
-
-        # Ensure we maintain pandas structure
-        df_z_denoised = pd.DataFrame(df_z_denoised, index=df_z.index, columns=df_z.columns)
-
-        # --- 2. SparsePCA with Randomized Setting ---
-        # "Alpha penalty for zeroing noise"
-        # We use a modest alpha to encourage sparsity without killing the signal
-        # svd_solver='randomized' is not available for SparsePCA, but we set random_state
-
-        sparse_pca = SparsePCA(
+        # --- 2. Subsampling + TruncatedSVD (Fast Randomized PCA) ---
+        # Optimization: Fit on subsampled data, transform full dataset
+        # TruncatedSVD is ~10x faster than SparsePCA
+        from sklearn.decomposition import TruncatedSVD
+        
+        # Subsample for fitting (20K samples max for efficiency)
+        n_samples = len(df_z_denoised)
+        max_fit_samples = 20000
+        
+        if n_samples > max_fit_samples:
+            rng = np.random.default_rng(42)
+            fit_idx = rng.choice(n_samples, size=max_fit_samples, replace=False)
+            fit_idx.sort()  # Keep temporal order for stratification
+            df_fit = df_z_denoised.iloc[fit_idx]
+            tprint_info(f"   📉 PCA Optimization: Fitting on {max_fit_samples}/{n_samples} samples")
+        else:
+            df_fit = df_z_denoised
+        
+        # TruncatedSVD (Randomized SVD) - much faster than SparsePCA
+        svd = TruncatedSVD(
             n_components=n_components,
-            alpha=1.0,  # Alpha penalty for sparsity (zeroing noise)
-            random_state=42, # Randomized setting
-            n_jobs=-1
+            algorithm='randomized',  # Fast randomized algorithm
+            n_iter=5,  # Good convergence for this use case
+            random_state=42
         )
+        
+        # Fit on subsample, transform full dataset
+        svd.fit(df_fit.values)
+        components = svd.transform(df_z_denoised.values)
+        
+        tprint_info(f"   ✅ TruncatedSVD complete: explained_variance_ratio={svd.explained_variance_ratio_.sum():.3f}")
 
-        components = sparse_pca.fit_transform(df_z_denoised)
+
         
         synthetic_candidates = []
         for i in range(n_components):
@@ -4158,6 +4427,14 @@ def orthogonal_label_generation(
     
     elif 'volume' not in df_full.columns and volume is not None:
         df_full['volume'] = volume
+
+    # 0.5. Layer 2 Price Processing
+    # Ensure standard price features (fracdiff, denoised) are available
+    processed_df = apply_layer2_price_processing(df_full)
+    # Update df_full with new columns
+    for col in ['log_returns', 'vol_adjusted_returns', 'fracdiff_price', 'wavelet_denoised_returns']:
+        if col in processed_df.columns:
+            df_full[col] = processed_df[col]
 
     # 1. Subsampling (de Prado optimization)
     # Target 10% with min 4 months @ 15m (11,520 bars)
@@ -4696,12 +4973,20 @@ def orthogonal_label_generation(
         )
         tprint_success(f"   ✅ Generated {len(composite_candidates)} composite interactions.")
         
+        # 10.5 RMI-based Composite Reduction (Optimization)
+        # Reduces composites from ~1800 to 500 using Residual Mutual Information
+        if len(composite_candidates) > 500:
+            composite_candidates = filter_composites_by_rmi(
+                df_full, composite_candidates, target_col='close', top_k=500
+            )
+        
         # Add composites to the final set
         filtered_candidates = filtered_candidates + composite_candidates
         
     except Exception as e:
         tprint_warning(f"Composite generation failed: {e}")
         composite_candidates = []
+
     
     # 11. Meta-Feature Synthesis (Level 11)
     # Synthesize Composites + Parents into Final Meta-Features

@@ -96,7 +96,15 @@ class AFMLSpecialistMixin:
             # Use variance but avoid recomputing if possible
             feature_variances = corr_data.var()
             top_features = feature_variances.nlargest(max_features).index
-            features = features[top_features]
+            # Filter to only include features that actually exist in the current DataFrame
+            available_top_features = [f for f in top_features if f in features.columns]
+            if available_top_features:
+                features = features[available_top_features]
+                tprint_info(f"   [Selection] Selected {len(available_top_features)}/{len(top_features)} available top features")
+            else:
+                # Fallback: just take the first max_features columns
+                features = features.iloc[:, :max_features]
+                tprint_warning(f"   [Selection] No top features available, using first {max_features} columns")
 
         return features
 

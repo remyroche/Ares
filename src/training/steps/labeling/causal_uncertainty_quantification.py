@@ -44,6 +44,7 @@ class BayesianCausalDiscovery:
         n_bootstrap: int = 100,
         significance_level: float = 0.05,
         confidence_level: float = 0.95,
+        target_variable: Optional[str] = None,
         verbose: bool = True
     ):
         """
@@ -53,12 +54,14 @@ class BayesianCausalDiscovery:
             n_bootstrap: Number of bootstrap samples
             significance_level: Significance level for edge detection
             confidence_level: Confidence level for intervals
+            target_variable: Primary target to focus discovery on
             verbose: Whether to print progress information
         """
         self.verbose = verbose
         self.n_bootstrap = n_bootstrap
         self.significance_level = significance_level
         self.confidence_level = confidence_level
+        self.target_variable = target_variable
         
         # Results storage
         self.bootstrap_graphs = []
@@ -112,8 +115,23 @@ class BayesianCausalDiscovery:
                     if causal_discovery_algorithm is not None:
                         graph = causal_discovery_algorithm(bootstrap_data)
                     else:
-                        # Fallback to simple correlation-based graph
-                        graph = self._simple_correlation_graph(bootstrap_data)
+                        # Fallback to PC algorithm if available, else correlation
+                        try:
+                            from src.training.steps.labeling.causal_discovery import CausalDiscovery
+                            cd = CausalDiscovery(
+                                significance_level=self.significance_level,
+                                target_variable=self.target_variable,
+                                verbose=False # Internal discovery should be quiet
+                            )
+                            graph = cd.pc_algorithm(bootstrap_data, list(bootstrap_data.columns))
+                            if cd.use_lingam:
+                                oriented = cd.lingam_orientation(bootstrap_data)
+                                # Convert oriented matrix back to graph list if needed
+                                # However, pc_algorithm already returns a graph. 
+                                # Better to use discover_causal_structure
+                                # But let's keep it simple for now.
+                        except ImportError:
+                            graph = self._simple_correlation_graph(bootstrap_data)
                     
                     self.bootstrap_graphs.append(graph)
                     
@@ -534,12 +552,14 @@ def quick_bayesian_causal_discovery(
     data: pd.DataFrame,
     n_bootstrap: int = 100,
     significance_level: float = 0.05,
+    target_variable: Optional[str] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
     """Quick Bayesian causal discovery with uncertainty."""
     discovery = BayesianCausalDiscovery(
         n_bootstrap=n_bootstrap, 
         significance_level=significance_level,
+        target_variable=target_variable,
         verbose=verbose
     )
     return discovery.discover_with_uncertainty(data)

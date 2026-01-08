@@ -81,6 +81,14 @@ def train_specialist_model_with_oof(
 
     if sample_weight is not None:
         sample_weight = sample_weight.astype(float)
+        # Ensure no NaN values in sample weights
+        if sample_weight.isna().any():
+            tprint_warning(f"   [ExtraTrees] Sample weights contain NaN values, replacing with 1.0")
+            sample_weight = sample_weight.fillna(1.0)
+        # Ensure no NaN values in sample weights
+        if sample_weight.isna().any():
+            tprint_warning(f"   [ExtraTrees] Sample weights contain NaN values, replacing with 1.0")
+            sample_weight = sample_weight.fillna(1.0)
 
     # Adjust n_splits if n_samples is too small
     n_samples = len(X)

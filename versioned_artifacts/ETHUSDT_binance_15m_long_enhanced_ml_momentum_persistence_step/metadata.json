@@ -1,6 +1,31 @@
 {
-  "versions": {},
-  "current_version": null,
+  "versions": {
+    "enhanced_ml_momentum_persistence_prediction_15m": {
+      "created_at": "2026-01-08T23:14:59.065254",
+      "num_rows": 142619,
+      "num_columns": 17,
+      "columns": [
+        "timestamp",
+        "specialist_prediction",
+        "specialist_probability",
+        "target_label",
+        "feature_open_squared",
+        "feature_volume_price_trend",
+        "feature_structural_inertia_60",
+        "feature_structural_inertia_40",
+        "feature_vol_intensity",
+        "feature_vp_efficiency",
+        "feature_roll_vol",
+        "feature_sig_0",
+        "feature_sig_1",
+        "feature_sig_2",
+        "feature_sig_3",
+        "feature_sig_4",
+        "feature_sig_5"
+      ]
+    }
+  },
+  "current_version": "enhanced_ml_momentum_persistence_prediction_15m",
   "created_at": "2026-01-03T00:18:19.481180",
   "context": {
     "symbol": "ETHUSDT",
@@ -9,5 +34,5 @@
     "direction": "long",
     "model": "enhanced_ml_momentum_persistence_step"
   },
-  "updated_at": "2026-01-03T00:26:09.363379"
+  "updated_at": "2026-01-08T23:33:50.313178"
 }

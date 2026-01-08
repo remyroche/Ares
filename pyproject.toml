@@ -17,6 +17,8 @@ scipy = "^1.10.0"
 scikit-learn = "^1.3.0"
 dowhy = "^0.11.1"
 econml = "^0.15.1"
+stumpy = "^1.12.0"
+iisignature = "^0.24"
 
 # Data visualization
 matplotlib = "^3.7.0"

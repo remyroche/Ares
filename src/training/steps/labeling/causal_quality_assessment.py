@@ -260,6 +260,15 @@ class CausalQualityAssessor:
         else:
             metrics['Layer2Score'] = self.compute_composite_score(metrics)
             metrics['survival_status'] = 'NO_FILTER'
+            
+        # 8. Determine Causal Quality Status
+        if metrics['Layer2Score'] >= 0.5:
+             metrics['causal_quality_status'] = 'PASSED'
+        elif metrics['Layer2Score'] >= 0.3:
+             metrics['causal_quality_status'] = 'WEAK'
+        else:
+             metrics['causal_quality_status'] = 'FAILED'
+        
         
         if self.verbose:
             tprint_success(f"✅ Candidate {candidate_id} assessment complete (Layer2Score: {metrics.get('Layer2Score', 0.0):.4f})")
@@ -442,6 +451,69 @@ class CausalQualityAssessor:
         })
         return m
 
+    def _fracdiff_innovation(self, series: pd.Series, d: float = 0.4, window: int = 20) -> pd.Series:
+        """
+        Apply FracDiff then extract innovation (residualize against lag).
+        """
+        try:
+            # 1. FracDiff (using orthogonal_label_generation's helper if available, else simple fallback)
+            # Assuming simple fracdiff logic here or import. 
+            # Implemeting lightweight fixed-window fracdiff for safety
+            def get_weights(d, size):
+                w = [1.0]
+                for k in range(1, size):
+                    w_k = -w[-1] * (d - k + 1) / k
+                    w.append(w_k)
+                return np.array(w)
+            
+            # Simple fixed window
+            width = 24 # Truncated
+            w = get_weights(d, width)
+            fd_vals = np.convolve(series.fillna(method='ffill').values, w[::-1], mode='valid')
+            fd_series = pd.Series(fd_vals, index=series.index[width-1:])
+            
+            # Reindex to full
+            fd_series = fd_series.reindex(series.index)
+            
+            # 2. Residualize (Innovation)
+            x = fd_series.shift(1).fillna(method='bfill')
+            y = fd_series.fillna(method='ffill')
+            
+            # Vectorized Linear Regression (Slope = Cov(x,y)/Var(x))
+            # Just use valid data
+            valid = ~(x.isna() | y.isna())
+            if valid.sum() > 20:
+                slope = np.cov(x[valid], y[valid])[0,1] / (np.var(x[valid]) + 1e-9)
+                intercept = np.mean(y[valid]) - slope * np.mean(x[valid])
+                innovation = y - (slope * x + intercept)
+            else:
+               innovation = y - x # Fallback to simple diff
+
+            # 3. Studentize
+            return innovation / (innovation.rolling(window=window).std().fillna(1.0) + 1e-9)
+        except Exception:
+            return series
+
+    def _residualize_feature(self, feature_series: pd.Series, window: int = 20) -> pd.Series:
+        """
+        Self-residualization via AR(1) and studentization.
+        """
+        try:
+            x = feature_series.shift(1).fillna(method='bfill')
+            y = feature_series.fillna(method='ffill')
+            
+            valid = ~(x.isna() | y.isna())
+            if valid.sum() > 20:
+                slope = np.cov(x[valid], y[valid])[0,1] / (np.var(x[valid]) + 1e-9)
+                intercept = np.mean(y[valid]) - slope * np.mean(x[valid])
+                innovation = y - (slope * x + intercept)
+            else:
+                 innovation = y - x
+
+            return innovation / (innovation.rolling(window=window).std().fillna(1.0) + 1e-9)
+        except Exception:
+            return feature_series
+
     def _perform_iterative_selection(self, X: pd.DataFrame, y: pd.Series, target_features: int = 100) -> pd.DataFrame:
         """
         Helper to perform iterative LightGBM feature selection (70% Gain + 30% Split + 20% Depth Decay).
@@ -458,7 +530,30 @@ class CausalQualityAssessor:
                     correlations = X.corrwith(y).abs().fillna(0)
                     top_features = correlations.nlargest(MAX_FEATURES_MI).index
                     X = X[top_features]
-                except Exception: pass
+                    
+                    if self.verbose:
+                        tprint_info(f"   📉 MI Proxy: Reduced to {len(top_features)} features")
+                        
+                    # === USER REQUEST: Feature Residualization at 300 features ===
+                    if self.verbose:
+                        tprint_info(f"   🔄 Performing FracDiff/Residualization on {len(X.columns)} features...")
+                    
+                    new_X = pd.DataFrame(index=X.index)
+                    for col in X.columns:
+                        # Price-like features get FracDiff Innovation
+                        if any(k in col.lower() for k in ['close', 'open', 'high', 'low', 'price', 'vwap']):
+                             new_X[col] = self._fracdiff_innovation(X[col])
+                        else:
+                             # Others get Self-Residualization
+                             new_X[col] = self._residualize_feature(X[col])
+                    
+                    # Replace X with transformed features
+                    X = new_X.fillna(0.0) # Ensure safety
+                    
+                except Exception as e: 
+                    tprint_warning(f"Feature transformation failed: {e}")
+            
+            # ========== STEP 2: ITERATIVE LGBM FEATURE SUBSETTING ==========
             
             # ========== STEP 2: ITERATIVE LGBM FEATURE SUBSETTING ==========
             TARGET_FEATURES = target_features
@@ -599,58 +694,50 @@ class CausalQualityAssessor:
                     residual_cols = []
                     try:
                         if self.verbose:
-                            tprint_info(f"      🔧 Starting residual extraction (mean-subtraction)...")
+                            tprint_info(f"      🔧 Starting robust backbone residualization (Ridge)...")
                         
                         # Prepare matrices
-                        bb_subset = bb_common.iloc[:, :10].fillna(0).values  # (n_samples, 10)
-                        n_features = min(30, len(X_common.columns))
-                        X_features = X_common.iloc[:, :n_features].fillna(0).values  # (n_samples, 30)
+                        bb_matrix = bb_common.fillna(0).values  # (n_samples, n_bb)
+                        X_matrix = X_common.fillna(0).values    # (n_samples, n_X)
+                        
+                        # Standardize backbone for stable Ridge solution
+                        from sklearn.preprocessing import StandardScaler
+                        bb_scaler = StandardScaler()
+                        bb_scaled = bb_scaler.fit_transform(bb_matrix)
+                        
+                        # Fit Ridge once for all columns (multiple outputs)
+                        # We use a substantial alpha for stability with high dimensionality
+                        # Use lsqr solver for large sparse-like matrices efficiency
+                        from sklearn.linear_model import Ridge
+                        ridge = Ridge(alpha=10.0, solver='lsqr')
+                        ridge.fit(bb_scaled, X_matrix)
+                        
+                        # Extract residuals: X_residual = X_actual - X_explained_by_backbone
+                        X_explained = ridge.predict(bb_scaled)
+                        X_res_vals = X_matrix - X_explained
+                        
+                        # Calculate explained variance per feature
+                        var_actual = np.var(X_matrix, axis=0)
+                        var_residual = np.var(X_res_vals, axis=0)
+                        explained_per_feature = 1 - (var_residual / (var_actual + 1e-9))
+                        backbone_explained_variance = np.mean(np.maximum(0, explained_per_feature))
                         
                         if self.verbose:
-                            tprint_info(f"      📊 Matrix shapes: bb={bb_subset.shape}, X={X_features.shape}")
+                            tprint_info(f"      📈 Mean backbone explained variance: {backbone_explained_variance:.4f}")
                         
-                        # Filter out low-variance features
-                        feature_std = np.std(X_features, axis=0)
-                        valid_mask = feature_std >= 1e-9
-                        X_features_valid = X_features[:, valid_mask]
-                        valid_cols = X_common.columns[:n_features][valid_mask]
-                        
-                        if self.verbose:
-                            tprint_info(f"      ✅ Valid features: {X_features_valid.shape[1]}/{n_features}")
-                        
-                        if X_features_valid.shape[1] > 0:
-                            # Simple denoising: center features by subtracting mean
-                            # This is equivalent to intercept-only Ridge and is O(1) complexity
-                            X_centered = X_features_valid - np.mean(X_features_valid, axis=0)
+                        # Create residual series
+                        for idx, col in enumerate(X_common.columns):
+                            residual_cols.append(pd.Series(
+                                X_res_vals[:, idx],
+                                index=common_idx,
+                                name=f"{col}_residual"
+                            ))
                             
-                            if self.verbose:
-                                tprint_info(f"      📐 Centering complete")
-                            
-                            # Compute explained variance from centering
-                            var_original = np.var(X_features_valid, axis=0)
-                            var_centered = np.var(X_centered, axis=0)
-                            explained_per_feature = 1 - var_centered / (var_original + 1e-9)
-                            backbone_explained_variance = np.mean(np.maximum(0, explained_per_feature))
-                            
-                            if self.verbose:
-                                tprint_info(f"      📈 Variance computed: {backbone_explained_variance:.4f}")
-                            
-                            # Store centered features as "residuals"
-                            for idx, col in enumerate(valid_cols):
-                                residual_cols.append(pd.Series(
-                                    X_centered[:, idx],
-                                    index=common_idx,
-                                    name=f"{col}_residual"
-                                ))
-                            
-                            if self.verbose:
-                                tprint_info(f"      ✅ Created {len(residual_cols)} residual series")
                     except Exception as e:
-                        # NO FALLBACK - Ridge can hang!
                         if self.verbose:
-                            tprint_error(f"   ❌ Residual extraction failed: {e}")
-                            tprint_warning(f"   ⚠️ Skipping residuals for this candidate (no fallback to avoid hangs)")
-                        residual_cols = []
+                            tprint_error(f"   ❌ Robust residualization failed: {e}")
+                        # Minimal fallback during FIT: just use centered if ridge failed
+                        X_residual = X_common - X_common.mean()
                         backbone_explained_variance = 0.0
                     
                     if residual_cols:

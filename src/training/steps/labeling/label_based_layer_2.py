@@ -2269,6 +2269,7 @@ class LabelBasedLayer2(BaseStep):
                     numeric_df,
                     n_bootstrap=self.discovery_bootstrap_samples,
                     significance_level=0.4, # Relaxed for discovery
+                    target_variable='TARGET_Sharpe', # TARGET-CENTRIC OPTIMIZATION
                     verbose=self.verbose
                 )
                 
@@ -2324,9 +2325,38 @@ class LabelBasedLayer2(BaseStep):
                 
                 if self.verbose:
                     tprint_success(f"   ✅ Bayesian discovery complete:")
-                    tprint_info(f"      - Graph edges: {len(causal_graph)}")
+                    tprint_info(f"      - Graph nodes: {len(causal_graph)}")
+                    
+                    # Compute graph density and edge count
+                    total_edges = sum(len(parents) for parents in causal_graph.values())
+                    n_nodes = len(causal_graph)
+                    density = total_edges / (n_nodes * (n_nodes - 1)) if n_nodes > 1 else 0
+                    
+                    tprint_info(f"      - Total edges: {total_edges} (density: {density:.3f})")
                     tprint_info(f"      - Graph stability: {uncertainty_metrics.get('graph_stability', 0):.3f}")
                     tprint_info(f"      - Avg confidence: {uncertainty_metrics.get('avg_confidence', 0):.3f}")
+                    
+                    # Topology Table
+                    tprint_info("\n   🕸️ Causal Graph Topology (Top Nodes):")
+                    tprint_info(f"      {'Node':<20} | {'Parents':<3} | {'Children':<3}")
+                    tprint_info(f"      {'-' * 40}")
+                    
+                    # Children map
+                    children_map = defaultdict(list)
+                    for node, parents in causal_graph.items():
+                        for p in parents:
+                            children_map[p].append(node)
+                    
+                    # Sort nodes by importance (deg = in + out)
+                    all_nodes = list(causal_graph.keys())
+                    node_degrees = {n: len(causal_graph.get(n, [])) + len(children_map.get(n, [])) for n in all_nodes}
+                    top_nodes = sorted(all_nodes, key=lambda n: node_degrees[n], reverse=True)[:10]
+                    
+                    for node in top_nodes:
+                        n_p = len(causal_graph.get(node, []))
+                        n_c = len(children_map.get(node, []))
+                        tprint_info(f"      {str(node)[:20]:<20} | {n_p:<7} | {n_c:<8}")
+                    tprint_info(f"      {'-' * 40}\n")
                 
                 return causal_graph
             else:
@@ -3775,9 +3805,128 @@ class LabelBasedLayer2(BaseStep):
              # Proxy 5-day vol using 15m bars (approx 480 bars)
              numeric_df['volatility_5d'] = df['close'].pct_change().rolling(480).std()
 
-        # 3. Calculate TARGET_RET_1 if not present (forward 1-period return)
         if 'TARGET_RET_1' not in numeric_df.columns and 'close' in df.columns:
             numeric_df['TARGET_RET_1'] = df['close'].pct_change().shift(-1)
+        
+        # --- ADVANCED FEATURE TRANSFORMATIONS (De Prado Stationarity & Structure) ---
+        try:
+            from src.training.steps.labeling.advanced_transformations import (
+                get_optimal_d, frac_diff_ffd, get_rolling_cusum_stats, 
+                get_rolling_chow_stat, get_rolling_entropy, get_lempel_ziv_complexity
+            )
+            
+            if self.verbose:
+                tprint_info("   🧬 Applying Advanced Feature Transformations (AFD, Structural, Entropic)...")
+                
+            # 1. Adaptive Fractional Differentiation (AFD)
+            if 'close' in df.columns:
+                # Find optimal d for close price
+                log_close = np.log(df['close'].fillna(method='ffill'))
+                optimal_d = get_optimal_d(log_close, max_d=1.0, step=0.1) # Fast search
+                tprint_info(f"      - Optimal fractional differentiation order d={optimal_d:.2f}")
+                
+                # Apply FFD to Close and Volume
+                # Use slightly higher d to be safe (conservatism)
+                ffd_d = min(optimal_d + 0.1, 1.0)
+                
+                # Close FFD
+                numeric_df['close_ffd'] = frac_diff_ffd(log_close, d=ffd_d).reindex(numeric_df.index).fillna(0)
+                
+                # Volume FFD
+                if 'volume' in df.columns:
+                    log_vol = np.log(df['volume'].replace(0, 1).fillna(method='ffill'))
+                    numeric_df['volume_ffd'] = frac_diff_ffd(log_vol, d=ffd_d).reindex(numeric_df.index).fillna(0)
+
+            # 2. Structural Break Metrics
+            if 'log_ret' in numeric_df.columns:
+                # CUSUM Stats
+                cusum_df = get_rolling_cusum_stats(numeric_df['log_ret'].fillna(0), window=100)
+                numeric_df['regime_cusum_stat'] = cusum_df['cusum_stat']
+                
+                # Chow Test
+                numeric_df['regime_chow_stat'] = get_rolling_chow_stat(numeric_df['log_ret'].fillna(0), window=100)
+
+            # 3. Information-Theoretic Metrics
+            if 'log_ret' in numeric_df.columns:
+                # Rolling Entropy
+                numeric_df['market_entropy'] = get_rolling_entropy(numeric_df['log_ret'].fillna(0), window=100, bins=20)
+                
+                # Lempel-Ziv Complexity (on binary returns)
+                numeric_df['market_complexity'] = get_lempel_ziv_complexity(numeric_df['log_ret'].fillna(0), window=100)
+                
+        except ImportError:
+            tprint_warning("   ⚠️ Advanced transformations module not found, skipping...")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Advanced transformations failed: {e}")
+        # --------------------------------------------------------------------------
+        
+        # --- FAST RESIDUALIZATION & ROBUST SCALING (Data Quality) ---
+        # Goal: Focus on structural innovations (AR-1 residuals) and ensure scaling
+        # We skip core price/target columns to preserve their semantics
+        exclude_from_residual = ['open', 'high', 'low', 'close', 'volume', 'TARGET_Sharpe', 'TARGET_RET_1']
+        
+        if self.verbose:
+            tprint_info("   🧬 Applying Fast Residualization (AR-1 Innovations) & Robust Scaling...")
+            
+        cols_to_process = [c for c in numeric_df.columns if c not in exclude_from_residual]
+        
+        # Residualization (AR-1 innovations)
+        for col in cols_to_process:
+            # Simple innovation: X_t - beta * X_{t-1}
+            # Instead of a full model, we use a simple diff if autocorrelation is high,
+            # but a proper AR(1) residual is better. 
+            # For speed, we can use a fixed-point approach or just diff for mean-reverting.
+            # However, for Discovery, we'll use a simple 1-lag residual.
+            series = numeric_df[col]
+            if series.std() > 0:
+                # Innovation series: subtract the lag
+                # (This is equivalent to assuming rho=1 for non-stationary or removing lag influence)
+                numeric_df[col] = (series - series.shift(1).fillna(method='bfill')).fillna(0)
+
+        # Robust Scaling (Standardization)
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        # Scale all except targets
+        scale_cols = [c for c in numeric_df.columns if 'TARGET' not in c]
+        if scale_cols:
+            numeric_df[scale_cols] = scaler.fit_transform(numeric_df[scale_cols])
+        # ------------------------------------------------------------
+
+        # --- STRICT REDUNDANCY FILTERING (Prior to Discovery) ---
+        target_name = 'TARGET_Sharpe'
+        if target_name not in numeric_df.columns and 'close' in df.columns:
+             # Calculate temporary Sharpe for filtering if not already done
+             fwd_ret = df['close'].pct_change().shift(-1)
+             idxr = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
+             numeric_df[target_name] = (fwd_ret.rolling(window=idxr).mean() / (fwd_ret.rolling(window=idxr).std() + 1e-9)).fillna(0)
+
+        # 1. Prune near-zero variance and near-zero correlation with target
+        if target_name in numeric_df.columns:
+            corrs_target = numeric_df.corrwith(numeric_df[target_name]).abs().fillna(0)
+            # Threshold: 0.005 (very weak)
+            noise_features = corrs_target[corrs_target < 0.002].index.tolist()
+            essential = [target_name, 'TARGET_RET_1', 'close', 'volume', 'log_ret']
+            to_drop_noise = [c for c in noise_features if c not in essential]
+            if to_drop_noise:
+                tprint_info(f"   📉 Pruning {len(to_drop_noise)} noise features (low target correlation)...")
+                numeric_df = numeric_df.drop(columns=to_drop_noise)
+
+        # 2. High Multi-collinearity Pruning (Quadratic reduction)
+        if len(numeric_df.columns) > 40:
+            # We want to reach ~40
+            n_to_prune = len(numeric_df.columns) - 40
+            corr_mat = numeric_df.corr().abs()
+            upper_tri = corr_mat.where(np.triu(np.ones(corr_mat.shape), k=1).astype(bool))
+            
+            # Find pairs with > 0.95 correlation
+            redundant_cols = [column for column in upper_tri.columns if any(upper_tri[column] > 0.95)]
+            # Prune only up to the excess amount to maintain ~40
+            to_prune_hc = [c for c in redundant_cols if c not in essential][:n_to_prune]
+            
+            if to_prune_hc:
+                tprint_info(f"   📉 Pruning {len(to_prune_hc)} redundant (high-corr) features to reach ~40 node target...")
+                numeric_df = numeric_df.drop(columns=to_prune_hc)
+        # --------------------------------------------------------
 
         # 4. Calculate TARGET_Sharpe (Rolling Sharpe Ratio) - Two-step discovery target
         # Using a small window (e.g. 12 periods) to capture local risk-adjusted performance
@@ -3864,14 +4013,18 @@ class LabelBasedLayer2(BaseStep):
                     split_norm = split_importance / (split_importance.max() + 1e-8)
                     root_norm = root_zone_counts / (root_zone_counts.max() + 1e-8)
                     
-                    # Composite: 70% Gain + 20% Split + 10% Root Zone
-                    composite_importance = 0.70 * gain_norm + 0.20 * split_norm + 0.10 * root_norm
+                    # Composite: 60% Gain + 20% Split + 20% Root Zone
+                    composite_importance = 0.60 * gain_norm + 0.20 * split_norm + 0.20 * root_norm
                     
                     # Rank and select top features
                     importance_series = pd.Series(composite_importance, index=feature_names).sort_values(ascending=False)
                     
                     # Select top features to fill budget
-                    budget = self.discovery_max_features - len(core_features)
+                    # STRICT LIMIT: Max 40 variables to avoid O(N^4) explosion in PC algorithm
+                    # This overrides config if > 40
+                    target_limit = min(40, self.discovery_max_features)
+                    budget = max(0, target_limit - len(core_features))
+                    
                     top_features = importance_series.head(budget).index.tolist()
                     final_cols = list(set(core_features + top_features))
                     
@@ -3881,8 +4034,9 @@ class LabelBasedLayer2(BaseStep):
             except Exception as e:
                 tprint_warning(f"   ⚠️ Composite importance failed, using variance fallback: {e}")
                 variances = numeric_df.var(skipna=True).sort_values(ascending=False)
-                top_cols = list(set(core_features + variances.head(self.discovery_max_features).index.tolist()))
-                numeric_df = numeric_df[[c for c in top_cols if c in numeric_df.columns][:self.discovery_max_features]]
+                target_limit = min(40, self.discovery_max_features)
+                top_cols = list(set(core_features + variances.head(target_limit).index.tolist()))
+                numeric_df = numeric_df[[c for c in top_cols if c in numeric_df.columns][:target_limit]]
         
         # 5. Final Downsampling for Causal Discovery
         if self.discovery_sample_size and len(numeric_df) > self.discovery_sample_size:
@@ -4782,9 +4936,23 @@ class LabelBasedLayer2(BaseStep):
             router = AdaptiveHunterRouter(n_regimes=3)
             self.regime_labels = router.fit_predict(df)
             
-            # Summary distribution
-            counts = self.regime_labels.value_counts().to_dict()
-            tprint_success(f"✅ Market Regimes distribution: {counts}")
+            # --- ENHANCED REPORTING ---
+            counts = self.regime_labels.value_counts()
+            total = len(self.regime_labels)
+            
+            tprint_success("📊 Market Regime Distribution:")
+            tprint_info(f"   {'Regime':<15} | {'Count':<8} | {'Frequency':<10}")
+            tprint_info("-" * 40)
+            for label, count in counts.items():
+                freq = (count / total) * 100
+                tprint_info(f"   {str(label):<15} | {count:<8} | {freq:>8.2f}%")
+            
+            # Transition Summary
+            transitions = (self.regime_labels != self.regime_labels.shift(1)).sum() - 1
+            tprint_info(f"   🔄 Total Regime Transitions: {max(0, transitions)}")
+            tprint_info("-" * 40)
+            # --------------------------
+
             return self.regime_labels
         except Exception as e:
             tprint_warning(f"⚠️ Failed to generate robust regimes: {e}. Falling back to simple volatility ratio.")
@@ -4797,6 +4965,11 @@ class LabelBasedLayer2(BaseStep):
             labels[ratio < 0.8] = "Quiet"
             labels[ratio > 1.2] = "Chaos"
             self.regime_labels = labels
+
+            # Simple fallback report
+            counts = labels.value_counts()
+            tprint_info(f"   Fallback Distribution: {counts.to_dict()}")
+            
             return self.regime_labels
 
     def _report_regime_stats(self, df: pd.DataFrame, specialist_predictions: Dict[str, Any], meta_results: Dict[str, Any], causal_graph: Dict[str, Any]) -> None:
@@ -5124,9 +5297,12 @@ class LabelBasedLayer2(BaseStep):
             if geometries:
                 tprint_info("\n🏆 Top Geometry Performance (Causal Metrics):")
                 tprint_info(f"   {'UUID':<10} | {'Family':<15} | {'L2-Score':<8} | {'CI':<5} | {'Stab':<5} | {'IC':<5} | {'DSR':<5}")
-                tprint_info("-" * 80)
+                tprint_info("-" * 85)
                 
-                for geom in geometries[:5]:
+                # Sort geometries by layer2_score for the consolidated leaderboard
+                sorted_geoms = sorted(geometries, key=lambda x: getattr(x, 'layer2_score', 0.0), reverse=True)
+                
+                for geom in sorted_geoms[:10]:
                     m = getattr(geom, 'quality_metrics', {})
                     uuid_short = geom.uuid[:8]
                     l2_score = getattr(geom, 'layer2_score', 0.0)
@@ -5135,8 +5311,25 @@ class LabelBasedLayer2(BaseStep):
                     ic = m.get('IC', 0.0)
                     dsr = m.get('DSR', 0.0)
                     
-                    tprint_info(f"   {uuid_short:<10} | {geom.family:<15} | {l2_score:<8.2f} | {ci:<5.2f} | {stab:<5.2f} | {ic:<5.2f} | {dsr:<5.2f}")
-                tprint_info("-" * 80)
+                    tprint_info(f"   {uuid_short:<10} | {geom.family[:15]:<15} | {l2_score:<8.2f} | {ci:<5.2f} | {stab:<5.2f} | {ic:<5.2f} | {dsr:<5.2f}")
+                tprint_info("-" * 85)
+
+                # Save a CSV summary for analysis
+                try:
+                    import os
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    report_df = pd.DataFrame([{
+                        'uuid': g.uuid,
+                        'family': g.family,
+                        'score': getattr(g, 'layer2_score', 0.0),
+                        **getattr(g, 'quality_metrics', {})
+                    } for g in geometries])
+                    os.makedirs('outcomes', exist_ok=True)
+                    report_df.to_csv(f"outcomes/layer2_model_race_{timestamp}.csv", index=False)
+                    tprint_success(f"💾 Model race report saved to outcomes/layer2_model_race_{timestamp}.csv")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save CSV race report: {e}")
 
         except Exception as e:
             tprint_warning(f"⚠️ Causal report generation failed: {e}")
@@ -5278,6 +5471,16 @@ class LabelBasedLayer2(BaseStep):
         """
         import time
         start_time = time.time()
+
+        # STANDARDIZATION: Ensure all features are standardized for the model race.
+        # This is critical for linear models (Ridge, Bagged Lasso, XGB Linear).
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        
+        # We must clone the data to avoid modifying the original frames outside this race
+        X_train = pd.DataFrame(scaler.fit_transform(X_train), index=X_train.index, columns=X_train.columns)
+        X_val = pd.DataFrame(scaler.transform(X_val), index=X_val.index, columns=X_val.columns)
+        
         race_results = {}
         # Compute dynamic scale_pos_weight based on class balance
         pos_count = np.sum(y_train == 1)
@@ -5295,7 +5498,7 @@ class LabelBasedLayer2(BaseStep):
         if use_irm:
             tprint_info("   🔬 Using Causal IRM Framework for model training")
             # Create IRM-based models
-            irm_candidates = self._create_irm_candidates(scale_pos_weight, environment_masks)
+            irm_candidates = self._create_irm_candidates(scale_pos_weight, X_train, y_train, environment_masks)
             candidates.extend(irm_candidates)
         else:
             tprint_info("   📊 Using Traditional AFML Framework")
@@ -5309,7 +5512,7 @@ class LabelBasedLayer2(BaseStep):
                 'name': 'XGB_Tree', 
                 'model': XGBClassifier(
                     n_estimators=100, learning_rate=0.05, max_depth=5, 
-                    objective=get_focal_loss_xgb(ALPHA, GAMMA),
+                    objective=get_focal_loss_xgb(self.focal_alpha, self.focal_gamma),
                     random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
                     eval_metric='logloss' 
                 )
@@ -5320,7 +5523,7 @@ class LabelBasedLayer2(BaseStep):
                 'model': XGBClassifier(
                     n_estimators=100, learning_rate=0.05, max_depth=5, 
                     booster='gblinear',
-                    objective=get_focal_loss_xgb(ALPHA, GAMMA),
+                    objective=get_focal_loss_xgb(self.focal_alpha, self.focal_gamma),
                     random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False,
                     eval_metric='logloss'
                 )
@@ -5360,29 +5563,31 @@ class LabelBasedLayer2(BaseStep):
 
                 # Fit
                 if 'LGBM' in name:
-                     # Note: Custom objective in LGBM requires special eval_metric handling 
                      model.fit(
                          X_train, y_train, sample_weight=w_train, 
                          eval_set=[(X_val, y_val)], 
-                         eval_metric='binary_logloss', 
-                         callbacks=[lgb.early_stopping(10, verbose=False)]
+                         eval_metric='binary_logloss'
                      )
                 elif 'XGB' in name:
-                     model.fit(
-                         X_train, y_train, sample_weight=w_train, 
-                         eval_set=[(X_val, y_val)], 
-                         verbose=False
-                     )
-                     model.fit(
-                         X_train, y_train, sample_weight=w_train,
-                         eval_set=(X_val, y_val),
-                         early_stopping_rounds=10,
-                         verbose=False
-                     )
+                     # XGB with custom objectives fails if sample_weight is passed to fit()
+                     # We attempt with weights, then fall back
+                     try:
+                         model.fit(
+                             X_train, y_train, sample_weight=w_train, 
+                             eval_set=[(X_val, y_val)], 
+                             verbose=False
+                         )
+                     except Exception:
+                         model.fit(
+                             X_train, y_train, 
+                             eval_set=[(X_val, y_val)], 
+                             verbose=False
+                         )
+                elif 'CatBoost' in name:
+                     model.fit(X_train, y_train, sample_weight=w_train, eval_set=(X_val, y_val), verbose=False)
                 elif 'ExtraTrees' in name:
                      model.fit(X_train, y_train, sample_weight=w_train)
                 elif 'Lasso' in name:
-                     # Lasso with pipeline - handle sample weights differently
                      if hasattr(model, 'named_steps') and 'lasso' in model.named_steps:
                          model.fit(X_train, y_train, lasso__sample_weight=w_train)
                      else:
@@ -5779,7 +5984,7 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning("⚠️ Enhanced Bagged Lasso dependencies not available")
             return None
 
-    def _create_irm_candidates(self, scale_pos_weight, environment_masks=None):
+    def _create_irm_candidates(self, scale_pos_weight, X_train, y_train, environment_masks=None):
         """Create causal IRM-based model candidates."""
         candidates = []
 
@@ -5796,7 +6001,7 @@ class LabelBasedLayer2(BaseStep):
                 n_estimators=100, learning_rate=0.05,
                 num_leaves=15, max_depth=5,
                 scale_pos_weight=scale_pos_weight,
-                random_state=42, verbose=-1, n_jobs=1
+                seed=42, verbose=-1, n_jobs=1
             )
         })
 
@@ -5810,7 +6015,7 @@ class LabelBasedLayer2(BaseStep):
                 num_leaves=15, max_depth=5,
                 linear_tree=True,
                 scale_pos_weight=scale_pos_weight,
-                random_state=42, verbose=-1, n_jobs=1
+                seed=42, verbose=-1, n_jobs=1
             )
         })
 
@@ -6286,9 +6491,82 @@ class LabelBasedLayer2(BaseStep):
                 # Use X.shape[1] as part of key to ensure we are using same feature space
                 cached_features = self._get_family_feature_cache(cand.family, X_cand, y_cand)
                 
+                # === USER REQUEST: Target Residualization (HAR + Studentization) ===
+                # Compute causal target (Innovation) for assessment
+                y_causal = y_cand # Default fallback
+                
+                try:
+                    # If we have continuous price data, we can compute proper innovations
+                    if 'close' in df.columns:
+                        # 1. HAR Model for 'Expected' Returns
+                        price_series = df['close']
+                        # Calculate returns first
+                        ret_series = np.log(price_series).diff()
+                        
+                        df_har = pd.DataFrame(index=ret_series.index)
+                        df_har['y'] = ret_series
+                        df_har['d'] = ret_series.shift(1)
+                        df_har['w'] = ret_series.rolling(5).mean().shift(1)
+                        df_har['m'] = ret_series.rolling(22).mean().shift(1)
+                        
+                        clean = df_har.dropna()
+                        # Simple linear regression for HAR
+                        if len(clean) > 100:
+                            from sklearn.linear_model import LinearRegression
+                            model_har = LinearRegression().fit(clean[['d', 'w', 'm']], clean['y'])
+                            
+                            # 2. Extract Innovation (Actual - Expected)
+                            innovation = clean['y'] - model_har.predict(clean[['d', 'w', 'm']])
+                            
+                            # 3. Studentize (Divide by rolling volatility of innovations)
+                            y_causal_series = innovation / (innovation.rolling(20).std() + 1e-9)
+                            
+                            # Align to event times
+                            # We want the innovation *at* the event time (or future?)
+                            # Typically for prediction we want y = Future Innovation
+                            # But here y_cand is already "Outcome label".
+                            # If y_cand is "Future Return", we want "Future Innovation".
+                            # If y_cand is "Binary Label", we probably can't easily swap it.
+                            # BUT, the user said "make the target causal... ensure this is done once... except triple barrier"
+                            # Triple barrier generates labels (-1, 0, 1). 
+                            # If we pass a continuous target to assess_candidate, it calculates IC/R2 against that.
+                            # Let's try to infer if we should look forward.
+                            # cand.events are timestamps. 
+                            # If we just take y_causal_series.loc[cand.events], we get the innovation AT the event.
+                            # For prediction, we usually want the innovation over the *horizon*.
+                            # However, `y_cand` is what the candidate claims to predict.
+                            # If cand is a Triple Barrier candidate, y_cand is the barrier outcome.
+                            # If we replace y_cand with y_causal, we change the definition of success.
+                            # Given the strict instruction "To make the target causal", I will use the forward-looking innovation
+                            # matched to the event horizon if possible, or just the next period innovation if horizon is undefined.
+                            # For safety, since horizon varies, I will stick to using y_cand (labels) for classification metrics 
+                            # but if possible, I should use this residualized target for continuous checks if I knew the horizon.
+                            # WITHOUT horizon info easily available here (it's in cand params?), 
+                            # I will use the residualized series aligned to the event time (assuming immediate impact) 
+                            # OR better, stick to y_cand for now but applying the user's logic if y_cand ITSELF was continuous.
+                            # Since y_cand is binary here: 
+                            # "y_cand = (cand.labels > 0).astype(int)"
+                            # I cannot fully replace it with continuous innovation without breaking potential classification steps inside assessor.
+                            # However, Assessor supports regression y.
+                            # Let's use the residualized target for `assess_candidate` *only*.
+                            # We assume a fixed horizon of 1 bar for "Next Step Innovation" causality 
+                            # or we can try to infer horizon.
+                            # Let's use a 1-bar lookahead innovation as the "Causal Target".
+                            y_causal_full = y_causal_series.shift(-1) # t+1 innovation
+                            
+                            # Align to events
+                            y_causal_aligned = y_causal_full.reindex(X_cand.index).fillna(0)
+                             
+                            # Check correlation with binary labels to ensure directionality isn't flipped
+                            # validation: corr(y_causal, y_cand) should be positive
+                            if y_causal_aligned.corr(y_cand) > 0:
+                                y_causal = y_causal_aligned
+                except Exception as e:
+                    tprint_warning(f"Failed to generate causal target: {e}. Using binary labels.")
+
                 # Run De Prado Causal Quality Assessment
                 assessment = self.assessor.assess_candidate(
-                    cand, df, events_df, X_cand, y_cand, 
+                    cand, df, events_df, X_cand, y_causal, 
                     backbone_features=backbone_df,
                     precomputed_features=cached_features # Pass cached features
                 )
@@ -6299,7 +6577,20 @@ class LabelBasedLayer2(BaseStep):
                     tprint_info(f"   💾 Cached {len(cand.selected_features)} features for family {cand.family}")
 
                 cand.quality_metrics = assessment
-                cand.layer2_score = assessment['Layer2Score']
+                score = assessment['Layer2Score']
+
+                # === CHAOS FILTER (User Request) ===
+                # Refine score for CAUSAL_SURPRISE using local entropy
+                if cand.family == 'CAUSAL_SURPRISE' and 'entropy' in df.columns:
+                    # Compute mean entropy over the event duration (approximate using window)
+                    # For simplicity, we use the average entropy of the bars where the events occurred
+                    avg_entropy = df.loc[cand.events, 'entropy'].mean() if len(cand.events) > 0 else 0.0
+                    if avg_entropy > 0:
+                        chaos_penalty = np.log1p(avg_entropy)
+                        score /= max(1e-9, chaos_penalty)
+                        tprint_info(f"   🌀 Chaos Filter applied to {cand.uuid[:8]}: Entropy={avg_entropy:.4f}, Penalty={chaos_penalty:.4f}")
+                
+                cand.layer2_score = score
 
                 
                 # === TWO-TIER FILTERING ENFORCEMENT ===
@@ -6617,6 +6908,21 @@ class LabelBasedLayer2(BaseStep):
         # Sort by Composite Layer 2 Score (ranking_score)
         scored_candidates.sort(key=lambda x: getattr(x, 'ranking_score', x.probe_score), reverse=True)
         
+        # --- ENHANCED REPORTING: RACE LEADERBOARD ---
+        tprint_success(f"🏆 {family} Model Race Leaderboard (Top 5):")
+        tprint_info(f"   {'UUID':<10} | {'Score':<8} | {'AUC':<5} | {'IC':<5} | {'God':<4}")
+        tprint_info(f"   {'-' * 45}")
+        for c in scored_candidates[:5]:
+            uid_short = c.uuid[:8]
+            score = getattr(c, 'ranking_score', 0.0)
+            m = getattr(c, 'quality_metrics', {})
+            auc = m.get('AUC', 0.0)
+            ic = m.get('IC', 0.0)
+            god = "YES" if getattr(c, 'god_features', []) else "NO"
+            tprint_info(f"   {uid_short:<10} | {score:<8.2f} | {auc:<5.2f} | {ic:<5.2f} | {god:<4}")
+        tprint_info(f"   {'-' * 45}\n")
+        # ---------------------------------------------
+
         selected = []
         
         # 3. Selection Logic
@@ -6675,7 +6981,7 @@ class LabelBasedLayer2(BaseStep):
         start_time = time.time()
 
         # Check for regime labels
-        regime_col = 'regime_label'
+        regime_col = 'vol_regime'
         regimes = ['Global'] # Default if no regimes
 
         if regime_col in df.columns:
@@ -6775,43 +7081,60 @@ class LabelBasedLayer2(BaseStep):
             # 3. Select Best via Race/Probe (Per Regime)
             regime_winners = []
             
-            # Funnel Metrics
-            n_candidates_total = sum(len(c) for c in family_map.values())
-            n_tier1 = 0
-            n_tier2 = 0
+            # --- FUNNEL METRICS (Regime-Specific) ---
+            funnel = {
+                'initial': sum(len(c) for c in family_map.values()),
+                'purity_filter': 0,
+                'race_survivors': 0,
+                'tier2_additions': 0,
+                'diversity_survivors': 0,
+                'final': 0
+            }
 
             for family, cands in family_map.items():
                 if not cands: continue
 
                 tprint_info(f"      {family}: {len(cands)} candidates -> Selection...")
+                
+                # Tier 1 Selection
+                tprint_info(f"      [Tier 1] Racing top candidates for {family}...")
                 winners = self._select_best_geometry_via_race(cands, df, top_k=10) # Reduced top_k for speed
-                tprint_info(f"          {regime} Winners: {len(winners)}")
+                tprint_info(f"          {regime} Winners (Tier 1): {len(winners)}")
                 regime_winners.extend(winners)
-                n_tier1 += len(winners)
+                funnel['race_survivors'] += len(winners)
 
                 # Tier 2 (Diversity)
                 remaining = [c for c in cands if c not in winners and getattr(c, 'filtering_status', 'UNKNOWN') == 'PASSED']
+                if remaining:
+                    tprint_info(f"      [Tier 2] Assessing {len(remaining)} remaining candidates for diversity persistence...")
+                
                 try:
                     tier2 = self._select_tier2_candidates(winners, remaining, df)
                     if tier2:
                         regime_winners.extend(tier2)
-                        tprint_info(f"          + {len(tier2)} Tier-2")
-                        n_tier2 += len(tier2)
+                        tprint_info(f"          + {len(tier2)} Tier-2 Winners (Diversity)")
+                        funnel['tier2_additions'] += len(tier2)
                 except Exception:
                     pass
 
-            n_pre_diversity = len(regime_winners)
-            
             # 3.5 Cross-Family Diversity (Per Regime)
             regime_winners = self._enforce_cross_family_diversity(regime_winners, max_similarity=0.90)
-            n_post_diversity = len(regime_winners)
+            funnel['diversity_survivors'] = len(regime_winners)
             
             # 3.6 Structural Quota (Per Regime)
             regime_winners = self._enforce_family_representation(regime_winners)
-            n_final = len(regime_winners)
             
-            # Log Funnel for this regime
-            tprint_info(f"📊 Regime '{regime}' Funnel: Candidates={n_candidates_total} -> Tier1={n_tier1} -> Tier2={n_tier2} -> DivFilter={n_post_diversity} (dropped {n_pre_diversity - n_post_diversity}) -> Final={n_final} (dropped {n_post_diversity - n_final})")
+            funnel['final'] = len(regime_winners)
+            
+            # Log Detailed Funnel for this regime
+            tprint_success(f"📊 Regime '{regime}' Selection Funnel:")
+            tprint_info(f"   - Initial Candidates:   {funnel['initial']}")
+            tprint_info(f"   - Race Survivors (T1):  {funnel['race_survivors']}")
+            tprint_info(f"   - Diversity Additions (T2): {funnel['tier2_additions']}")
+            tprint_info(f"   - Post-Diversity Filter: {funnel['diversity_survivors']}")
+            tprint_info(f"   - Final Geometries:     {funnel['final']}")
+            tprint_info(f"   📉 Drop Rate: {(1 - funnel['final']/funnel['initial'])*100:.1f}%")
+            tprint_info("-" * 45)
             
             # Add to global list
             production_geometries.extend(regime_winners)
@@ -7448,6 +7771,11 @@ class LabelBasedLayer2(BaseStep):
                  self._all_tree_stats, datetime.now().strftime("%Y%m%d_%H%M%S"),
                  candidate_metrics=self._all_candidate_assessments
              )
+             
+             # CLEAR ASSESSMENT LOGS AFTER REPORTING to free memory
+             if hasattr(self, '_all_candidate_assessments'):
+                 tprint_info(f"   🧹 Clearing {len(self._all_candidate_assessments)} records from _all_candidate_assessments post-reporting")
+                 self._all_candidate_assessments.clear()
         except Exception as e:
              tprint_error(f"❌ Failed to generate Layer 2 ML Report: {e}")
 
@@ -9016,9 +9344,41 @@ class LabelBasedLayer2(BaseStep):
         return df_opt
 
     def _cleanup_memory(self):
-        """Force garbage collection to free memory."""
+        """Force garbage collection and prune caches to free memory."""
         import gc
+        
+        # 1. Prune Size-Limited Caches
+        self._limit_cache_sizes()
+        
+        # 2. Clear exhausting assessment storage if too large
+        if hasattr(self, '_all_candidate_assessments') and len(self._all_candidate_assessments) > 5000:
+             tprint_warning(f"   🧹 Clearing large assessment storage ({len(self._all_candidate_assessments)} entries)")
+             self._all_candidate_assessments.clear()
+        
+        # 3. Force GC
         gc.collect()
+
+    def _limit_cache_sizes(self):
+        """Prune internal dictionaries to prevent memory leaks during long HPO runs."""
+        max_size = self.config.get("global_cache_size", 50)
+        
+        caches_to_limit = [
+            '_events_cache', '_feature_cache', '_probe_data_cache',
+            '_label_cache', '_signals_cache', '_global_feature_cache',
+            '_global_event_cache', '_model_cache', '_feature_selection_cache',
+            '_label_computation_cache', '_specialist_train_cache',
+            '_family_feature_cache', '_dollar_bar_cache'
+        ]
+        
+        for cache_name in caches_to_limit:
+            cache = getattr(self, cache_name, None)
+            if cache and isinstance(cache, dict) and len(cache) > max_size:
+                # Remove oldest entries (Python 3.7+ dicts preserve insertion order)
+                to_remove = len(cache) - max_size
+                tprint_info(f"   🧹 Pruning cache {cache_name}: removing {to_remove} oldest entries")
+                keys = list(cache.keys())
+                for i in range(to_remove):
+                    cache.pop(keys[i])
 
     def _align_features_efficiently(self, X_all: pd.DataFrame, events_idx: pd.DatetimeIndex) -> pd.DataFrame:
         """Fast feature alignment using pandas merge_asof."""
@@ -9165,22 +9525,16 @@ class LabelBasedLayer2(BaseStep):
             cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date']
             X = X.drop(columns=[c for c in cols_to_drop if c in X.columns], errors='ignore')
 
-            # FIX: Handle Categorical columns before fillna to prevent TypeError
-            # Identify categorical/object columns and convert them or drop them
-            categorical_cols = X.select_dtypes(include=['category', 'object']).columns.tolist()
-            if categorical_cols:
-                logger.info(f"   ⚠️ Converting {len(categorical_cols)} categorical columns before fillna")
-                for col in categorical_cols:
-                    try:
-                        # Try to convert to numeric codes if categorical
-                        if hasattr(X[col], 'cat'):
-                            X[col] = X[col].cat.codes.replace(-1, 0)  # -1 is NaN in cat codes
-                        else:
-                            # For object columns, try numeric conversion or drop
-                            X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
-                    except Exception as e:
-                        logger.warning(f"   Dropping unconvertible column {col}: {e}")
-                        X = X.drop(columns=[col])
+            # Final Standardization: Ensure all features (including probe features) 
+            # are standardized before entering the model pipeline.
+            if not X.empty:
+                X_numeric = X.select_dtypes(include=[np.number])
+                if not X_numeric.empty:
+                    # Use lightweight z-score mapping
+                    # (val - mean) / (std + eps)
+                    means = X_numeric.mean()
+                    stds = X_numeric.std()
+                    X[X_numeric.columns] = (X_numeric - means) / (stds + 1e-9)
 
             return X.fillna(0.0)
 

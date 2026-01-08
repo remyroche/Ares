@@ -441,15 +441,7 @@ class TVVARSystem:
         
         return relationships
     
-    def _extract_decision_tree_rules(self, 
-                                   features_df: pd.DataFrame,
-                                   time_varying_coeffs: pd.DataFrame,
-                                   regime_assignments: pd.Series) -> Dict[str, Any]:
-        """
-        Extract decision tree rules for real-time application.
-        
-        This creates interpretable rules from the TV-VAR results.
-        """
+
         logger.info("🌳 Extracting decision tree rules for real-time application")
         
         rules = {
@@ -458,14 +450,32 @@ class TVVARSystem:
             'regime_detection': {}
         }
         
-        # Align data
-        aligned_features = features_df.iloc[len(features_df) - len(time_varying_coeffs):]
-        aligned_regimes = regime_assignments.iloc[len(regime_assignments) - len(time_varying_coeffs):]
-        
+        # Properly align data by index, not by taking last N rows
+        # The coefficients DataFrame has a specific index that comes from the VAR fitting
+        # We need to align features and regimes to exactly match the coefficient timestamps
         try:
+            # Get the common index that exists in all three data structures
+            common_index = time_varying_coeffs.index.intersection(features_df.index).intersection(regime_assignments.index)
+            
+            if len(common_index) == 0:
+                logger.warning("No common index found between coefficients, features, and regimes")
+                return self._extract_simple_threshold_rules(features_df, regime_assignments)
+            
+            # Align all data to the common index
+            aligned_features = features_df.loc[common_index]
+            aligned_regimes = regime_assignments.loc[common_index]
+            aligned_coeffs = time_varying_coeffs.loc[common_index]
+            
+            # Verify alignment
+            if len(aligned_features) != len(aligned_coeffs):
+                logger.warning(f"Alignment failed: {len(aligned_features)} features vs {len(aligned_coeffs)} coefficients")
+                return self._extract_simple_threshold_rules(features_df, regime_assignments)
+            
+            logger.info(f"✅ Successfully aligned {len(aligned_features)} samples for decision tree extraction")
+            
             # Specialist selection tree
             tree_sel = DecisionTreeRegressor(max_depth=3, min_samples_leaf=20)
-            tree_sel.fit(aligned_features, time_varying_coeffs.iloc[:, 0])  # First coefficient as target
+            tree_sel.fit(aligned_features, aligned_coeffs.iloc[:, 0])  # First coefficient as target
             
             rules['specialist_selection'] = {
                 'tree_text': export_text(tree_sel, feature_names=list(aligned_features.columns)),
@@ -475,7 +485,10 @@ class TVVARSystem:
             # Orthogonalization weights tree
             tree_orth = DecisionTreeRegressor(max_depth=3, min_samples_leaf=20)
             # Use coefficient variance as target for weight determination
-            coeff_variance = time_varying_coeffs.rolling(window=10).var().iloc[-1]
+            coeff_variance = aligned_coeffs.rolling(window=min(10, len(aligned_coeffs)//2)).var().iloc[-1]
+            # Handle case where rolling variance returns NaN (insufficient data)
+            if coeff_variance.isna().any():
+                coeff_variance = aligned_coeffs.var()
             tree_orth.fit(aligned_features, coeff_variance)
             
             rules['orthogonalization_weights'] = {
@@ -500,7 +513,7 @@ class TVVARSystem:
             rules = self._extract_simple_threshold_rules(features_df, regime_assignments)
         
         return rules
-    
+
     def _extract_simple_threshold_rules(self, 
                                       features_df: pd.DataFrame,
                                       regime_assignments: pd.Series) -> Dict[str, Any]:

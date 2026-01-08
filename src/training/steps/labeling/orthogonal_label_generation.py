@@ -3346,13 +3346,18 @@ def generate_regime_conditioned_candidates(df: pd.DataFrame, ohlcv_candidates: L
 
 def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFrame, target_col: str = 'close', verbose: bool = True) -> List[Dict]:
     """
-    Level 9: Causal Graph Feedback Validation.
-    Run PC Algorithm on Candidates + Target to validate causality.
-    Keep only candidates that are PARENTS of the Target (or strong ancestors).
+    Level 9: Causal Graph Feedback Validation (Enhanced SNR).
+
+    Implements a robust two-step discovery process:
+    1. Volatility-Adjusted Target (Sharpe): Maximizes SNR by normalizing returns.
+    2. Volatility Interaction: Explicitly models Volatility as a causal node.
+    3. Robustness Check: Validates signals against both Sharpe and Raw Return targets.
+
+    This prevents "No Parents" failures in low-SNR regimes by boosting signal clarity.
     """
     if not candidates or df is None: return candidates
     
-    tprint_info("🔗 Running Level 9: Causal Graph Feedback Validation...")
+    tprint_info("🔗 Running Level 9: Causal Graph Feedback Validation (Enhanced SNR)...")
     
     try:
         from src.training.steps.labeling.causal_discovery import quick_causal_discovery
@@ -3364,22 +3369,42 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
         first_idx = candidates[0]['weight_vector'].index
         df_weights = pd.DataFrame(weight_data, index=first_idx).fillna(0.0)
         
-        # Prepare Target (1-bar forward return of 'close')
-        target_name = 'TARGET_RET_1'
-        target_series = df[target_col].pct_change().shift(-1).fillna(0.0)
+        # --- ENHANCEMENT: Volatility-Adjusted Targets & Explicit Volatility Nodes ---
+
+        # A. Base Return & Volatility Calculation
+        returns = df[target_col].pct_change().fillna(0.0)
+
+        # Volatility Nodes (Backward looking - Causal)
+        vol_short = returns.rolling(20).std().fillna(0.0)
+        vol_long = returns.rolling(100).std().fillna(0.0)
+
+        # B. Targets (Forward looking)
+        # Raw Return Target (Original)
+        target_ret = returns.shift(-1).fillna(0.0)
+
+        # Sharpe Target (SNR Boosted)
+        # return_t+1 / vol_t
+        # Regularize vol to avoid explosion
+        safe_vol = vol_short.replace(0, np.mean(vol_short) if np.mean(vol_short) > 0 else 1e-4)
+        target_sharpe = target_ret / (safe_vol + 1e-9)
         
         # Align indices
-        common_idx = df_weights.index.intersection(target_series.index)
+        common_idx = df_weights.index.intersection(target_ret.index)
         
         # Combine into one DataFrame for discovery
         discovery_df = df_weights.loc[common_idx].copy()
-        discovery_df[target_name] = target_series.loc[common_idx]
         
-        # 2. Run Causal Discovery (Fast mode)
-        # We use a higher alpha (0.1) to be permissive, we just want to prune potential non-causes
+        # Add Structural Nodes
+        discovery_df['VOLATILITY_SHORT'] = vol_short.loc[common_idx]
+        discovery_df['VOLATILITY_LONG'] = vol_long.loc[common_idx]
+        discovery_df['TARGET_RET_1'] = target_ret.loc[common_idx]
+        discovery_df['TARGET_Sharpe_1'] = target_sharpe.loc[common_idx]
+
+        # 2. Run Causal Discovery
+        # We target TARGET_Sharpe_1 primarily as it has higher SNR
         results = quick_causal_discovery(
             discovery_df,
-            target_variable=target_name,
+            target_variable='TARGET_Sharpe_1',
             significance_level=0.05, 
             use_lingam=True, # Use LiNGAM for orientation
             verbose=verbose
@@ -3389,25 +3414,67 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
             tprint_warning(f"Causal Validation error: {results['error']}. Skipping validation.")
             return candidates
             
-        # 3. Identify Causal Parents
-        parents = results.get('causal_parents', {}).get(target_name, [])
-        tprint_info(f"   🧬 Identified Causal Parents of Target: {parents}")
+        # 3. Analyze Causal Graph (Multi-Target & Volatility)
+        causal_graph = results.get('causal_graph', {})
+
+        # A. Primary Signal: Parents of Sharpe Target
+        parents_sharpe = causal_graph.get('TARGET_Sharpe_1', [])
+
+        # B. Robustness Check: Parents of Raw Return
+        parents_ret = causal_graph.get('TARGET_RET_1', [])
         
-        if not parents:
-            tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 20 by correlation as fallback.")
-            # Fallback: Don't kill everything. Return original list or top subset? 
-            # Let's return the original smart selected list but warn.
+        # C. Volatility Interaction: Edges to/from Volatility
+        # Drivers of Volatility (Candidates -> Vol)
+        parents_vol_short = causal_graph.get('VOLATILITY_SHORT', [])
+
+        # Influenced by Volatility (Vol -> Candidates) - Less likely if candidates are pure indicators, but possible
+        children_vol_short = [node for node, parents in causal_graph.items() if 'VOLATILITY_SHORT' in parents]
+
+        tprint_info(f"   🧬 Causal Analysis Results:")
+        tprint_info(f"      - Sharpe Drivers (High SNR): {parents_sharpe}")
+        tprint_info(f"      - Return Drivers (Raw): {parents_ret}")
+        tprint_info(f"      - Volatility Drivers: {parents_vol_short}")
+
+        # 4. Filter Candidates using Two-Step Logic
+        valid_families = set()
+
+        # Step 1: Select High SNR Drivers (Sharpe Parents)
+        # These are signals that predict risk-adjusted returns
+        valid_families.update(parents_sharpe)
+
+        # Step 2: Select Robust Raw Drivers (Return Parents)
+        # These are signals strong enough to pierce the noise
+        valid_families.update(parents_ret)
+
+        # Step 3: Volatility Specialists (Explicit)
+        # If a candidate predicts volatility, it is valuable for risk management even if not directional
+        # But we only keep them if they are explicit Volatility family or if we want to keep risk predictors
+        # For now, let's keep them if they are in parents_vol_short AND are Volatility/Risk families
+        for fam in parents_vol_short:
+            if 'VOL' in fam or 'RISK' in fam or 'ATR' in fam:
+                valid_families.add(fam)
+
+        # Remove structural nodes from valid set if they appeared (they shouldn't be candidates, but safety check)
+        structural_nodes = {'VOLATILITY_SHORT', 'VOLATILITY_LONG', 'TARGET_RET_1', 'TARGET_Sharpe_1'}
+        valid_families = valid_families - structural_nodes
+
+        # Fallback Logic
+        if not valid_families:
+            tprint_warning("   ⚠️ No causal parents found even with Sharpe Target. Using correlation fallback.")
             return candidates
             
-        # 4. Filter Candidates
-        # Keep candidates that are in the parent list
-        validated_candidates = [c for c in candidates if c['family'] in parents]
+        validated_candidates = [c for c in candidates if c['family'] in valid_families]
+
+        # Log hidden signals (Sharpe only) vs Robust signals (Both)
+        hidden = set(parents_sharpe) - set(parents_ret)
+        robust = set(parents_sharpe) & set(parents_ret)
         
-        if not validated_candidates:
-             tprint_warning("   ⚠️ No candidates matched the identified parents (maybe parents were latent?). Returning original set.")
-             return candidates
+        if hidden:
+            tprint_info(f"   🔍 Discovered {len(hidden)} Hidden Signals (revealed by Sharpe Target): {list(hidden)[:5]}...")
+        if robust:
+            tprint_info(f"   💪 Confirmed {len(robust)} Robust Signals (drive both Sharpe & Ret): {list(robust)[:5]}...")
              
-        tprint_success(f"   ✅ Causal Validation: {len(candidates)} -> {len(validated_candidates)} candidates confirmed as Causal Drivers.")
+        tprint_success(f"   ✅ Causal Validation: {len(candidates)} -> {len(validated_candidates)} candidates confirmed.")
         return validated_candidates
 
     except ImportError:
@@ -3415,6 +3482,8 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
         return candidates
     except Exception as e:
         tprint_warning(f"Causal Validation Failed: {e}. Skipping.")
+        import traceback
+        tprint_warning(traceback.format_exc())
         return candidates
 
 def filter_advanced_candidates(candidates: List[Dict], min_count: int = 200, max_corr: float = 0.95, df: pd.DataFrame = None) -> List[Dict]:

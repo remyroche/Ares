@@ -104,6 +104,11 @@ try:
 except Exception:
     EnhancedMLSpectralStep = None
 
+try:
+    from .gmm_based_features import GMMFeaturePipeline
+except Exception:
+    GMMFeaturePipeline = None
+
 # Registry helper
 def register_if_exists(name, step_class):
     if step_class is not None:
@@ -146,6 +151,7 @@ register_if_exists("enhanced_xgb_meso_regime_step", EnhancedXGBMesoRegimeStep)
 register_if_exists("enhanced_ml_microstructure_step", EnhancedMLMicrostructureStep)
 register_if_exists("enhanced_ml_candlestick_step", EnhancedMLCandlestickStep)
 register_if_exists("enhanced_ml_spectral_step", EnhancedMLSpectralStep)
+register_if_exists("gmm_based_features", GMMFeaturePipeline)
 
 # Import and register labeling steps (ensuring they are available)
 try:

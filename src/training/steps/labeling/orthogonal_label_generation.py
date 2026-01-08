@@ -15,9 +15,10 @@ from scipy.spatial.distance import pdist
 from sklearn.feature_selection import f_classif, mutual_info_classif, f_regression, mutual_info_regression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, SparsePCA
 from dataclasses import dataclass
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.training.steps.labeling.covariance_denoising import marcenko_pastur_distribution
 from .focal_loss_utils import get_focal_loss_lgbm
 from src.training.steps.labeling.composite_event_generators import (
     get_microstructure_generators,
@@ -3547,6 +3548,11 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
     Level 8: Synthetic Meta-Signals (PCA).
     Extracts latent factors from the filtered set of candidates.
     Identify shocks in PCA components representing global market modes.
+
+    Enhanced Pipeline:
+    1. Marchenko-Pastur Denoising (Covariance)
+    2. Signal Reconstruction (Filtering)
+    3. SparsePCA (Dimensionality Reduction with Alpha Penalty)
     """
     if len(filtered_candidates) < n_components + 1:
         return []
@@ -3561,9 +3567,52 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
         df_z = (df_weights - df_weights.mean()) / (df_weights.std() + 1e-9)
         df_z = df_z.fillna(0.0)
         
-        # Run PCA
-        pca = PCA(n_components=n_components)
-        components = pca.fit_transform(df_z)
+        # --- 1. Marchenko-Pastur Denoising ---
+        # Calculate correlation matrix
+        corr_matrix = df_z.corr()
+
+        # Get eigenvalues/vectors
+        eigenvalues, eigenvectors = np.linalg.eigh(corr_matrix.values)
+
+        # Sort desc
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+
+        # Determine Signal Threshold (Lambda Max)
+        T, N = df_z.shape
+        q = T / N
+        mp_evals, _ = marcenko_pastur_distribution(q, sigma=1.0)
+        lambda_max = mp_evals[-1]
+
+        # Count signal eigenvalues
+        n_signal = np.sum(eigenvalues > lambda_max)
+        if n_signal < 1: n_signal = 1
+
+        tprint_info(f"   🧬 MP Denoising: {n_signal} signal components found (q={q:.2f}, λ_max={lambda_max:.2f})")
+
+        # Signal Reconstruction (Filter out noise components)
+        # X_clean = X @ V_signal @ V_signal.T
+        # This keeps the data in the ORIGINAL basis but removes noise variance
+        V_signal = eigenvectors[:, :n_signal]
+        df_z_denoised = df_z @ V_signal @ V_signal.T
+
+        # Ensure we maintain pandas structure
+        df_z_denoised = pd.DataFrame(df_z_denoised, index=df_z.index, columns=df_z.columns)
+
+        # --- 2. SparsePCA with Randomized Setting ---
+        # "Alpha penalty for zeroing noise"
+        # We use a modest alpha to encourage sparsity without killing the signal
+        # svd_solver='randomized' is not available for SparsePCA, but we set random_state
+
+        sparse_pca = SparsePCA(
+            n_components=n_components,
+            alpha=1.0,  # Alpha penalty for sparsity (zeroing noise)
+            random_state=42, # Randomized setting
+            n_jobs=-1
+        )
+
+        components = sparse_pca.fit_transform(df_z_denoised)
         
         synthetic_candidates = []
         for i in range(n_components):

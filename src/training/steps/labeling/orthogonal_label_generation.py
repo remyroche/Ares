@@ -3394,25 +3394,44 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
         tprint_info(f"   🧬 Identified Causal Parents of Target: {parents}")
         
         if not parents:
-            tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 20 by correlation as fallback.")
+            tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 50 by correlation-redundancy as fallback.")
 
-            # Fallback: Top 20 by correlation
+            # Fallback: Top 50 by Correlation + Redundancy Check
             try:
-                # Calculate correlation with target
-                correlations = discovery_df.corrwith(discovery_df[target_name]).abs()
-                # Drop target itself
-                correlations = correlations.drop(target_name, errors='ignore')
+                # 1. Calculate correlation with target
+                target_corr = discovery_df.corrwith(discovery_df[target_name]).abs()
+                target_corr = target_corr.drop(target_name, errors='ignore')
 
-                # Get Top 20
-                top_20_families = set(correlations.nlargest(20).index)
+                # 2. Sort by target correlation (highest first)
+                sorted_features = target_corr.sort_values(ascending=False).index.tolist()
 
-                # Filter candidates
-                fallback_candidates = [c for c in candidates if c['family'] in top_20_families]
+                # 3. Greedy Selection (Redundancy Filter)
+                selected_features = []
+                feature_corr_matrix = discovery_df[sorted_features].corr().abs()
 
-                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates by correlation.")
+                for feature in sorted_features:
+                    if len(selected_features) >= 50:
+                        break
+
+                    # Check redundancy against already selected
+                    is_redundant = False
+                    for selected in selected_features:
+                        if feature_corr_matrix.loc[feature, selected] > 0.70:
+                            is_redundant = True
+                            break
+
+                    if not is_redundant:
+                        selected_features.append(feature)
+
+                # 4. Filter candidates
+                selected_set = set(selected_features)
+                fallback_candidates = [c for c in candidates if c['family'] in selected_set]
+
+                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates (Target Top 50, Redundancy < 0.70).")
                 return fallback_candidates
+
             except Exception as e:
-                tprint_warning(f"   ⚠️ Fallback correlation failed: {e}. Returning original set.")
+                tprint_warning(f"   ⚠️ Fallback selection failed: {e}. Returning original set.")
                 return candidates
             
         # 4. Filter Candidates

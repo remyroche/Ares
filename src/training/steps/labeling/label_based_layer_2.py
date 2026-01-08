@@ -85,6 +85,7 @@ from src.training.steps.labeling.layer2_advanced_logic import (
     rolling_mean_jit,
     rolling_std_jit,
     rolling_max_min_jit,
+    calculate_innovation_jit,
 )
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -7629,6 +7630,104 @@ class LabelBasedLayer2(BaseStep):
 
         return feats.fillna(0.0)
 
+    def _compute_rmi_scores(self, X: pd.DataFrame, y: pd.Series,
+                           n_neighbors: int = 3,
+                           n_samples: int = 2000) -> pd.Series:
+        """
+        Compute Residual Mutual Information (RMI) scores using Transfer Entropy principles.
+        RMI(X->Y) ~ MI(Innovation(X); Innovation(Y)).
+
+        Steps:
+        1. Residualize target Y against its history to get Y_innov (Target Innovation/Surprise).
+        2. For each feature X:
+           - Calculate X_innov (Z-scored Delta) using JIT.
+           - Compute MI(X_innov, Y_innov).
+
+        Args:
+            X: Feature matrix
+            y: Target labels (continuous or binary)
+            n_neighbors: Neighbors for MI estimation
+            n_samples: Subsample size for speed
+
+        Returns:
+            Series of RMI scores indexed by feature names
+        """
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            from sklearn.linear_model import LinearRegression
+
+            if X.empty or len(y) == 0:
+                return pd.Series(0.0, index=X.columns)
+
+            # 1. Target Innovation (Residualize Y against history)
+            # We construct a simple autoregressive feature set for Y
+            # If y is binary, we treat it as continuous for residualization (probability proxy)
+            y_clean = y.fillna(0).values.astype(float)
+
+            # Create lags for Y history
+            lags = [1, 2, 3, 5]
+            y_hist_list = []
+            valid_len = len(y_clean)
+
+            # Create lagged matrix manually to avoid pandas overhead here
+            for lag in lags:
+                lagged = np.roll(y_clean, lag)
+                lagged[:lag] = 0  # Fill startup with 0
+                y_hist_list.append(lagged)
+
+            X_y_hist = np.column_stack(y_hist_list)
+
+            # Regress Y on Y_history
+            model = LinearRegression()
+            model.fit(X_y_hist, y_clean)
+            y_pred = model.predict(X_y_hist)
+            y_innov = y_clean - y_pred  # The "Surprise" in Y
+
+            # 2. Subsampling & RMI Calculation
+            # Strategy: Calculate Innovation on FULL X to get correct rolling stats, then subsample for MI.
+
+            # Define subset indices on full length for MI calculation
+            if len(y) > n_samples:
+                indices = np.random.choice(len(y), n_samples, replace=False)
+            else:
+                indices = np.arange(len(y))
+
+            y_innov_subset = y_innov[indices]
+            rmi_scores = {}
+
+            for col in X.columns:
+                try:
+                    # Full feature series
+                    x_full = X[col].fillna(0).values.astype(np.float64)
+
+                    # 1. Innovation (Z-scored Delta) via JIT
+                    # Window=20 approx reasonable for short-term innovation
+                    x_innov = calculate_innovation_jit(x_full, window=20)
+
+                    # 2. Subsample
+                    x_innov_subset = x_innov[indices]
+
+                    # 3. MI calculation (Vectorized across samples, scalar result)
+                    # Reshape for sklearn
+                    mi = mutual_info_regression(
+                        x_innov_subset.reshape(-1, 1),
+                        y_innov_subset,
+                        discrete_features=False,
+                        n_neighbors=n_neighbors,
+                        random_state=42
+                    )[0]
+
+                    rmi_scores[col] = mi
+
+                except Exception:
+                    rmi_scores[col] = 0.0
+
+            return pd.Series(rmi_scores)
+
+        except Exception as e:
+            tprint_warning(f"⚠️ RMI computation failed: {e}")
+            return pd.Series(0.0, index=X.columns)
+
     def _entropic_feature_selection(self, X: pd.DataFrame, y: pd.Series, 
                                    causal_graph: Dict[str, Any] = None,
                                    max_features: int = 50) -> List[str]:
@@ -7658,9 +7757,13 @@ class LabelBasedLayer2(BaseStep):
                 
             tprint_info(f"🔬 De Prado Entropic Feature Selection: {len(X.columns)} features")
             
+            # 0. Pre-compute RMI scores (Transfer Entropy Proxy)
+            # This captures "new information" X provides about Y
+            rmi_scores = self._compute_rmi_scores(X, y)
+
             # 1. Compute feature entropies (Shannon entropy)
             feature_entropies = {}
-            feature_mi_with_target = {}
+            # feature_mi_with_target = {}  <-- Replaced by RMI
             
             for col in X.columns:
                 # Discretize continuous features for entropy calculation
@@ -7673,14 +7776,6 @@ class LabelBasedLayer2(BaseStep):
                         feature_entropies[col] = entropy(value_counts)
                 except Exception:
                     feature_entropies[col] = 0.0
-                
-                # Mutual information with target
-                try:
-                    feature_mi_with_target[col] = mutual_info_regression(
-                        X[[col]].fillna(0), y.fillna(0)
-                    )[0]
-                except Exception:
-                    feature_mi_with_target[col] = 0.0
             
             # 2. Build mutual information matrix between features
             n_features = len(X.columns)
@@ -7749,12 +7844,13 @@ class LabelBasedLayer2(BaseStep):
                     # Entropy score (normalized)
                     entropy_score = feature_entropies.get(feat, 0.0)
                     max_entropy = max(feature_entropies.values()) if feature_entropies else 1.0
-                    score += (entropy_score / max_entropy) * 0.4
+                    score += (entropy_score / max_entropy) * 0.3
                     
-                    # MI with target score (normalized)  
-                    mi_score = feature_mi_with_target.get(feat, 0.0)
-                    max_mi = max(feature_mi_with_target.values()) if feature_mi_with_target else 1.0
-                    score += (mi_score / max_mi) * 0.4
+                    # RMI score (Transfer Entropy Proxy)
+                    # Replaces raw MI with target
+                    rmi_val = rmi_scores.get(feat, 0.0)
+                    max_rmi = rmi_scores.max() if not rmi_scores.empty and rmi_scores.max() > 0 else 1.0
+                    score += (rmi_val / max_rmi) * 0.5  # Higher weight for Transfer Entropy
                     
                     cluster_scores[feat] = score
                 

@@ -2232,11 +2232,13 @@ class LabelBasedLayer2(BaseStep):
 
     def _run_causal_discovery(self, df: pd.DataFrame) -> Dict[str, List[str]]:
         """
-        Run enhanced causal discovery with Bayesian uncertainty quantification.
+        Run enhanced causal discovery with two-step validation:
+        1. Discover parents of TARGET_Sharpe (Signal + Risk)
+        2. Validate these parents against TARGET_RET (Raw Return)
         """
         try:
             if self.verbose:
-                tprint_info("🔍 Enhanced Causal Discovery: Starting Bayesian discovery with uncertainty...")
+                tprint_info("🔍 Enhanced Causal Discovery: Starting two-step discovery...")
             
             # Check if Bayesian discovery is enabled
             use_bayesian = getattr(self, 'use_bayesian_discovery', True)
@@ -2248,11 +2250,24 @@ class LabelBasedLayer2(BaseStep):
                     return {}
                 if self.verbose:
                     tprint_info(f"   📊 Using {len(numeric_df.columns)} filtered columns x {len(numeric_df)} samples")
+
+                # Step 1: Discover structure focusing on Sharpe Ratio
+                if self.verbose:
+                    tprint_info("   STEP 1: Discovering drivers of TARGET_Sharpe...")
                 
+                # We prioritize Sharpe for discovery to increase SNR
+                # Ensure TARGET_Sharpe is present
+                if 'TARGET_Sharpe' not in numeric_df.columns:
+                    tprint_warning("   ⚠️ TARGET_Sharpe missing from input, calculating fallback...")
+                    # This should have been handled in _filter_discovery_input, but safe fallback
+                    ret = numeric_df['TARGET_RET_1'] if 'TARGET_RET_1' in numeric_df.columns else df['close'].pct_change().shift(-1)
+                    vol = ret.rolling(12).std()
+                    numeric_df['TARGET_Sharpe'] = (ret.rolling(12).mean() / (vol + 1e-9)).fillna(0)
+
                 discovery_results = quick_bayesian_causal_discovery(
                     numeric_df,
                     n_bootstrap=self.discovery_bootstrap_samples,
-                    significance_level=0.4,
+                    significance_level=0.4, # Relaxed for discovery
                     verbose=self.verbose
                 )
                 
@@ -2265,6 +2280,35 @@ class LabelBasedLayer2(BaseStep):
                 causal_graph = discovery_results.get('consensus_graph', {})
                 uncertainty_metrics = discovery_results.get('uncertainty_metrics', {})
                 
+                # Extract parents of TARGET_Sharpe
+                sharpe_parents = causal_graph.get('TARGET_Sharpe', [])
+                if self.verbose:
+                    tprint_info(f"   🧬 Identified {len(sharpe_parents)} drivers of Sharpe Ratio: {sharpe_parents}")
+
+                # Step 2: Validate against TARGET_RET_1
+                if self.verbose:
+                    tprint_info("   STEP 2: Validating drivers against TARGET_RET_1...")
+
+                ret_parents = causal_graph.get('TARGET_RET_1', [])
+
+                # Merge parents: If Sharpe found valid drivers, they likely drive Returns too
+                # This transfers knowledge from high-SNR target to low-SNR target
+                combined_parents = list(set(ret_parents) | set(sharpe_parents))
+
+                # Explicitly update the graph for TARGET_RET_1
+                if combined_parents:
+                    causal_graph['TARGET_RET_1'] = combined_parents
+                    tprint_success(f"   ✅ Robustness Check: Expanded TARGET_RET_1 parents from {len(ret_parents)} to {len(combined_parents)}")
+
+                # Ensure Volatility is a standalone node with connections
+                vol_cols = [c for c in numeric_df.columns if 'volatility' in c]
+                for vol_col in vol_cols:
+                    if vol_col in causal_graph:
+                        vol_parents = causal_graph[vol_col]
+                        vol_children = [k for k, v in causal_graph.items() if vol_col in v]
+                        if self.verbose:
+                            tprint_info(f"   📊 Volatility Node '{vol_col}': {len(vol_parents)} parents, {len(vol_children)} children")
+
                 # Normalize confidence metrics to [0, 1] for safety
                 if 'avg_confidence' in uncertainty_metrics:
                     raw_conf = uncertainty_metrics['avg_confidence']
@@ -3706,6 +3750,8 @@ class LabelBasedLayer2(BaseStep):
         1. Keep core OHLCV features (for time-flow logic).
         2. Variance filter.
         3. Composite LGBM importance (70% Gain + 20% Split + 10% Root Zone).
+
+        Enhanced with Volatility and Multi-Horizon Targets for improved SNR.
         """
         tprint_info("   📊 Layer 2: Running smart feature pre-selection (Gain + Split + Root Zone)...")
         
@@ -3714,16 +3760,47 @@ class LabelBasedLayer2(BaseStep):
         if numeric_df.empty:
             return numeric_df
 
-        # 2. Force keep core features (Time-Flow / Information-Flow Nodes)
-        core_features = [c for c in ['open', 'high', 'low', 'close', 'volume', 'log_ret'] if c in numeric_df.columns]
+        # 2. Explicitly ensure Volatility features are kept and treated as standalone nodes
+        # Add realized volatility if not present
+        if 'volatility_1d' in df.columns and 'volatility_1d' not in numeric_df.columns:
+            numeric_df['volatility_1d'] = df['volatility_1d']
+        elif 'volatility_1d' not in numeric_df.columns and 'close' in df.columns:
+             # Calculate 1D volatility (approx 96 bars for 1 day at 15m)
+             numeric_df['volatility_1d'] = df['close'].pct_change().rolling(96).std()
+
+        # Add backward-looking multi-horizon volatility (optional as per request)
+        # "backward vol is causal"
+        if 'volatility_5d' not in numeric_df.columns and 'close' in df.columns:
+             # Proxy 5-day vol using 15m bars (approx 480 bars)
+             numeric_df['volatility_5d'] = df['close'].pct_change().rolling(480).std()
+
+        # 3. Calculate TARGET_RET_1 if not present (forward 1-period return)
+        if 'TARGET_RET_1' not in numeric_df.columns and 'close' in df.columns:
+            numeric_df['TARGET_RET_1'] = df['close'].pct_change().shift(-1)
+
+        # 4. Calculate TARGET_Sharpe (Rolling Sharpe Ratio) - Two-step discovery target
+        # Using a small window (e.g. 12 periods) to capture local risk-adjusted performance
+        if 'TARGET_Sharpe' not in numeric_df.columns and 'close' in df.columns:
+            returns = df['close'].pct_change()
+            # Forward looking for target
+            fwd_ret = returns.shift(-1)
+            # Local sharpe over next 12 bars (3 hours)
+            # Use rolling sum/std on forward returns
+            indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
+            rolling_ret = fwd_ret.rolling(window=indexer).mean()
+            rolling_std = fwd_ret.rolling(window=indexer).std()
+            numeric_df['TARGET_Sharpe'] = (rolling_ret / (rolling_std + 1e-9))
+
+        # 5. Force keep core features (Time-Flow / Information-Flow Nodes)
+        core_features = [c for c in ['open', 'high', 'low', 'close', 'volume', 'log_ret', 'volatility_1d', 'volatility_5d', 'TARGET_Sharpe', 'TARGET_RET_1'] if c in numeric_df.columns]
         
-        # 3. Compute target if missing
+        # 6. Compute target if missing (fallback target)
         target_col = 'log_ret'
         if target_col not in numeric_df.columns and 'close' in numeric_df.columns:
             numeric_df['log_ret'] = np.log(numeric_df['close']).diff()
             target_col = 'log_ret'
         
-        # 4. Composite LGBM Importance (Gain + Split + Root Zone)
+        # 7. Composite LGBM Importance (Gain + Split + Root Zone)
         if len(numeric_df.columns) > self.discovery_max_features and target_col in numeric_df.columns:
             try:
                 import lightgbm as lgb

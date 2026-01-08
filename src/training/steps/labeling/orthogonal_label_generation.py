@@ -3416,7 +3416,7 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
                     # Check redundancy against already selected
                     is_redundant = False
                     for selected in selected_features:
-                        if feature_corr_matrix.loc[feature, selected] > 0.70:
+                        if feature_corr_matrix.loc[feature, selected] > 0.85:
                             is_redundant = True
                             break
 
@@ -3427,7 +3427,7 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
                 selected_set = set(selected_features)
                 fallback_candidates = [c for c in candidates if c['family'] in selected_set]
 
-                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates (Target Top 50, Redundancy < 0.70).")
+                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates (Target Top 50, Redundancy < 0.85).")
                 return fallback_candidates
 
             except Exception as e:

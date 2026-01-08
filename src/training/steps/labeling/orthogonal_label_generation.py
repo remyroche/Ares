@@ -3394,10 +3394,45 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
         tprint_info(f"   🧬 Identified Causal Parents of Target: {parents}")
         
         if not parents:
-            tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 20 by correlation as fallback.")
-            # Fallback: Don't kill everything. Return original list or top subset? 
-            # Let's return the original smart selected list but warn.
-            return candidates
+            tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 50 by correlation-redundancy as fallback.")
+
+            # Fallback: Top 50 by Correlation + Redundancy Check
+            try:
+                # 1. Calculate correlation with target
+                target_corr = discovery_df.corrwith(discovery_df[target_name]).abs()
+                target_corr = target_corr.drop(target_name, errors='ignore')
+
+                # 2. Sort by target correlation (highest first)
+                sorted_features = target_corr.sort_values(ascending=False).index.tolist()
+
+                # 3. Greedy Selection (Redundancy Filter)
+                selected_features = []
+                feature_corr_matrix = discovery_df[sorted_features].corr().abs()
+
+                for feature in sorted_features:
+                    if len(selected_features) >= 50:
+                        break
+
+                    # Check redundancy against already selected
+                    is_redundant = False
+                    for selected in selected_features:
+                        if feature_corr_matrix.loc[feature, selected] > 0.85:
+                            is_redundant = True
+                            break
+
+                    if not is_redundant:
+                        selected_features.append(feature)
+
+                # 4. Filter candidates
+                selected_set = set(selected_features)
+                fallback_candidates = [c for c in candidates if c['family'] in selected_set]
+
+                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates (Target Top 50, Redundancy < 0.85).")
+                return fallback_candidates
+
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Fallback selection failed: {e}. Returning original set.")
+                return candidates
             
         # 4. Filter Candidates
         # Keep candidates that are in the parent list
@@ -3635,7 +3670,7 @@ def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[st
     if validated_candidates:
         # Use validated set as primary source of parents
         structural_parents = [c for c in validated_candidates if len(c['events']) > 200]
-        tprint_info(f"   🧬 Using {len(structural_parents)} Validated Causal Parents as Structural Seeds.")
+        tprint_info(f"   🧬 Using {len(structural_parents)} Structural Seeds (Validated or Fallback).")
     else:
         # Fallback to specialists
         tprint_warning("   ⚠️ No validated parents found. Using base Specialist families as seeds.")

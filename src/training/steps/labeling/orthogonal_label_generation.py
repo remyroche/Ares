@@ -3542,7 +3542,7 @@ def filter_advanced_candidates(candidates: List[Dict], min_count: int = 200, max
     return filtered_by_corr
 
 
-def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[Dict], n_components: int = 3) -> List[Dict]:
+def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[Dict], n_components: int = 5) -> List[Dict]:
     """
     Level 8: Synthetic Meta-Signals (PCA).
     Extracts latent factors from the filtered set of candidates.
@@ -4634,7 +4634,7 @@ def orthogonal_label_generation(
 
     # 12. Synthetic Meta-Signals (Level 8) - Keep this as legacy or extra
     tprint_info("🧪 Generating Synthetic Meta-Signals (PCA)...")
-    synthetic_candidates = generate_synthetic_meta_signals(df_full, filtered_candidates, n_components=3)
+    synthetic_candidates = generate_synthetic_meta_signals(df_full, filtered_candidates, n_components=5)
     for cand in synthetic_candidates:
          tprint_info(f"   🧪 Added {cand['family']} with {len(cand['events'])} events")
          

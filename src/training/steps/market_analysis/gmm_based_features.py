@@ -184,6 +184,63 @@ class GMMFeaturePipeline(BaseStep):
 
         return pd.DataFrame(X_clean, index=df.index, columns=df.columns)
 
+    def _batch_residualize_features_vectorized(self, X: pd.DataFrame, lag: int = 1) -> pd.DataFrame:
+        """
+        Vectorized batch AR(1) residualization for all features.
+        """
+        X_vals = X.values.astype(np.float64)
+        n_samples, n_features = X_vals.shape
+
+        if n_samples < lag + 10:
+            return X.copy()
+
+        X_lagged = np.roll(X_vals, lag, axis=0)
+        X_lagged[:lag, :] = np.nan
+
+        valid_mask = ~(np.isnan(X_vals) | np.isnan(X_lagged))
+        residuals = np.full_like(X_vals, np.nan)
+
+        for j in range(n_features):
+            col_valid = valid_mask[:, j]
+            if col_valid.sum() < 10:
+                residuals[:, j] = X_vals[:, j]
+                continue
+
+            X_design = np.column_stack([
+                np.ones(col_valid.sum()),
+                X_lagged[col_valid, j]
+            ])
+            y_col = X_vals[col_valid, j]
+            coeffs, _, _, _ = np.linalg.lstsq(X_design, y_col, rcond=None)
+            residuals[col_valid, j] = y_col - X_design @ coeffs
+
+        return pd.DataFrame(residuals, index=X.index, columns=X.columns)
+
+    def _batch_innovation_zscore_vectorized(self, X: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+        """
+        Vectorized batch innovation z-score computation.
+        """
+        deltas = X.diff(1)
+        rolling_mean = deltas.rolling(window=window, min_periods=1).mean()
+        rolling_std = deltas.rolling(window=window, min_periods=1).std()
+        rolling_std = rolling_std.replace(0, 1e-8).fillna(1e-8)
+        innovations = (deltas - rolling_mean) / rolling_std
+        return innovations.fillna(0)
+
+    def _innovate_features(self, df: pd.DataFrame, innovation_window: int = 20) -> pd.DataFrame:
+        """
+        Innovate Phase: Double Residualization + Innovation Z-Score.
+        """
+        tprint_info("   ✨ Innovation Phase: Double Residualization...")
+
+        # 1. Residualize (remove auto-correlation)
+        X_resid = self._batch_residualize_features_vectorized(df, lag=1)
+
+        # 2. Innovation Z-Score (remove trend/volatility in changes)
+        X_inn = self._batch_innovation_zscore_vectorized(X_resid, window=innovation_window)
+
+        return X_inn
+
     def _subsample_data(self, df: pd.DataFrame, n_samples: int = MAX_FITTING_SAMPLES) -> pd.DataFrame:
         """
         Uniformly subsample data for fitting models efficiently.
@@ -561,11 +618,113 @@ class GMMFeaturePipeline(BaseStep):
             tprint_error(f"   ❌ Feature selection failed: {e}")
             return all_features
 
-    def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def process_specialist_features(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
         """
-        Execute the full pipeline.
+        Custom Pipeline for Specialists: Denoise -> Innovate -> PCA -> GMM.
+
+        Args:
+            X: Raw specialist features
+            y: Target variable (for anchoring)
+
+        Returns:
+            DataFrame containing GMM probabilities/signals.
+        """
+        tprint_info(f"🚀 Processing Specialist Features: {X.shape[1]} raw features")
+
+        # 1. Denoise (Preprocessing)
+        X_clean = self._preprocess_features(X)
+
+        # 2. Innovate (Residualization)
+        X_inn = self._innovate_features(X_clean)
+
+        # Handle Target: Residualize it for innovation-based anchoring?
+        # User: "use another target (which should be similarly processed...)"
+        # Note: We use y for GMM anchoring.
+        if y is not None:
+             # If target is volatility (always positive), maybe log it instead of differencing?
+             # User: "except if the target is volatility itself"
+             # We check if it's volatility-like (all positive).
+             if (y >= 0).all() and y.max() > 1.0: # Heuristic for volatility/price
+                 y_proc = np.log1p(y)
+             else:
+                 y_proc = y.diff().fillna(0) # Innovation of target
+        else:
+             y_proc = pd.Series(0, index=X.index)
+
+        # 3. PCA (Dimensionality Reduction)
+        tprint_info("   📉 Running PCA for GMM input...")
+        # Ensure we have enough samples
+        if len(X_inn) > 50:
+            pca = PCA(n_components=self.pca_variance) # e.g. 0.95 variance
+            X_fit = self._subsample_data(X_inn)
+            pca.fit(X_fit)
+            X_pca = pca.transform(X_inn)
+            tprint_info(f"      PCA reduced {X.shape[1]} -> {X_pca.shape[1]} components")
+        else:
+            X_pca = X_inn.values
+
+        # 4. GMM
+        tprint_info("   🧠 Fitting GMM on processed features...")
+        gmm = RobustGMM(n_components=self.n_clusters_macro, random_state=GMM_RANDOM_STATE)
+        gmm.fit(self._subsample_data(pd.DataFrame(X_pca)).values)
+
+        probs, z_fam, ent = gmm.predict(X_pca)
+
+        # Anchor to processed target
+        # Use simple mean of y_proc for each cluster
+        cluster_impacts = []
+
+        # Align y_proc
+        y_proc_aligned = y_proc.reindex(X.index).fillna(0)
+
+        for k in range(self.n_clusters_macro):
+            w = probs[:, k]
+            impact = np.average(y_proc_aligned, weights=w) if np.sum(w) > 0 else 0.0
+            cluster_impacts.append(impact)
+
+        tprint_info(f"   ⚓ GMM Cluster Impacts: {[f'{i:.4f}' for i in cluster_impacts]}")
+
+        # Generate Output Features
+        # The user wants "a high-quality set of GMM-based features".
+        # We can return the probabilities + the aggregated signal + entropy.
+
+        results = pd.DataFrame(index=X.index)
+
+        # GMM Probabilities
+        for k in range(self.n_clusters_macro):
+            results[f'gmm_prob_{k}'] = probs[:, k]
+
+        # Aggregated Signal
+        results['gmm_signal'] = np.dot(probs, np.array(cluster_impacts))
+
+        # Metadata
+        results['gmm_entropy'] = ent
+        results['gmm_z_familiarity'] = z_fam
+
+        return results
+
+    def run(self, config: Dict[str, Any], pre_curated_features: Optional[pd.DataFrame] = None, custom_target: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Execute the pipeline.
+        If pre_curated_features is provided, runs the specialist pipeline.
+        Otherwise runs the full macro pipeline.
         """
         try:
+            if pre_curated_features is not None:
+                # Specialist Mode
+                tprint_info("🚀 Running GMM Feature Pipeline in Specialist Mode")
+                final_features = self.process_specialist_features(pre_curated_features, custom_target)
+
+                output_path = os.path.join(self.artifacts_dir, f"gmm_specialist_features_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet")
+                final_features.to_parquet(output_path)
+
+                return {
+                    "features_path": output_path,
+                    "features": final_features, # Return DF directly for convenience
+                    "success": True
+                }
+
+            # Standard Mode (Macro)
             # 1. Load Data
             market_data, _ = self.load_market_data_or_fail(config)
             if market_data is None or market_data.empty:

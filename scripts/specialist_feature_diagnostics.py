@@ -93,6 +93,8 @@ from src.training.steps.pre_training.components.final_feature_selection import (
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.training.steps.market_analysis import step_registry  # type: ignore
 from scripts.generate_orthogonal_comparison_report import generate_orthogonal_comparison_report
+from src.training.steps.market_analysis.gmm_based_features import GMMFeaturePipeline
+from src.utils.ml_common.standardized_xgb_trainer import StandardizedXGBTrainer, XGBTrainingConfig
 from src.analysis.tv_var_system import TVVARSystem
 from src.analysis.tv_var_regime_definition import EightFeatureRegimeDetector
 from src.analysis.tv_var_decision_tree_rules import TVVARDecisionTreeRules
@@ -1195,6 +1197,169 @@ def _garbage_collect_optimized():
     except Exception as e:
         logger.debug(f"Garbage collection failed: {e}")
 
+
+
+async def _train_specialists_with_gmm(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    selected_specialists: Optional[list[str]] = None,
+) -> None:
+    """Train specialist models using GMM-based feature processing."""
+    logger.info("🚀 Starting GMM-based specialist training")
+    tprint_info(f"🚀 [GMM Training] Starting for {symbol}-{exchange}-{timeframe}-{direction}")
+
+    # Use FeatureGenerationMetaLabelingStep to access ArtifactRouter
+    step = FeatureGenerationMetaLabelingStep()
+    step.set_context(symbol=symbol, exchange=exchange, timeframe=timeframe, direction=direction, model="analyst")
+
+    # Initialize GMM Pipeline
+    gmm_pipeline = GMMFeaturePipeline()
+
+    default_specialists = [
+        "ml_volume_force_step",
+        "ml_volatility_burst_step",
+        "ml_liquidity_regime_step",
+        "ml_momentum_persistence_step",
+        "ml_risk_regime_step"
+    ]
+
+    specialists_to_run = selected_specialists if selected_specialists else default_specialists
+
+    # Mapping from step name to artifact base name
+    # Heuristic: remove 'enhanced_' and '_step'
+
+    for spec_name in specialists_to_run:
+        base_name = spec_name.replace("enhanced_", "").replace("_step", "")
+
+        feature_artifact_name = f"{base_name}_features"
+        pred_artifact_name = f"{base_name}_predictions" # Contains targets
+
+        tprint_info(f"▶️ Processing {spec_name} (Artifacts: {feature_artifact_name}, {pred_artifact_name})")
+
+        try:
+            # Load Features
+            # Note: We need to use retrieve_artifact logic. Assuming load_artifact returns DF.
+            # We use a dummy step context to route correctly if possible, or try loading with router directly
+            # ArtifactRouter.load_latest_artifact returns (data, metadata) or None
+
+            # Using private method or accessing router directly
+            feat_res = step.artifact_router.load_latest_artifact(
+                feature_artifact_name,
+                step.context
+            )
+
+            if not feat_res:
+                tprint_warning(f"⚠️ Features not found for {spec_name}. Skipping.")
+                continue
+
+            features_df, _ = feat_res
+
+            # Load Targets (from predictions artifact)
+            pred_res = step.artifact_router.load_latest_artifact(
+                pred_artifact_name,
+                step.context
+            )
+
+            if not pred_res:
+                tprint_warning(f"⚠️ Predictions/Targets not found for {spec_name}. Skipping.")
+                continue
+
+            preds_df, _ = pred_res
+
+            # Find target columns
+            target_cols = [c for c in preds_df.columns if c.startswith("target_")]
+            if not target_cols:
+                tprint_warning(f"⚠️ No target columns found in {pred_artifact_name}. Skipping.")
+                continue
+
+            tprint_info(f"   Found {len(features_df.columns)} features and targets: {target_cols}")
+
+            # Align
+            common_idx = features_df.index.intersection(preds_df.index)
+            X = features_df.loc[common_idx]
+            y_all = preds_df.loc[common_idx]
+
+            if len(X) < 200:
+                tprint_warning(f"⚠️ Insufficient samples ({len(X)}). Skipping.")
+                continue
+
+            # For each target, run GMM pipeline and Train
+            for target_col in target_cols:
+                y = y_all[target_col]
+
+                # Check valid samples
+                valid_mask = X.notna().all(axis=1) & y.notna()
+                X_valid = X.loc[valid_mask]
+                y_valid = y.loc[valid_mask]
+
+                if len(X_valid) < 200:
+                    continue
+
+                tprint_info(f"   🧠 Processing GMM features for target: {target_col}")
+
+                # Run GMM Pipeline
+                # This returns the processed features (GMM probs + signals)
+                gmm_result = gmm_pipeline.run(
+                    config=step.context, # Pass context as config
+                    pre_curated_features=X_valid,
+                    custom_target=y_valid
+                )
+
+                if not gmm_result.get("success"):
+                    tprint_error(f"❌ GMM processing failed for {target_col}")
+                    continue
+
+                X_gmm = gmm_result["features"]
+
+                # Train XGBoost on GMM features
+                tprint_info(f"   🏋️ Training XGBoost on GMM features for {target_col}...")
+
+                model_id = f"{symbol}_{exchange}_{timeframe}_{base_name}_gmm_{target_col}"
+
+                # Configure Trainer
+                # Check if target is binary or regression
+                is_binary = False
+                if y_valid.nunique() <= 2 and set(y_valid.unique()).issubset({0, 1}):
+                    is_binary = True
+
+                train_config = XGBTrainingConfig(
+                    model_id=model_id,
+                    objective="binary:logistic" if is_binary else "reg:squarederror",
+                    eval_metric="logloss" if is_binary else "rmse",
+                    max_depth=4, # Shallower trees for dense GMM features
+                    learning_rate=0.02,
+                    n_estimators=500,
+                    early_stopping_rounds=30,
+                    subsample=0.7,
+                    colsample_bytree=0.8
+                )
+
+                trainer = StandardizedXGBTrainer(model_id=model_id, config=train_config)
+
+                train_result = trainer.train_and_predict(
+                    X=X_gmm,
+                    y=y_valid,
+                    data_start=X_gmm.index.min(),
+                    data_end=X_gmm.index.max(),
+                    verbose=False
+                )
+
+                # Log Result
+                metrics = train_result.metrics
+                score = metrics.get("best_score", 0.0)
+                tprint_success(f"✅ Trained {model_id}. Best Score: {score:.4f}")
+
+                # Save predictions (optional, or as a new artifact)
+                # For now, we just train and validate to prove the pipeline works.
+
+        except Exception as e:
+            tprint_error(f"❌ Error processing {spec_name}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    tprint_success("🏁 GMM-based specialist training sequence finished.")
 
 
 async def _run_specialist_training(
@@ -5269,6 +5434,11 @@ def main() -> None:
 
     # TV-VAR Enhanced Analysis arguments (default enabled)
     ap.add_argument(
+        "--train-with-gmm",
+        action="store_true",
+        help="Train specialist models using GMM-based feature processing"
+    )
+    ap.add_argument(
         "--enable-tv-var",
         action="store_true",
         default=True,
@@ -5342,6 +5512,18 @@ def main() -> None:
                 targets_to_run.append("binary_label_short")
 
     for tgt in targets_to_run:
+        if args.train_with_gmm:
+            import asyncio
+            asyncio.run(_train_specialists_with_gmm(
+                symbol=args.symbol,
+                exchange=args.exchange,
+                timeframe=args.timeframe,
+                direction=args.direction,
+                selected_specialists=None # Could add arg for this
+            ))
+            # Continue to diagnostics? Probably yes, to see results if we saved them, but currently we just print training scores.
+            print("\n--- GMM Training Completed. Proceeding to diagnostics (if artifacts were updated, which they are not yet fully wired to be used by diagnostics) ---")
+
         if args.independent_mode or args.auto_train:
             import asyncio
             regime_labels = None

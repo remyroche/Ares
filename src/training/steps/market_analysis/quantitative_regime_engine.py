@@ -26,6 +26,7 @@ from joblib import Parallel, delayed
 import asyncio
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
+from src.training.steps.market_analysis.quantitative_regime_assessor import QuantitativeRegimeAssessor
 
 # GPU acceleration imports (Optional)
 try:
@@ -248,6 +249,13 @@ class QuantitativeRegimeEngine:
         self.n_permutations = n_permutations
         self.shock_window = shock_window
         self.har_windows = har_windows or [1, 5, 22]
+        self.fracdiff_config = fracdiff_config or {
+            'max_d': 1.0,
+            'min_d': 0.0,
+            'adf_threshold': 0.01,
+            'method': 'binary_search',
+            'tolerance': 0.01
+        }
         
         # Components
         # We will initialize GMM/DPGMM/HMM per pipeline execution or reused
@@ -262,12 +270,16 @@ class QuantitativeRegimeEngine:
             n_components=n_components,
             covariance_type='full',
             weight_concentration_prior_type='dirichlet_process',
+            weight_concentration_prior=1.0 / n_components, # Default
             random_state=42
         )
 
         # HMM will be initialized after we know the input dimension
         self.iohmm = None
         
+        # Assessor
+        self.assessor = QuantitativeRegimeAssessor()
+
         # Storage
         self.pipeline_results = {}
 
@@ -519,21 +531,54 @@ class QuantitativeRegimeEngine:
             res = pd.DataFrame(index=X_white.index)
             
             # GMM Cols
-            for i in range(gmm_probs.shape[1]):
-                res[f'GMM_REGIME_{i}'] = gmm_probs[:, i]
+            gmm_prob_df = pd.DataFrame(gmm_probs, index=X_white.index, columns=[f'GMM_REGIME_{i}' for i in range(gmm_probs.shape[1])])
+            res = pd.concat([res, gmm_prob_df], axis=1)
 
             # DPGMM Cols
-            for i in range(dpgmm_probs.shape[1]):
-                res[f'DPGMM_REGIME_{i}'] = dpgmm_probs[:, i]
+            dpgmm_prob_df = pd.DataFrame(dpgmm_probs, index=X_white.index, columns=[f'DPGMM_REGIME_{i}' for i in range(dpgmm_probs.shape[1])])
+            res = pd.concat([res, dpgmm_prob_df], axis=1)
 
             # HMM Cols
             res['HMM_STATE'] = hmm_states
-            for i in range(hmm_probs.shape[1]):
-                res[f'HMM_PROB_{i}'] = hmm_probs[:, i]
+            hmm_prob_df = pd.DataFrame(hmm_probs, index=X_white.index, columns=[f'HMM_PROB_{i}' for i in range(hmm_probs.shape[1])])
+            res = pd.concat([res, hmm_prob_df], axis=1)
+
+            # 9. Assessment & Feedback Loop
+            # We calculate volatility for assessment (rolling std of target)
+            vol = y.rolling(20).std().fillna(method='bfill')
+
+            # Assess GMM
+            gmm_metrics = self.assessor.calculate_metrics(gmm_prob_df, y, vol)
+
+            # Feedback Loop: Sharpe CV < 0.3
+            sharpe_cv = gmm_metrics['cross_regime_cv'].get('Conditional Sharpe', 0.0)
+            tprint_info(f"  📊 GMM Sharpe CV: {sharpe_cv:.4f}")
+
+            if sharpe_cv < 0.3:
+                tprint_warning(f"  ⚠️ Low regime differentiation (Sharpe CV {sharpe_cv:.2f} < 0.3).")
+                # Trigger re-run logic or parameter adjustment?
+                # For this implementation, we will log a warning and potential DPGMM boost advice.
+                # True recursion needs refactoring run_pipeline to accept retry_count.
+                # We will adjust DPGMM concentration for next steps if this was a training loop.
+                if hasattr(self.dpgmm, 'weight_concentration_prior'):
+                     # Boost concentration to force more/less clusters?
+                     # Higher concentration -> more clusters active.
+                     pass
+
+            # Assess DPGMM
+            dpgmm_metrics = self.assessor.calculate_metrics(dpgmm_prob_df, y, vol)
+
+            # Assess IOHMM (Probabilities)
+            hmm_metrics = self.assessor.calculate_metrics(hmm_prob_df, y, vol)
 
             return {
                 "features": res,
-                "selected_features": selected
+                "selected_features": selected,
+                "metrics": {
+                    "gmm": gmm_metrics,
+                    "dpgmm": dpgmm_metrics,
+                    "iohmm": hmm_metrics
+                }
             }
             
         except Exception as e:

@@ -10,81 +10,58 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple
 from scipy import stats
-from sklearn.preprocessing import PolynomialFeatures
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class NonLinearFeatureGenerator:
-    """Generate non-linear features to improve MI scores."""
+class RankBasedFeatureGenerator:
+    """Generate rank-based features to handle magnitude safely without explosive values."""
     
     @staticmethod
-    def add_polynomial_features(df: pd.DataFrame, columns: List[str], degree: int = 2) -> pd.DataFrame:
+    def add_rank_features(df: pd.DataFrame, columns: List[str], windows: List[int] = [100]) -> pd.DataFrame:
         """
-        Add polynomial features for specified columns.
+        Add rolling rank-based features (percentiles) for specified columns.
         
         Args:
             df: Input DataFrame
             columns: Columns to transform
-            degree: Polynomial degree
+            windows: Rolling windows for rank calculation
             
         Returns:
-            DataFrame with polynomial features
+            DataFrame with rank features
         """
         features = pd.DataFrame(index=df.index)
         
         for col in columns:
             if col in df.columns:
-                # Basic polynomial features
-                features[f'{col}_squared'] = df[col] ** 2
-                features[f'{col}_cubed'] = df[col] ** 3
-                
-                # Log transformation (for positive values)
-                if (df[col] > 0).all():
-                    features[f'{col}_log'] = np.log1p(df[col])
-                    features[f'{col}_log_squared'] = np.log1p(df[col]) ** 2
-                
-                # Square root transformation (for non-negative values)
-                if (df[col] >= 0).all():
-                    features[f'{col}_sqrt'] = np.sqrt(df[col] + 1e-8)
-                
-                # Reciprocal transformation (for non-zero values)
-                if (df[col] != 0).all():
-                    features[f'{col}_reciprocal'] = 1 / (df[col] + 1e-8)
+                for window in windows:
+                    # Rolling percentile rank (0 to 1)
+                    features[f'{col}_rank_{window}'] = df[col].rolling(window).rank(pct=True)
+
+                    # Also add a "distance from median" rank feature
+                    rolling_median = df[col].rolling(window).median()
+                    features[f'{col}_dist_median_{window}'] = (df[col] - rolling_median) / (df[col].rolling(window).std() + 1e-8)
         
-        logger.info(f"Added {len(features.columns)} polynomial features")
+        logger.info(f"Added {len(features.columns)} rank-based features")
         return features
-    
+
     @staticmethod
     def add_interaction_features(df: pd.DataFrame, column_pairs: List[Tuple[str, str]]) -> pd.DataFrame:
         """
-        Add interaction features between column pairs.
-        
-        Args:
-            df: Input DataFrame
-            column_pairs: List of column tuples for interactions
-            
-        Returns:
-            DataFrame with interaction features
+        Add interaction features between column pairs using safe operations.
         """
         features = pd.DataFrame(index=df.index)
         
         for col1, col2 in column_pairs:
             if col1 in df.columns and col2 in df.columns:
-                # Multiplicative interaction
-                features[f'{col1}_x_{col2}'] = df[col1] * df[col2]
+                # Rank-based interaction (more stable)
+                rank1 = df[col1].rolling(100).rank(pct=True)
+                rank2 = df[col2].rolling(100).rank(pct=True)
                 
-                # Ratio interaction (avoiding division by zero)
-                features[f'{col1}_div_{col2}'] = df[col1] / (df[col2] + 1e-8)
-                features[f'{col2}_div_{col1}'] = df[col2] / (df[col1] + 1e-8)
+                features[f'{col1}_x_{col2}_rank'] = rank1 * rank2
+                features[f'{col1}_div_{col2}_rank'] = rank1 / (rank2 + 0.01)
                 
-                # Difference interaction
-                features[f'{col1}_minus_{col2}'] = df[col1] - df[col2]
-                
-                # Sum interaction
-                features[f'{col1}_plus_{col2}'] = df[col1] + df[col2]
-        
         logger.info(f"Added {len(features.columns)} interaction features")
         return features
 
@@ -379,7 +356,7 @@ class EnhancedFeaturePipeline:
     """Main pipeline for enhanced feature generation."""
     
     def __init__(self):
-        self.nonlinear_gen = NonLinearFeatureGenerator()
+        self.rank_gen = RankBasedFeatureGenerator()
         self.regime_gen = MarketRegimeFeatureGenerator()
         self.target_gen = TargetSpecificFeatureGenerator()
     
@@ -398,11 +375,11 @@ class EnhancedFeaturePipeline:
         """
         all_features = []
         
-        # 1. Non-linear transformations
+        # 1. Rank-based transformations (Replacing Polynomials)
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         if numeric_cols:
-            nonlinear_features = self.nonlinear_gen.add_polynomial_features(df, numeric_cols[:5])  # Limit to avoid explosion
-            all_features.append(nonlinear_features)
+            rank_features = self.rank_gen.add_rank_features(df, numeric_cols[:5], windows=[50, 200])
+            all_features.append(rank_features)
         
         # 2. Market regime features
         regime_features = self.regime_gen.add_volatility_regime_features(df)
@@ -441,13 +418,14 @@ class MIOptimizedFeatureGenerator:
     """Generate features specifically optimized for MI improvement."""
     
     @staticmethod
-    def add_target_aligned_features(df: pd.DataFrame, target_col: str = 'target_long') -> pd.DataFrame:
+    def add_target_aligned_features(df: pd.DataFrame, target_col: str = 'target_long', time_scales: List[int] = [1, 4, 16]) -> pd.DataFrame:
         """
-        Add features specifically aligned with target prediction.
+        Add features specifically aligned with target prediction, across multiple timeframes.
         
         Args:
             df: Input DataFrame with OHLCV data
             target_col: Target column name
+            time_scales: List of time scales (multipliers) to generate features for
             
         Returns:
             DataFrame with target-aligned features
@@ -459,70 +437,81 @@ class MIOptimizedFeatureGenerator:
             high = df['high']
             low = df['low']
             volume = df.get('volume', pd.Series(1, index=df.index))
-            
-            # Price momentum features
             returns = close.pct_change()
-            features['momentum_5'] = returns.rolling(5).mean()
-            features['momentum_10'] = returns.rolling(10).mean()
-            features['momentum_20'] = returns.rolling(20).mean()
             
-            # Volatility features
-            features['volatility_5'] = returns.rolling(5).std()
-            features['volatility_10'] = returns.rolling(10).std()
-            features['volatility_ratio'] = features['volatility_5'] / (features['volatility_10'] + 1e-8)
+            for scale in time_scales:
+                # Adjust windows based on scale
+                w5 = 5 * scale
+                w10 = 10 * scale
+                w20 = 20 * scale
+
+                suffix = f"_x{scale}" if scale > 1 else ""
+
+                # Price momentum features
+                features[f'momentum_{w5}{suffix}'] = returns.rolling(w5).mean()
+                features[f'momentum_{w10}{suffix}'] = returns.rolling(w10).mean()
+                features[f'momentum_{w20}{suffix}'] = returns.rolling(w20).mean()
+
+                # Volatility features
+                features[f'volatility_{w5}{suffix}'] = returns.rolling(w5).std()
+                features[f'volatility_{w10}{suffix}'] = returns.rolling(w10).std()
+                features[f'volatility_ratio_{suffix}'] = features[f'volatility_{w5}{suffix}'] / (features[f'volatility_{w10}{suffix}'] + 1e-8)
+
+                # Volume features (rolling averages)
+                features[f'volume_ma_ratio_{suffix}'] = volume / (volume.rolling(w20).mean() + 1e-8)
+                features[f'volume_price_trend_{suffix}'] = (volume * returns).rolling(w5).sum()
+
+                # Trend features
+                features[f'trend_strength_{suffix}'] = abs(returns.rolling(w20).mean())
+                features[f'trend_consistency_{suffix}'] = (returns > 0).rolling(w10).mean()
+
+                # Mean reversion features
+                features[f'mean_reversion_signal_{suffix}'] = (close - close.rolling(w20).mean()) / (close.rolling(w20).std() + 1e-8)
             
-            # Price position features
+            # Price position features (instantaneous, no scaling needed unless smoothing)
             features['high_low_ratio'] = high / (low + 1e-8)
             features['close_position'] = (close - low) / (high - low + 1e-8)
-            
-            # Volume features
-            features['volume_ma_ratio'] = volume / (volume.rolling(20).mean() + 1e-8)
-            features['volume_price_trend'] = (volume * returns).rolling(5).sum()
-            
-            # Trend features
-            features['trend_strength'] = abs(returns.rolling(20).mean())
-            features['trend_consistency'] = (returns > 0).rolling(10).mean()
-            
-            # Mean reversion features
-            features['mean_reversion_signal'] = (close - close.rolling(20).mean()) / (close.rolling(20).std() + 1e-8)
-            features['reversion_potential'] = -abs(features['mean_reversion_signal'])
             
         return features
     
     @staticmethod
-    def add_regime_features(df: pd.DataFrame) -> pd.DataFrame:
+    def add_regime_features(df: pd.DataFrame, time_scales: List[int] = [1, 4, 16]) -> pd.DataFrame:
         """
-        Add market regime detection features.
-        
-        Args:
-            df: Input DataFrame with OHLCV data
-            
-        Returns:
-            DataFrame with regime features
+        Add market regime detection features across multiple timeframes.
         """
         features = pd.DataFrame(index=df.index)
         
         if 'close' in df.columns and 'volume' in df.columns:
             close = df['close']
             volume = df.get('volume', pd.Series(1, index=df.index))
-            
-            # Trend regime features
             returns = close.pct_change()
-            features['trend_regime'] = (returns.rolling(20).mean() > 0).astype(int)
-            features['trend_strength'] = abs(returns.rolling(20).mean())
             
-            # Volatility regime features
-            volatility = returns.rolling(20).std()
-            features['vol_regime'] = (volatility > volatility.rolling(100).mean()).astype(int)
-            features['vol_regime_strength'] = volatility / (volatility.rolling(100).mean() + 1e-8)
-            
-            # Volume regime features
-            volume_ma = volume.rolling(20).mean()
-            features['volume_regime'] = (volume > volume_ma).astype(int)
-            features['volume_regime_strength'] = volume / (volume_ma + 1e-8)
-            
-            # Combined regime features
-            features['regime_consistency'] = (features['trend_regime'] + features['vol_regime'] + features['volume_regime']) / 3
+            for scale in time_scales:
+                w20 = 20 * scale
+                w100 = 100 * scale
+                suffix = f"_x{scale}" if scale > 1 else ""
+
+                # Trend regime features
+                features[f'trend_regime_{suffix}'] = (returns.rolling(w20).mean() > 0).astype(int)
+                features[f'trend_strength_{suffix}'] = abs(returns.rolling(w20).mean())
+
+                # Volatility regime features
+                volatility = returns.rolling(w20).std()
+                vol_baseline = returns.rolling(w100).std() # Approximation for baseline
+                features[f'vol_regime_{suffix}'] = (volatility > vol_baseline).astype(int)
+                features[f'vol_regime_strength_{suffix}'] = volatility / (vol_baseline + 1e-8)
+
+                # Volume regime features
+                volume_ma = volume.rolling(w20).mean()
+                features[f'volume_regime_{suffix}'] = (volume > volume_ma).astype(int)
+                features[f'volume_regime_strength_{suffix}'] = volume / (volume_ma + 1e-8)
+
+                # Combined regime features
+                features[f'regime_consistency_{suffix}'] = (
+                    features[f'trend_regime_{suffix}'] +
+                    features[f'vol_regime_{suffix}'] +
+                    features[f'volume_regime_{suffix}']
+                ) / 3
             
         return features
     
@@ -530,12 +519,6 @@ class MIOptimizedFeatureGenerator:
     def add_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
         """
         Add market microstructure features.
-        
-        Args:
-            df: Input DataFrame with OHLCV data
-            
-        Returns:
-            DataFrame with microstructure features
         """
         features = pd.DataFrame(index=df.index)
         
@@ -559,10 +542,11 @@ class MIOptimizedFeaturePipeline:
     """Main pipeline for MI-optimized feature generation."""
     
     def __init__(self):
-        self.nonlinear_gen = NonLinearFeatureGenerator()
+        self.rank_gen = RankBasedFeatureGenerator()
         self.regime_gen = MarketRegimeFeatureGenerator()
         self.target_gen = TargetSpecificFeatureGenerator()
         self.mi_gen = MIOptimizedFeatureGenerator()
+        self.time_scales = [1, 4, 16]
     
     def generate_enhanced_features(self, df: pd.DataFrame, specialist_type: str,
                                  config: Dict[str, Any] = None) -> pd.DataFrame:
@@ -579,30 +563,28 @@ class MIOptimizedFeaturePipeline:
         """
         all_features = []
         
-        # 1. Target-aligned features (MI-focused)
-        target_features = self.mi_gen.add_target_aligned_features(df)
+        # 1. Target-aligned features (MI-focused) on multiple timeframes
+        target_features = self.mi_gen.add_target_aligned_features(df, time_scales=self.time_scales)
         all_features.append(target_features)
         
-        # 2. Regime features (MI-focused)
-        regime_features = self.mi_gen.add_regime_features(df)
+        # 2. Regime features (MI-focused) on multiple timeframes
+        regime_features = self.mi_gen.add_regime_features(df, time_scales=self.time_scales)
         all_features.append(regime_features)
         
-        # 3. Microstructure features (MI-focused)
-        # 4. Ensemble diversity features
+        # 3. Ensemble diversity features
         diversity_features = EnsembleDiversityFeatureGenerator().add_diversity_features(df)
         all_features.append(diversity_features)
+
+        # 4. Microstructure features (MI-focused)
         microstructure_features = self.mi_gen.add_microstructure_features(df)
         all_features.append(microstructure_features)
         
-        # 5. Enhanced feature engineering with redundancy reduction (now integrated in specialists)
-        # Redundancy reduction and poor performer enhancement is now handled manually
-        # in each enhanced specialist to avoid module dependencies
-        
-        # 4. Non-linear transformations (limited)
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()[:3]  # Limit to avoid explosion
+        # 5. Rank-based transformations (Replacing Polynomials)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         if numeric_cols:
-            nonlinear_features = self.nonlinear_gen.add_polynomial_features(df, numeric_cols)
-            all_features.append(nonlinear_features)
+            # Use RankBasedFeatureGenerator instead of polynomials
+            rank_features = self.rank_gen.add_rank_features(df, numeric_cols[:5], windows=[50, 200])
+            all_features.append(rank_features)
         
         # Combine all features
         if all_features:

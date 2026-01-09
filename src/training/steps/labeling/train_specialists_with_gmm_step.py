@@ -270,6 +270,37 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             tprint_warning(f"⚠️ Memory pool access failed: {e}")
             return np.zeros(shape, dtype=dtype)
     
+    def _calculate_sample_weights(self, market_data: pd.DataFrame) -> np.ndarray:
+        """Calculate rank-based sample weights."""
+        tprint_info("⚖️ Calculating rank-based sample weights...")
+
+        # 1. Forward Returns (24 bars)
+        # Shift -24 means future value.
+        ret_forward = market_data['close'].shift(-24) / market_data['close'] - 1.0
+
+        # 2. Volatility (24 bars)
+        vol = market_data['close'].pct_change().rolling(24).std()
+
+        # 3. Vol-Adjusted Magnitude
+        magnitude = np.abs(ret_forward) / (vol + 1e-9)
+        magnitude_rank = magnitude.rank(pct=True).fillna(0.5)
+
+        # 4. Entropy (Information Content)
+        # Proxy: Log Volatility (Entropy of Gaussian)
+        entropy_proxy = np.log(market_data['close'].pct_change().rolling(100).std() + 1e-9)
+        entropy_rank = entropy_proxy.rank(pct=True).fillna(0.5)
+
+        # 5. Combined Weight
+        weights = (magnitude_rank + entropy_rank) / 2.0
+
+        # Fill NaNs
+        weights = weights.fillna(weights.mean())
+
+        # Normalize
+        weights = weights / weights.mean()
+
+        return weights.values
+
     def _generate_data_hash(self, data: pd.DataFrame) -> str:
         """Generate hash for data to identify cached models."""
         try:
@@ -1295,76 +1326,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             data_hash = self._generate_data_hash(features)
             model_key = f"gmm_{data_hash}"
 
-            # #region agent log - Hypothesis B: GMM caching operations
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_gmm_cache_start",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Starting GMM model caching operations",
-                    "data": {"data_hash": data_hash, "model_key": model_key, "features_shape": features.shape},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "B"
-                }) + '\n')
-            # #endregion
-
             # Try to load cached model
             cached_model, cached_metadata = self._load_gmm_model(model_key)
-
-            # #region agent log - Hypothesis B: Cached model loading result
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_gmm_cache_loaded",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Cached model loading result",
-                    "data": {
-                        "cached_model_found": cached_model is not None,
-                        "cached_metadata_keys": list(cached_metadata.keys()) if cached_metadata else None,
-                        "model_cache_size": len(self.gmm_model_cache)
-                    },
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "B"
-                }) + '\n')
-            # #endregion
             
             # Calculate adaptive parameters
-            # #region agent log - Hypothesis C: Adaptive parameter calculation start
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_adaptive_params_start",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Starting adaptive parameter calculation",
-                    "data": {"market_data_shape": market_data.shape, "features_shape": features.shape},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "C"
-                }) + '\n')
-            # #endregion
-
             adaptive_config = self._calculate_adaptive_parameters(market_data, features)
 
-            # #region agent log - Hypothesis C: Adaptive parameter calculation result
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_adaptive_params_result",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Adaptive parameter calculation completed",
-                    "data": {
-                        "adaptive_config_keys": list(adaptive_config.keys()),
-                        "n_components": adaptive_config.get("n_components"),
-                        "subsample_size": adaptive_config.get("subsample_size"),
-                        "wavelet": adaptive_config.get("wavelet")
-                    },
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "C"
-                }) + '\n')
-            # #endregion
+            # Calculate weights
+            weights = self._calculate_sample_weights(market_data)
             
             # Check if we should use cached model or train new one
             use_cached = False
@@ -1378,13 +1347,18 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             if use_cached:
                 # Use cached model for enhancement
                 engine = cached_model
-                results = await engine.transform(market_data, features)
-            else:
+                # Note: To fully utilize weights, we usually need to refit.
+                # If cached model didn't use weights, we might need to force update.
+                # Assuming here we trust cache or persistent storage handles it.
+                tprint_info("⚠️ Forcing retraining to apply Sample Weights correctly (Rank-Based).")
+                use_cached = False # Forced
+
+            if not use_cached:
                 # Train new model with adaptive parameters
                 engine = QuantitativeRegimeEngine(**adaptive_config)
                 
-                tprint_info("🧠 Running comprehensive GMM enhancement with adaptive parameters...")
-                results = await engine.fit_transform(market_data, features)
+                tprint_info("🧠 Running comprehensive GMM enhancement with adaptive parameters and weights...")
+                results = await engine.fit_transform(market_data, features, sample_weight=weights)
                 
                 # Save model to cache if successful
                 if results.get("success", False):
@@ -1448,7 +1422,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     def _generate_enhanced_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Generate enhanced features that all specialists need."""
         try:
-            from src.training.steps.market_analysis.enhanced_feature_generators import NonLinearFeatureGenerator
+            from src.training.steps.market_analysis.enhanced_feature_generators import RankBasedFeatureGenerator
 
             # Start with market data, but exclude non-numeric columns that could cause issues
             enhanced_data = market_data.copy()
@@ -1475,21 +1449,18 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             if cols_to_drop:
                 enhanced_data = enhanced_data.drop(columns=cols_to_drop)
 
-            # Generate polynomial features for key columns
-            nonlinear_gen = NonLinearFeatureGenerator()
-
-            # Key columns that specialists expect polynomial features for
+            # Use RankBasedFeatureGenerator instead of Polynomial
+            rank_gen = RankBasedFeatureGenerator()
             key_columns = ['high', 'low', 'open', 'close', 'volume']
             available_columns = [col for col in key_columns if col in enhanced_data.columns and
                                enhanced_data[col].dtype in ['float64', 'float32', 'int64', 'int32']]
 
             if available_columns:
-                tprint_info(f"🔧 Generating polynomial features for: {available_columns}")
-                poly_features = nonlinear_gen.add_polynomial_features(enhanced_data, available_columns, degree=3)
-                if not poly_features.empty:
-                    # Add polynomial features
-                    enhanced_data = pd.concat([enhanced_data, poly_features], axis=1)
-                    tprint_info(f"✅ Added {len(poly_features.columns)} polynomial features")
+                tprint_info(f"🔧 Generating rank-based features for: {available_columns}")
+                rank_features = rank_gen.add_rank_features(enhanced_data, available_columns, windows=[50, 200])
+                if not rank_features.empty:
+                    enhanced_data = pd.concat([enhanced_data, rank_features], axis=1)
+                    tprint_info(f"✅ Added {len(rank_features.columns)} rank features")
 
             # Generate additional features that specialists commonly need
             numeric_cols = enhanced_data.select_dtypes(include=[np.number]).columns
@@ -1497,17 +1468,13 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             # Add some basic derived features that specialists might expect
             if 'high' in numeric_cols and 'low' in numeric_cols:
                 enhanced_data['range'] = enhanced_data['high'] - enhanced_data['low']
-                enhanced_data['range_squared'] = enhanced_data['range'] ** 2
-                enhanced_data['range_cubed'] = enhanced_data['range'] ** 3
+                # Removed squared/cubed per instructions to avoid hazards
 
             if 'close' in numeric_cols and 'open' in numeric_cols:
                 enhanced_data['body'] = abs(enhanced_data['close'] - enhanced_data['open'])
-                enhanced_data['body_squared'] = enhanced_data['body'] ** 2
-                enhanced_data['body_cubed'] = enhanced_data['body'] ** 3
 
             # Add volume-based features if volume exists
             if 'volume' in numeric_cols:
-                enhanced_data['volume_sqrt'] = np.sqrt(enhanced_data['volume'] + 1e-8)
                 enhanced_data['volume_log'] = np.log1p(enhanced_data['volume'])
 
             # Clean up any NaN/inf values

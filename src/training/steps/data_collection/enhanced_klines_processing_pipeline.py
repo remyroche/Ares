@@ -1106,7 +1106,9 @@ class EnhancedKlinesProcessingPipeline:
                 results["stored_files"].extend(store_result.metadata.get("stored_files", []))
 
             # Step 7: Resample data if enabled and data is older than threshold
-            if self.config.enable_resampling and resampling_config.enable_auto_resampling:
+            if (self.config.enable_resampling and 
+                resampling_config and 
+                resampling_config.enable_auto_resampling):
                 filled_ranges = None
                 try:
                     filled_ranges = gap_result.metadata.get("filled_ranges") if self.config.enable_gap_filling else None
@@ -1366,6 +1368,142 @@ class EnhancedKlinesProcessingPipeline:
             # Assume it's a number of years
             return int(lookback_period)
 
+    async def _download_range_ccxt(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: datetime,
+        end_date: datetime,
+        save_to_disk: bool = True
+    ) -> pd.DataFrame:
+        """
+        Download historical data using CCXT public API (no authentication required).
+        Can save to disk in monthly batches for crash resilience.
+        """
+        try:
+            import ccxt.async_support as ccxt
+            
+            # Create CCXT exchange instance (public data, no auth needed)
+            exchange_name = self.exchange.lower()
+            if hasattr(ccxt, exchange_name):
+                exchange_class = getattr(ccxt, exchange_name)
+                ccxt_exchange = exchange_class({'enableRateLimit': True})
+            else:
+                tprint_warning(f"⚠️ Exchange '{exchange_name}' not found in CCXT, using binance")
+                ccxt_exchange = ccxt.binance({'enableRateLimit': True})
+            
+            tprint_info(f"   📦 Downloading {symbol} {interval} via CCXT: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+            
+            all_data = []
+            current_ts = int(start_date.timestamp() * 1000)
+            end_ts = int(end_date.timestamp() * 1000)
+            batch_limit = 1000
+            
+            month_data = []
+            current_month = start_date.month
+            current_year = start_date.year
+            
+            try:
+                while current_ts < end_ts:
+                    # Retry logic for network stability
+                    for attempt in range(5):
+                        try:
+                            ohlcv = await ccxt_exchange.fetch_ohlcv(
+                                symbol=symbol.replace('USDT', '/USDT'), 
+                                timeframe=interval,
+                                since=current_ts,
+                                limit=batch_limit
+                            )
+                            break
+                        except Exception as e:
+                            tprint_warning(f"⚠️ CCXT error (attempt {attempt+1}/5): {e}")
+                            await asyncio.sleep(2 * (attempt + 1))
+                    else:
+                        tprint_error(f"❌ CCXT download failed after 5 attempts at {current_ts}")
+                        break
+                    
+                    if not ohlcv:
+                        break
+                    
+                    # Convert to records
+                    for candle in ohlcv:
+                        record = {
+                            'timestamp': pd.to_datetime(candle[0], unit='ms'),
+                            'open': float(candle[1]),
+                            'high': float(candle[2]),
+                            'low': float(candle[3]),
+                            'close': float(candle[4]),
+                            'volume': float(candle[5]),
+                        }
+                        month_data.append(record)
+                    
+                    # Update timestamp
+                    last_ts = ohlcv[-1][0]
+                    if last_ts <= current_ts:
+                        break
+                    current_ts = last_ts + 1
+                    
+                    # Check for month change
+                    last_dt = datetime.fromtimestamp(last_ts / 1000)
+                    if last_dt.month != current_month or last_dt.year != current_year:
+                        if month_data:
+                            all_data.extend(month_data)
+                            if save_to_disk:
+                                month_df = pd.DataFrame(month_data)
+                                month_df.set_index('timestamp', inplace=True)
+                                month_df['symbol'] = symbol
+                                month_df['interval'] = interval
+                                month_df['exchange'] = self.exchange
+                                
+                                self.klines_manager.write_data(
+                                    month_df, symbol, interval,
+                                    data_type="raw", overwrite=False
+                                )
+                                tprint_success(f"   💾 Saved {len(month_df):,} records for {current_year}-{current_month:02d}")
+                            month_data = []
+                        current_month = last_dt.month
+                        current_year = last_dt.year
+                    
+                    # Simple progress log
+                    progress_pct = (current_ts - int(start_date.timestamp() * 1000)) / (end_ts - int(start_date.timestamp() * 1000)) * 100
+                    if len(all_data) % 50000 == 0 and len(all_data) > 0:
+                         tprint_info(f"   📊 CCXT Progress: {progress_pct:.1f}% ({len(all_data) + len(month_data):,} records)")
+
+                    await asyncio.sleep(0.05)
+                
+                # Handle remaining
+                if month_data:
+                    all_data.extend(month_data)
+                    if save_to_disk:
+                        remaining_df = pd.DataFrame(month_data)
+                        remaining_df.set_index('timestamp', inplace=True)
+                        remaining_df['symbol'] = symbol
+                        remaining_df['interval'] = interval
+                        remaining_df['exchange'] = self.exchange
+                        
+                        self.klines_manager.write_data(
+                            remaining_df, symbol, interval,
+                            data_type="raw", overwrite=False
+                        )
+                        tprint_success(f"   💾 Saved final {len(remaining_df):,} records")
+
+            finally:
+                await ccxt_exchange.close()
+                
+            if all_data:
+                df_result = pd.DataFrame(all_data)
+                if 'timestamp' in df_result.columns:
+                    df_result['timestamp'] = pd.to_datetime(df_result['timestamp'])
+                    df_result.set_index('timestamp', inplace=True)
+                return df_result
+            return pd.DataFrame()
+
+        except ImportError:
+            raise RuntimeError("CCXT not installed")
+        except Exception as e:
+            tprint_error(f"❌ CCXT download error: {e}")
+            raise RuntimeError(f"CCXT download failed: {e}")
+
     async def _download_data(
         self,
         symbol: str,
@@ -1427,15 +1565,53 @@ class EnhancedKlinesProcessingPipeline:
                     if latest_data_time < desired_end:
                         gaps_to_fill.append(("recent", latest_data_time, desired_end))
                     # Internal gaps
-                    time_diffs = klines_data.index.to_series().diff().dropna()
-                    gap_mask = time_diffs > expected_frequency * 1.1
+                    # Correctly identify gaps using vectorized index operations
+                    diffs = klines_data.index.to_series().diff()
+                    gap_mask = diffs > expected_frequency * 1.1
+                    
                     if gap_mask.any():
-                        gap_indices = gap_mask[gap_mask].index
-                        for gap_start in gap_indices:
-                            prev_time = klines_data.index[klines_data.index.get_loc(gap_start) - 1]
-                            gap_end = gap_start
-                            if (gap_end - prev_time) > expected_frequency * 1.1:
-                                gaps_to_fill.append(("internal", prev_time + expected_frequency, gap_end))
+                        gap_ends = klines_data.index[gap_mask]
+                        # Positions of the gap ends
+                        gap_positions = np.where(gap_mask)[0]
+                        # Starts are the preceding timestamps plus the expected interval
+                        gap_starts = klines_data.index[gap_positions - 1] + expected_frequency
+                        
+                        # Add to gaps list efficiently
+                        for s, e in zip(gap_starts, gap_ends):
+                            gaps_to_fill.append(("internal", s, e))
+
+                    # --- AGGRESSIVE GAP CONSOLIDATION ---
+                    if gaps_to_fill:
+                        # Sort by start time
+                        gaps_to_fill.sort(key=lambda x: x[1])
+                        
+                        consolidated = []
+                        if gaps_to_fill:
+                            curr_type, curr_start, curr_end = gaps_to_fill[0]
+                            
+                            # Merge gaps within 1 week of each other to drastically reduce I/O
+                            # Small gaps between missing segments are cheaper to redownload than to save individually
+                            merge_threshold = timedelta(days=7) 
+                            
+                            for i in range(1, len(gaps_to_fill)):
+                                next_type, next_start, next_end = gaps_to_fill[i]
+                                
+                                if next_start <= curr_end + merge_threshold:
+                                    # Overlap or close - extend current
+                                    curr_end = max(curr_end, next_end)
+                                    curr_type = "merged"
+                                else:
+                                    # New gap - push current
+                                    consolidated.append((curr_type, curr_start, curr_end))
+                                    curr_type, curr_start, curr_end = next_type, next_start, next_end
+                            
+                            consolidated.append((curr_type, curr_start, curr_end))
+                        
+                        if self.enable_logging:
+                             tprint_info(f"   🧩 Consolidated {len(gaps_to_fill):,} gaps into {len(consolidated):,} segments (threshold: 7d)")
+                        
+                        gaps_to_fill = consolidated
+                    # -------------------------
 
                     if gaps_to_fill and exchange_interface is not None:
                         if self.enable_logging:
@@ -1506,8 +1682,33 @@ class EnhancedKlinesProcessingPipeline:
                                 gap_dfs.append(gap_df)
                         if gap_dfs:
                             klines_data = pd.concat([klines_data] + gap_dfs).drop_duplicates().sort_index()
-                    elif gaps_to_fill and exchange_interface is None and self.enable_logging:
-                        tprint_warning("⚠️ Skipping gap download because exchange interface is unavailable; using existing data only")
+                    elif gaps_to_fill and exchange_interface is None:
+                        if self.enable_logging:
+                             tprint_info(f"📥 Filling {len(gaps_to_fill)} gap(s) via CCXT public API (no authenticated exchange interface)")
+                        
+                        for gap_type, gap_start, gap_end in gaps_to_fill:
+                            try:
+                                # Download gap using CCXT helper
+                                # Force save_to_disk=True for crash resilience on large backfills
+                                gap_df = await self._download_range_ccxt(symbol, interval, gap_start, gap_end, save_to_disk=True)
+                                
+                                if not gap_df.empty:
+                                    # Ensure consistency 
+                                    gap_df['symbol'] = symbol
+                                    gap_df['interval'] = interval
+                                    gap_df['exchange'] = self.exchange
+                                    gap_dfs.append(gap_df)
+                                
+                                # Rate limit between gaps
+                                await asyncio.sleep(0.5)
+                            except Exception as e:
+                                if self.enable_logging:
+                                    tprint_warning(f"⚠️ Failed to fill gap {gap_start} - {gap_end}: {e}")
+                        
+                        if gap_dfs:
+                            if self.enable_logging:
+                                tprint_info(f"   🧩 Merging {len(gap_dfs)} gap-filled segments from CCXT...")
+                            klines_data = pd.concat([klines_data] + gap_dfs).drop_duplicates().sort_index()
 
                     # Finalize using existing data (+ gaps if any)
                     total_gap_records = sum(len(df) for df in gap_dfs) if gap_dfs else 0
@@ -1526,14 +1727,32 @@ class EnhancedKlinesProcessingPipeline:
                         tprint_success(f"✅ Using existing data: {len(klines_data):,} records (gaps filled: {len(gaps_to_fill)})")
                         tprint_info(f"📅 Full range: {klines_data.index.min()} to {klines_data.index.max()}")
                     return result
-                else:
+
+
                     # No readable parquet data; fall through to fresh download
                     if self.enable_logging:
                         tprint_warning("⚠️ No valid data found in existing parquet files; downloading fresh data")
 
-            # If no data and no exchange interface available, fail fast
+            # If no data and no exchange interface available, try CCXT public download as fallback
             if not parquet_files and exchange_interface is None:
-                raise RuntimeError("No existing raw klines found and exchange interface unavailable; cannot download.")
+                if self.enable_logging:
+                    tprint_info("📥 No exchange interface available; attempting CCXT public download...")
+                
+                # Compute date range for download
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=years * 365)
+                
+                downloaded_df = await self._download_range_ccxt(symbol, interval, start_date, end_date, save_to_disk=True)
+                
+                if downloaded_df.empty:
+                     raise RuntimeError(f"CCXT download failed for {symbol}")
+
+                # Re-read data after CCXT download (use recursive search for nested structure)
+                parquet_files = list(data_dir.rglob(f"*{symbol.lower()}*{interval}*.parquet"))
+                if parquet_files:
+                    tprint_success(f"✅ Downloaded {len(downloaded_df):,} records via CCXT for {symbol}")
+                else:
+                    raise RuntimeError(f"File verification failed after CCXT download for {symbol}")
 
             # Ensure dispatcher is wired for live download
             if exchange_interface is not None and getattr(exchange_interface, "dispatcher", None) is None:
@@ -1559,7 +1778,8 @@ class EnhancedKlinesProcessingPipeline:
 
             # Download fresh data from exchange in batches
             if self.enable_logging:
-                tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
+                ex_name = exchange_interface.exchange_type.upper() if exchange_interface else "UNKNOWN"
+                tprint_info(f"🌐 Downloading fresh data from {ex_name} exchange")
                 
                 # Calculate date range
                 end_date = datetime.now()
@@ -2592,6 +2812,11 @@ class EnhancedKlinesProcessingPipeline:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=years * 365)
 
+            # Load processed 15m data
+            df_15m = self.klines_manager.get_data(
+                symbol, "15m", "processed",
+                start_date=start_date, end_date=end_date
+            )
 
             # Use refined _detect_gaps with boundary checks
             gaps = self._detect_gaps_vectorized(
@@ -2821,6 +3046,7 @@ class EnhancedKlinesProcessingPipeline:
             return []
 
         return timestamps
+
 
     async def _fill_gaps(
         self,
@@ -3236,6 +3462,11 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
+            # Force numeric types to prevent 'isfinite' errors on object columns
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
             df_with_timestamp = self._ensure_timestamp_column(df)
             timestamp_column = 'timestamp_ms' if 'timestamp_ms' in df_with_timestamp.columns else 'timestamp'
 
@@ -3255,33 +3486,29 @@ class EnhancedKlinesProcessingPipeline:
                     available_key_columns = [col for col in key_columns if col in df_with_timestamp.columns]
 
                     if available_key_columns:
-                        indices_to_drop: List[Any] = []
-                        duplicated_df = df_with_timestamp[duplicate_mask]
+                        # Optimized approach: Use vectorized operations to find matching records
+                        # 1. Identity check (all OHLCV columns same)
+                        identity_subset = [timestamp_column] + available_key_columns
+                        all_but_last_identical = df_with_timestamp.duplicated(subset=identity_subset, keep='last')
                         
-                        for ts, group in duplicated_df.groupby(timestamp_column):
-                            if len(group) <= 1:
-                                continue
-
-                            first_record = group.iloc[0]
-                            all_identical = True
-
-                            for i in range(1, len(group)):
-                                current_record = group.iloc[i]
-                                if not all(first_record[col] == current_record[col] for col in available_key_columns):
-                                    all_identical = False
-                                    break
-
-                            if all_identical:
-                                # All identical: keep latest, drop others
-                                indices_to_drop.extend(group.index[:-1].tolist())
-                            else:
-                                # Conflicting records at same timestamp: flag for redownload
+                        if all_but_last_identical.any():
+                            indices_to_drop = df_with_timestamp.index[all_but_last_identical].tolist()
+                            cleaned_df = cleaned_df.drop(index=list(set(indices_to_drop)))
+                            true_duplicate_records_removed = len(indices_to_drop)
+                            
+                        # 2. Conflict check (same timestamp, different OHLCV)
+                        # Use unique timestamps from remaining duplicates to find conflicts
+                        remaining_df = df_with_timestamp[~all_but_last_identical]
+                        remaining_ts_duplicates = remaining_df[timestamp_column].duplicated(keep=False)
+                        
+                        if remaining_ts_duplicates.any():
+                            conflicting_ts = remaining_df.loc[remaining_ts_duplicates, timestamp_column].unique()
+                            for ts in conflicting_ts:
                                 ts_dt = pd.to_datetime(ts, unit='ms') if timestamp_column == 'timestamp_ms' else ts
                                 conflicting_ranges_for_redownload.append(ts_dt)
 
-                        if indices_to_drop:
-                            cleaned_df = cleaned_df.drop(index=list(set(indices_to_drop)))
-                            true_duplicate_records_removed = len(indices_to_drop)
+                        if self.enable_logging and true_duplicate_records_removed > 0:
+                             tprint_info(f"   🧹 Removed {true_duplicate_records_removed:,} exact duplicate rows")
 
             # 2. Handle conflicting duplicates via redownload if interface available
             if conflicting_ranges_for_redownload and exchange_interface:
@@ -3867,6 +4094,10 @@ class EnhancedKlinesProcessingPipeline:
             stored_files = []
             resample_modes: Dict[str, str] = {}
 
+
+            if self.enable_logging:
+                 tprint_info(f"DEBUG: Resampling loop starting. Intervals: {resampling_config.target_intervals}")
+
             for target_interval in resampling_config.target_intervals:
                 try:
                     if self.enable_logging:
@@ -4056,6 +4287,9 @@ if __name__ == "__main__":
     parser.add_argument('--no-gap-filling', action='store_true', help='Disable gap filling')
     parser.add_argument('--no-resampling', action='store_true', help='Disable resampling')
     parser.add_argument('--no-quality-validation', action='store_true', help='Disable quality validation')
+    # Multi-asset mode arguments
+    parser.add_argument('--global', dest='global_mode', action='store_true', help='Enable multi-asset processing mode')
+    parser.add_argument('--assets', type=str, default='', help='Comma-separated list of assets (e.g., ETH,BTC,LINK). Auto-appends USDT suffix.')
     args = parser.parse_args()
 
     os.environ.setdefault("OMP_NUM_THREADS", "2")
@@ -4313,5 +4547,201 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
 
-    # Run the simplified example
-    asyncio.run(main_simple())
+    async def main_multi_asset():
+        """Run the enhanced klines processing pipeline for multiple assets."""
+        try:
+            # Parse assets from comma-separated string
+            asset_list = [a.strip().upper() for a in args.assets.split(',') if a.strip()]
+            if not asset_list:
+                print("❌ No assets specified. Use --assets ETH,BTC,LINK,SOL,AVAX,BNB")
+                return
+            
+            # Convert to full symbols (append USDT if not present)
+            symbols = []
+            for asset in asset_list:
+                if asset.endswith('USDT'):
+                    symbols.append(asset)
+                else:
+                    symbols.append(f"{asset}USDT")
+            
+            print("=" * 80)
+            print("🚀 ENHANCED KLINES PROCESSING PIPELINE - MULTI-ASSET MODE")
+            print("=" * 80)
+            print()
+            print(f"📊 Configuration:")
+            print(f"   - Exchange: {args.exchange}")
+            print(f"   - Assets: {', '.join(symbols)}")
+            print(f"   - Interval: {args.interval}")
+            print(f"   - Lookback: {args.years} years")
+            print(f"   - Data Directory: {args.data_dir}")
+            print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled (API + Binance Vision)'}")
+            print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
+            print()
+            
+            # Configure pipeline
+            pipeline_config = PipelineConfig(
+                data_dir=args.data_dir,
+                exchange=args.exchange,
+                enable_logging=True,
+                enable_gap_filling=not args.no_gap_filling,
+                enable_resampling=not args.no_resampling,
+                enable_duplicate_handling=True,
+                enable_quality_validation=not args.no_quality_validation,
+                batch_compatible=True,
+                max_gap_minutes=1
+            )
+            
+            # Configure resampling
+            resampling_config = ResamplingConfig(
+                target_intervals=['5m', '15m', '30m', '1h'],
+                method='ohlc',
+                preserve_volume=True,
+                resample_older_than_days=0,
+                enable_auto_resampling=True
+            ) if not args.no_resampling else None
+            
+            # Create pipeline
+            print(f"🔧 Initializing pipeline...")
+            pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
+            print(f"✅ Pipeline initialized")
+            print()
+            
+            # Create exchange interface with dispatcher (for CCXT-based downloads)
+            print(f"🔗 Connecting to {args.exchange.upper()}...")
+            exchange_interface = None
+            if not EXCHANGE_INTERFACE_AVAILABLE or ExchangeInterface is None:
+                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
+            else:
+                dispatcher = None
+                # Create dispatcher for live data downloads
+                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
+                    try:
+                        ex_type = ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
+                    except Exception:
+                        ex_type = ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else ExchangeType.BINANCE
+                    try:
+                        dispatcher_cfg = ExchangeConfig(
+                            exchange_type=ex_type,
+                            api_key=args.api_key or None,
+                            api_secret=args.api_secret or None,
+                            password=args.api_password or None,
+                            subaccount_id=None,
+                            use_testnet=args.use_testnet,
+                            trade_symbol=symbols[0] if symbols else "ETHUSDT",
+                            mode=TradingMode.TRADE,  # allow live data pulls
+                        )
+                        dispatcher = create_exchange_dispatcher(dispatcher_cfg)
+                        # Initialize dispatcher
+                        try:
+                            init_ret = dispatcher.initialize()
+                            if hasattr(init_ret, "__await__"):
+                                init_ret = await init_ret
+                            if init_ret is False:
+                                tprint_warning("⚠️ Dispatcher initialize returned False; live download may fail")
+                                dispatcher = None
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Dispatcher initialize failed: {e}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to create dispatcher: {e}")
+                        dispatcher = None
+
+                exchange_config = {
+                    'exchange_type': args.exchange,
+                    'api_key': args.api_key or None,
+                    'api_secret': args.api_secret or None,
+                    'password': args.api_password or None,
+                    'testnet': args.use_testnet,
+                    'rate_limits': {},
+                }
+                try:
+                    if create_exchange_interface is not None:
+                        exchange_interface = create_exchange_interface(exchange_config)
+                    else:
+                        exchange_interface = ExchangeInterface(exchange_config)
+                    if dispatcher is not None:
+                        exchange_interface.dispatcher = dispatcher
+                    await exchange_interface.connect()
+                    print(f"✅ Connected to {args.exchange.upper()}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Connection warning: {e}")
+                    tprint_info("📝 Will use existing/local data or Binance Vision archives...")
+                    exchange_interface = None
+            
+            print()
+            
+            # Process each asset
+            all_results = {}
+            for asset_idx, symbol in enumerate(symbols, 1):
+                print()
+                print("=" * 60)
+                print(f"📦 Processing Asset {asset_idx}/{len(symbols)}: {symbol}")
+                print("=" * 60)
+                print(f"⏰ Start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                try:
+                    # DEBUG: Print resampling config before call
+                    print(f"DEBUG MULTI: resampling_config={resampling_config}")
+                    results = await pipeline.process_klines_data(
+                        symbol=symbol,
+                        interval=args.interval,
+                        years=args.years,
+                        exchange_interface=exchange_interface,
+                        resampling_config=resampling_config,
+                        max_gap_minutes=1,
+                        create_consolidated=True,
+                        batch_id=f"{args.exchange}_{symbol.lower()}_{args.years}y_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    )
+                    
+                    all_results[symbol] = {
+                        'success': results.get('pipeline_success', False),
+                        'quality': results.get('data_quality', 'unknown'),
+                        'shape': results.get('final_data_shape', (0, 0))
+                    }
+                    
+                    print(f"✅ {symbol}: Success={results.get('pipeline_success')}, Quality={results.get('data_quality')}")
+                    
+                except Exception as e:
+                    print(f"❌ {symbol}: Failed - {e}")
+                    all_results[symbol] = {'success': False, 'error': str(e)}
+                
+                # Explicit memory cleanup between assets
+                import gc
+                results = None  # Clear reference
+                gc.collect()
+                tprint_info(f"🧹 GC collected. Memory clean for next asset.")
+            
+            # Print summary
+            print()
+            print("=" * 80)
+            print("📊 MULTI-ASSET PROCESSING SUMMARY")
+            print("=" * 80)
+            successful = sum(1 for r in all_results.values() if r.get('success'))
+            print(f"   - Total Assets: {len(symbols)}")
+            print(f"   - Successful: {successful}")
+            print(f"   - Failed: {len(symbols) - successful}")
+            print()
+            for symbol, result in all_results.items():
+                status = "✅" if result.get('success') else "❌"
+                quality = result.get('quality', result.get('error', 'unknown'))
+                print(f"   {status} {symbol}: {quality}")
+            print()
+            print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            if exchange_interface is not None:
+                await exchange_interface.disconnect()
+            
+        except Exception as e:
+            print()
+            print("=" * 80)
+            print("❌ ERROR IN MULTI-ASSET PROCESSING")
+            print("=" * 80)
+            print(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Run the appropriate mode based on CLI args
+    if args.global_mode and args.assets:
+        asyncio.run(main_multi_asset())
+    else:
+        asyncio.run(main_simple())
+

@@ -1,0 +1,17 @@
+{
+  "feature_analysis": {
+    "specialist_name": "EnhancedMLMomentumPersistenceStep",
+    "error": "'FeatureQualityMetrics' object has no attribute 'get'",
+    "timestamp": "2026-01-11T15:48:55.612215"
+  },
+  "orthogonalization_diagnostics": {
+    "error": "Feature diagnostics failed"
+  },
+  "legacy_metrics": {
+    "prediction_mi_to_target": 0.003911480529350975,
+    "avg_feature_mi": 0.01918158209935339,
+    "max_feature_mi": 0.04188644370437444,
+    "mi_improvement_potential": 0.022704861605021054,
+    "high_mi_features_count": 13,
+    "high_mi_features_ratio": 0.5416666666666666,
+    "mi_target_met": 

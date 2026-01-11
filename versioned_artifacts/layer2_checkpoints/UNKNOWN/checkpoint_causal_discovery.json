@@ -1,0 +1,239 @@
+{
+  "step_name": "causal_discovery",
+  "step_index": 3,
+  "timestamp": "20260111_204655",
+  "symbol": "UNKNOWN",
+  "config_hash": "99914b932bd3",
+  "data_keys": [
+    "df",
+    "causal_graph"
+  ],
+  "json_data": {
+    "causal_graph": {
+      "shadow_asymmetry_w50": [
+        "close_location_value_w50",
+        "force_index_w50",
+        "shadow_asymmetry_w100",
+        "drawdown_w150",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "log_ret",
+        "drawdown_w100"
+      ],
+      "smoothed_return": [
+        "shadow_asymmetry_w50",
+        "left_tail_var_ratio_w50",
+        "close_location_value_w50",
+        "force_index_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "left_tail_var_ratio_w20",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "left_tail_var_ratio_w200",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "log_ret",
+        "drawdown_w100",
+        "shadow_asymmetry_w100"
+      ],
+      "left_tail_var_ratio_w50": [
+        "close_location_value_w50",
+        "force_index_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "left_tail_var_ratio_w20",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "left_tail_var_ratio_w200",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "drawdown_w100"
+      ],
+      "volume_delta_w50": [
+        "left_tail_var_ratio_w50",
+        "close_location_value_w50",
+        "force_index_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "log_ret",
+        "smoothed_return",
+        "drawdown_w100",
+        "shadow_asymmetry_w100"
+      ],
+      "log_ret": [
+        "left_tail_var_ratio_w50",
+        "close_location_value_w50",
+        "force_index_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "left_tail_var_ratio_w20",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "close_lag_1",
+        "drawdown_w100"
+      ],
+      "force_index_w50": [
+        "close_location_value_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "downside_semivariance_w10",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "drawdown_w100"
+      ],
+      "shadow_asymmetry_w100": [
+        "close_location_value_w50",
+        "left_tail_var_ratio_w20",
+        "close_location_value_w20",
+        "close_location_value_w10",
+        "drawdown_w100",
+        "force_index_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "drawdown_w50",
+        "drawdown_w20",
+        "log_ret"
+      ],
+      "cmf_w50": [
+        "close_location_value_w50",
+        "close_location_value_w20",
+        "close_location_value_w10"
+      ],
+      "drawdown_w150": [
+        "close_location_value_w50",
+        "cmf_w50",
+        "close_location_value_w20",
+        "close_location_value_w10",
+        "drawdown_w100",
+        "downside_semivariance_w10"
+      ],
+      "left_tail_var_ratio_w20": [
+        "close_location_value_w50",
+        "force_index_w50",
+        "drawdown_w150",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "drawdown_w100"
+      ],
+      "close_location_value_w50": [
+        "close_location_value_w20",
+        "close_location_value_w10"
+      ],
+      "drawdown_w50": [
+        "close_location_value_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "close_location_value_w20",
+        "close_location_value_w10",
+        "drawdown_w20",
+        "drawdown_w100",
+        "downside_semivariance_w10"
+      ],
+      "left_tail_var_ratio_w200": [
+        "close_location_value_w50",
+        "force_index_w50",
+        "drawdown_w150",
+        "left_tail_var_ratio_w20",
+        "close_location_value_w20",
+        "drawdown_w50",
+        "drawdown_w20",
+        "drawdown_w100"
+      ],
+      "drawdown_w20": [
+        "close_location_value_w50",
+        "cmf_w50",
+        "drawdown_w150",
+        "close_location_value_w20",
+        "close_location_value_w10",
+        "drawdown_w100",
+        "downside_semivariance_w10"
+      ],
+      "drawdown_w100": [
+        "close_location_value_w50",
+        "cmf_w50",
+        "close_location_value_w20",
+        "close_location_value_w10"
+      ],
+      "volume": [
+        "open",
+        "close"
+      ],
+      "volatility_w50": [
+        "price_impact_w50",
+        "volatility_w200",
+        "downside_semivariance_w10",
+        "price_impact_w10",
+        "price_impact_w20",
+        "rv_z_short",
+        "volatility_1d",
+        "volatility_trend_slope_w100"
+      ],
+      "price_impact_w50": [
+        "price_impact_w10",
+        "price_impact_w20"
+      ],
+      "volatility_1d": [
+        "price_impact_w50",
+        "price_impact_w10",
+        "price_impact_w20",
+        "geo_atr_14",
+        "rv_z_short"
+      ],
+      "max_runup_w50": [
+        "max_runup_w100"
+      ],
+      "volatility_w200": [
+        "downside_semivariance_w10",
+        "price_impact_w10",
+        "rv_z_short",
+        "volatility_1d",
+        "volatility_trend_slope_w100",
+        "price_impact_w50",
+        "price_impact_w20"
+      ],
+      "volatility_5d": [
+        "volatility_1d",
+        "geo_atr_14"
+      ],
+      "open": [
+        "close"
+      ],
+      "price_impact_w10": [
+        "downside_semivariance_w10"
+      ],
+      "close_location_value_w20": [
+        "close_location_value_w10"
+      ],
+      "yang_zhang_volatility_w50": [
+        "volatility_w50",
+        "volatility_1d",
+        "geo_atr_14"
+      ],
+      "price_impact_w20": [
+        "price_impact_w10"
+      ],
+      "rv_z_short": [
+        "price_impact_w20",
+        "geo_atr_14",
+        "price_impact_w50",
+        "price_impact_w10"
+      ],
+      "volatility_trend_slope_w100": [
+        "rv_z_short"
+      ]
+    }
+  }
+}

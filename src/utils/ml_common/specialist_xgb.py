@@ -37,7 +37,7 @@ def _fit_single_model(
     
     import multiprocessing
     n_cpus = multiprocessing.cpu_count()
-    default_n_jobs = min(n_cpus, 4) if n_cpus > 4 else max(1, n_cpus - 1)
+    default_n_jobs = 1 # Force single thread for M1 stability
 
     params = {
         "n_estimators": 1000,
@@ -60,7 +60,8 @@ def _fit_single_model(
     return model
 
 
-PURGE_MINUTES = 45
+# Default purge to 24 hours (1440 minutes) to prevent leakage
+DEFAULT_PURGE_MINUTES = 1440 
 EMBARGO_MINUTES = 15
 
 
@@ -70,8 +71,12 @@ def train_specialist_model_with_oof(
     sample_weight: Optional[pd.Series] = None,
     n_splits: int = 5,
     params_override: Optional[Dict[str, Any]] = None,
+    purge_length: Optional[pd.Timedelta] = None,
 ) -> SpecialistTrainingResult:
-    tprint_info(f"   [ExtraTrees] Training with OOF (Splits: {n_splits})...")
+    # Use provided purge length or default to strict 24h
+    purge_delta = purge_length if purge_length is not None else pd.Timedelta(minutes=DEFAULT_PURGE_MINUTES)
+    
+    tprint_info(f"   [ExtraTrees] Training with OOF (Splits: {n_splits}, Purge: {purge_delta})...")
     
     if X.empty or len(y) == 0:
         raise ValueError("Cannot train model on empty dataset")
@@ -81,10 +86,6 @@ def train_specialist_model_with_oof(
 
     if sample_weight is not None:
         sample_weight = sample_weight.astype(float)
-        # Ensure no NaN values in sample weights
-        if sample_weight.isna().any():
-            tprint_warning(f"   [ExtraTrees] Sample weights contain NaN values, replacing with 1.0")
-            sample_weight = sample_weight.fillna(1.0)
         # Ensure no NaN values in sample weights
         if sample_weight.isna().any():
             tprint_warning(f"   [ExtraTrees] Sample weights contain NaN values, replacing with 1.0")
@@ -101,7 +102,7 @@ def train_specialist_model_with_oof(
 
     splitter = PurgedKFoldTime(
         n_splits=n_splits,
-        purge=pd.Timedelta(minutes=PURGE_MINUTES),
+        purge=purge_delta,
         embargo=pd.Timedelta(minutes=EMBARGO_MINUTES),
     )
     oof_probs = pd.Series(np.nan, index=X.index, dtype=float)

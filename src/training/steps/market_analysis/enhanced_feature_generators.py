@@ -22,39 +22,45 @@ class NonLinearFeatureGenerator:
     @staticmethod
     def add_polynomial_features(df: pd.DataFrame, columns: List[str], degree: int = 2) -> pd.DataFrame:
         """
-        Add polynomial features for specified columns.
+        Add robust rank-based non-linear features (replacing raw polynomials).
         
         Args:
             df: Input DataFrame
             columns: Columns to transform
-            degree: Polynomial degree
+            degree: Unused legacy arg (kept/deprecated)
             
         Returns:
-            DataFrame with polynomial features
+            DataFrame with GaussRank transformed features
         """
-        features = pd.DataFrame(index=df.index)
-        
-        for col in columns:
-            if col in df.columns:
-                # Basic polynomial features
-                features[f'{col}_squared'] = df[col] ** 2
-                features[f'{col}_cubed'] = df[col] ** 3
-                
-                # Log transformation (for positive values)
-                if (df[col] > 0).all():
-                    features[f'{col}_log'] = np.log1p(df[col])
-                    features[f'{col}_log_squared'] = np.log1p(df[col]) ** 2
-                
-                # Square root transformation (for non-negative values)
-                if (df[col] >= 0).all():
-                    features[f'{col}_sqrt'] = np.sqrt(df[col] + 1e-8)
-                
-                # Reciprocal transformation (for non-zero values)
-                if (df[col] != 0).all():
-                    features[f'{col}_reciprocal'] = 1 / (df[col] + 1e-8)
-        
-        logger.info(f"Added {len(features.columns)} polynomial features")
-        return features
+        try:
+            from src.features_common.transforms import GaussRankScaler
+            scaler = GaussRankScaler()
+            
+            features = pd.DataFrame(index=df.index)
+            
+            for col in columns:
+                if col in df.columns:
+                    # 1. Rank-based Magnitude (proxy for x^2 but robust)
+                    # We take abs(x) -> Volatility/Magnitude -> Rank Transform
+                    abs_val = df[col].abs()
+                    features[f'{col}_rank_magnitude'] = scaler.fit_transform(abs_val)
+                    
+                    # 2. Rank-based Value (proxy for x but robust)
+                    features[f'{col}_rank_value'] = scaler.fit_transform(df[col])
+                    
+                    # 3. Log-like behavior via Rank (no need for explicit log if using rank)
+                    # But we can capture asymmetry
+                    
+                    # 4. Interaction proxy: Sign * Rank(Magnitude)
+                    # This preserves direction but robustifies magnitude
+                    features[f'{col}_robust_feature'] = np.sign(df[col]) * features[f'{col}_rank_magnitude']
+            
+            logger.info(f"Added {len(features.columns)} robust rank-based features")
+            return features
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate robust features: {e}. Fallback to empty.")
+            return pd.DataFrame(index=df.index)
     
     @staticmethod
     def add_interaction_features(df: pd.DataFrame, column_pairs: List[Tuple[str, str]]) -> pd.DataFrame:

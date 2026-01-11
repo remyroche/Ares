@@ -18,6 +18,7 @@ from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import warnings
+from dataclasses import dataclass
 
 # Import tprint functions
 try:
@@ -736,3 +737,99 @@ def quick_specialist_training(
     
     manager.fit_all_specialists(X, y_dict)
     return manager
+
+
+@dataclass
+class LiquidationSpecialist(CausalSpecialist):
+    """
+    Specialist focused on Liquidation Squeezes.
+    
+    Logic:
+    - Identifies proximity to Liquidation Proxy Levels (Pivot + ATR).
+    - Checks for Volume Stress (RVS > Threshold).
+    - Triggers 'Squeeze' signal if Price dips into Proxy Zone with High Stress.
+    """
+    
+    def __init__(
+        self,
+        name: str = "Liquidation_Specialist",
+        rvs_threshold: float = 2.0,
+        **kwargs
+    ):
+        super().__init__(name, causal_parent="liquidation_risk_long", causal_child="returns", **kwargs)
+        self.rvs_threshold = rvs_threshold
+        self.confidence_scores_ = None # Initialize 
+        
+    def fit(self, X: pd.DataFrame, y: pd.Series, sample_weights: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Fit method (Standard Linear Model on composite feature).
+        
+        We primarily use the 'liquidation_risk_long' composite feature created in feature generation,
+        but we can also look at individual components if available.
+        """
+        if self.verbose:
+            tprint_info(f"🌊 Training Liquidation Specialist: {self.name}")
+        
+        # We use the standard fit from parent, but ensure we target the composite risk score
+        # passing 'liquidation_risk_long' as the parent feature.
+        return super().fit(X, y, sample_weights)
+
+    def detect_squeeze(self, X: pd.DataFrame) -> pd.Series:
+        """
+        Detect Squeeze Events based on Hard Logic rules.
+        
+        Rule:
+        - Price < Long_Proxy (implied by positive dist_to_long_proxy if normalized correctly, 
+          OR check 'in_long_liq_zone' flag if available).
+        - RVS > Threshold.
+        """
+        # We can reconstruct logic from raw features or use the composite
+        # Composite 'liquidation_risk_long' = in_zone * high_stress
+        if 'liquidation_risk_long' in X.columns:
+            # If feature gen did the heavy lifting
+            return (X['liquidation_risk_long'] > 0).astype(int)
+            
+        # Fallback reconstruction
+        squeeze_signal = pd.Series(0, index=X.index)
+        
+        if 'dist_to_long_proxy' in X.columns and 'relative_volume_stress' in X.columns:
+            # dist_to_long_proxy = (Price - Proxy). 
+            # If Price < Proxy, dist is negative.
+            # Wait, feature gen said: "For Long Squeeze (price drops to proxy): Distance is positive if Price > Proxy"
+            # mtf_feature_generation.py: dist_to_long_proxy = (close - proxy_long) / atr
+            # So if Price < Proxy, dist is NEGATIVE.
+            
+            # BUT, the user prompt said: "Price < Long_Proxy_Level".
+            # So we look for dist_to_long_proxy < 0.
+            
+            in_zone = X['dist_to_long_proxy'] < 0
+            high_stress = X['relative_volume_stress'] > self.rvs_threshold
+            
+            squeeze_signal = (in_zone & high_stress).astype(int)
+            
+        return squeeze_signal
+
+    def predict(self, X: pd.DataFrame, return_confidence: bool = True) -> Union[pd.Series, Tuple[pd.Series, pd.Series]]:
+        """
+        Predict returns, boosting them if a Squeeze is detected.
+        """
+        # Base prediction from linear model
+        base_pred = super().predict(X, return_confidence=False)
+        
+        # Add Squeeze Boost
+        squeeze = self.detect_squeeze(X)
+        
+        if return_confidence:
+            confidence = pd.Series(0.5, index=X.index)
+            # Boost confidence where squeeze is detected
+            confidence[squeeze == 1] = 0.9
+            # Use base confidence for others?
+            if self.confidence_scores_ is not None and not self.confidence_scores_.empty:
+                 # Align base confidence
+                 base_conf = self.confidence_scores_.reindex(X.index).fillna(0.5)
+                 confidence = np.maximum(confidence, base_conf)
+                 
+            return base_pred, confidence
+        
+        return base_pred
+

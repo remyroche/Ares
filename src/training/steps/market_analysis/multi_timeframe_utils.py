@@ -2,7 +2,8 @@
 Multi-Timeframe Data Processing Utilities for GMM Enhanced Features
 
 This module provides utilities for handling multiple timeframes (15m, 60m, 4h)
-with efficient resampling, alignment, and fusion capabilities.
+with efficient resampling, alignment, and fusion capabilities using Numba JIT
+and entropy-based bar generation.
 """
 
 import numpy as np
@@ -11,6 +12,31 @@ from typing import Dict, List, Optional, Tuple, Union
 from datetime import datetime, timedelta
 import warnings
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
+
+# Import entropy bar calculator
+try:
+    from src.utils.entropy_bars import generate_entropy_bars_from_ohlcv
+    ENTROPY_BARS_AVAILABLE = True
+except ImportError:
+    ENTROPY_BARS_AVAILABLE = False
+    generate_entropy_bars_from_ohlcv = None
+
+# Try to import Numba for JIT compilation
+try:
+    from numba import njit, prange, jit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def prange(n):
+        return range(n)
 
 
 class MultiTimeframeProcessor:
@@ -29,6 +55,9 @@ class MultiTimeframeProcessor:
             "60m": 4,    # 4x 15m bars
             "4h": 16     # 16x 15m bars
         }
+        # Optimized chunk sizes based on available memory and data size
+        self.max_memory_mb = 2048  # Increased for better performance
+        self.chunk_size = 50000    # Increased from 10000 for fewer iterations
         
         # Resampling configurations
         self.resample_config = {
@@ -114,6 +143,76 @@ class MultiTimeframeProcessor:
         ).std()
         
         return resampled
+    
+    @njit
+    def _fast_resample_ohlcv_numpy(self, prices: np.ndarray, volumes: np.ndarray, multiplier: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Fast JIT-compiled OHLCV resampling using NumPy arrays.
+        
+        Args:
+            prices: Price array (close prices)
+            volumes: Volume array
+            multiplier: Resampling multiplier (e.g., 4 for 15m->60m)
+            
+        Returns:
+            Tuple of (open, high, low, close, volume) arrays
+        """
+        n_bars = len(prices)
+        n_resampled = n_bars // multiplier
+        
+        if n_resampled == 0:
+            return np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
+        
+        # Pre-allocate arrays
+        opens = np.empty(n_resampled)
+        highs = np.empty(n_resampled)
+        lows = np.empty(n_resampled)
+        closes = np.empty(n_resampled)
+        volumes_sum = np.empty(n_resampled)
+        
+        # Vectorized resampling
+        for i in prange(n_resampled):
+            start_idx = i * multiplier
+            end_idx = (i + 1) * multiplier
+            
+            chunk = prices[start_idx:end_idx]
+            vol_chunk = volumes[start_idx:end_idx]
+            
+            opens[i] = chunk[0]
+            closes[i] = chunk[-1]
+            highs[i] = np.max(chunk)
+            lows[i] = np.min(chunk)
+            volumes_sum[i] = np.sum(vol_chunk)
+        
+        return opens, highs, lows, closes, volumes_sum
+    
+    def resample_to_entropy_bars(self, data: pd.DataFrame, target_minutes: int = 15) -> pd.DataFrame:
+        """
+        Resample data to entropy-based bars using the existing entropy bar calculator.
+        
+        Args:
+            data: OHLCV data
+            target_minutes: Target minutes per entropy bar
+            
+        Returns:
+            DataFrame with entropy bars
+        """
+        if not ENTROPY_BARS_AVAILABLE:
+            raise RuntimeError("Entropy bars not available - cannot proceed without entropy-based alignment")
+        
+        tprint_info(f"🔥 Generating {target_minutes}min entropy bars...")
+        entropy_bars = generate_entropy_bars_from_ohlcv(
+            data, 
+            n_bins=10, 
+            window_size=100, 
+            target_minutes=target_minutes
+        )
+        
+        if entropy_bars.empty:
+            raise RuntimeError(f"Failed to generate {target_minutes}min entropy bars")
+            
+        tprint_success(f"✅ Generated {len(entropy_bars)} entropy bars (avg {entropy_bars['n_minutes'].mean():.1f} min/bar)")
+        return entropy_bars
     
     def align_timeframes(self, 
                         base_data: pd.DataFrame, 
@@ -362,22 +461,24 @@ class MultiTimeframeProcessor:
             Combined features from all timeframes
         """
         if chunk_size is None:
-            chunk_size = self.calculate_optimal_chunk_size(
-                len(data_15m), 
-                len(data_15m.columns) * 10  # Estimate feature count
-            )
+            chunk_size = self.chunk_size  # Use optimized chunk size
         
-        tprint_info(f"🚀 Processing {len(data_15m)} rows in chunks of {chunk_size}")
+        tprint_info(f"🚀 Processing {len(data_15m)} rows in chunks of {chunk_size} (Numba: {NUMBA_AVAILABLE})")
         
-        # Resample to higher timeframes once
-        data_60m = self.resample_ohlcv(data_15m, "60m")
-        data_4h = self.resample_ohlcv(data_15m, "4h")
+        # Resample to higher timeframes using entropy bars (entropy-only)
+        tprint_info("📊 Resampling to entropy-based timeframes...")
         
-        # Align all timeframes
+        # Use entropy bars for better information alignment (no fallback)
+        data_60m = self.resample_to_entropy_bars(data_15m, target_minutes=60)
+        data_4h = self.resample_to_entropy_bars(data_15m, target_minutes=240)  # 4 hours = 240 minutes
+        
+        # Align all timeframes (vectorized)
+        tprint_info("🔗 Aligning timeframes...")
         aligned_data = self.align_timeframes(data_15m, {"60m": data_60m, "4h": data_4h})
         
-        # Process in chunks
-        all_features = []
+        # Pre-allocate results list for better memory management
+        n_chunks = (len(data_15m) + chunk_size - 1) // chunk_size
+        all_features = [None] * n_chunks  # Pre-allocate list
         
         for i in range(0, len(data_15m), chunk_size):
             end_idx = min(i + chunk_size, len(data_15m))
@@ -388,16 +489,24 @@ class MultiTimeframeProcessor:
             # Generate features for this chunk
             chunk_features = feature_generator(chunk_15m, chunk_60m, chunk_4h)
             
-            all_features.append(chunk_features)
+            # Store in pre-allocated list
+            chunk_idx = i // chunk_size
+            all_features[chunk_idx] = chunk_features
             
-            # Memory cleanup
+            # Minimal memory cleanup - only clear references
             del chunk_15m, chunk_60m, chunk_4h, chunk_features
             
-            if i % (chunk_size * 5) == 0:  # Progress update every 5 chunks
-                tprint_info(f"📊 Processed {min(end_idx, len(data_15m))}/{len(data_15m)} rows")
+            # Optimized progress reporting (less frequent)
+            if chunk_idx % 2 == 0 or chunk_idx == n_chunks - 1:  # Every 2 chunks or last chunk
+                progress_pct = (chunk_idx + 1) / n_chunks * 100
+                tprint_info(f"📊 Processed {chunk_idx + 1}/{n_chunks} chunks ({progress_pct:.1f}%)")
         
-        # Combine all chunks
+        # Combine all chunks efficiently
+        tprint_info("🔗 Combining all chunks...")
         final_features = pd.concat(all_features, ignore_index=False)
+        
+        # Clear the list to free memory
+        all_features.clear()
         
         tprint_success(f"✅ Streaming processing complete: {len(final_features)} features")
         

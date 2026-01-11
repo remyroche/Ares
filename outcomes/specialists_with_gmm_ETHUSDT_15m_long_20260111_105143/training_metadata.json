@@ -1,0 +1,18 @@
+{
+  "timestamp": "20260111_105143",
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "direction": "long",
+  "n_specialists": 1,
+  "enhanced_features_shape": [
+    142619,
+    2
+  ],
+  "specialist_names": [
+    "enhanced_ml_risk_regime_step"
+  ],
+  "feature_columns": [
+    "enhanced_ml_risk_regime_step_risk_regime",
+    "enhanced_ml_risk_regime_step_risk_score"
+  ]
+}

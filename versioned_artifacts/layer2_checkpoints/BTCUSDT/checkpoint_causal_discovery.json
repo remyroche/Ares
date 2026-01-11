@@ -1,0 +1,285 @@
+{
+  "step_name": "causal_discovery",
+  "step_index": 3,
+  "timestamp": "20260112_000534",
+  "symbol": "BTCUSDT",
+  "config_hash": "147870a253a4",
+  "data_keys": [
+    "df",
+    "causal_graph"
+  ],
+  "json_data": {
+    "causal_graph": {
+      "vwap_zscore_w50": [
+        "log_ret",
+        "smoothed_return",
+        "vwap_zscore_w10",
+        "vwap_zscore_w150",
+        "residual_return",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "vwap_zscore_w200",
+        "close_location_value_w50",
+        "vwap_zscore_w100",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "left_tail_var_ratio_w150",
+        "cmf_w10"
+      ],
+      "smoothed_return": [
+        "left_tail_var_ratio_w150",
+        "log_ret",
+        "cmf_w10",
+        "residual_return",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150"
+      ],
+      "left_tail_var_ratio_w150": [
+        "drawdown_w100",
+        "drawdown_w150",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100"
+      ],
+      "vwap_zscore_w200": [
+        "left_tail_var_ratio_w150",
+        "log_ret",
+        "smoothed_return",
+        "vwap_zscore_w10",
+        "vwap_zscore_w150",
+        "residual_return",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "macd_hist_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "vwap_zscore_w100",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "cmf_w10"
+      ],
+      "vwap_zscore_w10": [
+        "log_ret",
+        "smoothed_return",
+        "cmf_w10",
+        "residual_return",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "left_tail_var_ratio_w150"
+      ],
+      "log_ret": [
+        "close_lag_1",
+        "high_lag_1",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "cmf_w10"
+      ],
+      "vwap_zscore_w150": [
+        "log_ret",
+        "smoothed_return",
+        "vwap_zscore_w10",
+        "cmf_w10",
+        "residual_return",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "vwap_zscore_w100",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "left_tail_var_ratio_w150"
+      ],
+      "residual_return": [
+        "log_ret",
+        "cmf_w10",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "left_tail_var_ratio_w150"
+      ],
+      "vwap_zscore_w100": [
+        "log_ret",
+        "smoothed_return",
+        "vwap_zscore_w10",
+        "cmf_w10",
+        "residual_return",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "left_tail_var_ratio_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "left_tail_var_ratio_w150"
+      ],
+      "volatility_w50": [
+        "volatility_w20",
+        "volatility_1d",
+        "rv_z_short"
+      ],
+      "high_lag_1": [
+        "close_lag_1"
+      ],
+      "macd_hist_w150": [
+        "high_lag_1",
+        "drawdown_w100",
+        "drawdown_w150"
+      ],
+      "cmf_w10": [
+        "close_location_value_w10",
+        "close_location_value_w150",
+        "close_location_value_w50",
+        "close_location_value_w100"
+      ],
+      "left_tail_var_ratio_w10": [
+        "cmf_w10",
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "force_index_w10",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150"
+      ],
+      "dist_to_long_proxy": [
+        "cmf_w10",
+        "close_location_value_w150",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "close_location_value_w100"
+      ],
+      "open": [
+        "close"
+      ],
+      "drawdown_w100": [
+        "close_location_value_w150",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "cmf_w10"
+      ],
+      "drawdown_w50": [
+        "drawdown_w100",
+        "close_location_value_w150",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "cmf_w10"
+      ],
+      "force_index_w10": [
+        "drawdown_w100",
+        "close_location_value_w150",
+        "drawdown_w50",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "drawdown_w150",
+        "cmf_w10"
+      ],
+      "drawdown_w150": [
+        "drawdown_w100",
+        "close_location_value_w150",
+        "close_location_value_w10",
+        "close_location_value_w50",
+        "dist_to_long_proxy",
+        "close_location_value_w100",
+        "cmf_w10"
+      ],
+      "volatility_w20": [
+        "vol_acceleration_w20",
+        "volatility_1d",
+        "rv_z_short",
+        "vol_ratio_w10_vs_w40"
+      ],
+      "vol_acceleration_w20": [
+        "adx_trend_strength_w20",
+        "rv_z_short",
+        "range_expansion_ratio_w100"
+      ],
+      "close_location_value_w150": [
+        "close_location_value_w10",
+        "close_location_value_w100"
+      ],
+      "close_location_value_w50": [
+        "close_location_value_w150",
+        "close_location_value_w10",
+        "close_location_value_w100"
+      ],
+      "volatility_5d": [
+        "volatility_1d"
+      ],
+      "close_location_value_w100": [
+        "close_location_value_w10"
+      ],
+      "volatility_1d": [
+        "rv_z_short"
+      ],
+      "range_expansion_ratio_w100": [
+        "adx_trend_strength_w20"
+      ],
+      "rv_z_short": [
+        "range_expansion_ratio_w100"
+      ],
+      "vol_ratio_w10_vs_w40": [
+        "rv_z_short"
+      ]
+    }
+  }
+}

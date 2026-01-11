@@ -441,7 +441,19 @@ class TVVARSystem:
         
         return relationships
     
-
+    def _extract_decision_tree_rules(self, 
+                                   features_df: pd.DataFrame, 
+                                   time_varying_coeffs: pd.DataFrame,
+                                   regime_assignments: pd.Series) -> Dict[str, Any]:
+        """
+        Extract decision tree rules from TV-VAR results.
+        
+        Uses aligned data to train decision trees mapping features to:
+        1. Specialist selection (dominant coefficient)
+        2. Orthogonalization weights (coefficient variance)
+        3. Regime detection (regime labels)
+        """
+        
         logger.info("🌳 Extracting decision tree rules for real-time application")
         
         rules = {
@@ -474,13 +486,14 @@ class TVVARSystem:
             logger.info(f"✅ Successfully aligned {len(aligned_features)} samples for decision tree extraction")
             
             # Specialist selection tree
-            tree_sel = DecisionTreeRegressor(max_depth=3, min_samples_leaf=20)
-            tree_sel.fit(aligned_features, aligned_coeffs.iloc[:, 0])  # First coefficient as target
-            
-            rules['specialist_selection'] = {
-                'tree_text': export_text(tree_sel, feature_names=list(aligned_features.columns)),
-                'feature_importance': dict(zip(aligned_features.columns, tree_sel.feature_importances_))
-            }
+            if len(aligned_coeffs.columns) > 0:
+                tree_sel = DecisionTreeRegressor(max_depth=3, min_samples_leaf=20)
+                tree_sel.fit(aligned_features, aligned_coeffs.iloc[:, 0])  # First coefficient as target
+                
+                rules['specialist_selection'] = {
+                    'tree_text': export_text(tree_sel, feature_names=list(aligned_features.columns)),
+                    'feature_importance': dict(zip(aligned_features.columns, tree_sel.feature_importances_))
+                }
             
             # Orthogonalization weights tree
             tree_orth = DecisionTreeRegressor(max_depth=3, min_samples_leaf=20)
@@ -489,17 +502,25 @@ class TVVARSystem:
             # Handle case where rolling variance returns NaN (insufficient data)
             if coeff_variance.isna().any():
                 coeff_variance = aligned_coeffs.var()
-            tree_orth.fit(aligned_features, coeff_variance)
             
-            rules['orthogonalization_weights'] = {
-                'tree_text': export_text(tree_orth, feature_names=list(aligned_features.columns)),
-                'feature_importance': dict(zip(aligned_features.columns, tree_orth.feature_importances_))
-            }
+            # Handle if coeff_variance is still empty/NaN
+            if not coeff_variance.isna().all():
+                # If series, mean variance across coefficients? Or target variance of ALL coefficients?
+                # Simplified: target mean variance across coefficients
+                target_var = aligned_coeffs.var(axis=1).fillna(0)
+                tree_orth.fit(aligned_features, target_var)
+                
+                rules['orthogonalization_weights'] = {
+                    'tree_text': export_text(tree_orth, feature_names=list(aligned_features.columns)),
+                    'feature_importance': dict(zip(aligned_features.columns, tree_orth.feature_importances_))
+                }
             
             # Regime detection tree
             tree_regime = DecisionTreeRegressor(max_depth=2, min_samples_leaf=30)
             regime_encoded = aligned_regimes.map({'NEUTRAL': 0, 'HIGH_VOLATILITY': 1, 'LOW_VOLATILITY': 2, 
                                                 'STRESS_REGIME': 3, 'TREND_REGIME': 4, 'LIQUIDITY_REGIME': 5})
+            # Fill NaNs in encoding
+            regime_encoded = regime_encoded.fillna(0)
             tree_regime.fit(aligned_features, regime_encoded)
             
             rules['regime_detection'] = {

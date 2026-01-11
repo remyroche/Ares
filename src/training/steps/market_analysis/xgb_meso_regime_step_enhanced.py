@@ -313,6 +313,12 @@ class EnhancedXGBMesoRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
         
         return features
 
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For meso regime, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_meso_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced XGB meso regime step."""
         return await self.execute_standard_specialist_logic(

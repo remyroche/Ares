@@ -1,0 +1,518 @@
+2026-01-10 18:49:45,474 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-01-10 18:49:45,474 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-01-10 18:49:45.475] PERFORMANCE: DataQualityFramework initialization took 0.000s
+2026-01-10 18:49:45,475 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.000s
+2026-01-10 18:49:46,047 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-01-10 18:49:46.047] PERFORMANCE: AdvancedQualityMetrics initialization took 0.000s
+2026-01-10 18:49:46,047 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.000s
+2026-01-10 18:49:46,049 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-01-10 18:49:46.049] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-01-10 18:49:46,049 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-01-10 18:49:46,049 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-01-10 18:49:46.049] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-01-10 18:49:46,049 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-01-10 18:49:46,050 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-01-10 18:49:46.131] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-01-10 18:49:46.131] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-01-10 18:49:46,132 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-01-10 18:49:46.131] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-01-10 18:49:49,185 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+2026-01-10 18:49:49,200 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - ℹ️ 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+[2026-01-10 18:49:49.408] DEBUG: 🔧 [transforms] Module initialized with 14 exports
+2026-01-10 18:49:49,408 - src.features_common.backward_compatibility - INFO - ℹ️ Backward compatibility ensured for features_common
+[2026-01-10 18:49:49.410] DEBUG: 🔧 [optimization] Module initialized with 6 exports
+[2026-01-10 18:49:49.410] DEBUG: 🔧 [registry] Module initialized with BaseFeatureRegistry
+[2026-01-10 18:49:49.413] DEBUG: 🚀 [features_common] Enhanced module initialized with 59 exports
+[2026-01-10 18:49:49.413] SUCCESS: ✅ [features_common] All optimizations enabled by default
+2026-01-10 18:49:49,413 - System.tprint - INFO - ℹ️ ✅ [features_common] All optimizations enabled by default
+[2026-01-10 18:49:49.413] INFO: 🔧 [features_common] VectorBT integration available
+2026-01-10 18:49:49,414 - System.tprint - INFO - ℹ️ 🔧 [features_common] VectorBT integration available
+[2026-01-10 18:49:49.413] PERFORMANCE: 📊 [features_common] Performance monitoring enabled
+2026-01-10 18:49:49,414 - System.tprint - INFO - ℹ️ 📊 [features_common] Performance monitoring enabled
+[2026-01-10 18:49:49.413] WARNING: 💾 [features_common] Intelligent caching active
+2026-01-10 18:49:49,414 - System.tprint - WARNING - ⚠️ 💾 [features_common] Intelligent caching active
+2026-01-10 18:49:49,414 - System.DataStreamingManager - INFO - ℹ️ 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+[2026-01-10 18:49:49.414] PERFORMANCE: DataStreamingManager initialization took 0.000s
+2026-01-10 18:49:49,414 - System.tprint - INFO - ℹ️ DataStreamingManager initialization took 0.000s
+[2026-01-10 18:49:50.403] ✅ Custom logger available for MLCommon.ConfidenceMetrics
+2026-01-10 18:49:50,403 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ConfidenceMetrics
+[2026-01-10 18:49:50.404] ✅ Custom logger available for MLCommon.ModelExplanations
+2026-01-10 18:49:50,404 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelExplanations
+2026-01-10 18:49:51,022 - MLCommon.ModelExplanations - INFO - ℹ️ LIME library available - LIME explanations enabled
+[2026-01-10 18:49:51.023] ✅ Custom logger available for MLCommon.ModelRegistry
+2026-01-10 18:49:51,023 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelRegistry
+[2026-01-10 18:49:51.023] ✅ Custom logger available for MLCommon.ModelExplainability
+2026-01-10 18:49:51,023 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelExplainability
+[2026-01-10 18:49:51.085] ✅ Custom logger available for MLCommon.CV
+2026-01-10 18:49:51,085 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.CV
+2026-01-10 18:49:51,086 - src.utils.ml_common.validation.enhanced_validation - INFO - ℹ️ ✅ Enhanced Validation initialized
+[2026-01-10 18:49:51.088] ✅ Custom logger available for MLCommon.ValidationUtils
+2026-01-10 18:49:51,088 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ValidationUtils
+[2026-01-10 18:49:51.096] ✅ Custom logger available for MLCommon.HPOUtils
+2026-01-10 18:49:51,097 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.HPOUtils
+2026-01-10 18:49:51,176 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_condition_number
+2026-01-10 18:49:51,176 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_matrix_rank
+2026-01-10 18:49:51,177 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: matrix_normalize
+2026-01-10 18:49:51,177 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: extract_matrix_features
+2026-01-10 18:49:51,179 - src.utils.matrix_operations - INFO - ℹ️ ✅ Unified Matrix Operations module initialized
+2026-01-10 18:49:51,179 - src.utils.matrix_operations - INFO - ℹ️ 📦 Version: 1.0.0
+2026-01-10 18:49:51,179 - src.utils.matrix_operations - INFO - ℹ️ 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+2026-01-10 18:49:51,180 - src.utils.matrix_operations - INFO - ℹ️ 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+2026-01-10 18:49:51,180 - src.utils.matrix_operations - INFO - ℹ️ 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+2026-01-10 18:49:51,180 - src.utils.matrix_operations - INFO - ℹ️ 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+2026-01-10 18:49:51,180 - src.utils.matrix_operations - INFO - ℹ️ ⚡ UnifiedVectorizationManager available - unified vectorization operations
+2026-01-10 18:49:51,181 - System.ComplementaryLookbackOptimizer - INFO - ℹ️ ✅ Detected VectorBT v0.28.1
+2026-01-10 18:49:51,186 - src.feature_generation.utils.feature_generation_optimization - INFO - ℹ️ ✅ VectorBT available for feature optimization
+2026-01-10 18:49:51,199 - src.feature_generation.core.feature_registry.FeatureRegistry - INFO - ℹ️ FeatureRegistry initialized
+[2026-01-10 18:49:51.199] 🔧 Initializing AutoOptimizationConfig...
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ 🔧 Initializing AutoOptimizationConfig...
+[2026-01-10 18:49:51.199] 📝 Setting up conservative optimization settings...
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ 📝 Setting up conservative optimization settings...
+[2026-01-10 18:49:51.199] ✅ Conservative settings configured
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ ✅ Conservative settings configured
+[2026-01-10 18:49:51.199] 📝 Setting up balanced optimization settings...
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ 📝 Setting up balanced optimization settings...
+[2026-01-10 18:49:51.199] ✅ Balanced settings configured
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ ✅ Balanced settings configured
+[2026-01-10 18:49:51.199] 📝 Setting up aggressive optimization settings...
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ 📝 Setting up aggressive optimization settings...
+[2026-01-10 18:49:51.199] ✅ Aggressive settings configured
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ ✅ Aggressive settings configured
+[2026-01-10 18:49:51.199] 🎯 AutoOptimizationConfig initialized with balanced strategy
+2026-01-10 18:49:51,199 - System.tprint - INFO - ℹ️ 🎯 AutoOptimizationConfig initialized with balanced strategy
+[2026-01-10 18:49:51.199] ✅ Auto-optimization enabled for FeatureBank (default)
+2026-01-10 18:49:51,200 - System.tprint - INFO - ℹ️ ✅ Auto-optimization enabled for FeatureBank (default)
+2026-01-10 18:49:51,200 - src.feature_generation.utils.memory_pool_optimizer.MemoryPoolOptimizer - INFO - ℹ️ Memory pool optimizer initialized
+2026-01-10 18:49:51,200 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+2026-01-10 18:49:51,217 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-10 18:49:51,217 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🔧 Unified Hardware Manager initialized
+2026-01-10 18:49:51,218 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - ℹ️ 🔍 Hardware performance monitoring started
+2026-01-10 18:49:51,348 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 memory monitoring started
+2026-01-10 18:49:51,348 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 14 objects collected
+2026-01-10 18:49:51,348 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ ✅ Unified Hardware Manager fully initialized
+2026-01-10 18:49:51,348 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🎯 Optimizing for feature_engineering workload (balanced)
+2026-01-10 18:49:51,350 - src.utils.ml_common.hardware_singleton - INFO - ℹ️ 🔍 Detecting hardware capabilities (one-time detection)...
+2026-01-10 18:49:51,350 - src.utils.ml_common.hardware_singleton - INFO - ℹ️ ✅ Hardware detection complete: {'cpu_cores': 8, 'gpu_available': True, 'gpu_type': 'mps', 'memory_gb': 16.0, 'mps_available': True, 'gpu_memory_gb': None}
+[2026-01-10 18:49:51.350] 🚀 Initializing Unified Vectorization Manager...
+2026-01-10 18:49:51,350 - System.tprint - INFO - ℹ️ 🚀 Initializing Unified Vectorization Manager...
+[2026-01-10 18:49:51.350] 🔄 Initializing optimization components...
+2026-01-10 18:49:51,350 - System.tprint - INFO - ℹ️ 🔄 Initializing optimization components...
+[2026-01-10 18:49:51.350] 🔄 Initializing optimization components...
+2026-01-10 18:49:51,350 - System.tprint - INFO - ℹ️ 🔄 Initializing optimization components...
+[2026-01-10 18:49:51.350] 🔄 Loading VectorBTRollingOptimizer...
+2026-01-10 18:49:51,350 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBTRollingOptimizer...
+[2026-01-10 18:49:51.350] ✅ VectorBTRollingOptimizer loaded
+2026-01-10 18:49:51,350 - System.tprint - INFO - ℹ️ ✅ VectorBTRollingOptimizer loaded
+[2026-01-10 18:49:51.350] 🔄 Loading vectorized backtesting...
+2026-01-10 18:49:51,350 - System.tprint - INFO - ℹ️ 🔄 Loading vectorized backtesting...
+2026-01-10 18:49:51,352 - System.VectorizedBacktestingEngine - INFO - ℹ️ ✅ Vectorized Backtesting Engine initialized successfully
+[2026-01-10 18:49:51.352] ✅ Vectorized backtesting loaded
+2026-01-10 18:49:51,352 - System.tprint - INFO - ℹ️ ✅ Vectorized backtesting loaded
+[2026-01-10 18:49:51.352] 🔄 Loading VectorBT backtesting engine...
+2026-01-10 18:49:51,352 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBT backtesting engine...
+2026-01-10 18:49:51,353 - System.VectorBTBacktestingEngine - INFO - ℹ️ ✅ VectorBT Backtesting Engine initialized successfully
+[2026-01-10 18:49:51.353] ✅ VectorBT backtesting engine loaded
+2026-01-10 18:49:51,353 - System.tprint - INFO - ℹ️ ✅ VectorBT backtesting engine loaded
+[2026-01-10 18:49:51.353] 🔄 Loading VectorBT financial metrics...
+2026-01-10 18:49:51,353 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBT financial metrics...
+2026-01-10 18:49:51,354 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ ✅ VectorBT Financial Metrics initialized
+2026-01-10 18:49:51,354 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ 📊 Risk-free rate: 2.00%
+2026-01-10 18:49:51,354 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ 📊 Annualization factor: 252
+2026-01-10 18:49:51,354 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ 📊 Regime analysis: True
+[2026-01-10 18:49:51.354] ✅ VectorBT financial metrics loaded
+2026-01-10 18:49:51,354 - System.tprint - INFO - ℹ️ ✅ VectorBT financial metrics loaded
+[2026-01-10 18:49:51.354] 🔄 Loading VectorBT portfolio optimization...
+2026-01-10 18:49:51,354 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBT portfolio optimization...
+2026-01-10 18:49:51,358 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ ✅ VectorBT Memory Manager initialized
+2026-01-10 18:49:51,358 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ 📊 Total system memory: 16.00GB
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ 📊 Available memory: 3.37GB
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ 📊 Max allocated memory: 8.00GB
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ℹ️ ✅ VectorBT Performance Monitor initialized
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ℹ️ 📊 Monitoring enabled: timing=True, memory=True, gpu=True
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ ✅ VectorBT Portfolio Optimizer initialized
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Method: mean_variance
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Rebalancing: monthly
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Risk aversion: 1.0
+2026-01-10 18:49:51,359 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Memory manager: 3.37GB available
+[2026-01-10 18:49:51.359] ✅ VectorBT portfolio optimization loaded
+2026-01-10 18:49:51,359 - System.tprint - INFO - ℹ️ ✅ VectorBT portfolio optimization loaded
+[2026-01-10 18:49:51.359] 🔄 Loading matrix cross-validation...
+2026-01-10 18:49:51,359 - System.tprint - INFO - ℹ️ 🔄 Loading matrix cross-validation...
+2026-01-10 18:49:51,360 - src.utils.hardware.m1_memory_optimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-10 18:49:51,377 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-10 18:49:51,833 - src.feature_generation.core.vectorbt_batch_processor - INFO - ℹ️ VectorBTBatchProcessor initialized: VectorBT=True, GPU=False, Parallel=True
+2026-01-10 18:49:51,833 - src.feature_generation.utils.unified_vectorization_manager - INFO - ℹ️ UnifiedVectorizationManager initialized: VectorBT=True, GPU=False, Memory=True
+2026-01-10 18:49:51,833 - src.utils.matrix_operations.unified_operations.UnifiedMatrixOperations - INFO - ℹ️ 📊 GPU: False, Memory Opt: False, Parallel: False
+2026-01-10 18:49:51,833 - src.utils.ml_common.matrix_cross_validation - INFO - ℹ️ 🚀 VectorBT configured for cross-validation optimization
+2026-01-10 18:49:51,833 - src.utils.ml_common.matrix_cross_validation - INFO - ℹ️ ✅ Matrix-based cross-validator initialized
+2026-01-10 18:49:51,833 - src.utils.ml_common.matrix_cross_validation - INFO - ℹ️ 📊 Configuration - Splits: 5, GPU: True, VectorBT: True
+[2026-01-10 18:49:51.834] ✅ Matrix cross-validation loaded
+2026-01-10 18:49:51,834 - System.tprint - INFO - ℹ️ ✅ Matrix cross-validation loaded
+[2026-01-10 18:49:51.834] 🔄 Loading feature importance analyzer...
+2026-01-10 18:49:51,834 - System.tprint - INFO - ℹ️ 🔄 Loading feature importance analyzer...
+2026-01-10 18:49:51,848 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ 🔗 Integrating memory skimming with all ML utilities
+2026-01-10 18:49:51,848 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported HPO utilities (direct import)
+2026-01-10 18:49:51,848 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with HPO utilities
+2026-01-10 18:49:51,849 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported Unified CV utilities
+2026-01-10 18:49:51,849 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with Unified CV utilities
+2026-01-10 18:49:51,849 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with lookahead protection utilities
+2026-01-10 18:49:51,850 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ Skipping model evaluation memory integration (deprecated)
+2026-01-10 18:49:51,850 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported feature selection utilities
+2026-01-10 18:49:51,850 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with feature selection utilities
+2026-01-10 18:49:51,853 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported data quality utilities
+2026-01-10 18:49:51,853 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with data quality utilities
+2026-01-10 18:49:51,853 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integration completed: 6/6 successful
+[2026-01-10 18:49:51.853] ✅ Custom logger available for MLCommon.ThreadGuard
+2026-01-10 18:49:51,854 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ThreadGuard
+[2026-01-10 18:49:51.853] ✅ threadpoolctl available for thread management
+2026-01-10 18:49:51,854 - System.tprint - INFO - ℹ️ ✅ threadpoolctl available for thread management
+[2026-01-10 18:49:51.853] ✅ Custom logger available for MLCommon.BaseSafeguards
+2026-01-10 18:49:51,854 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.BaseSafeguards
+[2026-01-10 18:49:51.856] ✅ Scikit-learn available for thresholding functionality
+2026-01-10 18:49:51,856 - System.tprint - INFO - ℹ️ ✅ Scikit-learn available for thresholding functionality
+[2026-01-10 18:49:51.856] ✅ Custom logger available for FeatureSelection.BaseFramework
+2026-01-10 18:49:51,856 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.BaseFramework
+[2026-01-10 18:49:51.856] ✅ Custom logger available for FeatureSelection.DataValidation
+2026-01-10 18:49:51,857 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.DataValidation
+[2026-01-10 18:49:51.857] ✅ Vectorization utilities available for feature selection
+2026-01-10 18:49:51,857 - System.tprint - INFO - ℹ️ ✅ Vectorization utilities available for feature selection
+[2026-01-10 18:49:51.857] ✅ Custom logger available for FeatureSelection.SelectionMethods
+2026-01-10 18:49:51,858 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.SelectionMethods
+[2026-01-10 18:49:51.892] ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+2026-01-10 18:49:51,892 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+[2026-01-10 18:49:51.893] ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+2026-01-10 18:49:51,893 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+[2026-01-10 18:49:51.893] ✅ Custom logger available for FeatureSelection.QualityMetrics
+2026-01-10 18:49:51,894 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.QualityMetrics
+[2026-01-10 18:49:51.893] ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+2026-01-10 18:49:51,894 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+[2026-01-10 18:49:51.895] ✅ Custom logger available for FeatureSelection.CausalAnalysis
+2026-01-10 18:49:51,895 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.CausalAnalysis
+[2026-01-10 18:49:51.897] ✅ Custom logger available for FeatureSelection.MainFramework
+2026-01-10 18:49:51,897 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.MainFramework
+[2026-01-10 18:49:51.929] 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+2026-01-10 18:49:51,929 - System.tprint - INFO - ℹ️ 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+[2026-01-10 18:49:51.929] ✅ Feature importance analyzer loaded
+2026-01-10 18:49:51,929 - System.tprint - INFO - ℹ️ ✅ Feature importance analyzer loaded
+[2026-01-10 18:49:51.929] 🔄 Loading technical indicators...
+2026-01-10 18:49:51,930 - System.tprint - INFO - ℹ️ 🔄 Loading technical indicators...
+2026-01-10 18:49:51,931 - src.feature_generation.utils.feature_generators - INFO - ℹ️ ✅ TA-Lib available for enhanced technical indicators
+2026-01-10 18:49:51,931 - src.feature_generation.utils.feature_generators - INFO - ℹ️ Using fallback implementations for feature selection tools
+2026-01-10 18:49:51,953 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-10 18:49:51,953 - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ℹ️ ✅ Hardware optimization initialized
+2026-01-10 18:49:51,954 - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ℹ️ ✅ Matrix operations available for vectorization
+[2026-01-10 18:49:51.954] ✅ Technical indicators loaded
+2026-01-10 18:49:51,954 - System.tprint - INFO - ℹ️ ✅ Technical indicators loaded
+[2026-01-10 18:49:51.954] ℹ️ HMM operations deprecated - using alternative methods
+2026-01-10 18:49:51,954 - System.tprint - INFO - ℹ️ HMM operations deprecated - using alternative methods
+[2026-01-10 18:49:51.954] ✅ Component initialization completed
+2026-01-10 18:49:51,954 - System.tprint - INFO - ℹ️ ✅ Component initialization completed
+[2026-01-10 18:49:51.954] 🔄 Setting up performance tracking...
+2026-01-10 18:49:51,954 - System.tprint - INFO - ℹ️ 🔄 Setting up performance tracking...
+[2026-01-10 18:49:51.954] ✅ Unified Vectorization Manager initialized
+2026-01-10 18:49:51,954 - System.tprint - INFO - ℹ️ ✅ Unified Vectorization Manager initialized
+2026-01-10 18:49:51,954 - src.utils.ml_common.unified_vectorization_manager - INFO - ℹ️ ✅ Unified Vectorization Manager initialized
+2026-01-10 18:49:51,955 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 🚀 Initializing FeatureGenerationOptimizer...
+2026-01-10 18:49:51,955 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 📊 Configuration loaded: cross_validation
+2026-01-10 18:49:51,955 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ ✅ FeatureGenerationOptimizer initialized in 0.000s
+2026-01-10 18:49:51,956 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 📊 Min lookback: 5, Max lookback: 252
+2026-01-10 18:49:51,956 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 📊 CV folds: 3, Parallel processing: True
+2026-01-10 18:49:51,960 - src.utils.parallel_processing_optimizer - INFO - ℹ️ 🍎 Detected Apple Silicon - applying M1-specific limits
+2026-01-10 18:49:51,962 - src.utils.parallel_processing_optimizer - INFO - ℹ️ 🔧 Initialized MacM1ParallelOptimizer:
+2026-01-10 18:49:51,962 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Max workers: 4
+2026-01-10 18:49:51,962 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Chunk size: 1000
+2026-01-10 18:49:51,962 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Pool type: Process
+2026-01-10 18:49:51,966 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Memory limit per worker: 4096 MB
+2026-01-10 18:49:51,967 - src.utils.parallel_processing_optimizer - INFO - ℹ️    M1 Mac detected: True
+2026-01-10 18:49:51,967 - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ℹ️ ✅ Legacy optimization system available
+2026-01-10 18:49:51,970 - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ℹ️ ✅ LookbackOptimizer initialized
+2026-01-10 18:49:51,971 - src.feature_generation.core.feature_bank.FeatureBank - INFO - ℹ️ ✅ Regular lookback optimization enabled (Analyst mode)
+[2026-01-10 18:49:51.975] ✅ FeatureBank set as global instance
+2026-01-10 18:49:51,976 - System.tprint - INFO - ℹ️ ✅ FeatureBank set as global instance
+[2026-01-10 18:49:51.975] 🔧 Auto-registering feature generators...
+2026-01-10 18:49:51,976 - System.tprint - INFO - ℹ️ 🔧 Auto-registering feature generators...
+[2026-01-10 18:49:51.975] 🔧 Configuring lazy loading for feature generators...
+2026-01-10 18:49:51,976 - System.tprint - INFO - ℹ️ 🔧 Configuring lazy loading for feature generators...
+[2026-01-10 18:49:51.975] ✅ Registered lazy loaders for 16 categories. Generators will be created on demand.
+2026-01-10 18:49:51,976 - System.tprint - INFO - ℹ️ ✅ Registered lazy loaders for 16 categories. Generators will be created on demand.
+2026-01-10 18:49:51,977 - src.feature_generation.core.feature_bank.FeatureBank - INFO - ℹ️ ✅ FeatureBank initialized
+2026-01-10 18:49:51,977 - src.feature_generation.core.feature_bank.FeatureBank - INFO - ℹ️ 📊 Matrix ops: True, GPU: True, Lookback opt: True
+2026-01-10 18:49:51,977 - src.feature_generation - INFO - ℹ️ ✅ Unified Feature Generation System initialized
+2026-01-10 18:49:51,977 - src.feature_generation - INFO - ℹ️ 📦 Version: 2.0.0
+2026-01-10 18:49:51,977 - src.feature_generation - INFO - ℹ️ 🔧 Features: Category-based organization, advanced utilities, optimization
+2026-01-10 18:49:51,977 - src.feature_generation - INFO - ℹ️ 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+2026-01-10 18:49:51,977 - src.feature_generation - INFO - ℹ️ 🚀 Advanced utilities available (optimization, analysis, etc.)
+2026-01-10 18:49:51,977 - src.feature_generation - INFO - ℹ️ ⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)
+2026-01-10 18:49:51,977 - MLCommon.HPOUtils - INFO - ℹ️ ✅ VectorBT optimization available
+2026-01-10 18:49:51,977 - MLCommon.HPOUtils - INFO - ℹ️ 🚀 Initializing Enhanced HyperparameterOptimization...
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils.HPOUtils - INFO - ℹ️ ✅ VectorBT Rolling Optimizer initialized
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils.HPOUtils - INFO - ℹ️ ✅ Unified Vectorization Manager initialized
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils - INFO - ℹ️ ⚙️ Configuration - Parallel processing: True
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils - INFO - ℹ️ ⚙️ Configuration - Max workers: 4
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils - INFO - ℹ️ ⚙️ Configuration - Monitoring enabled: True
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils - INFO - ℹ️ 🚀 Configuration - Non-linear optimization: True
+2026-01-10 18:49:51,978 - MLCommon.HPOUtils - INFO - ℹ️ ✅ Enhanced HyperparameterOptimization initialized successfully
+2026-01-10 18:49:51,997 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-10 18:49:51,997 - System.UnifiedDataUtils - INFO - ℹ️ 🚀 Unified Data Utils initialized
+2026-01-10 18:49:52,002 - System.EvaluationUtils - INFO - ℹ️ EvaluationUtils delegating core metric computation to unified_evaluator
+2026-01-10 18:49:52,004 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️ 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+2026-01-10 18:49:52,004 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Critical leakage threshold: 5.0% (was 25%)
+2026-01-10 18:49:52,004 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Warning leakage threshold: 2.0% (was 10%)
+2026-01-10 18:49:52,005 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Small dataset multiplier: 1.0 (was 1.5)
+2026-01-10 18:49:52,005 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • These strict thresholds are ESSENTIAL for financial data integrity
+2026-01-10 18:49:52,005 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Even 1-2% leakage can invalidate backtesting results
+2026-01-10 18:49:52,005 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • High model scores (>96%) often indicate undetected temporal leakage
+2026-01-10 18:49:52,006 - src.utils.ml_common.validation.overfitting_monitoring - INFO - ℹ️ ✅ Overfitting Monitoring initialized
+2026-01-10 18:49:52,009 - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ℹ️ ✅ HPO with Overfitting Prevention initialized
+2026-01-10 18:49:52,010 - src.utils.ml_common.validation.model_complexity_analysis - INFO - ℹ️ ✅ Model Complexity Analyzer initialized
+2026-01-10 18:49:52,013 - EnhancedReportingSystem.EnhancedReportingSystem - INFO - ℹ️ 📊 Enhanced Reporting System initialized
+2026-01-10 18:49:52,013 - src.utils.ml_common.reporting.validation_reporting_integration - INFO - ℹ️ ✅ Validation Reporting Integrator initialized
+2026-01-10 18:49:52,013 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️ 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Critical leakage threshold: 5.0% (was 25%)
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Warning leakage threshold: 2.0% (was 10%)
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Small dataset multiplier: 1.0 (was 1.5)
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • These strict thresholds are ESSENTIAL for financial data integrity
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Even 1-2% leakage can invalidate backtesting results
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • High model scores (>96%) often indicate undetected temporal leakage
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.overfitting_monitoring - INFO - ℹ️ ✅ Overfitting Monitoring initialized
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.enhanced_validation - INFO - ℹ️ ✅ Enhanced Validation initialized
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ℹ️ ✅ HPO with Overfitting Prevention initialized
+2026-01-10 18:49:52,014 - src.utils.ml_common.validation.model_complexity_analysis - INFO - ℹ️ ✅ Model Complexity Analyzer initialized
+2026-01-10 18:49:52,014 - src.utils.ml_common.training.universal_validation_integration - INFO - ℹ️ ✅ Universal Validation Integrator initialized with new utilities
+2026-01-10 18:49:52,043 - System.sr_clustering - INFO - ℹ️ Initializing SR Clustering module
+2026-01-10 18:49:52,044 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported SRBacktestingEngine components
+2026-01-10 18:49:52,046 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported BacktestingEnhancedClustering components
+2026-01-10 18:49:52,047 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported WeightOptimizationEngine components
+2026-01-10 18:49:52,048 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported PredictiveSREngine components
+2026-01-10 18:49:52,049 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported TradingMLIntegration components
+2026-01-10 18:49:52,049 - System.sr_clustering - INFO - ℹ️ 🎉 SR Clustering module initialization completed successfully
+2026-01-10 18:49:52,133 - root - INFO - ℹ️ ✅ VectorBT compatibility layer loaded successfully
+2026-01-10 18:49:52,140 - sr_error_handlers - INFO - ℹ️ SR Error Handlers module initialized
+2026-01-10 18:49:56,528 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 20 objects collected
+2026-01-10 18:49:57,734 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-01-10 18:49:57,734 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+2026-01-10 18:49:57,736 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-10 18:49:57,736 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-10 18:49:57,736 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+2026-01-10 18:49:57,738 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+2026-01-10 18:49:57,741 - System.DataStreamingManager - INFO - ℹ️ 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+2026-01-10 18:49:57,742 - System.CrossStepValidator - INFO - ℹ️ 🔍 CrossStepValidator initialized with comprehensive consistency rules
+2026-01-10 18:49:57,743 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-10 18:49:57,743 - System.UnifiedDataUtils - INFO - ℹ️ 🚀 Unified Data Utils initialized
+2026-01-10 18:49:57,774 - utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+2026-01-10 18:49:57,796 - utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - ℹ️ 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+2026-01-10 18:49:57,827 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_condition_number
+2026-01-10 18:49:57,828 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_matrix_rank
+2026-01-10 18:49:57,828 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: matrix_normalize
+2026-01-10 18:49:57,828 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: extract_matrix_features
+2026-01-10 18:49:57,831 - utils.matrix_operations - INFO - ℹ️ ✅ Unified Matrix Operations module initialized
+2026-01-10 18:49:57,831 - utils.matrix_operations - INFO - ℹ️ 📦 Version: 1.0.0
+2026-01-10 18:49:57,831 - utils.matrix_operations - INFO - ℹ️ 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+2026-01-10 18:49:57,831 - utils.matrix_operations - INFO - ℹ️ 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+2026-01-10 18:49:57,831 - utils.matrix_operations - INFO - ℹ️ 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+2026-01-10 18:49:57,832 - utils.matrix_operations - INFO - ℹ️ 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+2026-01-10 18:49:57,832 - utils.matrix_operations - INFO - ℹ️ ⚡ UnifiedVectorizationManager available - unified vectorization operations
+2026-01-10 18:49:57,849 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ RegimeEnsembleTrainingConfigManager initialisé
+2026-01-10 18:49:57,849 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ Répertoire config: /Users/remyroche/Documents/Ares/src/config/regime_ensemble_training
+2026-01-10 18:49:57,849 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ Config personnalisée: None
+2026-01-10 18:49:57,849 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ Fallback hardcodé: True
+2026-01-10 18:49:57,850 - ares.registry - INFO - ℹ️ Registered step: regime_ensemble_training
+[2026-01-10 18:49:57.850] ✅ Regime ensemble training step registered SUCCESS
+2026-01-10 18:49:57,850 - System.tprint - INFO - ℹ️ ✅ Regime ensemble training step registered SUCCESS
+2026-01-10 18:49:57,852 - ares.registry - INFO - ℹ️ Registered step: regime_feature_selection
+✅ Mac M1 MPS GPU detected and enabled
+2026-01-10 18:49:57,928 - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ℹ️ 🔧 Initializing Execution Mode Lookback Configuration
+2026-01-10 18:49:57,929 - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ℹ️ ✅ Execution Mode Lookback Configuration initialized
+2026-01-10 18:49:57,934 - ares.registry - INFO - ℹ️ Registered step: feature_generation_data_validation_step
+[2026-01-10 18:49:57.934] ✅ Feature generation data validation step registered SUCCESS
+2026-01-10 18:49:57,934 - System.tprint - INFO - ℹ️ ✅ Feature generation data validation step registered SUCCESS
+[2026-01-10 18:49:57.934] 🔧 Loading labeling components...
+2026-01-10 18:49:57,935 - System.tprint - INFO - ℹ️ 🔧 Loading labeling components...
+✅ Using ORF-based Layer 3 implementation
+2026-01-10 18:50:00,306 - ares.registry - INFO - ℹ️ Registered step: global_meta_labeling_hpo_sample_weighted
+2026-01-10 18:50:00,311 - ares.registry - INFO - ℹ️ Registered step: meta_gated_backtest
+[2026-01-10 18:50:00.311] ✅ Meta-gated backtest step registered SUCCESS
+2026-01-10 18:50:00,311 - System.tprint - INFO - ℹ️ ✅ Meta-gated backtest step registered SUCCESS
+2026-01-10 18:50:00,311 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo_sample_weighted
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_sample_weighted
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo_experiment
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: sr_labeling_xgb
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: global_meta_labeling_hpo_sample_weighted
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: train_specialists_with_gmm
+2026-01-10 18:50:00,312 - ares.registry - INFO - ℹ️ Registered step: label_based_layer_2
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: sr_parameter_optimization
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: regime_clustering
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: regime_ensemble_training
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: sr_clustering
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: sr_detection
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: regime_feature_selection
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: sticky_finite_hmm_regime_discovery
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_momentum_persistence_step
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_smc_regime_step
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_volatility_burst_step
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_volume_force_step
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_reversion_regime_step
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_xgb_macro_regime_step
+2026-01-10 18:50:00,402 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_liquidity_regime_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_path_regime_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_risk_regime_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: enhanced_xgb_meso_regime_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_microstructure_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_candlestick_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_spectral_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: gmm_based_features
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: feature_generation_meta_labeling_step
+2026-01-10 18:50:00,403 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo_experiment
+[2026-01-10 18:50:00.404] ✅ Custom logger available for MLCommon.ModelTraining
+2026-01-10 18:50:00,404 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelTraining
+[2026-01-10 18:50:00.408] ✅ ML Common utilities loaded successfully
+2026-01-10 18:50:00,408 - System.tprint - INFO - ℹ️ ✅ ML Common utilities loaded successfully
+2026-01-10 18:50:00,409 - System.CrossStepValidator - INFO - ℹ️ 🔍 CrossStepValidator initialized with comprehensive consistency rules
+================================================================================
+🚀 ENHANCED KLINES PROCESSING PIPELINE - MULTI-ASSET MODE
+================================================================================
+
+📊 Configuration:
+   - Exchange: binance
+   - Assets: SOLUSDT
+   - Interval: 1m
+   - Lookback: 3 years
+   - Data Directory: historical_data
+   - Gap Filling: ✅ Enabled (API + Binance Vision)
+   - Resampling: ✅ Enabled
+
+🔧 Initializing pipeline...
+✅ Pipeline initialized
+
+🔗 Connecting to BINANCE...
+[2026-01-10 18:50:00.457] WARNING: ⚠️ ExchangeInterface unavailable; using existing/local data only
+2026-01-10 18:50:00,457 - System.tprint - WARNING - ⚠️ ExchangeInterface unavailable; using existing/local data only
+
+
+============================================================
+📦 Processing Asset 1/1: SOLUSDT
+============================================================
+⏰ Start: 2026-01-10 18:50:00
+2026-01-10 18:50:01,781 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 74 objects collected
+2026-01-10 18:50:04,247 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2026_01.parquet -> (13819, 11)
+2026-01-10 18:50:04,255 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 4.04 MB
+2026-01-10 18:50:04,263 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:04,263 - System.DataProcessor - INFO - ℹ️    Initial memory: 4.04 MB
+2026-01-10 18:50:04,263 - System.DataProcessor - INFO - ℹ️    Final memory: 0.55 MB
+2026-01-10 18:50:04,263 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:04,271 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 14031 records to solusdt_1m_2026_01.parquet
+2026-01-10 18:50:07,133 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 18 objects collected
+2026-01-10 18:50:08,260 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_03.parquet -> (44560, 11)
+2026-01-10 18:50:08,283 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.82 MB
+2026-01-10 18:50:08,304 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:08,304 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.82 MB
+2026-01-10 18:50:08,304 - System.DataProcessor - INFO - ℹ️    Final memory: 1.74 MB
+2026-01-10 18:50:08,304 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:08,340 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44560 records to solusdt_1m_2023_03.parquet
+2026-01-10 18:50:11,394 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_03.parquet -> (44560, 11)
+2026-01-10 18:50:11,418 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.82 MB
+2026-01-10 18:50:11,447 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:11,447 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.82 MB
+2026-01-10 18:50:11,447 - System.DataProcessor - INFO - ℹ️    Final memory: 1.74 MB
+2026-01-10 18:50:11,447 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:11,474 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44560 records to solusdt_1m_2023_03.parquet
+2026-01-10 18:50:12,566 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 35 objects collected
+2026-01-10 18:50:14,887 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_04.parquet -> (43200, 11)
+2026-01-10 18:50:14,911 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.43 MB
+2026-01-10 18:50:14,951 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:14,952 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.43 MB
+2026-01-10 18:50:14,952 - System.DataProcessor - INFO - ℹ️    Final memory: 1.69 MB
+2026-01-10 18:50:14,952 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:14,979 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 43200 records to solusdt_1m_2023_04.parquet
+2026-01-10 18:50:17,964 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 18 objects collected
+2026-01-10 18:50:18,343 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_06.parquet -> (43200, 11)
+2026-01-10 18:50:18,367 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.43 MB
+2026-01-10 18:50:18,389 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:18,390 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.43 MB
+2026-01-10 18:50:18,390 - System.DataProcessor - INFO - ℹ️    Final memory: 1.69 MB
+2026-01-10 18:50:18,390 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:18,413 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 43200 records to solusdt_1m_2023_06.parquet
+2026-01-10 18:50:21,415 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_06.parquet -> (43200, 11)
+2026-01-10 18:50:21,443 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.43 MB
+2026-01-10 18:50:21,472 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:21,472 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.43 MB
+2026-01-10 18:50:21,472 - System.DataProcessor - INFO - ℹ️    Final memory: 1.69 MB
+2026-01-10 18:50:21,472 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:21,503 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 43200 records to solusdt_1m_2023_06.parquet
+2026-01-10 18:50:23,426 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 34 objects collected
+2026-01-10 18:50:26,063 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_06.parquet -> (43200, 11)
+2026-01-10 18:50:26,088 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.43 MB
+2026-01-10 18:50:26,112 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:26,113 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.43 MB
+2026-01-10 18:50:26,113 - System.DataProcessor - INFO - ℹ️    Final memory: 1.69 MB
+2026-01-10 18:50:26,113 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:26,141 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 43200 records to solusdt_1m_2023_06.parquet
+2026-01-10 18:50:28,981 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 129 objects collected
+2026-01-10 18:50:29,484 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_06.parquet -> (43200, 11)
+2026-01-10 18:50:29,513 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.43 MB
+2026-01-10 18:50:29,538 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:29,538 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.43 MB
+2026-01-10 18:50:29,538 - System.DataProcessor - INFO - ℹ️    Final memory: 1.69 MB
+2026-01-10 18:50:29,539 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:29,564 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 43200 records to solusdt_1m_2023_06.parquet
+2026-01-10 18:50:32,381 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_07.parquet -> (44640, 11)
+2026-01-10 18:50:32,406 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:32,431 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:32,431 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:32,431 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:32,431 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:32,458 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_07.parquet
+2026-01-10 18:50:34,605 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 32 objects collected
+2026-01-10 18:50:36,075 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:36,100 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:36,135 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:36,135 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:36,135 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:36,136 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:36,238 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+2026-01-10 18:50:39,250 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:39,275 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:39,301 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:39,302 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:39,302 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:39,302 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:39,327 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+2026-01-10 18:50:39,833 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 35 objects collected
+2026-01-10 18:50:42,930 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:42,953 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:42,977 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:42,977 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:42,977 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:42,977 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:43,000 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+2026-01-10 18:50:46,166 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:46,197 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:46,230 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:46,230 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:46,230 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:46,230 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:46,257 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+2026-01-10 18:50:49,957 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:49,982 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:50,006 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:50,007 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:50,007 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:50,007 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:50,033 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+2026-01-10 18:50:53,153 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:53,177 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:53,200 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:53,200 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:53,200 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:53,200 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:53,223 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+2026-01-10 18:50:56,819 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: solusdt_1m_2023_08.parquet -> (44640, 11)
+2026-01-10 18:50:56,844 - System.DataProcessor - INFO - ℹ️ 🔧 Optimizing data types - Initial memory: 12.85 MB
+2026-01-10 18:50:56,868 - System.DataProcessor - INFO - ℹ️ 🔧 Data type optimization complete:
+2026-01-10 18:50:56,869 - System.DataProcessor - INFO - ℹ️    Initial memory: 12.85 MB
+2026-01-10 18:50:56,869 - System.DataProcessor - INFO - ℹ️    Final memory: 1.75 MB
+2026-01-10 18:50:56,870 - System.DataProcessor - INFO - ℹ️    Memory reduction: 86.4%
+2026-01-10 18:50:56,950 - KlinesParquetManager - INFO - ℹ️ 💾 Saved 44640 records to solusdt_1m_2023_08.parquet
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/multiprocessing/resource_tracker.py:224: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

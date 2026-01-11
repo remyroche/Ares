@@ -1,0 +1,16 @@
+{
+  "feature_analysis": {
+    "error": "'SpecialistFeatureDiagnostics' object has no attribute '_analyze_predictive_power'",
+    "specialist_name": "EnhancedMLMomentumPersistenceStep"
+  },
+  "orthogonalization_diagnostics": {
+    "error": "Feature diagnostics failed"
+  },
+  "legacy_metrics": {
+    "prediction_mi_to_target": 0,
+    "avg_feature_mi": 0.016741041552051066,
+    "max_feature_mi": 0.03714475593960298,
+    "mi_improvement_potential": 0.020403714387551914,
+    "high_mi_features_count": 11,
+    "high_mi_features_ratio": 0.4583333333333333,
+    "mi_target_met": 

@@ -2,6 +2,7 @@ import logging
 import time
 import pandas as pd
 import numpy as np
+import gc
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from sklearn.metrics import roc_auc_score
 from src.utils.numba_funcs import _numba_generate_dollar_bars, _numba_generate_range_bars
@@ -153,6 +154,10 @@ class AFMLSpecialistMixin:
             lr = LinearRegression()
             X_curr_clean = X_curr.fillna(0)
             W_curr_clean = W_curr.fillna(0)
+            
+            # Remove non-numeric columns before fitting
+            numeric_cols = X_curr_clean.select_dtypes(include=[np.number]).columns
+            X_curr_clean = X_curr_clean[numeric_cols]
 
             lr.fit(W_curr_clean, X_curr_clean)
             X_hat = lr.predict(W_curr_clean)
@@ -182,6 +187,20 @@ class AFMLSpecialistMixin:
             symbol = config.get('symbol', 'BTCUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
+            
+            # [Fix] Explicitly set specialist context to avoid dumping into 'analyst' directory
+            specialist_name = self.__class__.__name__
+            # Clean up name: EnhancedMLMomentumPersistenceStep -> momentum_persistence
+            clean_name = specialist_name.lower().replace('step', '').replace('enhancedml', '').replace('enhanced', '')
+            if clean_name.startswith('_'): clean_name = clean_name[1:]
+            
+            self.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                model=clean_name
+            )
+            
             cache_key = (symbol, exchange, timeframe)
 
             # 1. Load Market Data
@@ -226,12 +245,39 @@ class AFMLSpecialistMixin:
 
             # 4. Centralized Training
             tprint_info(f"   [Phase 5/6] Training ExtraTrees Model...")
+            
+            # Calculate dynamic purge length based on labeling horizon
+            # Default to 24h if unclear to be safe
+            horizon_bars = config.get('lookforward_bars', 35)
+            # Estimate purge duration: horizon_bars * timeframe duration
+            # Default assumption 15m if not parseable
+            tf_str = config.get('timeframe', '15m')
+            try:
+                if tf_str.endswith('m'):
+                    min_per_bar = int(tf_str[:-1])
+                elif tf_str.endswith('h'):
+                    min_per_bar = int(tf_str[:-1]) * 60
+                elif tf_str.endswith('d'):
+                    min_per_bar = int(tf_str[:-1]) * 1440
+                else:
+                    min_per_bar = 15
+            except:
+                min_per_bar = 15
+                
+            horizon_minutes = horizon_bars * min_per_bar
+            # Add small buffer + embargo is separate
+            purge_minutes = max(1440, horizon_minutes + 60) # Default minimum 24h as requested by user
+            purge_length = pd.Timedelta(minutes=purge_minutes)
+            
+            tprint_info(f"   [Phase 5/6] Calculated Purge: {purge_length} ({horizon_bars} bars * {min_per_bar}m + buffer)")
+            
             training_result = train_specialist_model_with_oof(
                 X.fillna(0.0),
                 y.fillna(0.0),
                 sample_weight=weights,
                 n_splits=5,
-                params_override=config.get('params_override', {})
+                params_override=config.get('params_override', {}),
+                purge_length=purge_length
             )
 
             # 5. Output Construction
@@ -248,7 +294,14 @@ class AFMLSpecialistMixin:
             y_aligned = y.reindex(df.index, method='ffill').fillna(0).astype(int)
             full_labels.update(y_aligned)
 
-            # 6. Save
+            # 6. Save (Clear heavy caches first to free memory for diagnostics)
+            tprint_info(f"   [Phase 6/6] Clearing caches & saving results...")
+            self._PHYSICS_CACHE.clear()
+            self._ROUTER_CACHE.clear()
+            self._ANARCHY_CACHE.clear()
+            self._BAR_CACHE.clear()
+            gc.collect()
+
             if hasattr(self, 'save_specialist_results'):
                 result = self.save_specialist_results(
                     config=config,

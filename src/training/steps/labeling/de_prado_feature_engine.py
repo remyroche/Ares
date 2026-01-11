@@ -444,7 +444,7 @@ class DePradoFeatureEngine:
         self.selected_features_ = selected_features
         
         # Enhanced detailed reporting
-        if cfg.get("detailed_feature_reporting", True):
+        if True:
             self._print_detailed_deprado_report(X)
         
         selection_time = time.time() - selection_start
@@ -514,44 +514,6 @@ class DePradoFeatureEngine:
         
         selected_stats = self.feature_stats_.loc[self.selected_features_].copy()
         return selected_stats.sort_values('CompositeScore', ascending=False)
-
-
-def de_prado_feature_selection(
-    X: pd.DataFrame,
-    y: pd.Series,
-    n_estimators: int = 1000,
-    max_clusters: int = 12,
-    gain_weight: float = 0.5,
-    depth_weight: float = 0.5,
-    random_state: int = 42
-) -> Tuple[pd.DataFrame, DePradoFeatureEngine]:
-    """
-    Convenience function for De Prado feature selection.
-    
-    Args:
-        X: Feature matrix
-        y: Target labels
-        n_estimators: Number of trees in ExtraTrees
-        max_clusters: Maximum number of clusters
-        gain_weight: Weight for gain in composite score
-        depth_weight: Weight for depth proximity in composite score
-        random_state: Random seed
-        
-    Returns:
-        Tuple of (selected_features_df, fitted_engine)
-    """
-    engine = DePradoFeatureEngine(
-        n_estimators=n_estimators,
-        max_clusters=max_clusters,
-        gain_weight=gain_weight,
-        depth_weight=depth_weight,
-        random_state=random_state
-    )
-    
-    selected_features = engine.run_selection(X, y)
-    X_selected = X[selected_features].copy()
-    
-    return X_selected, engine
 
     def _print_detailed_deprado_report(self, X: pd.DataFrame) -> None:
         """
@@ -644,3 +606,43 @@ def de_prado_feature_selection(
             ]
             king_name = king_in_cluster.index[0] if len(king_in_cluster) > 0 else "None"
             tprint_info(f"   Cluster {cluster_id}: {size} features → King: {king_name}")
+
+
+def de_prado_feature_selection(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_estimators: int = 1000,
+    max_clusters: int = 12,
+    gain_weight: float = 0.5,
+    depth_weight: float = 0.5,
+    random_state: int = 42
+) -> Tuple[pd.DataFrame, DePradoFeatureEngine]:
+    """
+    Convenience function for De Prado feature selection.
+    
+    Args:
+        X: Feature matrix
+        y: Target labels
+        n_estimators: Number of trees in ExtraTrees
+        max_clusters: Maximum number of clusters
+        gain_weight: Weight for gain in composite score
+        depth_weight: Weight for depth proximity in composite score
+        random_state: Random seed
+        
+    Returns:
+        Tuple of (selected_features_df, fitted_engine)
+    """
+    engine = DePradoFeatureEngine(
+        n_estimators=n_estimators,
+        max_clusters=max_clusters,
+        gain_weight=gain_weight,
+        depth_weight=depth_weight,
+        random_state=random_state
+    )
+    
+    selected_features = engine.run_selection(X, y)
+    X_selected = X[selected_features].copy()
+    
+    return X_selected, engine
+
+

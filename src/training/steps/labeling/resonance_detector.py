@@ -262,17 +262,24 @@ class ResonanceDetector:
             fast_clean = fast_clean - np.mean(fast_clean)
             slow_clean = slow_clean - np.mean(slow_clean)
             
-            # Instantaneous phase via Hilbert transform
+            # Instantaneous phase via Hilbert transform (wrapped [-pi, pi])
             analytic_fast = signal.hilbert(fast_clean)
             analytic_slow = signal.hilbert(slow_clean)
-            phase_fast = np.unwrap(np.angle(analytic_fast))
-            phase_slow = np.unwrap(np.angle(analytic_slow))
+            phase_fast = np.angle(analytic_fast)
+            phase_slow = np.angle(analytic_slow)
             
-            # Normalize phase difference to [-1, 1]
-            raw_phase = phase_fast - phase_slow
+            # Wrapped phase difference [-pi, pi]
+            # This correctly handles the cyclic nature of phase without linear drift
+            raw_phase = np.angle(np.exp(1j * (phase_fast - phase_slow)))
+            
+            # Normalize to [-1, 1]
             phase_series = np.clip(raw_phase / np.pi, -1.0, 1.0)
             
-            phase_summary = float(np.clip(np.mean(phase_series), -1.0, 1.0))
+            # Summary: Circular mean approximation (valid for clustered phases)
+            # Use mean of vector components to handle wrapping around pi/-pi boundary correctly for summary
+            mean_vector = np.mean(np.exp(1j * raw_phase))
+            mean_angle = np.angle(mean_vector)
+            phase_summary = float(np.clip(mean_angle / np.pi, -1.0, 1.0))
             
             # Cache result
             if len(self._phase_cache) < self.cache_size:

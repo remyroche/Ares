@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from scipy import stats
 from sklearn.utils import resample
 import time
+import gc
 
 # Import tprint functions
 try:
@@ -143,10 +144,22 @@ class BayesianCausalDiscovery:
                     
                     if self.verbose and (i + 1) % 20 == 0:
                         tprint_info(f"      📊 Completed {i + 1}/{self.n_bootstrap} bootstrap samples")
+                    
+                    # Explicit cleanup to prevent memory accumulation (M1 optimization)
+                    del bootstrap_data
+                    if 'cd' in locals():
+                        del cd
+                    gc.collect()
                         
                 except Exception as e:
                     if self.verbose:
                         tprint_warning(f"      ⚠️ Bootstrap sample {i} failed: {e}")
+                    # Cleanup on error too
+                    if 'bootstrap_data' in locals():
+                        del bootstrap_data
+                    if 'cd' in locals():
+                        del cd
+                    gc.collect()
                     continue
             
             # Calculate edge confidence

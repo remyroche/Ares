@@ -110,21 +110,29 @@ class ComprehensiveDuplicateAnalyzer:
 
     def _group_duplicates_by_timestamp(self, df: pd.DataFrame, duplicate_timestamps: pd.Series,
                                      timestamp_column: str) -> Dict[Any, pd.DataFrame]:
-        """Group duplicate records by their timestamp."""
+        """Group duplicate records by their timestamp efficiently."""
+        # 1. Convert duplicate_timestamps (which are in ms if datetime) to the original format if needed
+        unique_timestamps = duplicate_timestamps.unique()
+        
+        # 2. Extract only the rows that have duplicates to minimize search space
+        if pd.api.types.is_datetime64_any_dtype(df[timestamp_column]):
+            # Use milliseconds for matching if the source was converted
+            source_timestamps_ms = df[timestamp_column].astype('int64') // 10**6
+            duplicate_mask = source_timestamps_ms.isin(unique_timestamps)
+            temp_df = df[duplicate_mask].copy()
+            temp_df['_match_ts'] = source_timestamps_ms
+            match_col = '_match_ts'
+        else:
+            duplicate_mask = df[timestamp_column].isin(unique_timestamps)
+            temp_df = df[duplicate_mask].copy()
+            match_col = timestamp_column
+
+        # 3. Group by the match column
         groups = {}
-
-        for timestamp in duplicate_timestamps.unique():
-            # Find all records with this timestamp
-            if pd.api.types.is_datetime64_any_dtype(df[timestamp_column]):
-                # Convert the timestamp back to the original format for comparison
-                timestamp_dt = pd.to_datetime(timestamp, unit='ms')
-                mask = df[timestamp_column] == timestamp_dt
-            else:
-                # For integer timestamps, compare directly
-                mask = df[timestamp_column] == timestamp
-
-            group_df = df[mask].copy()
-            groups[timestamp] = group_df
+        for ts, group_df in temp_df.groupby(match_col):
+            groups[ts] = group_df.copy()
+            if match_col == '_match_ts':
+                groups[ts] = groups[ts].drop(columns=['_match_ts'])
 
         return groups
 
@@ -154,27 +162,50 @@ class ComprehensiveDuplicateAnalyzer:
             first_record = group_df.iloc[0][data_columns]
             all_identical = True
 
+            # Pre-filter numeric columns to avoid TypeError in np.isclose
+            numeric_cols = [col for col in data_columns if pd.api.types.is_numeric_dtype(group_df[col])]
+            non_numeric_cols = [col for col in data_columns if col not in numeric_cols]
+
             for idx in range(1, len(group_df)):
                 current_record = group_df.iloc[idx][data_columns]
 
                 # Compare numeric columns with tolerance
-                for col in data_columns:
-                    if pd.api.types.is_numeric_dtype(group_df[col]):
-                        if not np.isclose(first_record[col], current_record[col],
-                                        rtol=self.analysis_config['value_tolerance']):
-                            all_identical = False
-                            break
-                    else:
-                        if first_record[col] != current_record[col]:
-                            all_identical = False
-                            break
+                for col in numeric_cols:
+                    val1 = first_record[col]
+                    val2 = current_record[col]
+                    
+                    # Handle None/NaN explicitly
+                    if pd.isna(val1) and pd.isna(val2):
+                        continue
+                    if pd.isna(val1) or pd.isna(val2):
+                        all_identical = False
+                        break
+                        
+                    if not np.isclose(float(val1), float(val2),
+                                    rtol=self.analysis_config['value_tolerance']):
+                        all_identical = False
+                        break
+                
+                if not all_identical:
+                    break
 
+                # Compare non-numeric columns
+                for col in non_numeric_cols:
+                    if first_record[col] != current_record[col]:
+                        all_identical = False
+                        break
+                
                 if not all_identical:
                     break
 
             if all_identical:
                 classified['true_duplicates'].append(group_info)
             else:
+                # Optimized mixed check: skip O(K^2) for very large groups
+                if len(group_df) > 50:
+                    classified['false_duplicates'].append(group_info)
+                    continue
+
                 # Check if it's mixed (some identical, some different)
                 identical_pairs = 0
                 total_pairs = 0
@@ -185,16 +216,45 @@ class ComprehensiveDuplicateAnalyzer:
                         record1 = group_df.iloc[i][data_columns]
                         record2 = group_df.iloc[j][data_columns]
 
-                        # Check if this pair is identical
-                        pair_identical = True
                         for col in data_columns:
-                            if pd.api.types.is_numeric_dtype(group_df[col]):
-                                if not np.isclose(record1[col], record2[col],
-                                                rtol=self.analysis_config['value_tolerance']):
-                                    pair_identical = False
-                                    break
+                            val1 = record1[col]
+                            val2 = record2[col]
+                            
+                            # Universal NaN/None check first to prevent "boolean value of NA is ambiguous"
+                            # This handles pd.NA, np.nan, None safely
+                            is_val1_na = pd.isna(val1)
+                            is_val2_na = pd.isna(val2)
+                            
+                            if is_val1_na and is_val2_na:
+                                # Both are NaN/None -> they are equal
+                                continue
+                            
+                            if is_val1_na or is_val2_na:
+                                # One is NaN/None, other is not -> they are different
+                                pair_identical = False
+                                break
+
+                            # Now we know both are not NaN/None
+                            is_numeric_col = pd.api.types.is_numeric_dtype(group_df[col])
+                            is_val1_num = isinstance(val1, (int, float, np.number))
+                            is_val2_num = isinstance(val2, (int, float, np.number))
+
+                            if is_numeric_col and is_val1_num and is_val2_num:
+                                try:
+                                    if not np.isclose(val1, val2, rtol=self.analysis_config['value_tolerance']):
+                                        pair_identical = False
+                                        break
+                                except (TypeError, ValueError):
+                                    # Fallback to direct comparison if isclose fails
+                                    if val1 != val2:
+                                        pair_identical = False
+                                        break
                             else:
-                                if record1[col] != record2[col]:
+                                # Non-numeric comparison or mixed types
+                                # Since we checked for NA above, standard equality should be safe(r)
+                                # but strictly speaking pd.NA could still sneak in if pd.isna() false neg?
+                                # (unlikely for pd.NA, but safe equality is better)
+                                if val1 != val2:
                                     pair_identical = False
                                     break
 

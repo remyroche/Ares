@@ -372,7 +372,11 @@ class OptimizedResonanceDetector:
                     for future in futures:
                         try:
                             specialist_resonance = future.result(timeout=30)
-                            all_resonances.update(specialist_resonance)
+                            if isinstance(specialist_resonance, dict):
+                                all_resonances.update(specialist_resonance)
+                            else:
+                                if self.verbose:
+                                    tprint_warning(f"      ⚠️ Invalid resonance result type: {type(specialist_resonance)}")
                         except Exception as e:
                             if self.verbose:
                                 tprint_warning(f"      ⚠️ Parallel resonance computation failed: {e}")

@@ -33,7 +33,8 @@ from datetime import datetime
 from src.training.steps.base_step import BaseStep
 from src.training.steps.labeling.mtf_feature_generation import create_meta_features
 from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine
-from src.training.steps.labeling.causal_discovery import CausalDiscovery
+# from src.training.steps.labeling.causal_discovery import CausalDiscovery
+from src.training.steps.labeling.causal_discovery_light import CausalDiscoveryLight
 from src.utils.ml_common.wavelet_utils import wavelet_energy_ratios
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.numba_funcs import jit as njit
@@ -140,7 +141,11 @@ class GMMFeaturePipeline(BaseStep):
     """
 
     def __init__(self, step_name: str = "gmm_based_features", **kwargs):
-        super().__init__(step_name, **kwargs)
+        # Filter kwargs for BaseStep - only pass accepted parameters
+        base_step_kwargs = {k: v for k, v in kwargs.items() if k in ['use_versioned_artifacts']}
+        super().__init__(step_name, **base_step_kwargs)
+        
+        # Handle verbose separately since it's not a BaseStep parameter
         self.verbose = kwargs.get('verbose', True)
         self.artifacts_dir = "artifacts/gmm_features"
         os.makedirs(self.artifacts_dir, exist_ok=True)
@@ -153,6 +158,10 @@ class GMMFeaturePipeline(BaseStep):
         # Caches
         self.models = {}
         self.feature_lists = {}
+    
+    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute method to satisfy BaseStep interface."""
+        return self.run(config)
 
     def _preprocess_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -208,7 +217,7 @@ class GMMFeaturePipeline(BaseStep):
         tprint_info("   🔍 Running ONC Clustering on features...")
         X_fit = self._subsample_data(X)
 
-        deprado = DePradoFeatureEngine(max_clusters=self.n_clusters_macro, verbose=False)
+        deprado = DePradoFeatureEngine(max_clusters=self.n_clusters_macro)
         clusters = deprado._get_onc_clusters(X_fit)
 
         unique_clusters = clusters.unique()
@@ -295,12 +304,13 @@ class GMMFeaturePipeline(BaseStep):
         tprint_info("\n🔗 Step B: Causal Experts Analysis...")
 
         # 1. Causal Discovery
-        tprint_info("   🔍 Running Causal Discovery (PC Algorithm)...")
-        # Use subsample for speed
-        X_fit = self._subsample_data(X, n_samples=5000) # PC is slow, use smaller sample
+        tprint_info("   🔍 Running Light Causal Discovery (NOTEARS)...")
+        # Use subsample for speed (NOTEARS can handle more, but keeping it light)
+        X_fit = self._subsample_data(X, n_samples=5000)
 
-        cd = CausalDiscovery(verbose=False)
-        graph = cd.pc_algorithm(X_fit, list(X_fit.columns))
+        # Initialize Light engine
+        cd = CausalDiscoveryLight(verbose=self.verbose, lambda1=0.05)
+        graph = cd.run_discovery(X_fit, list(X_fit.columns))
 
         # 2. Family Construction
         tprint_info("   👨‍👩‍👧‍👦 Identifying Causal Families...")
@@ -542,8 +552,7 @@ class GMMFeaturePipeline(BaseStep):
         # Use DePrado engine
         engine = DePradoFeatureEngine(
             n_estimators=500, # Faster
-            max_clusters=5,
-            verbose=False
+            max_clusters=5
         )
 
         try:

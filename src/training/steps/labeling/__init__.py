@@ -76,7 +76,9 @@ try:
     )
     # Alias for backward compatibility
     MetaLabelingHPOExperimentStep = MetaLabelingHPOSampleWeightedStep
-except Exception:
+except Exception as e:
+    import traceback
+    traceback.print_exc()
     MetaLabelingHPOSampleWeightedStep = None
     TrainSpecialistsWithGMMStep = None
     # Fallback to original if sample-weighted version fails
@@ -114,6 +116,14 @@ from .meta_gated_backtest_step import (
     MetaGatedBacktestStep,
 )
 
+# Train Specialists with GMM (2025-12-11)
+try:
+    from .train_specialists_with_gmm_step import (
+        TrainSpecialistsWithGMMStep,
+    )
+except Exception:
+    TrainSpecialistsWithGMMStep = None
+
 # LGBM Feature Selection (2025-12-08)
 from .lgbm_feature_selection import (
     lgbm_feature_selection_pipeline,
@@ -147,6 +157,7 @@ __all__ = [
     "ValidationReport",
     "FeatureGenerationDataValidationStep",
     "MetaGatedBacktestStep",
+    "TrainSpecialistsWithGMMStep",
     "compute_realized_returns",
     "kalman_smooth_labels",
     "fit_probability_to_return_mapping",

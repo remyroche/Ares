@@ -384,8 +384,9 @@ class EnhancedMLRiskRegimeStep(BaseStep):
     
     def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Generate base pipeline features."""
-        # Placeholder for actual pipeline feature generation
-        return pd.DataFrame(index=market_data.index)
+        # For risk regime, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_risk_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
     
     def train_risk_regime_model(self, features: pd.DataFrame, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Train risk regime model."""

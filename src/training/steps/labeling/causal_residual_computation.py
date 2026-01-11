@@ -54,12 +54,50 @@ def compute_causal_residuals(
         if isinstance(y_causal_anchor, np.ndarray):
             y_causal_anchor = pd.Series(y_causal_anchor)
         
+        # Validate input data for infinity and extreme values
+        if verbose:
+            tprint_info("🔍 Validating input data...")
+        
+        # Check for infinity values
+        y_actual_inf = np.isinf(y_actual).sum()
+        y_anchor_inf = np.isinf(y_causal_anchor).sum()
+        
+        if y_actual_inf > 0:
+            if verbose:
+                tprint_warning(f"⚠️ Found {y_actual_inf} infinity values in y_actual, replacing with NaN")
+            y_actual = y_actual.replace([np.inf, -np.inf], np.nan)
+        
+        if y_anchor_inf > 0:
+            if verbose:
+                tprint_warning(f"⚠️ Found {y_anchor_inf} infinity values in y_causal_anchor, replacing with NaN")
+            y_causal_anchor = y_causal_anchor.replace([np.inf, -np.inf], np.nan)
+        
+        # Check for extremely large values (close to float64 limits)
+        float64_max = np.finfo(np.float64).max / 1000  # Use 1/1000 of max as safety margin
+        y_actual_large = (np.abs(y_actual) > float64_max).sum()
+        y_anchor_large = (np.abs(y_causal_anchor) > float64_max).sum()
+        
+        if y_actual_large > 0:
+            if verbose:
+                tprint_warning(f"⚠️ Found {y_actual_large} extremely large values in y_actual, clipping")
+            y_actual = y_actual.clip(lower=-float64_max, upper=float64_max)
+        
+        if y_anchor_large > 0:
+            if verbose:
+                tprint_warning(f"⚠️ Found {y_anchor_large} extremely large values in y_causal_anchor, clipping")
+            y_causal_anchor = y_causal_anchor.clip(lower=-float64_max, upper=float64_max)
+        
         # Align indices
         if len(y_actual) != len(y_causal_anchor):
             if isinstance(y_actual, pd.Series) and isinstance(y_causal_anchor, pd.Series):
                 y_actual, y_causal_anchor = y_actual.align(y_causal_anchor, join='inner')
             else:
                 raise ValueError("Length mismatch between actual and anchor predictions")
+        
+        # Handle NaN values before computation
+        if y_actual.isna().any() or y_causal_anchor.isna().any():
+            if verbose:
+                tprint_warning(f"⚠️ Found NaN values, will handle after residual computation")
         
         # Compute residuals
         residuals = y_actual - y_causal_anchor

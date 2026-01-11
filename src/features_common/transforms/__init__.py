@@ -16,6 +16,7 @@ from .scaling_normalization import (
     rank_normalize,
 )
 from .categorical_encoding import CategoricalEncoder
+from .gauss_rank import GaussRankScaler
 
 __all__ = [
     'BaseScaler',
@@ -28,6 +29,7 @@ __all__ = [
     'robust_normalize',
     'rank_normalize',
     'CategoricalEncoder',
+    'GaussRankScaler',
 ]
 
 # Add VectorBT optimization components to __all__ if available

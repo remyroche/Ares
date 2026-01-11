@@ -1,0 +1,17 @@
+{
+  "feature_analysis": {
+    "specialist_name": "EnhancedMLVolatilityBurstStep",
+    "error": "'FeatureQualityMetrics' object has no attribute 'get'",
+    "timestamp": "2026-01-11T15:51:43.603415"
+  },
+  "orthogonalization_diagnostics": {
+    "error": "Feature diagnostics failed"
+  },
+  "legacy_metrics": {
+    "prediction_mi_to_target": 0,
+    "avg_feature_mi": 0.010693511586218833,
+    "max_feature_mi": 0.035218110333520514,
+    "mi_improvement_potential": 0.02452459874730168,
+    "high_mi_features_count": 6,
+    "high_mi_features_ratio": 0.2608695652173913,
+    "mi_target_met": 

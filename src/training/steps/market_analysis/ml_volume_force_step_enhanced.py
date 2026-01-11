@@ -129,6 +129,12 @@ class EnhancedMLVolumeForceStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecia
         
         return pd.concat([base_features, manual_features], axis=1)
 
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For volume force, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_volume_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced volume force step with MI optimization."""
         return await self.execute_standard_specialist_logic(

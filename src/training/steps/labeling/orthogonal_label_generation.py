@@ -56,6 +56,43 @@ except ImportError:
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Event Pipeline Logger Class
+class EventPipelineLogger:
+    """Simple one-line logging for event pipeline stages"""
+    
+    def __init__(self, verbose: bool = True):
+        self.verbose = verbose
+        self.stages = []
+    
+    def log_stage(self, stage_name: str, count: int, total: int = None):
+        """Log a single stage with event count"""
+        if total:
+            percentage = (count / total) * 100
+            message = f"📊 {stage_name}: {count:,} events ({percentage:.1f}% of {total:,})"
+        else:
+            message = f"📊 {stage_name}: {count:,} events"
+        
+        if self.verbose:
+            tprint_info(message)
+        
+        self.stages.append({
+            'stage': stage_name,
+            'count': count,
+            'total': total,
+            'percentage': percentage if total else None
+        })
+    
+    def print_summary(self):
+        """Print final summary line"""
+        if not self.stages:
+            return
+        
+        initial = self.stages[0]['count']
+        final = self.stages[-1]['count']
+        efficiency = (final / initial) * 100 if initial > 0 else 0
+        
+        tprint_info(f"🎯 Pipeline Summary: {initial:,} → {final:,} events ({efficiency:.1f}% efficiency)")
+
 # Define UnifiedPriceMixin inline to avoid circular import
 class UnifiedPriceMixin:
     """Mixin class for Layer2 generators to use unified price."""
@@ -3651,16 +3688,41 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
         if not parents:
             tprint_warning("   ⚠️ No causal parents found for target. This might be due to low signal-to-noise. Keeping Top 50 by correlation-redundancy as fallback.")
 
-            # Fallback: Top 50 by Correlation + Redundancy Check
+            # Fallback: Top 50 by Correlation + Redundancy Check + Lead-Lag Causality
             try:
-                # 1. Calculate correlation with target
-                target_corr = discovery_df.corrwith(discovery_df[target_name]).abs()
-                target_corr = target_corr.drop(target_name, errors='ignore')
+                # 1. Calculate correlation with 30-bar forward target (matches TBM horizon)
+                target_30bar = df[target_col].pct_change(30).shift(-30).fillna(0.0)
+                target_30bar_aligned = target_30bar.loc[common_idx]
+                discovery_df['TARGET_RET_30'] = target_30bar_aligned
+                
+                target_corr = discovery_df.corrwith(discovery_df['TARGET_RET_30']).abs()
+                target_corr = target_corr.drop(['TARGET_RET_30', target_name], errors='ignore')
 
-                # 2. Sort by target correlation (highest first)
+                # 2. Lead-Lag Causality Filter (feature must LEAD the target)
+                # Compare: corr(feature_t, target_t+30) vs corr(feature_t, target_t-30)
+                # If feature leads target, forward corr should be higher
+                target_lag = df[target_col].pct_change(30).shift(30).fillna(0.0).loc[common_idx]
+                causal_features = []
+                for feat in target_corr.index:
+                    if feat not in discovery_df.columns:
+                        continue
+                    feat_series = discovery_df[feat]
+                    corr_lead = feat_series.corr(target_30bar_aligned)  # Feature leads
+                    corr_lag = feat_series.corr(target_lag)  # Feature lags (spurious)
+                    # Feature must have stronger lead correlation than lag correlation
+                    if abs(corr_lead) > abs(corr_lag) * 1.2:  # 20% margin
+                        causal_features.append(feat)
+                
+                tprint_info(f"   🧬 Lead-Lag Causality: {len(causal_features)}/{len(target_corr)} features pass (lead > lag * 1.2)")
+                
+                # Filter to causal features only, then sort by correlation
+                if causal_features:
+                    target_corr = target_corr[target_corr.index.isin(causal_features)]
+                
+                # 3. Sort by target correlation (highest first)
                 sorted_features = target_corr.sort_values(ascending=False).index.tolist()
 
-                # 3. Greedy Selection (Redundancy Filter)
+                # 4. Greedy Selection (Redundancy Filter)
                 selected_features = []
                 feature_corr_matrix = discovery_df[sorted_features].corr().abs()
 
@@ -3678,11 +3740,11 @@ def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFra
                     if not is_redundant:
                         selected_features.append(feature)
 
-                # 4. Filter candidates
+                # 5. Filter candidates
                 selected_set = set(selected_features)
                 fallback_candidates = [c for c in candidates if c['family'] in selected_set]
 
-                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates (Target Top 50, Redundancy < 0.85).")
+                tprint_info(f"   📉 Fallback: Selected {len(fallback_candidates)} candidates (30-bar corr, Lead-Lag filter, Redundancy < 0.85).")
                 return fallback_candidates
 
             except Exception as e:
@@ -3903,6 +3965,20 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
             df_fit = df_z_denoised
         
         # TruncatedSVD (Randomized SVD) - much faster than SparsePCA
+        # CRITICAL: Limit BLAS threads to prevent GIL deadlock on M1 Macs
+        import os
+        os.environ['OMP_NUM_THREADS'] = '1'
+        os.environ['MKL_NUM_THREADS'] = '1'
+        os.environ['OPENBLAS_NUM_THREADS'] = '1'
+        os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+        
+        try:
+            from threadpoolctl import threadpool_limits
+            use_threadpool = True
+        except ImportError:
+            use_threadpool = False
+            tprint_warning("   ⚠️ threadpoolctl not installed, using env vars only for thread limiting")
+        
         svd = TruncatedSVD(
             n_components=n_components,
             algorithm='randomized',  # Fast randomized algorithm
@@ -3910,9 +3986,14 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
             random_state=42
         )
         
-        # Fit on subsample, transform full dataset
-        svd.fit(df_fit.values)
-        components = svd.transform(df_z_denoised.values)
+        # Fit on subsample, transform full dataset (with thread limiting)
+        if use_threadpool:
+            with threadpool_limits(limits=1, user_api='blas'):
+                svd.fit(df_fit.values)
+                components = svd.transform(df_z_denoised.values)
+        else:
+            svd.fit(df_fit.values)
+            components = svd.transform(df_z_denoised.values)
         
         tprint_info(f"   ✅ TruncatedSVD complete: explained_variance_ratio={svd.explained_variance_ratio_.sum():.3f}")
 
@@ -3954,140 +4035,174 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
 
 def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[str], ohlcv_candidates: List[Dict] = None, derived_candidates: List[Dict] = None, horizon_candidates: List[Dict] = None, regime_candidates: List[Dict] = None, validated_candidates: List[Dict] = None) -> List[Dict]:
     """
-    Level 10: Composite Interaction Engine.
+    Level 10: Composite Interaction Engine (Optimized).
     Generates high-order signals by combining Structural Parents (Causal Seeds) with Trigger Events.
     
-    Logic:
-    1. Identify Structural Parents: High-quality specialists or causal parents from validated filters.
-    2. Identify Triggers: Short-horizon events (OHLCV shocks, Derived signals).
-    3. Generate Interactions: Parent * Trigger (Contextual Shock).
-    4. Adaptive Filtering: Smart quantile weighting.
+    OPTIMIZATIONS (2026-01-11):
+    1. Trigger Pruning: Only Top 10% triggers by variance used.
+    2. Vectorized Generation: Matrix operations.
+    3. MI Selection: Top 50 candidates by Binned Mutual Information (Fast Proxy).
     """
-    
+    try:
+        from sklearn.metrics import mutual_info_score
+    except ImportError:
+        tprint_warning("   ⚠️ sklearn not available for MI selection. Using correlation fallback.")
+        mutual_info_score = None
+
     # 1. Build Candidate Map
     candidate_map = {}
-    
-    # Add all available candidates to map
     source_lists = [ohlcv_candidates, derived_candidates, horizon_candidates, regime_candidates, validated_candidates]
     for src_list in source_lists:
         if src_list:
             for cand in src_list:
                 candidate_map[cand['family']] = cand
                 
-    # Also add base specialists
     for fam in specialist_families:
         if fam not in candidate_map:
-             # Re-generate if missing from lists but requested
-             # (In practice, specialists are usually passed in validated_candidates if they survived)
              pass 
              
     # 2. Identify Structural Parents (Seeds)
-    # Priority: Validated Causal Parents -> Specialists -> High Persistence Signals
     structural_parents = []
-    
     if validated_candidates:
-        # Use validated set as primary source of parents
         structural_parents = [c for c in validated_candidates if len(c['events']) > 200]
         tprint_info(f"   🧬 Using {len(structural_parents)} Structural Seeds (Validated or Fallback).")
     else:
-        # Fallback to specialists
         tprint_warning("   ⚠️ No validated parents found. Using base Specialist families as seeds.")
         for fam in specialist_families:
-             # Need weight vector. If not in map, we might need to skip or regen (skipping for now to be safe)
              if fam in candidate_map:
                  structural_parents.append(candidate_map[fam])
 
     # 3. Identify Triggers (High Frequency / Shock events)
-    # Heuristic: Families with 'SHOCK', 'SURGE', 'SPIKE', 'GAP', 'DERIVED'
     triggers = []
     for fam, cand in candidate_map.items():
         if any(x in fam for x in ['SHOCK', 'SURGE', 'SPIKE', 'GAP', 'DERIVED']):
             triggers.append(cand)
             
-    # 4. Generate Interactions
-    composites = []
-    
-    # A. Parent * Trigger (Contextual Shock)
-    # e.g. Volatility Specialist (High Vol Regime) * Volume Surge
-    import itertools
-    
-    # Limit combinations if too many?
-    # Let's interact each Structural Parent with Top Triggers
-    
-    for parent in structural_parents:
-        p_fam = parent['family']
-        p_weight = parent['weight_vector']
-        
-        for trigger in triggers:
-            t_fam = trigger['family']
-            
-            # Avoid self-interaction or same-family
-            if p_fam == t_fam: continue
-            if p_fam.split('_')[0] == t_fam.split('_')[0]: continue
-            
-            t_weight = trigger['weight_vector']
-            
-            # Contextual Interaction: Parent defines regime/trend, Trigger defines timing
-            # Weight = geometric mean or product? Product implies AND.
-            interaction_raw = p_weight * t_weight
-            
-            # Check signal strength
-            if interaction_raw.abs().max() < 0.01: continue
-            
-            # Filter: Smart Event Weight (Adaptive)
-            # We want significant overlaps
-            try:
-                # Normalize first
-                z_score = (interaction_raw - interaction_raw.rolling(100).mean()) / (interaction_raw.rolling(100).std() + 1e-9)
-                final_weight = pd.Series(smart_event_weight(z_score.fillna(0.0), quantile_threshold=0.99, use_adaptive=True), index=df.index)
-                
-                events = final_weight[final_weight > 0].index
-                
-                if len(events) >= 100: # Tier 1 requirement for composites
-                     composites.append({
-                        'family': f'COMPOSITE_{p_fam}_{t_fam}_INT',
-                        'events': events,
-                        'weight_vector': final_weight,
-                        'params': {'type': 'interaction', 'parents': [p_fam, t_fam], 'role': 'contextual_trigger'}
-                    })
-            except Exception:
-                continue
+    if not structural_parents or not triggers:
+        return []
 
-    tprint_info(f"   🧩 Generated {len(composites)} Composite Interactions (Parent * Trigger).")
+    # 4. DATA PREPARATION (Vectorized)
+    tprint_info(f"   📊 Preparing Matrix Data for {len(structural_parents)} Parents x {len(triggers)} Triggers...")
     
-    # B. Preserved Logic: Weighted Sums (Stability)
-    # ... (Keep existing simple sums if needed, or replace?)
-    # Let's keep one generic stability sum if specialists are available
-    if specialist_families:
+    # Extract weight vectors into DataFrames
+    parent_df = pd.DataFrame({p['family']: p['weight_vector'] for p in structural_parents if p['weight_vector'] is not None}).fillna(0.0)
+    trigger_df = pd.DataFrame({t['family']: t['weight_vector'] for t in triggers if t['weight_vector'] is not None}).fillna(0.0)
+    
+    # Align indices (intersection)
+    common_idx = parent_df.index.intersection(trigger_df.index)
+    parent_df = parent_df.loc[common_idx]
+    trigger_df = trigger_df.loc[common_idx]
+    
+    # OPTIMIZATION 1: Prune Triggers (Top 10% by Variance)
+    trigger_vars = trigger_df.var()
+    variance_threshold = trigger_vars.quantile(0.90) # Top 10%
+    top_triggers = trigger_vars[trigger_vars >= variance_threshold].index
+    trigger_df = trigger_df[top_triggers]
+    
+    tprint_info(f"   ✂️ Pruned Triggers: {len(triggers)} -> {len(top_triggers)} (Top 10% Variance)")
+
+    # Target Proxy for MI (1-period forward return)
+    # If not in df, try to calculate
+    target = None
+    if 'TARGET_RET_1' in df.columns:
+        target = df.loc[common_idx, 'TARGET_RET_1']
+    elif 'close' in df.columns:
+        target = df['close'].pct_change().shift(-1).loc[common_idx].fillna(0.0)
+    
+    # 5. GENERATION & SELECTION (Binned MI Proxy)
+    scored_candidates = []
+    
+    if target is not None and mutual_info_score is not None:
+        tprint_info("   🚀 Running Binned MI Selection (Fast Proxy)...")
+        
+        # Bin Target ONCE (5 bins)
         try:
-            # Gather available specialist weights
-            spec_weights = []
-            valid_specs = []
-            for fam in specialist_families:
-                if fam in candidate_map:
-                    spec_weights.append(candidate_map[fam]['weight_vector'])
-                    valid_specs.append(fam)
-                elif fam.endswith('_SPECIALIST'): # Try to get from df directly if simple column? No, must be computed.
-                     # Attempt to call get_specialist... (legacy support)
-                     try:
-                        w = get_specialist_event_matrix(df, fam)
-                        spec_weights.append(w)
-                        valid_specs.append(fam)
-                     except: pass
+            # Use qcut for equal-frequency bins, drop duplicates if constant
+            target_binned = pd.qcut(target, 5, labels=False, duplicates='drop').fillna(-1).astype(int)
+        except Exception:
+            # Fallback if qcut fails (e.g. all zeros)
+            target_binned = pd.cut(target, 5, labels=False).fillna(-1).astype(int)
+
+        # Process per Parent
+        for p_fam in parent_df.columns:
+            p_vec = parent_df[p_fam].values.reshape(-1, 1) # (N, 1)
             
-            if spec_weights:
-                total_weight = sum(spec_weights) / len(spec_weights)
-                events = total_weight[total_weight > 0.1].index
-                if len(events) >= 50:
-                    composites.append({
-                        'family': 'COMPOSITE_STABILITY_SUM',
-                        'events': events,
-                        'weight_vector': total_weight,
-                        'params': {'type': 'weighted_sum', 'parents': valid_specs}
-                    })
-        except Exception: pass
+            # Broadcast Interaction: Parent * Triggers
+            interactions = p_vec * trigger_df.values # (N, T)
+            
+            # Reduce sample size for speed if > 50k
+            if interactions.shape[0] > 50000:
+                indices = np.random.choice(interactions.shape[0], 50000, replace=False)
+                sub_interactions = interactions[indices]
+                sub_target = target_binned[indices]
+            else:
+                sub_interactions = interactions
+                sub_target = target_binned
+
+            # Loop Triggers and compute Discrete MI
+            for i, t_fam in enumerate(trigger_df.columns):
+                # Simple filter: Parent should not be trigger
+                if p_fam == t_fam or p_fam.split('_')[0] == t_fam.split('_')[0]:
+                    continue
+                
+                interaction_col = sub_interactions[:, i]
+                
+                try:
+                    # Bin Interaction column
+                    # Ensure series for qcut
+                    inter_series = pd.Series(interaction_col)
+                    inter_binned = pd.qcut(inter_series, 5, labels=False, duplicates='drop').fillna(-1).astype(int)
+                    
+                    # Compute Discrete MI
+                    score = mutual_info_score(inter_binned, sub_target)
+                    scored_candidates.append((score, p_fam, t_fam))
+                except Exception:
+                    continue
+                
+    else:
+        # Fallback: Random selection
+        tprint_warning("   ⚠️ No target/MI available. Using first 50 combinations.")
+        import itertools
+        pairs = list(itertools.product(parent_df.columns, trigger_df.columns))
+        scored_candidates = [(1.0, p, t) for p, t in pairs[:100]]
+
+    # 6. SELECT TOP 50 (Global Hard Cap)
+    scored_candidates.sort(key=lambda x: x[0], reverse=True)
+    top_50 = scored_candidates[:50]
+    
+    tprint_info(f"   🏆 Selected Top {len(top_50)} / {len(scored_candidates)} Interactions by Binned MI.")
+
+    # 7. GENERATE FINAL CANDIDATES
+    composites = []
+    for score, p_fam, t_fam in top_50:
+        try:
+            p_vec = parent_df[p_fam]
+            t_vec = trigger_df[t_fam]
+            interaction_raw = p_vec * t_vec
+            
+            # Filter: Smart Event Weight
+            z_score = (interaction_raw - interaction_raw.rolling(100).mean()) / (interaction_raw.rolling(100).std() + 1e-9)
+            final_weight = pd.Series(smart_event_weight(z_score.fillna(0.0), quantile_threshold=0.99, use_adaptive=True), index=common_idx)
+            
+            events = final_weight[final_weight > 0].index
+            
+            if len(events) >= 50: # Minimum events
+                 composites.append({
+                    'family': f'COMPOSITE_{p_fam}_{t_fam}_INT',
+                    'events': events,
+                    'weight_vector': final_weight,
+                    'params': {'type': 'interaction', 'parents': [p_fam, t_fam], 'role': 'contextual_trigger', 'mi_score': score}
+                })
+        except Exception:
+            continue
+
+    tprint_success(f"   ✅ Generated {len(composites)} Optimized Composite Interactions.")
+    
+    if specialist_families: 
+         pass
 
     return composites
+
 
 def generate_meta_features(df: pd.DataFrame, composites: List[Dict], validated_parents: List[Dict]) -> List[Dict]:
     """
@@ -4399,7 +4514,9 @@ def orthogonal_label_generation(
     enable_causal_events: bool = True,
     specialist_predictions: Optional[Dict[str, pd.Series]] = None,
     causal_graph: Optional[Dict[str, List[str]]] = None,
-    causal_surprise_threshold: float = 1.8
+    causal_surprise_threshold: float = 1.8,
+    # Pipeline logging parameters
+    enable_pipeline_logging: bool = True
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -4411,6 +4528,14 @@ def orthogonal_label_generation(
     import time
     tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
     t_start_total = time.time()
+
+    # Initialize pipeline logger
+    if enable_pipeline_logging:
+        logger = EventPipelineLogger(verbose=True)
+        if df_full is not None:
+            logger.log_stage("Raw Data", len(df_full))
+        else:
+            logger.log_stage("Raw Data", 0)
 
     # 0. Data Standardization
     if isinstance(data, pd.DataFrame):
@@ -5013,7 +5138,7 @@ def orthogonal_label_generation(
     for comp in final_candidates_for_selection:
         try:
             # Use fixed TP:SL for composites for now (Standard Institutional Params)
-            pt, actual_sl, horizon, risk_budget = 2.0, 1.0, 48, 0.7
+            pt, actual_sl, horizon, risk_budget = 2.0, 1.0, 48, 0.7  # Horizon updated from 24 to 48
             
             labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
                 price, comp['events'], df_full['volatility_1d'],
@@ -5078,6 +5203,11 @@ def orthogonal_label_generation(
     # Sort by score descending
     scored_candidates.sort(key=lambda x: x.get('score', 0), reverse=True)
 
+    # Pipeline logging: Candidate generation stage
+    if enable_pipeline_logging:
+        total_generated_events = sum(len(cand.get('events', [])) for cand in scored_candidates)
+        logger.log_stage("Generated Candidates", total_generated_events, len(df_full) if df_full is not None else 0)
+
     # If requested, return ALL robust candidates for Layer 2 Selection
     if return_raw_candidates:
         tprint_info(f"Returning {len(scored_candidates)} raw candidates for advanced selection.")
@@ -5121,6 +5251,11 @@ def orthogonal_label_generation(
     top_candidates = scored_candidates[:n_keep]
     logger.info(f"Top 50% selection: Kept {len(top_candidates)} from {len(scored_candidates)} candidates.")
 
+    # Pipeline logging: Top 50% selection
+    if enable_pipeline_logging:
+        total_top_events = sum(len(cand.get('events', [])) for cand in top_candidates)
+        logger.log_stage("Top 50% Selected", total_top_events, len(df_full) if df_full is not None else 0)
+
     # 5. Run LGBM Probe on Top Candidates
     tprint_info(f"🚀 Running LGBM Probe on {len(top_candidates)} top candidates...")
     probe_geoms = []
@@ -5152,11 +5287,23 @@ def orthogonal_label_generation(
         )
         probe_geoms.append(geo)
 
+    # Pipeline logging: Probe stage
+    if enable_pipeline_logging:
+        total_probe_events = sum(len(geo.events) for geo in probe_geoms)
+        logger.log_stage("Probed Geometries", total_probe_events, len(df_full) if df_full is not None else 0)
+
     # 6. Apply Final Diversity Filter
     tprint_info(f"🌐 Applying Final Diversity Filter to {len(probe_geoms)} geometries...")
     final_geoms = final_diversity_filter(probe_geoms, price, 
                                        jaccard_threshold=0.7, 
                                        returns_threshold=0.8)
+    
+    # Final pipeline logging summary
+    if enable_pipeline_logging:
+        total_events = sum(len(geo.events) for geo in final_geoms)
+        logger.log_stage("Final Geometries", total_events, len(df_full) if df_full is not None else 0)
+        logger.print_summary()
+    
     tprint_info(f"🎉 Pipeline Complete: {len(final_geoms)} final geometries selected")
     return final_geoms
 

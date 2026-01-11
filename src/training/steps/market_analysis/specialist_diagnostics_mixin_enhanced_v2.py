@@ -497,9 +497,17 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             # 1. Use passed data if available (Direct Path), else load artifacts (Fallback)
             if current_features is not None and current_labels is not None and current_predictions is not None:
                 self.logger.info("Using features/labels/predictions passed directly from memory")
-                enhanced_features = current_features
-                labels = current_labels
-                predictions = current_predictions
+                # Subsample if data is too large for fast diagnostics
+                if len(current_features) > 10000:
+                    self.logger.info(f"Subsampling features for diagnostics: {len(current_features)} -> 10000")
+                    indices = np.random.choice(len(current_features), 10000, replace=False)
+                    enhanced_features = current_features.iloc[indices]
+                    labels = current_labels.iloc[indices]
+                    predictions = current_predictions[indices]
+                else:
+                    enhanced_features = current_features
+                    labels = current_labels
+                    predictions = current_predictions
                 # Need to construct a proxy df for artifact creation calls later if needed, 
                 # but run_enhanced_diagnostics mainly needs these 3 components.
                 
@@ -569,12 +577,21 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             
             # 4. Run comprehensive feature diagnostics
             tprint_info(f"🔬 Running comprehensive feature analysis for {self.__class__.__name__}")
+            tprint_info(f"📊 Enhanced features shape: {enhanced_features.shape}")
+            tprint_info(f"📊 Labels shape: {labels.shape}")
+            tprint_info(f"📊 Predictions shape: {predictions.shape if predictions is not None else 'None'}")
+            
             feature_diagnostics_results = self.feature_diagnostics.comprehensive_feature_analysis(
                 features=enhanced_features,
                 labels=labels,
                 predictions=predictions,
                 specialist_name=self.__class__.__name__
             )
+            
+            if 'error' in feature_diagnostics_results:
+                tprint_error(f"❌ Feature analysis failed: {feature_diagnostics_results['error']}")
+            else:
+                tprint_success(f"✅ Feature analysis completed for {self.__class__.__name__}")
 
             # 5. Compute MI improvement metrics
             mi_metrics = self._compute_mi_improvement_metrics(enhanced_features, labels, predictions)

@@ -42,6 +42,8 @@ except ImportError:
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
+from .constraint_utils import compute_ridge_monotonic_constraints
+
 class Layer25Chaser:
     """
     Layer 2.5 Chaser: Non-linear alpha extraction from causal residuals.
@@ -227,11 +229,27 @@ class Layer25Chaser:
             # Time series cross-validation
             tscv = TimeSeriesSplit(n_splits=cv_folds)
 
+            # === COMPUTE MONOTONIC CONSTRAINTS ===
+            tprint_info("   🔒 Computing Ridge Monotonic Constraints...")
+            constraints_dict = compute_ridge_monotonic_constraints(
+                X_clean, y_clean, alpha=1.0, threshold=2.0, verbose=False
+            )
+            # XGBoost requires tuple (-1, 0, 1) corresponding to columns
+            xgb_constraints = tuple([constraints_dict.get(col, 0) for col in X_clean.columns])
+            
+            n_inc = sum(1 for x in xgb_constraints if x == 1)
+            n_dec = sum(1 for x in xgb_constraints if x == -1)
+            tprint_info(f"      → Found {n_inc} Increasing, {n_dec} Decreasing constraints")
+
             # XGBoost training with CV
             if self.verbose:
                 tprint_info("   📊 Training XGBoost model...")
 
-            self.xgb_model = xgb.XGBRegressor(**self.xgb_params)
+            # Apply constraints to XGB params
+            current_xgb_params = self.xgb_params.copy()
+            current_xgb_params['monotone_constraints'] = xgb_constraints
+            
+            self.xgb_model = xgb.XGBRegressor(**current_xgb_params)
             xgb_cv_scores = cross_val_score(
                 self.xgb_model, X_clean, y_clean,
                 cv=tscv, scoring='neg_mean_squared_error'
@@ -243,7 +261,13 @@ class Layer25Chaser:
                 if self.verbose:
                     tprint_info("   📊 Training CatBoost model...")
 
-                self.cat_model = cb.CatBoostRegressor(**self.cat_params)
+                # Apply constraints to CatBoost params
+                current_cat_params = self.cat_params.copy()
+                # CatBoost accepts dictionary {feat_name: constraint} or list
+                # We can pass the dict directly if using DataFrame (which we are)
+                current_cat_params['monotone_constraints'] = constraints_dict
+                
+                self.cat_model = cb.CatBoostRegressor(**current_cat_params)
                 cat_cv_scores = cross_val_score(
                     self.cat_model, X_clean, y_clean,
                     cv=tscv, scoring='neg_mean_squared_error'

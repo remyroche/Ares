@@ -163,8 +163,15 @@ class CausalDiscovery:
                                 tprint_warning("   ⚠️ CI Test: Invalid degrees of freedom")
                             return True, 1.0
                         
-                        t_stat = partial_corr * np.sqrt(df / (1 - partial_corr**2))
-                        p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))
+                        # Convert to t-statistic
+                        if abs(partial_corr) >= 1.0:
+                            t_stat = np.inf
+                        else:
+                            t_stat = partial_corr * np.sqrt(df / (1 - partial_corr**2))
+
+                        # Use survival function (sf) for better numerical stability with extremely small p-values
+                        # sf = 1 - cdf, so 2*sf gives two-tailed p-value
+                        p_value = 2 * stats.t.sf(abs(t_stat), df)
                         is_independent = p_value > self.significance_level
                         
                         if self.verbose:
@@ -403,6 +410,14 @@ class CausalDiscovery:
                 # Regress on previous variables
                 if i > 0:
                     prev_vars = var_indices[:i]
+                    
+                    # OPTIMIZATION: Constrain to variables connected in the PC skeleton
+                    # This makes regression sparse O(k^3) instead of dense O(N^3)
+                    if self.adjacency_matrix_ is not None:
+                        # Filter prev_vars to only those adjacent to current var_idx
+                        # In PC skeleton, matrix is symmetric for undirected edges
+                        prev_vars = [p for p in prev_vars if self.adjacency_matrix_[p, var_idx] == 1 or self.adjacency_matrix_[var_idx, p] == 1]
+                    
                     X = data.iloc[:, prev_vars].values
                     y = data.iloc[:, var_idx].values
                     
@@ -410,7 +425,9 @@ class CausalDiscovery:
                     if len(prev_vars) > 0:
                         try:
                             coeffs = np.linalg.lstsq(X, y, rcond=None)[0]
-                            B[prev_vars, var_idx] = coeffs
+                            # Map sparse coeffs back to full matrix
+                            for p_idx, p_var in enumerate(prev_vars):
+                                B[p_var, var_idx] = coeffs[p_idx]
                             
                             # Count non-zero coefficients
                             non_zero_coeffs = np.sum(np.abs(coeffs) > 1e-6)

@@ -1642,6 +1642,7 @@ def get_enhanced_specialist_models_outputs(
         "enhanced_ml_spectral_step": None,
         "enhanced_ml_candlestick_step": None,
         "enhanced_ml_reversion_regime_step": None,
+        "enhanced_ml_causal_step": None,
     }
 
     load_regime_label = None
@@ -1693,21 +1694,27 @@ def get_enhanced_specialist_models_outputs(
             }
             
             # Expected artifact base name used by Enhanced specialists.
-            base_name = step_name.replace("_step", "")
+            base_name = step_name.replace("_step", "").replace("enhanced_", "")
             artifact_name = f"{base_name}_prediction_{timeframe}"
+            training_data_name = f"{base_name}_training_data_{timeframe}"
 
             # Try to load enhanced specialist predictions
             # Try multiple possible artifact names
             specialist_data = None
             possible_art_names = [
                 artifact_name,
+                training_data_name,
+                f"ml_{training_data_name}" if not training_data_name.startswith("ml_") and "xgb" not in training_data_name else None,
+                f"xgb_{training_data_name}" if not training_data_name.startswith("xgb_") and "ml" not in training_data_name else None,
                 f"{artifact_name}__regime_{load_regime_label}" if load_regime_label else None,
                 artifact_name.replace('_predictions_', '_prediction_'),
                 artifact_name.replace('_prediction_', '_predictions_'),
                 "enhanced_predictions_with_confidence",
                 "enhanced_features",
+                "specialists_enhanced_features",
                 f"{step_name.replace('enhanced_', '')}_features",
                 f"{step_name.replace('enhanced_', '').replace('_step', '')}_features",
+                "layer2_specialist_predictions" if "causal" in step_name else None,
             ]
 
             possible_art_names = [x for x in possible_art_names if x]

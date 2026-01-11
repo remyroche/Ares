@@ -504,6 +504,12 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
         
         return training_result.model, training_result.metrics
     
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For reversion regime, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._generate_enhanced_reversion_features(market_data, {})
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced reversion regime step."""
         return await self.execute_standard_specialist_logic(

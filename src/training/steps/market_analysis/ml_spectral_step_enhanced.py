@@ -131,8 +131,8 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
         # Spectral focus: Multiple windows for Hilbert Transform
         for window in [50, 100, 200]:
             spectral_data = compute_spectral_energy(df['close'], window=window)
-            features[f'dominant_freq_{window}'] = spectral_data['dominant_freq']
-            features[f'phase_{window}'] = spectral_data['phase']
+            features[f'dominant_freq_{window}'] = spectral_data.get('dominant_freq', 0.0)
+            features[f'phase_{window}'] = spectral_data.get('phase', 0.0)
             
             # Phase change (oscillation velocity)
             features[f'phase_velocity_{window}'] = features[f'phase_{window}'].diff()
@@ -182,6 +182,12 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
         
         return manual_features
     
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For spectral regime, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_spectral_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced spectral analysis specialist with AFML hardening."""
         return await self.execute_standard_specialist_logic(

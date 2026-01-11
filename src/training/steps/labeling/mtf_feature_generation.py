@@ -411,6 +411,80 @@ def compute_donchian_channel(high: pd.Series, low: pd.Series, close: pd.Series, 
     position = (close - lower) / (width + 1e-9)
     return upper, lower, position
 
+
+def compute_wick_to_body_ratio(open_p: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    """
+    Compute Wick-to-Body Ratio.
+    (High - max(O,C)) / (max(O,C) - min(O,C))
+    High ratio (Long upper wick) suggests Short Squeeze / Rejection.
+    """
+    max_oc = pd.concat([open_p, close], axis=1).max(axis=1)
+    min_oc = pd.concat([open_p, close], axis=1).min(axis=1)
+    
+    upper_wick = high - max_oc
+    body = max_oc - min_oc
+    
+    # Handle div/0 for doji candles
+    return upper_wick / (body + 1e-9)
+
+def compute_relative_volume_stress(volume: pd.Series, window: int = 20) -> pd.Series:
+    """
+    Compute Relative Volume Stress (RVS).
+    Volume / SMA(Volume, 20)
+    """
+    sma_vol = volume.rolling(window).mean()
+    return volume / (sma_vol + 1e-9)
+
+def compute_amihud_illiquidity(open_p: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    """
+    Compute Amihud Illiquidity.
+    abs(log(C/O)) / Volume
+    """
+    log_ret = np.log(close / (open_p + 1e-9)).abs()
+    return log_ret / (volume + 1e-9)
+
+def compute_displacement_ratio(open_p: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    """
+    Compute Displacement Ratio.
+    (Close - Open) / (High - Low)
+    Small body but huge range -> choppy/hunting stops.
+    """
+    body_signed = close - open_p
+    rng = high - low
+    return body_signed / (rng + 1e-9)
+
+def compute_proxy_levels(
+    high: pd.Series, 
+    low: pd.Series, 
+    close: pd.Series, 
+    pivot_window: int = 30, 
+    atr_window: int = 200, 
+    k_factor: float = 1.0
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Calculate Liquidation Proxy Levels.
+    Using 30-period pivots and 200-period ATR.
+    
+    Long Proxy (below price) = PivotLow - (k * ATR)
+    Short Proxy (above price) = PivotHigh + (k * ATR)
+    """
+    # 1. Calculate Pivot Points (Rolling Min/Max) - representing swing points
+    pivot_low = low.rolling(window=pivot_window).min()
+    pivot_high = high.rolling(window=pivot_window).max()
+    
+    # 2. Calculate Long-Horizon ATR
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr_long = tr.rolling(atr_window).mean()
+    
+    # 3. Calculate Proxies
+    proxy_long = pivot_low - (k_factor * atr_long)
+    proxy_short = pivot_high + (k_factor * atr_long)
+    
+    return proxy_long, proxy_short
+
 def compute_garman_klass_volatility(open_p: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20) -> pd.Series:
     """Compute Garman-Klass Volatility."""
     log_hl = np.log(high / (low + 1e-9)) ** 2
@@ -632,17 +706,66 @@ def create_meta_features(
                  # So we need to access df robustly here too.
                  # However, high/low/close are available in outer scope if we move _norm definition after extraction.
                  # Or we access them robustly here.
-                 _high = df['high'] if 'high' in df.columns else df.get('High', df.get('close', df.get('Close')))
-                 _low = df['low'] if 'low' in df.columns else df.get('Low', df.get('close', df.get('Close')))
-                 _close = df['close'] if 'close' in df.columns else df['Close']
+                 # Find robust column names (handle multi-timeframe prefixes)
+                 def _find_col(df, suffixes):
+                     for suffix in suffixes:
+                         for col in df.columns:
+                             if col == suffix or col.endswith(f'_{suffix}'):
+                                 return col
+                     return None
+                 
+                 _high_col = _find_col(df, ['high', 'High', 'HIGH'])
+                 _low_col = _find_col(df, ['low', 'Low', 'LOW'])
+                 _close_col = _find_col(df, ['close', 'Close', 'CLOSE'])
+                 
+                 _high = df[_high_col] if _high_col else close
+                 _low = df[_low_col] if _low_col else close
+                 _close = df[_close_col] if _close_col else close
+                 
                  return atr_normalize(series, _high, _low, _close, window=14).fillna(0).to_numpy()
 
         return winsorized_zscore_normalize(series, window=600).fillna(0).to_numpy()
 
-    # Robust column extraction (case-insensitive)
-    close = df['close'] if 'close' in df.columns else df['Close']
-    high = df['high'] if 'high' in df.columns else df.get('High', close)
-    low = df['low'] if 'low' in df.columns else df.get('Low', close)
+    # Robust column extraction (case-insensitive, handle multi-timeframe prefixes)
+    close_col = None
+    for col in ['close', 'Close', 'CLOSE']:
+        if col in df.columns:
+            close_col = col
+            break
+    
+    # If not found, check for prefixed columns (e.g., '60m_close')
+    if close_col is None:
+        for col in df.columns:
+            if col.endswith('_close') or col.endswith('_Close') or col.endswith('_CLOSE'):
+                close_col = col
+                break
+    
+    if close_col is None:
+        raise KeyError(f"None of ['close', 'Close', 'CLOSE'] or prefixed variants found in columns: {list(df.columns)}")
+    
+    close = df[close_col]
+    
+    # Handle prefixed high/low columns
+    high_col = None
+    low_col = None
+    for suffix in ['high', 'High', 'HIGH']:
+        for col in df.columns:
+            if col == suffix or col.endswith(f'_{suffix}'):
+                high_col = col
+                break
+        if high_col:
+            break
+    
+    for suffix in ['low', 'Low', 'LOW']:
+        for col in df.columns:
+            if col == suffix or col.endswith(f'_{suffix}'):
+                low_col = col
+                break
+        if low_col:
+            break
+    
+    high = df[high_col] if high_col else close
+    low = df[low_col] if low_col else close
 
     # Pre-calc common series
     returns = close.pct_change()
@@ -753,8 +876,57 @@ def create_meta_features(
     rv_z_short = (vol_short_20 - vol_long_mean) / (vol_long_std + 1e-8)
     features['rv_z_short'] = _norm(rv_z_short.fillna(0.0), 'rv_z_short')
 
+
     # Volatility Trend Slope
     features['volatility_trend_slope'] = _align_to_features(_norm(vol_short_20.diff(5), 'volatility_trend_slope'), n_features)
+
+    # ===== 3. LIQUIDATION SPECIALIST FEATURES (NEW) =====
+    # Wick-to-Body
+    wb_ratio = compute_wick_to_body_ratio(open_p, high, low, close)
+    features['wick_to_body_ratio'] = _align_to_features(_norm(wb_ratio, 'wick_to_body_ratio'), n_features)
+    
+    # RVS
+    rvs = compute_relative_volume_stress(volume, window=20)
+    features['relative_volume_stress'] = _align_to_features(_norm(rvs, 'relative_volume_stress'), n_features)
+    
+    # Amihud
+    amihud = compute_amihud_illiquidity(open_p, close, volume)
+    features['amihud_illiquidity'] = _align_to_features(_norm(amihud, 'amihud_illiquidity'), n_features)
+    
+    # Displacement
+    displacement = compute_displacement_ratio(open_p, high, low, close)
+    features['displacement_ratio'] = _align_to_features(_norm(displacement, 'displacement_ratio'), n_features)
+    
+    # Proxy Levels & Distance
+    # User Spec: Pivot=30, ATR=200, k=1.0 (mid-range of 0.5-1.5)
+    proxy_long, proxy_short = compute_proxy_levels(high, low, close, pivot_window=30, atr_window=200, k_factor=1.0)
+    
+    # Distance to Proxy (normalized by ATR(14))
+    # dist_to_proxy = (Price - Proxy) / ATR(14)
+    # We use Close for current price
+    atr_14_local = atr_14 if 'atr_14' in locals() else (high - low).rolling(14).mean() # Fallback approximation if atr_14 not computed yet
+    
+    # For Long Squeeze (price drops to proxy): Distance is positive if Price > Proxy
+    dist_to_long_proxy = (close - proxy_long) / (atr_14_local + 1e-9)
+    features['dist_to_long_proxy'] = _align_to_features(_norm(dist_to_long_proxy, 'dist_to_long_proxy'), n_features)
+    
+    # For Short Squeeze (price rises to proxy): Distance is positive if Proxy > Price
+    dist_to_short_proxy = (proxy_short - close) / (atr_14_local + 1e-9)
+    features['dist_to_short_proxy'] = _align_to_features(_norm(dist_to_short_proxy, 'dist_to_short_proxy'), n_features)
+
+    # Liquidation Trigger Signal (Logic Trace)
+    # IF (Price < Long_Proxy_Level) AND (RVS > 2.0)
+    # Note: "Causal_Specialist_Signal" dependency is external/downstream, so we calculate the 'Liquidation Condition' component here.
+    # We capture the "Liquidation Zone" state.
+    
+    in_long_liq_zone = (close < proxy_long).astype(float)
+    high_stress = (rvs > 2.0).astype(float)
+    
+    # Composite feature: Liquidation Risk (Long)
+    # 1.0 = In Zone + High Stress
+    liq_risk_long = in_long_liq_zone * high_stress
+    features['liquidation_risk_long'] = _align_to_features(_norm(liq_risk_long, 'liquidation_risk_long'), n_features)
+
 
     # ===== SPECIALIST SCALAR FEATURES =====
     specialist_cols = [

@@ -47,7 +47,9 @@ class CausalTargetComputer:
         outcome_model: str = "ridge",
         n_folds: int = 3,
         random_state: int = 42,
-        verbose: bool = True
+        verbose: bool = True,
+        checkpoint_manager=None,
+        symbol: str = "UNKNOWN"
     ):
         """
         Initialize Causal Target Computer.
@@ -58,12 +60,16 @@ class CausalTargetComputer:
             n_folds: Number of cross-validation folds
             random_state: Random seed
             verbose: Whether to print progress information
+            checkpoint_manager: Optional checkpoint manager for saving progress
+            symbol: Trading symbol for checkpoint naming
         """
         self.treatment_model = treatment_model
         self.outcome_model = outcome_model
         self.n_folds = n_folds
         self.random_state = random_state
         self.verbose = verbose
+        self.checkpoint_manager = checkpoint_manager
+        self.symbol = symbol
         
         # Storage for models and results
         self.treatment_models_ = {}
@@ -74,6 +80,7 @@ class CausalTargetComputer:
         self.refutation_scores_ = None
         self.causal_effect_frame_ = None
         self.large_dataset_threshold = 50000
+        self.subsample_indices_ = None  # Store subsample indices for alignment
         
     def _get_model(self, model_type: str, model_name: str):
         """
@@ -111,6 +118,75 @@ class CausalTargetComputer:
             raise ValueError(f"Unknown model: {model_name}")
         
         return models[model_name]
+    
+    def _validate_and_clean_data(
+        self, 
+        data: pd.DataFrame, 
+        data_name: str = "data"
+    ) -> pd.DataFrame:
+        """
+        Validate and clean data for infinity and extreme values before sklearn processing.
+        
+        Args:
+            data: DataFrame to validate and clean
+            data_name: Name of the data for logging
+            
+        Returns:
+            Cleaned DataFrame
+        """
+        try:
+            if self.verbose:
+                tprint_info(f"🔍 Validating {data_name} for infinity and extreme values...")
+            
+            data_clean = data.copy()
+            
+            # Check for infinity values
+            inf_counts = {}
+            for col in data_clean.select_dtypes(include=[np.number]).columns:
+                inf_count = np.isinf(data_clean[col]).sum()
+                if inf_count > 0:
+                    inf_counts[col] = inf_count
+            
+            if inf_counts:
+                total_inf = sum(inf_counts.values())
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {total_inf} infinity values in {data_name}, replacing with NaN")
+                
+                # Replace infinity with NaN
+                for col, count in inf_counts.items():
+                    data_clean[col] = data_clean[col].replace([np.inf, -np.inf], np.nan)
+            
+            # Check for extremely large values
+            float64_max = np.finfo(np.float64).max / 1000  # Safety margin
+            large_counts = {}
+            
+            for col in data_clean.select_dtypes(include=[np.number]).columns:
+                large_count = (np.abs(data_clean[col]) > float64_max).sum()
+                if large_count > 0:
+                    large_counts[col] = large_count
+            
+            if large_counts:
+                total_large = sum(large_counts.values())
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {total_large} extremely large values in {data_name}, clipping")
+                
+                # Clip extreme values
+                for col in large_counts.keys():
+                    data_clean[col] = data_clean[col].clip(lower=-float64_max, upper=float64_max)
+            
+            # Handle NaN values that resulted from infinity replacement
+            nan_counts = data_clean.isna().sum()
+            if nan_counts.any():
+                total_nan = nan_counts.sum()
+                if self.verbose:
+                    tprint_info(f"   📝 Found {total_nan} NaN values in {data_name} (will be handled by sklearn imputers)")
+            
+            return data_clean
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"⚠️ Data validation failed for {data_name}: {e}")
+            return data
     
     def _optimize_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -197,6 +273,9 @@ class CausalTargetComputer:
             # Apply memory optimization
             confounders = self._optimize_memory(confounders)
             
+            # Validate and clean confounder data for sklearn compatibility
+            confounders = self._validate_and_clean_data(confounders, "confounder data")
+            
             n_samples = len(treatments_array)
             treatment_width = treatments_array.shape[1]
             outcome_width = outcomes_array.shape[1]
@@ -224,6 +303,9 @@ class CausalTargetComputer:
                 # Convert to arrays and shuffle
                 sample_indices = np.array(sample_indices)
                 np.random.shuffle(sample_indices)
+                
+                # Store subsample indices for later alignment
+                self.subsample_indices_ = sample_indices
                 
                 # Apply sampling
                 treatments_array = treatments_array[sample_indices]
@@ -323,7 +405,8 @@ class CausalTargetComputer:
                 "treatment_residuals": treatment_residuals,
                 "outcome_residuals": outcome_residuals,
                 "treatment_predictions": treatment_pred,
-                "outcome_predictions": outcome_pred
+                "outcome_predictions": outcome_pred,
+                "subsample_indices": self.subsample_indices_  # Store for alignment
             }
             # Create Layer 4-ready causal effect frame
             self.causal_effect_frame_ = pd.DataFrame({
@@ -341,6 +424,22 @@ class CausalTargetComputer:
                 tprint_info(f"   - R-squared: {r_squared:.4f}")
                 tprint_info(f"   - Treatment model: {self.treatment_model}")
                 tprint_info(f"   - Outcome model: {self.outcome_model}")
+            
+            # Save checkpoint after DML effects computation
+            if self.checkpoint_manager:
+                try:
+                    checkpoint_data = {
+                        'causal_effects': self.causal_effects_,
+                        'causal_effect_frame': self.causal_effect_frame_,
+                        'treatment_models': self.treatment_models_,
+                        'outcome_models': self.outcome_models_
+                    }
+                    self.checkpoint_manager.save_checkpoint('dml_effects_computed', checkpoint_data, self.symbol)
+                    if self.verbose:
+                        tprint_info("   💾 Saved checkpoint: dml_effects_computed")
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Failed to save dml_effects_computed checkpoint: {e}")
             
             return self.causal_effects_
             
@@ -388,9 +487,22 @@ class CausalTargetComputer:
                 tprint_warning("   No numeric features available for CATE, using X instead")
                 heterogeneity_data = X.select_dtypes(include=[np.number])
             
+            # Validate and clean heterogeneity data for sklearn compatibility
+            heterogeneity_data = self._validate_and_clean_data(heterogeneity_data, "heterogeneity data")
+            
             # Use treatment residuals for CATE estimation
             treatment_residuals = self.causal_effects_["treatment_residuals"].ravel()
             outcome_residuals = self.causal_effects_["outcome_residuals"].ravel()
+            
+            # Handle subsample indices if present
+            if self.subsample_indices_ is not None:
+                # Use only the subsampled heterogeneity data that matches the residuals
+                heterogeneity_data = heterogeneity_data.iloc[self.subsample_indices_]
+                if self.verbose:
+                    tprint_info(f"   Using subsampled heterogeneity data: {len(heterogeneity_data)} samples")
+            else:
+                if self.verbose:
+                    tprint_info(f"   Using full heterogeneity data: {len(heterogeneity_data)} samples")
             
             # Fit heterogeneity model
             cate_model = RandomForestRegressor(
@@ -411,7 +523,15 @@ class CausalTargetComputer:
                 cate_estimates = cate_model.predict(heterogeneity_data)
             else:
                 # Fallback to constant effect
-                cate_estimates = np.full(len(X), self.causal_effects_["causal_effect"])
+                cate_estimates = np.full(len(heterogeneity_data), self.causal_effects_["causal_effect"])
+            
+            # Expand CATE estimates back to original data size if subsampling was used
+            if self.subsample_indices_ is not None:
+                # Create full-size array with default values
+                full_cate_estimates = np.full(len(X), self.causal_effects_["causal_effect"])
+                # Fill in the computed values at the subsample positions
+                full_cate_estimates[self.subsample_indices_] = cate_estimates
+                cate_estimates = full_cate_estimates
             
             cate_series = pd.Series(cate_estimates, index=X.index)
             self.cate_estimates_ = cate_series
@@ -421,6 +541,20 @@ class CausalTargetComputer:
                 tprint_info(f"   - Mean CATE: {cate_estimates.mean():.6f}")
                 tprint_info(f"   - Std CATE: {cate_estimates.std():.6f}")
                 tprint_info(f"   - Range: [{cate_estimates.min():.6f}, {cate_estimates.max():.6f}]")
+            
+            # Save checkpoint after CATE computation
+            if self.checkpoint_manager:
+                try:
+                    checkpoint_data = {
+                        'cate_estimates': self.cate_estimates_,
+                        'causal_effects': self.causal_effects_
+                    }
+                    self.checkpoint_manager.save_checkpoint('cate_computed', checkpoint_data, self.symbol)
+                    if self.verbose:
+                        tprint_info("   💾 Saved checkpoint: cate_computed")
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Failed to save cate_computed checkpoint: {e}")
             
             return cate_series
             
@@ -465,7 +599,68 @@ class CausalTargetComputer:
             else:
                 outcomes_values = outcomes.ravel()
             
-            causal_residuals = outcomes_values - outcome_predictions
+            # Validate input data for infinity and extreme values
+            if self.verbose:
+                tprint_info("🔍 Validating outcome data for residual computation...")
+            
+            # Check for infinity values
+            outcomes_inf = np.isinf(outcomes_values).sum()
+            predictions_inf = np.isinf(outcome_predictions).sum()
+            
+            if outcomes_inf > 0:
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {outcomes_inf} infinity values in outcomes, replacing with NaN")
+                outcomes_values = np.where(np.isinf(outcomes_values), np.nan, outcomes_values)
+            
+            if predictions_inf > 0:
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {predictions_inf} infinity values in predictions, replacing with NaN")
+                outcome_predictions = np.where(np.isinf(outcome_predictions), np.nan, outcome_predictions)
+            
+            # Check for extremely large values
+            float64_max = np.finfo(np.float64).max / 1000
+            outcomes_large = (np.abs(outcomes_values) > float64_max).sum()
+            predictions_large = (np.abs(outcome_predictions) > float64_max).sum()
+            
+            if outcomes_large > 0:
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {outcomes_large} extremely large values in outcomes, clipping")
+                outcomes_values = np.clip(outcomes_values, -float64_max, float64_max)
+            
+            if predictions_large > 0:
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {predictions_large} extremely large values in predictions, clipping")
+                outcome_predictions = np.clip(outcome_predictions, -float64_max, float64_max)
+            
+            # Compute residuals with validation
+            if self.subsample_indices_ is not None:
+                # Handle subsampled case: align outcomes with predictions
+                if isinstance(outcomes, pd.Series):
+                    outcomes_values = outcomes.iloc[self.subsample_indices_].values
+                else:
+                    outcomes_values = outcomes[self.subsample_indices_].ravel()
+                
+                causal_residuals = outcomes_values - outcome_predictions
+                
+                # Expand residuals back to original size
+                full_residuals = np.zeros(len(X))
+                full_residuals[self.subsample_indices_] = causal_residuals
+                causal_residuals = full_residuals
+            else:
+                # Full dataset case
+                if isinstance(outcomes, pd.Series):
+                    outcomes_values = outcomes.values
+                else:
+                    outcomes_values = outcomes.ravel()
+                
+                causal_residuals = outcomes_values - outcome_predictions
+            
+            # Handle any NaN values that resulted from infinity replacement
+            nan_mask = np.isnan(causal_residuals)
+            if nan_mask.any():
+                if self.verbose:
+                    tprint_warning(f"⚠️ Found {nan_mask.sum()} NaN residuals after computation, setting to 0")
+                causal_residuals = np.where(nan_mask, 0, causal_residuals)
             
             # Convert to Series
             residual_series = pd.Series(causal_residuals, index=X.index)
@@ -602,10 +797,15 @@ class CausalTargetComputer:
             
             # Treatment residuals (for additional analysis)
             if self.causal_effects_:
-                treatment_residuals = pd.Series(
-                    self.causal_effects_["treatment_residuals"].ravel(),
-                    index=X.index
-                )
+                treatment_residuals_data = self.causal_effects_["treatment_residuals"].ravel()
+                
+                if self.subsample_indices_ is not None:
+                    # Expand treatment residuals back to original size
+                    full_treatment_residuals = np.zeros(len(X))
+                    full_treatment_residuals[self.subsample_indices_] = treatment_residuals_data
+                    treatment_residuals_data = full_treatment_residuals
+                
+                treatment_residuals = pd.Series(treatment_residuals_data, index=X.index)
                 chaser_targets["treatment_residuals"] = treatment_residuals
             
             # Add Layer 4-ready causal effect frame columns

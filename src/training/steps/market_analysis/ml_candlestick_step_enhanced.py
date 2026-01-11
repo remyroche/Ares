@@ -529,6 +529,12 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
         combined = pd.concat([candlestick_features, manual_features], axis=1)
         return self._apply_manual_candlestick_feature_selection(combined)
 
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For candlestick, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_candlestick_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced candlestick step."""
         return await self.execute_standard_specialist_logic(

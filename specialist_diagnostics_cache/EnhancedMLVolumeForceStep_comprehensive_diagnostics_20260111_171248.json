@@ -1,0 +1,16 @@
+{
+  "feature_analysis": {
+    "error": "'SpecialistFeatureDiagnostics' object has no attribute '_analyze_predictive_power'",
+    "specialist_name": "EnhancedMLVolumeForceStep"
+  },
+  "orthogonalization_diagnostics": {
+    "error": "Feature diagnostics failed"
+  },
+  "legacy_metrics": {
+    "prediction_mi_to_target": 0,
+    "avg_feature_mi": 0.009662573950413112,
+    "max_feature_mi": 0.03388612744980435,
+    "mi_improvement_potential": 0.02422355349939124,
+    "high_mi_features_count": 6,
+    "high_mi_features_ratio": 0.2608695652173913,
+    "mi_target_met": 

@@ -799,6 +799,17 @@ class SpectralSpecialists:
                 # Z-Score normalize
                 trend_signal = (trend_signal - trend_signal.rolling(50).mean()) / (trend_signal.rolling(50).std() + 1e-9)
                 
+                # DIAGNOSTIC LOGGING
+                if self.verbose and trend_signal is not None:
+                    # Check for effective constant signal
+                    sig_std = trend_signal.std()
+                    if sig_std < 1e-6:
+                        raw_std = trend_pressure.std()
+                        raw_mean = trend_pressure.mean()
+                        if self.verbose:
+                            tprint_warning(f"      ⚠️ Trend signal low variance: std={sig_std:.6f} (raw_std={raw_std:.6f}, raw_mean={raw_mean:.6f})")
+                            tprint_warning(f"         Raw Range: [{trend_pressure.min():.4f}, {trend_pressure.max():.4f}]")
+                
                 return trend_signal.fillna(0)
             return None
         except Exception as e:
@@ -898,6 +909,9 @@ class SpectralSpecialists:
                 inventory_signal = (inventory_signal - inventory_signal.rolling(50).mean()) / \
                                 (inventory_signal.rolling(50).std() + 1e-9)
                 
+                if self.verbose and inventory_signal.std() < 1e-6:
+                     tprint_warning(f"      ⚠️ Inventory signal low variance: raw_std={inventory_pressure.std():.6f}")
+
                 return inventory_signal.fillna(0)
             
             return None
@@ -946,7 +960,12 @@ class SpectralSpecialists:
                 # Add lagged features for momentum detection (simple momentum here)
                 volume_momentum = volume_signal.diff()
                 
-                return (volume_signal + 0.5 * volume_momentum).fillna(0)
+                final_sig = (volume_signal + 0.5 * volume_momentum).fillna(0)
+                
+                if self.verbose and final_sig.std() < 1e-6:
+                     tprint_warning(f"      ⚠️ Volume signal low variance: raw_vol_ratio_std={volume_ratio.std():.6f}")
+                     
+                return final_sig
             
             return None
             
@@ -984,6 +1003,9 @@ class SpectralSpecialists:
                 volatility_signal = (volatility_signal - volatility_signal.rolling(50).mean()) / \
                                    (volatility_signal.rolling(50).std() + 1e-9)
                 
+                if self.verbose and volatility_signal.std() < 1e-6:
+                     tprint_warning(f"      ⚠️ Volatility signal low variance: raw_change_std={vol_change.std():.6f}")
+
                 return volatility_signal.fillna(0)
             
             return None

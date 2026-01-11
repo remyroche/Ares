@@ -1,22 +1,21 @@
-
 import sys
 import os
 sys.path.insert(0, os.getcwd())
 
-print("Attempting to import MetaLabelingHPOSampleWeightedStep...")
 try:
-    from src.training.steps.labeling.meta_labeling_hpo_sample_weighted import MetaLabelingHPOSampleWeightedStep
-    print("SUCCESS: Import successful")
+    print("Attempting to import train_specialists_with_gmm_step...")
+    from src.training.steps.labeling import train_specialists_with_gmm_step
+    print("Import successful!")
 except Exception as e:
-    print(f"FAILURE: {e}")
+    print(f"Import failed: {e}")
     import traceback
     traceback.print_exc()
 
-print("\nAttempting to import LabelBasedLayer2...")
+print("\n--- Cheking CausalDiscoveryLight ---")
 try:
-    from src.training.steps.labeling.label_based_layer_2 import LabelBasedLayer2
-    print("SUCCESS: LabelBasedLayer2 imported")
+    from src.training.steps.labeling import causal_discovery_light
+    print("CausalDiscoveryLight imported successfully!")
 except Exception as e:
-    print(f"FAILURE: {e}")
+    print(f"CausalDiscoveryLight import failed: {e}")
     import traceback
     traceback.print_exc()

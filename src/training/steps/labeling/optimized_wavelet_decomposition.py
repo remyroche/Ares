@@ -330,9 +330,10 @@ class OptimizedWaveletDecomposition:
             # Vectorized reconstruction of individual scales
             for i, scale_name in enumerate(self.scale_order):
                 if scale_name in self.scales and i < len(coeffs) - 1:
-                    # Create dummy coefficients for reconstruction
-                    dummy_coeffs = [np.zeros_like(signal) for _ in range(len(coeffs))]
-                    dummy_coeffs[i] = coeffs[i]
+                    # Create dummy coefficients WITH CORRECT SHAPES for reconstruction
+                    # Each level has different coefficient length due to downsampling
+                    dummy_coeffs = [np.zeros_like(c) for c in coeffs]
+                    dummy_coeffs[i] = coeffs[i]  # Copy actual coefficients for this scale
                     
                     try:
                         reconstruction = pywt.waverec(dummy_coeffs, self.wavelet)

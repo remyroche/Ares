@@ -45,11 +45,16 @@ class RequirementStatus(Enum):
 class SpecialistRequirements:
     """Requirements definition for specialist models."""
     min_mi_score: float = 0.02
-    max_correlation_threshold: float = 0.7
-    binary_output_required: bool = True
+    min_hsic_score: float = 0.1
+    min_auc_score: float = 0.55
+    min_accuracy_score: float = 0.51
+    min_features: int = 5
+    max_features: int = 100
     min_samples: int = 1000
     max_high_correlation_pairs: int = 3
     target_ensemble_correlation: float = 0.3
+    binary_output_required: bool = True
+    max_correlation_threshold: float = 0.7
 
 
 @dataclass
@@ -154,11 +159,18 @@ class SpecialistDataValidator:
             issues.append("Data is not a pandas DataFrame")
             return False, issues
         
-        # Check required columns
-        required_columns = ['specialist_prediction', 'specialist_probability', 'target_label']
+        # Check required columns (make prediction/probability optional for feature-only specialists)
+        required_columns = ['target_label']
+        optional_columns = ['specialist_prediction', 'specialist_probability']
+        
         for col in required_columns:
             if col not in df.columns:
                 issues.append(f"Missing required column: {col}")
+        
+        # Check optional columns and warn if missing
+        missing_optional = [col for col in optional_columns if col not in df.columns]
+        if missing_optional:
+            issues.append(f"Missing optional columns: {missing_optional} (feature-only specialist)")
         
         # Check data quality
         if len(df) < self.requirements.min_samples:

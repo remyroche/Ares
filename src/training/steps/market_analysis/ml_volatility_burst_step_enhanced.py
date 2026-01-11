@@ -296,6 +296,12 @@ class EnhancedMLVolatilityBurstStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
             
         return manual_features
     
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For volatility burst, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_volatility_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced volatility burst step."""
         return await self.execute_standard_specialist_logic(

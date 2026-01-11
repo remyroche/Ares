@@ -45,7 +45,7 @@ class SpectralPCA:
         self,
         n_components: int = 2,
         variance_explained_threshold: float = 0.95,
-        enable_parallel: bool = True,
+        enable_parallel: bool = False,  # Disabled: M1 Mac semaphore deadlock
         verbose: bool = True
     ):
         """
@@ -560,7 +560,7 @@ class CausalCompression:
     def __init__(
         self,
         causal_graph: Dict[str, List[str]],
-        variance_threshold: float = 0.90, # Relaxed from 0.95 to balance noise vs signal
+        variance_threshold: float = 0.75, # Lowered from 0.90 to accommodate spectral data
         min_samples: int = 100,
         verbose: bool = True
     ):
@@ -579,7 +579,7 @@ class CausalCompression:
         # Initialize components
         # Increase components to 3 to capture more signal variance as requested
         self.spectral_pca = SpectralPCA(
-            n_components=3, 
+            n_components=4, 
             variance_explained_threshold=variance_threshold,
             verbose=verbose
         )
@@ -591,7 +591,7 @@ class CausalCompression:
         if self.verbose:
             tprint_info("🚀 Causal Compression: Initializing complete pipeline...")
             tprint_info(f"   ⚙️ Variance threshold: {variance_threshold}")
-            tprint_info(f"   ⚙️ PCA Components: 3 (increased for signal preservation)")
+            tprint_info(f"   ⚙️ PCA Components: 4 (increased for max signal preservation)")
             tprint_info(f"   ⚙️ Minimum samples: {min_samples}")
             tprint_success("   ✅ Causal Compression: Initialization complete")
     

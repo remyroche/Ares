@@ -27,6 +27,16 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 
+# ============================================================================
+# CRITICAL: Set BLAS thread limits BEFORE importing NumPy/SciPy
+# This prevents GIL deadlocks on M1 Macs during matrix operations
+# ============================================================================
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
 # Centralized lookback configuration for execution modes
 MODE_LOOKBACK_DAYS: Dict[str, int] = {
     "light": 30,     # 30 days
@@ -153,9 +163,26 @@ def is_known_step(step_name: str) -> bool:
     return step_name in STATIC_STEP_MAPPING
 
 # Lazy step registration - packages imported only when needed
+# #region agent log - Hypothesis D: Specialist import start
 def import_step_package_for_step(step_name: str) -> bool:
     """Import the appropriate package for a given step name."""
     try:
+        # #region agent log - Hypothesis D: Specialist import logging
+        import json
+        import time
+        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "id": "log_import_start",
+                "timestamp": int(time.time() * 1000),
+                "location": "ares_launcher.py:import_step_package_for_step",
+                "message": f"Starting import for step: {step_name}",
+                "data": {"step_name": step_name},
+                "sessionId": "debug-session",
+                "runId": "initial",
+                "hypothesisId": "D"
+            }) + '\n')
+        # #endregion
+
         # Map step names to their packages
         if any(step_name.startswith(prefix) for prefix in [
             'meta_labeling', 'weighted_meta_labeling', 'feature_generation_data_validation',
@@ -163,7 +190,7 @@ def import_step_package_for_step(step_name: str) -> bool:
             'triple_barrier_validator', 'lgbm_feature_selection', 'winning_feature_set_selector',
             'meta_gated_backtest', 'snr_diagnostics', 'generate_weights_per_label',
             'label_based_layer', 'orthogonal_label_generation', 'multi_label_voting',
-            'sr_labeling_xgb'  # Aliases for meta_labeling_hpo_sample_weighted
+            'sr_labeling_xgb', 'train_specialists_with_gmm'  # Aliases for meta_labeling_hpo_sample_weighted
         ]):
             import src.training.steps.labeling
             return True
@@ -256,6 +283,7 @@ def import_all_step_packages():
 
 # Default behavior: import all packages (can be overridden with --selective-import)
 # Note: This will be conditionally executed in main() based on --selective-import flag
+
 # import_all_step_packages()  # Commented out to enable lazy loading by default
 
 
@@ -294,12 +322,12 @@ class SimplifiedAresLauncher:
     async def run_step(self, step_name: str, config: Dict[str, Any], use_lazy_loading: bool = False) -> Dict[str, Any]:
         """
         Run a single autonomous step.
-        
+
         Args:
             step_name: Name of the step to run
             config: Configuration dictionary
             use_lazy_loading: If True, import packages only when needed
-            
+
         Returns:
             Execution result from the step
         """
@@ -605,12 +633,39 @@ Examples:
         )
     )
 
+    # Layer 2 checkpoint/resume system
+    layer2_substep_choices = [
+        'data_loading', 'regime_generation', 'causal_initialization',
+        'causal_discovery', 'specialist_training', 'event_generation',
+        'feature_engineering', 'geometry_optimization', 'final_processing'
+    ]
+    
     parser.add_argument(
-        '--layer2-substep',
+        '--layer2-resume-from',
         type=str,
         default=None,
-        choices=['prepare', 'optimize', 'oof', 'report'],
-        help='Execute a specific independent substep of Layer 2 (Meta-Labeling). Requires valid artifacts from previous substeps.'
+        choices=layer2_substep_choices,
+        help='Resume Layer 2 execution from a specific sub-step (requires valid checkpoint from previous step)'
+    )
+    
+    parser.add_argument(
+        '--layer2-delete-from',
+        type=str,
+        default=None,
+        choices=layer2_substep_choices,
+        help='Delete Layer 2 checkpoints from this sub-step onwards before execution'
+    )
+    
+    parser.add_argument(
+        '--layer2-list-checkpoints',
+        action='store_true',
+        help='List available Layer 2 checkpoints for the specified symbol and exit'
+    )
+    
+    parser.add_argument(
+        '--layer2-disable-checkpoints',
+        action='store_true',
+        help='Disable checkpoint saving during Layer 2 execution (faster but no resume capability)'
     )
     
     parser.add_argument(
@@ -957,6 +1012,7 @@ def cleanup_versioned_artifact_stores_repair(keep_per_base: int = 5) -> None:
 
 async def main():
     """Main entry point."""
+
     logger.info("Starting Simplified Ares Launcher...")
     
     # Create CLI parser
@@ -1037,6 +1093,16 @@ async def main():
         print("Available stages:")
         for stage in stages:
             print(f"  - {stage}")
+        return
+    
+    # Handle Layer 2 checkpoint listing
+    if getattr(args, 'layer2_list_checkpoints', False):
+        if not args.symbol:
+            print("Error: --symbol is required for --layer2-list-checkpoints")
+            return
+        from src.training.steps.labeling.layer2_checkpoint_manager import get_checkpoint_manager
+        checkpoint_mgr = get_checkpoint_manager()
+        print(checkpoint_mgr.print_checkpoint_status(args.symbol))
         return
     
     # Handle positional command argument
@@ -1146,9 +1212,13 @@ async def main():
     if getattr(args, 'labeling_hpo_start_at', None) is not None:
         config['labeling_hpo_start_at'] = args.labeling_hpo_start_at
 
-    # Optional: execute specific Layer 2 substep
-    if getattr(args, 'layer2_substep', None) is not None:
-        config['layer2_substep'] = args.layer2_substep
+    # Optional: execute specific Layer 2 substep (checkpoint system)
+    if getattr(args, 'layer2_resume_from', None) is not None:
+        config['layer2_resume_from'] = args.layer2_resume_from
+    if getattr(args, 'layer2_delete_from', None) is not None:
+        config['layer2_delete_from'] = args.layer2_delete_from
+    if getattr(args, 'layer2_disable_checkpoints', False):
+        config['layer2_disable_checkpoints'] = True
 
     # Hard-cap feature selection at ~200 features for full and blank modes
     if args.execution_mode in ("full", "blank"):

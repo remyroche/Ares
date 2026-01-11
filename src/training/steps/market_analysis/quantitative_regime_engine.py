@@ -66,6 +66,9 @@ with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
 # Internal imports
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.fracdiff import FracDiffTransformer, fracdiff_series, validate_stationarity
+from src.features_common.wavelets import RealTimeWaveletTransformer
+from src.training.steps.market_analysis.advanced_regime_models import DPGMMRegimeDetector, IOHMMRegimeDetector
+from src.training.steps.market_analysis.regime_assessor import RegimeAssessor
 
 
 class QuantitativeRegimeEngine:
@@ -111,13 +114,8 @@ class QuantitativeRegimeEngine:
             'tolerance': 0.01
         }
         
-        # Initialize components
-        self.gmm = GaussianMixture(
-            n_components=n_components,
-            covariance_type='full',
-            reg_covar=1e-4,
-            random_state=42
-        )
+        # Initialize components - Removed shared GMM to prevent race condition
+        # self.gmm = GaussianMixture(...)
         
         # Storage for preprocessing results
         self.denoised_price = None
@@ -204,34 +202,35 @@ class QuantitativeRegimeEngine:
             return pca.fit_transform(data)
 
     # --- 1. Wavelet Denoising ---
+    # --- 1. Wavelet Denoising ---
     def wavelet_denoise(self, series: pd.Series, level: int = 1) -> pd.Series:
         """
-        MODWT-style denoising to strip high-frequency jitter.
+        Strictly causal MODWT-style denoising using RealTimeWaveletTransformer.
         
         Args:
             series: Input time series
             level: Decomposition level for thresholding
             
         Returns:
-            Denoised series
+            Denoised series (causal)
         """
         try:
-            coeffs = pywt.wavedec(series.values, self.wavelet, mode='per')
+            from src.features_common.wavelets import RealTimeWaveletTransformer
             
-            # Soft threshold the detail coefficients
-            sigma = np.median(np.abs(coeffs[-level])) / 0.6745
-            threshold = sigma * np.sqrt(2 * np.log(len(series)))
+            # Use strict real-time transformer
+            # Window size should be sufficient for the level
+            # 2^level * filter_len approx. For db4 (len 8), 2^1 * 8 = 16.
+            # We use a larger window (256) to ensure stability while maintaining causality via rolling.
+            transformer = RealTimeWaveletTransformer(
+                wavelet=self.wavelet, 
+                level=level, 
+                window_size=min(len(series), 512)
+            )
             
-            # Apply threshold to detail coefficients
-            coeffs[1:] = [pywt.threshold(c, threshold, mode='soft') for c in coeffs[1:]]
-            
-            # Reconstruct
-            denoised = pywt.waverec(coeffs, self.wavelet, mode='per')[:len(series)]
-            
-            return pd.Series(denoised, index=series.index)
+            return transformer.transform(series)
             
         except Exception as e:
-            tprint_warning(f"⚠️ Wavelet denoising failed: {e}, returning original")
+            tprint_warning(f"⚠️ Real-time wavelet denoising failed: {e}, returning original")
             return series
 
     # --- 2. Target Innovation Extraction ---
@@ -492,7 +491,204 @@ class QuantitativeRegimeEngine:
             "feature_shocks": self.feature_shocks
         }
 
-    # --- 8. Pipeline Execution ---
+    # --- 8. Core GMM Logic ---
+    # --- 8. Core GMM Logic ---
+    def _fit_and_synthesize_regimes(
+        self, 
+        X_white: pd.DataFrame, 
+        target_innov: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
+        """
+        Fit GMM/DPGMM with optional IOHMM Layer 2.
+        
+        Args:
+            X_white: Whitened feature matrix
+            target_innov: Target innovations for W-EM
+            
+        Returns:
+            Dictionary with model parameters and regime features
+        """
+        use_dpgmm = self.gmm_config.get('use_dpgmm', False)
+        use_iohmm = self.gmm_config.get('use_iohmm', False)
+        
+        # Prepare data for fitting (W-EM Resampling)
+        X_fit = X_white.fillna(0)
+        weights_array = None
+        
+        if target_innov is not None:
+            try:
+                # W-EM Logic
+                weight_proxy = target_innov.abs()
+                ranks = weight_proxy.rank(pct=True)
+                weights = np.exp(3.0 * ranks)
+                weights = weights / weights.sum()
+                weights_array = weights.values
+                
+                tprint_info("⚖️ W-EM: Resampling data based on importance...")
+                indices = np.random.choice(
+                    len(X_white), size=len(X_white), p=weights_array, replace=True
+                )
+                X_fit = X_white.iloc[indices].fillna(0)
+            except Exception as e:
+                tprint_warning(f"⚠️ W-EM prep failed: {e}")
+
+        # Layer 1: Movement / Base Regime
+        if use_dpgmm:
+            tprint_info("🧠 Using DPGMM (Dirichlet Process GMM)...")
+            model = DPGMMRegimeDetector(n_components=self.n_components)
+            model.fit(X_fit)
+            probs = model.predict_proba(X_white.fillna(0))
+            
+            params = model.get_params()
+            gmm = None # No standard GMM object
+        else:
+            # Standard GMM
+            if self.use_gpu:
+                tprint_info("🖥️ Fitting GMM (GPU-accel)...")
+            else:
+                tprint_info("💻 Fitting GMM (Standard)...")
+                
+            gmm = GaussianMixture(
+                n_components=self.n_components,
+                covariance_type='full',
+                reg_covar=1e-4,
+                random_state=42
+            )
+            gmm.fit(X_fit)
+            probs = gmm.predict_proba(X_white.fillna(0))
+            
+            params = {
+                "means": gmm.means_.tolist(),
+                "covariances": gmm.covariances_.tolist(),
+                "weights": gmm.weights_.tolist()
+            }
+
+        # Layer 2: IOHMM State Refinement (Optional)
+        if use_iohmm:
+            tprint_info("🔮 Applying IOHMM Layer 2 Transition Model...")
+            try:
+                iohmm = IOHMMRegimeDetector(n_states=probs.shape[1])
+                # Fit transition dynamics on observed sequence
+                state_seq = probs.argmax(axis=1)
+                iohmm.fit(X_white.fillna(0), state_seq)
+                
+                # Refine probabilities
+                probs = iohmm.predict_smoothed_probs(X_white.fillna(0), probs)
+                params['iohmm_active'] = True
+            except Exception as e:
+                tprint_error(f"❌ IOHMM failed: {e}")
+
+        # Regime synthesis
+        regime_df = pd.DataFrame(
+            probs, 
+            index=X_white.index, 
+            columns=[f'REGIME_{i}' for i in range(self.n_components)]
+        )
+        
+        # Transition matrix
+        state_seq = probs.argmax(axis=1)
+        n_states = self.n_components
+        trans_mat = np.zeros((n_states, n_states))
+        for i in range(len(state_seq) - 1):
+            trans_mat[state_seq[i], state_seq[i+1]] += 1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            trans_mat = trans_mat / trans_mat.sum(axis=1, keepdims=True)
+            trans_mat = np.nan_to_num(trans_mat, 0.0)
+            
+        params["transition_matrix"] = trans_mat.tolist()
+
+        # Regime integrity
+        regime_df['REGIME_INTEGRITY'] = self.get_regime_p_values(X_white)
+        
+        # Regime velocity
+        velocity = regime_df.filter(like='REGIME_').diff().add_suffix('_VELOCITY')
+        
+        features = pd.concat([regime_df, velocity], axis=1).dropna()
+        
+        # Phase 3: Regime Assessment & Feedback Loop (Retry Logic)
+        try:
+            assessor = RegimeAssessor()
+            # Use target_innov if available, else standard deviation/mean proxy
+            target = target_innov if target_innov is not None else X_white.mean(axis=1)
+            
+            # Initial assessment
+            assessment = assessor.assess_regimes(features, target)
+            params['assessment'] = assessment
+            
+            # Feedback Loop: Retrain if quality invalid
+            retries = 0
+            max_retries = 3
+            current_concentration = 1.0/10 # Default
+            
+            while assessment.get('needs_retrain', False) and retries < max_retries:
+                tprint_warning(f"⚠️ Regime quality low (CV={assessment.get('sharpe_cv', 0):.2f}). Feedback Loop: Retrying {retries+1}/{max_retries}...")
+                
+                # Adjust parameters
+                if use_dpgmm:
+                    # Increase concentration to encourage more/different clusters
+                    current_concentration *= 10.0
+                    tprint_info(f"🔄 Increasing DPGMM concentration to {current_concentration}")
+                    
+                    # Re-fit DPGMM
+                    model = DPGMMRegimeDetector(n_components=self.n_components, concentration_prior=current_concentration)
+                    model.fit(X_fit)
+                    probs = model.predict_proba(X_white.fillna(0))
+                    params = model.get_params()
+                else:
+                    # Re-fit GMM with different random state
+                    tprint_info(f"🔄 Retrying GMM with new seed...")
+                    gmm = GaussianMixture(
+                        n_components=self.n_components,
+                        covariance_type='full',
+                        reg_covar=1e-4,
+                        random_state=42 + retries + 1
+                    )
+                    gmm.fit(X_fit)
+                    probs = gmm.predict_proba(X_white.fillna(0))
+                    params = {
+                        "means": gmm.means_.tolist(),
+                        "covariances": gmm.covariances_.tolist(),
+                        "weights": gmm.weights_.tolist()
+                    }
+                    
+                    # Re-apply IOHMM if active
+                    if use_iohmm:
+                        try:
+                            iohmm = IOHMMRegimeDetector(n_states=probs.shape[1])
+                            state_seq = probs.argmax(axis=1)
+                            iohmm.fit(X_white.fillna(0), state_seq)
+                            probs = iohmm.predict_smoothed_probs(X_white.fillna(0), probs)
+                            params['iohmm_active'] = True
+                        except: pass
+
+                # Re-synthesize features for assessment
+                regime_df = pd.DataFrame(
+                    probs, 
+                    index=X_white.index, 
+                    columns=[f'REGIME_{i}' for i in range(self.n_components)]
+                )
+                features = pd.concat([regime_df, velocity], axis=1).dropna() # Velocity might be slightly off due to index but ok proxies
+                
+                # Re-assess
+                assessment = assessor.assess_regimes(features, target)
+                params['assessment'] = assessment
+                retries += 1
+
+            if assessment.get('needs_retrain', False):
+                tprint_warning(f"⚠️ Feedback Loop exhausted. Proceeding with best effort (CV={assessment.get('sharpe_cv', 0):.2f}).")
+            else:
+                tprint_success(f"✅ Feedback Loop successful: Regimes optimized (CV={assessment.get('sharpe_cv', 0):.2f}).")
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Regime assessment/feedback failed: {e}")
+            params['assessment'] = {"error": str(e)}
+
+        return {
+            "features": features,
+            "model_params": params
+        }
+
+    # --- 9. Pipeline Execution ---
     async def run_returns_pipeline(
         self, 
         denoised_price: pd.Series, 
@@ -529,36 +725,17 @@ class QuantitativeRegimeEngine:
             # 5. Whitening
             X_white = self.whiten_features(X_selected)
             
-            # 6. GMM fitting
-            if self.use_gpu:
-                tprint_info("🖥️ Fitting GMM with GPU-accelerated preprocessing...")
-            else:
-                tprint_info("💻 Fitting GMM on CPU...")
-            self.gmm.fit(X_white.fillna(0))
-            probs = self.gmm.predict_proba(X_white.fillna(0))
-            
-            # 7. Regime synthesis
-            regime_df = pd.DataFrame(
-                probs, 
-                index=X_white.index, 
-                columns=[f'REGIME_{i}' for i in range(self.n_components)]
-            )
-            
-            # Add regime integrity
-            regime_df['REGIME_INTEGRITY'] = self.get_regime_p_values(X_white)
-            
-            # Add regime velocity
-            velocity = regime_df.filter(like='REGIME_').diff().add_suffix('_VELOCITY')
-            
-            final_features = pd.concat([regime_df, velocity], axis=1).dropna()
+            # 6. GMM fitting with W-EM
+            gmm_results = self._fit_and_synthesize_regimes(X_white, target_innov)
             
             return {
                 "pipeline_type": "returns_har",
-                "features": final_features,
+                "features": gmm_results["features"],
                 "target_innovations": target_innov,
                 "selected_features": selected_features,
                 "n_features": len(selected_features),
-                "optimal_d": 0.0  # No FracDiff in this pipeline
+                "optimal_d": 0.0,
+                "model_params": gmm_results["model_params"]
             }
             
         except Exception as e:
@@ -610,37 +787,18 @@ class QuantitativeRegimeEngine:
             # 5. Whitening
             X_white = self.whiten_features(X_selected)
             
-            # 6. GMM fitting
-            if self.use_gpu:
-                tprint_info("🖥️ Fitting GMM with GPU-accelerated preprocessing...")
-            else:
-                tprint_info("💻 Fitting GMM on CPU...")
-            self.gmm.fit(X_white.fillna(0))
-            probs = self.gmm.predict_proba(X_white.fillna(0))
-            
-            # 7. Regime synthesis
-            regime_df = pd.DataFrame(
-                probs, 
-                index=X_white.index, 
-                columns=[f'REGIME_{i}' for i in range(self.n_components)]
-            )
-            
-            # Add regime integrity
-            regime_df['REGIME_INTEGRITY'] = self.get_regime_p_values(X_white)
-            
-            # Add regime velocity
-            velocity = regime_df.filter(like='REGIME_').diff().add_suffix('_VELOCITY')
-            
-            final_features = pd.concat([regime_df, velocity], axis=1).dropna()
+            # 6. GMM fitting with W-EM
+            gmm_results = self._fit_and_synthesize_regimes(X_white, y)
             
             return {
                 "pipeline_type": "fracdiff",
-                "features": final_features,
+                "features": gmm_results["features"],
                 "target_innovations": returns,
                 "selected_features": selected_features,
                 "n_features": len(selected_features),
                 "optimal_d": optimal_d,
-                "stationarity": stationarity_results
+                "stationarity": stationarity_results,
+                "model_params": gmm_results["model_params"]
             }
             
         except Exception as e:

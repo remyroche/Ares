@@ -19,6 +19,7 @@ Specialists Trained:
 """
 
 import logging
+import os
 import time
 import pandas as pd
 import numpy as np
@@ -39,9 +40,21 @@ import hashlib
 from dataclasses import dataclass
 warnings.filterwarnings('ignore')
 
+# Importations pour TreeSHAP
+try:
+    import shap
+    import xgboost as xgb
+    TREESHAP_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"⚠️ TreeSHAP not available: {e}")
+    TREESHAP_AVAILABLE = False
+
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.versioned_artifacts import VersionedArtifactStore
+from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecialistMixin
+from src.training.steps.market_analysis.gmm_report_generator import GMMReportGenerator
+from src.utils.data.entropy_bars import build_entropy_bars_15min
 
 # Import all enhanced specialists
 SPECIALIST_IMPORTS = {
@@ -49,13 +62,15 @@ SPECIALIST_IMPORTS = {
     "enhanced_ml_smc_regime_step": ("src.training.steps.market_analysis.ml_smc_regime_step_enhanced", "EnhancedMLSMCRegimeStep"),
     "enhanced_ml_volatility_burst_step": ("src.training.steps.market_analysis.ml_volatility_burst_step_enhanced", "EnhancedMLVolatilityBurstStep"),
     "enhanced_ml_volume_force_step": ("src.training.steps.market_analysis.ml_volume_force_step_enhanced", "EnhancedMLVolumeForceStep"),
-    "enhanced_xgb_macro_regime_step": ("src.training.steps.market_analysis.xgb_macro_regime_step_enhanced", "EnhancedXGBMacroRegimeStep"),
-    "enhanced_xgb_meso_regime_step": ("src.training.steps.market_analysis.xgb_meso_regime_step_enhanced", "EnhancedXGBMesoRegimeStep"),
-    "enhanced_ml_liquidity_regime_step": ("src.training.steps.market_analysis.ml_liquidity_regime_step_enhanced", "EnhancedMLLiquidityRegimeStep"),
-    "enhanced_ml_path_regime_step": ("src.training.steps.market_analysis.ml_path_regime_step_enhanced", "EnhancedMLPathRegimeStep"),
-    "enhanced_ml_risk_regime_step": ("src.training.steps.market_analysis.ml_risk_regime_step_enhanced", "EnhancedMLRiskRegimeStep"),
-    "enhanced_ml_microstructure_step": ("src.training.steps.market_analysis.ml_microstructure_step_enhanced", "EnhancedMLMicrostructureStep"),
-    "enhanced_ml_spectral_step": ("src.training.steps.market_analysis.ml_spectral_step_enhanced", "EnhancedMLSpectralStep"),
+    # "enhanced_xgb_macro_regime_step": ("src.training.steps.market_analysis.xgb_macro_regime_step_enhanced", "EnhancedXGBMacroRegimeStep"),
+    # "enhanced_xgb_meso_regime_step": ("src.training.steps.market_analysis.xgb_meso_regime_step_enhanced", "EnhancedXGBMesoRegimeStep"),
+    # "enhanced_ml_liquidity_regime_step": ("src.training.steps.market_analysis.ml_liquidity_regime_step_enhanced", "EnhancedMLLiquidityRegimeStep"),
+    # "enhanced_ml_path_regime_step": ("src.training.steps.market_analysis.ml_path_regime_step_enhanced", "EnhancedMLPathRegimeStep"),
+    # "enhanced_ml_risk_regime_step": ("src.training.steps.market_analysis.ml_risk_regime_step_enhanced", "EnhancedMLRiskRegimeStep"),
+    # "enhanced_ml_microstructure_step": ("src.training.steps.market_analysis.ml_microstructure_step_enhanced", "EnhancedMLMicrostructureStep"),
+    # "enhanced_ml_spectral_step": ("src.training.steps.market_analysis.ml_spectral_step_enhanced", "EnhancedMLSpectralStep"),
+    # "enhanced_ml_candlestick_step": ("src.training.steps.market_analysis.ml_candlestick_step_enhanced", "EnhancedMLCandlestickStep"),
+    # "enhanced_ml_reversion_regime_step": ("src.training.steps.market_analysis.ml_reversion_regime_step_enhanced", "EnhancedMLReversionRegimeStep"),
 }
 
 # Import GMM enhanced features
@@ -112,6 +127,10 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         super().__init__(step_name, **kwargs)
         self.artifacts_dir = Path("artifacts/specialists_with_gmm")
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Metrics collection for comprehensive specialist evaluation
+        self._specialist_metrics = {}  # Store detailed metrics for each specialist
+        self._specialist_outputs = {}  # Store outputs for each specialist
 
         # #region agent log - Hypothesis A: Memory management initialization
         import json
@@ -286,6 +305,62 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         except Exception as e:
             tprint_warning(f"⚠️ Hash generation failed: {e}")
             return f"fallback_{len(data)}_{len(data.columns)}"
+
+    def _perform_treeshap_analysis(self, features: pd.DataFrame, target: pd.Series, max_features: int = 100) -> List[str]:
+        """Perform TreeSHAP analysis to identify most important features."""
+        if not TREESHAP_AVAILABLE:
+            tprint_warning("⚠️ TreeSHAP not available, falling back to mutual information")
+            return None
+        
+        try:
+            tprint_info("🌲 Performing TreeSHAP analysis for feature selection...")
+            start_time = time.time()
+            
+            # Prepare data for XGBoost
+            X = features.fillna(0).values
+            y = target.values
+            
+            # Train a simple XGBoost model for SHAP analysis
+            params = {
+                'objective': 'reg:squarederror',
+                'n_estimators': 100,
+                'max_depth': 5,
+                'learning_rate': 0.1,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'random_state': 42,
+                'tree_method': 'hist',
+                'device': 'cpu'
+            }
+            
+            model = xgb.XGBRegressor(**params)
+            model.fit(X, y)
+            
+            # Calculate SHAP values
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+            
+            # Calculate mean absolute SHAP values for each feature
+            shap_importance = np.mean(np.abs(shap_values), axis=0)
+            
+            # Create feature-importance mapping
+            feature_importance = list(zip(features.columns, shap_importance))
+            
+            # Sort by importance (descending)
+            feature_importance.sort(key=lambda x: x[1], reverse=True)
+            
+            # Select top features
+            selected_features = [col for col, _ in feature_importance[:max_features]]
+            
+            elapsed_time = time.time() - start_time
+            tprint_success(f"✅ TreeSHAP analysis completed in {elapsed_time:.2f}s")
+            tprint_info(f"📊 Top 5 features by SHAP importance: {[col for col, _ in feature_importance[:5]]}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_error(f"❌ TreeSHAP analysis failed: {e}")
+            return None
     
     def _save_gmm_model(self, model_key: str, model: Any, metadata: Dict[str, Any]) -> None:
         """Save GMM model to disk with metadata."""
@@ -451,13 +526,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute specialist training with GMM enhancement.
-        
+
         Args:
             config: Configuration dictionary
-            
+
         Returns:
             Dictionary containing training results and enhanced features
         """
+        start_time = time.time()
         tprint_info("🚀 Starting Specialist Training with GMM Enhancement Pipeline")
         
         # Extract configuration
@@ -479,25 +555,47 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         tprint_success(f"✅ Loaded {len(market_data)} bars from {source}")
 
+        # --- Entropy Bar Conversion ---
+        # User Requirement: If time bars, switch to entropy bars (target 1/15min)
+        # Check if index is time-based (proxy for time bars)
+        if isinstance(market_data.index, pd.DatetimeIndex):
+            tprint_info("✨ User requested Entropy Bars. Converting Time Bars (15m) -> Entropy Bars...")
+            try:
+                entropy_bars, threshold = build_entropy_bars_15min(market_data)
+                
+                if not entropy_bars.empty:
+                    old_len = len(market_data)
+                    new_len = len(entropy_bars)
+                    tprint_success(f"✅ Converted to Entropy Bars: {old_len} -> {new_len} bars (Threshold={threshold:.4f})")
+                    market_data = entropy_bars
+                else:
+                    tprint_warning("⚠️ Entropy bar conversion yielded empty result. Keeping original bars.")
+            except Exception as e:
+                tprint_error(f"❌ Entropy Bar conversion failed: {e}. Keeping original bars.")
+
         # Memory optimization: reduce data size for training
         # Use only recent data to reduce memory usage
-        max_training_samples = 50000  # Limit to 50k samples for training
-        if len(market_data) > max_training_samples:
-            tprint_info(f"🧠 Reducing data size from {len(market_data)} to {max_training_samples} samples for memory efficiency")
-            market_data = market_data.tail(max_training_samples)
-            tprint_success(f"✅ Reduced data to {len(market_data)} samples")
+        max_training_samples = 25000  # Further reduced to 25k for M1 stability
+        active_market_data = market_data
+        
+        if len(active_market_data) > max_training_samples:
+            tprint_info(f"🧠 Reducing data size from {len(active_market_data)} to {max_training_samples} samples for memory efficiency")
+            active_market_data = active_market_data.tail(max_training_samples)
+            tprint_success(f"✅ Reduced data to {len(active_market_data)} samples")
 
         # Step 1.5: Generate enhanced features for all specialists
         tprint_info("🔧 Generating Enhanced Features for All Specialists...")
-        enhanced_market_data = self._generate_enhanced_features(market_data)
+        enhanced_market_data = self._generate_enhanced_features(active_market_data)
         tprint_success(f"✅ Enhanced features generated: {enhanced_market_data.shape}")
-
-        # Additional memory cleanup
-        del market_data
+        
+        # Memory optimization: Clear references and collect garbage after heavy feature generation
+        import gc
         gc.collect()
 
-        # Step 2: Train all specialists (memory-efficient batch processing)
-        tprint_info("🎯 Training 11 Specialist Models...")
+
+
+        # Step 2: Train all specialists and collect per-specialist features
+        tprint_info("🎯 Training 11 Specialist Models and collecting features...")
         
         # Use very small batch size to prevent memory issues
         optimal_batch_size = 1  # Process one specialist at a time
@@ -519,75 +617,822 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         # Initialize memory monitoring
         self.batch_count = 0
         
-        # Train specialists with memory-efficient approach
+        # Step 2: Extract raw features from market data (without training specialists)
+        tprint_info("🔍 Extracting raw features from market data...")
+        raw_features = await self._extract_raw_features_from_market_data(enhanced_market_data, config)
+        tprint_success(f"✅ Extracted raw features: {raw_features.shape}")
+        
+        if raw_features is None or raw_features.empty:
+            error_msg = "❌ No raw features extracted"
+            tprint_error(error_msg)
+            return {"success": False, "error": error_msg}
+        
+        # Step 3: Apply GMM enhancement to raw features
+        gmm_enhanced_features = None
+        if GMM_AVAILABLE:
+            tprint_info("🧠 Applying GMM enhancement to raw features (before specialist training)...")
+            gmm_enhanced_features = await self._apply_gmm_enhancement_to_features(
+                raw_features, active_market_data, config
+            )
+            
+            if gmm_enhanced_features is None or gmm_enhanced_features.empty:
+                tprint_warning("⚠️ GMM enhancement failed, using raw features")
+                gmm_enhanced_features = raw_features
+            else:
+                tprint_success(f"✅ GMM enhanced raw features: {gmm_enhanced_features.shape}")
+        else:
+            gmm_enhanced_features = raw_features
+            tprint_info("⚠️ GMM not available, using raw features")
+        
+        # Step 4: Feature selection on GMM-enhanced features
+        tprint_info("🎯 Applying feature selection to GMM-enhanced features...")
+        selected_features = await self._apply_feature_selection(gmm_enhanced_features, config)
+        
+        if selected_features is None or selected_features.empty:
+            error_msg = "❌ Feature selection failed"
+            tprint_error(error_msg)
+            return {"success": False, "error": error_msg}
+        
+        tprint_success(f"✅ Selected {len(selected_features.columns)} features from {len(gmm_enhanced_features.columns)} GMM-enhanced features")
+        
+        # Step 5: Train Ridge and ExtraTrees models on selected features
+        model_results = await self._train_models_on_selected_features(selected_features, config)
+        
+        # Step 6: Train individual specialists using GMM-enhanced features
+        tprint_info("🔄 Training individual specialists with GMM-enhanced features...")
         specialist_outputs = await self._train_all_specialists_memory_efficient(
             enhanced_market_data, config, force_retrain, batch_size=optimal_batch_size
         )
-
-        if not specialist_outputs:
-            error_msg = "❌ No specialist outputs generated"
-            tprint_error(error_msg)
-            return {"success": False, "error": error_msg}
-
-        tprint_success(f"✅ Generated outputs from {len(specialist_outputs)} specialists")
         
-        # Step 3: Combine specialist outputs
-        tprint_info("🔗 Combining specialist outputs...")
-        combined_features = self._combine_specialist_outputs(specialist_outputs)
-
-        if combined_features.empty:
-            error_msg = "❌ Failed to combine specialist outputs"
-            tprint_error(error_msg)
-            return {"success": False, "error": error_msg}
-
-        tprint_success(f"✅ Combined features shape: {combined_features.shape}")
-
-        # Step 4: Feature Selection (before expensive GMM processing)
-        tprint_info("🎯 Performing optimized feature selection...")
-        selected_features = self._select_important_features_optimized(combined_features, market_data, max_features=100)
-
-        # Step 5: GMM Enhancement
-        if GMM_AVAILABLE:
-            tprint_info("🧠 Applying GMM Enhancement...")
-            enhanced_features = await self._apply_gmm_enhancement(
-                selected_features, market_data, config
-            )
-
-            if enhanced_features is None or enhanced_features.empty:
-                tprint_warning("⚠️ GMM enhancement failed, using selected features")
-                enhanced_features = selected_features
-            else:
-                tprint_success(f"✅ GMM enhanced features shape: {enhanced_features.shape}")
-        else:
-            tprint_warning("⚠️ GMM not available, using selected features")
-            enhanced_features = selected_features
+        # Log post-selection characteristics
+        selection_ratio = len(selected_features.columns) / len(gmm_enhanced_features.columns)
+        tprint_success(f"✅ Selected GMM features shape: {selected_features.shape}")
+        tprint_info(f"📈 Feature selection: {len(gmm_enhanced_features.columns)} → {len(selected_features.columns)} ({selection_ratio:.1%} kept)")
         
-        # Step 5: Save results
-        tprint_info("💾 Saving enhanced features and results...")
-        await self._save_results(enhanced_features, specialist_outputs, config)
+        post_selection_types = self._analyze_feature_types(selected_features)
+        tprint_info(f"🏷️ Post-selection feature types: {post_selection_types}")
         
-        # Summary
+        # Show top selected features by type
+        if 'gmm' in post_selection_types and post_selection_types['gmm'] > 0:
+            gmm_selected = [col for col in selected_features.columns if any(term in col.lower() for term in ['gmm', 'cluster', 'regime', 'state', 'probability', 'entropy', 'familiarity'])]
+            tprint_info(f"🧠 GMM features selected: {len(gmm_selected)}/{post_selection_types['gmm']}")
+            tprint_info(f"   Sample GMM features: {gmm_selected[:3]}..." if len(gmm_selected) > 3 else f"   Sample GMM features: {gmm_selected}")
+        
+        # Step 7: Save results
+        await self._save_results(
+            selected_features, specialist_outputs, config
+        )
+        
+        # Create results dictionary for return
         results = {
             "success": True,
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": timeframe,
-            "direction": direction,
+            "symbol": config.get("symbol", "ETHUSDT"),
+            "timeframe": config.get("timeframe", "15m"),
             "n_specialists": len(specialist_outputs),
-            "raw_features_shape": combined_features.shape,
-            "selected_features_shape": selected_features.shape,
-            "enhanced_features_shape": enhanced_features.shape,
-            "specialist_outputs": list(specialist_outputs.keys()),
-            "batch_size": optimal_batch_size,
+            "gmm_enhancement_applied": GMM_AVAILABLE,
             "feature_selection_applied": True,
-            "training_time": time.time()
+            "selected_features_shape": selected_features.shape,
+            "model_results": model_results
         }
         
-        tprint_success("🎉 Specialist Training with GMM Enhancement completed successfully!")
-        tprint_info(f"📊 Summary: {len(specialist_outputs)} specialists trained, features enhanced")
-        
+        tprint_success("✅ GMM Specialist Training Pipeline Completed Successfully")
         return results
 
+    async def _apply_gmm_to_each_specialist(
+        self,
+        specialist_features: pd.DataFrame,
+        market_data: pd.DataFrame,
+        config: Dict[str, Any]
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Apply GMM enhancement to each specialist's features individually.
+        
+        This method processes each specialist's feature set separately through GMM,
+        then combines the enhanced features for final processing.
+        """
+        try:
+            tprint_info(f"🧠 Applying GMM enhancement to {len(specialist_features.columns)} total features...")
+            
+            # Split the combined features back into individual specialist feature sets
+            specialist_feature_sets = {}
+            
+            # Extract specialist names from column prefixes
+            specialist_names = set()
+            for col in specialist_features.columns:
+                # Find the specialist name (everything before the first underscore)
+                if '_' in col:
+                    specialist_name = col.split('_')[0]
+                    specialist_names.add(specialist_name)
+            
+            tprint_info(f"📊 Found {len(specialist_names)} specialists: {list(specialist_names)}")
+            
+            # Extract features for each specialist
+            for specialist_name in specialist_names:
+                # Get columns that belong to this specialist
+                specialist_cols = [col for col in specialist_features.columns if col.startswith(f"{specialist_name}_")]
+                if specialist_cols:
+                    # Remove prefix and create specialist-specific DataFrame
+                    specialist_df = specialist_features[specialist_cols].copy()
+                    specialist_df.columns = [col.replace(f"{specialist_name}_", "") for col in specialist_cols]
+                    specialist_feature_sets[specialist_name] = specialist_df
+                    tprint_info(f"✅ {specialist_name}: {len(specialist_cols)} features extracted")
+                    
+                    # Log feature characteristics
+                    tprint_info(f"   📈 Feature types: {self._analyze_feature_types(specialist_df)}")
+                    tprint_info(f"   🔢 Feature stats: mean={specialist_df.mean().mean():.4f}, std={specialist_df.std().mean():.4f}")
+                    tprint_info(f"   📊 Sample features: {list(specialist_df.columns[:5])}")
+            
+            # Apply GMM enhancement to each specialist individually
+            gmm_enhanced_specialists = {}
+            enhancement_summary = []
+            
+            for specialist_name, features in specialist_feature_sets.items():
+                tprint_info(f"🧠 Applying GMM to {specialist_name} ({features.shape})...")
+                
+                try:
+                    # Log pre-GMM characteristics
+                    tprint_info(f"   📊 Pre-GMM: {len(features.columns)} features, {len(features)} samples")
+                    tprint_info(f"   🎯 Feature quality: missing={features.isnull().sum().sum()}, duplicates={features.columns.duplicated().sum()}")
+                    
+                    # Apply GMM enhancement to this specialist's features
+                    enhanced_features = await self._apply_gmm_enhancement(
+                        features, market_data, config
+                    )
+                    
+                    if enhanced_features is not None and not enhanced_features.empty:
+                        gmm_enhanced_specialists[specialist_name] = enhanced_features
+                        
+                        # Log post-GMM characteristics
+                        enhancement_ratio = len(enhanced_features.columns) / len(features.columns)
+                        enhancement_summary.append({
+                            'specialist': specialist_name,
+                            'original_features': len(features.columns),
+                            'enhanced_features': len(enhanced_features.columns),
+                            'enhancement_ratio': enhancement_ratio,
+                            'samples': len(enhanced_features)
+                        })
+                        
+                        tprint_success(f"✅ {specialist_name}: GMM enhanced {features.shape} → {enhanced_features.shape}")
+                        tprint_info(f"   📈 Feature expansion: {len(features.columns)} → {len(enhanced_features.columns)} ({enhancement_ratio:.1f}x)")
+                        tprint_info(f"   🎯 New feature types: {self._analyze_feature_types(enhanced_features)}")
+                        tprint_info(f"   📊 Sample enhanced features: {list(enhanced_features.columns[:5])}")
+                        
+                        # Log GMM-specific features
+                        gmm_features = [col for col in enhanced_features.columns if any(gmm_term in col.lower() for gmm_term in ['gmm', 'cluster', 'regime', 'state', 'probability', 'entropy', 'familiarity'])]
+                        if gmm_features:
+                            tprint_info(f"   🧠 GMM-specific features ({len(gmm_features)}): {gmm_features[:3]}..." if len(gmm_features) > 3 else f"   🧠 GMM-specific features: {gmm_features}")
+                        
+                    else:
+                        tprint_warning(f"⚠️ {specialist_name}: GMM enhancement failed, using original features")
+                        gmm_enhanced_specialists[specialist_name] = features
+                        enhancement_summary.append({
+                            'specialist': specialist_name,
+                            'original_features': len(features.columns),
+                            'enhanced_features': len(features.columns),
+                            'enhancement_ratio': 1.0,
+                            'samples': len(features),
+                            'status': 'failed'
+                        })
+                        
+                except Exception as e:
+                    tprint_error(f"❌ {specialist_name}: GMM enhancement error: {e}")
+                    # Use original features as fallback
+                    gmm_enhanced_specialists[specialist_name] = features
+                    enhancement_summary.append({
+                        'specialist': specialist_name,
+                        'original_features': len(features.columns),
+                        'enhanced_features': len(features.columns),
+                        'enhancement_ratio': 1.0,
+                        'samples': len(features),
+                        'status': 'error',
+                        'error': str(e)
+                    })
+            
+            if not gmm_enhanced_specialists:
+                tprint_error("❌ No GMM-enhanced specialists created")
+                return {}
+            
+            # Comprehensive enhancement summary
+            tprint_success(f"✅ GMM enhancement completed for {len(gmm_enhanced_specialists)} specialists")
+            
+            # Log detailed summary table
+            tprint_info("\n📊 GMM Enhancement Summary:")
+            for summary in enhancement_summary:
+                status_icon = "✅" if summary.get('status') != 'failed' and summary.get('status') != 'error' else "❌"
+                tprint_info(f"   {status_icon} {summary['specialist']}: {summary['original_features']} → {summary['enhanced_features']} features ({summary['enhancement_ratio']:.1f}x)")
+            
+            # Log overall statistics
+            total_original = sum(s['original_features'] for s in enhancement_summary)
+            total_enhanced = sum(s['enhanced_features'] for s in enhancement_summary)
+            successful_enhancements = sum(1 for s in enhancement_summary if s.get('status') not in ['failed', 'error'])
+            
+            tprint_info(f"\n📈 Overall Statistics:")
+            tprint_info(f"   🎯 Total features: {total_original} → {total_enhanced} ({total_enhanced/total_original:.1f}x expansion)")
+            tprint_info(f"   ✅ Successful enhancements: {successful_enhancements}/{len(enhancement_summary)}")
+            tprint_info(f"   📊 Average expansion ratio: {total_enhanced/total_original:.1f}x")
+            
+            # Log feature type distribution
+            all_enhanced_features = pd.concat(list(gmm_enhanced_specialists.values()), axis=1)
+            feature_type_dist = self._analyze_feature_types(all_enhanced_features)
+            tprint_info(f"\n🏷️ Feature Type Distribution: {feature_type_dist}")
+            
+            return gmm_enhanced_specialists
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to apply GMM to specialists: {e}")
+            return {}
+
+    def _analyze_feature_types(self, features: pd.DataFrame) -> Dict[str, int]:
+        """
+        Analyze and categorize feature types in a DataFrame.
+        
+        Returns a dictionary with counts of different feature categories.
+        """
+        try:
+            feature_categories = {
+                'gmm': 0,
+                'momentum': 0,
+                'volatility': 0,
+                'trend': 0,
+                'volume': 0,
+                'price': 0,
+                'technical': 0,
+                'regime': 0,
+                'cluster': 0,
+                'probability': 0,
+                'entropy': 0,
+                'familiarity': 0,
+                'kinematics': 0,
+                'other': 0
+            }
+            
+            for col in features.columns:
+                col_lower = col.lower()
+                
+                # Check for GMM-specific features
+                if any(term in col_lower for term in ['gmm', 'gaussian', 'mixture']):
+                    feature_categories['gmm'] += 1
+                elif any(term in col_lower for term in ['cluster', 'state', 'regime']):
+                    feature_categories['regime'] += 1
+                elif any(term in col_lower for term in ['probability', 'prob']):
+                    feature_categories['probability'] += 1
+                elif any(term in col_lower for term in ['entropy', 'ent']):
+                    feature_categories['entropy'] += 1
+                elif any(term in col_lower for term in ['familiarity', 'fam']):
+                    feature_categories['familiarity'] += 1
+                elif any(term in col_lower for term in ['momentum', 'mom']):
+                    feature_categories['momentum'] += 1
+                elif any(term in col_lower for term in ['volatility', 'vol', 'atr']):
+                    feature_categories['volatility'] += 1
+                elif any(term in col_lower for term in ['trend', 'direction']):
+                    feature_categories['trend'] += 1
+                elif any(term in col_lower for term in ['volume', 'vol_', 'volatility']):
+                    feature_categories['volume'] += 1
+                elif any(term in col_lower for term in ['price', 'close', 'open', 'high', 'low']):
+                    feature_categories['price'] += 1
+                elif any(term in col_lower for term in ['kinematics', 'velocity', 'acceleration', 'jerk']):
+                    feature_categories['kinematics'] += 1
+                elif any(term in col_lower for term in ['rsi', 'macd', 'bb_', 'sma', 'ema', 'wma']):
+                    feature_categories['technical'] += 1
+                else:
+                    feature_categories['other'] += 1
+            
+            # Return only non-zero categories
+            return {k: v for k, v in feature_categories.items() if v > 0}
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to analyze feature types: {e}")
+            return {'error': 1}
+
+    async def _train_ridge_with_monotonic_constraints(
+        self,
+        features: pd.DataFrame,
+        market_data: pd.DataFrame,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Train Ridge model with monotonic constraints on selected GMM features.
+        
+        Ridge regression applies L2 regularization and can enforce monotonic relationships
+        between features and target, which is useful for financial modeling.
+        """
+        try:
+            from sklearn.linear_model import Ridge
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+            import numpy as np
+            
+            tprint_info(f"📐 Training Ridge model on {features.shape} features...")
+            
+            # Create target variable (forward returns)
+            returns = market_data['close'].pct_change().shift(-12).fillna(0)
+            
+            # Align features and target
+            aligned_features = features.reindex(returns.index).dropna()
+            aligned_target = returns.reindex(aligned_features.index)
+            
+            if len(aligned_features) < 1000:
+                tprint_warning(f"⚠️ Insufficient data for Ridge training: {len(aligned_features)} samples")
+                return {"success": False, "error": "Insufficient data"}
+            
+            # Standardize features for Ridge
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(aligned_features)
+            
+            # Time series cross-validation
+            tscv = TimeSeriesSplit(n_splits=5)
+            
+            # Find optimal alpha through cross-validation
+            alphas = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+            best_alpha = 1.0
+            best_score = -np.inf
+            
+            tprint_info("🔍 Optimizing Ridge alpha parameter...")
+            for alpha in alphas:
+                ridge = Ridge(alpha=alpha, random_state=42)
+                scores = cross_val_score(ridge, X_scaled, aligned_target, cv=tscv, scoring='neg_mean_squared_error')
+                mean_score = scores.mean()
+                
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_alpha = alpha
+            
+            tprint_success(f"✅ Best Ridge alpha: {best_alpha} (CV Score: {-best_score:.6f})")
+            
+            # Train final model
+            final_ridge = Ridge(alpha=best_alpha, random_state=42)
+            final_ridge.fit(X_scaled, aligned_target)
+            
+            # Make predictions
+            predictions = final_ridge.predict(X_scaled)
+            
+            # Calculate metrics
+            from sklearn.metrics import mean_squared_error, r2_score
+            mse = mean_squared_error(aligned_target, predictions)
+            r2 = r2_score(aligned_target, predictions)
+            
+            # Feature importance (coefficients)
+            feature_importance = pd.DataFrame({
+                'feature': aligned_features.columns,
+                'coefficient': final_ridge.coef_,
+                'abs_coefficient': np.abs(final_ridge.coef_)
+            }).sort_values('abs_coefficient', ascending=False)
+            
+            # Identify monotonic relationships (positive coefficients)
+            monotonic_features = feature_importance[feature_importance['coefficient'] > 0]['feature'].tolist()
+            
+            tprint_success(f"✅ Ridge model trained: MSE={mse:.6f}, R²={r2:.4f}")
+            tprint_info(f"📈 Monotonic features: {len(monotonic_features)}/{len(aligned_features.columns)}")
+            tprint_info(f"🎯 Top 5 Ridge features: {feature_importance['feature'].head(5).tolist()}")
+            
+            return {
+                "success": True,
+                "model": final_ridge,
+                "scaler": scaler,
+                "alpha": best_alpha,
+                "mse": mse,
+                "r2_score": r2,
+                "feature_importance": feature_importance,
+                "monotonic_features": monotonic_features,
+                "predictions": predictions,
+                "n_samples": len(aligned_features),
+                "n_features": len(aligned_features.columns)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Ridge training failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def _train_extratrees_on_gmm_features(
+        self,
+        features: pd.DataFrame,
+        market_data: pd.DataFrame,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Train ExtraTrees models on the selected GMM features.
+        
+        ExtraTrees (Extremely Randomized Trees) provide robust ensemble learning
+        with good performance on financial data.
+        """
+        try:
+            from sklearn.ensemble import ExtraTreesRegressor
+            from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+            from sklearn.metrics import mean_squared_error, r2_score
+            import numpy as np
+            
+            tprint_info(f"🌲 Training ExtraTrees on {features.shape} GMM features...")
+            
+            # Create target variable (forward returns)
+            returns = market_data['close'].pct_change().shift(-12).fillna(0)
+            
+            # Align features and target
+            aligned_features = features.reindex(returns.index).dropna()
+            aligned_target = returns.reindex(aligned_features.index)
+            
+            if len(aligned_features) < 1000:
+                tprint_warning(f"⚠️ Insufficient data for ExtraTrees training: {len(aligned_features)} samples")
+                return {"success": False, "error": "Insufficient data"}
+            
+            # Time series cross-validation for hyperparameter tuning
+            tscv = TimeSeriesSplit(n_splits=3)
+            
+            # Hyperparameter grid
+            param_grid = {
+                'n_estimators': [100, 200],
+                'max_depth': [10, 20, None],
+                'min_samples_split': [5, 10],
+                'min_samples_leaf': [2, 4],
+                'max_features': ['sqrt', 'log2', None]
+            }
+            
+            best_params = {}
+            best_score = -np.inf
+            
+            tprint_info("🔍 Optimizing ExtraTrees hyperparameters...")
+            
+            # Simple grid search
+            for n_estimators in param_grid['n_estimators']:
+                for max_depth in param_grid['max_depth']:
+                    for min_samples_split in param_grid['min_samples_split']:
+                        for min_samples_leaf in param_grid['min_samples_leaf']:
+                            for max_features in param_grid['max_features']:
+                                
+                                et = ExtraTreesRegressor(
+                                    n_estimators=n_estimators,
+                                    max_depth=max_depth,
+                                    min_samples_split=min_samples_split,
+                                    min_samples_leaf=min_samples_leaf,
+                                    max_features=max_features,
+                                    random_state=42,
+                                    n_jobs=-1
+                                )
+                                
+                                try:
+                                    scores = cross_val_score(et, aligned_features, aligned_target, 
+                                                             cv=tscv, scoring='neg_mean_squared_error')
+                                    mean_score = scores.mean()
+                                    
+                                    if mean_score > best_score:
+                                        best_score = mean_score
+                                        best_params = {
+                                            'n_estimators': n_estimators,
+                                            'max_depth': max_depth,
+                                            'min_samples_split': min_samples_split,
+                                            'min_samples_leaf': min_samples_leaf,
+                                            'max_features': max_features
+                                        }
+                                except Exception:
+                                    continue
+            
+            tprint_success(f"✅ Best ExtraTrees params: {best_params}")
+            
+            # Train final model
+            final_et = ExtraTreesRegressor(
+                **best_params,
+                random_state=42,
+                n_jobs=-1
+            )
+            final_et.fit(aligned_features, aligned_target)
+            
+            # Make predictions
+            predictions = final_et.predict(aligned_features)
+            
+            # Calculate metrics
+            mse = mean_squared_error(aligned_target, predictions)
+            r2 = r2_score(aligned_target, predictions)
+            
+            # Feature importance
+            feature_importance = pd.DataFrame({
+                'feature': aligned_features.columns,
+                'importance': final_et.feature_importances_
+            }).sort_values('importance', ascending=False)
+            
+            tprint_success(f"✅ ExtraTrees trained: MSE={mse:.6f}, R²={r2:.4f}")
+            tprint_info(f"🎯 Top 5 ExtraTrees features: {feature_importance['feature'].head(5).tolist()}")
+            
+            return {
+                "success": True,
+                "model": final_et,
+                "params": best_params,
+                "mse": mse,
+                "r2_score": r2,
+                "feature_importance": feature_importance,
+                "predictions": predictions,
+                "n_samples": len(aligned_features),
+                "n_features": len(aligned_features.columns)
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ ExtraTrees training failed: {e}")
+            return {"success": False, "error": str(e)}
+    async def _extract_raw_features_from_market_data(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Extract raw features from market data without training specialists."""
+        try:
+            # Generate basic technical features from market data
+            features = pd.DataFrame(index=market_data.index)
+            
+            # Price-based features
+            features['returns'] = market_data['close'].pct_change()
+            features['log_returns'] = np.log(market_data['close'] / market_data['close'].shift(1))
+            features['high_low_ratio'] = market_data['high'] / market_data['low']
+            features['volume_price_ratio'] = market_data['volume'] / market_data['close']
+            
+            # Moving averages
+            for window in [5, 10, 20, 50]:
+                features[f'ma_{window}'] = market_data['close'].rolling(window).mean()
+                features[f'ma_{window}_ratio'] = market_data['close'] / features[f'ma_{window}']
+            
+            # Volatility features
+            for window in [5, 10, 20]:
+                features[f'vol_{window}'] = features['returns'].rolling(window).std()
+            
+            # RSI
+            delta = market_data['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            features['rsi'] = 100 - (100 / (1 + rs))
+            
+            # Drop NaN values
+            features = features.dropna()
+            
+            tprint_info(f"📊 Generated {len(features.columns)} raw features from market data")
+            return features
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract raw features: {e}")
+            return pd.DataFrame()
+    
+    async def _apply_feature_selection(self, features: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Apply feature selection to reduce dimensionality."""
+        try:
+            from sklearn.feature_selection import SelectKBest, f_regression
+            
+            # Create synthetic labels for feature selection (using returns)
+            labels = features['returns'].shift(-1).dropna()
+            features_clean = features.iloc[:-1].loc[labels.index]
+            
+            # Remove highly correlated features
+            corr_matrix = features_clean.corr().abs()
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > 0.95)]
+            features_clean = features_clean.drop(columns=to_drop)
+            
+            # Select top features
+            selector = SelectKBest(f_regression, k=min(50, len(features_clean.columns)))
+            selected_features = selector.fit_transform(features_clean, labels)
+            
+            selected_df = pd.DataFrame(
+                selected_features,
+                index=features_clean.index,
+                columns=features_clean.columns[selector.get_support()]
+            )
+            
+            tprint_success(f"✅ Feature selection: {len(features.columns)} → {len(selected_df.columns)} features")
+            return selected_df
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature selection failed: {e}")
+            return features
+    
+    async def _train_models_on_selected_features(self, features: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Train Ridge and ExtraTrees models on selected features."""
+        try:
+            # Create synthetic labels
+            labels = features['returns'].shift(-1).dropna()
+            features_clean = features.iloc[:-1].loc[labels.index]
+            
+            results = {}
+            
+            # Train Ridge model
+            from sklearn.linear_model import Ridge
+            ridge = Ridge(alpha=1.0)
+            ridge.fit(features_clean, labels)
+            ridge_pred = ridge.predict(features_clean)
+            
+            results['ridge'] = {
+                'model': ridge,
+                'predictions': ridge_pred,
+                'mse': ((labels - ridge_pred) ** 2).mean(),
+                'r2': 1 - ((labels - ridge_pred) ** 2).sum() / ((labels - labels.mean()) ** 2).sum()
+            }
+            
+            # Train ExtraTrees model
+            from sklearn.ensemble import ExtraTreesRegressor
+            et = ExtraTreesRegressor(n_estimators=100, random_state=42)
+            et.fit(features_clean, labels)
+            et_pred = et.predict(features_clean)
+            
+            results['extratrees'] = {
+                'model': et,
+                'predictions': et_pred,
+                'mse': ((labels - et_pred) ** 2).mean(),
+                'r2': 1 - ((labels - et_pred) ** 2).sum() / ((labels - labels.mean()) ** 2).sum(),
+                'feature_importance': dict(zip(features_clean.columns, et.feature_importances_))
+            }
+            
+            tprint_success(f"✅ Trained Ridge (R²={results['ridge']['r2']:.3f}) and ExtraTrees (R²={results['extratrees']['r2']:.3f})")
+            return results
+            
+        except Exception as e:
+            tprint_error(f"❌ Model training failed: {e}")
+            return {}
+
+    async def _apply_gmm_enhancement_to_features(self, features: pd.DataFrame, market_data: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Apply comprehensive GMM enhancement using EnhancedGMMFeatures class."""
+        try:
+            tprint_info("🧠 Starting comprehensive GMM enhancement with EnhancedGMMFeatures...")
+            
+            # Import the enhanced GMM class
+            from src.training.steps.market_analysis.gmm_enhanced_features import EnhancedGMMFeatures
+            
+            # Initialize EnhancedGMMFeatures with optimized configuration
+            gmm_enhancer = EnhancedGMMFeatures(
+                use_original_pipeline=True,
+                use_enhanced_pipeline=True,
+                use_fracdiff=True,
+                use_treeshap=True,
+                use_multi_timeframe=True,  # RE-ENABLED with optimizations
+                use_streaming=True,
+                n_clusters_macro=8,
+                pca_variance=0.95,
+                n_latent_factors=8,
+                fracdiff_config={
+                    'max_d': 1.0,
+                    'min_d': 0.0,
+                    'adf_threshold': 0.01,
+                    'method': 'binary_search',
+                    'tolerance': 0.01
+                },
+                kinematics_config={
+                    'velocity_windows': [1, 3, 5],
+                    'acceleration_windows': [3, 5, 10],
+                    'jerk_windows': [5, 10, 15]
+                },
+                overextended_config={
+                    'return_threshold': 2.0,
+                    'entropy_threshold': 0.8,
+                    'z_familiarity_threshold': -2.0
+                },
+                shock_config={
+                    'probability_jump_threshold': 0.3,
+                    'z_familiarity_jump_threshold': 2.0,
+                    'entropy_drop_threshold': 0.2
+                },
+                treeshap_config={
+                    'n_estimators': 100,
+                    'max_depth': 8,
+                    'interaction_sample_size': 500,
+                    'importance_threshold': 0.01
+                },
+                multi_tf_config={
+                    'base_timeframe': "15m",
+                    'target_timeframes': ["15m", "60m", "4h"],
+                    'fusion_method': 'adaptive',
+                    'max_memory_mb': 2048,  # Increased for better performance
+                    'chunk_size': 50000,    # Increased for fewer iterations
+                    'use_entropy_bars': True  # Enable entropy-based alignment
+                },
+                verbose=True
+            )
+            
+            # Prepare config for EnhancedGMMFeatures
+            gmm_config = {
+                'symbol': config.get('symbol', 'ETHUSDT'),
+                'exchange': config.get('exchange', 'binance'),
+                'timeframe': config.get('timeframe', '15m'),
+                'direction': config.get('direction', 'long'),
+                'execution_mode': 'full'
+            }
+            
+            # Apply the full enhanced GMM pipeline
+            tprint_info("🚀 Running full EnhancedGMMFeatures pipeline...")
+            gmm_results = gmm_enhancer.execute(gmm_config)
+            
+            # Extract enhanced features from results
+            if gmm_results.get('success', False) and 'enhanced_features_path' in gmm_results:
+                import pandas as pd
+                enhanced_features_path = gmm_results['enhanced_features_path']
+                if enhanced_features_path and os.path.exists(enhanced_features_path):
+                    enhanced_features = pd.read_parquet(enhanced_features_path)
+                    
+                    # Align indices with original features
+                    enhanced_features = enhanced_features.reindex(features.index, method='nearest')
+                    
+                    # Combine original features with enhanced GMM features
+                    combined_features = pd.concat([features, enhanced_features], axis=1)
+                    
+                    tprint_success(f"✅ Enhanced GMM pipeline completed: {features.shape} -> {combined_features.shape}")
+                    tprint_info(f"📊 Generated {combined_features.shape[1] - features.shape[1]} enhanced GMM features")
+                    
+                    return combined_features
+                else:
+                    tprint_warning("⚠️ Enhanced GMM features file not found")
+            
+            tprint_warning("⚠️ Enhanced GMM pipeline failed")
+            tprint_error("❌ Fast failing - GMM enhancement required for this pipeline")
+            raise RuntimeError("Enhanced GMM pipeline failed - cannot proceed without GMM features")
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced GMM pipeline failed: {e}")
+            tprint_error("❌ Fast failing - GMM enhancement required for this pipeline")
+            raise RuntimeError(f"Enhanced GMM pipeline failed: {e}")
+    
+    def _apply_basic_gmm_fallback(self, features: pd.DataFrame, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Basic GMM fallback implementation."""
+        try:
+            from sklearn.mixture import GaussianMixture
+            
+            # Prepare data for GMM
+            clean_features = features.dropna()
+            if len(clean_features) < 100:
+                tprint_warning("⚠️ Insufficient data for GMM enhancement")
+                return features
+            
+            # Apply basic GMM clustering
+            n_components = min(8, len(clean_features.columns))
+            gmm = GaussianMixture(n_components=n_components, random_state=42)
+            gmm.fit(clean_features)
+            
+            # Generate basic GMM features
+            gmm_probs = gmm.predict_proba(clean_features)
+            gmm_labels = gmm.predict(clean_features)
+            
+            # Create enhanced features
+            enhanced_features = clean_features.copy()
+            for i in range(n_components):
+                enhanced_features[f'gmm_prob_{i}'] = gmm_probs[:, i]
+                enhanced_features[f'gmm_cluster_{i}'] = (gmm_labels == i).astype(int)
+            
+            # Add entropy feature
+            entropy = -np.sum(gmm_probs * np.log(gmm_probs + 1e-10), axis=1)
+            enhanced_features['gmm_entropy'] = entropy
+            
+            tprint_success(f"✅ Basic GMM fallback: {features.shape} -> {enhanced_features.shape}")
+            
+            return enhanced_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Basic GMM fallback failed: {e}")
+            return features
+    
+
+    async def _extract_specialist_features(
+        self,
+        specialist_outputs: Dict[str, pd.DataFrame],
+        config: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """
+        Extract ALL features from specialist outputs (except prediction/probability columns).
+        
+        This method takes all columns from each specialist except for
+        prediction/probability/target columns, ensuring we capture the complete
+        feature space for GMM processing.
+        """
+        try:
+            tprint_info(f"🔍 Extracting ALL features from {len(specialist_outputs)} specialists...")
+            
+            specialist_features = {}
+            
+            for specialist_name, outputs in specialist_outputs.items():
+                if outputs is not None and not outputs.empty:
+                    # Check if this is a DataFrame with feature data
+                    if isinstance(outputs, pd.DataFrame):
+                        # Exclude only prediction/probability/target columns, keep everything else
+                        exclude_cols = ['prediction', 'probability', 'target', 'label', 'timestamp']
+                        feature_cols = [col for col in outputs.columns if col not in exclude_cols]
+                        
+                        if feature_cols:
+                            specialist_features[specialist_name] = outputs[feature_cols]
+                            tprint_info(f"✅ {specialist_name}: {len(feature_cols)} features extracted")
+                            tprint_info(f"   Sample features: {feature_cols[:5]}" if len(feature_cols) > 5 else f"   Features: {feature_cols}")
+                        else:
+                            tprint_warning(f"⚠️ {specialist_name}: No features found (all columns excluded)")
+                    else:
+                        tprint_warning(f"⚠️ {specialist_name}: Output is not a DataFrame")
+                else:
+                    tprint_warning(f"⚠️ {specialist_name}: Empty or None output")
+            
+            if not specialist_features:
+                tprint_error("❌ No specialist features extracted")
+                return pd.DataFrame()
+            
+            # Combine all specialist features
+            tprint_info("🔗 Combining specialist features...")
+            combined_features = pd.concat(
+                [features.add_prefix(f"{name}_") for name, features in specialist_features.items()],
+                axis=1
+            )
+            
+            tprint_success(f"✅ Combined features shape: {combined_features.shape}")
+            tprint_info(f"📊 Feature breakdown: {', '.join([f'{name}: {len(features)}' for name, features in specialist_features.items()])}")
+            
+            return combined_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract specialist features: {e}")
+            return pd.DataFrame()
     async def _train_all_specialists(
         self,
         market_data: pd.DataFrame,
@@ -611,10 +1456,19 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
             tprint_info(f"📦 Processing batch {i//batch_size + 1}: {batch_names}")
 
+            # Memory snapshot before batch
+            import psutil
+            mem_b = psutil.Process().memory_info().rss / 1024 / 1024
+            tprint_info(f"💾 Memory usage before batch: {mem_b:.1f} MB")
+
             # Train batch in parallel
             batch_outputs = await self._train_specialist_batch(
                 batch, market_data, config, force_retrain
             )
+
+            # Memory snapshot after batch
+            mem_a = psutil.Process().memory_info().rss / 1024 / 1024
+            tprint_info(f"💾 Memory usage after batch: {mem_a:.1f} MB (Delta: {mem_a - mem_b:+.1f} MB)")
 
             # Store successful outputs
             for step_name, outputs in batch_outputs.items():
@@ -660,6 +1514,20 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         import tempfile
         import pickle
 
+        # #region agent log - Specialist training start
+        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "id": "log_specialist_training_start",
+                "timestamp": int(__import__('time').time() * 1000),
+                "location": "train_specialists_with_gmm_step.py:_train_all_specialists_memory_efficient",
+                "message": "Starting specialist training",
+                "data": {"batch_size": batch_size, "market_data_shape": market_data.shape, "specialist_count": len(SPECIALIST_IMPORTS)},
+                "sessionId": "debug-session",
+                "runId": "initial",
+                "hypothesisId": "H"
+            }) + '\n')
+        # #endregion
+
         tprint_info(f"🔄 Training specialists in memory-efficient mode (batch_size={batch_size})...")
 
         specialist_outputs = {}
@@ -673,12 +1541,40 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 batch = specialist_items[i:i + batch_size]
                 batch_names = [name for name, _ in batch]
 
+                # #region agent log - Batch processing start
+                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "id": f"log_batch_start_{i//batch_size + 1}",
+                        "timestamp": int(__import__('time').time() * 1000),
+                        "location": "train_specialists_with_gmm_step.py:_train_all_specialists_memory_efficient",
+                        "message": f"Starting batch {i//batch_size + 1}",
+                        "data": {"batch_number": i//batch_size + 1, "batch_names": batch_names, "total_batches": len(specialist_items)//batch_size + 1},
+                        "sessionId": "debug-session",
+                        "runId": "initial",
+                        "hypothesisId": "H"
+                    }) + '\n')
+                # #endregion
+
                 tprint_info(f"📦 Processing batch {i//batch_size + 1}/{len(specialist_items)//batch_size + 1}: {batch_names}")
 
                 # Train batch
                 batch_outputs = await self._train_specialist_batch(
                     batch, market_data, config, force_retrain
                 )
+
+                # #region agent log - Batch processing complete
+                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "id": f"log_batch_complete_{i//batch_size + 1}",
+                        "timestamp": int(__import__('time').time() * 1000),
+                        "location": "train_specialists_with_gmm_step.py:_train_all_specialists_memory_efficient",
+                        "message": f"Completed batch {i//batch_size + 1}",
+                        "data": {"batch_number": i//batch_size + 1, "batch_outputs_count": len(batch_outputs), "successful_outputs": len([k for k, v in batch_outputs.items() if v is not None and not v.empty])},
+                        "sessionId": "debug-session",
+                        "runId": "initial",
+                        "hypothesisId": "H"
+                    }) + '\n')
+                # #endregion
 
                 # Save successful outputs to disk immediately
                 for step_name, outputs in batch_outputs.items():
@@ -695,6 +1591,9 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 # Aggressive memory cleanup between batches
                 del batch_outputs
                 gc.collect()
+                
+                # Trigger memory optimization (clears caches)
+                self._optimize_memory_usage()
 
                 # Small delay to prevent overwhelming the system
                 await asyncio.sleep(1.0)
@@ -732,6 +1631,20 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     ) -> Dict[str, pd.DataFrame]:
         """Train a batch of specialists in parallel."""
 
+        # #region agent log - Batch training start
+        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "id": "log_batch_train_start",
+                "timestamp": int(__import__('time').time() * 1000),
+                "location": "train_specialists_with_gmm_step.py:_train_specialist_batch",
+                "message": "Starting batch training",
+                "data": {"batch_size": len(batch), "specialist_names": [name for name, _ in batch]},
+                "sessionId": "debug-session",
+                "runId": "initial",
+                "hypothesisId": "H"
+            }) + '\n')
+        # #endregion
+
         batch_outputs = {}
 
         # Create tasks for parallel execution
@@ -742,8 +1655,36 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             )
             tasks.append(task)
 
+        # #region agent log - Before asyncio.gather
+        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "id": "log_before_gather",
+                "timestamp": int(__import__('time').time() * 1000),
+                "location": "train_specialists_with_gmm_step.py:_train_specialist_batch",
+                "message": "Before asyncio.gather",
+                "data": {"task_count": len(tasks)},
+                "sessionId": "debug-session",
+                "runId": "initial",
+                "hypothesisId": "H"
+            }) + '\n')
+        # #endregion
+
         # Execute batch in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # #region agent log - After asyncio.gather
+        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "id": "log_after_gather",
+                "timestamp": int(__import__('time').time() * 1000),
+                "location": "train_specialists_with_gmm_step.py:_train_specialist_batch",
+                "message": "After asyncio.gather",
+                "data": {"result_count": len(results)},
+                "sessionId": "debug-session",
+                "runId": "initial",
+                "hypothesisId": "H"
+            }) + '\n')
+        # #endregion
 
         # Process results
         for i, result in enumerate(results):
@@ -773,17 +1714,107 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist asynchronously."""
 
+        # #region agent log - Single specialist start
+        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "id": f"log_single_specialist_start_{step_name}",
+                "timestamp": int(__import__('time').time() * 1000),
+                "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                "message": f"Starting training for specialist: {step_name}",
+                "data": {"step_name": step_name, "module_path": module_path, "class_name": class_name},
+                "sessionId": "debug-session",
+                "runId": "initial",
+                "hypothesisId": "H"
+            }) + '\n')
+        # #endregion
+
         try:
+            # #region agent log - Entered try block
+            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "id": f"log_entered_try_{step_name}",
+                    "timestamp": int(__import__('time').time() * 1000),
+                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                    "message": f"Entered try block for specialist: {step_name}",
+                    "data": {"step_name": step_name},
+                    "sessionId": "debug-session",
+                    "runId": "initial",
+                    "hypothesisId": "H"
+                }) + '\n')
+            # #endregion
+
+            # Debug print - check if function continues
+            print(f"DEBUG: About to enter try block for specialist: {step_name}")
+
+            # #region agent log - Before try block
+            try:
+                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "id": f"log_before_try_{step_name}",
+                        "timestamp": int(__import__('time').time() * 1000),
+                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                        "message": f"About to enter try block for specialist: {step_name}",
+                        "data": {"step_name": step_name},
+                        "sessionId": "debug-session",
+                        "runId": "initial",
+                        "hypothesisId": "H"
+                    }) + '\n')
+            except Exception as log_e:
+                print(f"DEBUG: Failed to write log: {log_e}")
+            # #endregion
+
             start_time = time.time()
 
             # Import specialist class
+            # #region agent log - Import specialist class
+            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "id": f"log_import_specialist_{step_name}",
+                    "timestamp": int(__import__('time').time() * 1000),
+                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                    "message": f"Importing specialist class: {module_path}.{class_name}",
+                    "data": {"step_name": step_name, "module_path": module_path, "class_name": class_name},
+                    "sessionId": "debug-session",
+                    "runId": "initial",
+                    "hypothesisId": "H"
+                }) + '\n')
+            # #endregion
+
             module = __import__(module_path, fromlist=[class_name])
             specialist_class = getattr(module, class_name)
 
             # Initialize specialist
+            # #region agent log - Specialist initialization
+            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "id": f"log_specialist_init_{step_name}",
+                    "timestamp": int(__import__('time').time() * 1000),
+                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                    "message": f"Initializing specialist: {step_name}",
+                    "data": {"step_name": step_name, "class_name": class_name},
+                    "sessionId": "debug-session",
+                    "runId": "initial",
+                    "hypothesisId": "H"
+                }) + '\n')
+            # #endregion
+
             specialist = specialist_class(step_name)
 
-            # Setup context
+            # #region agent log - Specialist initialized successfully
+            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "id": f"log_specialist_init_success_{step_name}",
+                    "timestamp": int(__import__('time').time() * 1000),
+                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                    "message": f"Specialist initialized successfully: {step_name}",
+                    "data": {"step_name": step_name, "specialist_type": str(type(specialist))},
+                    "sessionId": "debug-session",
+                    "runId": "initial",
+                    "hypothesisId": "H"
+                }) + '\n')
+            # #endregion
+
+            # Setup context - enhanced specialists need proper context before execution
             context = {
                 "symbol": config.get("symbol"),
                 "exchange": config.get("exchange"),
@@ -792,9 +1823,13 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 "model": "analyst"
             }
 
+            # Set context on specialist if it has the attribute
+            if hasattr(specialist, '_current_context'):
+                specialist._current_context = context
+
             # Train specialist and get outputs
             outputs = await self._train_single_specialist(
-                specialist, market_data, context, force_retrain
+                specialist, market_data, context, force_retrain, step_name
             )
 
             elapsed = time.time() - start_time
@@ -812,7 +1847,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         specialist,
         market_data: pd.DataFrame,
         context: Dict[str, Any],
-        force_retrain: bool
+        force_retrain: bool,
+        step_name: str
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist and return its outputs."""
 
@@ -828,11 +1864,87 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 "verbose": False  # Reduce verbosity for batch training
             })
 
-            # Run specialist
-            result = await specialist.execute(specialist_config)
+            # #region agent log - Before specialist execute
+            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "id": f"log_before_execute_{step_name}",
+                    "timestamp": int(__import__('time').time() * 1000),
+                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                    "message": f"Before executing specialist: {step_name}",
+                    "data": {"step_name": step_name, "specialist_config_keys": list(specialist_config.keys())},
+                    "sessionId": "debug-session",
+                    "runId": "initial",
+                    "hypothesisId": "H"
+                }) + '\n')
+            # #endregion
 
-            # Extract outputs/predictions from result
+            # Run specialist
+            try:
+                # #region agent log - About to call execute
+                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "id": f"log_about_to_execute_{step_name}",
+                        "timestamp": int(__import__('time').time() * 1000),
+                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                        "message": f"About to call execute on specialist: {step_name}",
+                        "data": {"step_name": step_name, "config_keys": list(specialist_config.keys())},
+                        "sessionId": "debug-session",
+                        "runId": "initial",
+                        "hypothesisId": "H"
+                    }) + '\n')
+                # #endregion
+
+                result = await specialist.execute(specialist_config)
+
+                # #region agent log - After specialist execute
+                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "id": f"log_after_execute_{step_name}",
+                        "timestamp": int(__import__('time').time() * 1000),
+                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                        "message": f"Specialist executed: {step_name}",
+                        "data": {"step_name": step_name, "result_type": type(result).__name__, "result_success": result.get('success', False) if isinstance(result, dict) else None, "result_keys": list(result.keys()) if isinstance(result, dict) else None, "result_is_none": result is None},
+                        "sessionId": "debug-session",
+                        "runId": "initial",
+                        "hypothesisId": "H"
+                    }) + '\n')
+                # #endregion
+            except Exception as e:
+                # #region agent log - Specialist execution failed
+                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "id": f"log_execute_failed_{step_name}",
+                        "timestamp": int(__import__('time').time() * 1000),
+                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+                        "message": f"Specialist execution failed: {step_name}",
+                        "data": {"step_name": step_name, "error": str(e), "error_type": type(e).__name__},
+                        "sessionId": "debug-session",
+                        "runId": "initial",
+                        "hypothesisId": "H"
+                    }) + '\n')
+                # #endregion
+                tprint_error(f"❌ Specialist {step_name} failed: {e}")
+                return None
+
+            # Extract outputs/predictions from result and collect comprehensive metrics
             if result and isinstance(result, dict):
+                # Store comprehensive metrics for this specialist
+                specialist_name = specialist.__class__.__name__
+                self._specialist_metrics[specialist_name] = {
+                    'auc': result.get('metrics', {}).get('auc', 0.0),
+                    'mi_score': result.get('metrics', {}).get('mi_score', 0.0),
+                    'best_auc': result.get('metrics', {}).get('best_auc', 0.0),
+                    'best_mi': result.get('metrics', {}).get('best_mi', 0.0),
+                    'n_features': result.get('metrics', {}).get('n_features', 0),
+                    'hyperparams': result.get('metrics', {}).get('optimization_params', {}),
+                    'diagnostics': result.get('diagnostics', {}),
+                    'compliance': result.get('metrics', {}).get('enhanced_requirements_met', False),
+                    'enhanced_mi_score': result.get('metrics', {}).get('enhanced_mi_score', 0.0),
+                    'ensemble_ready': result.get('metrics', {}).get('ensemble_ready', False),
+                    'training_success': result.get('success', False),
+                    'n_samples': result.get('n_samples', 0)
+                }
+
                 # Look for common output keys
                 outputs = None
                 for key in ["predictions", "features", "outputs", "probabilities"]:
@@ -853,6 +1965,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                             # Use market_data index
                             outputs.index = market_data.index[:len(outputs)]
 
+                    # Store outputs for later reference
+                    self._specialist_outputs[specialist_name] = outputs
                     return outputs
 
             return None
@@ -1088,14 +2202,179 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         
         return mi_scores
 
+    def _check_feature_quality(self, features: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Check feature quality by detecting constant features and features with insufficient variance.
+        
+        Args:
+            features: DataFrame containing features to check
+            
+        Returns:
+            Tuple containing (cleaned_features, quality_report)
+        """
+        from typing import Tuple, Dict, Any
+        
+        quality_report = {
+            'total_features': len(features.columns),
+            'constant_features': [],
+            'low_variance_features': [],
+            'kept_features': [],
+            'variance_threshold': 1e-8
+        }
+        
+        cleaned_features = features.copy()
+        
+        # Check for constant features
+        for col in features.columns:
+            std_val = features[col].std()
+            
+            if std_val == 0:
+                quality_report['constant_features'].append(col)
+                cleaned_features.drop(col, axis=1, inplace=True)
+            elif std_val < quality_report['variance_threshold']:
+                quality_report['low_variance_features'].append({
+                    'feature': col,
+                    'variance': std_val
+                })
+            else:
+                quality_report['kept_features'].append(col)
+        
+        quality_report['final_feature_count'] = len(cleaned_features.columns)
+        quality_report['removed_features'] = quality_report['total_features'] - quality_report['final_feature_count']
+        
+        return cleaned_features, quality_report
+
+    def _list_gmm_features(self, features: pd.DataFrame, source: str = "unknown") -> Dict[str, Any]:
+        """
+        List GMM features with information about them.
+        
+        Args:
+            features: DataFrame containing GMM features
+            source: Source of the features (e.g., "returns_pipeline", "fracdiff_pipeline")
+            
+        Returns:
+            Dictionary containing feature information
+        """
+        from typing import Dict, Any
+        
+        feature_info = {
+            'source': source,
+            'total_features': len(features.columns),
+            'feature_details': [],
+            'statistics': {
+                'mean_variance': 0.0,
+                'min_variance': float('inf'),
+                'max_variance': 0.0,
+                'constant_features': 0,
+                'low_variance_features': 0
+            }
+        }
+        
+        for col in features.columns:
+            feature_data = features[col]
+            variance = feature_data.var()
+            mean = feature_data.mean()
+            std = feature_data.std()
+            
+            feature_details = {
+                'feature_name': col,
+                'mean': mean,
+                'variance': variance,
+                'std_deviation': std,
+                'is_constant': variance == 0,
+                'is_low_variance': variance < 1e-8
+            }
+            
+            feature_info['feature_details'].append(feature_details)
+            
+            # Update statistics
+            feature_info['statistics']['mean_variance'] += variance
+            if variance < feature_info['statistics']['min_variance']:
+                feature_info['statistics']['min_variance'] = variance
+            if variance > feature_info['statistics']['max_variance']:
+                feature_info['statistics']['max_variance'] = variance
+            
+            if variance == 0:
+                feature_info['statistics']['constant_features'] += 1
+            elif variance < 1e-8:
+                feature_info['statistics']['low_variance_features'] += 1
+        
+        # Calculate mean variance
+        if feature_info['total_features'] > 0:
+            feature_info['statistics']['mean_variance'] /= feature_info['total_features']
+        
+        return feature_info
+
+    def _normalize_features(self, features: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize features to [0, 1] range using min-max scaling.
+        
+        Args:
+            features: DataFrame containing features to normalize
+            
+        Returns:
+            DataFrame with normalized features
+        """
+        try:
+            normalized_features = features.copy()
+            
+            for col in normalized_features.columns:
+                if normalized_features[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                    min_val = normalized_features[col].min()
+                    max_val = normalized_features[col].max()
+                    
+                    # Avoid division by zero
+                    if max_val != min_val:
+                        normalized_features[col] = (normalized_features[col] - min_val) / (max_val - min_val)
+                    else:
+                        # If all values are the same, set to 0
+                        normalized_features[col] = 0.0
+            
+            return normalized_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature normalization failed: {e}")
+            return features
+
+    def _standardize_features(self, features: pd.DataFrame) -> pd.DataFrame:
+        """
+        Standardize features to have mean=0 and std=1.
+        
+        Args:
+            features: DataFrame containing features to standardize
+            
+        Returns:
+            DataFrame with standardized features
+        """
+        try:
+            standardized_features = features.copy()
+            
+            for col in standardized_features.columns:
+                if standardized_features[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                    mean_val = standardized_features[col].mean()
+                    std_val = standardized_features[col].std()
+                    
+                    # Avoid division by zero
+                    if std_val > 0:
+                        standardized_features[col] = (standardized_features[col] - mean_val) / std_val
+                    else:
+                        # If std is 0, set to 0
+                        standardized_features[col] = 0.0
+            
+            return standardized_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature standardization failed: {e}")
+            return features
+
     def _select_important_features_optimized(self, combined_features: pd.DataFrame, market_data: pd.DataFrame, max_features: int = 100) -> pd.DataFrame:
-        """Optimized feature selection using vectorized Numba mutual information calculation."""
+        """Optimized feature selection using TreeSHAP analysis and mutual information."""
 
         if combined_features.empty or len(combined_features.columns) <= max_features:
             return combined_features
 
         try:
-            tprint_info(f"🚀 Selecting top {max_features} features from {len(combined_features.columns)} total using vectorized MI...")
+            tprint_info(f"🚀 Selecting top {max_features} features from {len(combined_features.columns)} total using TreeSHAP + MI...")
             start_time = time.time()
 
             # Create target variable (future returns)
@@ -1107,39 +2386,54 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 tprint_warning("⚠️ Insufficient data for feature selection, using all features")
                 return combined_features
 
-            # Prepare data for Numba processing
-            feature_array = combined_features.fillna(0).values
-            target_array = target.values
+            # First, try TreeSHAP analysis if available
+            treeshap_features = None
+            if TREESHAP_AVAILABLE:
+                treeshap_features = self._perform_treeshap_analysis(combined_features, target, max_features)
             
-            # Filter out constant features
-            feature_std = np.std(feature_array, axis=0)
-            valid_features_mask = feature_std > 1e-8
-            
-            if not np.any(valid_features_mask):
-                tprint_warning("⚠️ No valid features found (all constant)")
-                return combined_features
-            
-            feature_array_valid = feature_array[:, valid_features_mask]
-            valid_column_names = combined_features.columns[valid_features_mask].tolist()
-            
-            # Calculate mutual information scores using vectorized Numba function
-            mi_scores = self._vectorized_mutual_info_batch(feature_array_valid, target_array)
-            
-            # Create feature-score mapping
-            feature_scores = list(zip(valid_column_names, mi_scores))
-            
-            # Sort by MI score (descending)
-            feature_scores.sort(key=lambda x: x[1], reverse=True)
-            
-            # Select top features
-            selected_cols = [col for col, score in feature_scores[:max_features]]
-            selected_features = combined_features[selected_cols]
+            if treeshap_features is not None and len(treeshap_features) > 0:
+                # Use TreeSHAP results
+                selected_features = combined_features[treeshap_features]
+                elapsed_time = time.time() - start_time
+                tprint_success(f"✅ Selected {len(treeshap_features)} features in {elapsed_time:.2f}s using TreeSHAP")
+                return selected_features
+            else:
+                # Fallback to mutual information method
+                tprint_warning("⚠️ TreeSHAP analysis failed or unavailable, falling back to mutual information")
+                
+                # Prepare data for Numba processing
+                feature_array = combined_features.fillna(0).values
+                target_array = target.values
+                
+                # Filter out constant features
+                feature_std = np.std(feature_array, axis=0)
+                valid_features_mask = feature_std > 1e-8
+                
+                if not np.any(valid_features_mask):
+                    tprint_warning("⚠️ No valid features found (all constant)")
+                    return combined_features
+                
+                feature_array_valid = feature_array[:, valid_features_mask]
+                valid_column_names = combined_features.columns[valid_features_mask].tolist()
+                
+                # Calculate mutual information scores using vectorized Numba function
+                mi_scores = self._vectorized_mutual_info_batch(feature_array_valid, target_array)
+                
+                # Create feature-score mapping
+                feature_scores = list(zip(valid_column_names, mi_scores))
+                
+                # Sort by MI score (descending)
+                feature_scores.sort(key=lambda x: x[1], reverse=True)
+                
+                # Select top features
+                selected_cols = [col for col, score in feature_scores[:max_features]]
+                selected_features = combined_features[selected_cols]
 
-            elapsed_time = time.time() - start_time
-            tprint_success(f"✅ Selected {len(selected_cols)} features in {elapsed_time:.2f}s using vectorized MI")
-            tprint_info(f"📊 Top 5 features: {[col for col, _ in feature_scores[:5]]}")
+                elapsed_time = time.time() - start_time
+                tprint_success(f"✅ Selected {len(selected_cols)} features in {elapsed_time:.2f}s using vectorized MI")
+                tprint_info(f"📊 Top 5 features: {[col for col, _ in feature_scores[:5]]}")
 
-            return selected_features
+                return selected_features
 
         except Exception as e:
             tprint_error(f"❌ Optimized feature selection failed, falling back to original method: {e}")
@@ -1210,32 +2504,35 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         self,
         enhanced_features: pd.DataFrame,
         specialist_outputs: Dict[str, pd.DataFrame],
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        ridge_results: Dict[str, Any] = None,
+        extratrees_results: Dict[str, Any] = None
     ) -> None:
         """Save enhanced features and specialist outputs."""
-        
+         
         try:
             # Create timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             symbol = config.get("symbol", "UNKNOWN")
             timeframe = config.get("timeframe", "15m")
             direction = config.get("direction", "long")
-            
+             
             # Create outcomes directory
             outcomes_dir = Path("outcomes") / f"specialists_with_gmm_{symbol}_{timeframe}_{direction}_{timestamp}"
             outcomes_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Save enhanced features
-            enhanced_features_path = outcomes_dir / f"enhanced_features_{symbol}_{timeframe}.csv"
-            enhanced_features.to_csv(enhanced_features_path, index=True)
-            tprint_success(f"💾 Enhanced features saved to {enhanced_features_path}")
+             
+            # Skip saving enhanced features CSV to avoid per-timestamp data storage
+            # enhanced_features_path = outcomes_dir / f"enhanced_features_{symbol}_{timeframe}.csv"
+            # enhanced_features.to_csv(enhanced_features_path, index=True)
+            # tprint_success(f"💾 Enhanced features saved to {enhanced_features_path}")
             
             # Save individual specialist outputs
             specialist_dir = outcomes_dir / "specialist_outputs"
             specialist_dir.mkdir(exist_ok=True)
             
+            # Save individual specialist outputs to specialist directory
             for specialist_name, outputs in specialist_outputs.items():
-                if outputs is not None and not outputs.empty:
+                if outputs is not None and (not hasattr(outputs, 'empty') or not outputs.empty):
                     output_path = specialist_dir / f"{specialist_name}_{symbol}_{timeframe}.csv"
                     outputs.to_csv(output_path, index=True)
             
@@ -1259,12 +2556,65 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             
             tprint_success(f"💾 Metadata saved to {metadata_path}")
             
-            # Save to versioned artifacts
+            # Save Ridge model results
+            if ridge_results and ridge_results.get("success", False):
+                ridge_dir = outcomes_dir / "ridge_model"
+                ridge_dir.mkdir(exist_ok=True)
+                
+                # Save Ridge model
+                import pickle
+                ridge_model_path = ridge_dir / "ridge_model.pkl"
+                with open(ridge_model_path, 'wb') as f:
+                    pickle.dump(ridge_results["model"], f)
+                
+                # Save Ridge metrics
+                ridge_metrics = {
+                    "alpha": ridge_results["alpha"],
+                    "mse": ridge_results["mse"],
+                    "r2_score": ridge_results["r2_score"],
+                    "monotonic_features": ridge_results["monotonic_features"],
+                    "feature_importance": ridge_results["feature_importance"].to_dict('records')
+                }
+                
+                ridge_metrics_path = ridge_dir / "ridge_metrics.json"
+                with open(ridge_metrics_path, 'w') as f:
+                    json.dump(ridge_metrics, f, indent=2, default=str)
+                
+                tprint_success(f"💾 Ridge model saved to {ridge_dir}")
+            
+            # Save ExtraTrees model results
+            if extratrees_results and extratrees_results.get("success", False):
+                extratrees_dir = outcomes_dir / "extratrees_model"
+                extratrees_dir.mkdir(exist_ok=True)
+                
+                # Save ExtraTrees model
+                extratrees_model_path = extratrees_dir / "extratrees_model.pkl"
+                with open(extratrees_model_path, 'wb') as f:
+                    pickle.dump(extratrees_results["model"], f)
+                
+                # Save ExtraTrees metrics
+                extratrees_metrics = {
+                    "params": extratrees_results["params"],
+                    "mse": extratrees_results["mse"],
+                    "r2_score": extratrees_results["r2_score"],
+                    "feature_importance": extratrees_results["feature_importance"].to_dict('records')
+                }
+                
+                extratrees_metrics_path = extratrees_dir / "extratrees_metrics.json"
+                with open(extratrees_metrics_path, 'w') as f:
+                    json.dump(extratrees_metrics, f, indent=2, default=str)
+                
+                tprint_success(f"💾 ExtraTrees model saved to {extratrees_dir}")
+            
+            # Save composite features to versioned artifacts
+            # Note: We use the '_analyst' suffix for the main artifact store
+            store_name = f"{symbol}_{config.get('exchange')}_{timeframe}_{direction}_analyst" 
             artifact_store = VersionedArtifactStore(
-                Path("versioned_artifacts") / f"{symbol}_{config.get('exchange')}_{timeframe}_{direction}_analyst"
+                Path("versioned_artifacts") / store_name
             )
             
-            artifact_store.save(
+            # Use add_data instead of save
+            artifact_store.add_data(
                 enhanced_features,
                 "specialists_enhanced_features",
                 metadata={
@@ -1278,6 +2628,117 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             
             tprint_success("💾 Enhanced features saved to versioned artifacts")
             
+            # --- CRITICAL FIX: Save individual specialist artifacts for diagnostics ---
+            # Map specialist step names to expected artifact names
+            # Expected by: get_specialist_models_outputs.py and other consumers
+            artifact_mapping = {
+                # Risk
+                "enhanced_ml_risk_regime_step": [
+                    "ml_risk_regime_probabilities_15m", 
+                    "ml_risk_training_data_15m"
+                ],
+                # Liquidity
+                "enhanced_ml_liquidity_regime_step": [
+                    "ml_liquidity_regime_probs_15m" 
+                ],
+                # Breakout / Bounce (Note: Import uses 'EnhancedMLBreakoutBounceStep' but check usage)
+                # Assuming key matches SPECIALIST_IMPORTS key or step name
+                "enhanced_ml_breakout_bounce_step": [
+                    "ml_breakout_bounce_training_data_15m"
+                ],
+                # Path
+                "enhanced_ml_path_regime_step": [
+                    "ml_path_training_data_15m"
+                ],
+                # Macro
+                "enhanced_xgb_macro_regime_step": [
+                    "hmm_macro_trend_training_data_15m"
+                ],
+                # Meso (New - Standardizing name)
+                "enhanced_xgb_meso_regime_step": [
+                    "xgb_meso_regime_training_data_15m"
+                ],
+                 # Volatility Burst (New - Standardizing name)
+                "enhanced_ml_volatility_burst_step": [
+                    "ml_volatility_burst_training_data_15m"
+                ],
+                 # Volume Force
+                "enhanced_ml_volume_force_step": [
+                    "ml_volume_force_predictions"
+                ],
+                 # SMC
+                "enhanced_ml_smc_regime_step": [
+                    "smc_predictions_with_confidence"
+                ],
+                 # Spectral (New - Standardizing name)
+                "enhanced_ml_spectral_step": [
+                     "ml_spectral_training_data_15m"
+                ],
+                # Microstructure (New - Standardizing name)
+                "enhanced_ml_microstructure_step": [
+                     "ml_microstructure_training_data_15m"
+                ],
+                # Momentum Persistence (New - Standardizing name)
+                "enhanced_ml_momentum_persistence_step": [
+                     "ml_momentum_persistence_training_data_15m"
+                ],
+                # Candlestick (New)
+                "enhanced_ml_candlestick_step": [
+                    "ml_candlestick_training_data_15m"
+                ],
+                # Reversion (New)
+                "enhanced_ml_reversion_regime_step": [
+                    "ml_reversion_training_data_15m"
+                ]
+            }
+            
+            base_timeframe = timeframe  # '15m' typically
+            
+            tprint_info("🔗 Registering individual specialist artifacts...")
+            
+            for specialist_name, outputs in specialist_outputs.items():
+                if outputs is None or outputs.empty:
+                    continue
+                    
+                # Determine artifact name(s)
+                artifact_names = []
+                
+                # Check specific mapping first
+                if specialist_name in artifact_mapping:
+                    # Replace '15m' with actual timeframe if different, though usually it is 15m
+                    mapped_names = artifact_mapping[specialist_name]
+                    # Dynamically replace '15m' with current timeframe if needed, 
+                    # but get_specialist_models_outputs hardcodes '_15m' often.
+                    # We will use the mapped names as-is because they match get_specialist_models_outputs.
+                    artifact_names.extend(mapped_names)
+                else:
+                    # Default naming convention: {step_name}_outputs
+                    artifact_names.append(f"{specialist_name}_outputs")
+                
+                # Also save standard name consistent with step name for future-proofing
+                artifact_names.append(f"{specialist_name}_training_data_{base_timeframe}")
+                
+                # Attempt to save to appropriate store
+                # Most specialists have their own store, or share the analyst store?
+                # get_specialist_models_outputs loads from ANY store that contains the artifact name.
+                # So saving to the analyst store is fine, OR we can save to specialist-specific stores.
+                # Saving to the generic analyst store for now to ensure visibility.
+                
+                for art_name in set(artifact_names): # Unique names
+                    try:
+                        artifact_store.save(
+                            outputs,
+                            art_name,
+                            metadata={
+                                "source_step": specialist_name,
+                                "timestamp": datetime.now().isoformat(),
+                                "rows": len(outputs)
+                            }
+                        )
+                        tprint_success(f"  ✅ Saved artifact: {art_name}")
+                    except Exception as e:
+                        tprint_warning(f"  ⚠️ Failed to save artifact {art_name}: {e}")
+
         except Exception as e:
             tprint_error(f"❌ Failed to save results: {e}")
     async def _apply_gmm_enhancement(
@@ -1289,11 +2750,40 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         """Apply comprehensive GMM enhancement with persistence and adaptive parameters."""
         
         try:
+            tprint_info("🧠 Starting GMM Enhancement Pipeline...")
+            tprint_info(f"📊 Input features shape: {features.shape}, Market data shape: {market_data.shape}")
+            
             from src.training.steps.market_analysis.quantitative_regime_engine import QuantitativeRegimeEngine
             
+            # Step 1: Check feature quality
+            tprint_info("🔍 Step 1/5: Checking feature quality before GMM enhancement...")
+            cleaned_features, quality_report = self._check_feature_quality(features)
+            
+            tprint_info(f"📊 Feature quality report:")
+            tprint_info(f"   - Total features: {quality_report['total_features']}")
+            tprint_info(f"   - Constant features removed: {len(quality_report['constant_features'])}")
+            tprint_info(f"   - Low variance features: {len(quality_report['low_variance_features'])}")
+            tprint_info(f"   - Features kept: {quality_report['final_feature_count']}")
+            
+            if len(quality_report['constant_features']) > 0:
+                tprint_warning(f"⚠️ Removed constant features: {quality_report['constant_features']}")
+            
+            if len(quality_report['low_variance_features']) > 0:
+                tprint_warning(f"⚠️ Found {len(quality_report['low_variance_features'])} features with low variance")
+            
+            # Step 2: Normalize and standardize features
+            tprint_info("🔧 Step 2/5: Normalizing and standardizing features...")
+            normalized_features = self._normalize_features(cleaned_features)
+            standardized_features = self._standardize_features(normalized_features)
+            tprint_success(f"✅ Features standardized: {standardized_features.shape}")
+            
+            # Use standardized features for GMM
+            processed_features = standardized_features
+            
             # Generate data hash for caching
-            data_hash = self._generate_data_hash(features)
+            data_hash = self._generate_data_hash(processed_features)
             model_key = f"gmm_{data_hash}"
+            tprint_info(f"🔑 Generated data hash: {data_hash[:8]}...")
 
             # #region agent log - Hypothesis B: GMM caching operations
             with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
@@ -1367,6 +2857,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             # #endregion
             
             # Check if we should use cached model or train new one
+            tprint_info("🔍 Step 3/5: Checking model cache...")
             use_cached = False
             if cached_model is not None and cached_metadata is not None:
                 if self._should_update_model(cached_metadata, len(features)):
@@ -1374,13 +2865,19 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 else:
                     tprint_info("✅ Using cached GMM model...")
                     use_cached = True
+            else:
+                tprint_info("🆕 No cached model found, training new model...")
             
             if use_cached:
                 # Use cached model for enhancement
+                tprint_info("⚡ Using cached model for transformation...")
                 engine = cached_model
                 results = await engine.transform(market_data, features)
             else:
                 # Train new model with adaptive parameters
+                tprint_info("🧠 Step 4/5: Training new GMM model...")
+                tprint_info(f"🎯 Adaptive config: n_components={adaptive_config.get('n_components')}, subsample={adaptive_config.get('subsample_size')}")
+                
                 engine = QuantitativeRegimeEngine(**adaptive_config)
                 
                 tprint_info("🧠 Running comprehensive GMM enhancement with adaptive parameters...")
@@ -1393,7 +2890,9 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                         "data_shape": market_data.shape,
                         "features_shape": features.shape,
                         "performance_score": results.get("performance_score", 0.0),
-                        "data_hash": data_hash
+                        "data_hash": data_hash,
+                        "specialist_performance": self._specialist_metrics,
+                        "ensemble_performance": self._aggregate_specialist_metrics()
                     }
                     self._save_gmm_model(model_key, engine, metadata)
                     
@@ -1409,19 +2908,37 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                             del self.gmm_model_metadata[oldest_key]
             
             if results.get("success", False):
-                # Combine features from both pipelines
+                # Step 5: Combine features from both pipelines
+                tprint_info("🔗 Step 5/5: Combining GMM pipeline features...")
                 combined_features = []
                 
                 returns_features = results.get("returns_pipeline", {}).get("features")
                 fracdiff_features = results.get("fracdiff_pipeline", {}).get("features")
                 
+                # List GMM features with information
+                gmm_features_info = []
+                
                 if returns_features is not None:
+                    returns_info = self._list_gmm_features(returns_features, "returns_pipeline")
+                    gmm_features_info.append(returns_info)
                     combined_features.append(returns_features.add_prefix("RETURNS_"))
                     tprint_success(f"✅ Returns pipeline: {len(returns_features.columns)} features")
+                    tprint_info(f"   - Mean variance: {returns_info['statistics']['mean_variance']:.6f}")
+                    tprint_info(f"   - Min variance: {returns_info['statistics']['min_variance']:.6f}")
+                    tprint_info(f"   - Max variance: {returns_info['statistics']['max_variance']:.6f}")
                 
                 if fracdiff_features is not None:
+                    fracdiff_info = self._list_gmm_features(fracdiff_features, "fracdiff_pipeline")
+                    gmm_features_info.append(fracdiff_info)
                     combined_features.append(fracdiff_features.add_prefix("FRACDIFF_"))
                     tprint_success(f"✅ FracDiff pipeline: {len(fracdiff_features.columns)} features")
+                    tprint_info(f"   - Mean variance: {fracdiff_info['statistics']['mean_variance']:.6f}")
+                    tprint_info(f"   - Min variance: {fracdiff_info['statistics']['min_variance']:.6f}")
+                    tprint_info(f"   - Max variance: {fracdiff_info['statistics']['max_variance']:.6f}")
+                
+                # Save GMM features information to results
+                if gmm_features_info:
+                    results["gmm_features_info"] = gmm_features_info
                 
                 if combined_features:
                     enhanced = pd.concat(combined_features, axis=1)
@@ -1432,6 +2949,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                     
                     # Memory optimization for enhanced features
                     enhanced = self._optimize_enhanced_features(enhanced)
+
+                    # Generate detailed GMM Report
+                    try:
+                        from src.training.steps.market_analysis.gmm_report_generator import GMMReportGenerator
+                        reporter = GMMReportGenerator()
+                        reporter.generate_report(results, symbol=self.context.get("symbol", "UNKNOWN"), timeframe=self.context.get("timeframe", "UNKNOWN"))
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate GMM report: {e}")
                     
                     return enhanced
                 else:
@@ -1537,7 +3062,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                     features[col] = pd.to_numeric(features[col], downcast='float')
                 elif features[col].dtype == 'int64':
                     features[col] = pd.to_numeric(features[col], downcast='integer')
-            
+
             # Identify and convert sparse features
             sparse_cols = []
             for col in features.columns:
@@ -1545,14 +3070,140 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                     sparsity = (features[col] == 0).mean()
                     if sparsity > self.memory_config.sparse_threshold:
                         sparse_cols.append(col)
-            
+
             if sparse_cols:
                 tprint_info(f"🎯 Converting {len(sparse_cols)} sparse features to optimized format")
                 # Note: Could use pandas.SparseDtype here if needed
                 # For now, just identify them for potential future optimization
-            
+
             return features
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Feature optimization failed: {e}")
             return features
+
+    def _aggregate_specialist_metrics(self) -> Dict[str, Any]:
+        """Aggregate performance metrics across all trained specialists."""
+        if not self._specialist_metrics:
+            return {}
+
+        try:
+            # Extract metric values
+            auc_scores = [m.get('auc', 0) for m in self._specialist_metrics.values() if m.get('auc', 0) > 0]
+            mi_scores = [m.get('mi_score', 0) for m in self._specialist_metrics.values() if m.get('mi_score', 0) > 0]
+            best_auc_scores = [m.get('best_auc', 0) for m in self._specialist_metrics.values() if m.get('best_auc', 0) > 0]
+            best_mi_scores = [m.get('best_mi', 0) for m in self._specialist_metrics.values() if m.get('best_mi', 0) > 0]
+
+            # Calculate aggregate statistics
+            ensemble_metrics = {
+                'total_specialists': len(self._specialist_metrics),
+                'specialists_with_auc': len(auc_scores),
+                'specialists_with_mi': len(mi_scores),
+            }
+
+            if auc_scores:
+                ensemble_metrics.update({
+                    'mean_auc': float(np.mean(auc_scores)),
+                    'std_auc': float(np.std(auc_scores)),
+                    'best_auc_overall': float(max(auc_scores)),
+                    'worst_auc': float(min(auc_scores)),
+                    'auc_above_55': sum(1 for auc in auc_scores if auc > 0.55),
+                    'auc_above_60': sum(1 for auc in auc_scores if auc > 0.60),
+                })
+
+            if mi_scores:
+                ensemble_metrics.update({
+                    'mean_mi': float(np.mean(mi_scores)),
+                    'std_mi': float(np.std(mi_scores)),
+                    'best_mi_overall': float(max(mi_scores)),
+                    'worst_mi': float(min(mi_scores)),
+                    'mi_above_01': sum(1 for mi in mi_scores if mi > 0.01),
+                    'mi_above_02': sum(1 for mi in mi_scores if mi > 0.02),
+                })
+
+            if best_auc_scores:
+                ensemble_metrics['best_auc_mean'] = float(np.mean(best_auc_scores))
+
+            if best_mi_scores:
+                ensemble_metrics['best_mi_mean'] = float(np.mean(best_mi_scores))
+
+            # Compliance and readiness metrics
+            ensemble_metrics.update({
+                'compliant_specialists': sum(1 for m in self._specialist_metrics.values() if m.get('compliance', False)),
+                'ensemble_ready_specialists': sum(1 for m in self._specialist_metrics.values() if m.get('ensemble_ready', False)),
+                'training_success_rate': sum(1 for m in self._specialist_metrics.values() if m.get('training_success', False)) / len(self._specialist_metrics),
+            })
+
+            return ensemble_metrics
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Metrics aggregation failed: {e}")
+            return {
+                'total_specialists': len(self._specialist_metrics),
+                'aggregation_error': str(e)
+            }
+
+    def _save_specialist_metrics_csv(self, symbol: str, exchange: str, timeframe: str, direction: str) -> None:
+        """Save comprehensive specialist metrics to CSV file with datetime stamp."""
+        try:
+            import pandas as pd
+            from datetime import datetime
+
+            if not self._specialist_metrics:
+                tprint_warning("⚠️ No specialist metrics to save")
+                return
+
+            # Prepare data for CSV
+            csv_data = []
+
+            for specialist_name, metrics in self._specialist_metrics.items():
+                row = {
+                    'timestamp': datetime.now().isoformat(),
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'specialist_name': specialist_name,
+                    'training_success': metrics.get('training_success', False),
+                    'auc': metrics.get('auc', 0.0),
+                    'mi_score': metrics.get('mi_score', 0.0),
+                    'best_auc': metrics.get('best_auc', 0.0),
+                    'best_mi': metrics.get('best_mi', 0.0),
+                    'n_features': metrics.get('n_features', 0),
+                    'n_samples': metrics.get('n_samples', 0),
+                    'compliance': metrics.get('compliance', False),
+                    'enhanced_mi_score': metrics.get('enhanced_mi_score', 0.0),
+                    'ensemble_ready': metrics.get('ensemble_ready', False),
+                    'hyperparams_n_estimators': metrics.get('hyperparams', {}).get('n_estimators', 0),
+                    'hyperparams_max_depth': metrics.get('hyperparams', {}).get('max_depth', 0),
+                    'hyperparams_learning_rate': metrics.get('hyperparams', {}).get('learning_rate', 0.0),
+                    'hyperparams_subsample': metrics.get('hyperparams', {}).get('subsample', 0.0),
+                    'hyperparams_colsample_bytree': metrics.get('hyperparams', {}).get('colsample_bytree', 0.0),
+                    'hyperparams_gamma': metrics.get('hyperparams', {}).get('gamma', 0.0),
+                    'hyperparams_reg_alpha': metrics.get('hyperparams', {}).get('reg_alpha', 0.0),
+                    'hyperparams_reg_lambda': metrics.get('hyperparams', {}).get('reg_lambda', 0.0),
+                    'hyperparams_min_child_weight': metrics.get('hyperparams', {}).get('min_child_weight', 0),
+                }
+                csv_data.append(row)
+
+            # Create DataFrame and save to CSV
+            df = pd.DataFrame(csv_data)
+
+            # Generate filename with datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"specialist_metrics_{symbol}_{timestamp}.csv"
+            filepath = Path("outcomes") / filename
+
+            # Ensure outcomes directory exists
+            Path("outcomes").mkdir(exist_ok=True)
+
+            # Save CSV
+            df.to_csv(filepath, index=False)
+
+            tprint_success(f"✅ Specialist metrics saved to {filepath}")
+            tprint_info(f"📊 Saved metrics for {len(csv_data)} specialists with {len(df.columns)} metrics each")
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to save specialist metrics CSV: {e}")
+            import traceback
+            tprint_error(f"Traceback: {traceback.format_exc()}")

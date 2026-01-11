@@ -1448,22 +1448,75 @@ class KlinesParquetManager:
             if new_data is None or len(new_data) == 0:
                 return True
 
-            # Read existing data
-            existing_data = self.read_data(symbol, interval, data_type=data_type)
+            # Ensure new_data has index as datetime and is sorted
+            if not isinstance(new_data.index, pd.DatetimeIndex):
+                if 'timestamp' in new_data.columns:
+                    new_data.index = pd.to_datetime(new_data['timestamp'])
+                else:
+                    new_data.index = pd.to_datetime(new_data.index)
+            
+            # Normalize index to UTC naive
+            if hasattr(new_data.index, 'tz') and new_data.index.tz is not None:
+                new_data.index = new_data.index.tz_convert('UTC').tz_localize(None)
+            
+            new_data = new_data.sort_index()
 
-            if existing_data is None or len(existing_data) == 0:
-                # No existing data, just write new data
-                return self.write_data(new_data, symbol, interval, data_type, overwrite=True)
+            # Process by partition (Month/Year) to avoid loading all data
+            # Group new data by year and month
+            for (year, month), partition_data in new_data.groupby([new_data.index.year, new_data.index.month]):
+                # Define date range for this partition
+                start_date = datetime(year, month, 1)
+                if month == 12:
+                    end_date = datetime(year + 1, 1, 1) - timedelta(milliseconds=1)
+                else:
+                    end_date = datetime(year, month + 1, 1) - timedelta(milliseconds=1)
+                
+                # Check if we have existing data for this specific month
+                existing_partition = self.read_data(
+                    symbol, 
+                    interval, 
+                    start_date=start_date, 
+                    end_date=end_date, 
+                    data_type=data_type
+                )
 
-            # Combine with existing data
-            combined_data = pd.concat([existing_data, new_data], ignore_index=False)
-            combined_data = combined_data.sort_index()
+                # Ensure partition_data has year and month columns for partitioning
+                partition_data = partition_data.copy()
+                partition_data['year'] = year
+                partition_data['month'] = month
+                
+                if existing_partition is None or existing_partition.empty:
+                    # No existing data for this month, just write the new data
+                    combined_partition = partition_data
+                    self.logger.info(f"📝 Writing new partition for {symbol} {interval}: {year}-{month:02d}")
+                else:
+                    # Combine existing partition with new partition data
+                    combined_partition = pd.concat([existing_partition, partition_data], ignore_index=False)
+                    
+                    # Normalize index of combined data (crucial for valid sorting)
+                    if hasattr(combined_partition.index, 'tz') and combined_partition.index.tz is not None:
+                        combined_partition.index = combined_partition.index.tz_convert('UTC').tz_localize(None)
+                    
+                    combined_partition = combined_partition.sort_index()
+                    
+                    # Remove duplicates (keep last)
+                    combined_partition = combined_partition[~combined_partition.index.duplicated(keep='last')]
+                    self.logger.info(f"🔄 Updating partition for {symbol} {interval}: {year}-{month:02d} (Merged {len(existing_partition)} + {len(partition_data)} -> {len(combined_partition_data if 'combined_partition_data' in locals() else combined_partition)} records)")
 
-            # Remove duplicates (keep last occurrence)
-            combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
-
-            # Write updated data
-            return self.write_data(combined_data, symbol, interval, data_type, overwrite=True)
+                # Write just this partition
+                success = self.write_data(
+                    combined_partition, 
+                    symbol, 
+                    interval, 
+                    data_type, 
+                    overwrite=True
+                )
+                
+                if not success:
+                    self.logger.error(f"❌ Failed to write partition {year}-{month:02d} for {symbol} {interval}")
+                    return False
+                    
+            return True
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to update data: {e}")

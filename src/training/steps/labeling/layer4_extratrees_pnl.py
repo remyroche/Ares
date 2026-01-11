@@ -38,6 +38,7 @@ from src.feature_generation.categories.ensemble_disagreement import EnsembleDisa
 from src.training.steps.labeling.conditional_mutual_information import ConditionalMutualInformationSelector, cmi_feature_selection
 from src.training.steps.labeling.contextual_residual_features import ContextualResidualFeatureGenerator, generate_contextual_residual_features
 from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
+from src.training.steps.labeling.constraint_utils import compute_ridge_monotonic_constraints
 
 
 def calculate_structural_break_scores(df: pd.DataFrame, price_col: str = 'close') -> pd.DataFrame:
@@ -686,6 +687,20 @@ def train_layer4_extratrees(
         sample_weights = np.abs(returns_aligned)
         sample_weights = sample_weights / (sample_weights.mean() + 1e-8)  # Normalize
         tprint_info(f"📊 Using sample weights (mean: {sample_weights.mean():.3f})")
+
+    tprint_info("🔒 Analyzing Monotonic Constraints (Ridge)...")
+    constraints_dict = compute_ridge_monotonic_constraints(
+        X, y, alpha=1.0, threshold=2.0, verbose=False
+    )
+    # Convert to array for sklearn
+    # -1: decreasing, 0: no constraint, 1: increasing
+    monotonic_cst = np.array([constraints_dict.get(col, 0) for col in X.columns])
+    
+    n_constrained = np.sum(monotonic_cst != 0)
+    if n_constrained > 0:
+        tprint_info(f"   🔒 Enforcing constraints on {n_constrained} features in ExtraTrees")
+    else:
+        tprint_info("   No significant constraints found to enforce.")
     
     # 5. Hyperparameter optimization focused on PnL and Sortino
     def objective(trial):
@@ -704,7 +719,8 @@ def train_layer4_extratrees(
             min_samples_leaf=min_samples_leaf,
             max_features=max_features,
             random_state=42,
-            n_jobs=-1
+            n_jobs=-1,
+            monotonic_cst=monotonic_cst # Apply constraints (sklearn 1.4+)
         )
         
         # Cross-validation with time series split
@@ -772,6 +788,7 @@ def train_layer4_extratrees(
     final_model = ExtraTreesClassifier(
         random_state=42,
         n_jobs=-1,
+        monotonic_cst=monotonic_cst, # Apply constraints
         **best_params
     )
     

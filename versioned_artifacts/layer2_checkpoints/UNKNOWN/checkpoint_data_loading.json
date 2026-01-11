@@ -1,0 +1,14 @@
+{
+  "step_name": "data_loading",
+  "step_index": 0,
+  "timestamp": "20260111_203032",
+  "symbol": "UNKNOWN",
+  "config_hash": "99914b932bd3",
+  "data_keys": [
+    "df",
+    "config"
+  ],
+  "json_data": {
+    "config": {}
+  }
+}

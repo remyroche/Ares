@@ -39,7 +39,7 @@ class CausalSurpriseDetector:
     
     def __init__(
         self,
-        surprise_threshold: float = 1.5,
+        surprise_threshold: float = 1.2,
         rolling_window: int = 100,
         min_specialists: int = 2,
         structural_break_window: int = 50,
@@ -262,9 +262,9 @@ class CausalSurpriseDetector:
                 rolling_mad = errors.rolling(self.rolling_window, min_periods=min(self.rolling_window, 20)).apply(get_mad)
                 
                 # Standardize: current error / Rolling MAD (robust sigma)
-                # Apply floor of Global MAD + absolute unit floor (1.0 for price)
-                global_mad = self.specialist_metadata_.get(specialist_name, {}).get('global_mad', 1.0)
-                sigma_floor = np.maximum(global_mad, 1.0)
+                # Apply floor of Global MAD + absolute unit floor (1e-6 for small scale metrics)
+                global_mad = self.specialist_metadata_.get(specialist_name, {}).get('global_mad', 1e-6)
+                sigma_floor = np.maximum(global_mad, 1e-6)
                 surprise_scores = np.abs(errors - rolling_median) / (np.maximum(rolling_mad, sigma_floor))
                 
             elif method == "magnitude":
@@ -272,8 +272,8 @@ class CausalSurpriseDetector:
                 rolling_mad = errors.rolling(self.rolling_window, min_periods=min(self.rolling_window, 20)).apply(
                     lambda x: np.median(np.abs(x - np.median(x)))
                 )
-                global_mad = self.specialist_metadata_.get(specialist_name, {}).get('global_mad', 1.0)
-                sigma_floor = np.maximum(global_mad, 1.0)
+                global_mad = self.specialist_metadata_.get(specialist_name, {}).get('global_mad', 1e-6)
+                sigma_floor = np.maximum(global_mad, 1e-6)
                 surprise_scores = np.abs(errors) / (np.maximum(rolling_mad, sigma_floor))
                 
             elif method == "combined":
@@ -283,8 +283,8 @@ class CausalSurpriseDetector:
                     lambda x: np.median(np.abs(x - np.median(x)))
                 )
                 
-                global_mad = self.specialist_metadata_.get(specialist_name, {}).get('global_mad', 1.0)
-                sigma_floor = np.maximum(global_mad, 1.0)
+                global_mad = self.specialist_metadata_.get(specialist_name, {}).get('global_mad', 1e-6)
+                sigma_floor = np.maximum(global_mad, 1e-6)
                 
                 zscore_surprise = np.abs(errors - rolling_median) / (np.maximum(rolling_mad, sigma_floor))
                 magnitude_surprise = np.abs(errors) / (np.maximum(rolling_mad, sigma_floor))
@@ -364,6 +364,14 @@ class CausalSurpriseDetector:
             if self.verbose:
                 tprint_error(f"❌ Structural break detection failed for {specialist_name}: {e}")
             return pd.Series(0, index=self.specialist_errors_[specialist_name].index)
+
+    def _compute_rolling_entropy(self, series: pd.Series, window: int = 100, bins: int = 10) -> pd.Series:
+        """Compute rolling Shannon entropy."""
+        def entropy_func(x):
+            counts, _ = np.histogram(x, bins=bins, density=True)
+            return stats.entropy(counts + 1e-10) # 1e-10 to avoid log(0)
+            
+        return series.rolling(window=window).apply(entropy_func, raw=True).fillna(0)
     
     def set_zone_score_weights(
         self,
@@ -387,35 +395,21 @@ class CausalSurpriseDetector:
         self,
         spectral_reliability: Optional[Dict[str, Dict[str, Any]]] = None,
         exposure_scalar: float = 1.0,
-        regime_vol: Optional[pd.Series] = None
+        regime_vol: Optional[pd.Series] = None,
+        market_data: Optional[pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
         Aggregate surprise scores across all specialists.
-        
-        Args:
-            spectral_reliability: Optional spectral reliability metrics
-            exposure_scalar: Exposure scaling factor
-            regime_vol: Optional regime volatility series for enhanced weighting
-            
-        Returns:
-            DataFrame with aggregated surprise metrics
-            
-        Raises:
-            ValueError: If insufficient specialists or empty data
         """
         try:
             if self.verbose:
                 tprint_info("🔄 Aggregating Specialist Surprise (Continuous Framework)...")
             
             if len(self.specialist_errors_) < self.min_specialists:
-                if self.verbose:
-                    tprint_error(f"❌ FAIL FAST: Insufficient specialists: {len(self.specialist_errors_)} < {self.min_specialists}")
                 raise ValueError(f"Insufficient specialists for surprise aggregation: {len(self.specialist_errors_)} < {self.min_specialists}")
             
             errors_df = self._build_error_frame()
             if errors_df.empty:
-                if self.verbose:
-                    tprint_error("❌ FAIL FAST: Empty error frame - no specialist data available")
                 raise ValueError("Empty error frame - no specialist data available")
             
             # Step 1: Compute Soft Surprises (Logistic Sigmoid Mapping)
@@ -425,21 +419,28 @@ class CausalSurpriseDetector:
             # Step 2: Compute Global ZoneScore (Continuous Gradient)
             zone_score = self.compute_zone_score(soft_surprise_df)
             
-            # Step 3: Compute Legacy/Discrete metrics for backward compatibility
-            surprise_df = self._compute_batch_surprises(errors_df, method="combined")
-            self.specialist_surprises_ = surprise_df  # Required for generate_causal_events
+            # Step 3: Compute Discrete Metrics + NORMALIZATION
+            surprise_df = self._compute_batch_surprises(errors_df, method="combined", market_data=market_data)
+            self.specialist_surprises_ = surprise_df
             
-            # Step 4: Integrate regime_vol if provided for enhanced weighting
+            # Step 4: Integrate regime_vol if provided
             if regime_vol is not None and not regime_vol.empty:
-                # Align regime_vol with surprise_df index
                 regime_vol_aligned = regime_vol.reindex(surprise_df.index).fillna(0.0)
-                # Use regime volatility to modulate surprise intensity
-                regime_weight = 1.0 + 0.5 * np.tanh(regime_vol_aligned)  # Scale: [0.5, 1.5]
+                regime_weight = 1.0 + 0.5 * np.tanh(regime_vol_aligned)
                 surprise_df = surprise_df.multiply(regime_weight, axis=0)
                 if self.verbose:
                     tprint_info(f"📊 Integrated regime volatility weighting (mean factor: {regime_weight.mean():.3f})")
             
-            # Build reliability weights by blending Spectral + detector scores
+            # Step 5: Specialist Weighting (Inverse-Variance + Reliability)
+            inv_var_weights = {}
+            for spec_name, meta in self.specialist_metadata_.items():
+                std_err = meta.get('std_error', 1.0)
+                inv_var_weights[spec_name] = 1.0 / (std_err**2 + 1e-4)
+            
+            inv_var_series = pd.Series(inv_var_weights).reindex(surprise_df.columns).fillna(0.1)
+            inv_var_series /= inv_var_series.sum()
+
+            # Reliability weights
             spectral_scores = pd.Series()
             if spectral_reliability:
                 spectral_scores = pd.Series({
@@ -452,29 +453,30 @@ class CausalSurpriseDetector:
             })
             reliability = pd.concat([spectral_scores, detector_scores], axis=1)
             if reliability.empty:
-                weight_series = pd.Series(1.0, index=surprise_df.columns)
+                reliability_weight = pd.Series(1.0, index=surprise_df.columns)
             else:
                 reliability.columns = ['spectral', 'detector']
-                reliability['spectral'] = reliability['spectral'].clip(lower=0, upper=1)
-                reliability['detector'] = reliability['detector'].clip(lower=0, upper=1)
                 reliability = reliability.reindex(surprise_df.columns).fillna(0.0)
-                reliability['blended'] = 0.6 * reliability['spectral'] + 0.4 * reliability['detector']
-                reliability['blended'] = reliability['blended'].replace(0.0, np.nan)
-                reliability['blended'] = reliability['blended'].fillna(
-                    reliability[['spectral', 'detector']].max(axis=1)
-                )
-                reliability['blended'] = reliability['blended'].replace(0.0, 0.1)
-                weight_series = reliability['blended']
-            weight_series = weight_series.reindex(surprise_df.columns).fillna(0.1)
-            weight_series = weight_series / weight_series.sum()
+                blended = 0.6 * reliability['spectral'] + 0.4 * reliability['detector']
+                reliability_weight = blended.fillna(reliability[['spectral', 'detector']].max(axis=1)).replace(0.0, 0.1)
+            
+            reliability_weight = reliability_weight.reindex(surprise_df.columns).fillna(0.1)
+            
+            # Combine
+            final_weights = inv_var_series * reliability_weight
+            weight_series = final_weights / final_weights.sum()
 
-            # Aggregation logic with reliability-weighted statistics
+            # Aggregation logic
             aggregated = pd.DataFrame(index=surprise_df.index)
             aggregated['max_surprise'] = (surprise_df * weight_series).max(axis=1)
             aggregated['mean_surprise'] = (surprise_df * weight_series).sum(axis=1)
             weighted_consensus = (surprise_df > self.surprise_threshold).mul(weight_series, axis=1).sum(axis=1)
             aggregated['surprise_consensus'] = weighted_consensus * float(len(weight_series))
             
+            # Aggregate Signed Errors for Directionality
+            signed_errors = errors_df.reindex(surprise_df.columns, axis=1).fillna(0)
+            aggregated['mean_signed_error'] = (signed_errors * weight_series).sum(axis=1)
+
             # Define break_df for total breaks calculation
             break_df = (surprise_df > self.surprise_threshold).astype(int)
             aggregated['total_breaks'] = break_df.sum(axis=1)
@@ -486,43 +488,31 @@ class CausalSurpriseDetector:
             adjusted_zone_score = combined_zone_score.reindex(aggregated.index).fillna(0.0)
             adjusted_zone_score *= float(getattr(self, "zone_score_exposure", 1.0)) * float(exposure_scalar)
             aggregated['zone_score'] = adjusted_zone_score.clip(0.0, self.zone_score_cap)
-            denom = float(zone_levels.shape[1]) if zone_levels.shape[1] > 0 else 1.0
-            aggregated['zone3_ratio'] = (zone_levels == 3.0).sum(axis=1) / denom
-            aggregated['zone2_ratio'] = (zone_levels == 2.0).sum(axis=1) / denom
             
-            # Map ZoneScore to Discrete Zones for reporting/filtering
-            # Zone 1: [0, 0.33], Zone 2: [0.33, 0.66], Zone 3: [0.66, 1.0]
+            # Surprise Density
+            if len(aggregated) > 0:
+                surprise_density = (aggregated['zone_score'] > 0.33).mean()
+                self.surprise_density_ = surprise_density
+            
+            aggregated['causal_surprise'] = (aggregated['zone_score'] > 0.25).astype(int)
+            
+            # Discrete Zones
             aggregated['surprise_zone'] = pd.cut(
-                zone_score,
-                bins=[-np.inf, 0.33, 0.66, np.inf],
+                aggregated['zone_score'],
+                bins=[-np.inf, 0.25, 0.66, np.inf],
                 labels=[1, 2, 3]
             ).astype(float).fillna(1)
             
-            # Surprise Density Monitoring
-            n_samples = len(aggregated)
-            if n_samples > 0:
-                # Use a soft threshold for density reporting
-                surprise_density = (zone_score > 0.33).mean()
-                self.surprise_density_ = surprise_density
-                if self.verbose:
-                    tprint_info(f"📊 Surprise Density (Soft): {surprise_density:.2%} (Target: < 15%)")
-            
-            # Combined surprise indicator (True if outside Zone 1)
-            aggregated['causal_surprise'] = (zone_score > 0.33).astype(int)
-            
-            # Store results
             self.surprise_events_ = aggregated
             
             if self.verbose:
                 tprint_success(f"✅ Continuous surprise aggregation complete:")
-                tprint_info(f"   - ZoneScore Mean: {zone_score.mean():.4f}")
+                tprint_info(f"   - ZoneScore Mean: {aggregated['zone_score'].mean():.4f}")
             
             return aggregated
         except Exception as e:
             if self.verbose:
                 tprint_error(f"❌ FAIL FAST: Surprise aggregation failed: {e}")
-                tprint_error(f"   Specialist count: {len(self.specialist_errors_)}")
-                tprint_error(f"   Error frame shape: {errors_df.shape if 'errors_df' in locals() else 'N/A'}")
             raise ValueError(f"Causal surprise aggregation failed: {e}") from e
             
     def _build_error_frame(self) -> pd.DataFrame:
@@ -542,72 +532,84 @@ class CausalSurpriseDetector:
     def _compute_batch_surprises(
         self,
         errors_df: pd.DataFrame,
-        method: str = "combined"
+        method: str = "combined",
+        market_data: Optional[pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
         Compute surprise scores for all specialists using vectorized rolling stats.
+        Includes optional Normalization (Volatility, Entropy, Liquidity).
         """
         window = self.rolling_window
         min_periods = min(window, 20)
         
         rolling_median = errors_df.rolling(window=window, min_periods=min_periods).median()
         
-        
-        # 2026 Optimization: Use Numba for rolling MAD (100x speedup)
-        # Replaces slow rolling().apply(mad_func) which is Python-loop bound
+        # 1. Compute Rolling MAD (Base Sigma)
         try:
             mads_dict = {}
             for col in errors_df.columns:
-                # Numba requires dense float arrays
-                # We assume fillna(0) is safe for error/diff arrays
                 values = errors_df[col].fillna(0).astype(np.float64).values
                 mads = _numba_rolling_mad(values, window)
                 mads_dict[col] = mads
-            
             rolling_mad = pd.DataFrame(mads_dict, index=errors_df.index)
-            
-        except Exception as e:
-            if self.verbose:
-                tprint_error(f"⚠️ Numba MAD failed ({e}), falling back to slow pandas...")
-            
+        except Exception:
             def mad_func(values: np.ndarray) -> float:
                 median = np.median(values)
                 return np.median(np.abs(values - median))
-            
-            rolling_mad = errors_df.rolling(window=window, min_periods=min_periods).apply(
-                mad_func,
-                raw=True
-            )
+            rolling_mad = errors_df.rolling(window=window, min_periods=min_periods).apply(mad_func, raw=True)
         
-        # Apply Robust Floors (2026 Pro Secret)
-        # 1. Individual specialist global MAD floor
-        # 2. Hard absolute floor (1.0)
+        # Apply Robust Floors
         global_mads = {}
         for col in errors_df.columns:
             meta = self.specialist_metadata_.get(col, {})
-            # Use max(global_mad, 1.0) as floor for each specialist
-            global_mads[col] = max(meta.get('global_mad', 1.0), 1.0)
-        
-        # Convert to Series for easy broadcasting
+            global_mads[col] = max(meta.get('global_mad', 1e-6), 1e-6)
         sigma_floors = pd.Series(global_mads)
-        
-        # Apply floors: max(rolling_mad, sigma_floor)
-        # Note: pandas will align columns automatically with axis=1
         rolling_mad = rolling_mad.clip(lower=sigma_floors, axis=1)
         
+        # 2. Compute Raw Surprise
         if method == "zscore" or method == "robust_zscore":
             surprise_df = (errors_df - rolling_median).abs() / rolling_mad
-        
         elif method == "magnitude":
             surprise_df = errors_df.abs() / rolling_mad
-        
         elif method == "combined":
             zscore_surprise = (errors_df - rolling_median).abs() / rolling_mad
             magnitude_surprise = errors_df.abs() / rolling_mad
             surprise_df = 0.6 * zscore_surprise + 0.4 * magnitude_surprise
         else:
             raise ValueError(f"Unknown surprise method: {method}")
-        
+            
+        # 3. Apply Advanced Normalization (Volatility, Entropy, Liquidity) if Market Data available
+        if market_data is not None:
+            try:
+                # Align market data
+                mkt = market_data.reindex(errors_df.index).ffill()
+                
+                # A) Volatility Normalization
+                if 'close' in mkt.columns:
+                    returns = mkt['close'].pct_change().fillna(0)
+                    vol = returns.rolling(window=window).std().fillna(1.0)
+                    vol_factor = vol.replace(0, 0.001)
+                    surprise_df = surprise_df.div(vol_factor * 100, axis=0)
+
+                # B) Entropy Normalization (H)
+                if 'close' in mkt.columns:
+                    returns = mkt['close'].pct_change().fillna(0)
+                    entropy = self._compute_rolling_entropy(returns, window=window)
+                    entropy_factor = 1.0 + entropy
+                    surprise_df = surprise_df.div(entropy_factor, axis=0)
+                
+                # C) Liquidity Normalization (L)
+                if 'close' in mkt.columns and 'volume' in mkt.columns:
+                    returns = mkt['close'].pct_change().fillna(0)
+                    vol = returns.rolling(window=window).std().fillna(1e-6)
+                    volume_ma = mkt['volume'].rolling(window=window).mean().fillna(1e-6)
+                    L = volume_ma / (vol + 1e-9)
+                    liq_score = L / (L + 1.0)
+                    surprise_df = surprise_df.mul(liq_score, axis=0)
+                    
+            except Exception as e:
+                tprint_warning(f"⚠️ Market Data Normalization failed: {e}")
+
         return surprise_df.fillna(0)
     
 
@@ -701,8 +703,9 @@ class CausalSurpriseDetector:
     
     def generate_causal_events(
         self,
-        event_threshold: float = 0.3,  # Lowered from 0.5 to capture more events
-        min_event_separation: float = 0.25  # Lowered from 1 hour to 15 minutes
+        event_threshold: float = 0.25,  # Lowered from 0.5 to capture more events
+        min_event_separation: float = 0.25,  # Lowered from 1 hour to 15 minutes
+        regime_vol: Optional[pd.Series] = None
     ) -> Dict[int, Dict[str, Any]]:
         """
         Generate causal surprise events from aggregated data.
@@ -710,6 +713,7 @@ class CausalSurpriseDetector:
         Args:
             event_threshold: Threshold for event generation (lowered default to 0.3)
             min_event_separation: Minimum separation between events in hours (lowered to 0.25)
+            regime_vol: Optional volatility series for Regime Gating (Noise Filtering)
             
         Returns:
             Dictionary of causal events
@@ -725,61 +729,162 @@ class CausalSurpriseDetector:
                 tprint_warning("   ⚠️ No surprise events found after aggregation - check specialist registration")
                 return {}
             
-            # Find event candidates: only pick the START of surprise sequences
-            # Rule: event_time = first_bar_where_surprise_crosses_threshold
-            is_surprised = self.surprise_events_['causal_surprise'] == 1
+            # --- 1. Adaptive Quantile Thresholding ---
+            # Instead of fixed threshold, use rolling 98th percentile of surprise magnitudes
+            # But ensure it doesn't fall below hard floor 'event_threshold'
+            scores = self.surprise_events_['max_surprise']
+            rolling_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.98) # 30 days of 15m
+            adaptive_threshold = rolling_threshold.fillna(event_threshold).clip(lower=event_threshold)
+            
+            # Use adaptive threshold
+            is_surprised = scores > adaptive_threshold
+
+            # --- 1b. Regime Gating (Noise Filtering) ---
+            # User Policy: Filter bottom 15% using (Entropy × VolSpike) metric
+            # Entropy: Local Shannon Entropy of returns (captures information content)
+            # VolSpike: Volume spike ratio (current bar / prior 10-bar mean)
+            if regime_vol is not None:
+                # regime_vol is actually market_data passed from Layer 2
+                # We need to compute our composite noise metric here
+                mkt = regime_vol if isinstance(regime_vol, pd.DataFrame) else None
+                
+                if mkt is not None and 'close' in mkt.columns and 'volume' in mkt.columns:
+                    # Align to surprise scores index
+                    mkt_aligned = mkt.reindex(scores.index).ffill()
+                    
+                    # A) Compute Local Shannon Entropy (from returns)
+                    returns = mkt_aligned['close'].pct_change().fillna(0)
+                    entropy = self._compute_rolling_entropy(returns, window=100)
+                    
+                    # B) Compute Volume Spike Ratio (current / prior 10-bar mean)
+                    volume = mkt_aligned['volume'].fillna(0)
+                    vol_mean_10 = volume.rolling(window=10, min_periods=1).mean()
+                    vol_spike = volume / (vol_mean_10 + 1e-9)
+                    
+                    # C) Composite Noise Metric: Entropy × VolSpike
+                    # Higher = more information + volume activity = NOT noise
+                    # Lower  = low entropy + low volume = NOISE
+                    noise_metric = entropy * vol_spike
+                    
+                    # Calculate 10th percentile threshold (User: 10% instead of 15%)
+                    noise_threshold = noise_metric.quantile(0.10)
+                    
+                    # Identify Noise Regime (Bottom 15%)
+                    is_noise = noise_metric < noise_threshold
+                    
+                    # Filter
+                    original_count = is_surprised.sum()
+                    is_surprised = is_surprised & (~is_noise)
+                    filtered_count = is_surprised.sum()
+                    
+                    if self.verbose and (original_count != filtered_count):
+                        removed = original_count - filtered_count
+                        tprint_info(f"   🛡️ Regime Gating (Entropy×VolSpike): Filtered {removed} events (threshold: {noise_threshold:.4f})")
+                else:
+                    # Fallback: If regime_vol is a Series (old behavior), use it directly
+                    aligned_vol = regime_vol.reindex(scores.index).fillna(0) if isinstance(regime_vol, pd.Series) else pd.Series(0, index=scores.index)
+                    vol_threshold = aligned_vol.quantile(0.15)
+                    is_noise = aligned_vol < vol_threshold
+                    original_count = is_surprised.sum()
+                    is_surprised = is_surprised & (~is_noise)
+                    filtered_count = is_surprised.sum()
+                    if self.verbose and (original_count != filtered_count):
+                        removed = original_count - filtered_count
+                        tprint_info(f"   🛡️ Regime Gating (Vol Fallback): Filtered {removed} events (< {vol_threshold:.4f})")
+            
+            # --- 2. Regime Break Retention (Fix for "Slow-Moving") ---
+            # Max duration: 96 bars (24 hours on 15m) - previously 48
+            # If > max_duration, we flag as "Structural Break" but KEEP the start
+            max_duration = 96 
+            
+            # Find contiguous blocks
+            block_id = (is_surprised != is_surprised.shift(1).fillna(False)).cumsum()
+            block_lengths = is_surprised.groupby(block_id).transform('count')
+            
+            # Determine type: 'novelty' (short) vs 'structural_break' (long)
+            # Only consider "on" blocks
+            event_types = pd.Series('none', index=is_surprised.index)
+            event_types[is_surprised & (block_lengths <= max_duration)] = 'novelty'
+            event_types[is_surprised & (block_lengths > max_duration)] = 'structural_break'
+            
+            # Generate mask for STARTS of events (Novelty OR Structural Break)
             surprise_start = is_surprised & (~is_surprised.shift(1).fillna(False))
-            surprise_mask = surprise_start
+            surprise_mask = surprise_start # We keep both!
             
-            # DIAGNOSTIC: Log how many raw surprise bars exist
-            raw_surprise_count = is_surprised.sum()
+            # DIAGNOSTIC
             if self.verbose:
-                tprint_info(f"   📊 Raw surprise bars: {raw_surprise_count} of {len(is_surprised)} ({100*raw_surprise_count/max(1,len(is_surprised)):.2f}%)")
-                tprint_info(f"   📊 Surprise sequence starts: {surprise_start.sum()}")
-            
-            # DIAGNOSTIC: Log pre-time-barrier count
-            pre_time_barrier_count = surprise_mask.sum()
-            
-            # Apply Time Barrier (Filter slow-moving/persistent signals)
-            # If signal stays "surprised" for too long, it's a regime, not an event.
-            # Max duration: 24 bars (6 hours on 15m) - more lenient for structural events
-            max_duration = 48  # Increased from 24 to allow longer structural events (12 hours on 15m bars)
-            if isinstance(self.specialist_surprises_, pd.DataFrame):
-                # Detect persistent surprise blocks
-                is_surprised = (self.specialist_surprises_ > self.surprise_threshold).any(axis=1)
-                clean_mask = self._filter_slow_moving_events(is_surprised, max_duration)
-                surprise_mask = surprise_mask & clean_mask
-            
-            post_time_barrier_count = surprise_mask.sum()
-            if self.verbose:
-                tprint_info(f"   📊 After time-barrier filter: {pre_time_barrier_count} → {post_time_barrier_count} (removed {pre_time_barrier_count - post_time_barrier_count} slow-moving)")
-            
+                novelty_count = (event_types[surprise_mask] == 'novelty').sum()
+                break_count = (event_types[surprise_mask] == 'structural_break').sum()
+                tprint_info(f"   📊 Events detected: {surprise_mask.sum()} (Novelty: {novelty_count}, Break: {break_count})")
+
             event_candidates = self.surprise_events_[surprise_mask].index
             
-            # Filter events by minimum separation
+            # --- 3. Clustering & Min Separation ---
+            # Aggregate close events into clusters
             filtered_events = []
+            cluster_events = []
             last_event_time = None
-            rejected_by_separation = 0
             
-            for event_time in event_candidates:
-                if last_event_time is None or (event_time - last_event_time).total_seconds() / 3600 >= min_event_separation:
-                    filtered_events.append(event_time)
-                    last_event_time = event_time
+            cached_events = list(event_candidates)
+            
+            if not cached_events:
+                tprint_warning("   ⚠️ No events passed thresholds")
+                return {}
+
+            # Simple clustering: if within window, add to current cluster, else start new
+            current_cluster_start = cached_events[0]
+            current_cluster_count = 1
+            current_cluster_max_score = scores.loc[current_cluster_start]
+            
+            for i in range(1, len(cached_events)):
+                evt_time = cached_events[i]
+                time_diff = (evt_time - current_cluster_start).total_seconds() / 3600.0
+                
+                if time_diff < min_event_separation:
+                    # Within cluster
+                    current_cluster_count += 1
+                    current_cluster_max_score = max(current_cluster_max_score, scores.loc[evt_time])
                 else:
-                    rejected_by_separation += 1
+                    # Close previous cluster
+                    cluster_events.append({
+                        'time': current_cluster_start,
+                        'count': current_cluster_count,
+                        'score': current_cluster_max_score,
+                        'label_type': event_types.loc[current_cluster_start]
+                    })
+                    # Start new
+                    current_cluster_start = evt_time
+                    current_cluster_count = 1
+                    current_cluster_max_score = scores.loc[evt_time]
             
-            if self.verbose:
-                tprint_info(f"   📊 Min separation filter ({min_event_separation:.2f}h): rejected {rejected_by_separation} events")
-            
+            # Close last
+            cluster_events.append({
+                'time': current_cluster_start,
+                'count': current_cluster_count,
+                'score': current_cluster_max_score,
+                'label_type': event_types.loc[current_cluster_start]
+            })
+
             # Generate event dictionary
             causal_events = {}
             
-            for i, event_time in enumerate(filtered_events):
+            for evt in cluster_events:
+                event_time = evt['time']
                 event_data = self.surprise_events_.loc[event_time]
+                
+                # --- 4. Directional Split ---
+                # Determine direction from mean_signed_error
+                # If mean_signed_error > 0 => Prediction < Target => Price Shifted UP => UPSIDE SURPRISE
+                # If mean_signed_error < 0 => Prediction > Target => Price Shifted DOWN => DOWNSIDE SURPRISE
+                signed_err = event_data.get('mean_signed_error', 0.0)
+                direction = 1 if signed_err >= 0 else -1
                 
                 causal_events[event_time] = {
                     'type': 'causal_surprise',
-                    'strength': event_data['max_surprise'],
+                    'label_type': evt['label_type'], # 'novelty' or 'structural_break' (Semantic Ambiguity Fix)
+                    'strength': evt['score'], # Max score in cluster
+                    'cluster_size': evt['count'], # Clustering count
+                    'direction': direction, # Directional Split
                     'zone': int(event_data['surprise_zone']),
                     'consensus': event_data['surprise_consensus'],
                     'mean_surprise': event_data['mean_surprise'],
@@ -788,17 +893,16 @@ class CausalSurpriseDetector:
                     'total_breaks': event_data['total_breaks'],
                     'specialist_count': len(self.specialist_errors_),
                     'source': 'specialist_prediction_errors',
-                    'sigma_method': 'rolling_mad',
-                    'event_id': f"causal_surprise_{i}"
+                    'sigma_method': 'rolling_mad_normalized',
+                    'event_id': f"causal_surprise_{event_time.isoformat()}"
                 }
             
             self.surprise_events_ = causal_events
             
             if self.verbose:
-                tprint_success(f"✅ Generated {len(causal_events)} causal surprise events:")
-                tprint_info(f"   - Event threshold: {event_threshold}")
+                tprint_success(f"✅ Generated {len(causal_events)} causal surprise events (merged from clusters):")
+                tprint_info(f"   - Event threshold: Adaptive (Quantile 98%)")
                 tprint_info(f"   - Min separation: {min_event_separation} hours")
-                tprint_info(f"   - Candidates filtered: {len(event_candidates)} → {len(filtered_events)}")
             
             return causal_events
             

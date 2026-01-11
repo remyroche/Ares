@@ -120,7 +120,7 @@ class SpecialistFeatureDiagnostics:
         specialist_name: str = "unknown"
     ) -> Dict[str, Any]:
         """
-        Comprehensive feature quality assessment.
+        Comprehensive feature quality assessment with memory optimization.
 
         Analyzes feature quality across multiple dimensions:
         - Missing data patterns
@@ -140,62 +140,86 @@ class SpecialistFeatureDiagnostics:
         """
         cache_key = f"{specialist_name}_feature_analysis_{hash(str(features.shape))}"
         if cache_key in self._feature_cache:
+            tprint_info(f"📋 Using cached feature analysis for {specialist_name}")
             return self._feature_cache[cache_key]
 
         tprint_info(f"🔬 Running comprehensive feature analysis for {specialist_name}")
+        tprint_info(f"📊 Feature matrix shape: {features.shape}, Labels shape: {labels.shape}")
 
         try:
+            # MEMORY OPTIMIZATION: Process in steps and clean up intermediate results
+            results = {}
+            
             # 1. Basic quality metrics
+            tprint_info(f"🔍 Step 1/6: Analyzing feature quality for {specialist_name}...")
             quality_metrics = self._analyze_feature_quality(features)
-
+            results['quality_metrics'] = quality_metrics
+            tprint_success(f"✅ Quality analysis completed: {len(quality_metrics.missing_rates)} features analyzed")
+            # Clean up
+            del quality_metrics
+            
             # 2. Relationship analysis
+            tprint_info(f"🔍 Step 2/6: Analyzing feature relationships for {specialist_name}...")
             relationship_analysis = self._analyze_feature_relationships(features, labels)
-
+            results['relationship_analysis'] = relationship_analysis
+            tprint_success(f"✅ Relationship analysis completed")
+            # Clean up
+            del relationship_analysis
+            
             # 3. Distribution and statistical analysis
+            tprint_info(f"🔍 Step 3/6: Analyzing feature distributions for {specialist_name}...")
             distribution_analysis = self._analyze_feature_distributions(features)
-
-            # 4. Temporal stability analysis
+            results['distribution_analysis'] = distribution_analysis
+            tprint_success(f"✅ Distribution analysis completed")
+            # Clean up
+            del distribution_analysis
+            
+            # 4. Temporal stability
+            tprint_info(f"🔍 Step 4/6: Analyzing temporal stability for {specialist_name}...")
             stability_analysis = self._analyze_temporal_stability(features, labels)
-
-            # 5. Predictive power assessment
-            predictive_analysis = self._assess_predictive_power(features, labels, predictions)
-
-            # 6. Feature interaction analysis
+            results['stability_analysis'] = stability_analysis
+            tprint_success(f"✅ Temporal stability analysis completed")
+            # Clean up
+            del stability_analysis
+            
+            # 5. Predictive power
+            tprint_info(f"🔍 Step 5/6: Analyzing predictive power for {specialist_name}...")
+            predictive_analysis = self._analyze_predictive_power(features, labels, predictions)
+            results['predictive_analysis'] = predictive_analysis
+            tprint_success(f"✅ Predictive power analysis completed")
+            # Clean up
+            del predictive_analysis
+            
+            # 6. Feature interactions
+            tprint_info(f"🔍 Step 6/6: Analyzing feature interactions for {specialist_name}...")
             interaction_analysis = self._analyze_feature_interactions(features, labels)
-
-            # 7. Overall quality scoring
-            overall_quality = self._compute_overall_quality_score(
-                quality_metrics, relationship_analysis, stability_analysis, predictive_analysis
-            )
-
-            results = {
+            results['interaction_analysis'] = interaction_analysis
+            tprint_success(f"✅ Feature interaction analysis completed")
+            # Clean up
+            del interaction_analysis
+            
+            # Compile final results
+            final_results = {
                 'specialist_name': specialist_name,
                 'timestamp': datetime.now().isoformat(),
-                'quality_metrics': quality_metrics,
-                'relationship_analysis': relationship_analysis,
-                'distribution_analysis': distribution_analysis,
-                'stability_analysis': stability_analysis,
-                'predictive_analysis': predictive_analysis,
-                'interaction_analysis': interaction_analysis,
-                'overall_quality_score': overall_quality,
-                'recommendations': self._generate_feature_recommendations(
-                    quality_metrics, relationship_analysis, predictive_analysis
-                )
+                'feature_count': len(features.columns),
+                'sample_count': len(features),
+                **results
             }
-
+            
             # Cache results
-            self._feature_cache[cache_key] = results
-
-            tprint_success(f"✅ Feature analysis completed for {specialist_name}")
-            return results
-
+            self._feature_cache[cache_key] = final_results
+            
+            tprint_success(f"✅ Comprehensive feature analysis completed for {specialist_name}")
+            return final_results
+            
         except Exception as e:
             tprint_error(f"❌ Feature analysis failed for {specialist_name}: {e}")
-            return {
-                'specialist_name': specialist_name,
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
+            return {'error': str(e), 'specialist_name': specialist_name}
+        finally:
+            # MEMORY OPTIMIZATION: Force garbage collection
+            import gc
+            gc.collect()
 
     def advanced_orthogonalization_diagnostics(
         self,
@@ -425,7 +449,7 @@ class SpecialistFeatureDiagnostics:
         return quality
 
     def _analyze_feature_relationships(self, features: pd.DataFrame, labels: pd.Series) -> Dict[str, Any]:
-        """Analyze relationships between features and target."""
+        """Analyze relationships between features and target with optimizations and memory management."""
         relationships = {
             'mutual_information': {},
             'spearman_correlation': {},
@@ -433,39 +457,132 @@ class SpecialistFeatureDiagnostics:
             'feature_target_dependence': {}
         }
 
-        # Compute mutual information with target
-        for col in features.columns:
+        try:
+            # OPTIMIZATION 1: Sample data for faster analysis
+            n_samples = min(2000, len(features))  # Use max 2000 samples
+            if len(features) > n_samples:
+                sample_indices = np.random.choice(len(features), n_samples, replace=False)
+                sample_features = features.iloc[sample_indices].copy()  # Explicit copy
+                sample_labels = labels.iloc[sample_indices].copy()
+                tprint_info(f"   📊 Sampling {n_samples}/{len(features)} samples for faster analysis")
+            else:
+                sample_features = features.copy()
+                sample_labels = labels.copy()
+            
+            # MEMORY OPTIMIZATION: Clean up original references
+            del sample_indices
+            
+            # OPTIMIZATION 2: Vectorized operations
+            # Pre-compute clean data once
+            valid_mask = ~(sample_features.isnull().any(axis=1) | sample_labels.isnull())
+            clean_features = sample_features[valid_mask].copy()
+            clean_labels = sample_labels[valid_mask].copy()
+            
+            # MEMORY OPTIMIZATION: Clean up intermediate data
+            del sample_features, sample_labels, valid_mask
+            
+            if len(clean_features) < self.min_samples_for_stats:
+                tprint_warning(f"   ⚠️ Insufficient clean samples: {len(clean_features)}")
+                return relationships
+            
+            # OPTIMIZATION 3: Vectorized correlation computation
+            feature_cols = clean_features.columns
+            n_features = len(feature_cols)
+            
+            # Vectorized Spearman correlation
             try:
-                clean_data = features[col].dropna()
-                clean_labels = labels.reindex(clean_data.index).dropna()
-
-                if len(clean_data) >= self.min_samples_for_stats:
-                    # Mutual information
-                    mi_score = mutual_info_regression(
-                        clean_data.values.reshape(-1, 1),
-                        clean_labels.values
-                    )[0]
-                    relationships['mutual_information'][col] = float(mi_score)
-
-                    # Spearman correlation
-                    if len(clean_data) > 10:
-                        corr, _ = spearmanr(clean_data, clean_labels)
-                        relationships['spearman_correlation'][col] = float(corr) if not np.isnan(corr) else 0.0
-
-                    # HSIC (simplified approximation)
-                    relationships['hsic_scores'][col] = self._compute_hsic_simple(
-                        clean_data.values, clean_labels.values
-                    )
-
+                # Compute rank correlations efficiently
+                feature_ranks = clean_features.rank(axis=0)
+                label_ranks = clean_labels.rank()
+                
+                # MEMORY OPTIMIZATION: Clean up after ranks
+                ranks_memory_usage = feature_ranks.memory_usage(deep=True).sum() + label_ranks.memory_usage(deep=True).sum()
+                
+                # Vectorized correlation computation
+                correlations = []
+                for col in feature_cols:
+                    # Ensure both are Series for correlation
+                    feature_series = feature_ranks[col]
+                    label_series = label_ranks
+                    
+                    if len(feature_series) != len(label_series):
+                        continue
+                        
+                    corr = np.corrcoef(feature_series, label_series)[0, 1]
+                    correlations.append(corr if not np.isnan(corr) else 0.0)
+                
+                relationships['spearman_correlation'] = dict(zip(feature_cols, correlations))
+                
+                # MEMORY OPTIMIZATION: Clean up rank data
+                del feature_ranks, label_ranks, correlations
+                tprint_info(f"   🧹 Cleaned up {ranks_memory_usage/1024/1024:.1f}MB of rank data")
+                
             except Exception as e:
-                relationships['mutual_information'][col] = 0.0
-                relationships['spearman_correlation'][col] = 0.0
-                relationships['hsic_scores'][col] = 0.0
-
+                tprint_warning(f"   ⚠️ Vectorized correlation failed: {e}")
+                relationships['spearman_correlation'] = {col: 0.0 for col in feature_cols}
+            
+            # OPTIMIZATION 4: Early stopping for mutual information
+            # Only compute MI for features with reasonable correlation
+            mi_candidates = []
+            for col in feature_cols:
+                corr_abs = abs(relationships['spearman_correlation'][col])
+                # Only skip if correlation is extremely low (keep most features)
+                if corr_abs < 0.001:  # Much lower threshold
+                    relationships['mutual_information'][col] = 0.0
+                    relationships['hsic_scores'][col] = 0.0
+                else:
+                    mi_candidates.append(col)
+                    
+            tprint_info(f"   🎯 Early stopping: {len(mi_candidates)}/{len(feature_cols)} features passed correlation filter")
+            
+            # Ensure we always keep at least some features
+            if len(mi_candidates) < 5:
+                mi_candidates = feature_cols[:min(10, len(feature_cols))]  # Keep top 10 as fallback
+                tprint_warning(f"   ⚠️ Fallback: keeping {len(mi_candidates)} features for analysis")
+            
+            # Compute MI only for promising candidates
+            if mi_candidates:
+                try:
+                    # Vectorized mutual information computation
+                    mi_scores = mutual_info_regression(
+                        clean_features[mi_candidates].values,
+                        clean_labels.values,
+                        random_state=42
+                    )
+                    
+                    relationships['mutual_information'].update(dict(zip(mi_candidates, mi_scores)))
+                    
+                    # Simplified HSIC for remaining candidates
+                    for col in mi_candidates:
+                        hsic_score = self._compute_hsic_simple(
+                            clean_features[col].values, 
+                            clean_labels.values
+                        )
+                        relationships['hsic_scores'][col] = hsic_score
+                        
+                    # MEMORY OPTIMIZATION: Clean up MI data
+                    del mi_scores
+                    
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ MI computation failed: {e}")
+                    for col in mi_candidates:
+                        relationships['mutual_information'][col] = 0.0
+                        relationships['hsic_scores'][col] = 0.0
+            
+            # MEMORY OPTIMIZATION: Clean up final data
+            del clean_features, clean_labels
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature relationship analysis failed: {e}")
+        finally:
+            # MEMORY OPTIMIZATION: Force garbage collection
+            import gc
+            gc.collect()
+        
         return relationships
 
     def _analyze_feature_distributions(self, features: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze feature distributions and statistical properties."""
+        """Analyze feature distributions and statistical properties with optimizations."""
         distribution_analysis = {
             'stationarity_tests': {},
             'normality_tests': {},
@@ -473,64 +590,144 @@ class SpecialistFeatureDiagnostics:
             'autocorrelation': {}
         }
 
-        for col in features.columns:
-            try:
-                series = features[col].dropna()
-
-                if len(series) >= self.min_samples_for_stats:
-                    # Stationarity tests
-                    stationarity = {}
-                    try:
-                        # ADF test
-                        adf_result = adfuller(series.values, autolag='AIC')
-                        stationarity['adf_pvalue'] = float(adf_result[1])
-                        stationarity['adf_stationary'] = adf_result[1] < 0.05
-                    except:
-                        stationarity['adf_pvalue'] = None
-                        stationarity['adf_stationary'] = None
-
-                    try:
-                        # KPSS test
-                        kpss_result = kpss(series.values, regression='c', nlags='auto')
-                        stationarity['kpss_pvalue'] = float(kpss_result[1])
-                        stationarity['kpss_stationary'] = kpss_result[1] > 0.05
-                    except:
-                        stationarity['kpss_pvalue'] = None
-                        stationarity['kpss_stationary'] = None
-
-                    distribution_analysis['stationarity_tests'][col] = stationarity
-
-                    # Normality tests
-                    normality = {}
-                    try:
-                        _, p_value = normaltest(series.values)
-                        normality['normaltest_pvalue'] = float(p_value)
-                        normality['is_normal'] = p_value > 0.05
-                    except:
-                        normality['normaltest_pvalue'] = None
-                        normality['is_normal'] = None
-
-                    distribution_analysis['normality_tests'][col] = normality
-
-                    # Outlier analysis
-                    q1, q3 = series.quantile([0.25, 0.75])
-                    iqr = q3 - q1
-                    outliers = ((series < (q1 - 1.5 * iqr)) | (series > (q3 + 1.5 * iqr))).sum()
-                    distribution_analysis['outlier_analysis'][col] = {
-                        'outlier_count': int(outliers),
-                        'outlier_percentage': float(outliers / len(series)),
-                        'iqr': float(iqr)
+        # OPTIMIZATION 1: Sample data for faster analysis
+        n_samples = min(2000, len(features))  # Use max 2000 samples
+        if len(features) > n_samples:
+            sample_indices = np.random.choice(len(features), n_samples, replace=False)
+            sample_features = features.iloc[sample_indices]
+        else:
+            sample_features = features
+        
+        # OPTIMIZATION 2: Vectorized outlier analysis
+        try:
+            # Vectorized outlier detection using IQR method
+            Q1 = sample_features.quantile(0.25)
+            Q3 = sample_features.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            # Count outliers for each feature
+            outlier_counts = ((sample_features < lower_bound) | (sample_features > upper_bound)).sum()
+            outlier_percentages = (outlier_counts / len(sample_features) * 100).round(2)
+            
+            distribution_analysis['outlier_analysis'] = {
+                col: {
+                    'outlier_count': int(outlier_counts[col]),
+                    'outlier_percentage': float(outlier_percentages[col]),
+                    'iqr_bounds': {
+                        'lower': float(lower_bound[col]),
+                        'upper': float(upper_bound[col])
                     }
-
-                    # Autocorrelation
-                    if len(series) > 10:
-                        autocorr = [pd.Series(series).autocorr(lag=i) for i in range(1, min(11, len(series)//2))]
-                        distribution_analysis['autocorrelation'][col] = autocorr
-
+                }
+                for col in sample_features.columns
+            }
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Vectorized outlier analysis failed: {e}")
+            distribution_analysis['outlier_analysis'] = {col: {'outlier_count': 0, 'outlier_percentage': 0.0} for col in sample_features.columns}
+        
+        # OPTIMIZATION 3: Early stopping for expensive tests
+        # Only run expensive tests on features with reasonable variance
+        feature_variances = sample_features.var()
+        high_variance_features = feature_variances[feature_variances > 1e-6].index.tolist()
+        
+        tprint_info(f"   🎯 Early stopping: {len(high_variance_features)}/{len(sample_features.columns)} features have sufficient variance")
+        
+        # OPTIMIZATION 4: Batch processing for stationarity tests
+        if high_variance_features:
+            try:
+                # Process features in batches to avoid memory issues
+                batch_size = 5
+                for i in range(0, len(high_variance_features), batch_size):
+                    batch_features = high_variance_features[i:i+batch_size]
+                    
+                    for col in batch_features:
+                        try:
+                            series = sample_features[col].dropna()
+                            
+                            if len(series) >= self.min_samples_for_stats:
+                                stationarity = {}
+                                
+                                # ADF test (simplified - skip KPSS for speed)
+                                try:
+                                    adf_result = adfuller(series.values, autolag='AIC', maxlag=5)  # Limit lags
+                                    stationarity['adf_pvalue'] = float(adf_result[1])
+                                    stationarity['adf_stationary'] = adf_result[1] < 0.05
+                                except:
+                                    stationarity['adf_pvalue'] = None
+                                    stationarity['adf_stationary'] = None
+                                
+                                distribution_analysis['stationarity_tests'][col] = stationarity
+                                
+                        except Exception as e:
+                            distribution_analysis['stationarity_tests'][col] = {
+                                'adf_pvalue': None,
+                                'adf_stationary': None
+                            }
+                    
+                    tprint_info(f"   📊 Processed batch {i//batch_size + 1}/{(len(high_variance_features)-1)//batch_size + 1}")
+                    
             except Exception as e:
-                # Skip problematic features
-                continue
-
+                tprint_warning(f"   ⚠️ Stationarity tests failed: {e}")
+        
+        # OPTIMIZATION 5: Simplified normality tests
+        try:
+            # Vectorized skewness and kurtosis for normality approximation
+            skewness = sample_features.skew()
+            kurtosis = sample_features.kurtosis()
+            
+            # Simple normality heuristic: |skew| < 2 and |kurtosis| < 7
+            normality_heuristic = (abs(skewness) < 2) & (abs(kurtosis) < 7)
+            
+            distribution_analysis['normality_tests'] = {
+                col: {
+                    'skewness': float(skewness[col]),
+                    'kurtosis': float(kurtosis[col]),
+                    'normality_heuristic': bool(normality_heuristic[col]),
+                    'normality_test': 'skew_kurt_heuristic'  # Indicate simplified method
+                }
+                for col in sample_features.columns
+            }
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Normality analysis failed: {e}")
+            distribution_analysis['normality_tests'] = {col: {'normality_heuristic': False} for col in sample_features.columns}
+        
+        # OPTIMIZATION 6: Simplified autocorrelation
+        try:
+            # Only compute autocorrelation for first few lags
+            max_lag = min(10, len(sample_features) // 4)
+            
+            autocorr_results = {}
+            for col in sample_features.columns:
+                try:
+                    series = sample_features[col].dropna()
+                    if len(series) > max_lag:
+                        # Compute autocorrelation for first few lags only
+                        autocorr_values = [series.autocorr(lag=i) for i in range(1, max_lag + 1)]
+                        autocorr_results[col] = {
+                            'lag1_autocorr': float(autocorr_values[0]) if not np.isnan(autocorr_values[0]) else 0.0,
+                            'mean_autocorr': float(np.nanmean(autocorr_values)),
+                            'max_lag_analyzed': max_lag
+                        }
+                    else:
+                        autocorr_results[col] = {
+                            'lag1_autocorr': 0.0,
+                            'mean_autocorr': 0.0,
+                            'max_lag_analyzed': 0
+                        }
+                except:
+                    autocorr_results[col] = {
+                        'lag1_autocorr': 0.0,
+                        'mean_autocorr': 0.0,
+                        'max_lag_analyzed': 0
+                    }
+            
+            distribution_analysis['autocorrelation'] = autocorr_results
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Autocorrelation analysis failed: {e}")
+            distribution_analysis['autocorrelation'] = {col: {'lag1_autocorr': 0.0} for col in sample_features.columns}
+        
         return distribution_analysis
 
     def _analyze_temporal_stability(self, features: pd.DataFrame, labels: pd.Series) -> Dict[str, Any]:
@@ -552,35 +749,84 @@ class SpecialistFeatureDiagnostics:
                 for train_idx, val_idx in tscv.split(features):
                     try:
                         X_train = features.iloc[train_idx][[col]].fillna(0)
-                        y_train = labels.iloc[train_idx]
                         X_val = features.iloc[val_idx][[col]].fillna(0)
+                        y_train = labels.iloc[train_idx]
                         y_val = labels.iloc[val_idx]
 
-                        if len(np.unique(y_train)) > 1 and len(X_train) > 10:
-                            # Simple logistic regression for stability
-                            lr = LogisticRegression(random_state=42, max_iter=1000)
-                            lr.fit(X_train, y_train)
-
-                            if len(np.unique(y_val)) > 1:
-                                score = lr.score(X_val, y_val)
-                                fold_scores.append(score)
-
+                        if len(X_train) > 10 and len(X_val) > 10:
+                            # Simple correlation as stability metric
+                            corr = np.corrcoef(X_train.values.flatten(), y_train.values)[0, 1]
+                            if not np.isnan(corr):
+                                fold_scores.append(corr)
                     except:
                         continue
 
                 if fold_scores:
                     stability_scores[col] = {
-                        'mean_score': float(np.mean(fold_scores)),
-                        'std_score': float(np.std(fold_scores)),
-                        'cv_score': float(np.std(fold_scores) / np.mean(fold_scores)) if np.mean(fold_scores) > 0 else float('inf')
+                        'mean_correlation': np.mean(fold_scores),
+                        'std_correlation': np.std(fold_scores),
+                        'stability_score': 1.0 - np.std(fold_scores)  # Higher = more stable
                     }
 
             stability_analysis['rolling_stability'] = stability_scores
 
         except Exception as e:
-            stability_analysis['rolling_stability'] = {'error': str(e)}
+            stability_analysis['error'] = str(e)
 
         return stability_analysis
+
+    def _analyze_predictive_power(self, features: pd.DataFrame, labels: pd.Series, predictions: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Analyze predictive power of features."""
+        predictive_analysis = {
+            'individual_feature_power': {}
+        }
+
+        try:
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.metrics import roc_auc_score
+            
+            for col in features.columns:
+                try:
+                    clean_data = features[col].dropna()
+                    clean_labels = labels.reindex(clean_data.index).dropna()
+
+                    if len(clean_data) >= 50 and len(np.unique(clean_labels)) > 1:
+                        # Simple AUC score
+                        lr = LogisticRegression(random_state=42, max_iter=1000)
+                        lr.fit(clean_data.values.reshape(-1, 1), clean_labels)
+
+                        probs = lr.predict_proba(clean_data.values.reshape(-1, 1))[:, 1]
+                        auc = roc_auc_score(clean_labels, probs)
+
+                        predictive_analysis['individual_feature_power'][col] = {
+                            'auc_score': float(auc),
+                            'predictive_strength': self._classify_predictive_strength(auc)
+                        }
+
+                except Exception as e:
+                    predictive_analysis['individual_feature_power'][col] = {
+                        'auc_score': 0.5,
+                        'predictive_strength': 'poor',
+                        'error': str(e)
+                    }
+
+        except Exception as e:
+            predictive_analysis['error'] = str(e)
+
+        return predictive_analysis
+
+    def _classify_predictive_strength(self, auc_score: float) -> str:
+        """Classify predictive strength based on AUC score."""
+        if auc_score >= 0.8:
+            return 'excellent'
+        elif auc_score >= 0.7:
+            return 'good'
+        elif auc_score >= 0.6:
+            return 'moderate'
+        elif auc_score >= 0.55:
+            return 'weak'
+        else:
+            return 'poor'
 
     def _assess_predictive_power(self, features: pd.DataFrame, labels: pd.Series,
                                 predictions: Optional[np.ndarray] = None) -> Dict[str, Any]:
@@ -623,7 +869,7 @@ class SpecialistFeatureDiagnostics:
         return predictive_analysis
 
     def _analyze_feature_interactions(self, features: pd.DataFrame, labels: pd.Series) -> Dict[str, Any]:
-        """Analyze feature interactions and dependencies."""
+        """Analyze feature interactions and dependencies with optimizations."""
         interaction_analysis = {
             'correlation_network': {},
             'feature_clusters': {},
@@ -631,24 +877,47 @@ class SpecialistFeatureDiagnostics:
         }
 
         try:
-            # Correlation network
-            if len(features.columns) > 1:
-                corr_matrix = features.corr().abs()
-
-                # Find strong correlations
+            # OPTIMIZATION 1: Sample data for faster analysis
+            n_samples = min(2000, len(features))  # Use max 2000 samples
+            if len(features) > n_samples:
+                sample_indices = np.random.choice(len(features), n_samples, replace=False)
+                sample_features = features.iloc[sample_indices]
+            else:
+                sample_features = features
+            
+            # OPTIMIZATION 2: Vectorized correlation computation
+            if len(sample_features.columns) > 1:
+                # Compute correlation matrix efficiently
+                corr_matrix = sample_features.corr().abs()
+                
+                # OPTIMIZATION 3: Vectorized strong correlation detection
+                # Use numpy operations instead of nested loops
+                corr_values = corr_matrix.values
+                n_features = len(corr_matrix.columns)
+                
+                # Create mask for upper triangle (excluding diagonal)
+                mask = np.triu(np.ones_like(corr_values, dtype=bool), k=1)
+                
+                # Find strong correlations vectorized
+                strong_corr_mask = (corr_values > 0.7) & mask
+                strong_corr_indices = np.where(strong_corr_mask)
+                
                 strong_correlations = []
-                for i in range(len(corr_matrix.columns)):
-                    for j in range(i+1, len(corr_matrix.columns)):
-                        corr_val = corr_matrix.iloc[i, j]
-                        if corr_val > 0.7:  # Strong correlation threshold
-                            strong_correlations.append({
-                                'feature1': corr_matrix.columns[i],
-                                'feature2': corr_matrix.columns[j],
-                                'correlation': float(corr_val)
-                            })
-
+                for i, j in zip(strong_corr_indices[0], strong_corr_indices[1]):
+                    strong_correlations.append({
+                        'feature1': corr_matrix.columns[i],
+                        'feature2': corr_matrix.columns[j],
+                        'correlation': float(corr_values[i, j])
+                    })
+                
                 interaction_analysis['correlation_network'] = strong_correlations
-
+                
+                # OPTIMIZATION 4: Early stopping for clustering
+                if len(strong_correlations) > 0:
+                    tprint_info(f"   🎯 Found {len(strong_correlations)} strong correlations out of {n_features*(n_features-1)//2} possible pairs")
+                else:
+                    tprint_info(f"   🎯 No strong correlations found (>0.7)")
+                    
         except Exception as e:
             interaction_analysis['correlation_network'] = {'error': str(e)}
 
@@ -659,36 +928,67 @@ class SpecialistFeatureDiagnostics:
     # ============================================================================
 
     def _analyze_correlation_structure(self, original: pd.DataFrame, orthogonal: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze changes in correlation structure."""
+        """Analyze changes in correlation structure with optimizations."""
         correlation_structure = {}
 
         try:
-            # Original correlation matrix
-            orig_corr = original.corr().abs()
-
-            # Orthogonal correlation matrix
-            ortho_corr = orthogonal.corr().abs()
-
+            # OPTIMIZATION 1: Sample data for faster analysis
+            n_samples = min(2000, len(original))  # Use max 2000 samples
+            if len(original) > n_samples:
+                sample_indices = np.random.choice(len(original), n_samples, replace=False)
+                sample_original = original.iloc[sample_indices]
+                sample_orthogonal = orthogonal.iloc[sample_indices]
+            else:
+                sample_original = original
+                sample_orthogonal = orthogonal
+            
+            # OPTIMIZATION 2: Vectorized correlation computation
+            # Compute correlation matrices efficiently
+            orig_corr = sample_original.corr().abs()
+            ortho_corr = sample_orthogonal.corr().abs()
+            
+            # OPTIMIZATION 3: Vectorized max correlation extraction
+            # Use numpy operations instead of manual indexing
+            orig_corr_values = orig_corr.values
+            ortho_corr_values = ortho_corr.values
+            
+            # Create upper triangle masks (excluding diagonal)
+            orig_mask = np.triu_indices_from(orig_corr_values, k=1)
+            ortho_mask = np.triu_indices_from(ortho_corr_values, k=1)
+            
+            # Extract upper triangle values vectorized
+            orig_upper_values = orig_corr_values[orig_mask]
+            ortho_upper_values = ortho_corr_values[ortho_mask]
+            
             # Max correlations
-            correlation_structure['original_max_correlation'] = float(orig_corr.values[np.triu_indices_from(orig_corr.values, k=1)].max())
-            correlation_structure['orthogonal_max_correlation'] = float(ortho_corr.values[np.triu_indices_from(ortho_corr.values, k=1)].max())
-
-            # Correlation distribution
-            orig_corr_values = orig_corr.values[np.triu_indices_from(orig_corr.values, k=1)]
-            ortho_corr_values = ortho_corr.values[np.triu_indices_from(ortho_corr.values, k=1)]
-
+            correlation_structure['original_max_correlation'] = float(np.max(orig_upper_values))
+            correlation_structure['orthogonal_max_correlation'] = float(np.max(ortho_upper_values))
+            
+            # OPTIMIZATION 4: Vectorized distribution statistics
             correlation_structure['original_correlation_distribution'] = {
-                'mean': float(np.mean(orig_corr_values)),
-                'std': float(np.std(orig_corr_values)),
-                'percentile_95': float(np.percentile(orig_corr_values, 95))
+                'mean': float(np.mean(orig_upper_values)),
+                'std': float(np.std(orig_upper_values)),
+                'percentile_95': float(np.percentile(orig_upper_values, 95)),
+                'n_pairs': len(orig_upper_values)
             }
-
+            
             correlation_structure['orthogonal_correlation_distribution'] = {
-                'mean': float(np.mean(ortho_corr_values)),
-                'std': float(np.std(ortho_corr_values)),
-                'percentile_95': float(np.percentile(ortho_corr_values, 95))
+                'mean': float(np.mean(ortho_upper_values)),
+                'std': float(np.std(ortho_upper_values)),
+                'percentile_95': float(np.percentile(ortho_upper_values, 95)),
+                'n_pairs': len(ortho_upper_values)
             }
-
+            
+            # OPTIMIZATION 5: Early stopping - correlation reduction metrics
+            reduction_ratio = np.mean(ortho_upper_values) / np.mean(orig_upper_values) if np.mean(orig_upper_values) > 0 else 1.0
+            correlation_structure['correlation_reduction'] = {
+                'mean_reduction_ratio': float(reduction_ratio),
+                'max_reduction_ratio': float(np.max(ortho_upper_values) / np.max(orig_upper_values)) if np.max(orig_upper_values) > 0 else 1.0,
+                'improvement': reduction_ratio < 0.8  # Significant reduction
+            }
+            
+            tprint_info(f"   🎯 Correlation analysis: {len(orig_upper_values)} feature pairs, reduction ratio: {reduction_ratio:.3f}")
+            
         except Exception as e:
             correlation_structure['error'] = str(e)
 
@@ -1199,16 +1499,24 @@ class SpecialistFeatureDiagnostics:
 
             # Convert numpy types to JSON-serializable
             def serialize_obj(obj):
-                if isinstance(obj, np.ndarray):
+                # Handle dataclass objects
+                if hasattr(obj, '__dataclass_fields__'):
+                    return {field: serialize_obj(getattr(obj, field)) for field in obj.__dataclass_fields__}
+                elif isinstance(obj, np.ndarray):
                     return obj.tolist()
-                elif isinstance(obj, np.float32) or isinstance(obj, np.float64):
+                elif isinstance(obj, (np.float32, np.float64)):
                     return float(obj)
-                elif isinstance(obj, np.int32) or isinstance(obj, np.int64):
+                elif isinstance(obj, (np.int32, np.int64)):
                     return int(obj)
+                elif isinstance(obj, (np.bool_, bool)):
+                    return bool(obj)
                 elif isinstance(obj, dict):
                     return {k: serialize_obj(v) for k, v in obj.items()}
                 elif isinstance(obj, list):
                     return [serialize_obj(item) for item in obj]
+                elif hasattr(obj, '__dict__'):
+                    # Handle other objects with __dict__
+                    return serialize_obj(obj.__dict__)
                 else:
                     return obj
 
@@ -1221,3 +1529,117 @@ class SpecialistFeatureDiagnostics:
 
         except Exception as e:
             tprint_error(f"❌ Failed to save diagnostics report: {e}")
+
+    def _evaluate_orthogonalization_strategy(self, original_features: pd.DataFrame, 
+                                          orthogonal_features: pd.DataFrame, 
+                                          correlation_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate the effectiveness of the orthogonalization strategy."""
+        strategy_evaluation = {
+            'strategy_effectiveness': 'unknown',
+            'feature_retention_rate': 0.0,
+            'correlation_reduction': 0.0,
+            'recommendations': []
+        }
+        
+        try:
+            # Calculate feature retention rate
+            original_count = len(original_features.columns)
+            orthogonal_count = len(orthogonal_features.columns)
+            retention_rate = orthogonal_count / original_count if original_count > 0 else 0.0
+            strategy_evaluation['feature_retention_rate'] = float(retention_rate)
+            
+            # Calculate correlation reduction
+            if 'original_max_correlation' in correlation_analysis and 'orthogonal_max_correlation' in correlation_analysis:
+                orig_max = correlation_analysis['original_max_correlation']
+                ortho_max = correlation_analysis['orthogonal_max_correlation']
+                reduction = (orig_max - ortho_max) / orig_max if orig_max > 0 else 0.0
+                strategy_evaluation['correlation_reduction'] = float(reduction)
+            
+            # Evaluate strategy effectiveness
+            if retention_rate > 0.8 and strategy_evaluation['correlation_reduction'] > 0.5:
+                strategy_evaluation['strategy_effectiveness'] = 'excellent'
+            elif retention_rate > 0.6 and strategy_evaluation['correlation_reduction'] > 0.3:
+                strategy_evaluation['strategy_effectiveness'] = 'good'
+            elif retention_rate > 0.4 and strategy_evaluation['correlation_reduction'] > 0.1:
+                strategy_evaluation['strategy_effectiveness'] = 'moderate'
+            else:
+                strategy_evaluation['strategy_effectiveness'] = 'poor'
+            
+            # Generate recommendations
+            recommendations = []
+            if retention_rate < 0.5:
+                recommendations.append("Consider less aggressive orthogonalization to retain more features")
+            if strategy_evaluation['correlation_reduction'] < 0.2:
+                recommendations.append("Orthogonalization not effectively reducing correlations")
+            if retention_rate > 0.9 and strategy_evaluation['correlation_reduction'] < 0.3:
+                recommendations.append("Minimal orthogonalization effect - consider alternative approach")
+            
+            strategy_evaluation['recommendations'] = recommendations
+            
+        except Exception as e:
+            strategy_evaluation['error'] = str(e)
+            strategy_evaluation['strategy_effectiveness'] = 'error'
+        
+        return strategy_evaluation
+    
+    def _compute_orthogonality_score(self, orthogonal_features: pd.DataFrame, 
+                                   correlation_analysis: Dict[str, Any]) -> float:
+        """Compute an overall orthogonality score."""
+        try:
+            if 'orthogonal_max_correlation' not in correlation_analysis:
+                return 0.0
+            
+            max_corr = correlation_analysis['orthogonal_max_correlation']
+            
+            # Score based on maximum correlation (lower is better)
+            if max_corr < 0.1:
+                return 1.0  # Excellent orthogonality
+            elif max_corr < 0.3:
+                return 0.8  # Good orthogonality
+            elif max_corr < 0.5:
+                return 0.6  # Moderate orthogonality
+            elif max_corr < 0.7:
+                return 0.4  # Poor orthogonality
+            else:
+                return 0.2  # Very poor orthogonality
+                
+        except Exception:
+            return 0.0
+    
+    def _generate_orthogonalization_recommendations(self, correlation_analysis: Dict[str, Any],
+                                                  information_analysis: Dict[str, Any],
+                                                  predictive_analysis: Dict[str, Any]) -> List[str]:
+        """Generate recommendations for orthogonalization improvement."""
+        recommendations = []
+        
+        try:
+            # Correlation-based recommendations
+            if 'orthogonal_max_correlation' in correlation_analysis:
+                max_corr = correlation_analysis['orthogonal_max_correlation']
+                if max_corr > 0.7:
+                    recommendations.append("High residual correlations detected - consider stronger orthogonalization")
+                elif max_corr < 0.1:
+                    recommendations.append("Excellent orthogonalization achieved - correlations well-controlled")
+            
+            # Information preservation recommendations
+            if 'mutual_info_retention' in information_analysis:
+                retention_ratio = information_analysis['mutual_info_retention'].get('retention_ratio', 0.0)
+                if retention_ratio < 0.7:
+                    recommendations.append("Significant information loss detected - consider less aggressive orthogonalization")
+                elif retention_ratio > 0.9:
+                    recommendations.append("Good information preservation maintained")
+            
+            # Predictive power recommendations
+            if 'auc_retention' in predictive_analysis:
+                auc_retention = predictive_analysis['auc_retention'].get('retention_ratio', 0.0)
+                if auc_retention < 0.8:
+                    recommendations.append("Predictive power significantly reduced - review orthogonalization parameters")
+            
+            # General recommendations
+            if not recommendations:
+                recommendations.append("Orthogonalization appears to be working well")
+                
+        except Exception as e:
+            recommendations.append(f"Error generating recommendations: {e}")
+        
+        return recommendations

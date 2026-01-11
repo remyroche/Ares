@@ -298,6 +298,12 @@ class EnhancedXGBMacroRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeci
         
         return features
     
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For macro regime, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_macro_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced XGB macro regime step."""
         return await self.execute_standard_specialist_logic(

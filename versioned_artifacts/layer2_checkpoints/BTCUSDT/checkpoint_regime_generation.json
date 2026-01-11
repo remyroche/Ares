@@ -1,0 +1,12 @@
+{
+  "step_name": "regime_generation",
+  "step_index": 1,
+  "timestamp": "20260111_235450",
+  "symbol": "BTCUSDT",
+  "config_hash": "147870a253a4",
+  "data_keys": [
+    "df",
+    "regime_labels"
+  ],
+  "json_data": {}
+}

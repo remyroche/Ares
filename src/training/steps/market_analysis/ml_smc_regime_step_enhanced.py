@@ -88,15 +88,32 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
         # Import original SMC features
         try:
             from src.feature_generation.categories.smc_regime_features import generate_smc_regime_features
-            # Need config for generate_smc_regime_features.
+            
+            # Safely extract and convert config values
+            symbol = self._current_context.get('symbol', 'ETHUSDT')
+            exchange = self._current_context.get('exchange', 'binance')
+            timeframe = self._current_context.get('timeframe', '15m')
+            direction = self._current_context.get('direction', 'long')
+            
+            # Ensure all values are strings, not floats
             config = {
-                'symbol': self._current_context.get('symbol'),
-                'exchange': self._current_context.get('exchange'),
-                'timeframe': self._current_context.get('timeframe'),
-                'direction': self._current_context.get('direction')
+                'symbol': str(symbol) if not isinstance(symbol, str) else symbol,
+                'exchange': str(exchange) if not isinstance(exchange, str) else exchange,
+                'timeframe': str(timeframe) if not isinstance(timeframe, str) else timeframe,
+                'direction': str(direction) if not isinstance(direction, str) else direction
             }
+            
+            # Additional safety check for symbol
+            if config['symbol'].replace('.', '').replace('-', '').isdigit():
+                # If it looks like a number, convert to proper symbol
+                config['symbol'] = 'ETHUSDT'
+                
+            tprint_info(f"🔧 SMC Config: {config}")
             base_smc_features = generate_smc_regime_features(df, config)
         except ImportError:
+            base_smc_features = pd.DataFrame(index=df.index)
+        except Exception as e:
+            tprint_error(f"❌ SMC feature generation failed: {e}")
             base_smc_features = pd.DataFrame(index=df.index)
         
         # Manual feature engineering for SMC regime
@@ -398,6 +415,12 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
             
         return manual_features
     
+    def generate_pipeline_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate base pipeline features."""
+        # For SMC regime, we use the combined manual features as pipeline features
+        # when called from external consumers (like GMM pipeline)
+        return self._get_smc_combined_manual_features(market_data, pd.DataFrame(index=market_data.index))
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced momentum persistence step."""
         return await self.execute_standard_specialist_logic(

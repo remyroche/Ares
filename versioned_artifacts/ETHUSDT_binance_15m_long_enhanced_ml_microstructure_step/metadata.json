@@ -329,9 +329,31 @@
         "reg_lambda": 2,
         "min_child_weight": 20
       }
+    },
+    "enhanced_ml_microstructure_prediction_15m": {
+      "created_at": "2026-01-09T20:09:59.813569",
+      "num_rows": 142619,
+      "num_columns": 15,
+      "columns": [
+        "timestamp",
+        "specialist_prediction",
+        "specialist_probability",
+        "target_label",
+        "feature_open_squared",
+        "feature_volume_price_trend",
+        "feature_vol_intensity",
+        "feature_vp_efficiency",
+        "feature_roll_vol",
+        "feature_sig_0",
+        "feature_sig_1",
+        "feature_sig_2",
+        "feature_sig_3",
+        "feature_sig_4",
+        "feature_sig_5"
+      ]
     }
   },
-  "current_version": "enhanced_ml_microstructure_prediction_15m_20260103_001631_497",
+  "current_version": "enhanced_ml_microstructure_prediction_15m",
   "created_at": "2026-01-02T22:29:27.338451",
-  "updated_at": "2026-01-03T00:16:33.669980"
+  "updated_at": "2026-01-09T20:09:59.813731"
 }

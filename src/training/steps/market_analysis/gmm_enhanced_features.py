@@ -190,7 +190,10 @@ class EnhancedGMMFeatures(BaseStep):
     def _initialize_fracdiff(self):
         """Initialize FracDiff transformer."""
         if self.use_fracdiff and self.fracdiff_transformer is None:
-            self.fracdiff_transformer = FracDiffTransformer(**self.fracdiff_config)
+            # Filter config for __init__
+            init_keys = ['max_d', 'min_d', 'adf_threshold', 'max_lags', 'use_numba']
+            init_config = {k: v for k, v in self.fracdiff_config.items() if k in init_keys}
+            self.fracdiff_transformer = FracDiffTransformer(**init_config)
     
     def _generate_multi_timeframe_features_streaming(self,
                                                     market_data: pd.DataFrame,
@@ -346,11 +349,17 @@ class EnhancedGMMFeatures(BaseStep):
         tprint_info("🔄 Applying FracDiff to target series...")
         
         try:
-            fracdiff_returns, optimal_d = fracdiff_series(
-                returns,
-                d=None,  # Auto-determine optimal d
-                **self.fracdiff_config
+            # Extract params for search
+            method = self.fracdiff_config.get('method', 'binary_search')
+            tolerance = self.fracdiff_config.get('tolerance', 0.01)
+
+            # Find optimal d and transform using the configured transformer
+            optimal_d = self.fracdiff_transformer.find_optimal_d(
+                returns, 
+                method=method, 
+                tolerance=tolerance
             )
+            fracdiff_returns = self.fracdiff_transformer.transform(returns)
             
             # Validate stationarity
             stationarity_results = validate_stationarity(fracdiff_returns)
@@ -464,6 +473,11 @@ class EnhancedGMMFeatures(BaseStep):
             DataFrame with enhanced kinematics features
         """
         T, K = probs.shape
+        
+        tprint_info(f"🎯 Calculating enhanced kinematics for {feature_name}: {T} timesteps, {K} clusters")
+        tprint_info(f"⚙️ Velocity windows: {self.kinematics_config['velocity_windows']}")
+        tprint_info(f"⚙️ Acceleration windows: {self.kinematics_config['acceleration_windows']}")
+        tprint_info(f"⚙️ Jerk windows: {self.kinematics_config['jerk_windows']}")
 
         # Pre-calculate column names for pre-allocation
         col_names = []
@@ -488,6 +502,9 @@ class EnhancedGMMFeatures(BaseStep):
 
         # 6. Enhanced momentum features
         col_names.extend([f'{feature_name}_momentum_{k}' for k in range(K)])
+        
+        tprint_info(f"📊 Kinematics feature breakdown: scores={K}, velocities={K*len(self.kinematics_config['velocity_windows'])}, accelerations={K*len(self.kinematics_config['acceleration_windows'])}, jerk={K*len(self.kinematics_config['jerk_windows'])}, prob_vel={K}, momentum={K}")
+        tprint_info(f"🎯 Total kinematics features: {len(col_names)}")
 
         # Pre-allocate DataFrame with all columns
         features = pd.DataFrame(
@@ -519,26 +536,38 @@ class EnhancedGMMFeatures(BaseStep):
                                       returns: pd.Series,
                                       feature_name: str) -> pd.DataFrame:
         """
-        Calculate advanced momentum persistence metrics beyond simple trend conviction.
+        Calculate momentum persistence features for each GMM cluster.
 
         Args:
             probs: GMM probability matrix (T x K)
             scores: Absolute scores matrix (T x K)
-            returns: Historical returns series
+            returns: Returns series
             feature_name: Base feature name for naming
 
         Returns:
             DataFrame with momentum persistence features
         """
         T, K = probs.shape
+        tprint_info(f"🚀 Calculating momentum persistence for {feature_name}: {T} timesteps, {K} clusters")
+        
         momentum_features = pd.DataFrame(index=range(T))
 
         # Convert returns to numpy for vectorized operations
         returns_array = returns.fillna(0).values
+        tprint_info(f"📈 Returns statistics: mean={returns_array.mean():.6f}, std={returns_array.std():.6f}")
+        
+        cluster_momentum_stats = []
 
         for k in range(K):
             score_series = scores[:, k]
             prob_series = probs[:, k]
+            
+            # Calculate cluster-specific statistics
+            cluster_score_mean = score_series.mean()
+            cluster_score_std = score_series.std()
+            cluster_prob_mean = prob_series.mean()
+            
+            tprint_info(f"🎯 Cluster {k}: score_mean={cluster_score_mean:.4f}, score_std={cluster_score_std:.4f}, prob_mean={cluster_prob_mean:.3f}")
 
             # 1. Hurst Exponent for persistence (fractal dimension)
             hurst_exponent = self._calculate_hurst_exponent(score_series)
@@ -576,6 +605,31 @@ class EnhancedGMMFeatures(BaseStep):
                 hurst_exponent, autocorr_profile, decay_rate
             )
             momentum_features[f'{feature_name}_persistence_score_{k}'] = persistence_score
+            
+            # Store cluster statistics for summary
+            cluster_momentum_stats.append({
+                'cluster_id': k,
+                'hurst_exponent': hurst_exponent,
+                'persistence_score': persistence_score,
+                'decay_rate': decay_rate,
+                'coupling_strength': coupling_strength
+            })
+        
+        # Log momentum analysis summary
+        tprint_info("📊 Momentum Persistence Analysis:")
+        for stats in cluster_momentum_stats:
+            tprint_info(f"   Cluster {stats['cluster_id']}: hurst={stats['hurst_exponent']:.3f}, persistence={stats['persistence_score']:.3f}, decay={stats['decay_rate']:.4f}, coupling={stats['coupling_strength']:.4f}")
+        
+        # Identify interesting momentum patterns
+        persistent_clusters = [s for s in cluster_momentum_stats if s['hurst_exponent'] > 0.5]
+        fast_decay_clusters = [s for s in cluster_momentum_stats if s['decay_rate'] > 0.1]
+        
+        if persistent_clusters:
+            tprint_info(f"🔄 Persistent clusters (hurst > 0.5): {[s['cluster_id'] for s in persistent_clusters]}")
+        if fast_decay_clusters:
+            tprint_info(f"⚡ Fast decay clusters (decay > 0.1): {[s['cluster_id'] for s in fast_decay_clusters]}")
+        
+        tprint_success(f"✅ Momentum persistence features generated: {len(momentum_features.columns)} features")
 
         return momentum_features
 
@@ -1381,25 +1435,35 @@ class EnhancedGMMFeatures(BaseStep):
         Enhanced Step A: Macro State with FracDiff, multi-timeframe fusion, and advanced kinematics.
         """
         tprint_info("\n🌐 Enhanced Step A: Macro State Analysis with FracDiff + Multi-Timeframe...")
+        tprint_info(f"📊 Input shapes: X={X.shape}, returns={returns.shape}, market_data={market_data.shape}")
 
         # Apply FracDiff to returns for target transformation
+        tprint_info("🔄 Applying FracDiff to target returns...")
         fracdiff_returns, optimal_d = self._apply_fracdiff_to_target(returns)
+        tprint_info(f"✅ FracDiff applied: optimal_d={optimal_d:.4f}")
 
         # Use original pipeline for base features and get full predictions in one pass
+        tprint_info("🔧 Initializing original GMM pipeline...")
         self._initialize_original_pipeline()
 
         # Preprocess features once
+        tprint_info("🧹 Preprocessing features...")
         full_compressed = self.original_pipeline._preprocess_features(X)
+        tprint_success(f"✅ Features preprocessed: {full_compressed.shape}")
 
         # Run original pipeline and capture full predictions
+        tprint_info("🚀 Running enhanced GMM pipeline...")
         base_results, gmm_results = self._run_enhanced_gmm_pipeline(
-            X, fracdiff_returns, full_compressed
+            X, fracdiff_returns, full_compressed, target_returns=returns
         )
+        tprint_success(f"✅ GMM pipeline completed: base_results={base_results.shape}")
 
         # Unpack GMM results
         probs, z_fam, ent, cluster_returns = gmm_results
+        tprint_info(f"📈 GMM results: probs={probs.shape}, z_fam={z_fam.shape}, clusters={len(cluster_returns)}")
 
         # Pre-calculate feature count for DataFrame pre-allocation
+        tprint_info("🔢 Calculating feature counts for pre-allocation...")
         n_kinematics = len(self._calculate_enhanced_kinematics(
             probs[:1], probs[:1] * cluster_returns[0], 'test'
         ).columns)
@@ -1428,21 +1492,29 @@ class EnhancedGMMFeatures(BaseStep):
             n_overextended +
             2  # fracdiff features
         )
+        
+        tprint_info(f"📊 Feature breakdown: base={len(base_results.columns)}, kinematics={n_kinematics}, momentum={n_momentum}, liquidity={n_liquidity}, contrarian={n_contrarian}, shock={n_shock_features}, overextended={n_overextended}, fracdiff=2")
+        tprint_info(f"🎯 Total features to generate: {total_features}")
 
         # Pre-allocate enhanced results DataFrame
+        tprint_info("🏗️ Pre-allocating enhanced results DataFrame...")
         enhanced_results = pd.DataFrame(
             index=X.index,
             columns=[f'feature_{i}' for i in range(total_features)],
             dtype=np.float32
         )
+        tprint_success(f"✅ DataFrame allocated: {enhanced_results.shape}")
 
         # 1. Original features (direct assignment)
+        tprint_info("📋 Step 1/8: Adding original base features...")
         enhanced_results.iloc[:, :len(base_results.columns)] = base_results.values
         enhanced_results.columns = list(base_results.columns) + list(enhanced_results.columns[len(base_results.columns):])
+        tprint_success(f"✅ Base features added: {len(base_results.columns)} features")
 
         col_offset = len(base_results.columns)
 
         # 2. Enhanced kinematics
+        tprint_info("🎯 Step 2/8: Calculating enhanced kinematics...")
         abs_scores = probs * np.array(cluster_returns)
         kinematics = self._calculate_enhanced_kinematics(probs, abs_scores, 'gmm_state')
         enhanced_results.iloc[:, col_offset:col_offset+len(kinematics.columns)] = kinematics.values
@@ -1452,8 +1524,10 @@ class EnhancedGMMFeatures(BaseStep):
             list(enhanced_results.columns[col_offset+len(kinematics.columns):])
         )
         col_offset += len(kinematics.columns)
+        tprint_success(f"✅ Kinematics features added: {len(kinematics.columns)} features")
 
         # 2.5. Momentum persistence features
+        tprint_info("🚀 Step 3/8: Calculating momentum persistence features...")
         momentum_features = self._calculate_momentum_persistence(probs, abs_scores, returns, 'gmm_state')
         enhanced_results.iloc[:, col_offset:col_offset+len(momentum_features.columns)] = momentum_features.values
         enhanced_results.columns = (
@@ -1462,8 +1536,10 @@ class EnhancedGMMFeatures(BaseStep):
             list(enhanced_results.columns[col_offset+len(momentum_features.columns):])
         )
         col_offset += len(momentum_features.columns)
+        tprint_success(f"✅ Momentum features added: {len(momentum_features.columns)} features")
 
         # 2.6. Liquidity horizon analysis (use market_data parameter)
+        tprint_info("💧 Step 4/8: Calculating liquidity horizon analysis...")
         liquidity_features = self._calculate_liquidity_horizon_analysis(market_data, 'gmm_state')
         enhanced_results.iloc[:, col_offset:col_offset+len(liquidity_features.columns)] = liquidity_features.values
         enhanced_results.columns = (
@@ -1472,8 +1548,10 @@ class EnhancedGMMFeatures(BaseStep):
             list(enhanced_results.columns[col_offset+len(liquidity_features.columns):])
         )
         col_offset += len(liquidity_features.columns)
+        tprint_success(f"✅ Liquidity features added: {len(liquidity_features.columns)} features")
 
         # 2.7. Contrarian signal strength measurements
+        tprint_info("🔄 Step 5/8: Calculating contrarian signal strength...")
         contrarian_features = self._calculate_contrarian_signal_strength(
             probs, abs_scores, returns, market_data, 'gmm_state'
         )
@@ -1484,8 +1562,10 @@ class EnhancedGMMFeatures(BaseStep):
             list(enhanced_results.columns[col_offset+len(contrarian_features.columns):])
         )
         col_offset += len(contrarian_features.columns)
+        tprint_success(f"✅ Contrarian features added: {len(contrarian_features.columns)} features")
 
         # 3. Overextended cluster detection
+        tprint_info("⚠️ Step 6/8: Detecting overextended clusters...")
         overextended_analysis = self._detect_overextended_clusters(
             probs, np.array(cluster_returns), returns
         )
@@ -1511,8 +1591,10 @@ class EnhancedGMMFeatures(BaseStep):
             list(enhanced_results.columns[col_offset+len(overextended_cols):])
         )
         col_offset += len(overextended_cols)
+        tprint_success(f"✅ Overextended features added: {len(overextended_cols)} features")
 
         # 4. GMM-Shock detection
+        tprint_info("💥 Step 7/8: Detecting GMM shock events...")
         shock_features = self._detect_gmm_shock_events(probs, z_fam, ent)
         enhanced_results.iloc[:, col_offset:col_offset+len(shock_features.columns)] = shock_features.values
         enhanced_results.columns = (
@@ -1521,8 +1603,10 @@ class EnhancedGMMFeatures(BaseStep):
             list(enhanced_results.columns[col_offset+len(shock_features.columns):])
         )
         col_offset += len(shock_features.columns)
+        tprint_success(f"✅ Shock features added: {len(shock_features.columns)} features")
 
         # 5. FracDiff information
+        tprint_info("📊 Step 8/8: Adding FracDiff information...")
         enhanced_results.iloc[:, col_offset] = optimal_d
         enhanced_results.iloc[:, col_offset+1] = int(self.use_fracdiff)
         enhanced_results.columns = (
@@ -1533,35 +1617,98 @@ class EnhancedGMMFeatures(BaseStep):
         # Store enhanced analysis
         self.enhanced_models['step_a_overextended'] = overextended_analysis
         self.enhanced_models['step_a_optimal_d'] = optimal_d
-
-        tprint_success(f"✅ Enhanced Step A completed: {len(enhanced_results.columns)} features")
-
+        
+        tprint_success(f"🎉 Enhanced Step A completed successfully!")
+        tprint_info(f"📊 Final enhanced features shape: {enhanced_results.shape}")
+        tprint_info(f"🔢 Total features generated: {len(enhanced_results.columns)}")
+        
         return enhanced_results
 
     def _run_enhanced_gmm_pipeline(self, X: pd.DataFrame, fracdiff_returns: pd.Series,
-                                  full_compressed: pd.DataFrame) -> Tuple[pd.DataFrame, Tuple]:
+                                  full_compressed: pd.DataFrame, target_returns: pd.Series = None) -> Tuple[pd.DataFrame, Tuple]:
         """
         Run GMM pipeline and return both base results and full predictions in one pass.
 
         Returns:
             Tuple of (base_results, (probs, z_fam, ent, cluster_returns))
         """
+        tprint_info("🤖 Running GMM inference pipeline...")
+        
+        # Ensure GMM model exists
+        if 'step_a_gmm' not in self.original_pipeline.models:
+            tprint_warning("⚠️ 'step_a_gmm' not found in original pipeline models. Training now...")
+            if target_returns is None:
+                raise ValueError("Cannot train GMM: target_returns is missing.")
+            
+            # Train the original Step A
+            # This will populate self.original_pipeline.models['step_a_gmm']
+            _ = self.original_pipeline._step_a_macro_state(X, target_returns)
+            tprint_success("✅ 'step_a_gmm' trained successfully on-demand.")
+
         # Get GMM model
         gmm = self.original_pipeline.models['step_a_gmm']
+        tprint_info(f"📈 GMM model loaded: {gmm.n_components} clusters")
+        
+        # Log GMM model characteristics
+        if hasattr(gmm, 'means_'):
+            tprint_info(f"🎯 GMM cluster means shape: {gmm.means_.shape}")
+            tprint_info(f"📊 GMM covariance type: {gmm.covariance_type}")
+            if hasattr(gmm, 'weights_'):
+                tprint_info(f"⚖️ GMM cluster weights: {gmm.weights_}")
 
         # Get full predictions (avoiding redundant computation)
+        tprint_info("🔮 Computing GMM predictions...")
         probs, z_fam, ent = gmm.predict(full_compressed.values)
-
+        
+        # Log prediction statistics
+        tprint_info(f"📊 Predictions shapes: probs={probs.shape}, z_fam={z_fam.shape}, ent={ent.shape}")
+        tprint_info(f"📈 Probability stats: mean={probs.mean():.4f}, std={probs.std():.4f}, min={probs.min():.4f}, max={probs.max():.4f}")
+        tprint_info(f"🎯 Z-familiarity stats: mean={z_fam.mean():.4f}, std={z_fam.std():.4f}, min={z_fam.min():.4f}, max={z_fam.max():.4f}")
+        tprint_info(f"🔀 Entropy stats: mean={ent.mean():.4f}, std={ent.std():.4f}, min={ent.min():.4f}, max={ent.max():.4f}")
+        
         # Calculate cluster returns using FracDiff-transformed returns
+        tprint_info("💰 Computing cluster returns...")
         fwd_ret = fracdiff_returns.shift(-12).fillna(0)
+        tprint_info(f"📈 Forward returns stats: mean={fwd_ret.mean():.6f}, std={fwd_ret.std():.6f}")
+        
         cluster_returns = []
+        cluster_stats = []
         for k in range(self.n_clusters_macro):
             w = probs[:, k]
             mean_ret = np.average(fwd_ret, weights=w) if np.sum(w) > 0 else 0.0
             cluster_returns.append(mean_ret)
+            
+            # Calculate cluster statistics
+            cluster_weight = np.mean(w)
+            cluster_volatility = np.std(fwd_ret[w > 0.1]) if np.sum(w > 0.1) > 10 else 0.0
+            cluster_samples = np.sum(w > 0.01)
+            
+            cluster_stats.append({
+                'cluster_id': k,
+                'mean_return': mean_ret,
+                'avg_weight': cluster_weight,
+                'volatility': cluster_volatility,
+                'samples': cluster_samples
+            })
+        
+        # Log detailed cluster information
+        tprint_info("🎭 GMM Cluster Analysis:")
+        for stats in cluster_stats:
+            tprint_info(f"   Cluster {stats['cluster_id']}: return={stats['mean_return']:+.6f}, weight={stats['avg_weight']:.3f}, vol={stats['volatility']:.6f}, samples={stats['samples']}")
+        
+        # Identify dominant and interesting clusters
+        best_cluster = max(cluster_stats, key=lambda x: abs(x['mean_return']))
+        most_active = max(cluster_stats, key=lambda x: x['avg_weight'])
+        most_volatile = max(cluster_stats, key=lambda x: x['volatility'])
+        
+        tprint_info(f"🏆 Best return cluster: {best_cluster['cluster_id']} ({best_cluster['mean_return']:+.6f})")
+        tprint_info(f"🔥 Most active cluster: {most_active['cluster_id']} (weight={most_active['avg_weight']:.3f})")
+        tprint_info(f"⚡ Most volatile cluster: {most_volatile['cluster_id']} (vol={most_volatile['volatility']:.6f})")
 
         # Get base results from original pipeline
+        tprint_info("🔧 Generating base GMM features...")
         base_results = self.original_pipeline._step_a_macro_state(X, fracdiff_returns)
+        tprint_success(f"✅ Base GMM features generated: {base_results.shape}")
 
         return base_results, (probs, z_fam, ent, cluster_returns)
     
@@ -1751,17 +1898,25 @@ class EnhancedGMMFeatures(BaseStep):
         Execute the enhanced GMM pipeline.
         """
         try:
+            tprint_info("🚀 Enhanced GMM Features Pipeline Starting...")
+            tprint_info(f"🔧 Config: use_original={self.use_original_pipeline}, use_enhanced={self.use_enhanced_pipeline}")
+            
             # 1. Load Data
+            tprint_info("📥 Step 1/4: Loading market data...")
             market_data, _ = self.load_market_data_or_fail(config)
             if market_data is None or market_data.empty:
                 raise ValueError("No market data loaded.")
             
-            tprint_info(f"🚀 Starting Enhanced GMM Feature Pipeline on {len(market_data)} rows...")
+            tprint_success(f"✅ Loaded market data: {len(market_data)} rows, {len(market_data.columns)} columns")
+            tprint_info(f"📊 Data range: {market_data.index[0]} to {market_data.index[-1]}")
             
             # Define Target first
+            tprint_info("🎯 Step 2/4: Computing returns target...")
             returns = market_data['close'].pct_change()
+            tprint_info(f"📈 Returns statistics: mean={returns.mean():.6f}, std={returns.std():.6f}")
             
             # 2. Base Features - use multi-timeframe if enabled
+            tprint_info("🔧 Step 3/4: Generating base features...")
             if self.use_multi_timeframe:
                 tprint_info("🌐 Generating multi-timeframe base features...")
                 base_features = self._generate_multi_timeframe_features_streaming(market_data, returns)
@@ -1770,25 +1925,33 @@ class EnhancedGMMFeatures(BaseStep):
                 dummy_signals = pd.DataFrame(index=market_data.index)
                 base_features = create_meta_features(market_data, dummy_signals, volume_available=True)
             
+            tprint_success(f"✅ Base features generated: {base_features.shape}")
+            
             # Preprocess
+            tprint_info("🧹 Preprocessing features...")
             X_clean = self.original_pipeline._preprocess_features(base_features) if self.original_pipeline else base_features
+            tprint_success(f"✅ Features preprocessed: {X_clean.shape}")
             
             # 3. Run Pipelines
+            tprint_info("🚀 Step 4/4: Running GMM pipelines...")
             all_results = {}
             
             # Pipeline 1: Original (if enabled)
             if self.use_original_pipeline:
-                tprint_info("\n📊 Running Original GMM Pipeline...")
+                tprint_info("📊 Running Original GMM Pipeline...")
                 self._initialize_original_pipeline()
                 original_features = self.original_pipeline.run(config)
                 all_results['original'] = original_features
+                tprint_success(f"✅ Original pipeline completed: {original_features.shape if hasattr(original_features, 'shape') else 'Unknown shape'}")
             
             # Pipeline 2: Enhanced
             if self.use_enhanced_pipeline:
-                tprint_info("\n🚀 Running Enhanced GMM Pipeline...")
+                tprint_info("🚀 Running Enhanced GMM Pipeline...")
                 
                 # Enhanced Step A (with FracDiff + Multi-Timeframe)
+                tprint_info("🧠 Running Enhanced Step A: Macro State Analysis...")
                 enhanced_step_a = self._enhanced_step_a_macro_state(X_clean, returns, market_data)
+                tprint_success(f"✅ Enhanced Step A completed: {enhanced_step_a.shape if hasattr(enhanced_step_a, 'shape') else 'Unknown shape'}")
                 
                 # For now, we'll focus on Step A enhancement
                 # Steps B, C, D can be enhanced similarly in future iterations
@@ -1796,9 +1959,14 @@ class EnhancedGMMFeatures(BaseStep):
                 
                 # TreeSHAP Analysis
                 if self.use_treeshap:
+                    tprint_info("🌲 Running TreeSHAP analysis...")
                     target_series = returns.shift(-12).fillna(0)
                     treeshap_results = self._run_treeshap_analysis(enhanced_step_a, target_series)
                     all_results['treeshap'] = treeshap_results
+                    if treeshap_results:
+                        tprint_success(f"✅ TreeSHAP analysis completed: {len(treeshap_results.get('selected_features', []))} features selected")
+                    else:
+                        tprint_warning("⚠️ TreeSHAP analysis returned no results")
             
             # 4. Save Artifacts
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

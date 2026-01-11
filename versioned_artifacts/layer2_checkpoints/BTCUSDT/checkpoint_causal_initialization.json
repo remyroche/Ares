@@ -1,0 +1,11 @@
+{
+  "step_name": "causal_initialization",
+  "step_index": 2,
+  "timestamp": "20260111_235542",
+  "symbol": "BTCUSDT",
+  "config_hash": "147870a253a4",
+  "data_keys": [
+    "df"
+  ],
+  "json_data": {}
+}

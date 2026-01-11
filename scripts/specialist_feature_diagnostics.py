@@ -172,6 +172,17 @@ def _calibrate_probabilities(y_tr: np.ndarray, p_tr: np.ndarray, p_te: np.ndarra
     X_tr = p_tr.reshape(-1, 1)
     X_te = p_te.reshape(-1, 1)
     
+    # Impute NaNs with 0 (neutral probability assumption)
+    import numpy as np
+    from sklearn.impute import SimpleImputer
+    
+    imputer = SimpleImputer(strategy='constant', fill_value=0.5) # Assuming 0.5 is neutral prob
+    X_tr = imputer.fit_transform(X_tr)
+    X_te = imputer.transform(X_te)
+    
+    if len(np.unique(y_tr)) < 2:
+        return p_te
+        
     calibrator.fit(X_tr, y_tr)
     return calibrator.predict_proba(X_te)[:, 1]
 
@@ -2289,6 +2300,12 @@ def _infer_model_group(feature_name: str) -> str:
         return "spectral"
     if "volatility" in name:
         return "volatility"
+    if "candlestick" in name:
+        return "candlestick"
+    if "reversion" in name:
+        return "reversion"
+    if "returns_" in name or "fracdiff_" in name:
+        return "gmm_regime"
     if "causal" in name or "surprise" in name:
         return "causal"
     return "other"

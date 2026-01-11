@@ -114,6 +114,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         
         tprint_info("   - Layer 1: Sample Weighting ENABLED") 
         config["run_layer1_optimization"] = True
+        
+        tprint_info("   - Event Pipeline Logging: ENABLED")
+        config["enable_pipeline_logging"] = True
 
         # 0. Setup & Data Loading
         tprint_info("📥 Loading Market Data...")

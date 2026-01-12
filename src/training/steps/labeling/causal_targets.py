@@ -80,7 +80,7 @@ class CausalTargetComputer:
         self.cate_model_type = self.cate_config.get('model_type', 'random_forest')
         self.cate_params = self.cate_config.get('params', {
             'n_estimators': 100,
-            'max_depth': 10,
+            'max_depth': 8,
             'min_samples_leaf': 10,
             'n_jobs': -1
         })

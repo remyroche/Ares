@@ -5478,7 +5478,7 @@ class LabelBasedLayer2(BaseStep):
                     'model_type': 'random_forest',
                     'params': {
                         'n_estimators': 200, # Optimized
-                        'max_depth': 12,     # Constrained depth
+                        'max_depth': 8,      # Constrained depth
                         'min_samples_leaf': 10,
                         'n_jobs': -1
                     }

@@ -59,7 +59,7 @@ def prepare_huber_production_orchestrator(
     
     # 6. Monotonicity via Local Residual Scale
     local_scale = np.mean(abs_avg_coeffs[keep_mask])
-    mono_cst = np.where(abs_avg_coeffs[keep_mask] > (0.15 * local_scale), 
+    mono_cst = np.where(abs_avg_coeffs[keep_mask] > max(0.15 * local_scale, np.percentile(abs_avg_coeffs[keep_mask], 10)),
                         np.sign(avg_coeffs[keep_mask]), 0)
 
     # 7. Interaction Constraints (Named Output for Tree Learners)

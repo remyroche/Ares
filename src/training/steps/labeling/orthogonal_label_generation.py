@@ -4797,6 +4797,11 @@ def orthogonal_label_generation(
             
         tprint_info(f"   [Pruning] Testing {len(param_grids['tpsl_grid'])} TP:SL combinations for {fam}...")
         t_start_fam_prune = time.time()
+
+        # Calculate duration for rate check (aligned with check_label_quality)
+        duration_days = max(1, (df_full.index[-1] - df_full.index[0]).days)
+        min_events_rate = max(50, int(0.1 * duration_days))
+
         # Test TP:SL combinations
         valid_items = []
         for grid_item in param_grids['tpsl_grid']:
@@ -4819,15 +4824,16 @@ def orthogonal_label_generation(
                 
                 if lbls.empty: continue
                 
-                # Check Gates: Balance & Count
+                # Check Gates: Balance & Count (ALIGNED with check_label_quality)
                 if fam == 'PRICE_CUSUM':
                     pos_rate = (lbls == 1).mean()
-                    min_bal = 0.03
+                    min_bal = 0.10 # Stricter to match main gate (0.10)
                 else:
                     pos_rate = (lbls != 0).mean()
-                    min_bal = 0.10
+                    min_bal = 0.05 # Relaxed to match main gate (0.05 for regression)
                 
-                count_ok = len(lbls) >= 50 # Relaxed for pruning
+                # Check rate matching main gate (0.1/day) plus minimum 50 events
+                count_ok = len(lbls) >= min_events_rate
                 bal_ok = (pos_rate >= min_bal) and (pos_rate <= 0.90) if fam == 'PRICE_CUSUM' else (pos_rate >= min_bal)
                 
                 if count_ok and bal_ok:

@@ -5536,11 +5536,24 @@ class LabelBasedLayer2(BaseStep):
             resume_from = getattr(self, '_resume_from', None)
             symbol = self._current_config.get('symbol', 'UNKNOWN')
             
-            # Initialize causal target computer
+            # Initialize causal target computer with optimized configuration
             target_computer = CausalTargetComputer(
                 verbose=self.verbose,
                 checkpoint_manager=self._checkpoint_manager if self._checkpoints_enabled else None,
-                symbol=symbol
+                symbol=symbol,
+                cate_config={
+                    'model_type': 'random_forest',
+                    'params': {
+                        'n_estimators': 200, # Optimized
+                        'max_depth': 8,      # Constrained depth
+                        'min_samples_leaf': 10,
+                        'n_jobs': -1
+                    }
+                },
+                subsample_config={
+                    'threshold': 50000,
+                    'method': 'adaptive'
+                }
             )
             
             # Check if we can resume from a checkpoint

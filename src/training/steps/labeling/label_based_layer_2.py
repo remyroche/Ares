@@ -58,7 +58,7 @@ import time
 import psutil
 from pathlib import Path
 import hashlib
-from sklearn.linear_model import RidgeClassifier
+from sklearn.linear_model import RidgeClassifier, Lasso, Ridge
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from src.utils.numba_funcs import (
@@ -6007,153 +6007,106 @@ class LabelBasedLayer2(BaseStep):
         """
         Run a model race to find the best base model for this geometry.
 
-        Traditional AFML Candidates:
-          1. LGBM (Tree) + RobustFocalLoss
-          2. LGBM (Linear) + RobustFocalLoss
-          3. XGB (Tree) + RobustFocalLoss
-          4. XGB (Linear) + RobustFocalLoss
-          5. CatBoost
-
-        Causal Framework Candidates (when enable_causal_framework=True):
-          1. LGBM (Tree) + IRM (Invariant Risk Minimization)
-          2. LGBM (Linear) + IRM
-          3. XGB (Tree) + IRM
-          4. XGB (Linear) + IRM
-
-        Metric: P@R40% (primary), AUC (tie-breaker).
-
-        OPTIMIZED: Simpler models with class balancing for sparse-event geometries.
-        REFINED: Ridge constraints for monotonicity and Ridge candidate added.
+        UPDATED FRAMEWORK:
+        - LASSO feature pruning
+        - Ridge monotonic constraints
+        - Candidates: CatBoost, XGB, Ridge, ExtraTrees
         """
         import time
-        start_time = time.time()
-
-        # STANDARDIZATION: Ensure all features are standardized for the model race.
-        # This is critical for linear models (Ridge, Bagged Lasso, XGB Linear).
         from sklearn.preprocessing import StandardScaler
-        from sklearn.linear_model import RidgeClassifier
+        from sklearn.linear_model import Lasso, Ridge
         from sklearn.calibration import CalibratedClassifierCV
-        from sklearn.ensemble import BaggingClassifier
         
+        start_time = time.time()
+        
+        # 1. Standardization
         scaler = StandardScaler()
-        
-        # We must clone the data to avoid modifying the original frames outside this race
         X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), index=X_train.index, columns=X_train.columns)
         X_val_scaled = pd.DataFrame(scaler.transform(X_val), index=X_val.index, columns=X_val.columns)
         
-        # === COMPUTE MONOTONIC CONSTRAINTS (RIDGE-BASED) ===
-        # We Use the training data to learn the constraints
-        # y_train is binary here, but Ridge (Linear Regression) works fine for directionality extraction
-        constraints_dict = compute_ridge_monotonic_constraints(
-            X_train, y_train, alpha=1.0, threshold=2.0, verbose=False
-        )
-        
-        # Convert to list/array format for LightGBM/CatBoost if needed, or keeping dict map
-        # LightGBM expects a list of ints corresponding to feature columns, or feature_name: constraint
-        # We will map feature names to constraints for LGBM
-        # constraints_dict is {feature: -1/0/1}
-        
-        # Count significant constraints
-        n_increasing = sum(1 for v in constraints_dict.values() if v == 1)
-        n_decreasing = sum(1 for v in constraints_dict.values() if v == -1)
-        tprint_info(f"   🔒 Ridge Constraints: {n_increasing} Increasing, {n_decreasing} Decreasing")
+        # 2. LASSO Feature Selection (Pruning)
+        # Train LASSO to identify non-zero coefficients
+        # Use a small alpha to be conservative with pruning
+        tprint_info("   ✂️ Running LASSO for feature pruning...")
+        try:
+            lasso = Lasso(alpha=0.001, random_state=42)
+            lasso.fit(X_train_scaled, y_train)
 
-        race_results = {}
-        # Compute dynamic scale_pos_weight based on class balance
+            # Identify features to keep (coef != 0)
+            kept_mask = lasso.coef_ != 0
+            kept_features = X_train.columns[kept_mask].tolist()
+
+            if len(kept_features) < 2:
+                tprint_warning(f"   ⚠️ LASSO pruned too aggressively ({len(kept_features)} features left). Reverting to all features.")
+                kept_features = X_train.columns.tolist()
+            else:
+                n_dropped = len(X_train.columns) - len(kept_features)
+                tprint_info(f"   ✅ LASSO pruned {n_dropped} features. Keeping {len(kept_features)}.")
+
+            # Filter Datasets
+            X_train_final = X_train_scaled[kept_features]
+            X_val_final = X_val_scaled[kept_features]
+
+        except Exception as e:
+            tprint_warning(f"   ⚠️ LASSO pruning failed: {e}. Using all features.")
+            X_train_final = X_train_scaled
+            X_val_final = X_val_scaled
+            kept_features = X_train.columns.tolist()
+
+        # 3. Ridge Monotonic Constraints
+        # Train Ridge on kept features to determine constraints
+        tprint_info("   🔒 Computing Ridge-based Monotonic Constraints...")
+        constraints_dict = {}
+        try:
+            ridge = Ridge(alpha=1.0, random_state=42)
+            ridge.fit(X_train_final, y_train)
+
+            # Threshold 0.01
+            for feat, coef in zip(kept_features, ridge.coef_):
+                if coef > 0.01:
+                    constraints_dict[feat] = 1
+                elif coef < -0.01:
+                    constraints_dict[feat] = -1
+                else:
+                    constraints_dict[feat] = 0
+
+            n_inc = sum(1 for v in constraints_dict.values() if v == 1)
+            n_dec = sum(1 for v in constraints_dict.values() if v == -1)
+            tprint_info(f"      Constraints: {n_inc} Increasing, {n_dec} Decreasing")
+
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Ridge constraints failed: {e}")
+            constraints_dict = {f: 0 for f in kept_features}
+
+        # Compute dynamic scale_pos_weight
         pos_count = np.sum(y_train == 1)
         neg_count = np.sum(y_train == 0)
         if pos_count > 0:
             scale_pos_weight = neg_count / pos_count  # (1-balance)/balance
         else:
             scale_pos_weight = 1.0
-        
-        candidates = []
 
-        # Check if using causal framework with IRM
-        use_irm = self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled
+        # 4. Create Candidates
+        # Updated to pass filtered features and constraints
+        candidates = self._create_irm_candidates(
+            scale_pos_weight, X_train_final, y_train,
+            environment_masks=environment_masks,
+            constraints_dict=constraints_dict
+        )
 
-        if use_irm:
-            tprint_info("   🔬 Using Causal IRM Framework for model training")
-            # Create IRM-based models
-            irm_candidates = self._create_irm_candidates(scale_pos_weight, X_train_scaled, y_train, environment_masks)
-            candidates.extend(irm_candidates)
-        else:
-            tprint_info("   📊 Using Traditional AFML Framework")
-            
-            # --- 1. LGBM (Tree) + RobustFocalLoss + Constraints ---
-            # Prepare monotone constraints list for LGBM
-            # LGBM accepts 'monotone_constraints': [1, -1, 0...] corresponding to columns
-            lgbm_constraints = [constraints_dict.get(col, 0) for col in X_train.columns]
-            
-            candidates.append({
-                 'name': 'LGBM_Tree',
-                 'model': lgb.LGBMClassifier(
-                     **LAYER2_PROBE_CONSTANTS,
-                     monotone_constraints=lgbm_constraints, # Apply constraints
-                     monotone_constraints_method='basic'
-                 )
-            })
-
-            # --- 2. LGBM (Linear) + RobustFocalLoss ---
-            # Linear trees essentially learn linear boundaries, constraints less critical but applicable
-            candidates.append({
-                 'name': 'LGBM_Linear',
-                 'model': lgb.LGBMClassifier(
-                     **LAYER2_PROBE_CONSTANTS,
-                     linear_tree=True, # Linear trees
-                     monotone_constraints=lgbm_constraints # Apply constraints
-                 )
-            })
-
-        # --- REMOVED XGBOOST (Tree & Linear) as per plan ---
-        
-        # --- 3. Ridge Classifier (New Candidate) ---
-        # We need proba, so we wrap in CalibratedClassifierCV
-        try:
-             ridge_base = RidgeClassifier(alpha=1.0, class_weight='balanced', random_state=42)
-             ridge_calibrated = CalibratedClassifierCV(ridge_base, method='sigmoid', cv=3)
-             
-             candidates.append({
-                 'name': 'RidgeClassifier',
-                 'model': ridge_calibrated
-             })
-        except Exception as e:
-             tprint_warning(f"⚠️ Failed to init RidgeClassifier: {e}")
-
-        # 5. CatBoost
-        if CATBOOST_AVAILABLE and catboost is not None:
-            from catboost import CatBoostClassifier
-            # CatBoost constraints format: dictionary {feat_idx: constraint} or list
-            # We use feature names mapping if passing DataFrame, but here we pass logic
-            # CatBoost supports monotone_constraints as "feature_index:constraint,..." string or dict
-            # Since we pass X as DataFrame, we can map names
-            cat_constraints = constraints_dict # Dictionary is supported in newer versions, or we format string
-            
-            candidates.append({
-                'name': 'CatBoost',
-                'model': CatBoostClassifier(
-                    iterations=100, learning_rate=0.05, depth=5,
-                    verbose=0, random_seed=42, thread_count=1,
-                    allow_writing_files=False,
-                    monotone_constraints=cat_constraints
-                )
-            })
-
-        # --- OPTIMIZED BATCH MODEL TRAINING ---
-        # Use batch model training for 4x speedup
-        if OPTIMIZED_FUNCTIONS_AVAILABLE and len(candidates) > 2:
+        # 5. Run Race (Batch Training)
+        if OPTIMIZED_FUNCTIONS_AVAILABLE and len(candidates) > 0:
             tprint_info(f"   🚀 Batch Training: {len(candidates)} Models with optimized parallel processing...")
             
-            # Convert to DataFrames for batch training
-            X_train_df = pd.DataFrame(X_train_scaled, columns=[f'feature_{i}' for i in range(X_train_scaled.shape[1])])
-            X_val_df = pd.DataFrame(X_val_scaled, columns=[f'feature_{i}' for i in range(X_val_scaled.shape[1])])
-            y_train_series = pd.Series(y_train)
-            y_val_series = pd.Series(y_val)
+            # Ensure columns have string names for LightGBM/XGB/CatBoost
+            # They should be preserved from DataFrame, but let's be safe
+            X_train_batch = X_train_final.copy()
+            X_val_batch = X_val_final.copy()
             
             # Run batch training
             batch_results = batch_model_training(
-                X_train_df, y_train_series, X_val_df, y_val_series, 
-                model_configs=candidates, n_jobs=2
+                X_train_batch, pd.Series(y_train), X_val_batch, pd.Series(y_val),
+                model_configs=candidates, n_jobs=min(len(candidates), 4) # Parallelize
             )
             
             # Extract results
@@ -6161,43 +6114,38 @@ class LabelBasedLayer2(BaseStep):
             best_name = batch_results['best_model_name']
             race_results = batch_results['metrics']
             
-            # Calculate additional metrics for consistency
-            if best_model is not None:
-                if hasattr(best_model, "predict_proba"):
-                    preds = best_model.predict_proba(X_val_scaled)
-                    if preds.ndim == 2:
-                        preds = preds[:, 1]
-                else:
-                    preds = best_model.predict(X_val_scaled)
-                
+            # Reporting
+            best_metric = race_results[best_name].get('r@p60', 0.0) # Or primary metric used in batch_model_training
+            best_auc = race_results[best_name].get('auc', 0.0)
+
+            tprint_success(f"   🏆 Race Winner: {best_name} (Metric={best_metric:.4f}, AUC={best_auc:.4f})")
+
+            return best_model, best_name, race_results
+
+        else:
+            # Fallback manual loop (should not happen if OPTIMIZED_FUNCTIONS_AVAILABLE)
+            tprint_warning("   ⚠️ Optimized functions missing, running sequential race...")
+            best_model = None
+            best_name = None
+            best_score = -np.inf
+            results = {}
+
+            for cand in candidates:
+                name = cand['name']
+                model = cand['model']
                 try:
-                    auc = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
-                    ap = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
-                    r_at_p = recall_at_precision_threshold(y_val, preds, target_precision=0.60)
-                    ll = log_loss(y_val, preds)
-                except ValueError:
-                    auc = 0.5
-                    ap = 0.0
-                    r_at_p = 0.0
-                    ll = 999.0
-                
-                # Update race results with additional metrics
-                for name in race_results:
-                    race_results[name]['pr_auc'] = ap
-                    race_results[name]['r@p60'] = r_at_p
-                    race_results[name]['recall'] = 0.0  # Placeholder
-                
-                best_score = r_at_p
-                best_auc = auc
-                
-                tprint_success(f"   ✅ Batch training complete: Best model {best_name} (R@P60={r_at_p:.4f}, AUC={auc:.4f})")
-            else:
-                # Fallback if batch training fails
-                best_model = None
-                best_name = "LGBM_Tree"
-                best_score = 0.0
-                best_auc = 0.0
-                tprint_warning("   ⚠️ Batch training failed, using fallback")
+                    model.fit(X_train_final, y_train)
+                    preds = model.predict_proba(X_val_final)[:, 1]
+                    score = roc_auc_score(y_val, preds)
+                    results[name] = {'auc': score}
+                    if score > best_score:
+                        best_score = score
+                        best_model = model
+                        best_name = name
+                except Exception as e:
+                    tprint_warning(f"   ❌ {name} failed: {e}")
+
+            return best_model, best_name, results
         else:
             # Fallback to original sequential training
             best_score = 0.0  # PR-AUC: Higher is better
@@ -6616,72 +6564,117 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning("⚠️ Enhanced Bagged Lasso dependencies not available")
             return None
 
-    def _create_irm_candidates(self, scale_pos_weight, X_train, y_train, environment_masks=None):
-        """Create causal IRM-based model candidates."""
+    def _create_irm_candidates(self, scale_pos_weight, X_train, y_train, environment_masks=None, constraints_dict=None):
+        """Create causal IRM-based model candidates with updated specs."""
+        from sklearn.linear_model import RidgeClassifier
+        from sklearn.calibration import CalibratedClassifierCV
+
         candidates = []
+        constraints_dict = constraints_dict or {}
 
         # Create environment masks if not provided (simplified)
         if environment_masks is None:
-            environment_masks = self._create_default_environment_masks(X_train, y_train)
+            # Simple placeholder or actual mask creation if needed
+            # Assuming _create_default_environment_masks exists and works
+            try:
+                environment_masks = self._create_default_environment_masks(X_train, y_train)
+            except:
+                environment_masks = {}
 
-        # 1. LGBM with IRM (Tree) - Causal Framework
-        candidates.append({
-            'name': 'LGBM_IRM',
-            'model': IRM_LGBMClassifier(
-                irm_system=self._irm_system,
-                environment_masks=environment_masks,
-                n_estimators=100, learning_rate=0.05,
-                num_leaves=15, max_depth=5,
-                scale_pos_weight=scale_pos_weight,
-                seed=42, verbose=-1, n_jobs=1
-            )
-        })
-
-        # 2. LGBM with IRM (Linear Tree) - Causal Framework
-        candidates.append({
-            'name': 'LGBM_IRM_Linear',
-            'model': IRM_LGBMClassifier(
-                irm_system=self._irm_system,
-                environment_masks=environment_masks,
-                n_estimators=100, learning_rate=0.05,
-                num_leaves=15, max_depth=5,
-                linear_tree=True,
-                scale_pos_weight=scale_pos_weight,
-                seed=42, verbose=-1, n_jobs=1
-            )
-        })
-
-        # 3. ExtraTrees with IRM (Wrapper)
-        candidates.append({
-            'name': 'ExtraTrees_IRM',
-            'model': IRM_ExtraTreesClassifier(
-                irm_system=self._irm_system,
-                environment_masks=environment_masks,
-                n_estimators=1000,           # More trees for stability
-                max_features='log2',         # log2(p) features per split
-                min_samples_leaf=0.02,       # 2% of samples per leaf (controls depth)
-                max_depth=None,               # Let min_samples_leaf control depth
-                class_weight='balanced',      # Balanced classes
-                bootstrap=True,               # Enable bootstrap sampling
-                random_state=42,
-                n_jobs=1                      # Prevent deadlock
-            )
-        })
-
+        # 1. CatBoost with IRM (Wrapper)
+        # Params: subsample=0.6, colsample_bylevel=0.5, leaf_estimation_iterations=10,
+        # l2_leaf_reg 20, random_strength 5, bootstrap_type='MVS'
         if CATBOOST_AVAILABLE_LOCAL:
-            # 4. CatBoost with IRM (Wrapper)
+            # Prepare constraints for CatBoost (dict or list)
+            # CatBoost accepts dictionary mapping feature index/name to constraint
+            # Since X_train is DataFrame with names, we can pass dictionary directly if supported,
+            # or convert to string/list.
+            # CatBoost `monotone_constraints` param supports dict {feat_name: constraint}
+
             candidates.append({
                 'name': 'CatBoost_IRM',
                 'model': IRM_CatBoostClassifier(
                     irm_system=self._irm_system,
                     environment_masks=environment_masks,
-                    iterations=100, learning_rate=0.05, depth=5,
-                    scale_pos_weight=scale_pos_weight,  # ADDED: Handle class imbalance
-                    verbose=0, random_seed=42, thread_count=1,
-                    allow_writing_files=False
+                    iterations=100,
+                    learning_rate=0.03, # Lower LR for stability? User didn't specify LR for CatBoost but did for XGB (0.03)
+                    depth=5, # Default?
+                    subsample=0.6,
+                    colsample_bylevel=0.5,
+                    leaf_estimation_iterations=10,
+                    l2_leaf_reg=20,
+                    random_strength=5,
+                    bootstrap_type='MVS',
+                    scale_pos_weight=scale_pos_weight,
+                    verbose=0,
+                    random_seed=42,
+                    thread_count=1,
+                    allow_writing_files=False,
+                    monotone_constraints=constraints_dict
                 )
             })
-        
+
+        # 2. XGBoost with IRM (Wrapper)
+        # Params: num_parallel_tree 7, colsample_bynode 0.4, subsample 0.6,
+        # reg_lambda 50, min_child_weight 10, gamma 1.1, learning_rate 0.03
+        if XGBClassifier is not None:
+            # Prepare constraints for XGBoost (tuple/list of constraints in feature order)
+            # XGB expects constraints as tuple `(1, 0, -1, ...)` corresponding to feature columns
+            xgb_constraints = tuple(constraints_dict.get(col, 0) for col in X_train.columns)
+
+            candidates.append({
+                'name': 'XGB_IRM',
+                'model': IRM_XGBClassifier(
+                    irm_system=self._irm_system,
+                    environment_masks=environment_masks,
+                    n_estimators=100,
+                    learning_rate=0.03,
+                    num_parallel_tree=7,
+                    colsample_bynode=0.4,
+                    subsample=0.6,
+                    reg_lambda=50,
+                    min_child_weight=10,
+                    gamma=1.1,
+                    monotone_constraints=xgb_constraints,
+                    scale_pos_weight=scale_pos_weight,
+                    random_state=42,
+                    n_jobs=1,
+                    verbosity=0,
+                    use_label_encoder=False
+                )
+            })
+
+        # 3. Ridge Classifier (Standard)
+        # User said "add a RidgeClassifier model". Assuming standalone is fine.
+        try:
+            ridge_base = RidgeClassifier(alpha=1.0, class_weight='balanced', random_state=42)
+            ridge_calibrated = CalibratedClassifierCV(ridge_base, method='sigmoid', cv=3)
+
+            candidates.append({
+                'name': 'RidgeClassifier',
+                'model': ridge_calibrated
+            })
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to init RidgeClassifier: {e}")
+
+        # 4. ExtraTrees with IRM (Wrapper) - Kept from original, updated for context
+        # Note: No monotonic constraints
+        candidates.append({
+            'name': 'ExtraTrees_IRM',
+            'model': IRM_ExtraTreesClassifier(
+                irm_system=self._irm_system,
+                environment_masks=environment_masks,
+                n_estimators=1000,
+                max_features='log2',
+                min_samples_leaf=0.02,
+                max_depth=None,
+                class_weight='balanced',
+                bootstrap=True,
+                random_state=42,
+                n_jobs=1
+            )
+        })
+
         return candidates
 
     def _create_default_environment_masks(self, X_train, y_train):

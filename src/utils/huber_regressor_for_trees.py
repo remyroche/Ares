@@ -1,55 +1,77 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import HuberRegressor
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
+from joblib import Parallel, delayed
+from typing import Dict, List, Tuple, Optional
 
-def prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=None, 
-                                 pruning_percentile=15, corr_threshold=0.7):
+def prepare_huber_production_orchestrator(
+    X_train: pd.DataFrame, 
+    y_train: pd.Series,
+    vol_proxy: pd.Series, # e.g., Realized Volatility or ATR
+    X_val: Optional[pd.DataFrame] = None,
+    X_test: Optional[pd.DataFrame] = None,
+    epsilons: List[float] = [1.1, 1.35, 1.75],
+    alphas: List[float] = [1e-4, 1e-3, 1e-2],
+    pruning_percentile: int = 15,
+    corr_threshold: float = 0.7,
+    n_jobs: int = -1
+) -> Dict:
     """
-    Unified Teacher Script (2026 Strategy)
-    Uses HuberRegressor to generate: Pruned Features, Monotonic Constraints, 
-    Interaction Groups, and Warm-Start Baselines.
+    Advanced Huber Orchestrator for 15m Crypto Specialists.
+    Includes: Vol-Weighting, Parallel Grid Fitting, and Named Interaction Constraints.
     """
-    # --- 1. Robust Feature Scaling ---
-    scaler = StandardScaler()
-    X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
+    # 1. Local Volatility Weighting (De Prado alignment)
+    # Weights samples by inverse volatility to prioritize structural regimes over noise
+    sample_weights = (1.0 / vol_proxy).fillna(vol_proxy.median()).values
+    sample_weights /= sample_weights.mean() # Normalize to preserve scale
+    [Image of heteroskedasticity in financial time series]
+
+    # 2. Robust Scaling (NumPy-first for speed)
+    scaler = RobustScaler()
+    X_tr_scaled = scaler.fit_transform(X_train)
+    feature_names = np.asarray(X_train.columns)
+
+    # 3. Vectorized Ensemble Training (Parallel Grid Fit)
+    # 3x3 Grid: 3 Epsilons x 3 Alphas = 9 Teachers
+    def _fit_huber(eps, alpha):
+        h = HuberRegressor(epsilon=eps, alpha=alpha, max_iter=1000)
+        h.fit(X_tr_scaled, y_train, sample_weight=sample_weights)
+        return h.coef_, h.predict(X_tr_scaled), h
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_huber)(e, a) for e in epsilons for a in alphas
+    )
     
-    # --- 2. Train Huber Teacher ---
-    # epsilon=1.35 is robust to crypto wicks while staying efficient
-    huber = HuberRegressor(epsilon=1.35, alpha=0.0001, max_iter=1000)
-    huber.fit(X_train_scaled, y_train)
+    ensemble_coeffs, ensemble_preds_tr, models = zip(*results)
+
+    # 4. Consensus Logic (Median Coeffs for structural logic)
+    avg_coeffs = np.median(ensemble_coeffs, axis=0)
+    abs_avg_coeffs = np.abs(avg_coeffs)
+    warm_start_tr = np.mean(ensemble_preds_tr, axis=0)
+
+    # 5. O(n) Feature Pruning
+    kth_val = np.percentile(abs_avg_coeffs, pruning_percentile)
+    keep_mask = abs_avg_coeffs > kth_val
+    selected_feats = feature_names[keep_mask]
     
-    coeffs = huber.coef_
-    abs_coeffs = np.abs(coeffs)
+    # 6. Monotonicity via Local Residual Scale
+    local_scale = np.mean(abs_avg_coeffs[keep_mask])
+    mono_cst = np.where(abs_avg_coeffs[keep_mask] > max(0.15 * local_scale, np.percentile(abs_avg_coeffs[keep_mask], 10)),
+                        np.sign(avg_coeffs[keep_mask]), 0)
+
+    # 7. Interaction Constraints (Named Output for Tree Learners)
+    # Efficiency: Use Rank-based correlation (O(n log n))
+    imp_mask = abs_avg_coeffs[keep_mask] > np.median(abs_avg_coeffs[keep_mask])
+    imp_feat_names = selected_feats[imp_mask]
     
-    # --- 3. Feature Pruning ---
-    # Drop features that Huber identifies as having near-zero structural signal
-    prune_limit = np.percentile(abs_coeffs, pruning_percentile)
-    selected_mask = abs_coeffs > prune_limit
-    selected_features = X_train.columns[selected_mask].tolist()
-    
-    # Filter coefficients and data for selected features
-    pruned_coeffs = coeffs[selected_mask]
-    X_train_pruned = X_train[selected_features]
-    
-    # --- 4. Monotonic Constraints ---
-    # 1: Increasing, -1: Decreasing, 0: Neutral (below significance threshold)
-    sig_threshold = np.mean(abs_coeffs) * 0.1
-    monotonic_cst = [1 if c > sig_threshold else -1 if c < -sig_threshold else 0 
-                     for c in pruned_coeffs]
-    
-    # --- 5. Automated Interaction Constraints ---
-    # Group important features by correlation to prevent spurious inter-domain links
-    important_mask = abs_coeffs[selected_mask] > np.mean(abs_coeffs[selected_mask])
-    important_idx = np.where(important_mask)[0]
-    
-    if len(important_idx) > 1:
-        corr = X_train_pruned.iloc[:, important_idx].corr().abs()
-        dissimilarity = 1 - corr.fillna(0)
-        hierarchy = linkage(squareform(dissimilarity, checks=False), method='complete')
-        cluster_labels = fcluster(hierarchy, corr_threshold, criterion='distance')
+    interaction_constraints = []
+    if imp_feat_names.size > 1:
+        # Vectorized Rank correlation
+        X_imp_ranks = pd.DataFrame(X_tr_scaled[:, keep_mask][:, imp_mask]).rank().values
+        corr_matrix = np.corrcoef(X_imp_ranks.T)
         
         interaction_groups = {}
         for i, label in enumerate(cluster_labels):
@@ -59,23 +81,37 @@ def prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=None,
             interaction_groups.setdefault(label, []).append(feat_name)
         interaction_constraints = list(interaction_groups.values())
     else:
+        D = np.clip(1 - np.abs(corr_matrix), 0, 1)
+        Z = linkage(squareform(D, checks=False), method='complete')
+        
+        labels = fcluster(Z, corr_threshold, criterion='distance')
+        
+        # Save as feature names to prevent indexing breaks in HPO
+        for l in np.unique(labels):
+            group = imp_feat_names[labels == l].tolist()
+            interaction_constraints.append(group)
+    else:
         interaction_constraints = None
 
-    # --- 6. Warm-Start Baselines ---
-    # Generate the 'initial guess' for the Tree models
-    warm_start_train = huber.predict(X_train_scaled)
-    warm_start_val = huber.predict(scaler.transform(X_val)) if X_val is not None else None
-    warm_start_test = huber.predict(scaler.transform(X_test)) if X_test is not None else None
+    # 8. Consensus Inference for Validation/Test
+    def get_consensus_pred(df):
+        if df is None: return None
+        df_s = scaler.transform(df)
+        preds = [m.predict(df_s) for m in models]
+        return np.mean(preds, axis=0)
 
     return {
-        "selected_features": selected_features,
-        "monotonic_constraints": tuple(monotonic_cst),
-        "interaction_constraints": interaction_constraints,
-        "warm_start": {
-            "train": warm_start_train,
-            "val": warm_start_val,
-            "test": warm_start_test
+        'selected_features': selected_feats.tolist(),
+        'monotonic_constraints': dict(zip(selected_feats, mono_cst.astype(int))),
+        'interaction_constraints': interaction_constraints,
+        'warm_start': {
+            'train': warm_start_tr,
+            'val': get_consensus_pred(X_val),
+            'test': get_consensus_pred(X_test)
         },
         "huber_model": huber, # For future inspection and prediction
-        "scaler": scaler      # Needed for prediction
+        "huber_model": huber, # For future inspection
+        'quantile_meta_targets': y_train - warm_start_tr,
+        'scaler': scaler,
+        'models': models
     }

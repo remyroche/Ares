@@ -27,11 +27,16 @@ from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint
 from scipy.stats import spearmanr, norm
 import statsmodels.api as sm
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.calibration import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.model_selection import KFold, cross_val_predict
 from sklearn.base import clone
+
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from catboost import CatBoostRegressor
+
+from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 
 # Import entropy bars functionality
 try:
@@ -62,6 +67,8 @@ class SimpleMultiModelRiskEngine:
     - SE (Standard Errors) for 12/48 Reg/Class
     - Disagreement features (e.g. 12 Reg vs 48 Reg)
     - Entropy bar features for market microstructure analysis
+
+    Updated to use Huber Regressor for Teacher logic, pruning, and constraints.
     """
     
     def __init__(self, 
@@ -69,11 +76,15 @@ class SimpleMultiModelRiskEngine:
                  max_features: str = 'log2',
                  consensus_weights: Optional[Dict[str, float]] = None):
         
+        # Default weights if not provided
         self.consensus_weights = consensus_weights or {
-            'extratrees': 0.66,
-            'ridge': 0.34
+            'extratrees': 0.25,
+            'lgbm': 0.25,
+            'xgboost': 0.25,
+            'catboost': 0.25
         }
         
+        # Models configuration
         self.extratrees = ExtraTreesRegressor(
             n_estimators=n_estimators,
             max_features=max_features,
@@ -82,15 +93,58 @@ class SimpleMultiModelRiskEngine:
             random_state=42
         )
         
-        self.ridge = Ridge(alpha=1.0, random_state=42)
+        # LGBM params (implicit defaults + warm start handling in train)
+        self.lgbm_params = {
+            'n_estimators': 1000,
+            'n_jobs': -1,
+            'random_state': 42,
+            'verbosity': -1
+        }
+        self.lgbm_model = None
+
+        # XGB params
+        self.xgb_params = {
+            'n_estimators': 1000,
+            'n_jobs': -1,
+            'random_state': 42,
+            'num_parallel_tree': 7,
+            'colsample_bynode': 0.4,
+            'subsample': 0.6,
+            'reg_lambda': 50, # "22 regularisation 50" -> l2 regularization
+            'min_child_weight': 10,
+            'gamma': 1.1,
+            'learning_rate': 0.03
+        }
+        self.xgb_model = None
+
+        # CatBoost params
+        self.catboost_params = {
+            'n_estimators': 1000,
+            'random_state': 42,
+            'thread_count': -1,
+            'subsample': 0.6,
+            'colsample_bylevel': 0.5,
+            'leaf_estimation_iterations': 10,
+            'l2_leaf_reg': 20, # overriding 7 with 20 per instructions
+            'random_strength': 5,
+            'bootstrap_type': 'MVS',
+            'allow_writing_files': False,
+            'verbose': 0
+        }
+        self.catboost_model = None
         
         self.calibrators = {
             'extratrees': IsotonicRegression(out_of_bounds='clip'),
-            'ridge': IsotonicRegression(out_of_bounds='clip')
+            'lgbm': IsotonicRegression(out_of_bounds='clip'),
+            'xgboost': IsotonicRegression(out_of_bounds='clip'),
+            'catboost': IsotonicRegression(out_of_bounds='clip')
         }
         
         self.consensus_calibrator = IsotonicRegression(out_of_bounds='clip')
         self.feature_names = None
+        self.selected_features = None
+        self.huber_model = None
+        self.huber_scaler = None
         self.is_fitted = False
     
     def _compute_financial_weights(self, abs_returns: pd.Series) -> pd.Series:
@@ -162,6 +216,7 @@ class SimpleMultiModelRiskEngine:
               y_true: pd.Series, abs_returns: pd.Series) -> Dict[str, Any]:
         """
         Train risk engine using 4-horizon ORF features, entropy features, and market context.
+        Uses Huber Regressor for Teacher output generation (constraints, pruning, warm start).
         """
         tprint_info("🚀 Training Layer 4 Risk Engine (Multi-Horizon ORF + Entropy Bars)...")
         
@@ -169,31 +224,143 @@ class SimpleMultiModelRiskEngine:
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
         # Combine all features
-        X = pd.concat([orf_feats, entropy_feats, market_features], axis=1).fillna(0)
-        self.feature_names = X.columns.tolist()
+        X_full = pd.concat([orf_feats, entropy_feats, market_features], axis=1).fillna(0)
         weights = self._compute_financial_weights(abs_returns)
         
-        tprint_info(f"📊 Training on {len(self.feature_names)} features ({len(orf_feats.columns)} ORF, {len(entropy_feats.columns)} entropy, {len(market_features.columns)} market)")
+        tprint_info(f"📊 Processing Huber Teacher on {len(X_full.columns)} potential features...")
+
+        # --- Prepare Huber Teacher ---
+        huber_outputs = prepare_huber_teacher_outputs(
+            X_train=X_full,
+            y_train=y_true,
+            pruning_percentile=15,
+            corr_threshold=0.7
+        )
+
+        self.selected_features = huber_outputs['selected_features']
+        self.huber_model = huber_outputs['huber_model']
+        self.huber_scaler = huber_outputs['scaler']
+
+        X_pruned = X_full[self.selected_features]
+        warm_start_train = huber_outputs['warm_start']['train']
+
+        monotonic_cst_tuple = huber_outputs['monotonic_constraints']
+        interaction_cst = huber_outputs['interaction_constraints']
+
+        # DEBUG: Inspect constraints for XGBoost issue
+        if interaction_cst:
+            tprint_info(f"DEBUG: Interaction Constraints Sample: {interaction_cst[:2]}")
+            tprint_info(f"DEBUG: Interaction Type: {type(interaction_cst)}")
+            if len(interaction_cst) > 0:
+                tprint_info(f"DEBUG: Interaction Inner Type: {type(interaction_cst[0])}, Element Type: {type(interaction_cst[0][0])}")
+            tprint_info(f"DEBUG: Pruned Features: {self.selected_features[:5]}")
+
+        tprint_info(f"✨ Feature pruning: {len(self.selected_features)}/{len(X_full.columns)} features selected")
         
         base_predictions = {}
         
-        # Train ExtraTrees
-        tprint_info(f"📊 Training ExtraTrees...")
-        self.extratrees.fit(X, y_true, sample_weight=weights)
-        et_preds = self.extratrees.predict(X)
+        # --- 1. ExtraTrees (with monotonic constraints) ---
+        tprint_info(f"📊 Training ExtraTrees (with monotonic constraints)...")
+        # Check if monotonic_cst is supported (sklearn 1.4+)
+        try:
+            self.extratrees.set_params(monotonic_cst=monotonic_cst_tuple)
+        except ValueError:
+            tprint_warning("ExtraTrees monotonic_cst parameter not supported or invalid. Skipping constraints.")
+            self.extratrees.set_params(monotonic_cst=None)
+        except Exception:
+             # In case of older sklearn versions that don't accept monotonic_cst in set_params yet
+            pass
+
+        self.extratrees.fit(X_pruned, y_true, sample_weight=weights)
+        et_preds = self.extratrees.predict(X_pruned)
         base_predictions['extratrees'] = et_preds
         self.calibrators['extratrees'].fit(et_preds, y_true)
         
-        # Train Ridge
-        tprint_info("📊 Training Ridge...")
-        self.ridge.fit(X, y_true, sample_weight=weights)
-        ridge_preds = self.ridge.predict(X)
-        base_predictions['ridge'] = ridge_preds
-        self.calibrators['ridge'].fit(ridge_preds, y_true)
+        # --- 2. LGBM Regressor ---
+        tprint_info("📊 Training LGBM (with constraints & warm start)...")
+        self.lgbm_model = LGBMRegressor(**self.lgbm_params)
+        self.lgbm_model.set_params(
+            monotone_constraints=list(monotonic_cst_tuple),
+            interaction_constraints=interaction_cst if interaction_cst else None
+        )
+        self.lgbm_model.fit(
+            X_pruned, y_true,
+            sample_weight=weights,
+            init_score=warm_start_train
+        )
+        lgbm_raw_preds = self.lgbm_model.predict(X_pruned)
+        # For LGBMRegressor, predict() returns the raw prediction (sum of trees).
+        # If trained with init_score, the trees model the residual.
+        # We must add the init_score (warm_start) manually to get the full prediction.
+        lgbm_preds = lgbm_raw_preds + warm_start_train
+        base_predictions['lgbm'] = lgbm_preds
+        self.calibrators['lgbm'].fit(lgbm_preds, y_true)
+
+        # --- 3. XGB Regressor ---
+        tprint_info("📊 Training XGBoost (with constraints & warm start)...")
+        self.xgb_model = XGBRegressor(**self.xgb_params)
+
+        # Try-catch for XGBoost constraints failure
+        try:
+            self.xgb_model.set_params(
+                monotone_constraints=monotonic_cst_tuple,
+                interaction_constraints=interaction_cst if interaction_cst else None
+            )
+
+            self.xgb_model.fit(
+                X_pruned, y_true,
+                sample_weight=weights,
+                base_margin=warm_start_train
+            )
+        except (ValueError, KeyError) as e:
+            tprint_error(f"XGBoost constraints failed: {e}. Retrying without interaction constraints.")
+            self.xgb_model.set_params(interaction_constraints=None)
+            self.xgb_model.fit(
+                X_pruned, y_true,
+                sample_weight=weights,
+                base_margin=warm_start_train
+            )
+
+        xgb_preds = self.xgb_model.predict(X_pruned, base_margin=warm_start_train)
+        base_predictions['xgboost'] = xgb_preds
+        self.calibrators['xgboost'].fit(xgb_preds, y_true)
+
+        # --- 4. CatBoost Regressor ---
+        tprint_info("📊 Training CatBoost (with constraints & warm start)...")
+        self.catboost_model = CatBoostRegressor(**self.catboost_params)
+        # Monotonic constraints string format for CatBoost: "1:1,2:-1,3:0" or list
+        # It accepts list.
+        self.catboost_model.set_params(monotone_constraints=list(monotonic_cst_tuple))
+
+        self.catboost_model.fit(
+            X_pruned, y_true,
+            sample_weight=weights,
+            baseline=warm_start_train
+        )
+        # CatBoost predict: if trained with baseline, does predict() include it?
+        # CatBoost sklearn API usually outputs prediction (raw or probability).
+        # For regression, it outputs the leaf sum.
+        # If baseline used, leaf sum is residual.
+        # We must add baseline manually?
+        # Let's double check. Docs say: "If baseline is not None, the resulting values are the sum of baseline and model prediction."
+        # Wait, that's for fit.
+        # For predict: "If baseline is not None, it is added to the prediction." (if passed to predict?)
+        # predict() doesn't have 'baseline' arg, it has 'data'.
+        # Actually it does NOT have baseline arg in predict().
+        # So we MUST add it manually.
+
+        cb_raw_preds = self.catboost_model.predict(X_pruned)
+        catboost_preds = warm_start_train + cb_raw_preds
+        base_predictions['catboost'] = catboost_preds
+        self.calibrators['catboost'].fit(catboost_preds, y_true)
         
-        # Create Weighted Consensus
-        consensus_raw = (self.consensus_weights['extratrees'] * et_preds + 
-                         self.consensus_weights['ridge'] * ridge_preds)
+        # --- Consensus ---
+        consensus_raw = (
+            self.consensus_weights['extratrees'] * base_predictions['extratrees'] +
+            self.consensus_weights['lgbm'] * base_predictions['lgbm'] +
+            self.consensus_weights['xgboost'] * base_predictions['xgboost'] +
+            self.consensus_weights['catboost'] * base_predictions['catboost']
+        )
         
         # Calibrate Consensus
         self.consensus_calibrator.fit(consensus_raw, y_true)
@@ -201,17 +368,16 @@ class SimpleMultiModelRiskEngine:
         
         self.is_fitted = True
         self.final_predictions_ = consensus_calibrated
+        self.feature_names = self.selected_features # Save for consistency check
         
         metrics = {
             'consensus_weighted_logloss': log_loss(y_true, consensus_calibrated, sample_weight=weights),
-            'n_features': len(self.feature_names),
-            'n_orf_features': len(orf_feats.columns),
-            'n_entropy_features': len(entropy_feats.columns),
-            'n_market_features': len(market_features.columns),
+            'n_features_total': len(X_full.columns),
+            'n_features_pruned': len(self.selected_features),
             'mean_conviction': consensus_calibrated.mean()
         }
         
-        tprint_success(f"✅ Layer 4 Engine trained: WL={metrics['consensus_weighted_logloss']:.4f}, Features={metrics['n_features']}")
+        tprint_success(f"✅ Layer 4 Engine trained: WL={metrics['consensus_weighted_logloss']:.4f}, Features={metrics['n_features_pruned']}")
         return metrics
 
     def predict_bet_size(self, df: pd.DataFrame, market_features: pd.DataFrame) -> np.ndarray:
@@ -221,17 +387,47 @@ class SimpleMultiModelRiskEngine:
         orf_feats = self._extract_orf_features(df)
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
-        X = pd.concat([orf_feats, entropy_feats, market_features], axis=1).fillna(0)
-        X = X[self.feature_names]
+        X_full = pd.concat([orf_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # Prepare Warm Start for this new data
+        X_scaled = pd.DataFrame(self.huber_scaler.transform(X_full), columns=X_full.columns)
+        warm_start = self.huber_model.predict(X_scaled)
         
-        et_preds = self.extratrees.predict(X)
+        # Select features
+        X_pruned = X_full[self.selected_features]
+
+        # 1. ExtraTrees
+        et_preds = self.extratrees.predict(X_pruned)
         et_cal = self.calibrators['extratrees'].transform(et_preds)
         
-        ridge_preds = self.ridge.predict(X)
-        ridge_cal = self.calibrators['ridge'].transform(ridge_preds)
+        # 2. LGBM
+        # For LGBM, if we used init_score in fit, the model is trained on residuals.
+        # Does predict automatically handle it?
+        # In LGBM sklearn API, `fit` with `init_score` -> `predict` assumes you might want to add raw score yourself or it might return raw score.
+        # Actually, for LGBMRegressor, `predict(X)` returns the sum of trees.
+        # If trained with init_score, the trees sum to (Target - InitScore).
+        # So we MUST add the warm_start.
+        lgbm_raw = self.lgbm_model.predict(X_pruned)
+        lgbm_preds = lgbm_raw + warm_start
+        lgbm_cal = self.calibrators['lgbm'].transform(lgbm_preds)
+
+        # 3. XGBoost
+        # Similarly, XGBoost trained with base_margin.
+        xgb_preds = self.xgb_model.predict(X_pruned, base_margin=warm_start)
+        xgb_cal = self.calibrators['xgboost'].transform(xgb_preds)
         
-        consensus = (self.consensus_weights['extratrees'] * et_cal + 
-                     self.consensus_weights['ridge'] * ridge_cal)
+        # 4. CatBoost
+        cb_raw = self.catboost_model.predict(X_pruned)
+        catboost_preds = cb_raw + warm_start
+        cb_cal = self.calibrators['catboost'].transform(catboost_preds)
+
+        # Consensus
+        consensus = (
+            self.consensus_weights['extratrees'] * et_cal +
+            self.consensus_weights['lgbm'] * lgbm_cal +
+            self.consensus_weights['xgboost'] * xgb_cal +
+            self.consensus_weights['catboost'] * cb_cal
+        )
         
         return self.consensus_calibrator.transform(consensus)
 
@@ -377,6 +573,7 @@ def train_layer4_simple_multimodel(
     kf = KFold(n_splits=n_folds, shuffle=False)
     oof_bet_sizes = np.zeros(len(oof_df))
     
+    # Instantiate engine once, but models will be re-trained per fold
     engine = SimpleMultiModelRiskEngine()
     
     for train_idx, val_idx in kf.split(oof_df):
@@ -391,7 +588,7 @@ def train_layer4_simple_multimodel(
             market_features=market_features.iloc[val_idx]
         )
     
-    # Final fit
+    # Final fit on full data
     final_metrics = engine.train(oof_df, market_features, y_binary, abs_returns)
     
     oof_df_out = oof_df.copy()

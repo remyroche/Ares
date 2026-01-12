@@ -126,13 +126,28 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
         1. Hilbert Transform (Phase, Instantaneous Frequency)
         2. Dominant Cycle Period
         """
+        tprint_info(f"[{self.step_name}] _compute_frequency_domain_features start")
         features = pd.DataFrame(index=df.index)
         
+        # Calculate 30-period log returns for spectral analysis
+        # Using 30-period returns (approx 1 day on 30m, or 7.5h on 15m) to capture
+        # momentum cycles and trend regime shifts rather than high-frequency noise.
+        # This addresses the low MI issue by focusing on the "spectral energy of the trend".
+        # Ensure we look back 30 bars (not 1).
+        lookback = 30
+        tprint_info(f"[{self.step_name}] Computing log returns with lookback={lookback} for spectral analysis")
+
+        log_rets = np.log(df['close'] / df['close'].shift(lookback)).fillna(0)
+
         # Spectral focus: Multiple windows for Hilbert Transform
         for window in [50, 100, 200]:
-            spectral_data = compute_spectral_energy(df['close'], window=window)
+            # Pass log returns to capture cyclical variance of momentum
+            spectral_data = compute_spectral_energy(log_rets, window=window)
             features[f'dominant_freq_{window}'] = spectral_data.get('dominant_freq', 0.0)
             features[f'phase_{window}'] = spectral_data.get('phase', 0.0)
+            features[f'energy_hf_{window}'] = spectral_data.get('energy_hf', 0.0)
+            features[f'energy_lf_{window}'] = spectral_data.get('energy_lf', 0.0)
+            features[f'spectral_entropy_{window}'] = spectral_data.get('spectral_entropy', 0.0)
             
             # Phase change (oscillation velocity)
             features[f'phase_velocity_{window}'] = features[f'phase_{window}'].diff()

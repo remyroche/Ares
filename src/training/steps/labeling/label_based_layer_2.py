@@ -55,6 +55,7 @@ except ImportError:
 import gc
 import os
 import time
+import psutil
 from pathlib import Path
 import hashlib
 from sklearn.linear_model import RidgeClassifier
@@ -507,6 +508,15 @@ from src.training.steps.labeling.label_geometry_selection import (
 )
 
 from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_selection_pipeline
+
+# Import custom exceptions
+try:
+    from src.training.steps.labeling.layer2_exceptions import Layer2Error, Layer2RecoverableError, Layer2FatalError
+except ImportError:
+    # Fallback definition if file not found (though we just created it)
+    class Layer2Error(Exception): pass
+    class Layer2RecoverableError(Layer2Error): pass
+    class Layer2FatalError(Layer2Error): pass
 
 # Import BaseStep for step registration
 from src.training.steps.base_step import BaseStep
@@ -1339,6 +1349,56 @@ class LabelBasedLayer2(BaseStep):
         self.use_dollar_bars = kwargs.get('use_dollar_bars', True)
         self.dollar_bar_target_per_day = kwargs.get('dollar_bar_target_per_day', 96)  # ~15 min avg frequency
         self._dollar_bar_cache = {}
+
+    def _handle_error(self, e: Exception, context: str, fatal: bool = False):
+        """
+        Standardized error handling and logging.
+
+        Args:
+            e: The exception caught.
+            context: Description of where the error occurred.
+            fatal: If True, raises Layer2FatalError. If False, logs and raises Layer2RecoverableError.
+        """
+        msg = f"Error in {context}: {str(e)}"
+        if fatal:
+            tprint_error(f"❌ CRITICAL: {msg}")
+            raise Layer2FatalError(msg) from e
+        else:
+            tprint_warning(f"⚠️ RECOVERABLE: {msg}")
+            # We can either raise a RecoverableError to be caught by the caller
+            # or just log it if the caller handles control flow.
+            # Here we raise it so caller knows to skip/retry.
+            raise Layer2RecoverableError(msg) from e
+
+    def _get_process_memory(self) -> float:
+        """Get current process memory usage in MB."""
+        try:
+            process = psutil.Process(os.getpid())
+            return process.memory_info().rss / (1024 * 1024)
+        except Exception:
+            return 0.0
+
+    def _log_stage_metrics(self, stage_name: str, input_shape: Tuple = None, output_shape: Tuple = None):
+        """Log metrics for a pipeline stage."""
+        mem_usage = self._get_process_memory()
+
+        # Create metrics object
+        metrics = Layer2StageMetrics(
+            stage_name=stage_name,
+            timestamp=datetime.now().isoformat(),
+            input_data_shape=input_shape if input_shape else (0, 0),
+            output_data_shape=output_shape,
+            processing_time=0.0, # Placeholder, can be updated if we track duration
+            memory_usage_mb=mem_usage
+        )
+
+        self._stage_metrics.append(metrics)
+
+        shape_str = f"In={input_shape}" if input_shape else ""
+        if output_shape:
+            shape_str += f" -> Out={output_shape}"
+
+        tprint_info(f"   📊 [Metrics] {stage_name}: Mem={mem_usage:.1f}MB {shape_str}")
 
     def _convert_to_dollar_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """
@@ -3044,6 +3104,7 @@ class LabelBasedLayer2(BaseStep):
             Dict with success status, artifacts, metrics, and execution info.
         """
         import time
+        self._log_stage_metrics("Start")
         import asyncio
         start_time = time.time()
         
@@ -3568,17 +3629,23 @@ class LabelBasedLayer2(BaseStep):
         # Create cache key based on data shape and key columns
         key_cols = ['close', 'volume', 'high', 'low']
         available_cols = [col for col in key_cols if col in df.columns]
-        cache_key = hashlib.md5(
-            f"{df.shape}_{df.index[0] if len(df) > 0 else ''}_{df.index[-1] if len(df) > 0 else ''}_{'_'.join(available_cols)}".encode()
-        ).hexdigest()[:16]
+        try:
+            cache_key = hashlib.md5(
+                f"{df.shape}_{df.index[0] if len(df) > 0 else ''}_{df.index[-1] if len(df) > 0 else ''}_{'_'.join(available_cols)}".encode()
+            ).hexdigest()[:16]
+        except Exception:
+            cache_key = f"global_feat_{hash(str(df.shape))}"
+
+        if cache_key in self._global_feature_cache:
+            tprint_info("   ♻️ Using cached global features")
+            return self._global_feature_cache[cache_key]
 
         if cache_key not in self._global_feature_cache:
             tprint_info("🔄 Generating global features for entire dataset...")
             start_time = time.time()
 
-            # Check cache for global features
-            df_hash = str(hash(df.values.tobytes()))
-            cache_key_global = f"global_features_{df_hash}"
+            # Robust cache key
+            cache_key_global = cache_key
             
             if not hasattr(self, '_cached_global_features'):
                  self._cached_global_features = {}
@@ -7892,6 +7959,7 @@ class LabelBasedLayer2(BaseStep):
     ) -> Dict[str, Any]:
         """Step 3: OOF Analytics."""
         tprint_info(">>> Layer 2: Step 3 - OOF Analytics...")
+        self._log_stage_metrics("OOF_Start", input_shape=df.shape)
     
         if not production_geometries:
             return {}
@@ -8545,6 +8613,16 @@ class LabelBasedLayer2(BaseStep):
         """Generate family-specific features for geometry assessment using vectorized operations."""
         if events_index.empty: return pd.DataFrame()
 
+        # Caching optimization
+        params_hash = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
+        cache_key = f"geo_feats_{params_hash}_{len(events_index)}"
+
+        if cache_key in self._feature_cache:
+            # Verify index match to be safe (cheap check)
+            cached_df = self._feature_cache[cache_key]
+            if len(cached_df) == len(events_index) and cached_df.index.equals(events_index):
+                return cached_df
+
         # Vectorized data extraction
         subset = df.reindex(events_index)
         # FIX: Handle missing volatility_1d if pruned
@@ -8639,7 +8717,12 @@ class LabelBasedLayer2(BaseStep):
             feats['breakout_momentum'] = (current_range - range_avg_shift) / (range_avg_shift + 1e-9)
             feats['range_position'] = (price - roll20_min) / range_avg_safe
 
-        return feats.fillna(0.0)
+        result = feats.fillna(0.0)
+
+        # Update cache
+        self._feature_cache[cache_key] = result
+
+        return result
 
     def _compute_rmi_scores(self, X: pd.DataFrame, y: pd.Series,
                            n_neighbors: int = 3,
@@ -9433,6 +9516,9 @@ class LabelBasedLayer2(BaseStep):
     def _train_geometry_batch(self, geometry_batch: List, df_train: pd.DataFrame, X_train: pd.DataFrame,
                             labels_dict: Dict, weights_dict: Dict, family: str, fold_idx: int) -> Dict[str, Any]:
         """Train a batch of geometries in parallel (max 2 concurrent)."""
+        if fold_idx == 0:
+            self._log_stage_metrics(f"TrainBatch_{family}", input_shape=X_train.shape)
+
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         trained_models = {}
@@ -9988,8 +10074,15 @@ class LabelBasedLayer2(BaseStep):
                 for i in range(to_remove):
                     cache.pop(keys[i])
 
+    def _ensure_tz_compatibility(self, idx: pd.Index) -> pd.Index:
+        """Ensure index is timezone-naive datetime."""
+        idx = pd.to_datetime(idx)
+        if idx.tz is not None:
+            return idx.tz_localize(None)
+        return idx
+
     def _align_features_efficiently(self, X_all: pd.DataFrame, events_idx: pd.DatetimeIndex) -> pd.DataFrame:
-        """Fast feature alignment using pandas merge_asof."""
+        """Fast feature alignment using pandas merge_asof with simplified logic."""
         if len(events_idx) == 0:
             return pd.DataFrame()
 
@@ -9997,63 +10090,74 @@ class LabelBasedLayer2(BaseStep):
             if self.verbose:
                 tprint_info(f"   🔁 Aligning {len(events_idx)} events with feature frame {X_all.shape}")
 
-            # Create events DataFrame with timestamp index
-            events_df = pd.DataFrame(index=events_idx)
+            # Ensure compatible timezone-naive indices
+            events_naive = self._ensure_tz_compatibility(events_idx)
+            features_naive = self._ensure_tz_compatibility(X_all.index)
 
-            # Ensure both indices are datetime and handle timezones
-            events_naive = pd.to_datetime(events_idx)
-            features_naive = pd.to_datetime(X_all.index)
+            # Sort indices for merge_asof
+            # Note: We assume X_all is already sorted by time, but events_idx might not be
+            # Create a mapping dataframe to preserve original order if needed, but here we return reindexed
 
-            if events_naive.tz is not None:
-                events_naive = events_naive.tz_localize(None)
-            if features_naive.tz is not None:
-                features_naive = features_naive.tz_localize(None)
+            # Simplified merge_asof logic without excessive copying
+            # Use a view or minimal DataFrame for events
+            events_df = pd.DataFrame(index=events_naive.sort_values())
 
-            # Create temporary DataFrames for merge_asof
-            events_temp = pd.DataFrame({'event_marker': 1}, index=events_naive)
-            features_temp = X_all.copy()
-            features_temp.index = features_naive
+            # Using X_all directly but with naive index for alignment
+            # We avoid full copy if possible, but set_index makes a copy usually
+            # To minimize memory, we only copy the index if needed
+            X_temp = X_all
+            if not X_all.index.equals(features_naive):
+                X_temp = X_all.copy(deep=False) # Shallow copy
+                X_temp.index = features_naive
 
-            # Use merge_asof for fast alignment (assumes sorted indices)
+            X_temp = X_temp.sort_index()
+
+            # Use merge_asof
             merged = pd.merge_asof(
-                events_temp.sort_index(),
-                features_temp.sort_index(),
+                events_df,
+                X_temp,
                 left_index=True,
                 right_index=True,
                 direction='nearest',
                 tolerance=pd.Timedelta('1min')
             )
 
-            # Remove the event_marker column and restore original event index
-            result = merged.drop(columns=['event_marker'], errors='ignore')
-            result.index = events_idx
+            # Restore original order (events_idx)
+            # Reindex to original events_idx (naive version) to ensure order matches input
+            # If events_idx was unsorted, merged is sorted by time.
+            if not events_naive.is_monotonic_increasing:
+                merged = merged.reindex(events_naive)
+            else:
+                # If monotonic, just ensure the index matches explicitly (it should already)
+                merged.index = events_naive
+
+            # Restore original index metadata (timezone)
+            merged.index = events_idx
 
             # Deduplicate columns to prevent "DataFrame object has no attribute cat" error
-            if any(result.columns.duplicated()):
-                result = result.loc[:, ~result.columns.duplicated(keep='last')]
+            if any(merged.columns.duplicated()):
+                merged = merged.loc[:, ~merged.columns.duplicated(keep='last')]
 
             # Handle categorical columns safely before fillna (Bug #10 fix)
             # If a column is categorical and contains NaNs (alignment gaps), fillna(0.0) will fail
             # if 0.0 is not in the categories. Also, categorical dtype doesn't support std() operations
-            for col in result.select_dtypes(include=['category']).columns:
+            for col in merged.select_dtypes(include=['category']).columns:
                 try:
                     # Convert categorical to numeric codes to avoid std() errors
-                    result[col] = result[col].cat.codes.astype(float).replace(-1.0, np.nan)
+                    merged[col] = merged[col].cat.codes.astype(float).replace(-1.0, np.nan)
                 except Exception:
                     # Fallback: convert to object then to numeric if possible
                     try:
-                        result[col] = pd.to_numeric(result[col].astype(str), errors='coerce')
+                        merged[col] = pd.to_numeric(merged[col].astype(str), errors='coerce')
                     except:
-                        result[col] = result[col].astype(object)
+                        merged[col] = merged[col].astype(object)
 
             # Optimize memory and cleanup
-            result = self._optimize_dataframe_memory(result.fillna(0.0))
+            result = self._optimize_dataframe_memory(merged.fillna(0.0))
 
             if self.verbose:
                 tprint_info(f"   ✅ Alignment produced feature frame {result.shape}")
 
-            # Cleanup temporary variables
-            del events_temp, features_temp, merged
             self._cleanup_memory()
 
             return result

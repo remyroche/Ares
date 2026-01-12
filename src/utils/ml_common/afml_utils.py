@@ -78,7 +78,9 @@ def get_t_events(close: pd.Series, threshold: Union[float, pd.Series]) -> pd.Dat
         elif s_pos > thresh:
             s_pos = 0
             t_events.append(i)
-            
+
+    # Log the count
+    tprint_info(f"[afml_utils] get_t_events found {len(t_events)} events")
     return close.index[t_events]
 
 def get_vertical_barrier(close: pd.Series, t_events: pd.DatetimeIndex, num_bars: int) -> pd.Series:
@@ -151,27 +153,26 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
     if not close.index.is_unique:
         tprint_info("   [TBM] Index not unique, falling back to loop")
         # Standard Loop Implementation (Fallback)
+        count_labeled = 0
         for evt in t_events:
+            if evt not in close.index: continue
             try:
-                # Find start location
-                if evt not in close.index: continue
+                # Basic non-optimized logic
                 loc_start = close.index.get_loc(evt)
-                if isinstance(loc_start, (slice, np.ndarray)):
-                     loc_start = loc_start.start if isinstance(loc_start, slice) else loc_start[0]
+                if isinstance(loc_start, (slice, np.ndarray)): loc_start = loc_start.start if isinstance(loc_start, slice) else loc_start[0]
 
-                # Find end location
                 end_ts = vertical_barrier.get(evt, pd.NaT)
                 if pd.isna(end_ts):
-                    loc_end = len(close) # Go to end
+                     loc_end = len(close) - 1
                 else:
                     if end_ts in close.index:
-                        loc_end = close.index.get_loc(end_ts)
-                        if isinstance(loc_end, (slice, np.ndarray)):
-                             loc_end = loc_end.stop if isinstance(loc_end, slice) else loc_end[-1] # Inclusive?
-                             # Slicing is usually exclusive at stop, inclusive at start
+                        try:
+                            loc_end = close.index.get_loc(end_ts)
+                            if isinstance(loc_end, (slice, np.ndarray)): loc_end = loc_end.stop if isinstance(loc_end, slice) else loc_end[-1]
+                        except:
+                            loc_end = len(close) - 1
                     else:
-                        # Approx search?
-                        loc_end = len(close) # Fallback
+                        loc_end = len(close) - 1
 
                 price_path = close.iloc[loc_start:loc_end+1] # Include end
                 if len(price_path) < 2: continue
@@ -187,8 +188,6 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
                 touch_idx = -1
                 touch_type = 'none'
 
-                # Find first touch
-                # Iterate or use vectorized
                 hi_touch = rets[rets > pt]
                 lo_touch = rets[rets < sl]
 
@@ -211,11 +210,12 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
                 else:
                     if not pd.isna(end_ts):
                         touch_type = 'expiration'
-                        touch_idx = end_ts # close.index[min(loc_end, len(close)-1)]
+                        touch_idx = end_ts
 
                 if touch_type != 'none':
                     out.loc[evt, 't1'] = touch_idx
                     out.loc[evt, 'type'] = touch_type
+                    count_labeled += 1
                     # Return at touch point
                     try:
                         ret_val = rets.loc[touch_idx]
@@ -225,7 +225,6 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
                         pass
 
                     # MFE/MAE
-                    # Limit path to touch
                     try:
                         touch_loc = rets.index.get_loc(touch_idx)
                         if isinstance(touch_loc, (slice, np.ndarray)):
@@ -243,6 +242,7 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
 
             except Exception:
                 continue
+        tprint_info(f"   [TBM] Loop finished: labeled {count_labeled}/{len(t_events)} events")
         return out
 
     # Pre-calculate integer indices for speed
@@ -291,6 +291,8 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
         res_mfe = np.zeros(len(event_ilocs), dtype=float)
         res_mae = np.zeros(len(event_ilocs), dtype=float)
         
+        count_labeled = 0
+
         # Iterate using integers
         for i in range(len(event_ilocs)):
             start_iloc = event_ilocs[i]
@@ -362,6 +364,7 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
             if touch_type != 'none':
                 res_type[i] = touch_type
                 res_ret[i] = rets[touch_idx]
+                count_labeled += 1
                 
                 # Convert relative index back to timestamp?
                 # Need absolute index: start_iloc + 1 + touch_idx
@@ -392,12 +395,14 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
         out.loc[valid_events, 'mfe'] = res_mfe
         out.loc[valid_events, 'mae'] = res_mae
         
+        tprint_info(f"   [TBM] Optimized finished: labeled {count_labeled}/{len(valid_events)} events")
+
     except Exception as e:
         tprint_info(f"   [TBM] Optimized implementation failed: {e}. Falling back to standard loop.")
         # Fallback to original slow loop logic if optimization fails (e.g. index mismatch)
         import sys
 
-        # Clean fallback loop logic
+        count_labeled = 0
         for evt in t_events:
             if evt not in close.index: continue
             try:
@@ -407,20 +412,84 @@ def apply_triple_barrier(close: pd.Series, t_events: pd.DatetimeIndex, pt_sl: Li
 
                 end_ts = vertical_barrier.get(evt, pd.NaT)
                 if pd.isna(end_ts):
-                     loc_end = len(close)
+                     loc_end = len(close) - 1
                 else:
-                    try:
-                        loc_end = close.index.get_loc(end_ts)
-                        if isinstance(loc_end, (slice, np.ndarray)): loc_end = loc_end.stop if isinstance(loc_end, slice) else loc_end[-1]
-                    except:
-                        loc_end = len(close)
+                    if end_ts in close.index:
+                        try:
+                            loc_end = close.index.get_loc(end_ts)
+                            if isinstance(loc_end, (slice, np.ndarray)): loc_end = loc_end.stop if isinstance(loc_end, slice) else loc_end[-1]
+                        except:
+                            loc_end = len(close) - 1
+                    else:
+                        loc_end = len(close) - 1
 
-                # ... same logic as above ...
-                # For brevity, assuming optimized part catches most cases.
-                pass
-            except:
-                pass
-        pass
+                price_path = close.iloc[loc_start:loc_end+1] # Include end
+                if len(price_path) < 2: continue
+
+                trgt = aligned_target.loc[evt]
+                if np.isnan(trgt): continue
+
+                rets = (price_path / price_path.iloc[0]) - 1.0
+                pt = pt_sl[0] * trgt if pt_sl[0] > 0 else np.inf
+                sl = -pt_sl[1] * trgt if pt_sl[1] > 0 else -np.inf
+
+                # Check touches
+                touch_idx = -1
+                touch_type = 'none'
+
+                hi_touch = rets[rets > pt]
+                lo_touch = rets[rets < sl]
+
+                first_hi = hi_touch.index[0] if len(hi_touch) > 0 else pd.NaT
+                first_lo = lo_touch.index[0] if len(lo_touch) > 0 else pd.NaT
+
+                if not pd.isna(first_hi) and not pd.isna(first_lo):
+                    if first_hi < first_lo:
+                        touch_type = 'pt'
+                        touch_idx = first_hi
+                    else:
+                        touch_type = 'sl'
+                        touch_idx = first_lo
+                elif not pd.isna(first_hi):
+                    touch_type = 'pt'
+                    touch_idx = first_hi
+                elif not pd.isna(first_lo):
+                    touch_type = 'sl'
+                    touch_idx = first_lo
+                else:
+                    if not pd.isna(end_ts):
+                        touch_type = 'expiration'
+                        touch_idx = end_ts
+
+                if touch_type != 'none':
+                    out.loc[evt, 't1'] = touch_idx
+                    out.loc[evt, 'type'] = touch_type
+                    count_labeled += 1
+                    try:
+                        ret_val = rets.loc[touch_idx]
+                        if isinstance(ret_val, pd.Series): ret_val = ret_val.iloc[0]
+                        out.loc[evt, 'ret'] = ret_val
+                    except:
+                        pass
+
+                    try:
+                        touch_loc = rets.index.get_loc(touch_idx)
+                        if isinstance(touch_loc, (slice, np.ndarray)):
+                            touch_loc = touch_loc.start if isinstance(touch_loc, slice) else touch_loc[0]
+
+                        sub_path = rets.iloc[:touch_loc+1]
+                        out.loc[evt, 'mfe'] = sub_path.max()
+                        out.loc[evt, 'mae'] = sub_path.min()
+                    except:
+                        out.loc[evt, 'mfe'] = rets.max()
+                        out.loc[evt, 'mae'] = rets.min()
+                else:
+                     out.loc[evt, 'mfe'] = rets.max()
+                     out.loc[evt, 'mae'] = rets.min()
+
+            except Exception:
+                continue
+        tprint_info(f"   [TBM] Fallback loop finished: labeled {count_labeled}/{len(t_events)} events")
 
     return out
 

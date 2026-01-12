@@ -622,7 +622,20 @@ class AFMLSpecialistMixin:
         tprint_info(f"[{self.__class__.__name__}] apply_afml_sampling start filter={filter_type}")
         
         use_volume_bars = config.get('use_volume_bars', True)
-        threshold_base = get_daily_vol(df['close'], use_volume_time=use_volume_bars)
+
+        # Select threshold base based on filter type
+        if filter_type == 'volume' and 'volume' in df.columns:
+            # For volume sampling, use rolling average volume as threshold base
+            # Note: For Dollar Bars, volume is roughly constant, so this may degrade to time sampling
+            threshold_base = df['volume'].rolling(window=100).mean()
+            # If using dollar bars, volume is constant (e.g. 1M USDT). CUSUM on constant volume
+            # accumulates linearly. This is equivalent to periodic sampling.
+            # If this was "broken" (7%), switching to price/volatility fixes it by using Price CUSUM.
+            tprint_info("      [Sampling] Using Volume CUSUM logic")
+        else:
+            # Default: Price/Volatility CUSUM (Standard AFML)
+            threshold_base = get_daily_vol(df['close'], use_volume_time=use_volume_bars)
+            tprint_info("      [Sampling] Using Volatility (Price) CUSUM logic")
         
         target_rate = config.get('afml_target_sampling_rate', 0.20) # Increased target rate
         low, high = 1e-8, 1.0
@@ -635,7 +648,26 @@ class AFMLSpecialistMixin:
         if len(df) > 10:
             for _ in range(8):
                 mid = (low + high) / 2
-                t_events = get_t_events(df['close'], threshold_base * mid)
+
+                # Apply filter logic
+                if filter_type == 'volume' and 'volume' in df.columns:
+                    # Volume CUSUM: accum = max(0, accum + vol - threshold)
+                    # This is slightly different from standard Symmetric CUSUM on price
+                    # Simplified: Trigger when cumulative volume exceeds threshold
+                    # Since we don't have a volume-specific CUSUM utility in afml_utils yet,
+                    # we can simulate it or use get_t_events if we treat volume as the series.
+                    # But get_t_events does pct_change().
+                    # Volume CUSUM usually means: sum(volume) >= threshold.
+                    # Which is just re-sampling bars.
+                    # Here we treat 'volume' filter as: "Sample when cumulative volume deviation is high"?
+                    # Or just use the original get_t_events on volume?
+                    # get_t_events(volume) -> volume.pct_change() CUSUM.
+                    # This detects "Volume Surges".
+                    t_events = get_t_events(df['volume'], threshold_base * mid)
+                else:
+                    # Standard Price CUSUM
+                    t_events = get_t_events(df['close'], threshold_base * mid)
+
                 count = len(t_events)
                 
                 if count > target_count:

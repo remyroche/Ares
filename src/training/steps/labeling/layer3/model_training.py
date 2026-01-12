@@ -38,7 +38,6 @@ def apply_huber_rotation_logic(X: pd.DataFrame, huber_coeffs: pd.Series, top_n: 
     X_rotated = X.copy()
 
     # 1. Identify top feature pairs based on Huber Absolute Coefficients
-    # Filter for features present in X
     valid_coeffs = huber_coeffs[huber_coeffs.index.isin(X.columns)]
     if valid_coeffs.empty:
         return X_rotated
@@ -65,6 +64,7 @@ def train_lgbm_model(
 ) -> Dict[str, Any]:
     """
     Trains LightGBM with Pseudo-Oblique Linear Trees, Monotonic & Interaction Constraints, and Warm Start.
+    Uses 'quantile' objective for regression tasks.
     """
     tprint_info(f"   🍁 Training LGBM ({task_type}): {model_name}...")
     
@@ -82,10 +82,21 @@ def train_lgbm_model(
 
     # Warm start
     init_score = huber_output['warm_start']['train']
-    
+
+    # Configure objective
+    if task_type == 'classification':
+        objective = 'binary'
+        metric = 'binary_logloss'
+        # For classification, warm start is typically margin. Huber outputs continuous.
+        # We will assume it acts as a base margin.
+    else:
+        objective = 'quantile'
+        metric = 'quantile'
+        # For quantile regression, typically alpha=0.5 (Median)
+
     params = {
-        'objective': 'binary' if task_type == 'classification' else 'regression',
-        'metric': 'binary_logloss' if task_type == 'classification' else 'rmse',
+        'objective': objective,
+        'metric': metric,
         'verbosity': -1,
         'linear_tree': True,
         'path_smooth': 20 if fast_mode else 50,
@@ -99,6 +110,9 @@ def train_lgbm_model(
         'early_stopping_round': 20,
         'seed': 42
     }
+
+    if objective == 'quantile':
+        params['alpha'] = 0.5
 
     if config and 'lgbm_params' in config:
         params.update(config['lgbm_params'])
@@ -123,7 +137,6 @@ def train_lgbm_model(
     # Optuna Integration
     if config and 'optuna_trial' in config:
         trial = config['optuna_trial']
-        # LightGBMPruningCallback expects metric name
         metric_name = params['metric']
         callbacks.append(optuna.integration.LightGBMPruningCallback(trial, metric_name, valid_name='valid_0'))
 
@@ -136,7 +149,6 @@ def train_lgbm_model(
     
     # Prediction (Raw Score = Margin)
     raw_margin = model.predict(X_scaled, raw_score=True)
-    # Add base margin (init_score)
     final_margin = raw_margin + init_score
 
     if task_type == 'classification':
@@ -170,19 +182,14 @@ def train_xgboost_model(
     selected_features = huber_output['selected_features']
     X_t = X_train[selected_features].copy()
 
-    # Scaling BEFORE Rotation is critical for Sum/Diff to make sense
+    # Scaling BEFORE Rotation
     scaler = StandardScaler()
     X_scaled_np = scaler.fit_transform(X_t)
     X_scaled = pd.DataFrame(X_scaled_np, columns=X_t.columns, index=X_t.index)
 
     # 1. Apply Huber Rotation Logic
     huber_model = huber_output['huber_model']
-    # Need column-mapped coefficients
-    # huber_model was trained on X_train (unscaled? no, prepare_huber_teacher_outputs scaled it)
-    # But huber_model.coef_ corresponds to columns passed to it.
-    # The columns match X_t (if prepare_huber_teacher_outputs used same features, which it did)
     coeffs_series = pd.Series(huber_model.coef_, index=X_t.columns)
-
     X_rotated = apply_huber_rotation_logic(X_scaled, coeffs_series)
 
     # 2. Constraints (Only on original features)
@@ -229,11 +236,6 @@ def train_xgboost_model(
     callbacks = []
     if config and 'optuna_trial' in config:
         trial = config['optuna_trial']
-        # XGBoostPruningCallback
-        # Default eval_metric depends on objective.
-        # For reg:quantileerror -> quantile (but usually mapped to validation_0-quantile)
-        # For binary:logistic -> logloss
-        # Safest is to specify observation_key if known, or let it guess.
         callbacks.append(optuna.integration.XGBoostPruningCallback(trial, "validation_0-" + ("quantile" if task_type == 'regression' else "logloss")))
 
     model.fit(
@@ -253,7 +255,19 @@ def train_xgboost_model(
         preds = model.predict(X_rotated, base_margin=base_margin)
     else:
         # Predict Probabilities for Classification
-        preds = model.predict_proba(X_rotated, base_margin=base_margin)[:, 1]
+        # predict_proba returns [prob_class_0, prob_class_1]
+        # XGBClassifier with base_margin is tricky in sklearn API.
+        # It usually applies sigmoid(base_margin + score).
+        # We assume base_margin is log-odds.
+        try:
+             preds = model.predict_proba(X_rotated, base_margin=base_margin)[:, 1]
+        except TypeError:
+            # Fallback if base_margin not supported in predict_proba (older versions)
+            # Use predict(output_margin=True) + base_margin -> Sigmoid
+            # But predict() on classifier returns class.
+            # We can use get_booster().predict(dmatrix)
+            dmat = xgb.DMatrix(X_rotated, base_margin=base_margin)
+            preds = model.get_booster().predict(dmat) # Returns prob by default for binary:logistic
 
     return {
         'model': model,
@@ -387,7 +401,7 @@ def train_dual_head_models(
         ('48', 'alpha', y_alpha_48, w_alpha, 'regression'),
         ('48', 'prob', y_prob_48, w_prob, 'classification')
     ]
-    
+
     for horizon, target_name, y_target, w_target, task_type in tasks:
         suffix = f"{horizon}_{'reg' if task_type == 'regression' else 'cls'}"
 

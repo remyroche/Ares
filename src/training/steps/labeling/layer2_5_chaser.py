@@ -19,6 +19,8 @@ import scipy.stats as stats
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Union
 from sklearn.ensemble import VotingRegressor, ExtraTreesRegressor
+from sklearn.linear_model import LassoCV, Ridge
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score, train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import xgboost as xgb
@@ -78,13 +80,17 @@ class Layer25Chaser:
         self.xgb_params = xgb_params or {
             'n_estimators': 200,
             'max_depth': 6,
-            'learning_rate': 0.05,
-            'subsample': 0.8,
+            'learning_rate': 0.03,
+            'subsample': 0.6,
             'colsample_bytree': 0.8,
-            'random_state': 42,
-            'n_jobs': -1,
+            'colsample_bynode': 0.4,
+            'num_parallel_tree': 7,
+            'min_child_weight': 10,
+            'gamma': 1.1,
+            'reg_lambda': 50,  # L2 regularization
             'reg_alpha': 0.1,
-            'reg_lambda': 0.1
+            'random_state': 42,
+            'n_jobs': -1
         }
 
         # Default CatBoost parameters
@@ -92,7 +98,12 @@ class Layer25Chaser:
             'iterations': 200,
             'depth': 6,
             'learning_rate': 0.05,
-            'l2_leaf_reg': 3,
+            'l2_leaf_reg': 20,
+            'random_strength': 5,
+            'subsample': 0.6,
+            'colsample_bylevel': 0.5,
+            'leaf_estimation_iterations': 10,
+            'bootstrap_type': 'MVS',
             'random_seed': 42,
             'verbose': False,
             'od_type': 'Iter',
@@ -119,19 +130,13 @@ class Layer25Chaser:
         self.cat_model = None
         self.et_model = None
         
-        # Initialize enhanced components
-        
-        # Enhanced feature tracking
-        
-        # Initialize enhanced components
-        
-        # Enhanced feature tracking
-
         # Training metadata
         self.feature_names = None
         self.training_score = None
         self.cv_scores = None
         self.prediction_std = None
+        self.pruned_features = []
+        self.constraints = {}
         
     def _validate_inputs(
         self,
@@ -223,23 +228,61 @@ class Layer25Chaser:
                 outlier_handling_strategy=outlier_handling_strategy
             )
 
-            # Store feature names
-            self.feature_names = X_clean.columns.tolist()
+            # --- FEATURE PRUNING (LASSO) ---
+            tprint_info("   ✂️  Pruning features with LASSO...")
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_clean)
 
-            # Time series cross-validation
-            tscv = TimeSeriesSplit(n_splits=cv_folds)
+            # Using LassoCV to automatically find the best alpha
+            lasso = LassoCV(cv=5, random_state=42, n_jobs=-1)
+            lasso.fit(X_scaled, y_clean)
 
-            # === COMPUTE MONOTONIC CONSTRAINTS ===
-            tprint_info("   🔒 Computing Ridge Monotonic Constraints...")
-            constraints_dict = compute_ridge_monotonic_constraints(
-                X_clean, y_clean, alpha=1.0, threshold=2.0, verbose=False
-            )
+            # Identify features with zero coefficients
+            feature_mask = np.abs(lasso.coef_) > 1e-5
+            original_features = X_clean.columns.tolist()
+            kept_features = [f for f, keep in zip(original_features, feature_mask) if keep]
+            pruned_features = [f for f, keep in zip(original_features, feature_mask) if not keep]
+
+            self.pruned_features = pruned_features
+            tprint_info(f"      → Pruned {len(pruned_features)} features, {len(kept_features)} remaining.")
+
+            # Update X_clean to only keep selected features
+            X_clean = X_clean[kept_features]
+            X_scaled = X_scaled[:, feature_mask] # Update scaled matrix too for Ridge
+
+            # Store final feature names
+            self.feature_names = kept_features
+
+            # --- CONSTRAINT GENERATION (RIDGE) ---
+            tprint_info("   🔒 Generating Monotonic Constraints with Ridge...")
+
+            ridge = Ridge(alpha=1.0) # Standard alpha
+            ridge.fit(X_scaled, y_clean)
+
+            constraints_dict = {}
+            n_inc = 0
+            n_dec = 0
+            n_none = 0
+
+            for feat, coef in zip(self.feature_names, ridge.coef_):
+                if coef > 0.01:
+                    constraints_dict[feat] = 1
+                    n_inc += 1
+                elif coef < -0.01:
+                    constraints_dict[feat] = -1
+                    n_dec += 1
+                else:
+                    constraints_dict[feat] = 0
+                    n_none += 1
+
+            self.constraints = constraints_dict
+            tprint_info(f"      → Constraints: {n_inc} Increasing, {n_dec} Decreasing, {n_none} None.")
+
             # XGBoost requires tuple (-1, 0, 1) corresponding to columns
             xgb_constraints = tuple([constraints_dict.get(col, 0) for col in X_clean.columns])
             
-            n_inc = sum(1 for x in xgb_constraints if x == 1)
-            n_dec = sum(1 for x in xgb_constraints if x == -1)
-            tprint_info(f"      → Found {n_inc} Increasing, {n_dec} Decreasing constraints")
+            # Time series cross-validation
+            tscv = TimeSeriesSplit(n_splits=cv_folds)
 
             # XGBoost training with CV
             if self.verbose:
@@ -263,8 +306,6 @@ class Layer25Chaser:
 
                 # Apply constraints to CatBoost params
                 current_cat_params = self.cat_params.copy()
-                # CatBoost accepts dictionary {feat_name: constraint} or list
-                # We can pass the dict directly if using DataFrame (which we are)
                 current_cat_params['monotone_constraints'] = constraints_dict
                 
                 self.cat_model = cb.CatBoostRegressor(**current_cat_params)
@@ -290,7 +331,7 @@ class Layer25Chaser:
 
             # ExtraTrees training with CV
             if self.verbose:
-                tprint_info("   📊 Training ExtraTrees model...")
+                tprint_info("   📊 Training ExtraTrees model (Constraints not supported)...")
 
             self.et_model = ExtraTreesRegressor(**self.et_params)
             et_cv_scores = cross_val_score(
@@ -305,6 +346,15 @@ class Layer25Chaser:
                 'mae': mean_absolute_error(y_clean, et_train_pred),
                 'rmse': np.sqrt(mean_squared_error(y_clean, et_train_pred)),
                 'r2': 1 - (np.var(y_clean - et_train_pred) / np.var(y_clean))
+            }
+
+            # Calculate training metrics for XGB
+            xgb_train_pred = self.xgb_model.predict(X_clean)
+            xgb_metrics = {
+                'mse': mean_squared_error(y_clean, xgb_train_pred),
+                'mae': mean_absolute_error(y_clean, xgb_train_pred),
+                'rmse': np.sqrt(mean_squared_error(y_clean, xgb_train_pred)),
+                'r2': 1 - (np.var(y_clean - xgb_train_pred) / np.var(y_clean))
             }
 
             self.training_score = {
@@ -324,16 +374,6 @@ class Layer25Chaser:
             }
 
             # Calculate prediction standard deviation for confidence
-            # Calculate training metrics for XGB
-            xgb_train_pred = self.xgb_model.predict(X_clean)
-            xgb_metrics = {
-                'mse': mean_squared_error(y_clean, xgb_train_pred),
-                'mae': mean_absolute_error(y_clean, xgb_train_pred),
-                'rmse': np.sqrt(mean_squared_error(y_clean, xgb_train_pred)),
-                'r2': 1 - (np.var(y_clean - xgb_train_pred) / np.var(y_clean))
-            }
-
-            # Calculate prediction standard deviation for confidence using all available models
             all_predictions = [xgb_train_pred]
             if CATBOOST_AVAILABLE and self.cat_model is not None:
                 all_predictions.append(cat_train_pred)
@@ -355,7 +395,9 @@ class Layer25Chaser:
                 'training_metrics': self.training_score,
                 'cv_metrics': self.cv_scores,
                 'feature_count': len(self.feature_names),
-                'sample_count': len(X_clean)
+                'sample_count': len(X_clean),
+                'pruned_features': len(self.pruned_features),
+                'constraints_stats': {'inc': n_inc, 'dec': n_dec, 'none': n_none}
             }
 
         except Exception as e:
@@ -382,8 +424,9 @@ class Layer25Chaser:
             if self.xgb_model is None:
                 raise ValueError("Chaser models not fitted. Call fit() first.")
 
-            # Ensure feature order matches training
+            # Ensure feature order matches training (and use only kept features)
             if self.feature_names is not None:
+                # Filter to only the features we kept during training
                 X_aligned = X_non_causal[self.feature_names].fillna(0)
             else:
                 X_aligned = X_non_causal.fillna(0)
@@ -919,23 +962,18 @@ class Layer25Chaser:
         """
         try:
             # Get training predictions from all models
-            xgb_pred = self.xgb_model.predict(
-                pd.DataFrame(columns=self.feature_names, 
+            # Make sure we use the correct features
+            dummy_data = pd.DataFrame(columns=self.feature_names,
                           data=np.zeros((1, len(self.feature_names))))
-            )
+
+            xgb_pred = self.xgb_model.predict(dummy_data)
             
             if CATBOOST_AVAILABLE and self.cat_model is not None:
-                cat_pred = self.cat_model.predict(
-                    pd.DataFrame(columns=self.feature_names, 
-                              data=np.zeros((1, len(self.feature_names))))
-                )
+                cat_pred = self.cat_model.predict(dummy_data)
             else:
                 cat_pred = xgb_pred
             
-            et_pred = self.et_model.predict(
-                pd.DataFrame(columns=self.feature_names, 
-                          data=np.zeros((1, len(self.feature_names))))
-            )
+            et_pred = self.et_model.predict(dummy_data)
             
             # Calculate agreement metrics (using dummy data for structure)
             all_preds = np.array([[xgb_pred[0], cat_pred[0], et_pred[0]]])

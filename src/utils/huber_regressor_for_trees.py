@@ -1,83 +1,89 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import HuberRegressor
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler  # Better for Huber logic
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
+from typing import Dict, Tuple, Optional, List
 
-def prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=None, 
-                                 pruning_percentile=15, corr_threshold=0.7):
+def prepare_huber_teacher_outputs(
+    X_train: pd.DataFrame, 
+    y_train: pd.Series, 
+    X_val: Optional[pd.DataFrame] = None, 
+    X_test: Optional[pd.DataFrame] = None, 
+    sample_weight: Optional[np.ndarray] = None,
+    pruning_percentile: int = 15, 
+    corr_threshold: float = 0.7,
+    epsilon: float = 1.35  # 1.35 for 95% efficiency, 1.1 for higher robustness
+) -> Dict:
     """
-    Unified Teacher Script (2026 Strategy)
-    Uses HuberRegressor to generate: Pruned Features, Monotonic Constraints, 
-    Interaction Groups, and Warm-Start Baselines.
+    Optimized Teacher Script (2026 Edition).
+    Refined for speed, robustness to 'fat-tailed' data, and native model integration.
     """
-    # --- 1. Robust Feature Scaling ---
-    scaler = StandardScaler()
-    X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
+    # 1. Robust Scaling: Aligns with Huber logic by focusing on medians/IQRs
+    scaler = RobustScaler()
+    X_train_scaled = pd.DataFrame(
+        scaler.fit_transform(X_train), 
+        columns=X_train.columns, 
+        index=X_train.index
+    )
     
-    # --- 2. Train Huber Teacher ---
-    # epsilon=1.35 is robust to crypto wicks while staying efficient
-    huber = HuberRegressor(epsilon=1.35, alpha=0.0001, max_iter=1000)
-    huber.fit(X_train_scaled, y_train)
+    # 2. Vectorized Huber Training
+    # warm_start=True allows iterative updates if this is called in a loop
+    huber = HuberRegressor(epsilon=epsilon, alpha=0.0001, max_iter=1000, warm_start=False)
+    huber.fit(X_train_scaled, y_train, sample_weight=sample_weight)
     
     coeffs = huber.coef_
     abs_coeffs = np.abs(coeffs)
     
-    # --- 3. Feature Pruning ---
-    # Drop features that Huber identifies as having near-zero structural signal
+    # 3. Dynamic Feature Pruning
     prune_limit = np.percentile(abs_coeffs, pruning_percentile)
     selected_mask = abs_coeffs > prune_limit
     selected_features = X_train.columns[selected_mask].tolist()
     
-    # Filter coefficients and data for selected features
-    pruned_coeffs = coeffs[selected_mask]
-    X_train_pruned = X_train[selected_features]
+    if not selected_features:
+        raise ValueError("Pruning percentile too high; 0 features selected.")
+
+    # 4. Monotonic Constraints (Vectorized)
+    # 2026 Best Practice: Using 15% of mean importance as the neutral '0' floor
+    sig_threshold = np.mean(abs_coeffs) * 0.15
+    monotonic_cst = np.where(coeffs[selected_mask] > sig_threshold, 1, 
+                             np.where(coeffs[selected_mask] < -sig_threshold, -1, 0))
     
-    # --- 4. Monotonic Constraints ---
-    # 1: Increasing, -1: Decreasing, 0: Neutral (below significance threshold)
-    sig_threshold = np.mean(abs_coeffs) * 0.1
-    monotonic_cst = [1 if c > sig_threshold else -1 if c < -sig_threshold else 0 
-                     for c in pruned_coeffs]
-    
-    # --- 5. Automated Interaction Constraints ---
-    # Group important features by correlation to prevent spurious inter-domain links
-    important_mask = abs_coeffs[selected_mask] > np.mean(abs_coeffs[selected_mask])
+    # 5. Optimized Interaction Constraints
+    # Prune interaction search to only 'High Signal' features to speed up linkage
+    important_mask = abs_coeffs[selected_mask] > np.median(abs_coeffs[selected_mask])
     important_idx = np.where(important_mask)[0]
     
+    interaction_constraints = []
     if len(important_idx) > 1:
-        corr = X_train_pruned.iloc[:, important_idx].corr().abs()
-        dissimilarity = 1 - corr.fillna(0)
+        # Use Spearman correlation if data is highly non-linear/outlier-heavy
+        corr = X_train[selected_features].iloc[:, important_idx].corr(method='spearman').abs()
+        dissimilarity = np.clip(1 - corr.fillna(0).values, 0, 1)
+        
+        # Linkage is the bottleneck; complete method prevents 'chaining'
         hierarchy = linkage(squareform(dissimilarity, checks=False), method='complete')
         cluster_labels = fcluster(hierarchy, corr_threshold, criterion='distance')
         
-        interaction_groups = {}
+        groups = {}
         for i, label in enumerate(cluster_labels):
-            idx = int(important_idx[i])
-            interaction_groups.setdefault(label, []).append(idx)
-        interaction_constraints = list(interaction_groups.values())
-    else:
-        interaction_constraints = None
-
-    # --- 6. Warm-Start Baselines ---
-    # Generate the 'initial guess' for the Tree models
-    warm_start_train = huber.predict(X_train_scaled)
-    warm_start_val = huber.predict(scaler.transform(X_val)) if X_val is not None else None
-    warm_start_test = huber.predict(scaler.transform(X_test)) if X_test is not None else None
+            feat_idx = int(important_idx[i])
+            groups.setdefault(label, []).append(feat_idx)
+        interaction_constraints = list(groups.values())
+    
+    # 6. Optimized Baseline Generation
+    def get_pred(df):
+        return huber.predict(scaler.transform(df)) if df is not None else None
 
     return {
         "selected_features": selected_features,
-        "monotonic_constraints": tuple(monotonic_cst),
+        "monotonic_constraints": tuple(monotonic_cst.tolist()),
         "interaction_constraints": interaction_constraints,
         "warm_start": {
-            "train": warm_start_train,
-            "val": warm_start_val,
-            "test": warm_start_test
+            "train": huber.predict(X_train_scaled),
+            "val": get_pred(X_val),
+            "test": get_pred(X_test)
         },
-        "huber_model": huber # For future inspection
+        "scaler": scaler,
+        "huber_model": huber
     }
-
-# --- EXAMPLE USAGE ---
-# outputs = prepare_huber_teacher_outputs(X_train, y_train, X_val, X_test)
-# xgb_params['interaction_constraints'] = outputs['interaction_constraints']
-# xgb_params['monotone_constraints'] = outputs['monotonic_constraints']

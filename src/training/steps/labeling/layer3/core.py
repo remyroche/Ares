@@ -327,46 +327,68 @@ def layer3_analyst_lgbm(
     tprint_info(f"   - 12-bar: {X_12_valid.shape[1]} features, {X_12_valid.shape[0]} samples")
     tprint_info(f"   - 48-bar: {X_48_valid.shape[1]} features, {X_48_valid.shape[0]} samples")
 
-    # 6. Model Training (ORF) - Geometry Specific
-    tprint_info("🤖 PHASE 5: 4-Horizon ORF Model Training")
+    # 6. Model Training (ORF + ExtraTrees) - Geometry Specific
+    tprint_info("🤖 PHASE 5: 4-Horizon ORF + ExtraTrees Model Training")
     
     # Train 12-bar models
-    tprint_info("🎯 Training 12-bar ORF models")
+    tprint_info("🎯 Training 12-bar ORF & ET models")
     model_results_12 = train_dual_head_models(
         X_12_valid, y_alpha_12_valid, y_prob_12, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
     )
     
     # Train 48-bar models
-    tprint_info("🎯 Training 48-bar ORF models") 
+    tprint_info("🎯 Training 48-bar ORF & ET models")
     model_results_48 = train_dual_head_models(
         X_48_valid, y_alpha_48_valid, y_prob_48, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
     )
     
-    # Combine model results
+    # Combine model results (Merge ORF and ET)
     combined_models = {
+        # ORF Models
         'orf_12_reg': model_results_12['models']['orf_12_reg'],
         'orf_12_cls': model_results_12['models']['orf_12_cls'], 
         'orf_48_reg': model_results_48['models']['orf_48_reg'],
-        'orf_48_cls': model_results_48['models']['orf_48_cls']
+        'orf_48_cls': model_results_48['models']['orf_48_cls'],
+
+        # ExtraTrees Models
+        'et_12_reg': model_results_12['models']['et_12_reg'],
+        'et_12_cls': model_results_12['models']['et_12_cls'],
+        'et_48_reg': model_results_48['models']['et_48_reg'],
+        'et_48_cls': model_results_48['models']['et_48_cls']
     }
     model_results = {'models': combined_models}
 
     # 7. Propagation
     tprint_info("📊 PHASE 6: Model Propagation")
     
+    # Helper to propagate predictions
+    def propagate(res, key, idx):
+        return pd.Series(res[key], index=idx).reindex(df.index).fillna(0 if 'cate' in key else 1.0)
+
     # Horizon 12
-    df['orf_cate_12_reg'] = pd.Series(model_results['models']['orf_12_reg']['cate'], index=X_12_valid.index).reindex(df.index).fillna(0)
-    df['orf_se_12_reg'] = pd.Series(model_results['models']['orf_12_reg']['se'], index=X_12_valid.index).reindex(df.index).fillna(1.0)
-    df['orf_cate_12_cls'] = pd.Series(model_results['models']['orf_12_cls']['cate'], index=X_12_valid.index).reindex(df.index).fillna(0)
-    df['orf_se_12_cls'] = pd.Series(model_results['models']['orf_12_cls']['se'], index=X_12_valid.index).reindex(df.index).fillna(1.0)
+    # ORF
+    df['orf_cate_12_reg'] = propagate(model_results['models']['orf_12_reg'], 'cate', X_12_valid.index)
+    df['orf_se_12_reg'] = propagate(model_results['models']['orf_12_reg'], 'se', X_12_valid.index)
+    df['orf_cate_12_cls'] = propagate(model_results['models']['orf_12_cls'], 'cate', X_12_valid.index)
+    df['orf_se_12_cls'] = propagate(model_results['models']['orf_12_cls'], 'se', X_12_valid.index)
+
+    # ExtraTrees
+    df['et_cate_12_reg'] = propagate(model_results['models']['et_12_reg'], 'cate', X_12_valid.index)
+    df['et_se_12_reg'] = propagate(model_results['models']['et_12_reg'], 'se', X_12_valid.index)
+    df['et_cate_12_cls'] = propagate(model_results['models']['et_12_cls'], 'cate', X_12_valid.index)
     
     # Horizon 48
-    df['orf_cate_48_reg'] = pd.Series(model_results['models']['orf_48_reg']['cate'], index=X_48_valid.index).reindex(df.index).fillna(0)
-    df['orf_se_48_reg'] = pd.Series(model_results['models']['orf_48_reg']['se'], index=X_48_valid.index).reindex(df.index).fillna(1.0)
-    df['orf_cate_48_cls'] = pd.Series(model_results['models']['orf_48_cls']['cate'], index=X_48_valid.index).reindex(df.index).fillna(0)
-    df['orf_se_48_cls'] = pd.Series(model_results['models']['orf_48_cls']['se'], index=X_48_valid.index).reindex(df.index).fillna(1.0)
+    # ORF
+    df['orf_cate_48_reg'] = propagate(model_results['models']['orf_48_reg'], 'cate', X_48_valid.index)
+    df['orf_se_48_reg'] = propagate(model_results['models']['orf_48_reg'], 'se', X_48_valid.index)
+    df['orf_cate_48_cls'] = propagate(model_results['models']['orf_48_cls'], 'cate', X_48_valid.index)
 
-    # Legacy compatibility
+    # ExtraTrees
+    df['et_cate_48_reg'] = propagate(model_results['models']['et_48_reg'], 'cate', X_48_valid.index)
+    df['et_se_48_reg'] = propagate(model_results['models']['et_48_reg'], 'se', X_48_valid.index)
+    df['et_cate_48_cls'] = propagate(model_results['models']['et_48_cls'], 'cate', X_48_valid.index)
+
+    # Legacy compatibility (Default to ORF 12)
     df['meta_alpha'] = df['orf_cate_12_reg']
     df['meta_prob'] = expit(df['orf_cate_12_cls'] / (df['orf_cate_12_cls'].std() + 1e-9))
     df['orf_cate'] = df['meta_alpha']
@@ -438,7 +460,7 @@ def layer3_analyst_lgbm(
     except Exception as e:
         tprint_warning(f"⚠️ Enhanced Layer 3 reporting failed: {e}")
 
-    tprint_success(f"🎉 Layer 3 ORF Complete! CausalFeatureSieve applied with geometry-specific feature selection.")
+    tprint_success(f"🎉 Layer 3 ORF+ET Complete! CausalFeatureSieve applied with geometry-specific feature selection.")
     tprint_success(f"📊 Final summary:")
     tprint_success(f"   - 12-bar models: {len(X_12_valid.columns)} features")
     tprint_success(f"   - 48-bar models: {len(X_48_valid.columns)} features")

@@ -6,6 +6,7 @@ incorporating:
 1. Ensemble-based features (Probability, Logit, Momentum)
 2. Volume and Shape features
 3. Regime and Complexity features (derived from GateModel logic)
+4. FracDiff and Innovation Features
 """
 
 import numpy as np
@@ -31,7 +32,52 @@ from src.feature_generation.categories.ensemble_disagreement import (
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
 
 
+def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
+    """
+    Apply fractional differentiation using fixed-width window.
 
+    Uses the approach from AFML Ch. 5:
+    (1-B)^d = sum_{k=0}^{inf} C(d,k) * (-B)^k
+    where C(d,k) = d*(d-1)*...*(d-k+1) / k!
+    """
+    # Calculate weights
+    def _get_weights(d: float, size: int, threshold: float) -> np.ndarray:
+        w = [1.0]
+        for k in range(1, size):
+            w_k = -w[-1] * (d - k + 1) / k
+            if abs(w_k) < threshold:
+                break
+            w.append(w_k)
+        return np.array(w)
+
+    # Get weights (w[0] applies to current X_t, w[1] to X_t-1, etc.)
+    w = _get_weights(d, len(series), threshold)
+    width = len(w)
+
+    # Apply convolution
+    vals = series.values
+    result = np.full(len(series), np.nan)
+
+    if len(series) >= width:
+        # We want to calculate Y_t = w[0]*X_t + w[1]*X_{t-1} + ... + w[k]*X_{t-k}
+        # np.convolve(a, v, mode='valid') computes the discrete convolution.
+        # The standard definition is (a*v)[n] = sum(a[m] * v[n-m])
+        # If we let 'a' be our data 'vals' and 'v' be our weights 'w':
+        # Y[n] = sum(vals[m] * w[n-m]) -- this applies w[0] to vals[n], w[1] to vals[n-1], etc.
+        # This matches exactly what we want for time series filtering where w is the filter kernel.
+        # So we pass 'w' directly without reversing.
+        # Note: Some signal processing definitions reverse the kernel implicitly.
+        # np.convolve DOES reverse the second array.
+        # So if we want sum(w[k] * x[n-k]), we must pass 'w' such that when reversed it matches the formula?
+        # Let's trace: np.convolve(x, h) at index n is sum_{k} x[n-k] * h[k].
+        # We want sum_{k} w[k] * x[n-k].
+        # So h[k] should be w[k].
+        # Therefore, we pass 'w' as the second argument.
+
+        res = np.convolve(vals, w, mode='valid')
+        result[width-1:] = res
+
+    return pd.Series(result, index=series.index)
 
 def shrink(x, n, prior, k=50):
     """
@@ -156,6 +202,8 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute regime features based on GateModel logic.
 
+    Updated to generate features for both FracDiff and Innovation series.
+
     Includes:
     - Volatility features (rv_short, rv_z_short, etc.)
     - Trend/Momentum features (slope, adx_proxy, snr)
@@ -169,20 +217,82 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     high = df['high']
     low = df['low']
 
-    # Log returns
+    # --- Prepare Base Series ---
+
+    # 1. Log Returns (Original)
     log_ret = np.log(close / close.shift(1))
 
-    # 1. Volatility Features
-    rv_short = log_ret.rolling(window=12).std() * np.sqrt(12)
-    # rv_short, rv_short_over_med, rv_z_short removed from output as per request
+    # 2. FracDiff Series
+    try:
+        log_price = np.log(close)
+        frac_diff = _apply_fracdiff(log_price.fillna(method='ffill'), d=0.4)
+        # Fill initial NaNs
+        frac_diff = frac_diff.fillna(0.0)
+    except Exception as e:
+        tprint_warning(f"FracDiff calculation failed: {e}")
+        frac_diff = log_ret # Fallback
 
+    # 3. Innovation Series (Z-scored Delta)
+    # Innovation ≈ ((Xt − Xt-1) − RollingMean(ΔX)) / RollingStd(ΔX)
+    try:
+        delta_x = close.diff()
+        rolling_mean = delta_x.rolling(window=20).mean()
+        rolling_std = delta_x.rolling(window=20).std()
+        innovation = (delta_x - rolling_mean) / (rolling_std + 1e-9)
+        innovation = innovation.fillna(0.0).clip(-5, 5) # Clip outliers
+    except Exception as e:
+        tprint_warning(f"Innovation calculation failed: {e}")
+        innovation = pd.Series(0, index=df.index)
+
+    # --- Helper to calculate features for a series ---
+    def calc_series_features(series, prefix, is_price_level=False):
+        # Volatility
+        f = pd.DataFrame(index=series.index)
+
+        # Short-term volatility
+        # If series is already returns-like (FracDiff, Innovation), we just take std
+        # If series is price-like, we need diff first?
+        # FracDiff is stationary (memory preserving), Innovation is stationary Z-score.
+
+        # Volatility of the series
+        f[f'{prefix}_vol_12'] = series.rolling(window=12).std()
+
+        # Momentum / Slope
+        # For stationary series, momentum is just the rolling sum or mean?
+        # Or slope of the series itself.
+        f[f'{prefix}_slope_12'] = series.diff(12).abs() if is_price_level else series.rolling(12).sum()
+
+        # Efficiency Ratio (Fractal Dimension proxy)
+        # ER = Net Change / Sum of Absolute Changes
+        # For stationary series S, net change = S_t - S_{t-n}
+        er_window = 10
+        change = (series - series.shift(er_window)).abs()
+        volatility = series.diff().abs().rolling(er_window).sum()
+        f[f'{prefix}_efficiency_ratio'] = change / (volatility + 1e-8)
+
+        # Choppiness Index (requires High/Low, approximated here for single series)
+        # Using rolling range as proxy
+        # CI ~ log(Sum(TR) / Range)
+        # TR proxy = abs(diff)
+        sum_tr = series.diff().abs().rolling(20).sum()
+        range_hl = series.rolling(20).max() - series.rolling(20).min()
+        f[f'{prefix}_choppiness'] = sum_tr / (range_hl + 1e-8)
+
+        # SNR (Signal to Noise)
+        # Mean / Std
+        f[f'{prefix}_snr'] = series.rolling(20).mean().abs() / (series.rolling(20).std() + 1e-8)
+
+        return f
+
+    # --- Generate Features ---
+
+    # 1. Original features (based on Price/Returns)
+    # Volatility Features
+    rv_short = log_ret.rolling(window=12).std() * np.sqrt(12)
     tr = (high - low) / close
     atr_short = tr.rolling(window=12).mean()
 
-    rv_long = log_ret.rolling(window=200).std()
-    # rv_z_short removed
-
-    # 2. Trend Strength Features
+    # Trend Strength Features
     log_price = np.log(close)
     features['slope_short'] = log_price.diff(12).abs()
 
@@ -197,11 +307,11 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-8)
     features['adx_proxy'] = dx.rolling(window=14).mean()
 
-    # 3. Momentum
+    # Momentum
     features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
     features['snr'] = features['momentum_short'].abs() / (rv_short + 1e-8)
 
-    # 4. New Features (Vol Spike, Large Candle, Time)
+    # Vol Spike / Large Candle
     rv_mean = rv_short.rolling(window=100, min_periods=20).mean()
     rv_std = rv_short.rolling(window=100, min_periods=20).std()
     rv_z = (rv_short - rv_mean) / (rv_std + 1e-8)
@@ -219,7 +329,7 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     features['time_since_last_large_candle'] = int_index - large_candle_int_idx
     features['time_since_last_large_candle'] = features['time_since_last_large_candle'].fillna(1000)
 
-    # 5. Advanced Regime Features
+    # Standard Regime Features
     chop_window = 20
     tr1 = high - low
     tr2 = (high - close.shift(1)).abs()
@@ -284,6 +394,26 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     else:
         features['permutation_entropy'] = np.nan
 
+    # Efficiency Ratio (Kaufman's)
+    er_window = 10
+    change = (close - close.shift(er_window)).abs()
+    volatility = close.diff().abs().rolling(er_window).sum()
+    features['efficiency_ratio'] = change / (volatility + 1e-8)
+
+    # -------------------------------------------------------------
+    # NEW: FracDiff and Innovation Features
+    # -------------------------------------------------------------
+
+    # Generate FracDiff features
+    frac_feats = calc_series_features(frac_diff, prefix='frac')
+    for col in frac_feats.columns:
+        features[col] = frac_feats[col]
+
+    # Generate Innovation features
+    innov_feats = calc_series_features(innovation, prefix='innov')
+    for col in innov_feats.columns:
+        features[col] = innov_feats[col]
+
     # Time Features
     if isinstance(df.index, pd.DatetimeIndex):
         hour = df.index.hour
@@ -298,12 +428,6 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
         features['hour_sin'] = 0.0
         features['hour_cos'] = 0.0
         features['is_weekend'] = 0
-
-    # Efficiency Ratio (Kaufman's)
-    er_window = 10
-    change = (close - close.shift(er_window)).abs()
-    volatility = close.diff().abs().rolling(er_window).sum()
-    features['efficiency_ratio'] = change / (volatility + 1e-8)
 
     return features
 

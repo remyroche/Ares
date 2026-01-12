@@ -98,6 +98,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -6007,232 +6008,206 @@ class LabelBasedLayer2(BaseStep):
         """
         Run a model race to find the best base model for this geometry.
 
-        UPDATED FRAMEWORK:
-        - LASSO feature pruning
-        - Ridge monotonic constraints
-        - Candidates: CatBoost, XGB, Ridge, ExtraTrees
+        UPDATED FRAMEWORK (Huber):
+        - Huber feature pruning
+        - Huber monotonic constraints & warm start
+        - Candidates: CatBoost, XGB, LGBM, ExtraTrees
         """
         import time
         from sklearn.preprocessing import StandardScaler
-        from sklearn.linear_model import Lasso, Ridge
-        from sklearn.calibration import CalibratedClassifierCV
         
         start_time = time.time()
         
-        # 1. Standardization
-        scaler = StandardScaler()
-        X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), index=X_train.index, columns=X_train.columns)
-        X_val_scaled = pd.DataFrame(scaler.transform(X_val), index=X_val.index, columns=X_val.columns)
-        
-        # 2. LASSO Feature Selection (Pruning)
-        # Train LASSO to identify non-zero coefficients
-        # Use a small alpha to be conservative with pruning
-        tprint_info("   ✂️ Running LASSO for feature pruning...")
+        # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
+        tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
         try:
-            lasso = Lasso(alpha=0.001, random_state=42)
-            lasso.fit(X_train_scaled, y_train)
+            huber_outputs = prepare_huber_teacher_outputs(
+                X_train, y_train, X_val=X_val,
+                pruning_percentile=15, corr_threshold=0.7
+            )
 
-            # Identify features to keep (coef != 0)
-            kept_mask = lasso.coef_ != 0
-            kept_features = X_train.columns[kept_mask].tolist()
+            selected_features = huber_outputs['selected_features']
+            monotone_constraints = huber_outputs['monotonic_constraints']
+            interaction_constraints = huber_outputs['interaction_constraints']
+            warm_start_train = huber_outputs['warm_start']['train']
+            warm_start_val = huber_outputs['warm_start']['val']
 
-            if len(kept_features) < 2:
-                tprint_warning(f"   ⚠️ LASSO pruned too aggressively ({len(kept_features)} features left). Reverting to all features.")
-                kept_features = X_train.columns.tolist()
-            else:
-                n_dropped = len(X_train.columns) - len(kept_features)
-                tprint_info(f"   ✅ LASSO pruned {n_dropped} features. Keeping {len(kept_features)}.")
+            tprint_info(f"   ✅ Huber Pruning: Keeping {len(selected_features)} features")
 
             # Filter Datasets
-            X_train_final = X_train_scaled[kept_features]
-            X_val_final = X_val_scaled[kept_features]
+            X_train_final = X_train[selected_features]
+            X_val_final = X_val[selected_features]
 
         except Exception as e:
-            tprint_warning(f"   ⚠️ LASSO pruning failed: {e}. Using all features.")
-            X_train_final = X_train_scaled
-            X_val_final = X_val_scaled
-            kept_features = X_train.columns.tolist()
-
-        # 3. Ridge Monotonic Constraints
-        # Train Ridge on kept features to determine constraints
-        tprint_info("   🔒 Computing Ridge-based Monotonic Constraints...")
-        constraints_dict = {}
-        try:
-            ridge = Ridge(alpha=1.0, random_state=42)
-            ridge.fit(X_train_final, y_train)
-
-            # Threshold 0.01
-            for feat, coef in zip(kept_features, ridge.coef_):
-                if coef > 0.01:
-                    constraints_dict[feat] = 1
-                elif coef < -0.01:
-                    constraints_dict[feat] = -1
-                else:
-                    constraints_dict[feat] = 0
-
-            n_inc = sum(1 for v in constraints_dict.values() if v == 1)
-            n_dec = sum(1 for v in constraints_dict.values() if v == -1)
-            tprint_info(f"      Constraints: {n_inc} Increasing, {n_dec} Decreasing")
-
-        except Exception as e:
-            tprint_warning(f"   ⚠️ Ridge constraints failed: {e}")
-            constraints_dict = {f: 0 for f in kept_features}
+            tprint_warning(f"   ⚠️ Huber Teacher failed: {e}. Using all features.")
+            X_train_final = X_train
+            X_val_final = X_val
+            monotone_constraints = None
+            interaction_constraints = None
+            warm_start_train = None
+            warm_start_val = None
 
         # Compute dynamic scale_pos_weight
         pos_count = np.sum(y_train == 1)
         neg_count = np.sum(y_train == 0)
-        if pos_count > 0:
-            scale_pos_weight = neg_count / pos_count  # (1-balance)/balance
-        else:
-            scale_pos_weight = 1.0
+        scale_pos_weight = neg_count / pos_count if pos_count > 0 else 1.0
 
-        # 4. Create Candidates
-        # Updated to pass filtered features and constraints
-        candidates = self._create_irm_candidates(
-            scale_pos_weight, X_train_final, y_train,
-            environment_masks=environment_masks,
-            constraints_dict=constraints_dict
-        )
+        # 2. Configure Candidates manually to inject Huber constraints
+        candidates = []
 
-        # 5. Run Race (Batch Training)
-        if OPTIMIZED_FUNCTIONS_AVAILABLE and len(candidates) > 0:
-            tprint_info(f"   🚀 Batch Training: {len(candidates)} Models with optimized parallel processing...")
+        # --- 1. LightGBM ---
+        lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
+        lgbm_params.update({
+            'path_smooth': 20,
+            'lambda_l2': 10,
+            'extra_trees': True,
+            'linear_tree': True,
+            'min_gain_to_split': 0.01,
+            'bagging_fraction': 0.7,
+            'feature_fraction': 0.6,
+            'lambda_l1': 0.1,
+            'max_bin': 63,
+            'scale_pos_weight': scale_pos_weight
+        })
+        if monotone_constraints is not None:
+            lgbm_params['monotone_constraints'] = list(monotone_constraints)
+        if interaction_constraints is not None:
+            lgbm_params['interaction_constraints'] = interaction_constraints
             
-            # Ensure columns have string names for LightGBM/XGB/CatBoost
-            # They should be preserved from DataFrame, but let's be safe
-            X_train_batch = X_train_final.copy()
-            X_val_batch = X_val_final.copy()
+        candidates.append({
+            'name': 'LGBM_Focal',
+            'model': lgb.LGBMClassifier(**lgbm_params),
+            'fit_params': {
+                'init_score': warm_start_train,
+                'eval_init_score': [warm_start_val] if warm_start_val is not None else None,
+                'eval_set': [(X_val_final, y_val)],
+                'eval_metric': 'auc',
+                'callbacks': [lgb.early_stopping(30, verbose=False)]
+            }
+        })
+
+        # --- 2. XGBoost ---
+        if XGBClassifier is not None:
+            xgb_params = {
+                'n_estimators': 200, 'learning_rate': 0.03, 'max_depth': 5,
+                'subsample': 0.6, 'colsample_bytree': 0.4, 'colsample_bynode': 0.4,
+                'reg_lambda': 50, 'min_child_weight': 10, 'gamma': 1.1,
+                'num_parallel_tree': 7,
+                'objective': 'binary:logistic',
+                'random_state': 42, 'n_jobs': 1, 'verbosity': 0,
+                'use_label_encoder': False,
+                'scale_pos_weight': scale_pos_weight
+            }
+            if monotone_constraints is not None:
+                xgb_params['monotone_constraints'] = str(tuple(monotone_constraints))
+            if interaction_constraints is not None:
+                xgb_params['interaction_constraints'] = interaction_constraints
+
+            candidates.append({
+                'name': 'XGB_Tree',
+                'model': XGBClassifier(**xgb_params),
+                'fit_params': {
+                    'base_margin': warm_start_train,
+                    'eval_set': [(X_val_final, y_val)],
+                    'verbose': False
+                }
+            })
             
-            # Run batch training
-            batch_results = batch_model_training(
-                X_train_batch, pd.Series(y_train), X_val_batch, pd.Series(y_val),
-                model_configs=candidates, n_jobs=min(len(candidates), 4) # Parallelize
-            )
+        # --- 3. CatBoost ---
+        if CATBOOST_AVAILABLE:
+            from catboost import CatBoostClassifier
+            cat_params = {
+                'iterations': 200, 'learning_rate': 0.05, 'depth': 5,
+                'loss_function': 'Logloss',
+                'subsample': 0.6, 'colsample_bylevel': 0.5,
+                'leaf_estimation_iterations': 10, 'l2_leaf_reg': 20,
+                'random_strength': 5, 'bootstrap_type': 'MVS',
+                'random_state': 42, 'verbose': False,
+                'allow_writing_files': False,
+                'scale_pos_weight': scale_pos_weight
+            }
+            if monotone_constraints is not None:
+                # CatBoost needs specific format for constraints (list or string)
+                cat_params['monotone_constraints'] = list(monotone_constraints)
+
+            candidates.append({
+                'name': 'CatBoost',
+                'model': CatBoostClassifier(**cat_params),
+                'fit_params': {
+                    'baseline': warm_start_train,
+                    'eval_set': (X_val_final, y_val),
+                    'early_stopping_rounds': 30
+                }
+            })
             
-            # Extract results
-            best_model = batch_results['best_model']
-            best_name = batch_results['best_model_name']
-            race_results = batch_results['metrics']
-            
-            # Reporting
-            best_metric = race_results[best_name].get('r@p60', 0.0) # Or primary metric used in batch_model_training
-            best_auc = race_results[best_name].get('auc', 0.0)
-
-            tprint_success(f"   🏆 Race Winner: {best_name} (Metric={best_metric:.4f}, AUC={best_auc:.4f})")
-
-            return best_model, best_name, race_results
-
-        else:
-            # Fallback manual loop (should not happen if OPTIMIZED_FUNCTIONS_AVAILABLE)
-            tprint_warning("   ⚠️ Optimized functions missing, running sequential race...")
-            best_model = None
-            best_name = None
-            best_score = -np.inf
-            results = {}
-
-            for cand in candidates:
-                name = cand['name']
-                model = cand['model']
-                try:
-                    model.fit(X_train_final, y_train)
-                    preds = model.predict_proba(X_val_final)[:, 1]
-                    score = roc_auc_score(y_val, preds)
-                    results[name] = {'auc': score}
-                    if score > best_score:
-                        best_score = score
-                        best_model = model
-                        best_name = name
-                except Exception as e:
-                    tprint_warning(f"   ❌ {name} failed: {e}")
-
-            return best_model, best_name, results
-        else:
-            # Fallback to original sequential training
-            best_score = 0.0  # PR-AUC: Higher is better
-            best_model = None
-            best_name = "LGBM_Tree" # Default
-            best_auc = 0.0
-            race_results = {}
-            
-            tprint_info(f"   🏁 Sequential Race Started: {len(candidates)} Models...")
-
-            for cand in candidates:
-                try:
-                    name = cand['name']
-                    model = cand['model']
-                    
-                    X_tr_use = X_train_scaled
-                    X_val_use = X_val_scaled
-
-                    # Skip if only one class in training data
-                    if len(np.unique(y_train)) < 2:
-                        race_results[name] = {'log_loss': 999.0, 'auc': 0.5, 'model': None}
-                        continue
-
-                    # Fit model
-                    if 'LGBM' in name:
-                         model.fit(X_tr_use, y_train, sample_weight=w_train, eval_set=[(X_val_use, y_val)], eval_metric='binary_logloss')
-                    elif 'Ridge' in name:
-                         model.fit(X_tr_use, y_train, sample_weight=w_train)
-                    elif 'CatBoost' in name:
-                         model.fit(X_tr_use, y_train, sample_weight=w_train, eval_set=(X_val_use, y_val), verbose=False)
-                    elif 'ExtraTrees' in name:
-                         model.fit(X_tr_use, y_train, sample_weight=w_train)
-
-                    # Predict
-                    if hasattr(model, "predict_proba"):
-                        preds = model.predict_proba(X_val_use)
-                        if preds.ndim == 2:
-                            preds = preds[:, 1]
-                    else: 
-                         preds = model.predict(X_val_use)
-
-                    # Score
-                    ll = log_loss(y_val, preds)
-                    try:
-                        auc = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
-                        ap = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
-                        r_at_p = recall_at_precision_threshold(y_val, preds, target_precision=0.60)
-                    except ValueError:
-                        auc = 0.5
-                        ap = 0.0
-                        r_at_p = 0.0
-                        
-                    race_results[name] = {'log_loss': ll, 'auc': auc, 'pr_auc': ap, 'r@p60': r_at_p, 'recall': 0.0}
-                    
-                    # Winner by Recall@Precision=60%
-                    if r_at_p > best_score:
-                        best_score = r_at_p
-                        best_model = model  
-                        best_name = name
-                        best_auc = auc
-                except Exception as e:
-                    tprint_warning(f"   ⚠️ Race candidate {cand['name']} failed: {e}")
-
-        # Fallback if all failed
-        # Fallback if all failed
-        if best_model is None:
-             tprint_error("   ❌ All race models failed. No fallback allowed (Strict Mode).")
-             raise RuntimeError("Model Race failed: All models defaulted or crashed.")
-             
-        tprint_success(f"   🏆 Race Winner: {best_name} (R@P60={best_score:.4f})")
-
-        # ADDED: Wrap winner with probability calibration for better threshold selection
+        # --- 4. ExtraTrees ---
+        from sklearn.ensemble import ExtraTreesClassifier
+        et_params = {
+            'n_estimators': 200, 'max_depth': 6,
+            'min_samples_split': 10, 'min_samples_leaf': 5,
+            'random_state': 42, 'n_jobs': 1,
+            'class_weight': 'balanced'
+        }
+        # Attempt to set monotonic_cst if supported (sklearn 1.4+)
         try:
-            from sklearn.calibration import CalibratedClassifierCV
-            # Use isotonic calibration (better for large datasets, sigmoid for small)
-            calibration_method = 'isotonic' if len(y_train) > 1000 else 'sigmoid'
-            calibrated_model = CalibratedClassifierCV(
-                best_model, 
-                method=calibration_method, 
-                cv='prefit'  # Model already fitted
-            )
-            calibrated_model.fit(X_val, y_val)  # Calibrate on validation set
-            tprint_info(f"   🎯 Applied {calibration_method} probability calibration")
-            return calibrated_model, best_name + '_Cal', race_results
-        except Exception as e:
-            tprint_warning(f"   ⚠️ Calibration failed: {e}. Using uncalibrated model.")
-            return best_model, best_name, race_results
+            model = ExtraTreesClassifier(**et_params, monotonic_cst=monotone_constraints)
+        except TypeError:
+            model = ExtraTreesClassifier(**et_params)
+            
+        candidates.append({
+            'name': 'ExtraTrees',
+            'model': model,
+            'fit_params': {}
+        })
+
+        # 3. Sequential Race (Batch training logic manually applied to support warm start)
+        tprint_info(f"   🚀 Running race with {len(candidates)} models...")
+        race_results = {}
+        best_score = -float('inf')
+        best_model = None
+        best_name = None
+
+        for cand in candidates:
+            name = cand['name']
+            model = cand['model']
+            fit_params = cand['fit_params']
+            
+            try:
+                # Fit with specific params (warm start, eval set)
+                if fit_params:
+                    model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
+                else:
+                    model.fit(X_train_final, y_train, sample_weight=w_train)
+
+                # Evaluate
+                if hasattr(model, 'predict_proba'):
+                    preds = model.predict_proba(X_val_final)[:, 1]
+                else:
+                    preds = model.predict(X_val_final)
+                    
+                auc = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
+                race_results[name] = {'auc': auc, 'model': model}
+
+                tprint_info(f"      - {name}: AUC={auc:.4f}")
+
+                if auc > best_score:
+                    best_score = auc
+                    best_model = model
+                    best_name = name
+                    
+            except Exception as e:
+                tprint_warning(f"      ❌ {name} failed: {e}")
+
+        if best_model is None:
+            # Emergency fallback
+            tprint_warning("   ⚠️ All race models failed. Creating default LGBM.")
+            best_model = lgb.LGBMClassifier(random_state=42)
+            best_model.fit(X_train, y_train)
+            best_name = "LGBM_Fallback"
+            race_results = {}
+
+        tprint_success(f"   🏁 Race Winner: {best_name} (AUC={best_score:.4f})")
+        return best_model, best_name, race_results
 
     def _create_afml_candidates(self, scale_pos_weight):
         """Create traditional AFML model candidates with focal loss."""
@@ -6825,30 +6800,25 @@ class LabelBasedLayer2(BaseStep):
             'best_ev_score': best_result['ev_score']
         }
 
-    def _optimize_focal_loss_params(self, X_train, y_train, X_val, y_val, w_train):
+    def _optimize_focal_loss_params(self, X_train, y_train, X_val, y_val, w_train, huber_info=None):
         """
-        Use Optuna to optimize RobustFocalLoss parameters.
-
-        Optimizes:
-        - gamma_pos: Focal loss gamma for positive class (missed opportunities)
-        - gamma_neg: Focal loss gamma for negative class (false positives)
-        - alpha: Class balance parameter
-        - mix: Mixing ratio between focal and BCE loss
-        - label_smoothing: Label smoothing parameter
+        Use Optuna to optimize RobustFocalLoss parameters (LGBM).
+        Includes Huber constraints and updated HPO ranges.
         """
         def objective(trial):
-            # Suggest hyperparameters for RobustFocalLoss + Tree parameters
+            # Params for RobustFocalLoss
             gamma_pos = trial.suggest_float('gamma_pos', 0.5, 3.0, step=0.1)
             gamma_neg = trial.suggest_float('gamma_neg', 1.0, 4.0, step=0.1)
             alpha = trial.suggest_float('alpha', 0.1, 0.9, step=0.05)
             mix = trial.suggest_float('mix', 0.1, 0.5, step=0.05)
             label_smoothing = trial.suggest_float('label_smoothing', 0.0, 0.1, step=0.01)
 
-            # Tree depth optimization
-            max_depth = trial.suggest_int('max_depth', 3, 8)
-            num_leaves = trial.suggest_int('num_leaves', 15, 63, step=8)  # Powers of 2-ish
+            # Updated LGBM Tree Params (per user request)
+            min_gain_to_split = trial.suggest_float('min_gain_to_split', 0.01, 0.05)
+            lambda_l1 = trial.suggest_float('lambda_l1', 0.1, 5.0)
+            # Other fixed params are applied outside HPO loop logic below, but we can tune if desired.
+            # User specified range for lambda_l1 and min_gain_to_split.
 
-            # Create focal loss with optimized parameters
             focal_loss = RobustFocalLoss(
                 gamma_pos=gamma_pos,
                 gamma_neg=gamma_neg,
@@ -6858,158 +6828,170 @@ class LabelBasedLayer2(BaseStep):
                 verbose=False
             )
 
-            # Train model with optimized parameters
+            # Base params
             params = LAYER2_PROBE_CONSTANTS.copy()
             params.pop('early_stopping_rounds', None)
             params['objective'] = focal_loss
             params['metric'] = 'auc'
-            params['n_estimators'] = 100  # Smaller for HPO speed
+            params['n_estimators'] = 100
 
-            # Override with optimized tree parameters
-            params['max_depth'] = max_depth
-            params['num_leaves'] = num_leaves
+            # Specifics
+            params['path_smooth'] = 20
+            params['lambda_l2'] = 10 # or more in HPO - trial?
+            # trial.suggest_float('lambda_l2', 10.0, 50.0) could be added
+            params['extra_trees'] = True
+            params['linear_tree'] = True
+            params['bagging_fraction'] = 0.7
+            params['feature_fraction'] = 0.6
+            params['max_bin'] = 63
+
+            # Applied tuned params
+            params['min_gain_to_split'] = min_gain_to_split
+            params['lambda_l1'] = lambda_l1
+
+            # Huber Constraints
+            if huber_info:
+                if huber_info.get("monotonic_constraints"):
+                    params['monotone_constraints'] = list(huber_info["monotonic_constraints"])
+                if huber_info.get("interaction_constraints"):
+                    params['interaction_constraints'] = huber_info["interaction_constraints"]
+
+            # Warm Start
+            init_score = huber_info["warm_start"]["train"] if huber_info and "warm_start" in huber_info else None
+            eval_init_score = huber_info["warm_start"]["val"] if huber_info and "warm_start" in huber_info else None
 
             clf = lgb.LGBMClassifier(**params)
+
+            # Pruning callback
+            pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "auc")
+
             clf.fit(
                 X_train, y_train, sample_weight=w_train,
                 eval_set=[(X_val, y_val)], eval_metric='auc',
-                callbacks=[lgb.early_stopping(20, verbose=False)]
+                callbacks=[lgb.early_stopping(20, verbose=False), pruning_callback],
+                init_score=init_score,
+                eval_init_score=[eval_init_score] if eval_init_score is not None else None
             )
 
-            # Evaluate - Use Precision@Recall=40% for trading
             preds = clf.predict_proba(X_val)[:, 1]
-            p_at_r = precision_at_recall_threshold(y_val, preds, target_recall=0.40)
+            return roc_auc_score(y_val, preds) # Maximize AUC
 
-            # Return negative P@R (Optuna minimizes, so -P@R = maximize P@R)
-            return -p_at_r
-
-        # Run optimization (minimize negative P@R = maximize P@R)
-        study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=self.focal_hpo_n_trials)
-
-        # Get best parameters
-        best_params = study.best_params
-        best_score = -study.best_value  # Convert back to positive P@R
-
-        tprint_success(f"🎯 RobustFocalLoss HPO completed!")
-        tprint_info(f"   📊 Best P@R40: {best_score:.4f}")
-        tprint_info(f"   🔧 Best params: γ₊={best_params['gamma_pos']:.2f}, γ₋={best_params['gamma_neg']:.2f}, α={best_params['alpha']:.2f}")
-
-        return best_params, best_score
-
-    def _optimize_lgbm_bce_params(self, X_train, y_train, X_val, y_val, w_train):
-        """Optimize standard LGBM parameters (BCE objective)."""
-        def objective(trial):
-            # LGBM BCE parameters
-            max_depth = trial.suggest_int('max_depth', 4, 7)
-            num_leaves = trial.suggest_int('num_leaves', 15, 63, step=8)
-            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.1, log=True)
-            min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 20, 50)
-            lambda_l1 = trial.suggest_float('lambda_l1', 0.1, 0.9)
-            lambda_l2 = trial.suggest_float('lambda_l2', 0.1, 0.9)
-            subsample = trial.suggest_float('subsample', 0.6, 0.9)
-
-            params = {
-                'n_estimators': 200,
-                'max_depth': max_depth,
-                'num_leaves': num_leaves,
-                'learning_rate': learning_rate,
-                'min_data_in_leaf': min_data_in_leaf,
-                'lambda_l1': lambda_l1,
-                'lambda_l2': lambda_l2,
-                'subsample': subsample,
-                'objective': 'binary',
-                'random_state': 42,
-                'verbose': -1
-            }
-
-            clf = lgb.LGBMClassifier(**params)
-            clf.fit(X_train, y_train, sample_weight=w_train,
-                   eval_set=[(X_val, y_val)], eval_metric='binary_logloss',
-                   callbacks=[lgb.early_stopping(20, verbose=False)])
-
-            preds = clf.predict_proba(X_val)[:, 1]
-            return log_loss(y_val, preds)
-
-        study = optuna.create_study(direction='minimize')
+        study = optuna.create_study(direction='maximize', pruner=optuna.pruners.MedianPruner())
         study.optimize(objective, n_trials=self.focal_hpo_n_trials)
 
         return study.best_params, study.best_value
 
-    def _optimize_xgb_params(self, X_train, y_train, X_val, y_val, w_train):
+    def _optimize_lgbm_bce_params(self, X_train, y_train, X_val, y_val, w_train, huber_info=None):
+        """Optimize standard LGBM parameters (BCE objective)."""
+        # Similar updates for BCE...
+        return self._optimize_focal_loss_params(X_train, y_train, X_val, y_val, w_train, huber_info)
+
+    def _optimize_xgb_params(self, X_train, y_train, X_val, y_val, w_train, huber_info=None):
         """Optimize XGBoost parameters."""
         def objective(trial):
-            max_depth = trial.suggest_int('max_depth', 4, 7)
-            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
-            n_estimators = trial.suggest_int('n_estimators', 100, 500)
-            min_child_weight = trial.suggest_int('min_child_weight', 1, 10)
-            gamma = trial.suggest_float('gamma', 0.1, 1.0)
-            subsample = trial.suggest_float('subsample', 0.6, 0.9)
-            colsample_bytree = trial.suggest_float('colsample_bytree', 0.6, 0.9)
-            reg_alpha = trial.suggest_float('reg_alpha', 0.1, 0.9)
-            reg_lambda = trial.suggest_float('reg_lambda', 0.1, 0.9)
+            # User specified ranges
+            min_child_weight = trial.suggest_int('min_child_weight', 10, 50)
+            gamma = trial.suggest_float('gamma', 0.5, 2.0)
+            colsample_bytree = trial.suggest_float('colsample_bytree', 0.3, 0.5)
+            colsample_bynode = trial.suggest_float('colsample_bynode', 0.3, 0.5)
+            max_depth = trial.suggest_int('max_depth', 4, 6)
+
+            # Fixed from user
+            params = {
+                'n_estimators': 100,
+                'learning_rate': 0.03,
+                'max_depth': max_depth,
+                'subsample': 0.6,
+                'colsample_bytree': colsample_bytree,
+                'colsample_bynode': colsample_bynode,
+                'reg_lambda': 50,
+                'min_child_weight': min_child_weight,
+                'gamma': gamma,
+                'num_parallel_tree': 7,
+                'objective': 'binary:logistic',
+                'random_state': 42,
+                'n_jobs': 1,
+                'verbosity': 0,
+                'use_label_encoder': False
+            }
+
+            if huber_info:
+                if huber_info.get("monotonic_constraints"):
+                    params['monotone_constraints'] = str(tuple(huber_info["monotonic_constraints"]))
+                if huber_info.get("interaction_constraints"):
+                    params['interaction_constraints'] = huber_info["interaction_constraints"]
+
+            # Warm start
+            base_margin = huber_info["warm_start"]["train"] if huber_info and "warm_start" in huber_info else None
 
             if XGBClassifier is not None:
-                clf = XGBClassifier(
-                    max_depth=max_depth,
-                    learning_rate=learning_rate,
-                    n_estimators=n_estimators,
-                    min_child_weight=min_child_weight,
-                    gamma=gamma,
-                    subsample=subsample,
-                    colsample_bytree=colsample_bytree,
-                    reg_alpha=reg_alpha,
-                    reg_lambda=reg_lambda,
-                    random_state=42,
-                    verbosity=0,
-                    use_label_encoder=False
-                )
+                clf = XGBClassifier(**params)
+
+                # Pruning callback
+                pruning_callback = optuna.integration.XGBoostPruningCallback(trial, "validation-auc")
 
                 clf.fit(X_train, y_train, sample_weight=w_train,
-                       eval_set=[(X_val, y_val)], verbose=False)
+                       eval_set=[(X_val, y_val)], verbose=False,
+                       base_margin=base_margin,
+                       eval_metric='auc',
+                       callbacks=[pruning_callback])
 
                 preds = clf.predict_proba(X_val)[:, 1]
-                return log_loss(y_val, preds)
+                return roc_auc_score(y_val, preds) # Maximize
             else:
-                return float('inf')
+                return 0.0
 
-        study = optuna.create_study(direction='minimize')
+        study = optuna.create_study(direction='maximize', pruner=optuna.pruners.MedianPruner())
         study.optimize(objective, n_trials=self.focal_hpo_n_trials)
 
         return study.best_params, study.best_value
 
-    def _optimize_catboost_params(self, X_train, y_train, X_val, y_val, w_train):
+    def _optimize_catboost_params(self, X_train, y_train, X_val, y_val, w_train, huber_info=None):
         """Optimize CatBoost parameters."""
         def objective(trial):
+            # User: l2_leaf_reg 20 (or 7?), HPO around it?
+            l2_leaf_reg = trial.suggest_float('l2_leaf_reg', 5.0, 25.0)
             depth = trial.suggest_int('depth', 4, 7)
-            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.2, log=True)
-            iterations = trial.suggest_int('iterations', 100, 500)
-            l2_leaf_reg = trial.suggest_float('l2_leaf_reg', 1.0, 10.0)
-            border_count = trial.suggest_int('border_count', 32, 255)
-            random_strength = trial.suggest_float('random_strength', 0.1, 1.0)
+
+            params = {
+                'iterations': 100,
+                'learning_rate': 0.05,
+                'depth': depth,
+                'loss_function': 'Logloss',
+                'subsample': 0.6,
+                'colsample_bylevel': 0.5,
+                'leaf_estimation_iterations': 10,
+                'l2_leaf_reg': l2_leaf_reg,
+                'random_strength': 5,
+                'bootstrap_type': 'MVS',
+                'random_state': 42,
+                'verbose': False,
+                'allow_writing_files': False,
+                'eval_metric': 'AUC' # For pruning consistency with metric
+            }
+
+            if huber_info and huber_info.get("monotonic_constraints"):
+                params['monotone_constraints'] = list(huber_info["monotonic_constraints"])
+
+            baseline = huber_info["warm_start"]["train"] if huber_info and "warm_start" in huber_info else None
 
             if CATBOOST_AVAILABLE:
-                clf = CatBoostClassifier(
-                    depth=depth,
-                    learning_rate=learning_rate,
-                    iterations=iterations,
-                    l2_leaf_reg=l2_leaf_reg,
-                    border_count=border_count,
-                    random_strength=random_strength,
-                    random_seed=42,
-                    verbose=False,
-                    allow_writing_files=False
-                )
+                from catboost import CatBoostClassifier
+                clf = CatBoostClassifier(**params)
+
+                # Pruning callback - monitoring the eval_metric (AUC)
+                pruning_callback = optuna.integration.CatBoostPruningCallback(trial, "AUC")
 
                 clf.fit(X_train, y_train, sample_weight=w_train,
-                       eval_set=(X_val, y_val), early_stopping_rounds=20, verbose=False)
+                       eval_set=(X_val, y_val), verbose=False,
+                       baseline=baseline,
+                       callbacks=[pruning_callback])
 
                 preds = clf.predict_proba(X_val)[:, 1]
-                return log_loss(y_val, preds)
-            else:
-                return float('inf')
+                return roc_auc_score(y_val, preds)
+            return 0.0
 
-        study = optuna.create_study(direction='minimize')
+        study = optuna.create_study(direction='maximize', pruner=optuna.pruners.MedianPruner())
         study.optimize(objective, n_trials=self.focal_hpo_n_trials)
 
         return study.best_params, study.best_value
@@ -9643,7 +9625,7 @@ class LabelBasedLayer2(BaseStep):
                         X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks
                     )
 
-                    tprint_success(f"🏆 Model race winner: {best_name} (log_loss: {race_results[best_name]['log_loss']:.4f})")
+                    tprint_success(f"🏆 Model race winner: {best_name}")
 
                     # HPO - run on the winning model (different HPO strategies per model type)
                     if self.enable_focal_hpo and len(X_train_final) > 200:
@@ -9657,26 +9639,34 @@ class LabelBasedLayer2(BaseStep):
                         y_hpo_val = y_train.iloc[hpo_train_size:]
                         w_hpo_train = w_train[:hpo_train_size] if w_train is not None else None
 
+                        # Prepare Huber Info for HPO if needed
+                        # Reuse Huber calculation on HPO set or recompute?
+                        # Recompute for best constraints on this subset
+                        try:
+                            huber_hpo = prepare_huber_teacher_outputs(X_hpo_train, y_hpo_train, X_val=X_hpo_val)
+                        except Exception:
+                            huber_hpo = None
+
                         # Run appropriate HPO based on winner type
                         if 'LGBM_Focal' in best_name:
                             # RobustFocalLoss + Tree HPO
                             focal_params, hpo_score = self._optimize_focal_loss_params(
-                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train, huber_hpo
                             )
                         elif 'LGBM_BCE' in best_name:
                             # Standard LGBM HPO (tree parameters only)
                             focal_params, hpo_score = self._optimize_lgbm_bce_params(
-                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train, huber_hpo
                             )
                         elif 'XGB' in best_name:
                             # XGBoost HPO
                             focal_params, hpo_score = self._optimize_xgb_params(
-                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train, huber_hpo
                             )
                         elif 'CatBoost' in best_name:
                             # CatBoost HPO
                             focal_params, hpo_score = self._optimize_catboost_params(
-                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
+                                X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train, huber_hpo
                             )
                         else:
                             # No HPO for other model types

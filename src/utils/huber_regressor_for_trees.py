@@ -74,7 +74,8 @@ def prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=None,
             "val": warm_start_val,
             "test": warm_start_test
         },
-        "huber_model": huber # For future inspection
+        "huber_model": huber, # For future inspection
+        "scaler": scaler
     }
 
 # --- EXAMPLE USAGE ---

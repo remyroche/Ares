@@ -6146,8 +6146,6 @@ class LabelBasedLayer2(BaseStep):
                     tprint_warning(f"   ❌ {name} failed: {e}")
 
             return best_model, best_name, results
-        else:
-            # Fallback to original sequential training
             best_score = 0.0  # PR-AUC: Higher is better
             best_model = None
             best_name = "LGBM_Tree" # Default

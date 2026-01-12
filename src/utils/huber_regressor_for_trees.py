@@ -99,6 +99,7 @@ def prepare_huber_production_orchestrator(
             'val': get_consensus_pred(X_val),
             'test': get_consensus_pred(X_test)
         },
+        "huber_model": huber, # For future inspection
         'quantile_meta_targets': y_train - warm_start_tr,
         'scaler': scaler,
         'models': models

@@ -68,6 +68,9 @@ class EnhancedLayer3Reporter:
         self._generate_regime_performance_report(df, target_col)
         self._generate_structural_feature_report(df, meta_features, target_col)
         
+        # NEW: ExtraTrees vs ORF comparison
+        self._generate_orf_vs_et_report(df, models, target_col)
+
         tprint_success(f"✅ Enhanced Layer 3 reports saved to {self.outcomes_dir}")
     
     def _generate_meta_report(self, df: pd.DataFrame, geometry_metrics: List[Dict[str, Any]], 
@@ -128,8 +131,9 @@ class EnhancedLayer3Reporter:
             feature_counts = {
                 'total': len(df.columns),
                 'meta': len([c for c in df.columns if 'meta_' in c]),
-                'layer0': len([c for c in df.columns if any(x in c for x in ['unified', 'adaptive', 'noise', 'filter'])]),
-                'layer1': len([c for c in df.columns if 'layer1_weight' in c])
+                'layer0': len([c for c in df.columns if any(x in c for x in ['unified', 'adaptive', 'noise', 'filter'])],),
+                'layer1': len([c for c in df.columns if 'layer1_weight' in c]),
+                'et': len([c for c in df.columns if 'et_cate' in c])
             }
             
             for category, count in feature_counts.items():
@@ -146,6 +150,54 @@ class EnhancedLayer3Reporter:
         except Exception as e:
             tprint_error(f"❌ Failed to generate enhanced meta-report: {e}")
     
+    def _generate_orf_vs_et_report(self, df: pd.DataFrame, models: Dict[str, Any], target_col: str) -> None:
+        """Generate comparison report between ORF and ExtraTrees models."""
+        try:
+            if target_col not in df.columns:
+                return
+
+            lines = ["# ORF vs ExtraTrees Comparison Report\n\n"]
+            lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+            # Compare Classification
+            lines.append("## Classification Performance (12-bar)\n")
+            y_true = (df[target_col] > 0.5).astype(int)
+
+            from sklearn.metrics import roc_auc_score, log_loss
+            from scipy.stats import spearmanr
+
+            # ORF 12 Cls
+            if 'orf_cate_12_cls' in df.columns:
+                # Assuming raw score needs sigmoid
+                from scipy.special import expit
+                orf_prob = expit(df['orf_cate_12_cls'] / (df['orf_cate_12_cls'].std() + 1e-9))
+                orf_auc = roc_auc_score(y_true, orf_prob)
+                lines.append(f"- **ORF AUC**: {orf_auc:.4f}\n")
+
+            # ET 12 Cls
+            if 'et_cate_12_cls' in df.columns:
+                et_prob = df['et_cate_12_cls'] # ET returns probability directly from predict_proba
+                et_auc = roc_auc_score(y_true, et_prob)
+                lines.append(f"- **ExtraTrees AUC**: {et_auc:.4f}\n")
+
+            # Compare Regression (IC)
+            lines.append("\n## Regression Performance (12-bar Alpha)\n")
+
+            if 'orf_cate_12_reg' in df.columns:
+                orf_ic, _ = spearmanr(df[target_col], df['orf_cate_12_reg'])
+                lines.append(f"- **ORF IC**: {orf_ic:.4f}\n")
+
+            if 'et_cate_12_reg' in df.columns:
+                et_ic, _ = spearmanr(df[target_col], df['et_cate_12_reg'])
+                lines.append(f"- **ExtraTrees IC**: {et_ic:.4f}\n")
+
+            report_path = self.outcomes_dir / f"layer3_orf_vs_et_report_{self.ts}.md"
+            report_path.write_text("".join(lines))
+            tprint_success(f"✅ ORF vs ET report saved to {report_path}")
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate ORF vs ET report: {e}")
+
     def _generate_dual_head_analysis_report(self, df: pd.DataFrame, models: Dict[str, Any], 
                                           target_col: str) -> None:
         """Generate dual-head analysis report."""

@@ -10014,24 +10014,40 @@ class LabelBasedLayer2(BaseStep):
             self.layer25_chaser_system = None
         
 
-    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame memory usage with categorical dtypes and downcasting."""
+    def _optimize_dataframe_memory(self, df: pd.DataFrame, inplace: bool = False) -> pd.DataFrame:
+        """
+        Optimize DataFrame memory usage with categorical dtypes and downcasting.
+
+        Args:
+            df: Input DataFrame.
+            inplace: If True, modify the DataFrame in-place (avoids copy).
+        """
         if df.empty:
             return df
 
-        df_opt = df.copy()
+        df_opt = df if inplace else df.copy()
 
-        # Convert object columns to categorical where appropriate
+        # Iterate only relevant columns
+        # Object -> Category
         for col in df_opt.select_dtypes(include=['object']).columns:
-            if df_opt[col].nunique() / len(df_opt) < 0.5:  # Less than 50% unique values
+            if df_opt[col].nunique() / len(df_opt) < 0.5:
                 df_opt[col] = df_opt[col].astype('category')
 
-        # Downcast numeric types
-        for col in df_opt.select_dtypes(include=['int64']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+        # Numeric Downcasting (Vectorized per column)
+        # Integers
+        int_cols = df_opt.select_dtypes(include=['int64']).columns
+        if len(int_cols) > 0:
+            # Apply downcast to all int columns
+            # pd.to_numeric is smart but iterates.
+            # For massive DFs, iterating is fine as vectorization is per-col.
+            for col in int_cols:
+                df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
 
-        for col in df_opt.select_dtypes(include=['float64']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
+        # Floats
+        float_cols = df_opt.select_dtypes(include=['float64']).columns
+        if len(float_cols) > 0:
+            for col in float_cols:
+                df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
 
         return df_opt
 
@@ -10153,7 +10169,8 @@ class LabelBasedLayer2(BaseStep):
                         merged[col] = merged[col].astype(object)
 
             # Optimize memory and cleanup
-            result = self._optimize_dataframe_memory(merged.fillna(0.0))
+            # merged.fillna(0.0) creates a copy, so inplace=True is safe and efficient
+            result = self._optimize_dataframe_memory(merged.fillna(0.0), inplace=True)
 
             if self.verbose:
                 tprint_info(f"   ✅ Alignment produced feature frame {result.shape}")

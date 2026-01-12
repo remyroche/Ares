@@ -4,101 +4,102 @@ from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import RobustScaler
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
+from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional
 
-def prepare_huber_ensemble_teacher(
+def prepare_huber_production_orchestrator(
     X_train: pd.DataFrame, 
     y_train: pd.Series,
+    vol_proxy: pd.Series, # e.g., Realized Volatility or ATR
     X_val: Optional[pd.DataFrame] = None,
     X_test: Optional[pd.DataFrame] = None,
     epsilons: List[float] = [1.1, 1.35, 1.75],
+    alphas: List[float] = [1e-4, 1e-3, 1e-2],
     pruning_percentile: int = 15,
-    corr_threshold: float = 0.7
+    corr_threshold: float = 0.7,
+    n_jobs: int = -1
 ) -> Dict:
     """
-    Multi-Alpha Huber Ensemble & Quantile Meta-Target Infrastructure.
-    Optimized for memory efficiency, causal consistency, and residual-student training.
+    Advanced Huber Orchestrator for 15m Crypto Specialists.
+    Includes: Vol-Weighting, Parallel Grid Fitting, and Named Interaction Constraints.
     """
-    # 1. Robust Scaling (Focus on IQR to neutralize wicks)
+    # 1. Local Volatility Weighting (De Prado alignment)
+    # Weights samples by inverse volatility to prioritize structural regimes over noise
+    sample_weights = (1.0 / vol_proxy).fillna(vol_proxy.median()).values
+    sample_weights /= sample_weights.mean() # Normalize to preserve scale
+    [Image of heteroskedasticity in financial time series]
+
+    # 2. Robust Scaling (NumPy-first for speed)
     scaler = RobustScaler()
     X_tr_scaled = scaler.fit_transform(X_train)
     feature_names = np.asarray(X_train.columns)
 
-    # 2. Multi-Alpha Huber Ensembling
-    # Fits multiple epsilons to capture signals across different volatility regimes
-    ensemble_coeffs = []
-    ensemble_preds_tr = []
+    # 3. Vectorized Ensemble Training (Parallel Grid Fit)
+    # 3x3 Grid: 3 Epsilons x 3 Alphas = 9 Teachers
+    def _fit_huber(eps, alpha):
+        h = HuberRegressor(epsilon=eps, alpha=alpha, max_iter=1000)
+        h.fit(X_tr_scaled, y_train, sample_weight=sample_weights)
+        return h.coef_, h.predict(X_tr_scaled), h
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_huber)(e, a) for e in epsilons for a in alphas
+    )
     
-    # We maintain the list of models for validation/test inference
-    models = []
+    ensemble_coeffs, ensemble_preds_tr, models = zip(*results)
 
-    for eps in epsilons:
-        # Varying alpha (L2 penalty) relative to epsilon for stability
-        h = HuberRegressor(epsilon=eps, alpha=0.0001 * eps, max_iter=1000)
-        h.fit(X_tr_scaled, y_train)
-        
-        ensemble_coeffs.append(h.coef_)
-        ensemble_preds_tr.append(h.predict(X_tr_scaled))
-        models.append(h)
-
-    # 3. Consensus Logic (Median Coeffs for structural logic)
-    # Using the Median coefficient across regimes provides a 'Structural Anchor'
+    # 4. Consensus Logic (Median Coeffs for structural logic)
     avg_coeffs = np.median(ensemble_coeffs, axis=0)
     abs_avg_coeffs = np.abs(avg_coeffs)
-    
-    # Warm-start consensus (Mean prediction)
     warm_start_tr = np.mean(ensemble_preds_tr, axis=0)
 
-    # 4. Vectorized Feature Pruning (O(n) partitioning)
+    # 5. O(n) Feature Pruning
     kth_val = np.percentile(abs_avg_coeffs, pruning_percentile)
     keep_mask = abs_avg_coeffs > kth_val
     selected_feats = feature_names[keep_mask]
     
-    # 5. Monotonicity via Local Residual Scale
-    # Ties monotonicity to the structural signal floor
+    # 6. Monotonicity via Local Residual Scale
     local_scale = np.mean(abs_avg_coeffs[keep_mask])
     mono_cst = np.where(abs_avg_coeffs[keep_mask] > (0.15 * local_scale), 
                         np.sign(avg_coeffs[keep_mask]), 0)
 
-    # 6. Interaction Constraints (Spearman-lite Clustering)
-    # Filter for above-median importance to keep linkage computationally light
+    # 7. Interaction Constraints (Named Output for Tree Learners)
+    # Efficiency: Use Rank-based correlation (O(n log n))
     imp_mask = abs_avg_coeffs[keep_mask] > np.median(abs_avg_coeffs[keep_mask])
-    imp_indices = np.where(imp_mask)[0]
+    imp_feat_names = selected_feats[imp_mask]
     
     interaction_constraints = []
-    if imp_indices.size > 1:
-        # Rank-based correlation (Spearman) is more robust for crypto feature tails
-        X_imp_ranks = pd.DataFrame(X_tr_scaled[:, keep_mask][:, imp_indices]).rank()
-        corr_matrix = np.corrcoef(X_imp_ranks.values.T)
+    if imp_feat_names.size > 1:
+        # Vectorized Rank correlation
+        X_imp_ranks = pd.DataFrame(X_tr_scaled[:, keep_mask][:, imp_mask]).rank().values
+        corr_matrix = np.corrcoef(X_imp_ranks.T)
         
-        # Dissimilarity: D = 1 - |rho|
         D = np.clip(1 - np.abs(corr_matrix), 0, 1)
         Z = linkage(squareform(D, checks=False), method='complete')
         
         labels = fcluster(Z, corr_threshold, criterion='distance')
-        interaction_constraints = [imp_indices[labels == l].tolist() for l in np.unique(labels)]
+        
+        # Save as feature names to prevent indexing breaks in HPO
+        for l in np.unique(labels):
+            group = imp_feat_names[labels == l].tolist()
+            interaction_constraints.append(group)
 
-    # 7. Multi-Set Inference (Consensus)
+    # 8. Consensus Inference for Validation/Test
     def get_consensus_pred(df):
         if df is None: return None
         df_s = scaler.transform(df)
         preds = [m.predict(df_s) for m in models]
         return np.mean(preds, axis=0)
 
-    # 8. Residual Generation for Quantile Meta-Targets
-    # The student should now fit the 'Unexplained Alpha' of the consensus
-    residuals_tr = y_train - warm_start_tr
-
     return {
         'selected_features': selected_feats.tolist(),
-        'monotonic_constraints': tuple(mono_cst.astype(int).tolist()),
+        'monotonic_constraints': dict(zip(selected_feats, mono_cst.astype(int))),
         'interaction_constraints': interaction_constraints,
         'warm_start': {
             'train': warm_start_tr,
             'val': get_consensus_pred(X_val),
             'test': get_consensus_pred(X_test)
         },
-        'quantile_meta_targets': residuals_tr,
+        'quantile_meta_targets': y_train - warm_start_tr,
         'scaler': scaler,
         'models': models
     }

@@ -1,9 +1,10 @@
 """
-Layer 3 Core Orchestration - Multi-Horizon ORF Integrated with Entropy Bars and CausalFeatureSieve
+Layer 3 Core Orchestration - Multi-Horizon Meta-Models (ExtraTrees + LGBM + XGB)
 
-Main orchestration function for Layer 3 meta-modeling using 4 ORF horizons.
+Main orchestration function for Layer 3 meta-modeling using 4 horizons (12/48 bars).
 Enhanced with entropy bars for improved information-based sampling.
 Replaced feature selection with CausalFeatureSieve for geometry-specific processing.
+Replaced ORF with constrained ExtraTrees, LGBM, and XGBoost models.
 """
 
 import numpy as np
@@ -13,19 +14,12 @@ from datetime import datetime
 from pathlib import Path
 import logging
 from scipy.special import expit
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics import log_loss, mean_squared_error, roc_auc_score
 
-from .geometry_system import generate_geometries_adaptive
 from .model_training import train_dual_head_models
 from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
 from .enhanced_reporting import EnhancedLayer3Reporter
-
-# Import CausalFeatureSieve
-try:
-    from src.training.steps.labeling.causal_feature_sieve import CausalFeatureSieve
-    CAUSAL_SIEVE_AVAILABLE = True
-except ImportError as e:
-    CAUSAL_SIEVE_AVAILABLE = False
-    print(f"⚠️ CausalFeatureSieve not available: {e}")
 
 # Import entropy bars functionality
 try:
@@ -59,15 +53,6 @@ def integrate_entropy_bars_into_layer3(
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Integrate entropy bars and specialized features into Layer 3.
-    
-    Args:
-        df: Original DataFrame with market data
-        symbol: Trading symbol
-        exchange: Exchange name
-        config: Configuration dictionary
-        
-    Returns:
-        Tuple of (enhanced_df, entropy_bars_df)
     """
     if not ENTROPY_BARS_AVAILABLE:
         tprint_warning("⚠️ Entropy bars not available, using original data")
@@ -125,10 +110,7 @@ def integrate_entropy_bars_into_layer3(
         )
         
         # Merge entropy features back to main dataframe
-        # Align on timestamp index
         enhanced_df = df.copy()
-        
-        # Forward-fill entropy features to match main dataframe timestamps
         for col in entropy_features.columns:
             enhanced_df[col] = entropy_features[col].reindex(enhanced_df.index, method='ffill').fillna(0)
         
@@ -149,43 +131,123 @@ def integrate_entropy_bars_into_layer3(
         return df, pd.DataFrame()
 
 
-def apply_causal_feature_sieve(
+def apply_mild_mp_clustering(
     X: pd.DataFrame,
-    y: pd.Series,
-    geometry: str,
-    sample_weight: Optional[pd.Series] = None,
-    fast_mode: bool = False
+    threshold: float = 0.98
 ) -> pd.DataFrame:
     """
-    Apply CausalFeatureSieve for geometry-specific feature selection.
-    
-    Args:
-        X: Feature matrix
-        y: Target series
-        geometry: '12_bar' or '48_bar'
-        sample_weight: Optional sample weights
-        fast_mode: Use fast settings
-        
-    Returns:
-        Selected feature matrix
+    Phase 3: Mild MP-Clustering.
+    Removes purely collinear clusters (correlation > threshold), keeping one redundant predictor.
     """
-    if not CAUSAL_SIEVE_AVAILABLE:
-        tprint_warning("⚠️ CausalFeatureSieve not available, using all features")
+    tprint_info(f"🔍 Phase 3: Mild MP-Clustering (Threshold={threshold})...")
+
+    if X.shape[1] < 2:
         return X
+
+    # Compute correlation matrix
+    corr = X.corr().abs().fillna(0)
     
+    # Distance matrix
+    dist = 1 - corr
+    dist = dist.clip(0, 1) # Ensure valid range
+
+    # Hierarchical Clustering
     try:
-        # Initialize CausalFeatureSieve for specific geometry
-        sieve = CausalFeatureSieve(geometry=geometry, seed=42)
-        
-        # Apply the 4-sieve pipeline
-        X_selected = sieve.fit_transform(X, y, sample_weight)
-        
-        return X_selected
-        
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=1-threshold,
+            metric='precomputed',
+            linkage='complete'
+        ).fit(dist)
+
+        labels = clustering.labels_
+        n_clusters = len(np.unique(labels))
+
+        selected_cols = []
+        dropped_cols = []
+
+        for i in range(n_clusters):
+            cluster_indices = np.where(labels == i)[0]
+            cluster_features = X.columns[cluster_indices]
+
+            # Select feature with highest variance (or simple first one)
+            # Variance check:
+            variances = X[cluster_features].var()
+            best_feature = variances.idxmax()
+
+            selected_cols.append(best_feature)
+            dropped_cols.extend([f for f in cluster_features if f != best_feature])
+
+        tprint_success(f"   ✅ Reduced {X.shape[1]} -> {len(selected_cols)} features. Dropped {len(dropped_cols)} redundant features.")
+        return X[selected_cols]
+
     except Exception as e:
-        tprint_error(f"❌ CausalFeatureSieve failed: {e}")
-        tprint_warning("⚠️ Falling back to all features")
+        tprint_warning(f"   ⚠️ Mild MP-Clustering failed: {e}. Keeping all features.")
         return X
+
+def select_best_model_per_task(
+    models_dict: Dict[str, Any],
+    y_target: np.ndarray,
+    task_type: str,
+    horizon: str
+) -> Tuple[np.ndarray, str]:
+    """
+    Phase 9: Select best models (one per geometry + target type).
+    Compares ET, LGBM, XGB outputs against y_target.
+    """
+    best_score = float('inf') if task_type == 'regression' else float('-inf')
+    best_model_key = None
+    best_pred = None
+
+    # Candidate keys
+    candidates = [f"et_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"lgbm_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"xgb_{horizon}_{'reg' if task_type == 'regression' else 'cls'}"]
+
+    for key in candidates:
+        if key not in models_dict:
+            continue
+
+        res = models_dict[key]
+        pred = res['cate']
+
+        # Calculate metric
+        # Regression: MSE (lower is better) or IC (higher is better).
+        # User usually likes IC for Alpha, but MSE is safer for 'selection' if scales match.
+        # Let's use MSE for Reg, AUC for Cls.
+
+        valid_mask = ~np.isnan(y_target) & ~np.isnan(pred)
+        if np.sum(valid_mask) == 0:
+            continue
+
+        y_true = y_target[valid_mask]
+        y_pred = pred[valid_mask]
+
+        if task_type == 'regression':
+            score = mean_squared_error(y_true, y_pred)
+            if score < best_score:
+                best_score = score
+                best_model_key = key
+                best_pred = pred
+        else:
+            # Classification: AUC (higher is better)
+            # Ensure binary target
+            try:
+                score = roc_auc_score((y_true > 0).astype(int), y_pred)
+            except ValueError:
+                score = 0.5 # Single class?
+
+            if score > best_score:
+                best_score = score
+                best_model_key = key
+                best_pred = pred
+
+    if best_model_key:
+        tprint_info(f"   🏆 Best model for {horizon} {task_type}: {best_model_key} (Score: {best_score:.4f})")
+        return best_pred, best_model_key
+    else:
+        tprint_warning(f"   ⚠️ No valid models found for {horizon} {task_type}")
+        return np.zeros(len(y_target)), "none"
 
 
 def layer3_analyst_lgbm(
@@ -204,7 +266,7 @@ def layer3_analyst_lgbm(
     cfg = config if isinstance(config, dict) else {}
     cfg['base_model_cols'] = base_model_cols
     
-    tprint_info("🚀 Layer 3: Starting Multi-Horizon ORF Meta-Models Pipeline with CausalFeatureSieve")
+    tprint_info("🚀 Layer 3: Starting Multi-Horizon Meta-Models Pipeline (ET+LGBM+XGB)")
     
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     outcomes_dir = Path(cfg.get('outcomes_dir', 'outcomes'))
@@ -212,8 +274,8 @@ def layer3_analyst_lgbm(
 
     df = oof_df.copy()
 
-    # 0. Entropy Bars Integration
-    tprint_info("🔧 PHASE 0: Entropy Bars Integration")
+    # Phase 0: Entropy Bars
+    tprint_info("🔧 Phase 0: Entropy Bars Integration")
     symbol = cfg.get('symbol', 'ETHUSDT')
     exchange = cfg.get('exchange', 'binance')
     
@@ -221,11 +283,10 @@ def layer3_analyst_lgbm(
         df, entropy_bars_df = integrate_entropy_bars_into_layer3(df, symbol, exchange, cfg)
         cfg['entropy_bars_df'] = entropy_bars_df
     else:
-        tprint_info("⏭️ Skipping entropy bars (disabled in config)")
         entropy_bars_df = pd.DataFrame()
 
-    # 1. Feature Engineering
-    tprint_info("🔧 PHASE 1: Feature Engineering")
+    # Phase 1: Meta-Features
+    tprint_info("🔧 Phase 1: Meta-Features Engineering")
     safe_base_cols = [c for c in base_model_cols if c in df.columns]
     try:
         from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
@@ -233,8 +294,8 @@ def layer3_analyst_lgbm(
     except Exception as e:
         tprint_warning(f"⚠️ Feature generation failed: {e}")
 
-    # 2. Data Preparation (12 vs 48 bars)
-    tprint_info("📊 PHASE 2: Data Preparation")
+    # Phase 2: Targets + Volatility Weights
+    tprint_info("📊 Phase 2: Targets + Volatility Weights")
     if net_returns is None:
         if 'close' in df.columns:
             net_returns = df['close'].pct_change().fillna(0)
@@ -244,25 +305,17 @@ def layer3_analyst_lgbm(
     ret_series = net_returns.reindex(df.index)
     vol_series = ret_series.rolling(24).std().fillna(0.001)
 
-    # 12-bar targets (Studentized HAR-Residual)
-    tprint_info("🎯 Calculating Studentized HAR-Residual Target (12-bar)")
+    # 12-bar targets
     y_alpha_12_series = calculate_studentized_har_target(ret_series, vol_series)
     y_alpha_12 = y_alpha_12_series.values
     y_prob_12 = (ret_series.values > 0).astype(np.int32)
     
-    # 48-bar targets (Studentized HAR-Residual)
+    # 48-bar targets
     if 'close' in df.columns:
         ret_48 = df['close'].shift(-48) / df['close'] - 1
         vol_48 = ret_series.rolling(48).std().fillna(0.001)
-
-        tprint_info("🎯 Calculating Studentized HAR-Residual Target (48-bar)")
-        # Note: We align NaN handling with original logic
-        y_alpha_48_series = calculate_studentized_har_target(
-            ret_48.fillna(0),
-            vol_48.fillna(0)
-        )
+        y_alpha_48_series = calculate_studentized_har_target(ret_48.fillna(0), vol_48.fillna(0))
         y_alpha_48 = y_alpha_48_series.values
-
         y_prob_48 = (ret_48.fillna(0) > 0).astype(np.int32)
     else:
         y_alpha_48 = y_alpha_12 * 1.5
@@ -271,199 +324,94 @@ def layer3_analyst_lgbm(
     cfg['y_alpha_48'] = y_alpha_48
     cfg['y_prob_48'] = y_prob_48
 
-    # 3. Sample Weights
     w_alpha = calculate_sample_weights_efficient(ret_series.values, vol_series.values, layer1_weights=layer1_weight.values if layer1_weight is not None else None)
 
-    # 4. Feature Matrix Preparation
-    tprint_info("📊 PHASE 3: Feature Matrix Preparation")
+    # Phase 3: Mild MP-Clustering (Feature Selection)
     exclude = set(base_model_cols) | {target_col, 'close', 'high', 'low', 'volume', 'regime_label'}
     meta_features = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64]]
-    
     X_full = df[meta_features].copy()
-    tprint_info(f"📊 Full feature matrix: {X_full.shape}")
     
-    # Add base model columns back for ORF training
+    # Add base model columns back for training (important for stacking)
     for col in safe_base_cols:
         if col in df.columns:
             X_full[col] = df[col].reindex(X_full.index)
-    
-    # 5. Geometry-Specific Feature Selection with CausalFeatureSieve
-    tprint_info("🔍 PHASE 4: Geometry-Specific Feature Selection with CausalFeatureSieve")
-    
-    # Prepare target series for feature selection
-    y_alpha_12_series = pd.Series(y_alpha_12, index=df.index)
-    y_alpha_48_series = pd.Series(y_alpha_48, index=df.index)
-    
-    # Prepare sample weights
-    sample_weight_series = None
-    if sample_weight is not None:
-        sample_weight_series = pd.Series(sample_weight, index=df.index)
-    
-    # Apply CausalFeatureSieve for 12-bar geometry
-    tprint_info("🎯 12-Bar Geometry (Impulse) Feature Selection")
-    X_12_selected = apply_causal_feature_sieve(
-        X_full, 
-        y_alpha_12_series, 
-        geometry='12_bar',
-        sample_weight=sample_weight_series,
-        fast_mode=cfg.get('fast_mode', False)
-    )
-    
-    # Apply CausalFeatureSieve for 48-bar geometry  
-    tprint_info("🎯 48-Bar Geometry (Structural) Feature Selection")
-    X_48_selected = apply_causal_feature_sieve(
-        X_full,
-        y_alpha_48_series,
-        geometry='48_bar', 
-        sample_weight=sample_weight_series,
-        fast_mode=cfg.get('fast_mode', False)
-    )
-    
-    # Validate selected feature matrices
-    X_12_valid, y_alpha_12_valid = validate_feature_matrix(X_12_selected, y_alpha_12_series.loc[X_12_selected.index])
-    X_48_valid, y_alpha_48_valid = validate_feature_matrix(X_48_selected, y_alpha_48_series.loc[X_48_selected.index])
-    
-    tprint_info(f"📊 Final feature matrices:")
-    tprint_info(f"   - 12-bar: {X_12_valid.shape[1]} features, {X_12_valid.shape[0]} samples")
-    tprint_info(f"   - 48-bar: {X_48_valid.shape[1]} features, {X_48_valid.shape[0]} samples")
 
-    # 6. Model Training (ORF + ExtraTrees) - Geometry Specific
-    tprint_info("🤖 PHASE 5: 4-Horizon ORF + ExtraTrees Model Training")
+    # Apply Clustering
+    X_clustered = apply_mild_mp_clustering(X_full, threshold=0.98)
+
+    # Phase 4-8: Multi-Horizon Model Training
+    # (Huber Teacher -> Rotation -> Train -> Optuna -> Predictions) handled in model_training.py
+    tprint_info("🤖 Phase 4-8: Multi-Horizon Model Training")
     
-    # Train 12-bar models
-    tprint_info("🎯 Training 12-bar ORF & ET models")
-    model_results_12 = train_dual_head_models(
-        X_12_valid, y_alpha_12_valid, y_prob_12, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
+    # Run training for all horizons/tasks
+    model_results = train_dual_head_models(
+        X_clustered, y_alpha_12, y_prob_12, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
     )
     
-    # Train 48-bar models
-    tprint_info("🎯 Training 48-bar ORF & ET models")
-    model_results_48 = train_dual_head_models(
-        X_48_valid, y_alpha_48_valid, y_prob_48, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
-    )
-    
-    # Combine model results (Merge ORF and ET)
-    combined_models = {
-        # ORF Models
-        'orf_12_reg': model_results_12['models']['orf_12_reg'],
-        'orf_12_cls': model_results_12['models']['orf_12_cls'], 
-        'orf_48_reg': model_results_48['models']['orf_48_reg'],
-        'orf_48_cls': model_results_48['models']['orf_48_cls'],
+    combined_models = model_results['models']
 
-        # ExtraTrees Models
-        'et_12_reg': model_results_12['models']['et_12_reg'],
-        'et_12_cls': model_results_12['models']['et_12_cls'],
-        'et_48_reg': model_results_48['models']['et_48_reg'],
-        'et_48_cls': model_results_48['models']['et_48_cls']
-    }
-    model_results = {'models': combined_models}
+    # Phase 9: Select best models
+    tprint_info("🏆 Phase 9: Select Best Models")
 
-    # 7. Propagation
-    tprint_info("📊 PHASE 6: Model Propagation")
+    best_pred_12_reg, best_key_12_reg = select_best_model_per_task(combined_models, y_alpha_12, 'regression', '12')
+    best_pred_12_cls, best_key_12_cls = select_best_model_per_task(combined_models, y_prob_12, 'classification', '12')
+    best_pred_48_reg, best_key_48_reg = select_best_model_per_task(combined_models, y_alpha_48, 'regression', '48')
+    best_pred_48_cls, best_key_48_cls = select_best_model_per_task(combined_models, y_prob_48, 'classification', '48')
+
+    # Phase 11: Save best models OOF predictions
+    tprint_info("💾 Phase 11: Save Models OOF")
     
     # Helper to propagate predictions
-    def propagate(res, key, idx):
-        return pd.Series(res[key], index=idx).reindex(df.index).fillna(0 if 'cate' in key else 1.0)
+    def propagate_simple(values, idx):
+        return pd.Series(values, index=idx).reindex(df.index).fillna(0)
 
-    # Horizon 12
-    # ORF
-    df['orf_cate_12_reg'] = propagate(model_results['models']['orf_12_reg'], 'cate', X_12_valid.index)
-    df['orf_se_12_reg'] = propagate(model_results['models']['orf_12_reg'], 'se', X_12_valid.index)
-    df['orf_cate_12_cls'] = propagate(model_results['models']['orf_12_cls'], 'cate', X_12_valid.index)
-    df['orf_se_12_cls'] = propagate(model_results['models']['orf_12_cls'], 'se', X_12_valid.index)
+    # Save ALL models OOF predictions
+    for key, res in combined_models.items():
+        # key like 'et_12_reg'
+        pred = res['cate']
+        df[f"{key}_oof"] = propagate_simple(pred, X_clustered.index)
 
-    # ExtraTrees
-    df['et_cate_12_reg'] = propagate(model_results['models']['et_12_reg'], 'cate', X_12_valid.index)
-    df['et_se_12_reg'] = propagate(model_results['models']['et_12_reg'], 'se', X_12_valid.index)
-    df['et_cate_12_cls'] = propagate(model_results['models']['et_12_cls'], 'cate', X_12_valid.index)
-    
-    # Horizon 48
-    # ORF
-    df['orf_cate_48_reg'] = propagate(model_results['models']['orf_48_reg'], 'cate', X_48_valid.index)
-    df['orf_se_48_reg'] = propagate(model_results['models']['orf_48_reg'], 'se', X_48_valid.index)
-    df['orf_cate_48_cls'] = propagate(model_results['models']['orf_48_cls'], 'cate', X_48_valid.index)
+    # Map best models to meta columns
+    df['meta_alpha'] = propagate_simple(best_pred_12_reg, X_clustered.index)
+    df['meta_prob'] = propagate_simple(best_pred_12_cls, X_clustered.index)
 
-    # ExtraTrees
-    df['et_cate_48_reg'] = propagate(model_results['models']['et_48_reg'], 'cate', X_48_valid.index)
-    df['et_se_48_reg'] = propagate(model_results['models']['et_48_reg'], 'se', X_48_valid.index)
-    df['et_cate_48_cls'] = propagate(model_results['models']['et_48_cls'], 'cate', X_48_valid.index)
+    # Save 48 bar outputs too if needed
+    df['meta_alpha_48'] = propagate_simple(best_pred_48_reg, X_clustered.index)
+    df['meta_prob_48'] = propagate_simple(best_pred_48_cls, X_clustered.index)
 
-    # Legacy compatibility (Default to ORF 12)
-    df['meta_alpha'] = df['orf_cate_12_reg']
-    df['meta_prob'] = expit(df['orf_cate_12_cls'] / (df['orf_cate_12_cls'].std() + 1e-9))
+    # Legacy compatibility
     df['orf_cate'] = df['meta_alpha']
-    df['orf_se'] = df['orf_se_12_reg']
+    df['orf_se'] = df['meta_prob'] * 0.1 # Placeholder
 
-    models_dict = {
-        'orf_models': model_results['models'],
-        'meta_features': meta_features,
-        'selected_features_12': X_12_valid.columns.tolist(),
-        'selected_features_48': X_48_valid.columns.tolist(),
-        'entropy_bars': entropy_bars_df if not entropy_bars_df.empty else None,
-        'causal_sieve_applied': True
+    # Store Best Model Keys in results
+    best_models_info = {
+        '12_reg': best_key_12_reg,
+        '12_cls': best_key_12_cls,
+        '48_reg': best_key_48_reg,
+        '48_cls': best_key_48_cls
     }
 
-    # 8. Enhanced Reporting
+    models_dict = {
+        'all_models': combined_models,
+        'best_models': best_models_info,
+        'meta_features': meta_features,
+        'entropy_bars': entropy_bars_df if not entropy_bars_df.empty else None
+    }
+
+    # Enhanced Reporting
     try:
         reporter = EnhancedLayer3Reporter(outcomes_dir=outcomes_dir)
         reporter.generate_all_reports(
             df=df,
-            models=model_results,
+            models={'models': combined_models}, # Wrap in dict to match expected structure if needed
             geometry_metrics=cfg.get('geometry_metrics', []),
             meta_features=meta_features,
-            target_col='orf_cate_12_cls' if 'orf_cate_12_cls' in df.columns else target_col,
+            target_col='meta_prob',
             config=cfg
         )
-        
-        # Add CausalFeatureSieve reporting
-        if CAUSAL_SIEVE_AVAILABLE:
-            tprint_info("📊 Generating CausalFeatureSieve summary report")
-            sieve_report_path = outcomes_dir / f"causal_feature_sieve_summary_{ts}.md"
-            with open(sieve_report_path, 'w') as f:
-                f.write(f"# CausalFeatureSieve Summary Report\n\n")
-                f.write(f"## Geometry-Specific Feature Selection\n\n")
-                f.write(f"### 12-Bar Geometry (Impulse)\n")
-                f.write(f"- Features selected: {len(X_12_valid.columns)}\n")
-                f.write(f"- Feature reduction rate: {(1 - len(X_12_valid.columns)/len(X_full.columns)):.1%}\n")
-                f.write(f"- Selected features: {X_12_valid.columns.tolist()}\n\n")
-                f.write(f"### 48-Bar Geometry (Structural)\n")
-                f.write(f"- Features selected: {len(X_48_valid.columns)}\n") 
-                f.write(f"- Feature reduction rate: {(1 - len(X_48_valid.columns)/len(X_full.columns)):.1%}\n")
-                f.write(f"- Selected features: {X_48_valid.columns.tolist()}\n\n")
-                f.write(f"## Pipeline Configuration\n")
-                f.write(f"- Entropy bars: {'Enabled' if cfg.get('use_entropy_bars', True) else 'Disabled'}\n")
-                f.write(f"- Fast mode: {cfg.get('fast_mode', False)}\n")
-                f.write(f"- Total samples: {len(df)}\n")
-                f.write(f"- Total initial features: {len(X_full.columns)}\n")
-                
-        # Add entropy bars reporting if available
-        if not entropy_bars_df.empty:
-            tprint_info("📊 Generating entropy bars summary report")
-            entropy_report_path = outcomes_dir / f"entropy_bars_summary_{ts}.md"
-            with open(entropy_report_path, 'w') as f:
-                f.write(f"# Entropy Bars Summary Report\n\n")
-                f.write(f"## Generation Parameters\n")
-                f.write(f"- Symbol: {symbol}\n")
-                f.write(f"- Exchange: {exchange}\n")
-                f.write(f"- Target Minutes: {cfg.get('entropy_target_minutes', 15)}\n")
-                f.write(f"- Bins: {cfg.get('entropy_bins', 10)}\n")
-                f.write(f"- Window Size: {cfg.get('entropy_window', 100)}\n\n")
-                f.write(f"## Results\n")
-                f.write(f"- Total Entropy Bars: {len(entropy_bars_df)}\n")
-                f.write(f"- Date Range: {entropy_bars_df.index.min()} to {entropy_bars_df.index.max()}\n")
-                if 'entropy_contribution' in entropy_bars_df.columns:
-                    f.write(f"- Average Entropy: {entropy_bars_df['entropy_contribution'].mean():.4f}\n")
-                    f.write(f"- Entropy Std: {entropy_bars_df['entropy_contribution'].std():.4f}\n")
-                if 'n_minutes' in entropy_bars_df.columns:
-                    f.write(f"- Average Minutes per Bar: {entropy_bars_df['n_minutes'].mean():.1f}\n")
-                
     except Exception as e:
         tprint_warning(f"⚠️ Enhanced Layer 3 reporting failed: {e}")
 
-    tprint_success(f"🎉 Layer 3 ORF+ET Complete! CausalFeatureSieve applied with geometry-specific feature selection.")
-    tprint_success(f"📊 Final summary:")
-    tprint_success(f"   - 12-bar models: {len(X_12_valid.columns)} features")
-    tprint_success(f"   - 48-bar models: {len(X_48_valid.columns)} features")
-    tprint_success(f"   - Entropy bars: {'Integrated' if not entropy_bars_df.empty else 'Not available'}")
+    tprint_success(f"🎉 Layer 3 Pipeline Complete! Best Models: {best_models_info}")
     
     return df, models_dict

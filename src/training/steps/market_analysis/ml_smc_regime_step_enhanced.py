@@ -427,7 +427,7 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
             config=config,
             specialist_type=SpecialistType.SMC_REGIME, # Assuming exist or fallback
             manual_feature_func=self._get_smc_combined_manual_features,
-            filter_type='volume',
+            filter_type='volatility',  # Changed from 'volume' to 'volatility' for better coverage
             pt_sl_config_key='smc_pt_sl',
             default_pt_sl=[2.0, 1.0],
             suffix="enhanced_smc_features"

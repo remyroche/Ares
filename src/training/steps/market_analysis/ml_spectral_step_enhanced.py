@@ -128,11 +128,19 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
         """
         features = pd.DataFrame(index=df.index)
         
+        # Calculate log returns for spectral analysis (stationarity required)
+        # Using raw prices for FFT results in dominant DC component (trend) which obscures cycles.
+        log_rets = np.log(df['close'] / df['close'].shift(1)).fillna(0)
+
         # Spectral focus: Multiple windows for Hilbert Transform
         for window in [50, 100, 200]:
-            spectral_data = compute_spectral_energy(df['close'], window=window)
+            # Pass log returns to capture cyclical variance
+            spectral_data = compute_spectral_energy(log_rets, window=window)
             features[f'dominant_freq_{window}'] = spectral_data.get('dominant_freq', 0.0)
             features[f'phase_{window}'] = spectral_data.get('phase', 0.0)
+            features[f'energy_hf_{window}'] = spectral_data.get('energy_hf', 0.0)
+            features[f'energy_lf_{window}'] = spectral_data.get('energy_lf', 0.0)
+            features[f'spectral_entropy_{window}'] = spectral_data.get('spectral_entropy', 0.0)
             
             # Phase change (oscillation velocity)
             features[f'phase_velocity_{window}'] = features[f'phase_{window}'].diff()

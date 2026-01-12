@@ -87,12 +87,9 @@ def train_lgbm_model(
     if task_type == 'classification':
         objective = 'binary'
         metric = 'binary_logloss'
-        # For classification, warm start is typically margin. Huber outputs continuous.
-        # We will assume it acts as a base margin.
     else:
         objective = 'quantile'
         metric = 'quantile'
-        # For quantile regression, typically alpha=0.5 (Median)
 
     params = {
         'objective': objective,
@@ -255,19 +252,12 @@ def train_xgboost_model(
         preds = model.predict(X_rotated, base_margin=base_margin)
     else:
         # Predict Probabilities for Classification
-        # predict_proba returns [prob_class_0, prob_class_1]
-        # XGBClassifier with base_margin is tricky in sklearn API.
-        # It usually applies sigmoid(base_margin + score).
-        # We assume base_margin is log-odds.
         try:
              preds = model.predict_proba(X_rotated, base_margin=base_margin)[:, 1]
         except TypeError:
-            # Fallback if base_margin not supported in predict_proba (older versions)
-            # Use predict(output_margin=True) + base_margin -> Sigmoid
-            # But predict() on classifier returns class.
-            # We can use get_booster().predict(dmatrix)
+            # Fallback if base_margin not supported in predict_proba
             dmat = xgb.DMatrix(X_rotated, base_margin=base_margin)
-            preds = model.get_booster().predict(dmat) # Returns prob by default for binary:logistic
+            preds = model.get_booster().predict(dmat)
 
     return {
         'model': model,
@@ -392,7 +382,6 @@ def train_dual_head_models(
     y_alpha_48 = cfg.get('y_alpha_48', y_alpha * 1.5)
     y_prob_48 = cfg.get('y_prob_48', y_prob)
 
-    results = {}
     models_store = {}
     
     tasks = [
@@ -427,16 +416,7 @@ def train_dual_head_models(
         )
         models_store[f"xgb_{suffix}"] = xgb_res
 
-    def get_avg_pred(horizon, target_type):
-        suffix = f"{horizon}_{target_type}"
-        p1 = models_store[f"et_{suffix}"]['cate']
-        p2 = models_store[f"lgbm_{suffix}"]['cate']
-        p3 = models_store[f"xgb_{suffix}"]['cate']
-        return (p1 + p2 + p3) / 3.0
-
     all_results = {
-        'alpha_oof': get_avg_pred('12', 'reg'),
-        'prob_oof': get_avg_pred('12', 'cls'),
         'models': models_store
     }
     

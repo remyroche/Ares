@@ -343,38 +343,35 @@ def layer3_analyst_lgbm(
     # (Huber Teacher -> Rotation -> Train -> Optuna -> Predictions) handled in model_training.py
     tprint_info("🤖 Phase 4-8: Multi-Horizon Model Training")
     
-    # Train 12-bar models
-    model_results_12 = train_dual_head_models(
+    # Run training for all horizons/tasks
+    model_results = train_dual_head_models(
         X_clustered, y_alpha_12, y_prob_12, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
     )
     
-    # Train 48-bar models
-    model_results_48 = train_dual_head_models(
-        X_clustered, y_alpha_48, y_prob_48, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
-    )
-    
-    combined_models = {}
-    combined_models.update(model_results_12['models'])
-    combined_models.update(model_results_48['models'])
+    combined_models = model_results['models']
 
     # Phase 9: Select best models
     tprint_info("🏆 Phase 9: Select Best Models")
 
-    best_pred_12_reg, best_key_12_reg = select_best_model_per_task(model_results_12['models'], y_alpha_12, 'regression', '12')
-    best_pred_12_cls, best_key_12_cls = select_best_model_per_task(model_results_12['models'], y_prob_12, 'classification', '12')
-    best_pred_48_reg, best_key_48_reg = select_best_model_per_task(model_results_48['models'], y_alpha_48, 'regression', '48')
-    best_pred_48_cls, best_key_48_cls = select_best_model_per_task(model_results_48['models'], y_prob_48, 'classification', '48')
+    best_pred_12_reg, best_key_12_reg = select_best_model_per_task(combined_models, y_alpha_12, 'regression', '12')
+    best_pred_12_cls, best_key_12_cls = select_best_model_per_task(combined_models, y_prob_12, 'classification', '12')
+    best_pred_48_reg, best_key_48_reg = select_best_model_per_task(combined_models, y_alpha_48, 'regression', '48')
+    best_pred_48_cls, best_key_48_cls = select_best_model_per_task(combined_models, y_prob_48, 'classification', '48')
 
     # Phase 11: Save best models OOF predictions
-    tprint_info("💾 Phase 11: Save Best Models OOF")
+    tprint_info("💾 Phase 11: Save Models OOF")
     
     # Helper to propagate predictions
     def propagate_simple(values, idx):
         return pd.Series(values, index=idx).reindex(df.index).fillna(0)
 
-    # We need the indices from training (which might be subsets if splits were used, but here X_clustered is full)
-    # The models return predictions aligned with input X (assuming no internal dropping)
+    # Save ALL models OOF predictions
+    for key, res in combined_models.items():
+        # key like 'et_12_reg'
+        pred = res['cate']
+        df[f"{key}_oof"] = propagate_simple(pred, X_clustered.index)
 
+    # Map best models to meta columns
     df['meta_alpha'] = propagate_simple(best_pred_12_reg, X_clustered.index)
     df['meta_prob'] = propagate_simple(best_pred_12_cls, X_clustered.index)
 
@@ -406,7 +403,7 @@ def layer3_analyst_lgbm(
         reporter = EnhancedLayer3Reporter(outcomes_dir=outcomes_dir)
         reporter.generate_all_reports(
             df=df,
-            models=model_results_12, # Just pass one set for structure compatibility or handle dict
+            models={'models': combined_models}, # Wrap in dict to match expected structure if needed
             geometry_metrics=cfg.get('geometry_metrics', []),
             meta_features=meta_features,
             target_col='meta_prob',

@@ -54,7 +54,9 @@ def prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=None,
         interaction_groups = {}
         for i, label in enumerate(cluster_labels):
             idx = int(important_idx[i])
-            interaction_groups.setdefault(label, []).append(idx)
+            # Use feature NAME instead of index for XGBoost/LGBM DataFrame compatibility
+            feat_name = X_train_pruned.columns[idx]
+            interaction_groups.setdefault(label, []).append(feat_name)
         interaction_constraints = list(interaction_groups.values())
     else:
         interaction_constraints = None
@@ -74,10 +76,6 @@ def prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=None,
             "val": warm_start_val,
             "test": warm_start_test
         },
-        "huber_model": huber # For future inspection
+        "huber_model": huber, # For future inspection and prediction
+        "scaler": scaler      # Needed for prediction
     }
-
-# --- EXAMPLE USAGE ---
-# outputs = prepare_huber_teacher_outputs(X_train, y_train, X_val, X_test)
-# xgb_params['interaction_constraints'] = outputs['interaction_constraints']
-# xgb_params['monotone_constraints'] = outputs['monotonic_constraints']

@@ -8,6 +8,7 @@ Manages checkpoints for Layer 2 sub-step execution, enabling:
 """
 
 import json
+import os
 import hashlib
 import logging
 from datetime import datetime
@@ -143,14 +144,9 @@ class Layer2CheckpointManager:
                         store.put(key, value.to_frame(), format='table')
                     elif isinstance(value, np.ndarray):
                         store.put(key, pd.DataFrame(value), format='table')
-                    elif isinstance(value, dict):
-                        # Store dict as JSON string in metadata
-                        json_data[key] = self._serialize_dict(value)
-                    elif isinstance(value, (list, tuple)):
-                        json_data[key] = list(value)
                     else:
-                        # Store primitive types in JSON
-                        json_data[key] = value
+                        # For everything else, use robust recursive serialization for JSON metadata
+                        json_data[key] = self._serialize_for_json(value)
         except ImportError:
             # Fallback: Use pickle if tables not available
             import pickle
@@ -184,30 +180,52 @@ class Layer2CheckpointManager:
         
         return h5_path
     
+    def _serialize_for_json(self, obj: Any) -> Any:
+        """
+        Recursively serialize an object for JSON storage.
+        
+        Handles:
+        - dict: Recursively serializes values and converts keys to strings
+        - list/tuple: Recursively serializes elements
+        - pd.DataFrame/pd.Series: Converts to dict and recursively serializes
+        - pd.Timestamp/datetime: Converts to ISO string
+        - np.ndarray: Converts to list and recursively serializes
+        - Other types: Uses str(obj) as fallback if not primitive
+        """
+        if isinstance(obj, (str, int, float, bool, type(None))):
+            return obj
+        
+        if isinstance(obj, (pd.Timestamp, datetime)):
+            return obj.isoformat()
+        
+        if isinstance(obj, np.ndarray):
+            return self._serialize_for_json(obj.tolist())
+        
+        if isinstance(obj, (pd.DataFrame, pd.Series)):
+            return self._serialize_for_json(obj.to_dict())
+        
+        if isinstance(obj, (list, tuple)):
+            return [self._serialize_for_json(item) for item in obj]
+        
+        if isinstance(obj, dict):
+            serialized_dict = {}
+            for k, v in obj.items():
+                # Ensure key is a string
+                if isinstance(k, (pd.Timestamp, datetime)):
+                    key = k.isoformat()
+                elif not isinstance(k, (str, int, float, bool, type(None))):
+                    key = str(k)
+                else:
+                    key = k
+                serialized_dict[str(key)] = self._serialize_for_json(v)
+            return serialized_dict
+        
+        # Fallback for others
+        return str(obj)
+
     def _serialize_dict(self, d: Dict) -> Dict:
-        """Serialize a dict for JSON storage, handling special types including Timestamp keys."""
-        result = {}
-        for k, v in d.items():
-            # Convert key to string if it's not a JSON-compatible type
-            if isinstance(k, (pd.Timestamp, datetime)):
-                key = k.isoformat()
-            elif not isinstance(k, (str, int, float, bool, type(None))):
-                key = str(k)
-            else:
-                key = k
-            
-            # Serialize value
-            if isinstance(v, (pd.DataFrame, pd.Series)):
-                result[key] = v.to_dict()
-            elif isinstance(v, np.ndarray):
-                result[key] = v.tolist()
-            elif isinstance(v, dict):
-                result[key] = self._serialize_dict(v)
-            elif hasattr(v, 'isoformat'):
-                result[key] = v.isoformat()
-            else:
-                result[key] = v
-        return result
+        """Deprecated: Use _serialize_for_json instead."""
+        return self._serialize_for_json(d)
     
     def load_checkpoint(
         self, 
@@ -252,8 +270,18 @@ class Layer2CheckpointManager:
         except ImportError:
             # Fallback: Use pickle
             import pickle
-            with open(h5_path, 'rb') as f:
-                data = pickle.load(f)
+            try:
+                with open(h5_path, 'rb') as f:
+                    data = pickle.load(f)
+            except (pickle.UnpicklingError, EOFError, AttributeError, ImportError, IndexError) as e:
+                logger.warning(f"⚠️ Corrupted pickle checkpoint file {h5_path}: {e}")
+                logger.info(f"🗑️ Deleting corrupted checkpoint file...")
+                try:
+                    os.remove(h5_path)
+                    logger.info(f"✅ Deleted corrupted checkpoint file")
+                except OSError as remove_error:
+                    logger.error(f"❌ Failed to delete corrupted checkpoint file: {remove_error}")
+                return None
         
         # Merge JSON data
         for key, value in json_data.items():

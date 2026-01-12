@@ -16,13 +16,129 @@ from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
 from src.utils.feature_common.atr_normalization import atr_normalize, should_use_atr_normalization, calculate_atr
 from src.utils.numba_funcs import jit # assuming it's exported there or use global import
 try:
-    from numba import njit
+    from numba import njit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
     from src.utils.numba_funcs import jit as njit
     NUMBA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# ===== NUMBA-OPTIMIZED FEATURE COMPUTATIONS =====
+
+@njit(parallel=True, fastmath=True)
+def _compute_candle_geometry_numba(
+    open_p: np.ndarray, 
+    high: np.ndarray, 
+    low: np.ndarray, 
+    close: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Numba-optimized candle geometry calculations."""
+    n = len(open_p)
+    body_to_range = np.zeros(n)
+    shadow_asymmetry = np.zeros(n)
+    clv = np.zeros(n)
+    real_body = np.zeros(n)
+    
+    for i in prange(n):
+        candle_range = high[i] - low[i]
+        upper_shadow = high[i] - max(open_p[i], close[i])
+        lower_shadow = min(open_p[i], close[i]) - low[i]
+        real_body[i] = abs(close[i] - open_p[i])
+        
+        eps = 1e-9
+        if candle_range > eps:
+            body_to_range[i] = real_body[i] / candle_range
+            shadow_asymmetry[i] = (upper_shadow - lower_shadow) / candle_range
+            clv[i] = ((close[i] - low[i]) - (high[i] - close[i])) / candle_range
+        else:
+            body_to_range[i] = 0.0
+            shadow_asymmetry[i] = 0.0
+            clv[i] = 0.0
+    
+    return body_to_range, shadow_asymmetry, clv, real_body
+
+@njit(parallel=True, fastmath=True)
+def _compute_volatility_features_numba(
+    log_ret: np.ndarray,
+    short_window: int = 20,
+    long_window: int = 200
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Numba-optimized volatility regime calculations."""
+    n = len(log_ret)
+    vol_short = np.zeros(n)
+    vol_long_mean = np.zeros(n)
+    vol_long_std = np.zeros(n)
+    rv_z_short = np.zeros(n)
+    
+    # Compute rolling volatility
+    for i in range(short_window - 1, n):
+        start_idx = i - short_window + 1
+        vol_short[i] = np.std(log_ret[start_idx:i+1])
+    
+    # Compute long-term statistics
+    min_periods = max(50, long_window // 4)
+    
+    for i in range(long_window - 1, n):
+        start_idx = i - long_window + 1
+        vol_slice = vol_short[start_idx:i+1]
+        
+        valid_count = np.sum(~np.isnan(vol_slice))
+        if valid_count >= min_periods:
+            vol_long_mean[i] = np.nanmean(vol_slice)
+            vol_long_std[i] = np.nanstd(vol_slice)
+    
+    # Compute Z-scores
+    for i in range(n):
+        if vol_long_std[i] > 1e-8:
+            rv_z_short[i] = (vol_short[i] - vol_long_mean[i]) / vol_long_std[i]
+        else:
+            rv_z_short[i] = 0.0
+    
+    return vol_short, vol_long_mean, vol_long_std, rv_z_short
+
+@njit(parallel=True, fastmath=True)
+def _compute_wick_to_body_ratio_numba(
+    open_p: np.ndarray,
+    high: np.ndarray, 
+    low: np.ndarray,
+    close: np.ndarray
+) -> np.ndarray:
+    """Numba-optimized wick-to-body ratio calculation."""
+    n = len(open_p)
+    wb_ratio = np.zeros(n)
+    
+    for i in prange(n):
+        real_body = abs(close[i] - open_p[i])
+        candle_range = high[i] - low[i]
+        
+        if candle_range > 1e-9 and real_body > 1e-9:
+            total_wick = candle_range - real_body
+            wb_ratio[i] = total_wick / real_body
+        else:
+            wb_ratio[i] = 0.0
+    
+    return wb_ratio
+
+@njit(parallel=True, fastmath=True)
+def _compute_displacement_ratio_numba(
+    open_p: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray, 
+    close: np.ndarray
+) -> np.ndarray:
+    """Numba-optimized displacement ratio calculation."""
+    n = len(open_p)
+    displacement = np.zeros(n)
+    
+    for i in prange(n):
+        candle_range = high[i] - low[i]
+        if candle_range > 1e-9:
+            displacement[i] = abs(close[i] - open_p[i]) / candle_range
+        else:
+            displacement[i] = 0.0
+    
+    return displacement
 
 class KalmanFilter1D:
     """
@@ -58,10 +174,23 @@ class KalmanFilter1D:
         x_prior = self.x
         P_prior = self.P + self.Q
 
+        # Numerical stability: bound P_prior to prevent infinity
+        P_prior = np.clip(P_prior, 1e-12, 1e6)
+
         # Update
-        K = P_prior / (P_prior + self.R)  # Kalman gain
+        # Prevent division by zero and ensure numerical stability
+        denominator = P_prior + self.R
+        if denominator <= 1e-12:
+            K = 0.0  # No update if denominator is too small
+        else:
+            K = P_prior / denominator
+            K = np.clip(K, 0.0, 1.0)  # Bound Kalman gain
+        
         self.x = x_prior + K * (measurement - x_prior)
         self.P = (1 - K) * P_prior
+        
+        # Bound state variance to prevent infinity
+        self.P = np.clip(self.P, 1e-12, 1e6)
 
         return self.x, self.P
 
@@ -105,10 +234,33 @@ def _numba_kalman_filter(data, Q, R, initial_value):
             x_prior = x
             P_prior = P + Q
             
+            # Numerical stability: bound P_prior to prevent infinity
+            if P_prior > 1e6:
+                P_prior = 1e6
+            elif P_prior < 1e-12:
+                P_prior = 1e-12
+            
             # Update
-            K = P_prior / (P_prior + R)
+            # Prevent division by zero and ensure numerical stability
+            denominator = P_prior + R
+            if denominator <= 1e-12:
+                K = 0.0  # No update if denominator is too small
+            else:
+                K = P_prior / denominator
+                # Bound Kalman gain
+                if K > 1.0:
+                    K = 1.0
+                elif K < 0.0:
+                    K = 0.0
+            
             x = x_prior + K * (val - x_prior)
             P = (1 - K) * P_prior
+            
+            # Bound state variance to prevent infinity
+            if P > 1e6:
+                P = 1e6
+            elif P < 1e-12:
+                P = 1e-12
             
             filtered[i] = x
             variances[i] = P
@@ -654,7 +806,15 @@ def create_meta_features(
 ) -> pd.DataFrame:
     """
     Create features for the meta-model with Multi-Timeframe support.
+    Enhanced with Numba JIT optimizations for performance.
     """
+    import time
+    import gc
+    start_time = time.time()
+    
+    # Add progress tracking
+    print(f"🔍 Starting MTF feature generation for {len(df)} rows...")
+    
     # Hard-align df and signals to a shared tail window
     len_df = len(df)
     len_sig = len(signals)
@@ -675,6 +835,51 @@ def create_meta_features(
 
     features = pd.DataFrame(index=df.index)
     n_features = len(features)
+
+    # Log optimization status
+    if NUMBA_AVAILABLE:
+        print(f"🚀 Using Numba JIT optimizations for {len(df)} rows...")
+    else:
+        print(f"⚠️  Numba not available, using pandas fallback for {len(df)} rows...")
+
+    # Memory optimization: limit data size for feature generation
+    MAX_FEATURE_ROWS = 20000  # Further reduced to prevent memory issues
+    if len(df) > MAX_FEATURE_ROWS:
+        print(f"🧠 Limiting feature generation from {len(df)} to {MAX_FEATURE_ROWS} rows for memory efficiency")
+        df = df.tail(MAX_FEATURE_ROWS)
+        signals = signals.tail(MAX_FEATURE_ROWS)
+        features = pd.DataFrame(index=df.index)
+        print(f"✅ Limited to {len(df)} rows for feature generation")
+    
+    # IMPORTANT: Update n_features after limiting
+    n_features = len(features)
+    
+    # Additional memory optimization: reduce windows for large datasets
+    if len(df) > 10000:
+        print(f"🔧 Reducing feature windows for large dataset ({len(df)} rows)")
+        windows = [10, 20, 50]  # Reduced windows for memory efficiency
+        print(f"📊 Using reduced windows: {windows}")
+    else:
+        windows = [10, 20, 50, 100, 150, 200]  # Full windows for smaller datasets
+    
+    # NOW extract columns and compute returns on the LIMITED data
+    close_col = None
+    for col in ['close', 'Close', 'CLOSE']:
+        if col in df.columns:
+            close_col = col
+            break
+    
+    if close_col is None:
+        for col in df.columns:
+            if col.endswith('_close') or col.endswith('_Close') or col.endswith('_CLOSE'):
+                close_col = col
+                break
+    
+    if close_col is None:
+        raise KeyError(f"None of ['close', 'Close', 'CLOSE'] or prefixed variants found in columns: {list(df.columns)}")
+    
+    close = df[close_col]
+    log_ret = close.pct_change()
 
     def _norm(data: Union[pd.Series, np.ndarray], name: str) -> np.ndarray:
         """
@@ -726,25 +931,6 @@ def create_meta_features(
 
         return winsorized_zscore_normalize(series, window=600).fillna(0).to_numpy()
 
-    # Robust column extraction (case-insensitive, handle multi-timeframe prefixes)
-    close_col = None
-    for col in ['close', 'Close', 'CLOSE']:
-        if col in df.columns:
-            close_col = col
-            break
-    
-    # If not found, check for prefixed columns (e.g., '60m_close')
-    if close_col is None:
-        for col in df.columns:
-            if col.endswith('_close') or col.endswith('_Close') or col.endswith('_CLOSE'):
-                close_col = col
-                break
-    
-    if close_col is None:
-        raise KeyError(f"None of ['close', 'Close', 'CLOSE'] or prefixed variants found in columns: {list(df.columns)}")
-    
-    close = df[close_col]
-    
     # Handle prefixed high/low columns
     high_col = None
     low_col = None
@@ -767,9 +953,7 @@ def create_meta_features(
     high = df[high_col] if high_col else close
     low = df[low_col] if low_col else close
 
-    # Pre-calc common series
-    returns = close.pct_change()
-    log_ret = np.log(close).diff()
+    # Add log_ret feature (already computed above)
     features['log_ret'] = _align_to_features(_norm(log_ret, 'log_ret'), n_features)
 
     if 'open' in df.columns:
@@ -804,6 +988,7 @@ def create_meta_features(
         volume_available = False
 
     # ===== 0. ORTHOGONAL CUSUM & EFFICIENCY FEATURES (NEW) =====
+    print("📊 Computing CUSUM & Efficiency features...")
     # Dual CUSUM Continuous Stats
     cusum_stats = compute_dual_cusum_statistics(
         close,
@@ -827,13 +1012,19 @@ def create_meta_features(
     signal_cols = [c for c in signals.columns if 'signal' in c.lower() or 'consensus' in c.lower()]
     abs_signal_sum = pd.Series(0.0, index=df.index)
 
-    # Recalculate vol_short if not available from earlier block
-    if 'log_ret' not in locals():
-        log_ret = np.log(close).diff()
+    # Use the log_ret already computed above
     vol_short_local = log_ret.rolling(window=20).std()
 
-    for col in signal_cols:
+    print(f"📈 Processing {len(signal_cols)} signal columns...")
+    for i, col in enumerate(signal_cols):
+        if i % 10 == 0:  # Progress update every 10 signals
+            print(f"   Processing signal {i+1}/{len(signal_cols)}: {col}")
+            
+        # IMPORTANT: Use signals that have been limited to match df
         sig_series = signals[col].fillna(0)
+        if len(sig_series) > len(df):
+            sig_series = sig_series.tail(len(df))
+        
         abs_signal_sum += sig_series.abs()
 
         # Lags
@@ -856,34 +1047,75 @@ def create_meta_features(
     features['signal_cluster_count'] = _align_to_features(_norm(abs_signal_sum, 'signal_cluster_count'), n_features)
 
     # ===== 1. CANDLE GEOMETRY & MICRO-SENTIMENT (BASE) =====
-    # Base timeframe calculation
-    candle_range = high - low
-    upper_shadow = high - pd.concat([open_p, close], axis=1).max(axis=1)
-    lower_shadow = pd.concat([open_p, close], axis=1).min(axis=1) - low
-    real_body = (close - open_p).abs()
+    # Use Numba-optimized calculations if available
+    if NUMBA_AVAILABLE:
+        # Convert to numpy arrays for Numba processing
+        open_arr = open_p.values.astype(np.float64)
+        high_arr = high.values.astype(np.float64)
+        low_arr = low.values.astype(np.float64)
+        close_arr = close.values.astype(np.float64)
+        
+        # Optimized candle geometry calculations
+        body_to_range_arr, shadow_asymmetry_arr, clv_arr, real_body_arr = _compute_candle_geometry_numba(
+            open_arr, high_arr, low_arr, close_arr
+        )
+        
+        features['body_to_range'] = _align_to_features(_norm(body_to_range_arr, 'body_to_range'), n_features)
+        features['shadow_asymmetry'] = _align_to_features(_norm(shadow_asymmetry_arr, 'shadow_asymmetry'), n_features)
+        features['close_location_value'] = _align_to_features(_norm(clv_arr, 'close_location_value'), n_features)
+    else:
+        # Fallback to original pandas calculations
+        candle_range = high - low
+        upper_shadow = high - pd.concat([open_p, close], axis=1).max(axis=1)
+        lower_shadow = pd.concat([open_p, close], axis=1).min(axis=1) - low
+        real_body = (close - open_p).abs()
 
-    features['body_to_range'] = _align_to_features(_norm(real_body / (candle_range + 1e-9), 'body_to_range'), n_features)
-    features['shadow_asymmetry'] = _align_to_features(_norm((upper_shadow - lower_shadow) / (candle_range + 1e-9), 'shadow_asymmetry'), n_features)
+        features['body_to_range'] = _align_to_features(_norm(real_body / (candle_range + 1e-9), 'body_to_range'), n_features)
+        features['shadow_asymmetry'] = _align_to_features(_norm((upper_shadow - lower_shadow) / (candle_range + 1e-9), 'shadow_asymmetry'), n_features)
 
-    clv = ((close - low) - (high - close)) / (candle_range + 1e-9)
-    features['close_location_value'] = _align_to_features(_norm(clv, 'close_location_value'), n_features)
+        clv = ((close - low) - (high - close)) / (candle_range + 1e-9)
+        features['close_location_value'] = _align_to_features(_norm(clv, 'close_location_value'), n_features)
 
     # ===== 2. VOLATILITY REGIME (GLOBAL) =====
-    # Global/Base features
-    vol_short_20 = log_ret.rolling(window=20).std()
-    vol_long_mean = vol_short_20.rolling(window=200, min_periods=50).mean()
-    vol_long_std = vol_short_20.rolling(window=200, min_periods=50).std()
-    rv_z_short = (vol_short_20 - vol_long_mean) / (vol_long_std + 1e-8)
-    features['rv_z_short'] = _norm(rv_z_short.fillna(0.0), 'rv_z_short')
+    # Use Numba-optimized volatility calculations if available
+    if NUMBA_AVAILABLE:
+        # Optimized volatility calculations
+        vol_short_arr, vol_long_mean_arr, vol_long_std_arr, rv_z_short_arr = _compute_volatility_features_numba(
+            log_ret.values.astype(np.float64)
+        )
+        
+        features['rv_z_short'] = _norm(rv_z_short_arr, 'rv_z_short')
+        features['volatility_trend_slope'] = _align_to_features(_norm(np.diff(vol_short_arr, 5), 'volatility_trend_slope'), n_features)
+    else:
+        # Fallback to original pandas calculations
+        vol_short_20 = log_ret.rolling(window=20).std()
+        vol_long_mean = vol_short_20.rolling(window=200, min_periods=50).mean()
+        vol_long_std = vol_short_20.rolling(window=200, min_periods=50).std()
+        rv_z_short = (vol_short_20 - vol_long_mean) / (vol_long_std + 1e-8)
+        features['rv_z_short'] = _norm(rv_z_short.fillna(0.0), 'rv_z_short')
 
-
-    # Volatility Trend Slope
-    features['volatility_trend_slope'] = _align_to_features(_norm(vol_short_20.diff(5), 'volatility_trend_slope'), n_features)
+        # Volatility Trend Slope
+        features['volatility_trend_slope'] = _align_to_features(_norm(vol_short_20.diff(5), 'volatility_trend_slope'), n_features)
 
     # ===== 3. LIQUIDATION SPECIALIST FEATURES (NEW) =====
-    # Wick-to-Body
-    wb_ratio = compute_wick_to_body_ratio(open_p, high, low, close)
-    features['wick_to_body_ratio'] = _align_to_features(_norm(wb_ratio, 'wick_to_body_ratio'), n_features)
+    # Wick-to-Body - Use Numba optimization if available
+    if NUMBA_AVAILABLE:
+        wb_ratio_arr = _compute_wick_to_body_ratio_numba(
+            open_arr, high_arr, low_arr, close_arr
+        )
+        features['wick_to_body_ratio'] = _align_to_features(_norm(wb_ratio_arr, 'wick_to_body_ratio'), n_features)
+        
+        displacement_arr = _compute_displacement_ratio_numba(
+            open_arr, high_arr, low_arr, close_arr
+        )
+        features['displacement_ratio'] = _align_to_features(_norm(displacement_arr, 'displacement_ratio'), n_features)
+    else:
+        # Fallback to original calculations
+        wb_ratio = compute_wick_to_body_ratio(open_p, high, low, close)
+        features['wick_to_body_ratio'] = _align_to_features(_norm(wb_ratio, 'wick_to_body_ratio'), n_features)
+        
+        displacement = compute_displacement_ratio(open_p, high, low, close)
+        features['displacement_ratio'] = _align_to_features(_norm(displacement, 'displacement_ratio'), n_features)
     
     # RVS
     rvs = compute_relative_volume_stress(volume, window=20)
@@ -892,10 +1124,6 @@ def create_meta_features(
     # Amihud
     amihud = compute_amihud_illiquidity(open_p, close, volume)
     features['amihud_illiquidity'] = _align_to_features(_norm(amihud, 'amihud_illiquidity'), n_features)
-    
-    # Displacement
-    displacement = compute_displacement_ratio(open_p, high, low, close)
-    features['displacement_ratio'] = _align_to_features(_norm(displacement, 'displacement_ratio'), n_features)
     
     # Proxy Levels & Distance
     # User Spec: Pivot=30, ATR=200, k=1.0 (mid-range of 0.5-1.5)
@@ -948,7 +1176,7 @@ def create_meta_features(
 
     # Kalman
     if use_kalman:
-        kalman_trend, kalman_uncertainty = kalman_smooth_trend(close, Q=1e-5, R=0.01)
+        kalman_trend, kalman_uncertainty = kalman_smooth_trend(close, Q=1e-4, R=0.1)
         features['kalman_trend'] = _align_to_features(_norm(kalman_trend, 'kalman_trend'), n_features)
         features['kalman_uncertainty'] = _align_to_features(_norm(kalman_uncertainty, 'kalman_uncertainty'), n_features)
 
@@ -967,16 +1195,22 @@ def create_meta_features(
     features['atr_14'] = _align_to_features(_norm(atr_14, 'atr_14'), n_features)
 
     # Base Sharpe
-    roll_mean_50 = returns.rolling(50).mean()
-    roll_std_50 = returns.rolling(50).std()
+    roll_mean_50 = log_ret.rolling(50).mean()
+    roll_std_50 = log_ret.rolling(50).std()
     features['rolling_sharpe'] = _align_to_features(_norm((roll_mean_50/(roll_std_50+1e-9)).fillna(0), 'rolling_sharpe'), n_features)
 
     # Kaufman ER (Base)
     features['kaufman_efficiency_ratio'] = _align_to_features(_norm(get_efficiency_ratio(close, 30), 'kaufman_efficiency_ratio'), n_features)
 
-    # ===== MTF LOOP =====
-    for w in windows:
-        # --- 1. CANDLE GEOMETRY (MTF Virtual Candle) ---
+    # ===== 6. MULTI-TIMEFRAME FEATURES =====
+    # User requested multi-timeframe features
+    print(f" Computing multi-timeframe features for windows: {windows}")
+    
+    for i, w in enumerate(windows):
+        if i % 2 == 0:  # Progress update every 2 windows
+            print(f"   Processing window {i+1}/{len(windows)}: w={w}")
+        
+        # --- 1. PRICE MOMENTUM ---(MTF Virtual Candle) ---
         # Construct virtual candle for window w
         # High = Rolling Max, Low = Rolling Min, Close = Close, Open = Open shifted
         # Open of the virtual candle is the Open of the bar w-1 periods ago
@@ -1046,7 +1280,7 @@ def create_meta_features(
 
         # Breakout after compression: Interaction
         # If we broke out (price change high) AND we were compressed recently
-        price_breakout = compute_rolling_zscore(returns, w).abs() > 2.0
+        price_breakout = compute_rolling_zscore(log_ret, w).abs() > 2.0
         was_compressed = features[f'vol_compression_duration_w{w}'] > w
         features[f'breakout_after_compression_flag_w{w}'] = _align_to_features(_norm(price_breakout.astype(float) * was_compressed.astype(float), f'breakout_after_compression_flag_w{w}'), n_features)
 
@@ -1056,7 +1290,7 @@ def create_meta_features(
         features[f'trend_efficiency_ratio_w{w}'] = _align_to_features(_norm(er_w, f'trend_efficiency_ratio_w{w}'), n_features)
 
         # Directional Consistency: sum(sign(returns)) / w
-        dir_consistency = np.sign(returns).rolling(w).sum() / w
+        dir_consistency = np.sign(log_ret).rolling(w).sum() / w
         features[f'directional_consistency_w{w}'] = _align_to_features(_norm(dir_consistency.abs(), f'directional_consistency_w{w}'), n_features)
 
         # Trend Duration: Bars since MA slope flip
@@ -1071,7 +1305,7 @@ def create_meta_features(
         features[f'momentum_decay_w{w}'] = _align_to_features(_norm(roc / (max_roc + 1e-9), f'momentum_decay_w{w}'), n_features)
 
         # Trend per Vol (Sharpe proxy)
-        sharpe_w = (returns.rolling(w).mean() / (returns.rolling(w).std() + 1e-9)).fillna(0)
+        sharpe_w = (log_ret.rolling(w).mean() / (log_ret.rolling(w).std() + 1e-9)).fillna(0)
         features[f'trend_per_vol_w{w}'] = _align_to_features(_norm(sharpe_w, f'trend_per_vol_w{w}'), n_features)
 
         # Trend Slope Stability: Mean(Slope) / Std(Slope)
@@ -1122,11 +1356,11 @@ def create_meta_features(
             # Price Impact: Abs(Ret) / Vol
             # Normalize volume first or ratio?
             # Log Return / Log Volume is better, or Amihud illiquidity
-            impact = returns.abs() / (volume + 1e-9)
+            impact = log_ret.abs() / (volume + 1e-9)
             features[f'price_impact_w{w}'] = _align_to_features(_norm(impact.rolling(w).mean(), f'price_impact_w{w}'), n_features)
 
             # Signed Price Impact
-            signed_impact = returns / (volume + 1e-9)
+            signed_impact = log_ret / (volume + 1e-9)
             features[f'signed_price_impact_w{w}'] = _align_to_features(_norm(signed_impact.rolling(w).mean(), f'signed_price_impact_w{w}'), n_features)
 
             # Range per Volume (Kyber's liquidity metric)
@@ -1206,7 +1440,7 @@ def create_meta_features(
         # Breakout Follow Through: (Close - BreakLevel) / BreakCandleSize
         # Defined as momentum continuity
         # Simplified: Return(t) * Return(t-1) > 0 ?
-        features[f'breakout_follow_through_w{w}'] = _align_to_features(_norm((returns * returns.shift(1)), f'breakout_follow_through_w{w}'), n_features)
+        features[f'breakout_follow_through_w{w}'] = _align_to_features(_norm((log_ret * log_ret.shift(1)), f'breakout_follow_through_w{w}'), n_features)
 
         # False Break Rate (Proxy)
         # Breakout: High > Rolling Max High (w)
@@ -1219,16 +1453,16 @@ def create_meta_features(
 
         # --- 9. TAIL RISK ---
         # Rolling Skew/Kurt
-        features[f'rolling_skewness_w{w}'] = _align_to_features(_norm(returns.rolling(w).skew(), f'rolling_skewness_w{w}'), n_features)
-        features[f'rolling_kurtosis_w{w}'] = _align_to_features(_norm(returns.rolling(w).kurt(), f'rolling_kurtosis_w{w}'), n_features)
+        features[f'rolling_skewness_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).skew(), f'rolling_skewness_w{w}'), n_features)
+        features[f'rolling_kurtosis_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).kurt(), f'rolling_kurtosis_w{w}'), n_features)
 
         # Downside Semivariance
-        neg_ret = returns.where(returns < 0, 0)
+        neg_ret = log_ret.where(log_ret < 0, 0)
         downside_var = neg_ret.rolling(w).var()
         features[f'downside_semivariance_w{w}'] = _align_to_features(_norm(downside_var, f'downside_semivariance_w{w}'), n_features)
 
         # Left Tail Var Ratio
-        total_var = returns.rolling(w).var()
+        total_var = log_ret.rolling(w).var()
         features[f'left_tail_var_ratio_w{w}'] = _align_to_features(_norm(downside_var / (total_var + 1e-9), f'left_tail_var_ratio_w{w}'), n_features)
 
         # Max Runup (MFE Proxy)
@@ -1248,7 +1482,7 @@ def create_meta_features(
         features[f'max_adverse_excursion_w{w}'] = features[f'drawdown_w{w}']
 
         # Tail Event Flag
-        is_tail = returns.abs() > (returns.rolling(w).std() * 3)
+        is_tail = log_ret.abs() > (log_ret.rolling(w).std() * 3)
         features[f'tail_event_flag_w{w}'] = _align_to_features(_norm(is_tail.astype(float), f'tail_event_flag_w{w}'), n_features)
 
         # --- 11. EVENT BASED TIME IN STATE ---
@@ -1273,7 +1507,7 @@ def create_meta_features(
         if volume_available:
              # Correlation between Returns and Volume Change
              vol_chg = volume.pct_change()
-             pv_corr = returns.rolling(w).corr(vol_chg).fillna(0)
+             pv_corr = log_ret.rolling(w).corr(vol_chg).fillna(0)
              features[f'price_vol_correlation_w{w}'] = _align_to_features(_norm(pv_corr, f'price_vol_correlation_w{w}'), n_features)
 
         # --- 13. CROSS-TIMEFRAME RATIOS ---
@@ -1317,5 +1551,15 @@ def create_meta_features(
         logger.info(f"[MTF] create_meta_features produced {int(len(features.columns))} columns prior to Layer2 filtering.")
     except Exception:
         pass
+
+    # Performance timing
+    end_time = time.time()
+    elapsed = end_time - start_time
+    optimization_status = "Numba JIT" if NUMBA_AVAILABLE else "Pandas fallback"
+    print(f"⚡ MTF feature generation completed in {elapsed:.2f}s using {optimization_status} ({len(features)} features)")
+    
+    # Memory cleanup
+    gc.collect()
+    print(f"🧹 Memory cleanup completed")
 
     return features

@@ -1,0 +1,1565 @@
+{
+  "step_name": "feature_engineering",
+  "step_index": 7,
+  "timestamp": "20260113_004000",
+  "symbol": "ETHUSDT",
+  "config_hash": "2b62410f9152",
+  "data_keys": [
+    "df",
+    "engineered_df",
+    "causal_graph",
+    "augmented_graph",
+    "causal_metadata"
+  ],
+  "json_data": {
+    "causal_graph": {
+      "log_ret": [
+        "close_location_value_w20",
+        "close_lag_1",
+        "dist_to_long_proxy"
+      ],
+      "macd_hist_w10": [
+        "log_ret",
+        "close_location_value_w20",
+        "dist_to_long_proxy"
+      ],
+      "rsi_ratio_w10_vs_w40": [
+        "log_ret",
+        "close_location_value_w20",
+        "macd_hist_w10",
+        "dist_to_long_proxy"
+      ],
+      "shadow_asymmetry_w50": [
+        "log_ret",
+        "close_location_value_w20",
+        "macd_hist_w10",
+        "rsi_ratio_w10_vs_w40",
+        "dist_to_long_proxy"
+      ],
+      "dist_to_long_proxy": [
+        "close_location_value_w20"
+      ],
+      "range_per_volume_w50": [
+        "price_impact_w20"
+      ],
+      "volatility_w50": [
+        "price_impact_w20",
+        "downside_semivariance_w50",
+        "range_per_volume_w50",
+        "price_impact_w50",
+        "volatility_1d"
+      ],
+      "price_impact_w50": [
+        "price_impact_w20",
+        "downside_semivariance_w50"
+      ],
+      "volatility_1d": [
+        "downside_semivariance_w50",
+        "price_impact_w50",
+        "price_impact_w20"
+      ],
+      "volatility_5d": [
+        "volatility_1d"
+      ],
+      "volume": [
+        "close",
+        "open"
+      ],
+      "open": [
+        "close"
+      ],
+      "adx_trend_strength_w50": [
+        "adx_trend_strength_w20"
+      ],
+      "low_range_20": [
+        "close_range_20"
+      ]
+    },
+    "augmented_graph": {
+      "log_ret": [
+        "close_location_value_w20",
+        "close_lag_1",
+        "dist_to_long_proxy"
+      ],
+      "macd_hist_w10": [
+        "log_ret",
+        "close_location_value_w20",
+        "dist_to_long_proxy"
+      ],
+      "rsi_ratio_w10_vs_w40": [
+        "log_ret",
+        "close_location_value_w20",
+        "macd_hist_w10",
+        "dist_to_long_proxy"
+      ],
+      "shadow_asymmetry_w50": [
+        "log_ret",
+        "close_location_value_w20",
+        "macd_hist_w10",
+        "rsi_ratio_w10_vs_w40",
+        "dist_to_long_proxy"
+      ],
+      "dist_to_long_proxy": [
+        "close_location_value_w20"
+      ],
+      "range_per_volume_w50": [
+        "price_impact_w20"
+      ],
+      "volatility_w50": [
+        "price_impact_w20",
+        "downside_semivariance_w50",
+        "range_per_volume_w50",
+        "price_impact_w50",
+        "volatility_1d"
+      ],
+      "price_impact_w50": [
+        "price_impact_w20",
+        "downside_semivariance_w50"
+      ],
+      "volatility_1d": [
+        "downside_semivariance_w50",
+        "price_impact_w50",
+        "price_impact_w20"
+      ],
+      "volatility_5d": [
+        "volatility_1d"
+      ],
+      "volume": [
+        "close",
+        "open"
+      ],
+      "open": [],
+      "adx_trend_strength_w50": [
+        "adx_trend_strength_w20"
+      ],
+      "low_range_20": [
+        "close_range_20"
+      ],
+      "close": [
+        "open",
+        "high",
+        "low"
+      ],
+      "spec_inventory_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_volume_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_volatility_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_information_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_cusum_break_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_entropy_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_tick_rule_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_bar_efficiency_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_trend_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_reversal_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spec_volatility_breakout_specialist": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_inventory_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_inventory_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_inventory_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_inventory_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volume_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volume_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volume_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volume_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_information_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_information_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_information_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_information_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_cusum_break_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_cusum_break_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_cusum_break_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_cusum_break_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_entropy_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_entropy_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_entropy_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_entropy_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_tick_rule_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_tick_rule_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_tick_rule_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_tick_rule_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_bar_efficiency_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_bar_efficiency_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_bar_efficiency_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_bar_efficiency_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_trend_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_trend_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_trend_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_trend_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_reversal_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_reversal_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_reversal_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_reversal_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_breakout_specialist_d1": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_breakout_specialist_d2": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_breakout_specialist_d3": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ],
+      "spectral_volatility_breakout_specialist_d4": [
+        "open",
+        "volume",
+        "volatility_1d"
+      ]
+    },
+    "causal_metadata": {
+      "original_features": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "bar_duration",
+        "vol_regime",
+        "volatility_1d",
+        "geo_atr_14",
+        "log_ret",
+        "cusum_trend_pos",
+        "cusum_trend_neg",
+        "cusum_rev_pos",
+        "cusum_rev_neg",
+        "smoothed_return",
+        "residual_return",
+        "rolling_efficiency_ratio",
+        "efficiency_ratio_volatility",
+        "signal_cluster_count",
+        "body_to_range",
+        "shadow_asymmetry",
+        "close_location_value",
+        "rv_z_short",
+        "volatility_trend_slope",
+        "wick_to_body_ratio",
+        "displacement_ratio",
+        "relative_volume_stress",
+        "amihud_illiquidity",
+        "dist_to_long_proxy",
+        "dist_to_short_proxy",
+        "liquidation_risk_long",
+        "momentum_30",
+        "kalman_trend",
+        "kalman_uncertainty",
+        "rsi_kalman",
+        "atr_14",
+        "rolling_sharpe",
+        "kaufman_efficiency_ratio",
+        "body_to_range_w10",
+        "shadow_asymmetry_w10",
+        "close_location_value_w10",
+        "yang_zhang_volatility_w10",
+        "rogers_satchell_volatility_w10",
+        "parkinson_volatility_w10",
+        "volatility_w10",
+        "volatility_zscore_w10",
+        "volatility_trend_slope_w10",
+        "vol_acceleration_w10",
+        "bars_since_vol_spike_w10",
+        "vol_compression_duration_w10",
+        "bars_since_compression_ended_w10",
+        "breakout_after_compression_flag_w10",
+        "trend_efficiency_ratio_w10",
+        "directional_consistency_w10",
+        "trend_duration_w10",
+        "momentum_decay_w10",
+        "trend_per_vol_w10",
+        "trend_slope_stability_w10",
+        "adx_w10",
+        "adx_trend_strength_w10",
+        "macd_hist_w10",
+        "hurst_proxy_w10",
+        "donchian_position_w10",
+        "donchian_width_w10",
+        "ehlers_fisher_transform_w10",
+        "aroon_oscillator_w10",
+        "stochastic_k_w10",
+        "cci_w10",
+        "price_impact_w10",
+        "signed_price_impact_w10",
+        "range_per_volume_w10",
+        "volume_without_progress_w10",
+        "delta_volume_divergence_w10",
+        "climax_volume_flag_w10",
+        "cmf_w10",
+        "force_index_w10",
+        "volume_delta_w10",
+        "obv_slope_w10",
+        "vwap_zscore_w10",
+        "ease_of_movement_w10",
+        "volume_weighted_rsi_w10",
+        "touch_count_near_price_w10",
+        "time_weighted_sr_strength_w10",
+        "range_expansion_ratio_w10",
+        "breakout_follow_through_w10",
+        "false_break_rate_w10",
+        "rolling_skewness_w10",
+        "rolling_kurtosis_w10",
+        "downside_semivariance_w10",
+        "left_tail_var_ratio_w10",
+        "max_runup_w10",
+        "drawdown_w10",
+        "max_adverse_excursion_w10",
+        "tail_event_flag_w10",
+        "bars_since_breakout_attempt_w10",
+        "bars_since_trend_exhaustion_signal_w10",
+        "trend_alignment_score_w10",
+        "price_vol_correlation_w10",
+        "sma_ratio_w10_vs_w40",
+        "rsi_ratio_w10_vs_w40",
+        "vol_ratio_w10_vs_w40",
+        "vol_trend_conflict_w10",
+        "compression_x_momentum_w10",
+        "absorption_x_vol_spike_w10",
+        "body_to_range_w20",
+        "shadow_asymmetry_w20",
+        "close_location_value_w20",
+        "yang_zhang_volatility_w20",
+        "rogers_satchell_volatility_w20",
+        "parkinson_volatility_w20",
+        "volatility_w20",
+        "volatility_zscore_w20",
+        "volatility_trend_slope_w20",
+        "vol_acceleration_w20",
+        "bars_since_vol_spike_w20",
+        "vol_compression_duration_w20",
+        "bars_since_compression_ended_w20",
+        "breakout_after_compression_flag_w20",
+        "trend_efficiency_ratio_w20",
+        "directional_consistency_w20",
+        "trend_duration_w20",
+        "momentum_decay_w20",
+        "trend_per_vol_w20",
+        "trend_slope_stability_w20",
+        "adx_w20",
+        "adx_trend_strength_w20",
+        "macd_hist_w20",
+        "hurst_proxy_w20",
+        "donchian_position_w20",
+        "donchian_width_w20",
+        "ehlers_fisher_transform_w20",
+        "hilbert_transform_phase",
+        "aroon_oscillator_w20",
+        "stochastic_k_w20",
+        "cci_w20",
+        "price_impact_w20",
+        "signed_price_impact_w20",
+        "range_per_volume_w20",
+        "volume_without_progress_w20",
+        "delta_volume_divergence_w20",
+        "climax_volume_flag_w20",
+        "cmf_w20",
+        "force_index_w20",
+        "volume_delta_w20",
+        "obv_slope_w20",
+        "vwap_zscore_w20",
+        "ease_of_movement_w20",
+        "volume_weighted_rsi_w20",
+        "touch_count_near_price_w20",
+        "time_weighted_sr_strength_w20",
+        "range_expansion_ratio_w20",
+        "breakout_follow_through_w20",
+        "false_break_rate_w20",
+        "rolling_skewness_w20",
+        "rolling_kurtosis_w20",
+        "downside_semivariance_w20",
+        "left_tail_var_ratio_w20",
+        "max_runup_w20",
+        "drawdown_w20",
+        "max_adverse_excursion_w20",
+        "tail_event_flag_w20",
+        "bars_since_breakout_attempt_w20",
+        "bars_since_trend_exhaustion_signal_w20",
+        "trend_alignment_score_w20",
+        "price_vol_correlation_w20",
+        "sma_ratio_w20_vs_w80",
+        "rsi_ratio_w20_vs_w80",
+        "vol_ratio_w20_vs_w80",
+        "vol_trend_conflict_w20",
+        "compression_x_momentum_w20",
+        "absorption_x_vol_spike_w20",
+        "body_to_range_w50",
+        "shadow_asymmetry_w50",
+        "close_location_value_w50",
+        "yang_zhang_volatility_w50",
+        "rogers_satchell_volatility_w50",
+        "parkinson_volatility_w50",
+        "volatility_w50",
+        "volatility_zscore_w50",
+        "volatility_trend_slope_w50",
+        "vol_acceleration_w50",
+        "bars_since_vol_spike_w50",
+        "vol_compression_duration_w50",
+        "bars_since_compression_ended_w50",
+        "breakout_after_compression_flag_w50",
+        "trend_efficiency_ratio_w50",
+        "directional_consistency_w50",
+        "trend_duration_w50",
+        "momentum_decay_w50",
+        "trend_per_vol_w50",
+        "trend_slope_stability_w50",
+        "adx_w50",
+        "adx_trend_strength_w50",
+        "macd_hist_w50",
+        "hurst_proxy_w50",
+        "donchian_position_w50",
+        "donchian_width_w50",
+        "ehlers_fisher_transform_w50",
+        "aroon_oscillator_w50",
+        "stochastic_k_w50",
+        "cci_w50",
+        "price_impact_w50",
+        "signed_price_impact_w50",
+        "range_per_volume_w50",
+        "volume_without_progress_w50",
+        "delta_volume_divergence_w50",
+        "climax_volume_flag_w50",
+        "cmf_w50",
+        "force_index_w50",
+        "volume_delta_w50",
+        "obv_slope_w50",
+        "vwap_zscore_w50",
+        "ease_of_movement_w50",
+        "volume_weighted_rsi_w50",
+        "touch_count_near_price_w50",
+        "time_weighted_sr_strength_w50",
+        "range_expansion_ratio_w50",
+        "breakout_follow_through_w50",
+        "false_break_rate_w50",
+        "rolling_skewness_w50",
+        "rolling_kurtosis_w50",
+        "downside_semivariance_w50",
+        "left_tail_var_ratio_w50",
+        "max_runup_w50",
+        "drawdown_w50",
+        "max_adverse_excursion_w50",
+        "tail_event_flag_w50",
+        "bars_since_breakout_attempt_w50",
+        "bars_since_trend_exhaustion_signal_w50",
+        "trend_alignment_score_w50",
+        "price_vol_correlation_w50",
+        "sma_ratio_w50_vs_w200",
+        "rsi_ratio_w50_vs_w200",
+        "vol_ratio_w50_vs_w200",
+        "vol_trend_conflict_w50",
+        "compression_x_momentum_w50",
+        "absorption_x_vol_spike_w50",
+        "returns_1h",
+        "returns_4h",
+        "spec_inventory_specialist",
+        "spec_volume_specialist",
+        "spec_volatility_specialist",
+        "spec_information_specialist",
+        "spec_cusum_break_specialist",
+        "spec_entropy_specialist",
+        "spec_tick_rule_specialist",
+        "spec_bar_efficiency_specialist",
+        "spec_trend_specialist",
+        "spec_reversal_specialist",
+        "spec_volatility_breakout_specialist",
+        "spectral_inventory_specialist_d1",
+        "spectral_inventory_specialist_d2",
+        "spectral_inventory_specialist_d3",
+        "spectral_inventory_specialist_d4",
+        "spectral_volume_specialist_d1",
+        "spectral_volume_specialist_d2",
+        "spectral_volume_specialist_d3",
+        "spectral_volume_specialist_d4",
+        "spectral_volatility_specialist_d1",
+        "spectral_volatility_specialist_d2",
+        "spectral_volatility_specialist_d3",
+        "spectral_volatility_specialist_d4",
+        "spectral_information_specialist_d1",
+        "spectral_information_specialist_d2",
+        "spectral_information_specialist_d3",
+        "spectral_information_specialist_d4",
+        "spectral_cusum_break_specialist_d1",
+        "spectral_cusum_break_specialist_d2",
+        "spectral_cusum_break_specialist_d3",
+        "spectral_cusum_break_specialist_d4",
+        "spectral_entropy_specialist_d1",
+        "spectral_entropy_specialist_d2",
+        "spectral_entropy_specialist_d3",
+        "spectral_entropy_specialist_d4",
+        "spectral_tick_rule_specialist_d1",
+        "spectral_tick_rule_specialist_d2",
+        "spectral_tick_rule_specialist_d3",
+        "spectral_tick_rule_specialist_d4",
+        "spectral_bar_efficiency_specialist_d1",
+        "spectral_bar_efficiency_specialist_d2",
+        "spectral_bar_efficiency_specialist_d3",
+        "spectral_bar_efficiency_specialist_d4",
+        "spectral_trend_specialist_d1",
+        "spectral_trend_specialist_d2",
+        "spectral_trend_specialist_d3",
+        "spectral_trend_specialist_d4",
+        "spectral_reversal_specialist_d1",
+        "spectral_reversal_specialist_d2",
+        "spectral_reversal_specialist_d3",
+        "spectral_reversal_specialist_d4",
+        "spectral_volatility_breakout_specialist_d1",
+        "spectral_volatility_breakout_specialist_d2",
+        "spectral_volatility_breakout_specialist_d3",
+        "spectral_volatility_breakout_specialist_d4"
+      ],
+      "applied_steps": [
+        "causal_relationship_learning",
+        "causal_imputation",
+        "causal_denoising",
+        "causal_adjustment",
+        "causal_transformation"
+      ],
+      "feature_counts": {
+        "original": 294,
+        "final": 495,
+        "added": 201
+      },
+      "causal_models_count": 67,
+      "final_features": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "bar_duration",
+        "vol_regime",
+        "volatility_1d",
+        "geo_atr_14",
+        "log_ret",
+        "cusum_trend_pos",
+        "cusum_trend_neg",
+        "cusum_rev_pos",
+        "cusum_rev_neg",
+        "smoothed_return",
+        "residual_return",
+        "rolling_efficiency_ratio",
+        "efficiency_ratio_volatility",
+        "signal_cluster_count",
+        "body_to_range",
+        "shadow_asymmetry",
+        "close_location_value",
+        "rv_z_short",
+        "volatility_trend_slope",
+        "wick_to_body_ratio",
+        "displacement_ratio",
+        "relative_volume_stress",
+        "amihud_illiquidity",
+        "dist_to_long_proxy",
+        "dist_to_short_proxy",
+        "liquidation_risk_long",
+        "momentum_30",
+        "kalman_trend",
+        "kalman_uncertainty",
+        "rsi_kalman",
+        "atr_14",
+        "rolling_sharpe",
+        "kaufman_efficiency_ratio",
+        "body_to_range_w10",
+        "shadow_asymmetry_w10",
+        "close_location_value_w10",
+        "yang_zhang_volatility_w10",
+        "rogers_satchell_volatility_w10",
+        "parkinson_volatility_w10",
+        "volatility_w10",
+        "volatility_zscore_w10",
+        "volatility_trend_slope_w10",
+        "vol_acceleration_w10",
+        "bars_since_vol_spike_w10",
+        "vol_compression_duration_w10",
+        "bars_since_compression_ended_w10",
+        "breakout_after_compression_flag_w10",
+        "trend_efficiency_ratio_w10",
+        "directional_consistency_w10",
+        "trend_duration_w10",
+        "momentum_decay_w10",
+        "trend_per_vol_w10",
+        "trend_slope_stability_w10",
+        "adx_w10",
+        "adx_trend_strength_w10",
+        "macd_hist_w10",
+        "hurst_proxy_w10",
+        "donchian_position_w10",
+        "donchian_width_w10",
+        "ehlers_fisher_transform_w10",
+        "aroon_oscillator_w10",
+        "stochastic_k_w10",
+        "cci_w10",
+        "price_impact_w10",
+        "signed_price_impact_w10",
+        "range_per_volume_w10",
+        "volume_without_progress_w10",
+        "delta_volume_divergence_w10",
+        "climax_volume_flag_w10",
+        "cmf_w10",
+        "force_index_w10",
+        "volume_delta_w10",
+        "obv_slope_w10",
+        "vwap_zscore_w10",
+        "ease_of_movement_w10",
+        "volume_weighted_rsi_w10",
+        "touch_count_near_price_w10",
+        "time_weighted_sr_strength_w10",
+        "range_expansion_ratio_w10",
+        "breakout_follow_through_w10",
+        "false_break_rate_w10",
+        "rolling_skewness_w10",
+        "rolling_kurtosis_w10",
+        "downside_semivariance_w10",
+        "left_tail_var_ratio_w10",
+        "max_runup_w10",
+        "drawdown_w10",
+        "max_adverse_excursion_w10",
+        "tail_event_flag_w10",
+        "bars_since_breakout_attempt_w10",
+        "bars_since_trend_exhaustion_signal_w10",
+        "trend_alignment_score_w10",
+        "price_vol_correlation_w10",
+        "sma_ratio_w10_vs_w40",
+        "rsi_ratio_w10_vs_w40",
+        "vol_ratio_w10_vs_w40",
+        "vol_trend_conflict_w10",
+        "compression_x_momentum_w10",
+        "absorption_x_vol_spike_w10",
+        "body_to_range_w20",
+        "shadow_asymmetry_w20",
+        "close_location_value_w20",
+        "yang_zhang_volatility_w20",
+        "rogers_satchell_volatility_w20",
+        "parkinson_volatility_w20",
+        "volatility_w20",
+        "volatility_zscore_w20",
+        "volatility_trend_slope_w20",
+        "vol_acceleration_w20",
+        "bars_since_vol_spike_w20",
+        "vol_compression_duration_w20",
+        "bars_since_compression_ended_w20",
+        "breakout_after_compression_flag_w20",
+        "trend_efficiency_ratio_w20",
+        "directional_consistency_w20",
+        "trend_duration_w20",
+        "momentum_decay_w20",
+        "trend_per_vol_w20",
+        "trend_slope_stability_w20",
+        "adx_w20",
+        "adx_trend_strength_w20",
+        "macd_hist_w20",
+        "hurst_proxy_w20",
+        "donchian_position_w20",
+        "donchian_width_w20",
+        "ehlers_fisher_transform_w20",
+        "hilbert_transform_phase",
+        "aroon_oscillator_w20",
+        "stochastic_k_w20",
+        "cci_w20",
+        "price_impact_w20",
+        "signed_price_impact_w20",
+        "range_per_volume_w20",
+        "volume_without_progress_w20",
+        "delta_volume_divergence_w20",
+        "climax_volume_flag_w20",
+        "cmf_w20",
+        "force_index_w20",
+        "volume_delta_w20",
+        "obv_slope_w20",
+        "vwap_zscore_w20",
+        "ease_of_movement_w20",
+        "volume_weighted_rsi_w20",
+        "touch_count_near_price_w20",
+        "time_weighted_sr_strength_w20",
+        "range_expansion_ratio_w20",
+        "breakout_follow_through_w20",
+        "false_break_rate_w20",
+        "rolling_skewness_w20",
+        "rolling_kurtosis_w20",
+        "downside_semivariance_w20",
+        "left_tail_var_ratio_w20",
+        "max_runup_w20",
+        "drawdown_w20",
+        "max_adverse_excursion_w20",
+        "tail_event_flag_w20",
+        "bars_since_breakout_attempt_w20",
+        "bars_since_trend_exhaustion_signal_w20",
+        "trend_alignment_score_w20",
+        "price_vol_correlation_w20",
+        "sma_ratio_w20_vs_w80",
+        "rsi_ratio_w20_vs_w80",
+        "vol_ratio_w20_vs_w80",
+        "vol_trend_conflict_w20",
+        "compression_x_momentum_w20",
+        "absorption_x_vol_spike_w20",
+        "body_to_range_w50",
+        "shadow_asymmetry_w50",
+        "close_location_value_w50",
+        "yang_zhang_volatility_w50",
+        "rogers_satchell_volatility_w50",
+        "parkinson_volatility_w50",
+        "volatility_w50",
+        "volatility_zscore_w50",
+        "volatility_trend_slope_w50",
+        "vol_acceleration_w50",
+        "bars_since_vol_spike_w50",
+        "vol_compression_duration_w50",
+        "bars_since_compression_ended_w50",
+        "breakout_after_compression_flag_w50",
+        "trend_efficiency_ratio_w50",
+        "directional_consistency_w50",
+        "trend_duration_w50",
+        "momentum_decay_w50",
+        "trend_per_vol_w50",
+        "trend_slope_stability_w50",
+        "adx_w50",
+        "adx_trend_strength_w50",
+        "macd_hist_w50",
+        "hurst_proxy_w50",
+        "donchian_position_w50",
+        "donchian_width_w50",
+        "ehlers_fisher_transform_w50",
+        "aroon_oscillator_w50",
+        "stochastic_k_w50",
+        "cci_w50",
+        "price_impact_w50",
+        "signed_price_impact_w50",
+        "range_per_volume_w50",
+        "volume_without_progress_w50",
+        "delta_volume_divergence_w50",
+        "climax_volume_flag_w50",
+        "cmf_w50",
+        "force_index_w50",
+        "volume_delta_w50",
+        "obv_slope_w50",
+        "vwap_zscore_w50",
+        "ease_of_movement_w50",
+        "volume_weighted_rsi_w50",
+        "touch_count_near_price_w50",
+        "time_weighted_sr_strength_w50",
+        "range_expansion_ratio_w50",
+        "breakout_follow_through_w50",
+        "false_break_rate_w50",
+        "rolling_skewness_w50",
+        "rolling_kurtosis_w50",
+        "downside_semivariance_w50",
+        "left_tail_var_ratio_w50",
+        "max_runup_w50",
+        "drawdown_w50",
+        "max_adverse_excursion_w50",
+        "tail_event_flag_w50",
+        "bars_since_breakout_attempt_w50",
+        "bars_since_trend_exhaustion_signal_w50",
+        "trend_alignment_score_w50",
+        "price_vol_correlation_w50",
+        "sma_ratio_w50_vs_w200",
+        "rsi_ratio_w50_vs_w200",
+        "vol_ratio_w50_vs_w200",
+        "vol_trend_conflict_w50",
+        "compression_x_momentum_w50",
+        "absorption_x_vol_spike_w50",
+        "returns_1h",
+        "returns_4h",
+        "spec_inventory_specialist",
+        "spec_volume_specialist",
+        "spec_volatility_specialist",
+        "spec_information_specialist",
+        "spec_cusum_break_specialist",
+        "spec_entropy_specialist",
+        "spec_tick_rule_specialist",
+        "spec_bar_efficiency_specialist",
+        "spec_trend_specialist",
+        "spec_reversal_specialist",
+        "spec_volatility_breakout_specialist",
+        "spectral_inventory_specialist_d1",
+        "spectral_inventory_specialist_d2",
+        "spectral_inventory_specialist_d3",
+        "spectral_inventory_specialist_d4",
+        "spectral_volume_specialist_d1",
+        "spectral_volume_specialist_d2",
+        "spectral_volume_specialist_d3",
+        "spectral_volume_specialist_d4",
+        "spectral_volatility_specialist_d1",
+        "spectral_volatility_specialist_d2",
+        "spectral_volatility_specialist_d3",
+        "spectral_volatility_specialist_d4",
+        "spectral_information_specialist_d1",
+        "spectral_information_specialist_d2",
+        "spectral_information_specialist_d3",
+        "spectral_information_specialist_d4",
+        "spectral_cusum_break_specialist_d1",
+        "spectral_cusum_break_specialist_d2",
+        "spectral_cusum_break_specialist_d3",
+        "spectral_cusum_break_specialist_d4",
+        "spectral_entropy_specialist_d1",
+        "spectral_entropy_specialist_d2",
+        "spectral_entropy_specialist_d3",
+        "spectral_entropy_specialist_d4",
+        "spectral_tick_rule_specialist_d1",
+        "spectral_tick_rule_specialist_d2",
+        "spectral_tick_rule_specialist_d3",
+        "spectral_tick_rule_specialist_d4",
+        "spectral_bar_efficiency_specialist_d1",
+        "spectral_bar_efficiency_specialist_d2",
+        "spectral_bar_efficiency_specialist_d3",
+        "spectral_bar_efficiency_specialist_d4",
+        "spectral_trend_specialist_d1",
+        "spectral_trend_specialist_d2",
+        "spectral_trend_specialist_d3",
+        "spectral_trend_specialist_d4",
+        "spectral_reversal_specialist_d1",
+        "spectral_reversal_specialist_d2",
+        "spectral_reversal_specialist_d3",
+        "spectral_reversal_specialist_d4",
+        "spectral_volatility_breakout_specialist_d1",
+        "spectral_volatility_breakout_specialist_d2",
+        "spectral_volatility_breakout_specialist_d3",
+        "spectral_volatility_breakout_specialist_d4",
+        "log_ret_causal_denoised",
+        "macd_hist_w10_causal_denoised",
+        "rsi_ratio_w10_vs_w40_causal_denoised",
+        "shadow_asymmetry_w50_causal_denoised",
+        "dist_to_long_proxy_causal_denoised",
+        "range_per_volume_w50_causal_denoised",
+        "volatility_w50_causal_denoised",
+        "price_impact_w50_causal_denoised",
+        "volatility_1d_causal_denoised",
+        "volume_causal_denoised",
+        "adx_trend_strength_w50_causal_denoised",
+        "close_causal_denoised",
+        "spec_inventory_specialist_causal_denoised",
+        "spec_volume_specialist_causal_denoised",
+        "spec_volatility_specialist_causal_denoised",
+        "spec_information_specialist_causal_denoised",
+        "spec_cusum_break_specialist_causal_denoised",
+        "spec_entropy_specialist_causal_denoised",
+        "spec_tick_rule_specialist_causal_denoised",
+        "spec_bar_efficiency_specialist_causal_denoised",
+        "spec_trend_specialist_causal_denoised",
+        "spec_reversal_specialist_causal_denoised",
+        "spec_volatility_breakout_specialist_causal_denoised",
+        "spectral_inventory_specialist_d1_causal_denoised",
+        "spectral_inventory_specialist_d2_causal_denoised",
+        "spectral_inventory_specialist_d3_causal_denoised",
+        "spectral_inventory_specialist_d4_causal_denoised",
+        "spectral_volume_specialist_d1_causal_denoised",
+        "spectral_volume_specialist_d2_causal_denoised",
+        "spectral_volume_specialist_d3_causal_denoised",
+        "spectral_volume_specialist_d4_causal_denoised",
+        "spectral_volatility_specialist_d1_causal_denoised",
+        "spectral_volatility_specialist_d2_causal_denoised",
+        "spectral_volatility_specialist_d3_causal_denoised",
+        "spectral_volatility_specialist_d4_causal_denoised",
+        "spectral_information_specialist_d1_causal_denoised",
+        "spectral_information_specialist_d2_causal_denoised",
+        "spectral_information_specialist_d3_causal_denoised",
+        "spectral_information_specialist_d4_causal_denoised",
+        "spectral_cusum_break_specialist_d1_causal_denoised",
+        "spectral_cusum_break_specialist_d2_causal_denoised",
+        "spectral_cusum_break_specialist_d3_causal_denoised",
+        "spectral_cusum_break_specialist_d4_causal_denoised",
+        "spectral_entropy_specialist_d1_causal_denoised",
+        "spectral_entropy_specialist_d2_causal_denoised",
+        "spectral_entropy_specialist_d3_causal_denoised",
+        "spectral_entropy_specialist_d4_causal_denoised",
+        "spectral_tick_rule_specialist_d1_causal_denoised",
+        "spectral_tick_rule_specialist_d2_causal_denoised",
+        "spectral_tick_rule_specialist_d3_causal_denoised",
+        "spectral_tick_rule_specialist_d4_causal_denoised",
+        "spectral_bar_efficiency_specialist_d1_causal_denoised",
+        "spectral_bar_efficiency_specialist_d2_causal_denoised",
+        "spectral_bar_efficiency_specialist_d3_causal_denoised",
+        "spectral_bar_efficiency_specialist_d4_causal_denoised",
+        "spectral_trend_specialist_d1_causal_denoised",
+        "spectral_trend_specialist_d2_causal_denoised",
+        "spectral_trend_specialist_d3_causal_denoised",
+        "spectral_trend_specialist_d4_causal_denoised",
+        "spectral_reversal_specialist_d1_causal_denoised",
+        "spectral_reversal_specialist_d2_causal_denoised",
+        "spectral_reversal_specialist_d3_causal_denoised",
+        "spectral_reversal_specialist_d4_causal_denoised",
+        "spectral_volatility_breakout_specialist_d1_causal_denoised",
+        "spectral_volatility_breakout_specialist_d2_causal_denoised",
+        "spectral_volatility_breakout_specialist_d3_causal_denoised",
+        "spectral_volatility_breakout_specialist_d4_causal_denoised",
+        "log_ret_causal_adjusted",
+        "macd_hist_w10_causal_adjusted",
+        "rsi_ratio_w10_vs_w40_causal_adjusted",
+        "shadow_asymmetry_w50_causal_adjusted",
+        "dist_to_long_proxy_causal_adjusted",
+        "range_per_volume_w50_causal_adjusted",
+        "volatility_w50_causal_adjusted",
+        "price_impact_w50_causal_adjusted",
+        "volatility_1d_causal_adjusted",
+        "volume_causal_adjusted",
+        "adx_trend_strength_w50_causal_adjusted",
+        "close_causal_adjusted",
+        "spec_inventory_specialist_causal_adjusted",
+        "spec_volume_specialist_causal_adjusted",
+        "spec_volatility_specialist_causal_adjusted",
+        "spec_information_specialist_causal_adjusted",
+        "spec_cusum_break_specialist_causal_adjusted",
+        "spec_entropy_specialist_causal_adjusted",
+        "spec_tick_rule_specialist_causal_adjusted",
+        "spec_bar_efficiency_specialist_causal_adjusted",
+        "spec_trend_specialist_causal_adjusted",
+        "spec_reversal_specialist_causal_adjusted",
+        "spec_volatility_breakout_specialist_causal_adjusted",
+        "spectral_inventory_specialist_d1_causal_adjusted",
+        "spectral_inventory_specialist_d2_causal_adjusted",
+        "spectral_inventory_specialist_d3_causal_adjusted",
+        "spectral_inventory_specialist_d4_causal_adjusted",
+        "spectral_volume_specialist_d1_causal_adjusted",
+        "spectral_volume_specialist_d2_causal_adjusted",
+        "spectral_volume_specialist_d3_causal_adjusted",
+        "spectral_volume_specialist_d4_causal_adjusted",
+        "spectral_volatility_specialist_d1_causal_adjusted",
+        "spectral_volatility_specialist_d2_causal_adjusted",
+        "spectral_volatility_specialist_d3_causal_adjusted",
+        "spectral_volatility_specialist_d4_causal_adjusted",
+        "spectral_information_specialist_d1_causal_adjusted",
+        "spectral_information_specialist_d2_causal_adjusted",
+        "spectral_information_specialist_d3_causal_adjusted",
+        "spectral_information_specialist_d4_causal_adjusted",
+        "spectral_cusum_break_specialist_d1_causal_adjusted",
+        "spectral_cusum_break_specialist_d2_causal_adjusted",
+        "spectral_cusum_break_specialist_d3_causal_adjusted",
+        "spectral_cusum_break_specialist_d4_causal_adjusted",
+        "spectral_entropy_specialist_d1_causal_adjusted",
+        "spectral_entropy_specialist_d2_causal_adjusted",
+        "spectral_entropy_specialist_d3_causal_adjusted",
+        "spectral_entropy_specialist_d4_causal_adjusted",
+        "spectral_tick_rule_specialist_d1_causal_adjusted",
+        "spectral_tick_rule_specialist_d2_causal_adjusted",
+        "spectral_tick_rule_specialist_d3_causal_adjusted",
+        "spectral_tick_rule_specialist_d4_causal_adjusted",
+        "spectral_bar_efficiency_specialist_d1_causal_adjusted",
+        "spectral_bar_efficiency_specialist_d2_causal_adjusted",
+        "spectral_bar_efficiency_specialist_d3_causal_adjusted",
+        "spectral_bar_efficiency_specialist_d4_causal_adjusted",
+        "spectral_trend_specialist_d1_causal_adjusted",
+        "spectral_trend_specialist_d2_causal_adjusted",
+        "spectral_trend_specialist_d3_causal_adjusted",
+        "spectral_trend_specialist_d4_causal_adjusted",
+        "spectral_reversal_specialist_d1_causal_adjusted",
+        "spectral_reversal_specialist_d2_causal_adjusted",
+        "spectral_reversal_specialist_d3_causal_adjusted",
+        "spectral_reversal_specialist_d4_causal_adjusted",
+        "spectral_volatility_breakout_specialist_d1_causal_adjusted",
+        "spectral_volatility_breakout_specialist_d2_causal_adjusted",
+        "spectral_volatility_breakout_specialist_d3_causal_adjusted",
+        "spectral_volatility_breakout_specialist_d4_causal_adjusted",
+        "close_x_open_causal",
+        "close_x_high_causal",
+        "close_causal_residual",
+        "volatility_w50_x_price_impact_w20_causal",
+        "volatility_w50_x_downside_semivariance_w50_causal",
+        "volatility_w50_causal_residual",
+        "price_impact_w50_x_price_impact_w20_causal",
+        "price_impact_w50_x_downside_semivariance_w50_causal",
+        "price_impact_w50_causal_residual",
+        "dist_to_long_proxy_x_close_location_value_w20_causal",
+        "dist_to_long_proxy_causal_residual",
+        "rsi_ratio_w10_vs_w40_x_log_ret_causal",
+        "rsi_ratio_w10_vs_w40_x_close_location_value_w20_causal",
+        "rsi_ratio_w10_vs_w40_causal_residual",
+        "macd_hist_w10_x_log_ret_causal",
+        "macd_hist_w10_x_close_location_value_w20_causal",
+        "macd_hist_w10_causal_residual",
+        "shadow_asymmetry_w50_x_log_ret_causal",
+        "shadow_asymmetry_w50_x_close_location_value_w20_causal",
+        "shadow_asymmetry_w50_causal_residual",
+        "volume_x_close_causal",
+        "volume_x_open_causal",
+        "volume_causal_residual",
+        "adx_trend_strength_w50_x_adx_trend_strength_w20_causal",
+        "adx_trend_strength_w50_causal_residual",
+        "log_ret_x_close_location_value_w20_causal",
+        "log_ret_x_dist_to_long_proxy_causal",
+        "log_ret_causal_residual",
+        "spec_volatility_specialist_x_open_causal",
+        "spec_volatility_specialist_x_volume_causal",
+        "spec_volume_specialist_x_open_causal",
+        "spec_volume_specialist_x_volume_causal",
+        "range_per_volume_w50_x_price_impact_w20_causal",
+        "volatility_1d_x_downside_semivariance_w50_causal",
+        "volatility_1d_x_price_impact_w50_causal",
+        "spec_volatility_breakout_specialist_x_open_causal",
+        "spec_volatility_breakout_specialist_x_volume_causal",
+        "spectral_volatility_breakout_specialist_d1_x_open_causal",
+        "spectral_volatility_breakout_specialist_d1_x_volume_causal",
+        "spectral_volatility_specialist_d1_x_open_causal",
+        "spectral_volatility_specialist_d1_x_volume_causal",
+        "spectral_volume_specialist_d1_x_open_causal",
+        "spectral_volume_specialist_d1_x_volume_causal",
+        "spectral_volatility_specialist_d4_x_open_causal",
+        "spectral_volatility_specialist_d4_x_volume_causal",
+        "spectral_volume_specialist_d4_x_open_causal",
+        "spectral_volume_specialist_d4_x_volume_causal",
+        "spectral_volatility_specialist_d3_x_open_causal",
+        "spectral_volatility_specialist_d3_x_volume_causal",
+        "spectral_volume_specialist_d3_x_open_causal",
+        "spectral_volume_specialist_d3_x_volume_causal",
+        "spectral_volume_specialist_d2_x_open_causal",
+        "spectral_volume_specialist_d2_x_volume_causal",
+        "spectral_volatility_specialist_d2_x_open_causal",
+        "spectral_volatility_specialist_d2_x_volume_causal",
+        "spec_entropy_specialist_x_open_causal",
+        "spec_entropy_specialist_x_volume_causal",
+        "spec_inventory_specialist_x_open_causal",
+        "spec_inventory_specialist_x_volume_causal",
+        "spectral_trend_specialist_d1_x_open_causal",
+        "spectral_trend_specialist_d1_x_volume_causal",
+        "spectral_entropy_specialist_d1_x_open_causal",
+        "spectral_entropy_specialist_d1_x_volume_causal",
+        "spec_trend_specialist_x_open_causal",
+        "spec_trend_specialist_x_volume_causal",
+        "spectral_reversal_specialist_d1_x_open_causal",
+        "spectral_reversal_specialist_d1_x_volume_causal"
+      ],
+      "causal_adjustments": {
+        "log_ret": {
+          "parent_effects_mean": -0.0038222910490704897,
+          "adjustment_mean": -8.044851481236604e-19,
+          "adjustment_std": 0.3482645619738702
+        },
+        "macd_hist_w10": {
+          "parent_effects_mean": -0.0005865243717471803,
+          "adjustment_mean": -1.3408085802061007e-18,
+          "adjustment_std": 0.3014968274553488
+        },
+        "rsi_ratio_w10_vs_w40": {
+          "parent_effects_mean": -0.0019166298616674305,
+          "adjustment_mean": -1.2067277221854906e-18,
+          "adjustment_std": 0.283637072847184
+        },
+        "shadow_asymmetry_w50": {
+          "parent_effects_mean": -0.001251689377433477,
+          "adjustment_mean": 1.6760107252576258e-20,
+          "adjustment_std": 0.0059606024853019034
+        },
+        "dist_to_long_proxy": {
+          "parent_effects_mean": 0.002657857093838719,
+          "adjustment_mean": -1.769867325872053e-18,
+          "adjustment_std": 0.25054963843847927
+        },
+        "range_per_volume_w50": {
+          "parent_effects_mean": 4.891769495722259e-08,
+          "adjustment_mean": -2.710832777058538e-24,
+          "adjustment_std": 5.779778499319973e-09
+        },
+        "volatility_w50": {
+          "parent_effects_mean": -0.00697739760430955,
+          "adjustment_mean": -7.096614393028074e-06,
+          "adjustment_std": 0.1680098984927836
+        },
+        "price_impact_w50": {
+          "parent_effects_mean": 0.015486559121920066,
+          "adjustment_mean": 0.0,
+          "adjustment_std": 0.26902771383860363
+        },
+        "volatility_1d": {
+          "parent_effects_mean": 0.0036392633909694974,
+          "adjustment_mean": -1.0139864887808637e-19,
+          "adjustment_std": 0.0015345508868225555
+        },
+        "volume": {
+          "parent_effects_mean": 14492474.718191177,
+          "adjustment_mean": -4.786943483063285e-09,
+          "adjustment_std": 5630880.439247327
+        },
+        "adx_trend_strength_w50": {
+          "parent_effects_mean": 0.010905048058948125,
+          "adjustment_mean": -6.435881184989283e-19,
+          "adjustment_std": 0.33887748531887985
+        },
+        "close": {
+          "parent_effects_mean": 2570.5472776296,
+          "adjustment_mean": 3.0476214328150854e-13,
+          "adjustment_std": 4.604499336689375
+        },
+        "spec_inventory_specialist": {
+          "parent_effects_mean": -0.015080326180124153,
+          "adjustment_mean": -4.12969042703479e-18,
+          "adjustment_std": 1.1191178675172622
+        },
+        "spec_volume_specialist": {
+          "parent_effects_mean": 0.003470727790066164,
+          "adjustment_mean": -5.4275931326742956e-17,
+          "adjustment_std": 1.4945816236197516
+        },
+        "spec_volatility_specialist": {
+          "parent_effects_mean": 0.02338955098788983,
+          "adjustment_mean": 1.265723299714559e-17,
+          "adjustment_std": 0.9877040411850743
+        },
+        "spec_information_specialist": {
+          "parent_effects_mean": -0.000283670706306029,
+          "adjustment_mean": 2.9363707906513607e-18,
+          "adjustment_std": 0.9896717387079869
+        },
+        "spec_cusum_break_specialist": {
+          "parent_effects_mean": -0.029670150728876854,
+          "adjustment_mean": 1.2013644878646663e-17,
+          "adjustment_std": 1.3628353056792573
+        },
+        "spec_entropy_specialist": {
+          "parent_effects_mean": -0.046607841765441714,
+          "adjustment_mean": -6.114087125739819e-18,
+          "adjustment_std": 1.277058734767642
+        },
+        "spec_tick_rule_specialist": {
+          "parent_effects_mean": -0.005016886459399671,
+          "adjustment_mean": 1.0297409895982853e-17,
+          "adjustment_std": 1.295506836061025
+        },
+        "spec_bar_efficiency_specialist": {
+          "parent_effects_mean": 0.003360508856419452,
+          "adjustment_mean": 1.5553379530390769e-18,
+          "adjustment_std": 1.1061539417828776
+        },
+        "spec_trend_specialist": {
+          "parent_effects_mean": 0.014601101172352722,
+          "adjustment_mean": 6.328616498572795e-18,
+          "adjustment_std": 1.216974017055147
+        },
+        "spec_reversal_specialist": {
+          "parent_effects_mean": 0.0005739757407289625,
+          "adjustment_mean": -3.807896367785326e-18,
+          "adjustment_std": 1.1497879338544048
+        },
+        "spec_volatility_breakout_specialist": {
+          "parent_effects_mean": 0.0207625850655075,
+          "adjustment_mean": -1.7805937945137018e-17,
+          "adjustment_std": 1.09505367588361
+        },
+        "spectral_inventory_specialist_d1": {
+          "parent_effects_mean": -0.015083450961201011,
+          "adjustment_mean": 2.2525584147462494e-18,
+          "adjustment_std": 0.761450404926464
+        },
+        "spectral_inventory_specialist_d2": {
+          "parent_effects_mean": 4.7409989131006543e-07,
+          "adjustment_mean": -7.977811052226299e-19,
+          "adjustment_std": 0.5165572447916241
+        },
+        "spectral_inventory_specialist_d3": {
+          "parent_effects_mean": 6.055788154081068e-07,
+          "adjustment_mean": -9.653821777483925e-19,
+          "adjustment_std": 0.4388839662640132
+        },
+        "spectral_inventory_specialist_d4": {
+          "parent_effects_mean": 1.976627456871514e-06,
+          "adjustment_mean": -1.2067277221854906e-19,
+          "adjustment_std": 0.3501715952002717
+        },
+        "spectral_volume_specialist_d1": {
+          "parent_effects_mean": 0.0034749197091038585,
+          "adjustment_mean": 3.754264024577082e-18,
+          "adjustment_std": 0.4309183682986767
+        },
+        "spectral_volume_specialist_d2": {
+          "parent_effects_mean": -4.4285533217278925e-06,
+          "adjustment_mean": -2.8425141900369335e-18,
+          "adjustment_std": 0.29060331189505756
+        },
+        "spectral_volume_specialist_d3": {
+          "parent_effects_mean": 4.888830831505634e-07,
+          "adjustment_mean": -2.9765950480575436e-18,
+          "adjustment_std": 0.4033627323113432
+        },
+        "spectral_volume_specialist_d4": {
+          "parent_effects_mean": -2.762715029884027e-07,
+          "adjustment_mean": -1.0190145209566365e-17,
+          "adjustment_std": 0.6688933353467996
+        },
+        "spectral_volatility_specialist_d1": {
+          "parent_effects_mean": 0.02338812104152908,
+          "adjustment_mean": -3.2179405924946417e-19,
+          "adjustment_std": 0.387361182344659
+        },
+        "spectral_volatility_specialist_d2": {
+          "parent_effects_mean": 6.431927748677028e-10,
+          "adjustment_mean": -6.435881184989283e-19,
+          "adjustment_std": 0.33104002375918073
+        },
+        "spectral_volatility_specialist_d3": {
+          "parent_effects_mean": 2.1567971553288214e-06,
+          "adjustment_mean": -3.2983891073070076e-18,
+          "adjustment_std": 0.372603851262493
+        },
+        "spectral_volatility_specialist_d4": {
+          "parent_effects_mean": -6.979217322036923e-07,
+          "adjustment_mean": 1.0190145209566365e-18,
+          "adjustment_std": 0.47162390291872974
+        },
+        "spectral_information_specialist_d1": {
+          "parent_effects_mean": -0.0002926450784976199,
+          "adjustment_mean": 8.044851481236604e-19,
+          "adjustment_std": 0.24189550204024024
+        },
+        "spectral_information_specialist_d2": {
+          "parent_effects_mean": 2.5963273662179407e-06,
+          "adjustment_mean": 1.3072883657009482e-19,
+          "adjustment_std": 0.2522263497692487
+        },
+        "spectral_information_specialist_d3": {
+          "parent_effects_mean": -4.92608723585819e-07,
+          "adjustment_mean": -3.050339519968879e-19,
+          "adjustment_std": 0.35033927599638215
+        },
+        "spectral_information_specialist_d4": {
+          "parent_effects_mean": 6.74998246661873e-06,
+          "adjustment_mean": 5.86603753840169e-19,
+          "adjustment_std": 0.4981155251511466
+        },
+        "spectral_cusum_break_specialist_d1": {
+          "parent_effects_mean": -0.029676960537167167,
+          "adjustment_mean": 4.719646202325475e-18,
+          "adjustment_std": 1.234053419714417
+        },
+        "spectral_cusum_break_specialist_d2": {
+          "parent_effects_mean": 4.825808843615632e-06,
+          "adjustment_mean": 1.5218177385339243e-18,
+          "adjustment_std": 0.4057625027662982
+        },
+        "spectral_cusum_break_specialist_d3": {
+          "parent_effects_mean": 6.71762050621548e-07,
+          "adjustment_mean": -2.849218232937964e-19,
+          "adjustment_std": 0.2967655187722814
+        },
+        "spectral_cusum_break_specialist_d4": {
+          "parent_effects_mean": 1.2562742694637934e-06,
+          "adjustment_mean": -2.8827384474431165e-19,
+          "adjustment_std": 0.2191007793407589
+        },
+        "spectral_entropy_specialist_d1": {
+          "parent_effects_mean": -0.04659555767897816,
+          "adjustment_mean": -4.344219799867766e-18,
+          "adjustment_std": 1.1569553934828138
+        },
+        "spectral_entropy_specialist_d2": {
+          "parent_effects_mean": -1.1152335866691094e-05,
+          "adjustment_mean": -1.1799115505813687e-18,
+          "adjustment_std": 0.37161305371755887
+        },
+        "spectral_entropy_specialist_d3": {
+          "parent_effects_mean": -2.1755114999937174e-07,
+          "adjustment_mean": -7.910770623215994e-19,
+          "adjustment_std": 0.28194084359420357
+        },
+        "spectral_entropy_specialist_d4": {
+          "parent_effects_mean": -7.986165995417099e-07,
+          "adjustment_mean": -2.9497788764534217e-19,
+          "adjustment_std": 0.210667198347245
+        },
+        "spectral_tick_rule_specialist_d1": {
+          "parent_effects_mean": -0.005028064600923794,
+          "adjustment_mean": -1.930764355496785e-18,
+          "adjustment_std": 1.0088257209275002
+        },
+        "spectral_tick_rule_specialist_d2": {
+          "parent_effects_mean": 4.484781162708434e-06,
+          "adjustment_mean": -1.6760107252576259e-18,
+          "adjustment_std": 0.5609388135492496
+        },
+        "spectral_tick_rule_specialist_d3": {
+          "parent_effects_mean": 3.346127335080499e-06,
+          "adjustment_mean": -3.888344882597692e-19,
+          "adjustment_std": 0.4220920050232726
+        },
+        "spectral_tick_rule_specialist_d4": {
+          "parent_effects_mean": 3.259940154229879e-06,
+          "adjustment_mean": 6.033638610927453e-19,
+          "adjustment_std": 0.31758720457099243
+        },
+        "spectral_bar_efficiency_specialist_d1": {
+          "parent_effects_mean": 0.0033580145449429574,
+          "adjustment_mean": 1.823499669080297e-18,
+          "adjustment_std": 0.7876877803366159
+        },
+        "spectral_bar_efficiency_specialist_d2": {
+          "parent_effects_mean": -4.886502618542627e-07,
+          "adjustment_mean": -1.8838360551895714e-18,
+          "adjustment_std": 0.5876222876822816
+        },
+        "spectral_bar_efficiency_specialist_d3": {
+          "parent_effects_mean": 1.6688659183085687e-06,
+          "adjustment_mean": -1.0793509070659111e-18,
+          "adjustment_std": 0.3623693418074043
+        },
+        "spectral_bar_efficiency_specialist_d4": {
+          "parent_effects_mean": 1.226927053478856e-06,
+          "adjustment_mean": -1.0726468641648805e-19,
+          "adjustment_std": 0.27237410716579386
+        },
+        "spectral_trend_specialist_d1": {
+          "parent_effects_mean": 0.014589415263745919,
+          "adjustment_mean": 6.328616498572795e-18,
+          "adjustment_std": 1.0567205435835672
+        },
+        "spectral_trend_specialist_d2": {
+          "parent_effects_mean": 1.1501329028192288e-05,
+          "adjustment_mean": -2.8156980184328117e-19,
+          "adjustment_std": 0.4165559515882698
+        },
+        "spectral_trend_specialist_d3": {
+          "parent_effects_mean": 2.1700990064082777e-07,
+          "adjustment_mean": 5.698436465875928e-19,
+          "adjustment_std": 0.30997791619871506
+        },
+        "spectral_trend_specialist_d4": {
+          "parent_effects_mean": 1.5310389378699864e-07,
+          "adjustment_mean": -4.6593098162162e-19,
+          "adjustment_std": 0.23533048328444586
+        },
+        "spectral_reversal_specialist_d1": {
+          "parent_effects_mean": 0.0005886576593215826,
+          "adjustment_mean": 2.6816171604122013e-18,
+          "adjustment_std": 0.9039054266425115
+        },
+        "spectral_reversal_specialist_d2": {
+          "parent_effects_mean": -1.3396407634460475e-05,
+          "adjustment_mean": 9.821422850009689e-19,
+          "adjustment_std": 0.472961849041351
+        },
+        "spectral_reversal_specialist_d3": {
+          "parent_effects_mean": 8.49173358641497e-07,
+          "adjustment_mean": -4.3241076711646747e-19,
+          "adjustment_std": 0.36656895481416246
+        },
+        "spectral_reversal_specialist_d4": {
+          "parent_effects_mean": -2.109149832282581e-06,
+          "adjustment_mean": 2.9497788764534217e-19,
+          "adjustment_std": 0.2894695711434596
+        },
+        "spectral_volatility_breakout_specialist_d1": {
+          "parent_effects_mean": 0.020767126840085064,
+          "adjustment_mean": 5.3632343208244025e-19,
+          "adjustment_std": 0.9440516418600001
+        },
+        "spectral_volatility_breakout_specialist_d2": {
+          "parent_effects_mean": -5.366271307875028e-06,
+          "adjustment_mean": 1.5955622104452598e-18,
+          "adjustment_std": 0.4644146197307939
+        },
+        "spectral_volatility_breakout_specialist_d3": {
+          "parent_effects_mean": 1.1899216831430004e-06,
+          "adjustment_mean": -2.59781662414932e-20,
+          "adjustment_std": 0.24536726685672175
+        },
+        "spectral_volatility_breakout_specialist_d4": {
+          "parent_effects_mean": -3.592176234381144e-07,
+          "adjustment_mean": 8.178932339257215e-19,
+          "adjustment_std": 0.15498890952009942
+        }
+      }
+    }
+  }
+}

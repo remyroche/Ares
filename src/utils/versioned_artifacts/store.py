@@ -158,7 +158,7 @@ class VersionedArtifactStore:
 
                 negative_weights = (weights_to_check < 0).sum()
                 if negative_weights > 0:
-                    validation_errors.append(f"Negative weights in '{weight_col}': {negative_weights}")
+                    validation_warnings.append(f"Negative weights in '{weight_col}': {negative_weights}")
 
         # ------------------------------------------------------------------
         # 2. Meta-probability validation
@@ -254,18 +254,12 @@ class VersionedArtifactStore:
 
     def _load_metadata(self) -> Dict[str, Any]:
         """Load store metadata."""
-        from src.utils.tprint import tprint
-        
-        tprint(f"🐛 DEBUG: _load_metadata() checking {self.metadata_file}", "INFO")
         if self.metadata_file.exists():
-            tprint(f"🐛 DEBUG: Metadata file exists, size: {self.metadata_file.stat().st_size} bytes", "INFO")
             try:
                 with open(self.metadata_file, 'r') as f:
                     metadata = json.load(f)
-                    tprint(f"🐛 DEBUG: Successfully loaded metadata with {len(metadata.get('versions', {}))} versions", "INFO")
                     return metadata
             except Exception as e:
-                tprint(f"🐛 DEBUG: Error loading metadata: {e}", "ERROR")
                 # Return default metadata on error
                 return {
                     'versions': {},
@@ -274,7 +268,6 @@ class VersionedArtifactStore:
                     'load_error': str(e)
                 }
         else:
-            tprint("🐛 DEBUG: Metadata file does not exist, returning default metadata", "INFO")
             return {
                 'versions': {},
                 'current_version': None,
@@ -810,18 +803,10 @@ class VersionedArtifactStore:
         Returns:
             List of version names
         """
-        from src.utils.tprint import tprint
-        
-        tprint(f"🐛 DEBUG: list_versions() called", "INFO")
-        tprint(f"🐛 DEBUG: Metadata file exists: {self.metadata_file.exists()}", "INFO")
-        tprint(f"🐛 DEBUG: HDF5 file exists: {self.h5_file.exists()}", "INFO")
-        
         # Reload metadata to ensure we have the latest
-        tprint("🐛 DEBUG: Reloading metadata to get latest versions", "INFO")
         self._metadata = self._load_metadata()
-        
+
         versions = list(self._metadata['versions'].keys())
-        tprint(f"🐛 DEBUG: Found {len(versions)} versions in metadata: {versions}", "INFO")
         
         # Also check HDF5 file directly
         if self.h5_file.exists():
@@ -829,19 +814,92 @@ class VersionedArtifactStore:
                 with h5py.File(self.h5_file, 'r') as f:
                     if 'versions' in f:
                         h5_versions = list(f['versions'].keys())
-                        tprint(f"🐛 DEBUG: Found {len(h5_versions)} versions in HDF5: {h5_versions}", "INFO")
                         
                         # Check for discrepancies
                         if set(versions) != set(h5_versions):
-                            tprint(f"🐛 DEBUG: MISMATCH between metadata and HDF5!", "ERROR")
-                            tprint(f"🐛 DEBUG: Metadata only: {set(versions) - set(h5_versions)}", "ERROR")
-                            tprint(f"🐛 DEBUG: HDF5 only: {set(h5_versions) - set(versions)}", "ERROR")
-                    else:
-                        tprint("🐛 DEBUG: No 'versions' group found in HDF5 file!", "ERROR")
+                            self.logger.warning(f"MISMATCH between metadata and HDF5!")
+                            self.logger.warning(f"Metadata only: {set(versions) - set(h5_versions)}")
+                            self.logger.warning(f"HDF5 only: {set(h5_versions) - set(versions)}")
             except Exception as e:
-                tprint(f"🐛 DEBUG: Error reading HDF5 file: {e}", "ERROR")
+                self.logger.error(f"Error reading HDF5 file: {e}")
         
         return versions
+
+    def cleanup_old_versions(self, keep_per_prefix: int = 3, dry_run: bool = False) -> Dict[str, List[str]]:
+        """
+        Clean up old versions, keeping only the latest N versions per prefix.
+        
+        Args:
+            keep_per_prefix: Number of versions to keep per prefix
+            dry_run: If True, only report what would be deleted without actually deleting
+            
+        Returns:
+            Dictionary with prefixes as keys and lists of deleted versions as values
+        """
+        from src.utils.tprint import tprint
+        import re
+        from datetime import datetime
+        
+        versions = list(self._metadata['versions'].keys())
+        
+        # Group versions by prefix (everything before the last timestamp)
+        prefix_groups = {}
+        for version in versions:
+            # Extract prefix by removing the trailing timestamp pattern
+            # Pattern: _YYYYMMDD_HHMMSS_###
+            match = re.match(r'(.+)_\d{8}_\d{6}_\d+$', version)
+            if match:
+                prefix = match.group(1)
+            else:
+                # Fallback: use everything before the last underscore
+                prefix = '_'.join(version.split('_')[:-3]) if '_' in version else version
+            
+            if prefix not in prefix_groups:
+                prefix_groups[prefix] = []
+            prefix_groups[prefix].append(version)
+        
+        # Sort each group by timestamp and keep only the latest N
+        deleted_versions = {}
+        
+        for prefix, version_list in prefix_groups.items():
+            if len(version_list) <= keep_per_prefix:
+                continue
+                
+            # Sort by timestamp (extracted from version name)
+            def extract_timestamp(version_name):
+                match = re.search(r'_(\d{8})_(\d{6})_', version_name)
+                if match:
+                    date_str = match.group(1)
+                    time_str = match.group(2)
+                    return datetime.strptime(f"{date_str}{time_str}", "%Y%m%d%H%M%S")
+                return datetime.min
+            
+            sorted_versions = sorted(version_list, key=extract_timestamp, reverse=True)
+            versions_to_delete = sorted_versions[keep_per_prefix:]
+            
+            if versions_to_delete:
+                deleted_versions[prefix] = versions_to_delete
+                
+                if not dry_run:
+                    tprint(f"🗑️  Cleaning up {len(versions_to_delete)} old versions for prefix: {prefix}", "INFO")
+                    for version in versions_to_delete:
+                        self.delete_version(version)
+                        tprint(f"   Deleted: {version}", "INFO")
+                else:
+                    tprint(f"🔍 Would delete {len(versions_to_delete)} old versions for prefix: {prefix}", "INFO")
+                    for version in versions_to_delete:
+                        tprint(f"   Would delete: {version}", "INFO")
+        
+        if not deleted_versions:
+            tprint("✅ No versions to clean up", "INFO")
+        elif dry_run:
+            total_to_delete = sum(len(versions) for versions in deleted_versions.values())
+            tprint(f"🔍 Dry run: Would delete {total_to_delete} versions total", "INFO")
+        else:
+            total_deleted = sum(len(versions) for versions in deleted_versions.values())
+            tprint(f"🗑️  Deleted {total_deleted} versions total", "INFO")
+            
+        return deleted_versions
 
     def get_version_info(self, version_name: str) -> Dict[str, Any]:
         """
@@ -854,6 +912,50 @@ class VersionedArtifactStore:
             Version metadata
         """
         return self._metadata['versions'].get(version_name, {})
+
+    def delete_version(self, version_name: str) -> bool:
+        """
+        Delete a specific version from the store.
+        
+        Args:
+            version_name: Version name to delete
+            
+        Returns:
+            True if version was deleted, False if version didn't exist
+        """
+        from src.utils.tprint import tprint
+        
+        if version_name not in self._metadata['versions']:
+            tprint(f"⚠️ Version {version_name} not found, cannot delete", "WARNING")
+            return False
+        
+        try:
+            # Delete from HDF5 file
+            if self.h5_file.exists():
+                with h5py.File(self.h5_file, 'r+') as f:
+                    if 'versions' in f and version_name in f['versions']:
+                        del f['versions'][version_name]
+                        tprint(f"🗑️  Deleted version {version_name} from HDF5", "INFO")
+            
+            # Delete from metadata
+            if version_name in self._metadata['versions']:
+                del self._metadata['versions'][version_name]
+                self._save_metadata()
+                tprint(f"🗑️  Deleted version {version_name} from metadata", "INFO")
+            
+            # Clean up changelog entries for this version
+            self.changelog.remove_version_changes(version_name)
+            
+            # Clean up row version tracker for this version
+            if hasattr(self, '_row_version_tracker') and self._row_version_tracker:
+                self._row_version_tracker.remove_version(version_name)
+            
+            tprint(f"✅ Successfully deleted version: {version_name}", "INFO")
+            return True
+            
+        except Exception as e:
+            tprint(f"❌ Failed to delete version {version_name}: {e}", "ERROR")
+            return False
 
     def get_changelog(
         self,

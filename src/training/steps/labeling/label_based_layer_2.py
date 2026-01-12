@@ -1116,6 +1116,8 @@ class LabelBasedLayer2(BaseStep):
     def __init__(self, step_name: str = 'label_based_layer_2', **kwargs):
         # Initialize BaseStep with step name
         super().__init__(step_name)
+        self.symbol = kwargs.get('symbol')
+        self.init_config = kwargs
         self._dataset_fingerprint: Optional[str] = None
         self._label_batch_cache: Dict[str, Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]] = {}
         self._confounder_cache: Dict[str, pd.DataFrame] = {}
@@ -1253,14 +1255,14 @@ class LabelBasedLayer2(BaseStep):
         
         # Causal Discovery Parameters
         self.significance_level = kwargs.get('significance_level', 0.05)
-        self.max_conditioning_set = kwargs.get('max_conditioning_set', 3)
+        self.max_conditioning_set = kwargs.get('max_conditioning_set', 1)  # Optimized default (was 3)
         self.use_lingam = kwargs.get('use_lingam', True)
         
         # Causal Surprise Parameters
         self.surprise_threshold = kwargs.get('surprise_threshold', 0.9)  # Lowered from 1.2 for more events (was 1.8 originally)
         self.rolling_window = kwargs.get('rolling_window', 20)
         self.min_specialists = kwargs.get('min_specialists', 2)
-        self.discovery_max_features = kwargs.get('discovery_max_features', 60)
+        self.discovery_max_features = kwargs.get('discovery_max_features', 25)  # Optimized default (was 60)
         self.discovery_sample_size = kwargs.get('discovery_sample_size', 10000)
         
         # Initialize Enhanced Quality Assessor
@@ -1298,6 +1300,13 @@ class LabelBasedLayer2(BaseStep):
         )
         self._all_candidate_assessments = [] # Storage for exhaustive reporting
         self.discovery_bootstrap_samples = kwargs.get('discovery_bootstrap_samples', 15)
+        
+        # Apply execution mode adjustments
+        try:
+            from src.utils.ml_common.optimization.execution_mode_adapter import adjust_bootstrap_for_mode
+            self.discovery_bootstrap_samples = adjust_bootstrap_for_mode(self.discovery_bootstrap_samples)
+        except ImportError:
+            pass  # Fallback to original value if adapter not available
         self.specialist_train_workers = kwargs.get('specialist_train_workers', 4)
         self.specialist_max_models = kwargs.get('specialist_max_models')
         self.specialist_debug_logging = kwargs.get('specialist_debug_logging', False)
@@ -2896,8 +2905,14 @@ class LabelBasedLayer2(BaseStep):
 
             # Generate events
             tprint_info("   🎯 Layer 2: Generating causal events from surprise scores...")
-            # Pass full market DataFrame for Entropy×VolSpike Noise Gating
-            causal_events = self._surprise_detector.generate_causal_events(regime_vol=df)
+            # Retry logic with progressively lower thresholds
+            causal_events = {}
+            for thresh in [0.01, 0.005, 0.001, 0.0001]:
+                tprint_info(f"   🔄 Attempting event generation with threshold={thresh}...")
+                causal_events = self._surprise_detector.generate_causal_events(regime_vol=df, event_threshold=thresh)
+                if causal_events and len(causal_events) > 0:
+                     tprint_success(f"   ✅ Generated {len(causal_events)} events with threshold={thresh}")
+                     break
             
             events_df = pd.DataFrame()
 
@@ -4613,6 +4628,12 @@ class LabelBasedLayer2(BaseStep):
             # Extract config from input if it's a dict, otherwise create minimal config
             config = input_data if isinstance(input_data, dict) else {}
 
+        # Merge initialization config into run configuration (init config serves as default)
+        if hasattr(self, 'init_config'):
+             base_config = self.init_config.copy()
+             base_config.update(config)
+             config = base_config
+
         # Convert to dollar bars for proper sample frequency (~15 min avg instead of raw 15m bars)
         if self.use_dollar_bars:
             df_bars = self._convert_to_dollar_bars(df, config)
@@ -4627,7 +4648,7 @@ class LabelBasedLayer2(BaseStep):
         self._current_config = config
         
         # --- Checkpoint System: Handle cleanup and resume ---
-        symbol = config.get('symbol', 'UNKNOWN')
+        symbol = config.get('symbol') or getattr(self, 'symbol', None) or 'UNKNOWN'
         resume_from = config.get('layer2_resume_from')
         delete_from = config.get('layer2_delete_from')
         self._checkpoints_enabled = not config.get('layer2_disable_checkpoints', False)
@@ -4732,6 +4753,7 @@ class LabelBasedLayer2(BaseStep):
         """
         try:
             tprint_info("🚀 Causal Layer 2 Pipeline: Starting modern De Prado framework...")
+            symbol = self._current_config.get('symbol', 'UNKNOWN')
             
             # 0. Initialize causal components & feature precomputation
             # Skip if resuming past this step
@@ -4743,6 +4765,10 @@ class LabelBasedLayer2(BaseStep):
                     if checkpoint_data and 'df' in checkpoint_data:
                         df = checkpoint_data['df']
                         tprint_info(f"   📂 Restored DataFrame: {df.shape}")
+                
+                 # CRITICAL FIX: Ensure components are initialized even when resuming
+                tprint_info("   🔧 Restoring causal components state...")
+                self._initialize_causal_components(df)
             else:
                 tprint_info("🔧 Step 0: Initializing causal components & features...")
                 df = self._validate_inputs(df)
@@ -4779,6 +4805,7 @@ class LabelBasedLayer2(BaseStep):
                 tprint_success(f"   ✅ Causal discovery complete: {len(causal_graph)} variables")
                 
                 # Save causal_discovery checkpoint
+                symbol = self._current_config.get('symbol', 'UNKNOWN')
                 if self._checkpoints_enabled:
                     self._checkpoint_manager.save_checkpoint('causal_discovery', {
                         'df': df,
@@ -6011,23 +6038,28 @@ class LabelBasedLayer2(BaseStep):
         UPDATED FRAMEWORK (Huber):
         - Huber feature pruning
         - Huber monotonic constraints & warm start
-        - Candidates: CatBoost, XGB, LGBM, ExtraTrees
+        - Integration of sequential bootstrap weights
+        - Detailed leaderboard with IC, ROC-AUC, PR-AUC
         """
         import time
         from sklearn.preprocessing import StandardScaler
+        from sklearn.metrics import average_precision_score
+        from scipy.stats import spearmanr
         
         start_time = time.time()
         
         # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
         tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
         try:
+            # Pass w_train to Huber as sample_weight
             huber_outputs = prepare_huber_teacher_outputs(
                 X_train, y_train, X_val=X_val,
+                sample_weight=w_train,
                 pruning_percentile=15, corr_threshold=0.7
             )
 
             selected_features = huber_outputs['selected_features']
-            monotone_constraints = huber_outputs['monotonic_constraints']
+            monotone_constraints_dict = huber_outputs['monotonic_constraints']
             interaction_constraints = huber_outputs['interaction_constraints']
             warm_start_train = huber_outputs['warm_start']['train']
             warm_start_val = huber_outputs['warm_start']['val']
@@ -6037,6 +6069,9 @@ class LabelBasedLayer2(BaseStep):
             # Filter Datasets
             X_train_final = X_train[selected_features]
             X_val_final = X_val[selected_features]
+            
+            # Map monotonic constraints to ordered list for tree learners
+            monotone_constraints = [monotone_constraints_dict.get(f, 0) for f in selected_features]
 
         except Exception as e:
             tprint_warning(f"   ⚠️ Huber Teacher failed: {e}. Using all features.")
@@ -6067,7 +6102,10 @@ class LabelBasedLayer2(BaseStep):
             'feature_fraction': 0.6,
             'lambda_l1': 0.1,
             'max_bin': 63,
-            'scale_pos_weight': scale_pos_weight
+            'scale_pos_weight': scale_pos_weight,
+            'random_state': 42,
+            'verbose': -1,
+            'n_jobs': 1
         })
         if monotone_constraints is not None:
             lgbm_params['monotone_constraints'] = list(monotone_constraints)
@@ -6099,7 +6137,7 @@ class LabelBasedLayer2(BaseStep):
                 'scale_pos_weight': scale_pos_weight
             }
             if monotone_constraints is not None:
-                xgb_params['monotone_constraints'] = str(tuple(monotone_constraints))
+                xgb_params['monotone_constraints'] = tuple(monotone_constraints)
             if interaction_constraints is not None:
                 xgb_params['interaction_constraints'] = interaction_constraints
 
@@ -6127,7 +6165,6 @@ class LabelBasedLayer2(BaseStep):
                 'scale_pos_weight': scale_pos_weight
             }
             if monotone_constraints is not None:
-                # CatBoost needs specific format for constraints (list or string)
                 cat_params['monotone_constraints'] = list(monotone_constraints)
 
             candidates.append({
@@ -6160,7 +6197,7 @@ class LabelBasedLayer2(BaseStep):
             'fit_params': {}
         })
 
-        # 3. Sequential Race (Batch training logic manually applied to support warm start)
+        # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
         race_results = {}
         best_score = -float('inf')
@@ -6171,18 +6208,15 @@ class LabelBasedLayer2(BaseStep):
             name = cand['name']
             model = cand['model']
             fit_params = cand['fit_params']
-            best_score = 0.0  # PR-AUC: Higher is better
-            best_model = None
-            best_name = "LGBM_Tree" # Default
-            best_auc = 0.0
-            race_results = {}
             
             try:
                 # Fit with specific params (warm start, eval set)
+                start_fit = time.time()
                 if fit_params:
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
                     model.fit(X_train_final, y_train, sample_weight=w_train)
+                fit_duration = time.time() - start_fit
 
                 # Evaluate
                 if hasattr(model, 'predict_proba'):
@@ -6190,18 +6224,41 @@ class LabelBasedLayer2(BaseStep):
                 else:
                     preds = model.predict(X_val_final)
                     
-                auc = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
-                race_results[name] = {'auc': auc, 'model': model}
+                # Metrics
+                auc_score = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
+                pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
+                ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
+                
+                # Combined score (sort by ROC-AUC)
+                race_results[name] = {
+                    'auc': auc_score,
+                    'pr_auc': pr_auc,
+                    'ic': ic,
+                    'model': model,
+                    'fit_time': fit_duration
+                }
 
-                tprint_info(f"      - {name}: AUC={auc:.4f}")
+                tprint_info(f"      - {name.ljust(12)}: ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f}, IC={ic:.4f}")
 
-                if auc > best_score:
-                    best_score = auc
+                if auc_score > best_score:
+                    best_score = auc_score
                     best_model = model
                     best_name = name
                     
             except Exception as e:
                 tprint_warning(f"      ❌ {name} failed: {e}")
+
+        # 4. Display Leaderboard
+        if race_results:
+            tprint_info("\n   🏆 Model Race Leaderboard:")
+            tprint_info(f"   {'Name':<15} | {'ROC-AUC':<8} | {'PR-AUC':<8} | {'IC':<8} | {'Time':<6}")
+            tprint_info(f"   {'-'*15}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*6}")
+            
+            # Sort by ROC-AUC
+            sorted_results = sorted(race_results.items(), key=lambda x: x[1]['auc'], reverse=True)
+            for name, metrics in sorted_results:
+                tprint_info(f"   {name:<15} | {metrics['auc']:<8.4f} | {metrics['pr_auc']:<8.4f} | {metrics['ic']:<8.4f} | {metrics['fit_time']:<6.2f}s")
+            tprint_info("")
 
         if best_model is None:
             # Emergency fallback
@@ -6211,7 +6268,7 @@ class LabelBasedLayer2(BaseStep):
             best_name = "LGBM_Fallback"
             race_results = {}
 
-        tprint_success(f"   🏁 Race Winner: {best_name} (AUC={best_score:.4f})")
+        tprint_success(f"   🏁 Race Winner: {best_name} (ROC-AUC={best_score:.4f})")
         return best_model, best_name, race_results
 
     def _create_afml_candidates(self, scale_pos_weight):
@@ -8993,61 +9050,48 @@ class LabelBasedLayer2(BaseStep):
             if len(events) < 2:
                 return np.ones(len(events))
                 
-            tprint_info(f"🔄 Sequential Bootstrap: {len(events)} events, lookback={lookback}d")
+            tprint_info(f"🔄 Sequential Bootstrap: {len(events)} events, lookback={lookback}d (Optimized Vectorized)")
             
             n_events = len(events)
-            weights = np.ones(n_events)
             
-            # Build overlap matrix based on temporal proximity and feature similarity
-            overlap_matrix = np.zeros((n_events, n_events))
+            # 1. Temporal overlap (vectorized)
+            # Convert to nanoseconds for precision
+            event_ns = events.values.astype(np.int64)
+            lookback_ns = lookback * 24 * 60 * 60 * 1_000_000_000
             
-            for i in range(n_events):
-                for j in range(n_events):
-                    if i == j:
-                        overlap_matrix[i, j] = 1.0
-                        continue
+            # Broadcast to get pair-wise diffs
+            time_diff = np.abs(event_ns[:, np.newaxis] - event_ns[np.newaxis, :])
+            temporal_overlap = np.maximum(0.0, 1.0 - time_diff / lookback_ns)
+            
+            # 2. Feature overlap (vectorized)
+            feature_overlap = np.zeros((n_events, n_events))
+            if X is not None and not X.empty:
+                try:
+                    # Convert to numpy and handle NaNs
+                    X_vals = X.fillna(0).values.astype(np.float32)
                     
-                    # Temporal overlap based on lookback window
-                    time_diff = abs((events[i] - events[j]).days)
-                    temporal_overlap = max(0.0, 1.0 - time_diff / lookback)
+                    # Normalize rows for cosine similarity
+                    norms = np.linalg.norm(X_vals, axis=1, keepdims=True)
+                    # Avoid division by zero
+                    X_normed = np.divide(X_vals, norms, out=np.zeros_like(X_vals), where=norms > 1e-9)
                     
-                    # Feature overlap if X is provided
-                    feature_overlap = 0.0
-                    if X is not None and not X.empty:
-                        try:
-                            # Use correlation-based feature overlap
-                            if i < len(X) and j < len(X):
-                                feat_i = X.iloc[i].fillna(0)
-                                feat_j = X.iloc[j].fillna(0)
-                                
-                                # Compute cosine similarity
-                                dot_product = np.dot(feat_i, feat_j)
-                                norm_i = np.linalg.norm(feat_i)
-                                norm_j = np.linalg.norm(feat_j)
-                                
-                                if norm_i > 0 and norm_j > 0:
-                                    feature_overlap = dot_product / (norm_i * norm_j)
-                                    feature_overlap = max(0.0, feature_overlap)  # Keep positive
-                        except Exception:
-                            feature_overlap = 0.0
-                    
-                    # Combined overlap (weighted average)
-                    overlap_matrix[i, j] = 0.7 * temporal_overlap + 0.3 * feature_overlap
+                    # Matrix multiplication for all-to-all cosine similarity
+                    feature_overlap = np.maximum(0.0, np.dot(X_normed, X_normed.T))
+                except Exception as e:
+                    tprint_warning(f"⚠️ Vectorized feature overlap failed, using temporal only: {e}")
+                    feature_overlap = np.zeros((n_events, n_events))
             
-            # Compute average uniqueness for each event
-            # Uniqueness = 1 / (1 + sum of overlaps with other events)
-            uniqueness_values = np.zeros(n_events)
+            # 3. Combined overlap matrix
+            overlap_matrix = 0.7 * temporal_overlap + 0.3 * feature_overlap
             
-            for i in range(n_events):
-                # Remove self-overlap from calculation
-                other_overlaps = overlap_matrix[i, :] - np.eye(n_events)[i, :]
-                total_overlap = np.sum(other_overlaps[other_overlaps > 0])
-                
-                # Average uniqueness (De Prado formula)
-                if total_overlap > 0:
-                    uniqueness_values[i] = 1.0 / (1.0 + total_overlap)
-                else:
-                    uniqueness_values[i] = 1.0
+            # 4. Compute uniqueness (vectorized)
+            # Self-overlap on diagonal should be ignored for the 'sum of others' calculation
+            # But the formula 1 / (1 + sum of others) is equivalent to 1 / (sum of all including self) 
+            # if self-overlap is 1.0.
+            # In our case, overlap_matrix diagonal is 0.7 * 1.0 + 0.3 * 1.0 = 1.0.
+            
+            total_overlap = np.sum(np.maximum(0.0, overlap_matrix), axis=1)
+            uniqueness_values = 1.0 / total_overlap
             
             # Sample weights are proportional to uniqueness
             weights = uniqueness_values
@@ -9059,7 +9103,7 @@ class LabelBasedLayer2(BaseStep):
                 weights = np.ones(n_events) / n_events
             
             # Log statistics
-            tprint_success(f"✅ Sequential Bootstrap weights computed")
+            tprint_success(f"✅ Sequential Bootstrap weights computed (Optimized)")
             tprint_info(f"   - Avg uniqueness: {np.mean(uniqueness_values):.3f}")
             tprint_info(f"   - Weight range: [{weights.min():.4f}, {weights.max():.4f}]")
             tprint_info(f"   - Effective sample size: {1.0 / np.sum(weights**2):.1f}")

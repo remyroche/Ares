@@ -5,14 +5,15 @@ from sklearn.preprocessing import RobustScaler
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
 from joblib import Parallel, delayed
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 
-def prepare_huber_production_orchestrator(
+def prepare_huber_teacher_outputs(
     X_train: pd.DataFrame, 
     y_train: pd.Series,
-    vol_proxy: pd.Series, # e.g., Realized Volatility or ATR
     X_val: Optional[pd.DataFrame] = None,
     X_test: Optional[pd.DataFrame] = None,
+    vol_proxy: Optional[pd.Series] = None,
+    sample_weight: Optional[np.ndarray] = None,
     epsilons: List[float] = [1.1, 1.35, 1.75],
     alphas: List[float] = [1e-4, 1e-3, 1e-2],
     pruning_percentile: int = 15,
@@ -23,11 +24,17 @@ def prepare_huber_production_orchestrator(
     Advanced Huber Orchestrator for 15m Crypto Specialists.
     Includes: Vol-Weighting, Parallel Grid Fitting, and Named Interaction Constraints.
     """
-    # 1. Local Volatility Weighting (De Prado alignment)
-    # Weights samples by inverse volatility to prioritize structural regimes over noise
-    sample_weights = (1.0 / vol_proxy).fillna(vol_proxy.median()).values
-    sample_weights /= sample_weights.mean() # Normalize to preserve scale
-    [Image of heteroskedasticity in financial time series]
+    # 1. Sample Weighting (De Prado alignment)
+    # Priority 1: Direct sample_weight (e.g. from Sequential Bootstrap)
+    # Priority 2: Inverse Volatility (if vol_proxy provided)
+    if sample_weight is not None:
+        actual_weights = np.asarray(sample_weight)
+        actual_weights /= actual_weights.mean() # Normalize to preserve scale
+    elif vol_proxy is not None:
+        actual_weights = (1.0 / vol_proxy).fillna(vol_proxy.median()).values
+        actual_weights /= actual_weights.mean() # Normalize to preserve scale
+    else:
+        actual_weights = None
 
     # 2. Robust Scaling (NumPy-first for speed)
     scaler = RobustScaler()
@@ -37,8 +44,11 @@ def prepare_huber_production_orchestrator(
     # 3. Vectorized Ensemble Training (Parallel Grid Fit)
     # 3x3 Grid: 3 Epsilons x 3 Alphas = 9 Teachers
     def _fit_huber(eps, alpha):
-        h = HuberRegressor(epsilon=eps, alpha=alpha, max_iter=1000)
-        h.fit(X_tr_scaled, y_train, sample_weight=sample_weights)
+        h = HuberRegressor(epsilon=eps, alpha=alpha, max_iter=5000)  # Increased max_iter for better convergence
+        if actual_weights is not None:
+            h.fit(X_tr_scaled, y_train, sample_weight=actual_weights)
+        else:
+            h.fit(X_tr_scaled, y_train)
         return h.coef_, h.predict(X_tr_scaled), h
 
     results = Parallel(n_jobs=n_jobs)(
@@ -73,14 +83,6 @@ def prepare_huber_production_orchestrator(
         X_imp_ranks = pd.DataFrame(X_tr_scaled[:, keep_mask][:, imp_mask]).rank().values
         corr_matrix = np.corrcoef(X_imp_ranks.T)
         
-        interaction_groups = {}
-        for i, label in enumerate(cluster_labels):
-            idx = int(important_idx[i])
-            # Use feature NAME instead of index for XGBoost/LGBM DataFrame compatibility
-            feat_name = X_train_pruned.columns[idx]
-            interaction_groups.setdefault(label, []).append(feat_name)
-        interaction_constraints = list(interaction_groups.values())
-    else:
         D = np.clip(1 - np.abs(corr_matrix), 0, 1)
         Z = linkage(squareform(D, checks=False), method='complete')
         
@@ -109,9 +111,12 @@ def prepare_huber_production_orchestrator(
             'val': get_consensus_pred(X_val),
             'test': get_consensus_pred(X_test)
         },
-        "huber_model": huber, # For future inspection and prediction
-        "huber_model": huber, # For future inspection
+        'huber_models': models, # For future inspection and prediction
         'quantile_meta_targets': y_train - warm_start_tr,
-        'scaler': scaler,
-        'models': models
+        'scaler': scaler
     }
+
+# Backward compatibility alias
+def prepare_huber_production_orchestrator(*args, **kwargs):
+    """Deprecated alias for prepare_huber_teacher_outputs"""
+    return prepare_huber_teacher_outputs(*args, **kwargs)

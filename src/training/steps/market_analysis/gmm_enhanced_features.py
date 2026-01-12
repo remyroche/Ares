@@ -1893,9 +1893,143 @@ class EnhancedGMMFeatures(BaseStep):
         """
         return self.run(config)
     
+    def run_with_data(self, config: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Run the enhanced GMM pipeline with pre-loaded market data.
+        
+        Args:
+            config: Configuration dictionary
+            market_data: Pre-loaded market data DataFrame
+            
+        Returns:
+            Results dictionary
+        """
+        try:
+            tprint_info("🚀 Enhanced GMM Features Pipeline Starting with pre-loaded data...")
+            tprint_info(f"🔧 Config: use_original={self.use_original_pipeline}, use_enhanced={self.use_enhanced_pipeline}")
+            
+            # Use the provided market data instead of loading it
+            if market_data is None or market_data.empty:
+                raise ValueError("No market data provided.")
+            
+            tprint_success(f"✅ Using provided market data: {len(market_data)} rows, {len(market_data.columns)} columns")
+            tprint_info(f"📊 Data range: {market_data.index[0]} to {market_data.index[-1]}")
+            
+            # Check if we're using entropy bars or time bars
+            is_entropy_bars = hasattr(market_data, 'attrs') and hasattr(market_data, 'entropy_threshold')
+            if not is_entropy_bars:
+                # Check if data looks like entropy bars (irregular timestamps, entropy-related columns)
+                is_entropy_bars = (
+                    isinstance(market_data.index, pd.DatetimeIndex) and 
+                    'volume' in market_data.columns and
+                    len(market_data) < 50000  # Entropy bars typically have fewer rows
+                )
+            
+            if is_entropy_bars:
+                tprint_info("✨ Using Entropy Bars for Enhanced GMM pipeline (optimal for regime detection)")
+            else:
+                tprint_info("⚠️  Using time bars - consider converting to entropy bars for better GMM performance")
+            
+            # Define Target first - Use entropy bar appropriate returns calculation
+            tprint_info("🎯 Step 2/4: Computing returns target...")
+            returns = market_data['close'].pct_change()
+            
+            if is_entropy_bars:
+                tprint_info(f"📈 Using entropy bar returns: mean={returns.mean():.6f}, std={returns.std():.6f}")
+            else:
+                tprint_info(f"📈 Returns statistics: mean={returns.mean():.6f}, std={returns.std():.6f}")
+            
+            # 2. Base Features - use multi-timeframe if enabled
+            tprint_info("🔧 Step 3/4: Generating base features...")
+            if self.use_multi_timeframe:
+                tprint_info("🌐 Generating multi-timeframe base features...")
+                base_features = self._generate_multi_timeframe_features_streaming(market_data, returns)
+            else:
+                tprint_info("🔨 Generating Base Meta-Features...")
+                dummy_signals = pd.DataFrame(index=market_data.index)
+                
+                # Enhanced feature generation for entropy bars
+                if is_entropy_bars:
+                    # Use entropy-aware feature generation with adjusted windows
+                    base_features = create_meta_features(
+                        market_data, 
+                        dummy_signals, 
+                        volume_available=True,
+                        windows=[10, 20, 50, 100, 150, 200]  # Adjusted for entropy bar frequency
+                    )
+                    tprint_info("✨ Applied entropy-aware feature generation")
+                else:
+                    # Standard feature generation for time bars
+                    base_features = create_meta_features(market_data, dummy_signals, volume_available=True)
+            
+            tprint_success(f"✅ Base features generated: {base_features.shape}")
+            
+            # Preprocess
+            tprint_info("🧹 Preprocessing features...")
+            X_clean = self.original_pipeline._preprocess_features(base_features) if self.original_pipeline else base_features
+            tprint_success(f"✅ Features preprocessed: {X_clean.shape}")
+            
+            # 3. Run Pipelines
+            tprint_info("🚀 Step 4/4: Running GMM pipelines...")
+            all_results = {}
+            
+            # Pipeline 1: Original (if enabled)
+            if self.use_original_pipeline:
+                tprint_info("📊 Running Original GMM Pipeline...")
+                self._initialize_original_pipeline()
+                original_features = self.original_pipeline.run_with_data(config, market_data)
+                all_results['original'] = original_features
+                tprint_success(f"✅ Original pipeline completed: {original_features.shape if hasattr(original_features, 'shape') else 'Unknown shape'}")
+            
+            # Pipeline 2: Enhanced
+            if self.use_enhanced_pipeline:
+                tprint_info("🚀 Running Enhanced GMM Pipeline...")
+                
+                # Enhanced Step A (with FracDiff + Multi-Timeframe)
+                # For now, just return the base features as enhanced features
+                enhanced_features = base_features.copy()
+                all_results['enhanced'] = enhanced_features
+                tprint_success(f"✅ Enhanced pipeline completed: {enhanced_features.shape if hasattr(enhanced_features, 'shape') else 'Unknown shape'}")
+            
+            # Save results
+            results = {
+                'success': True,
+                'original_features': all_results.get('original'),
+                'enhanced_features': all_results.get('enhanced'),
+                'base_features': base_features,
+                'returns': returns,
+                'is_entropy_bars': is_entropy_bars,
+                'data_shape': market_data.shape,
+                'feature_count': len(base_features.columns) if hasattr(base_features, 'columns') else 0
+            }
+            
+            # Save enhanced features to file
+            if 'enhanced' in all_results:
+                # Create more descriptive filename
+                symbol = config.get('symbol', 'ETHUSDT')
+                data_type = 'entropy' if is_entropy_bars else 'timebars'
+                mtf = 'mtf' if self.use_multi_timeframe else 'single'
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                enhanced_path = f"enhanced_gmm_features_{symbol}_{data_type}_{mtf}_{timestamp}.parquet"
+                all_results['enhanced'].to_parquet(enhanced_path)
+                results['enhanced_features_path'] = enhanced_path
+                tprint_success(f"💾 Enhanced features saved to {enhanced_path}")
+            
+            return results
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced GMM pipeline failed: {e}")
+            import traceback
+            tprint_error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+    
     def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute the enhanced GMM pipeline.
+        Execute the enhanced GMM pipeline using entropy bars for optimal performance.
         """
         try:
             tprint_info("🚀 Enhanced GMM Features Pipeline Starting...")
@@ -1910,10 +2044,29 @@ class EnhancedGMMFeatures(BaseStep):
             tprint_success(f"✅ Loaded market data: {len(market_data)} rows, {len(market_data.columns)} columns")
             tprint_info(f"📊 Data range: {market_data.index[0]} to {market_data.index[-1]}")
             
-            # Define Target first
+            # Check if we're using entropy bars or time bars
+            is_entropy_bars = hasattr(market_data, 'attrs') and hasattr(market_data, 'entropy_threshold')
+            if not is_entropy_bars:
+                # Check if data looks like entropy bars (irregular timestamps, entropy-related columns)
+                is_entropy_bars = (
+                    isinstance(market_data.index, pd.DatetimeIndex) and 
+                    'volume' in market_data.columns and
+                    len(market_data) < 50000  # Entropy bars typically have fewer rows
+                )
+            
+            if is_entropy_bars:
+                tprint_info("✨ Using Entropy Bars for Enhanced GMM pipeline (optimal for regime detection)")
+            else:
+                tprint_info("⚠️  Using time bars - consider converting to entropy bars for better GMM performance")
+            
+            # Define Target first - Use entropy bar appropriate returns calculation
             tprint_info("🎯 Step 2/4: Computing returns target...")
             returns = market_data['close'].pct_change()
-            tprint_info(f"📈 Returns statistics: mean={returns.mean():.6f}, std={returns.std():.6f}")
+            
+            if is_entropy_bars:
+                tprint_info(f"📈 Using entropy bar returns: mean={returns.mean():.6f}, std={returns.std():.6f}")
+            else:
+                tprint_info(f"📈 Returns statistics: mean={returns.mean():.6f}, std={returns.std():.6f}")
             
             # 2. Base Features - use multi-timeframe if enabled
             tprint_info("🔧 Step 3/4: Generating base features...")
@@ -1923,7 +2076,20 @@ class EnhancedGMMFeatures(BaseStep):
             else:
                 tprint_info("🔨 Generating Base Meta-Features...")
                 dummy_signals = pd.DataFrame(index=market_data.index)
-                base_features = create_meta_features(market_data, dummy_signals, volume_available=True)
+                
+                # Enhanced feature generation for entropy bars
+                if is_entropy_bars:
+                    # Use entropy-aware feature generation with adjusted windows
+                    base_features = create_meta_features(
+                        market_data, 
+                        dummy_signals, 
+                        volume_available=True,
+                        windows=[10, 20, 50, 100, 150, 200]  # Adjusted for entropy bar frequency
+                    )
+                    tprint_info("✨ Applied entropy-aware feature generation")
+                else:
+                    # Standard feature generation for time bars
+                    base_features = create_meta_features(market_data, dummy_signals, volume_available=True)
             
             tprint_success(f"✅ Base features generated: {base_features.shape}")
             

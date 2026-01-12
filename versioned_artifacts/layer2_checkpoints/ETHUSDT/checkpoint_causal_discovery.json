@@ -1,220 +1,75 @@
 {
   "step_name": "causal_discovery",
   "step_index": 3,
-  "timestamp": "20260110_190123",
-  "symbol": "UNKNOWN",
-  "config_hash": "99914b932bd3",
+  "timestamp": "20260113_003605",
+  "symbol": "ETHUSDT",
+  "config_hash": "2b62410f9152",
   "data_keys": [
     "df",
     "causal_graph"
   ],
   "json_data": {
     "causal_graph": {
-      "drawdown_w20": [
-        "close_location_value_w20",
-        "close_location_value_w10",
-        "close_location_value_w50"
-      ],
-      "volume_weighted_rsi_w20": [
-        "drawdown_w20",
-        "close_location_value_w10",
-        "drawdown_w50",
-        "force_index_w50",
-        "smoothed_return",
-        "macd_hist_w50",
-        "left_tail_var_ratio_w20",
-        "close_location_value_w50",
-        "ease_of_movement_w20",
-        "close_location_value_w20"
-      ],
-      "ease_of_movement_w10": [
-        "drawdown_w20",
-        "close_location_value_w10",
-        "drawdown_w50",
-        "close_location_value_w50",
-        "close_location_value_w20"
-      ],
-      "drawdown_w50": [
-        "drawdown_w20",
-        "close_location_value_w20",
-        "close_location_value_w10",
-        "close_location_value_w50"
-      ],
       "log_ret": [
-        "drawdown_w20",
         "close_location_value_w20",
-        "close_location_value_w10",
-        "drawdown_w50",
-        "force_index_w50",
-        "left_tail_var_ratio_w10",
-        "close_location_value_w50",
-        "left_tail_var_ratio_w20"
+        "close_lag_1",
+        "dist_to_long_proxy"
       ],
-      "smoothed_return": [
-        "drawdown_w20",
-        "close_location_value_w20",
-        "close_location_value_w10",
-        "ease_of_movement_w10",
-        "drawdown_w50",
-        "force_index_w50",
+      "macd_hist_w10": [
         "log_ret",
-        "ease_of_movement_w200",
-        "ease_of_movement_w50",
-        "left_tail_var_ratio_w10",
-        "macd_hist_w50",
-        "close_location_value_w50",
-        "ease_of_movement_w150",
-        "ease_of_movement_w20",
-        "left_tail_var_ratio_w200",
-        "left_tail_var_ratio_w20"
-      ],
-      "ease_of_movement_w50": [
-        "drawdown_w20",
         "close_location_value_w20",
-        "ease_of_movement_w10",
-        "drawdown_w50",
-        "ease_of_movement_w200",
-        "ease_of_movement_w150",
-        "ease_of_movement_w20",
-        "close_location_value_w50"
+        "dist_to_long_proxy"
       ],
-      "left_tail_var_ratio_w10": [
-        "drawdown_w20",
+      "rsi_ratio_w10_vs_w40": [
+        "log_ret",
         "close_location_value_w20",
-        "close_location_value_w10",
-        "ease_of_movement_w10",
-        "drawdown_w50",
-        "force_index_w50",
-        "close_location_value_w50"
+        "macd_hist_w10",
+        "dist_to_long_proxy"
       ],
-      "macd_hist_w50": [
-        "drawdown_w20",
-        "ehlers_fisher_transform_w100",
-        "ehlers_fisher_transform_w50",
-        "ease_of_movement_w10",
-        "force_index_w50",
-        "ease_of_movement_w200",
-        "ease_of_movement_w150",
-        "ease_of_movement_w20",
-        "close_location_value_w10",
-        "ease_of_movement_w50"
+      "shadow_asymmetry_w50": [
+        "log_ret",
+        "close_location_value_w20",
+        "macd_hist_w10",
+        "rsi_ratio_w10_vs_w40",
+        "dist_to_long_proxy"
       ],
-      "ease_of_movement_w20": [
-        "drawdown_w20",
-        "ease_of_movement_w10",
-        "drawdown_w50",
-        "close_location_value_w50",
-        "ease_of_movement_w150",
+      "dist_to_long_proxy": [
         "close_location_value_w20"
       ],
-      "ehlers_fisher_transform_w50": [
-        "ehlers_fisher_transform_w100",
-        "ease_of_movement_w10",
-        "ease_of_movement_w50",
-        "ease_of_movement_w20"
+      "range_per_volume_w50": [
+        "price_impact_w20"
       ],
-      "ehlers_fisher_transform_w100": [
-        "ease_of_movement_w20"
+      "volatility_w50": [
+        "price_impact_w20",
+        "downside_semivariance_w50",
+        "range_per_volume_w50",
+        "price_impact_w50",
+        "volatility_1d"
       ],
-      "close_location_value_w20": [
-        "close_location_value_w10"
+      "price_impact_w50": [
+        "price_impact_w20",
+        "downside_semivariance_w50"
       ],
-      "force_index_w50": [
-        "close_location_value_w20",
-        "close_location_value_w10",
-        "ease_of_movement_w10",
-        "drawdown_w50",
-        "ease_of_movement_w50",
-        "downside_semivariance_w20",
-        "close_location_value_w50",
-        "ease_of_movement_w150",
-        "ease_of_movement_w20",
-        "drawdown_w20",
-        "ease_of_movement_w200"
-      ],
-      "left_tail_var_ratio_w20": [
-        "close_location_value_w20",
-        "force_index_w50",
-        "left_tail_var_ratio_w10",
-        "downside_semivariance_w20",
-        "ease_of_movement_w20",
-        "drawdown_w20",
-        "close_location_value_w10",
-        "drawdown_w50",
-        "close_location_value_w50"
-      ],
-      "close_location_value_w50": [
-        "close_location_value_w20",
-        "close_location_value_w10"
-      ],
-      "ease_of_movement_w150": [
-        "close_location_value_w20",
-        "ease_of_movement_w10",
-        "close_location_value_w50",
-        "drawdown_w20",
-        "drawdown_w50"
-      ],
-      "volatility_zscore_w200": [
-        "volatility_1d",
-        "volatility_w200",
-        "volatility_w50"
+      "volatility_1d": [
+        "downside_semivariance_w50",
+        "price_impact_w50",
+        "price_impact_w20"
       ],
       "volatility_5d": [
         "volatility_1d"
-      ],
-      "ease_of_movement_w200": [
-        "ease_of_movement_w10",
-        "ease_of_movement_w150",
-        "ease_of_movement_w20",
-        "drawdown_w20",
-        "drawdown_w50",
-        "close_location_value_w50"
       ],
       "volume": [
         "close",
         "open"
       ],
-      "volatility_w200": [
-        "volatility_trend_slope_w100",
-        "volatility_1d",
-        "downside_semivariance_w20",
-        "price_impact_w100",
-        "price_impact_w20"
-      ],
-      "volatility_w50": [
-        "volatility_trend_slope_w100",
-        "volatility_1d",
-        "volatility_w200",
-        "downside_semivariance_w20",
-        "price_impact_w100",
-        "price_impact_w20"
-      ],
-      "volatility_trend_slope_w100": [
-        "price_impact_w100"
-      ],
       "open": [
         "close"
       ],
-      "left_tail_var_ratio_w200": [
-        "force_index_w50",
-        "ease_of_movement_w200",
-        "left_tail_var_ratio_w20",
-        "close_location_value_w50",
-        "drawdown_w20",
-        "close_location_value_w20",
-        "drawdown_w50"
+      "adx_trend_strength_w50": [
+        "adx_trend_strength_w20"
       ],
-      "volatility_1d": [
-        "price_impact_w20",
-        "price_impact_w100"
-      ],
-      "rolling_skewness_w20": [
-        "downside_semivariance_w20",
-        "left_tail_var_ratio_w20"
-      ],
-      "price_impact_w20": [
-        "downside_semivariance_w20",
-        "price_impact_w100"
+      "low_range_20": [
+        "close_range_20"
       ]
     }
   }

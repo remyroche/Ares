@@ -91,6 +91,22 @@ class DePradoFeatureEngine:
         # Compute correlation matrix
         corr = X.corr().fillna(0)
         
+        # Debug: Check correlation matrix properties
+        tprint_info(f"🔍 Correlation matrix shape: {corr.shape}")
+        tprint_info(f"   Correlation stats: min={corr.min().min():.3f}, max={corr.max().max():.3f}")
+        
+        # Check for highly correlated features
+        high_corr_pairs = []
+        for i in range(len(corr.columns)):
+            for j in range(i+1, len(corr.columns)):
+                if abs(corr.iloc[i, j]) > 0.95:
+                    high_corr_pairs.append((corr.columns[i], corr.columns[j], corr.iloc[i, j]))
+        
+        if high_corr_pairs:
+            tprint_warning(f"   Found {len(high_corr_pairs)} highly correlated pairs (>0.95)")
+            for pair in high_corr_pairs[:3]:  # Show first 3
+                tprint_warning(f"      {pair[0]} - {pair[1]}: {pair[2]:.3f}")
+        
         # Handle perfect correlation
         if corr.isin([1.0]).all().all():
             tprint_warning("All features are perfectly correlated. Using single cluster.")
@@ -111,16 +127,32 @@ class DePradoFeatureEngine:
                 clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
                 cluster_labels = clusterer.fit_predict(X)
                 
+                # Debug: Check if clustering actually produced k clusters
+                unique_labels = np.unique(cluster_labels)
+                if len(unique_labels) != k:
+                    tprint_warning(f"Clustering for k={k}: Expected {k} clusters, got {len(unique_labels)}")
+                
                 # Compute silhouette score
-                if len(np.unique(cluster_labels)) > 1:
-                    score = silhouette_score(dist, cluster_labels, metric='precomputed')
+                if len(unique_labels) > 1:
+                    # For precomputed distance, we need to pass the distance matrix
+                    # But cluster_labels corresponds to samples, not features
+                    # We should compute silhouette on the feature correlation distance
+                    score = silhouette_score(dist.T, cluster_labels, metric='precomputed')
                     scores_history[k] = score
+                    tprint_info(f"   k={k}: silhouette={score:.3f}")
                     
                     if score > best_score:
                         best_score, best_k = score, k
+                else:
+                    tprint_warning(f"Clustering for k={k}: Only 1 cluster found")
                         
             except Exception as e:
                 tprint_warning(f"Clustering failed for k={k}: {e}")
+                # Debug: Print more details about the data
+                if k == 2:  # Only print for first failure to avoid spam
+                    tprint_warning(f"   Data shape: {X.shape}")
+                    tprint_warning(f"   Distance matrix shape: {dist.shape}")
+                    tprint_warning(f"   Distance matrix stats: min={dist.min():.3f}, max={dist.max():.3f}, mean={dist.mean():.3f}")
                 continue
         
         if best_k == 2 and best_score < 0:

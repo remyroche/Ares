@@ -134,7 +134,8 @@ def vectorized_feature_selection(
     method: str = 'correlation',
     top_k: int = 20,
     min_variance: float = 1e-6,
-    n_jobs: int = -1
+    n_jobs: int = -1,
+    verbose: bool = False
 ) -> List[str]:
     """
     Vectorized feature selection with 8x speedup.
@@ -459,7 +460,8 @@ def vectorized_geometry_search(
     horizon_range: Tuple[int, int] = (5, 100),
     n_kappa: int = 20,
     n_horizon: int = 20,
-    top_k: int = 5
+    top_k: int = 5,
+    verbose: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Vectorized geometry search with 7.5x speedup.

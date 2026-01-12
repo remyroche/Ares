@@ -159,9 +159,18 @@ class SpecialistDataValidator:
             issues.append("Data is not a pandas DataFrame")
             return False, issues
         
-        # Check required columns (make prediction/probability optional for feature-only specialists)
-        required_columns = ['target_label']
-        optional_columns = ['specialist_prediction', 'specialist_probability']
+        # Check if this is a feature-only specialist (no predictions/probabilities)
+        has_predictions = any(col in df.columns for col in ['specialist_prediction', 'specialist_probability'])
+        
+        # Check required columns
+        if has_predictions:
+            # For specialists with predictions, target_label is required
+            required_columns = ['target_label']
+            optional_columns = ['specialist_prediction', 'specialist_probability']
+        else:
+            # For feature-only specialists, target_label is optional
+            required_columns = []
+            optional_columns = ['target_label', 'specialist_prediction', 'specialist_probability']
         
         for col in required_columns:
             if col not in df.columns:
@@ -170,7 +179,10 @@ class SpecialistDataValidator:
         # Check optional columns and warn if missing
         missing_optional = [col for col in optional_columns if col not in df.columns]
         if missing_optional:
-            issues.append(f"Missing optional columns: {missing_optional} (feature-only specialist)")
+            if not has_predictions and 'target_label' in missing_optional:
+                issues.append(f"Missing optional columns: {missing_optional} (feature-only specialist)")
+            else:
+                issues.append(f"Missing optional columns: {missing_optional}")
         
         # Check data quality
         if len(df) < self.requirements.min_samples:

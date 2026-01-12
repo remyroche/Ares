@@ -39,10 +39,13 @@ def _numba_loss_l2(W, X):
     L = 0.5/n * ||X - XW||^2
     """
     n = X.shape[0]
-    M = X @ W
-    R = X - M
+    # Ensure dtype compatibility for matrix multiplication
+    W_float = W.astype(np.float64)
+    X_float = X.astype(np.float64)
+    M = X_float @ W_float
+    R = X_float - M
     loss = 0.5 / n * np.sum(R ** 2)
-    G_loss = - 1.0 / n * (X.T @ R)
+    G_loss = - 1.0 / n * (X_float.T @ R)
     return loss, G_loss
 
 @njit(fastmath=True, cache=True)
@@ -51,12 +54,15 @@ def _numba_loss_logistic(W, X):
     Numba optimized Logistic loss and gradient.
     """
     n = X.shape[0]
-    M = X @ W
+    # Ensure dtype compatibility for matrix multiplication
+    W_float = W.astype(np.float64)
+    X_float = X.astype(np.float64)
+    M = X_float @ W_float
     # logaddexp(0, M)
-    loss = 1.0 / n * np.sum(np.logaddexp(0.0, M) - X * M)
+    loss = 1.0 / n * np.sum(np.logaddexp(0.0, M) - X_float * M)
     # sigmoid(M)
     sig_M = 1.0 / (1.0 + np.exp(-M))
-    G_loss = 1.0 / n * (X.T @ (sig_M - X))
+    G_loss = 1.0 / n * (X_float.T @ (sig_M - X_float))
     return loss, G_loss
 
 # _h remains non-JIT due to scipy.expm dependency (matrix exponential)

@@ -547,7 +547,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         
         # Step 1: Load market data with memory optimization
         tprint_info("📥 Loading market data...")
-        market_data, source = self.load_market_data_or_fail(config)
+        market_data, source = self.load_market_data_or_fail(config, skip_artifacts=True)
         if market_data is None or market_data.empty:
             error_msg = "❌ Failed to load market data"
             tprint_error(error_msg)
@@ -1181,6 +1181,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             features_clean = features_clean.drop(columns=to_drop)
             
             # Select top features
+            # Handle NaN values before SelectKBest
+            features_clean = features_clean.fillna(0)  # Replace NaN with 0
             selector = SelectKBest(f_regression, k=min(50, len(features_clean.columns)))
             selected_features = selector.fit_transform(features_clean, labels)
             
@@ -1263,6 +1265,18 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
             tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(selected_features_names)} features")
             
+            # Convert monotonic_constraints dict to array for tree models that need it
+            if isinstance(monotonic_constraints, dict):
+                # Map selected features to their monotonic constraints
+                mono_cst_array = []
+                for feat in selected_features_names:
+                    mono_cst_array.append(monotonic_constraints.get(feat, 0))
+                mono_cst_array_np = np.array(mono_cst_array)  # numpy array for sklearn
+                mono_cst_array_list = mono_cst_array_np.tolist()  # list for CatBoost
+            else:
+                mono_cst_array_np = np.array(monotonic_constraints) if not isinstance(monotonic_constraints, np.ndarray) else monotonic_constraints
+                mono_cst_array_list = mono_cst_array_np.tolist()
+            
             results = {}
             
             def calculate_score(y_true, y_pred):
@@ -1273,6 +1287,13 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             # --- Model 1: ExtraTrees ---
             # Sklearn 1.4+ supports monotonic_cst
             tprint_info("🌲 Training ExtraTrees...")
+            tprint_info(f"   🔧 Monotonic constraints: {mono_cst_array_np}")
+            # Count constraint types
+            neg_count = sum(1 for x in mono_cst_array_np if x == -1)
+            pos_count = sum(1 for x in mono_cst_array_np if x == 1)
+            zero_count = sum(1 for x in mono_cst_array_np if x == 0)
+            tprint_info(f"   📊 Constraints: {neg_count} negative, {pos_count} positive, {zero_count} unconstrained")
+            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
             
             def objective_et(trial):
                 n_estimators = trial.suggest_int('n_estimators', 100, 500)
@@ -1286,7 +1307,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                         n_estimators=n_estimators,
                         max_depth=max_depth,
                         min_samples_leaf=min_samples_leaf,
-                        monotonic_cst=monotonic_constraints, # Check argument name
+                        monotonic_cst=mono_cst_array_np, # Use numpy array for sklearn
                         n_jobs=-1,
                         random_state=42
                     )
@@ -1311,17 +1332,23 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
             # Retrain best ET
             best_et_params = study_et.best_params
+            tprint_info(f"   🏆 Best ET params: {best_et_params}")
             try:
-                best_et = ExtraTreesRegressor(**best_et_params, monotonic_cst=monotonic_constraints, n_jobs=-1, random_state=42)
+                best_et = ExtraTreesRegressor(**best_et_params, monotonic_cst=mono_cst_array_np, n_jobs=-1, random_state=42)
+                tprint_info("   ✅ Using monotonic constraints")
             except TypeError:
                 best_et = ExtraTreesRegressor(**best_et_params, n_jobs=-1, random_state=42)
+                tprint_info("   ⚠️ Monotonic constraints not supported (older sklearn)")
             best_et.fit(X_train_sel, y_train)
             pred_et = best_et.predict(X_oof_sel)
             score_et, ic_et, auc_et = calculate_score(y_oof, pred_et)
             results['ExtraTrees'] = {'score': score_et, 'ic': ic_et, 'auc': auc_et, 'model': best_et}
+            tprint_success(f"   ✅ ExtraTrees: Score={score_et:.4f}, IC={ic_et:.4f}, AUC={auc_et:.4f}")
 
             # --- Model 2: XGBoost ---
             tprint_info("🚀 Training XGBoost...")
+            tprint_info(f"   🔧 Fixed params: {xgb_fixed_params}")
+            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
             # Fixed params from user
             xgb_fixed_params = {
                 'num_parallel_tree': 7,
@@ -1356,14 +1383,19 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             study_xgb = optuna.create_study(direction='maximize', pruner=MedianPruner())
             study_xgb.optimize(objective_xgb, n_trials=10)
             
-            best_xgb = XGBRegressor(**xgb_fixed_params, **study_xgb.best_params)
+            best_xgb_params = study_xgb.best_params
+            tprint_info(f"   🏆 Best XGB params: {best_xgb_params}")
+            best_xgb = XGBRegressor(**xgb_fixed_params, **best_xgb_params)
             best_xgb.fit(X_train_sel, y_train, base_margin=warm_start_train)
             pred_xgb = best_xgb.predict(X_oof_sel, base_margin=warm_start_oof)
             score_xgb, ic_xgb, auc_xgb = calculate_score(y_oof, pred_xgb)
             results['XGBoost'] = {'score': score_xgb, 'ic': ic_xgb, 'auc': auc_xgb, 'model': best_xgb}
+            tprint_success(f"   ✅ XGBoost: Score={score_xgb:.4f}, IC={ic_xgb:.4f}, AUC={auc_xgb:.4f}")
 
             # --- Model 3: CatBoost ---
             tprint_info("🐱 Training CatBoost...")
+            tprint_info(f"   🔧 Fixed params: {cb_fixed_params}")
+            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
             # Fixed params
             cb_fixed_params = {
                 'subsample': 0.6,
@@ -1374,10 +1406,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 'bootstrap_type': 'MVS',
                 'verbose': False,
                 'allow_writing_files': False,
-                # Monotonic constraints format in CatBoost: string or list.
-                # tuple of -1,0,1 might need conversion to string or list?
-                # CatBoost accepts list/tuple of int.
-                'monotone_constraints': monotonic_constraints
+                # Monotonic constraints format in CatBoost: list/tuple of int
+                'monotone_constraints': mono_cst_array_list
             }
             
             def objective_cb(trial):
@@ -1413,16 +1443,22 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             study_cb = optuna.create_study(direction='maximize', pruner=MedianPruner())
             study_cb.optimize(objective_cb, n_trials=10)
 
-            best_cb = CatBoostRegressor(**cb_fixed_params, **study_cb.best_params)
+            best_cb_params = study_cb.best_params
+            tprint_info(f"   🏆 Best CB params: {best_cb_params}")
+            best_cb = CatBoostRegressor(**cb_fixed_params, **best_cb_params)
             train_pool = Pool(X_train_sel, y_train, baseline=warm_start_train)
             best_cb.fit(train_pool)
             eval_pool = Pool(X_oof_sel, baseline=warm_start_oof)
             pred_cb = best_cb.predict(eval_pool)
             score_cb, ic_cb, auc_cb = calculate_score(y_oof, pred_cb)
             results['CatBoost'] = {'score': score_cb, 'ic': ic_cb, 'auc': auc_cb, 'model': best_cb}
+            tprint_success(f"   ✅ CatBoost: Score={score_cb:.4f}, IC={ic_cb:.4f}, AUC={auc_cb:.4f}")
 
             # --- Model 4: LGBM ---
             tprint_info("🍃 Training LGBM...")
+            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
+            tprint_info(f"   🔧 Monotonic constraints: {monotonic_constraints}")
+            tprint_info(f"   🔧 Interaction constraints: {interaction_constraints}")
             # Optuna tuning + Interaction constraints
 
             def objective_lgbm(trial):
@@ -1458,6 +1494,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             study_lgbm.optimize(objective_lgbm, n_trials=10)
 
             best_lgbm_params = study_lgbm.best_params
+            tprint_info(f"   🏆 Best LGBM params: {best_lgbm_params}")
             best_lgbm = LGBMRegressor(
                 **best_lgbm_params,
                 monotone_constraints=monotonic_constraints,
@@ -1471,6 +1508,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             pred_lgbm = pred_lgbm_raw + warm_start_oof
             score_lgbm, ic_lgbm, auc_lgbm = calculate_score(y_oof, pred_lgbm)
             results['LGBM'] = {'score': score_lgbm, 'ic': ic_lgbm, 'auc': auc_lgbm, 'model': best_lgbm}
+            tprint_success(f"   ✅ LGBM: Score={score_lgbm:.4f}, IC={ic_lgbm:.4f}, AUC={auc_lgbm:.4f}")
 
             # 4. Compare and Pick Winner
             tprint_info("\n🏆 Model Comparison (Winner = IC * AUC on OOF):")
@@ -1506,103 +1544,98 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
     async def _apply_gmm_enhancement_to_features(self, features: pd.DataFrame, market_data: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Apply comprehensive GMM enhancement using EnhancedGMMFeatures class."""
-        try:
-            tprint_info("🧠 Starting comprehensive GMM enhancement with EnhancedGMMFeatures...")
-            
-            # Import the enhanced GMM class
-            from src.training.steps.market_analysis.gmm_enhanced_features import EnhancedGMMFeatures
-            
-            # Initialize EnhancedGMMFeatures with optimized configuration
-            gmm_enhancer = EnhancedGMMFeatures(
-                use_original_pipeline=True,
-                use_enhanced_pipeline=True,
-                use_fracdiff=True,
-                use_treeshap=True,
-                use_multi_timeframe=True,  # RE-ENABLED with optimizations
-                use_streaming=True,
-                n_clusters_macro=8,
-                pca_variance=0.95,
-                n_latent_factors=8,
-                fracdiff_config={
-                    'max_d': 1.0,
-                    'min_d': 0.0,
-                    'adf_threshold': 0.01,
-                    'method': 'binary_search',
-                    'tolerance': 0.01
-                },
-                kinematics_config={
-                    'velocity_windows': [1, 3, 5],
-                    'acceleration_windows': [3, 5, 10],
-                    'jerk_windows': [5, 10, 15]
-                },
-                overextended_config={
-                    'return_threshold': 2.0,
-                    'entropy_threshold': 0.8,
-                    'z_familiarity_threshold': -2.0
-                },
-                shock_config={
-                    'probability_jump_threshold': 0.3,
-                    'z_familiarity_jump_threshold': 2.0,
-                    'entropy_drop_threshold': 0.2
-                },
-                treeshap_config={
-                    'n_estimators': 100,
-                    'max_depth': 8,
-                    'interaction_sample_size': 500,
-                    'importance_threshold': 0.01
-                },
-                multi_tf_config={
-                    'base_timeframe': "15m",
-                    'target_timeframes': ["15m", "60m", "4h"],
-                    'fusion_method': 'adaptive',
-                    'max_memory_mb': 2048,  # Increased for better performance
-                    'chunk_size': 50000,    # Increased for fewer iterations
-                    'use_entropy_bars': True  # Enable entropy-based alignment
-                },
-                verbose=True
-            )
-            
-            # Prepare config for EnhancedGMMFeatures
-            gmm_config = {
-                'symbol': config.get('symbol', 'ETHUSDT'),
-                'exchange': config.get('exchange', 'binance'),
-                'timeframe': config.get('timeframe', '15m'),
-                'direction': config.get('direction', 'long'),
-                'execution_mode': 'full'
-            }
-            
-            # Apply the full enhanced GMM pipeline
-            tprint_info("🚀 Running full EnhancedGMMFeatures pipeline...")
-            gmm_results = gmm_enhancer.execute(gmm_config)
-            
-            # Extract enhanced features from results
-            if gmm_results.get('success', False) and 'enhanced_features_path' in gmm_results:
-                import pandas as pd
-                enhanced_features_path = gmm_results['enhanced_features_path']
-                if enhanced_features_path and os.path.exists(enhanced_features_path):
-                    enhanced_features = pd.read_parquet(enhanced_features_path)
-                    
-                    # Align indices with original features
-                    enhanced_features = enhanced_features.reindex(features.index, method='nearest')
-                    
-                    # Combine original features with enhanced GMM features
-                    combined_features = pd.concat([features, enhanced_features], axis=1)
-                    
-                    tprint_success(f"✅ Enhanced GMM pipeline completed: {features.shape} -> {combined_features.shape}")
-                    tprint_info(f"📊 Generated {combined_features.shape[1] - features.shape[1]} enhanced GMM features")
-                    
-                    return combined_features
-                else:
-                    tprint_warning("⚠️ Enhanced GMM features file not found")
-            
-            tprint_warning("⚠️ Enhanced GMM pipeline failed")
-            tprint_error("❌ Fast failing - GMM enhancement required for this pipeline")
-            raise RuntimeError("Enhanced GMM pipeline failed - cannot proceed without GMM features")
-            
-        except Exception as e:
-            tprint_error(f"❌ Enhanced GMM pipeline failed: {e}")
-            tprint_error("❌ Fast failing - GMM enhancement required for this pipeline")
-            raise RuntimeError(f"Enhanced GMM pipeline failed: {e}")
+        tprint_info("🧠 Starting comprehensive GMM enhancement with EnhancedGMMFeatures...")
+        
+        # Import the enhanced GMM class
+        from src.training.steps.market_analysis.gmm_enhanced_features import EnhancedGMMFeatures
+        
+        # Initialize EnhancedGMMFeatures with optimized configuration
+        gmm_enhancer = EnhancedGMMFeatures(
+            use_original_pipeline=True,
+            use_enhanced_pipeline=True,
+            use_fracdiff=True,
+            use_treeshap=True,
+            use_multi_timeframe=True,  # RE-ENABLED with optimizations
+            use_streaming=True,
+            n_clusters_macro=8,
+            pca_variance=0.95,
+            n_latent_factors=8,
+            fracdiff_config={
+                'max_d': 1.0,
+                'min_d': 0.0,
+                'adf_threshold': 0.01,
+                'method': 'binary_search',
+                'tolerance': 0.01
+            },
+            kinematics_config={
+                'velocity_windows': [1, 3, 5],
+                'acceleration_windows': [3, 5, 10],
+                'jerk_windows': [5, 10, 15]
+            },
+            overextended_config={
+                'return_threshold': 2.0,
+                'entropy_threshold': 0.8,
+                'z_familiarity_threshold': -2.0
+            },
+            shock_config={
+                'probability_jump_threshold': 0.3,
+                'z_familiarity_jump_threshold': 2.0,
+                'entropy_drop_threshold': 0.2
+            },
+            treeshap_config={
+                'n_estimators': 100,
+                'max_depth': 8,
+                'interaction_sample_size': 500,
+                'importance_threshold': 0.01
+            },
+            multi_tf_config={
+                'base_timeframe': "15m",
+                'target_timeframes': ["15m", "60m", "4h"],
+                'fusion_method': 'adaptive',
+                'max_memory_mb': 2048,  # Increased for better performance
+                'chunk_size': 50000,    # Increased for fewer iterations
+                'use_entropy_bars': True  # Enable entropy-based alignment
+            },
+            verbose=True
+        )
+        
+        # Prepare config for EnhancedGMMFeatures with market_data already loaded
+        gmm_config = {
+            'symbol': config.get('symbol', 'ETHUSDT'),
+            'exchange': config.get('exchange', 'binance'),
+            'timeframe': config.get('timeframe', '15m'),
+            'direction': config.get('direction', 'long'),
+            'execution_mode': 'full',
+            'market_data': market_data  # Pass the already loaded market data
+        }
+        
+        # Apply the full enhanced GMM pipeline
+        tprint_info("🚀 Running full EnhancedGMMFeatures pipeline...")
+        gmm_results = gmm_enhancer.run_with_data(gmm_config, market_data)
+        
+        # Extract enhanced features from results
+        if gmm_results.get('success', False) and 'enhanced_features_path' in gmm_results:
+            import pandas as pd
+            enhanced_features_path = gmm_results['enhanced_features_path']
+            if enhanced_features_path and os.path.exists(enhanced_features_path):
+                enhanced_features = pd.read_parquet(enhanced_features_path)
+                
+                # Align indices with original features
+                enhanced_features = enhanced_features.reindex(features.index, method='nearest')
+                
+                # Combine original features with enhanced GMM features
+                combined_features = pd.concat([features, enhanced_features], axis=1)
+                
+                tprint_success(f"✅ Enhanced GMM pipeline completed: {features.shape} -> {combined_features.shape}")
+                tprint_info(f"📊 Generated {combined_features.shape[1] - features.shape[1]} enhanced GMM features")
+                
+                return combined_features
+            else:
+                tprint_warning("⚠️ Enhanced GMM features file not found")
+        
+        tprint_warning("⚠️ Enhanced GMM pipeline failed")
+        tprint_error("❌ Fast failing - GMM enhancement required for this pipeline")
+        raise RuntimeError("Enhanced GMM pipeline failed - cannot proceed without GMM features")
     
     def _apply_basic_gmm_fallback(self, features: pd.DataFrame, market_data: pd.DataFrame) -> pd.DataFrame:
         """Basic GMM fallback implementation."""
@@ -2126,7 +2159,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             specialist_config = context.copy()
             specialist_config.update({
                 "force_retrain": force_retrain,
-                "verbose": False  # Reduce verbosity for batch training
+                "verbose": False,  # Reduce verbosity for batch training
+                "market_data": market_data  # Pass market data directly to avoid artifact loading
             })
 
             # #region agent log - Before specialist execute

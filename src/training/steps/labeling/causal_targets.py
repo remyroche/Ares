@@ -434,16 +434,24 @@ class CausalTargetComputer:
             causal_effect_model = LinearRegression()
             causal_effect_model.fit(treatment_residuals, outcome_residuals.ravel())
             
-            causal_effect = causal_effect_model.coef_[0]
-            causal_effect_se = np.sqrt(np.var(outcome_residuals - causal_effect * treatment_residuals) / 
-                                      np.var(treatment_residuals) / n_samples)
+            # Predict outcome from treatment residuals to calculate R-squared
+            y_pred = causal_effect_model.predict(treatment_residuals)
+            
+            # Compute aggregate causal effect (mean coefficient across treatments)
+            causal_effect = np.mean(causal_effect_model.coef_)
+            
+            # Standard error calculation (using residuals from the full model)
+            # outcome_residuals is (n, 1), y_pred is (n,)
+            resid_var = np.var(outcome_residuals.ravel() - y_pred)
+            treat_var = np.var(treatment_residuals)
+            causal_effect_se = np.sqrt(resid_var / (treat_var + 1e-9) / n_samples)
+            
             ci_radius = 1.96 * causal_effect_se
             effect_ci_low = causal_effect - ci_radius
             effect_ci_high = causal_effect + ci_radius
             
-            # Compute R-squared (used as simple refutation proxy)
-            y_pred = causal_effect * treatment_residuals
-            r_squared = 1 - np.var(outcome_residuals - y_pred) / np.var(outcome_residuals)
+            # Compute R-squared
+            r_squared = 1 - resid_var / (np.var(outcome_residuals) + 1e-9)
             refutation_score = float(np.clip(r_squared, 0.0, 1.0))
             
             # Store results
@@ -540,7 +548,13 @@ class CausalTargetComputer:
             heterogeneity_data = self._validate_and_clean_data(heterogeneity_data, "heterogeneity data")
             
             # Use treatment residuals for CATE estimation
-            treatment_residuals = self.causal_effects_["treatment_residuals"].ravel()
+            # If multiple treatments, use their mean residual to stabilize Wald estimator
+            raw_treatment_residuals = self.causal_effects_["treatment_residuals"]
+            if raw_treatment_residuals.ndim > 1 and raw_treatment_residuals.shape[1] > 1:
+                treatment_residuals = raw_treatment_residuals.mean(axis=1)
+            else:
+                treatment_residuals = raw_treatment_residuals.ravel()
+                
             outcome_residuals = self.causal_effects_["outcome_residuals"].ravel()
             
             # Handle subsample indices if present
@@ -868,7 +882,12 @@ class CausalTargetComputer:
             
             # Treatment residuals (for additional analysis)
             if self.causal_effects_:
-                treatment_residuals_data = self.causal_effects_["treatment_residuals"].ravel()
+                # If multiple treatments, use their mean for the 1D target
+                treatment_residuals_raw = self.causal_effects_["treatment_residuals"]
+                if treatment_residuals_raw.ndim > 1 and treatment_residuals_raw.shape[1] > 1:
+                    treatment_residuals_data = treatment_residuals_raw.mean(axis=1)
+                else:
+                    treatment_residuals_data = treatment_residuals_raw.ravel()
                 
                 if self.subsample_indices_ is not None:
                     # Expand treatment residuals back to original size

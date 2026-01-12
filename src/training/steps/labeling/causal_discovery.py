@@ -327,6 +327,43 @@ class CausalDiscovery:
                     if self.verbose:
                         tprint_info(f"      ⏭️ No changes, stopping at size {cond_size-1}")
                     break
+
+            # --- LAYER 2: TARGETED REFINEMENT ---
+            # If we just finished Layer 1 (max_cond=1) and the graph is sparse enough,
+            # auto-refine with higher order tests (Layer 2) to disambiguate edges.
+            current_density = np.sum(adjacency_matrix) / (n_vars * (n_vars - 1))
+            if self.max_conditioning_set == 1 and current_density < 0.15:
+                if self.verbose:
+                    tprint_info(f"   ✨ Layer 1 Complete (Density={current_density:.3f}). Auto-triggering Layer 2 Refinement (max_set=2)...")
+                
+                # Run Refinement (cond_size=2)
+                cond_size = 2
+                edges_removed_cond = 0
+                
+                for i in range(n_vars):
+                    # TARGET-CENTRIC (strictly enforce on refinement)
+                    if target_idx is not None:
+                        if i != target_idx and adjacency_matrix[i, target_idx] == 0:
+                            continue
+                    
+                    neighbors = [j for j in range(n_vars) if adjacency_matrix[i, j] == 1]
+                    for j in neighbors:
+                        common_neighbors = [k for k in neighbors if adjacency_matrix[j, k] == 1 and k != i]
+                        if len(common_neighbors) >= cond_size:
+                            for cond_set in combinations(common_neighbors, cond_size):
+                                x = data.iloc[:, i].values
+                                y = data.iloc[:, j].values
+                                z = data.iloc[:, list(cond_set)].values.T
+                                is_independent, p_value = self.conditional_independence_test(x, y, z)
+                                if is_independent:
+                                    adjacency_matrix[i, j] = 0
+                                    adjacency_matrix[j, i] = 0
+                                    edges_removed_cond += 1
+                                    if self.verbose and edges_removed_cond <= 3:
+                                        tprint_info(f"         ❌ [Refinement] Removed edge {variable_names[i]}-{variable_names[j]} (p={p_value:.4f})")
+                                    break
+                if self.verbose:
+                    tprint_info(f"      ✅ Layer 2 Refinement: Removed {edges_removed_cond} edges")
             
             # Phase 3: Edge orientation (simplified)
             if self.verbose:

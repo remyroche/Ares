@@ -51,7 +51,8 @@ except ImportError:
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.utils.huber_regressor_for_trees import prepare_huber_production_orchestrator
+
 
 class Layer25Chaser:
     """
@@ -160,7 +161,7 @@ class Layer25Chaser:
         self.lgb_model = None
 
         # Huber Teacher components
-        self.huber_model = None
+        self.huber_models = None
         self.scaler = None
         
         # Training metadata
@@ -264,9 +265,14 @@ class Layer25Chaser:
 
             # --- HUBER TEACHER ---
             tprint_info("   🧑‍🏫 Running Huber Teacher for Feature Selection, Constraints & Warm Start...")
-            teacher_outputs = prepare_huber_teacher_outputs(X_clean, y_clean)
+            # Calculate vol proxy (rolling std), fallback to 1s
+            vol_proxy = y_clean.rolling(20, min_periods=5).std().fillna(y_clean.std())
+            if vol_proxy.isna().all() or (vol_proxy == 0).all():
+                vol_proxy = pd.Series(1.0, index=y_clean.index)
 
-            self.huber_model = teacher_outputs['huber_model']
+            teacher_outputs = prepare_huber_production_orchestrator(X_clean, y_clean, vol_proxy)
+
+            self.huber_models = teacher_outputs['huber_models']
             self.scaler = teacher_outputs['scaler']
             self.feature_names = teacher_outputs['selected_features']
             self.interaction_constraints = teacher_outputs['interaction_constraints']
@@ -475,9 +481,11 @@ class Layer25Chaser:
             # --- Huber Prediction ---
             # Huber teacher uses ALL features (robustly scaled)
             # We must pass the full feature set to the scaler, matching fit time
-            huber_pred = self.huber_model.predict(
-                self.scaler.transform(X_non_causal.fillna(0))
-            )
+            X_scaled = self.scaler.transform(X_non_causal.fillna(0))
+            
+            # Predict with ensemble of Huber models
+            huber_preds = [m.predict(X_scaled) for m in self.huber_models]
+            huber_pred = np.mean(huber_preds, axis=0)
 
             # --- Tree Predictions ---
             # Tree models use PRUNED features (self.feature_names)
@@ -560,7 +568,12 @@ class Layer25Chaser:
 
             # --- Huber Teacher for Optimization Subset ---
             # We run teacher on the optimization subset to get correct base margins for CV
-            teacher_outputs = prepare_huber_teacher_outputs(X_opt, y_opt)
+            # Calculate vol proxy for optimization subset
+            vol_proxy_opt = y_opt.rolling(20, min_periods=5).std().fillna(y_opt.std())
+            if vol_proxy_opt.isna().all() or (vol_proxy_opt == 0).all():
+                vol_proxy_opt = pd.Series(1.0, index=y_opt.index)
+
+            teacher_outputs = prepare_huber_production_orchestrator(X_opt, y_opt, vol_proxy_opt)
             X_opt_sel = X_opt[teacher_outputs['selected_features']]
             full_ws = teacher_outputs['warm_start']['train']
             monotonic = teacher_outputs['monotonic_constraints']

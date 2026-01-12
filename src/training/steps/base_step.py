@@ -196,6 +196,15 @@ class BaseStep(ABC):
                 }
                 self._versioned_store._save_metadata()
 
+            # Automatic cleanup of old versions (keep latest 3 per prefix)
+            try:
+                cleanup_result = self._versioned_store.cleanup_old_versions(keep_per_prefix=3, dry_run=False)
+                if cleanup_result:
+                    total_cleaned = sum(len(versions) for versions in cleanup_result.values())
+                    tprint(f"🧹 Cleaned up {total_cleaned} old versions from {store_name}")
+            except Exception as e:
+                tprint(f"⚠️ Version cleanup failed for {store_name}: {e}")
+
             context_str = f"{symbol}/{exchange} [{timeframe}] {direction}/{model}"
             tprint(f"📦 Initialized VersionedArtifactStore: {context_str} at {store_path}")
         return self._versioned_store
@@ -271,6 +280,15 @@ class BaseStep(ABC):
                     'model': model
                 }
                 self._versioned_store._save_metadata()
+
+            # Automatic cleanup of old versions (keep latest 3 per prefix)
+            try:
+                cleanup_result = self._versioned_store.cleanup_old_versions(keep_per_prefix=3, dry_run=False)
+                if cleanup_result:
+                    total_cleaned = sum(len(versions) for versions in cleanup_result.values())
+                    tprint(f"🧹 Cleaned up {total_cleaned} old versions from {store_name}")
+            except Exception as e:
+                tprint(f"⚠️ Version cleanup failed for {store_name}: {e}")
 
             context_str = f"{symbol}/{exchange} [{timeframe}] {direction}/{model}"
             tprint(f"🔄 Reinitialized VersionedArtifactStore with new context: {context_str}")

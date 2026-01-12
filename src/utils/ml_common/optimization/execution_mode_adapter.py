@@ -138,6 +138,40 @@ def adjust_model_iterations_for_mode(
     return adjusted
 
 
+def adjust_bootstrap_for_mode(
+    n_bootstrap: int,
+    execution_mode: Optional[str] = None
+) -> int:
+    """
+    Adjust bootstrap sample count based on execution mode.
+    
+    Args:
+        n_bootstrap: Original number of bootstrap samples
+        execution_mode: Execution mode ('light', 'blank', 'full'). If None, auto-detect.
+    
+    Returns:
+        Adjusted number of bootstrap samples
+    """
+    if execution_mode is None:
+        execution_mode = get_execution_mode()
+    
+    if execution_mode == 'light':
+        # Light mode: 10% of bootstrap samples (minimum 5)
+        adjusted = max(5, int(n_bootstrap * 0.1))
+        logger.info(f"LIGHT mode: Bootstrap samples {n_bootstrap} → {adjusted} (10%)")
+        
+    elif execution_mode == 'blank':
+        # Blank mode: 25% of bootstrap samples (minimum 10)
+        adjusted = max(10, int(n_bootstrap * 0.25))
+        logger.info(f"BLANK mode: Bootstrap samples {n_bootstrap} → {adjusted} (25%)")
+        
+    else:
+        # Full mode: no change
+        adjusted = n_bootstrap
+    
+    return adjusted
+
+
 def set_execution_mode(mode: str) -> None:
     """
     Set the execution mode for all subsequent HPO operations.

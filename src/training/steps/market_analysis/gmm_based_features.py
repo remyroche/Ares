@@ -154,6 +154,8 @@ class GMMFeaturePipeline(BaseStep):
         self.n_clusters_macro = kwargs.get('n_clusters_macro', 8)
         self.pca_variance = kwargs.get('pca_variance', 0.95)
         self.n_latent_factors = kwargs.get('n_latent_factors', 8)
+        self.n_samples = kwargs.get('n_samples', MAX_FITTING_SAMPLES)  # Add n_samples attribute
+        self.n_clusters_causal = kwargs.get('n_clusters_causal', 8)  # Add n_clusters_causal attribute
 
         # Caches
         self.models = {}
@@ -259,14 +261,24 @@ class GMMFeaturePipeline(BaseStep):
         # Use 12-period forward return (approx 3h)
         fwd_ret = returns.shift(-12).fillna(0)
 
-        # Align timelines
+        # Align timelines - ensure fwd_ret and probs have same length
+        min_len = min(len(fwd_ret), len(probs))
+        fwd_ret = fwd_ret.iloc[:min_len]
+        probs = probs[:min_len]
+
         # Compute weighted average return for each cluster
         cluster_returns = []
-        for k in range(self.n_clusters_macro):
+        # Use actual number of clusters from the fitted GMM
+        n_actual_clusters = probs.shape[1]
+        
+        for k in range(n_actual_clusters):
             # Weight = probability of being in cluster k
             w = probs[:, k]
-            # Weighted mean return
-            mean_ret = np.average(fwd_ret, weights=w) if np.sum(w) > 0 else 0.0
+            # Weighted mean return - specify axis=0 for 1D arrays
+            mean_ret = np.average(fwd_ret.values, weights=w, axis=0) if np.sum(w) > 0 else 0.0
+            # Ensure mean_ret is a scalar, not a Series
+            if hasattr(mean_ret, 'item'):
+                mean_ret = mean_ret.item()
             cluster_returns.append(mean_ret)
 
         tprint_info(f"   ⚓ Anchored Cluster Returns: {[f'{r:.5f}' for r in cluster_returns]}")
@@ -474,13 +486,22 @@ class GMMFeaturePipeline(BaseStep):
 
         probs, z_fam, ent = gmm.predict(latent_factors)
 
+        # Align latent_factors and returns to ensure same length
+        min_len = min(len(latent_factors), len(returns))
+        latent_factors = latent_factors[:min_len]
+        returns = returns[:min_len]
+        probs = probs[:min_len]
+
         # 4. Causal Impact Calculation
         cluster_impacts = []
+        
+        # Use actual number of clusters from the fitted GMM
+        n_actual_clusters = probs.shape[1]
 
         # Calculate Rolling Wavelet Entropy of Returns (expensive?)
         # Or just calculate it on the subsets defined by the clusters.
 
-        for k in range(self.n_clusters_macro):
+        for k in range(n_actual_clusters):
             # Identify periods where this cluster is dominant
             mask = probs[:, k] > 0.5
             if mask.sum() < 20:
@@ -492,6 +513,9 @@ class GMMFeaturePipeline(BaseStep):
 
             # 1. Mean Return
             mean_ret = regime_returns.mean()
+            # Ensure mean_ret is a scalar
+            if hasattr(mean_ret, 'item'):
+                mean_ret = mean_ret.item()
 
             # 2. Wavelet Entropy of Regime Returns
             # Are returns structured during this regime?
@@ -519,7 +543,18 @@ class GMMFeaturePipeline(BaseStep):
         results = pd.DataFrame(index=X.index)
 
         # Latent Macro Signal
-        results['latent_macro_signal'] = np.dot(probs, np.array(cluster_impacts))
+        # Ensure shapes match for dot product
+        cluster_impacts = np.array(cluster_impacts)
+        if len(cluster_impacts) != probs.shape[1]:
+            # Adjust cluster_impacts to match number of clusters in probs
+            if len(cluster_impacts) < probs.shape[1]:
+                # Pad with zeros
+                cluster_impacts = np.pad(cluster_impacts, (0, probs.shape[1] - len(cluster_impacts)), 'constant')
+            else:
+                # Truncate
+                cluster_impacts = cluster_impacts[:probs.shape[1]]
+        
+        results['latent_macro_signal'] = np.dot(probs, cluster_impacts)
 
         # Causal Kinematics (Acceleration of the Latent State)
         # Latent State Vector S = Sum(Prob_k * Factor_Mean_k)?
@@ -572,27 +607,91 @@ class GMMFeaturePipeline(BaseStep):
 
     def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute the full pipeline.
+        Execute the GMM pipeline using entropy bars for optimal performance.
+        """
+        # Load market data first
+        market_data, _ = self.load_market_data_or_fail(config)
+        if market_data is None or market_data.empty:
+            raise ValueError("No market data loaded.")
+        return self.run_with_data(config, market_data)
+    
+    def run_with_data(self, config: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Execute the GMM pipeline with pre-loaded market data.
+        
+        Args:
+            config: Configuration dictionary
+            market_data: Pre-loaded market data DataFrame
+            
+        Returns:
+            Dictionary containing GMM features and metadata
         """
         try:
             # 1. Load Data
-            market_data, _ = self.load_market_data_or_fail(config)
-            if market_data is None or market_data.empty:
-                raise ValueError("No market data loaded.")
+            # market_data, _ = self.load_market_data_or_fail(config)
+            # if market_data is None or market_data.empty:
+            #     raise ValueError("No market data loaded.")
 
             tprint_info(f"🚀 Starting GMM Feature Pipeline on {len(market_data)} rows...")
 
-            # 2. Base Features
-            tprint_info("🔨 Generating Base Meta-Features...")
+            # Check if we're using entropy bars or time bars
+            is_entropy_bars = hasattr(market_data, 'attrs') and hasattr(market_data, 'entropy_threshold')
+            if not is_entropy_bars:
+                # Check if data looks like entropy bars (irregular timestamps, entropy-related columns)
+                is_entropy_bars = (
+                    isinstance(market_data.index, pd.DatetimeIndex) and 
+                    'volume' in market_data.columns and
+                    len(market_data) < 50000  # Entropy bars typically have fewer rows
+                )
+                
+                # Additional check: entropy bars usually have irregular time intervals
+                if is_entropy_bars and len(market_data) > 10:
+                    time_diffs = market_data.index.to_series().diff().dropna()
+                    # If time intervals are highly variable, it's likely entropy bars
+                    time_diff_std = time_diffs.std()
+                    time_diff_mean = time_diffs.mean()
+                    if time_diff_mean.total_seconds() > 0:
+                        cv = time_diff_std / time_diff_mean
+                        is_entropy_bars = is_entropy_bars and (cv > 0.5)  # High coefficient of variation
+            
+            if is_entropy_bars:
+                tprint_info("✨ Using Entropy Bars for GMM pipeline (optimal for regime detection)")
+                # Adjust GMM parameters for entropy bars (fewer samples, more structure)
+                self.n_samples = min(self.n_samples, len(market_data))
+                self.n_clusters_macro = min(self.n_clusters_macro, 12)  # Fewer clusters for entropy bars
+                self.n_clusters_causal = min(self.n_clusters_causal, 8)
+                tprint_info(f"🔧 Adjusted GMM parameters for entropy bars: samples={self.n_samples}, macro_clusters={self.n_clusters_macro}")
+            else:
+                tprint_info("⚠️  Using time bars - consider converting to entropy bars for better GMM performance")
+
+            # 2. Base Features - Use entropy bar optimized feature generation
+            tprint_info("🔨 Generating Base Meta-Features on entropy bars...")
             # Dummy signals df required by create_meta_features
             dummy_signals = pd.DataFrame(index=market_data.index)
-            base_features = create_meta_features(market_data, dummy_signals, volume_available=True)
+            
+            # Enhanced feature generation for entropy bars
+            if is_entropy_bars:
+                # Use entropy-aware feature generation
+                base_features = create_meta_features(
+                    market_data, 
+                    dummy_signals, 
+                    volume_available=True,
+                    windows=[10, 20, 50, 100, 150, 200]  # Adjusted for entropy bar frequency
+                )
+            else:
+                # Standard feature generation for time bars
+                base_features = create_meta_features(market_data, dummy_signals, volume_available=True)
 
             # Preprocess
             X_clean = self._preprocess_features(base_features)
 
-            # Define Target (e.g., 1-day forward return for anchoring/selection)
-            returns = market_data['close'].pct_change()
+            # Define Target - Use entropy bar appropriate returns calculation
+            if is_entropy_bars:
+                # For entropy bars, use the close-to-close returns which represent actual price moves
+                returns = market_data['close'].pct_change()
+                tprint_info(f"📈 Using entropy bar returns: mean={returns.mean():.6f}, std={returns.std():.6f}")
+            else:
+                returns = market_data['close'].pct_change()
 
             # 3. Pipelines
             # A: Macro State

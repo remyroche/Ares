@@ -49,7 +49,9 @@ class CausalTargetComputer:
         random_state: int = 42,
         verbose: bool = True,
         checkpoint_manager=None,
-        symbol: str = "UNKNOWN"
+        symbol: str = "UNKNOWN",
+        cate_config: Optional[Dict[str, Any]] = None,
+        subsample_config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize Causal Target Computer.
@@ -62,6 +64,8 @@ class CausalTargetComputer:
             verbose: Whether to print progress information
             checkpoint_manager: Optional checkpoint manager for saving progress
             symbol: Trading symbol for checkpoint naming
+            cate_config: Configuration for CATE model (model_type, params)
+            subsample_config: Configuration for subsampling (threshold, method)
         """
         self.treatment_model = treatment_model
         self.outcome_model = outcome_model
@@ -71,6 +75,21 @@ class CausalTargetComputer:
         self.checkpoint_manager = checkpoint_manager
         self.symbol = symbol
         
+        # CATE Configuration
+        self.cate_config = cate_config or {}
+        self.cate_model_type = self.cate_config.get('model_type', 'random_forest')
+        self.cate_params = self.cate_config.get('params', {
+            'n_estimators': 100,
+            'max_depth': 10,
+            'min_samples_leaf': 10,
+            'n_jobs': -1
+        })
+
+        # Subsample Configuration
+        self.subsample_config = subsample_config or {}
+        self.large_dataset_threshold = self.subsample_config.get('threshold', 50000)
+        self.subsample_method = self.subsample_config.get('method', 'adaptive') # Default to adaptive
+
         # Storage for models and results
         self.treatment_models_ = {}
         self.outcome_models_ = {}
@@ -79,7 +98,6 @@ class CausalTargetComputer:
         self.residual_targets_ = {}
         self.refutation_scores_ = None
         self.causal_effect_frame_ = None
-        self.large_dataset_threshold = 50000
         self.subsample_indices_ = None  # Store subsample indices for alignment
         
     def _get_model(self, model_type: str, model_name: str):
@@ -280,25 +298,56 @@ class CausalTargetComputer:
             treatment_width = treatments_array.shape[1]
             outcome_width = outcomes_array.shape[1]
             
-            # Stratified subsampling for large datasets
+            # Adaptive subsampling for large datasets
             if n_samples > self.large_dataset_threshold:
                 if self.verbose:
-                    tprint_info(f"   Large dataset detected ({n_samples:,} samples), applying stratified subsampling...")
+                    tprint_info(f"   Large dataset detected ({n_samples:,} samples), applying {self.subsample_method} subsampling...")
                 
-                # Create strata based on first treatment quantiles for representative sampling
-                # We use only the first column [:, 0] to ensure indices mapped to rows (axis 0)
-                treatment_quantiles = pd.qcut(treatments_array[:, 0], q=10, labels=False, duplicates='drop')
+                sample_indices = None
                 
-                # Sample within each stratum
-                sample_size_per_stratum = min(self.large_dataset_threshold // 10, n_samples // 10)
-                sample_indices = []
-                
-                for stratum in range(10):
-                    stratum_indices = np.where(treatment_quantiles == stratum)[0]
-                    if len(stratum_indices) > 0:
-                        n_sample = min(len(stratum_indices), sample_size_per_stratum)
-                        sampled_indices = np.random.choice(stratum_indices, size=n_sample, replace=False)
-                        sample_indices.extend(sampled_indices)
+                if self.subsample_method == 'adaptive':
+                    # Adaptive strategy: check outcome variance to decide stratification
+                    outcome_std = np.std(outcomes_array)
+                    treatment_std = np.std(treatments_array[:, 0])
+
+                    # If high variance, we need more representative sampling
+                    # We stratify by both treatment and outcome if possible
+                    if outcome_std > 1.0 or treatment_std > 1.0: # Arbitrary high variance check
+                         if self.verbose: tprint_info("   High variance detected - using dual stratification")
+                         # Bin both
+                         t_bins = pd.qcut(treatments_array[:, 0], q=5, labels=False, duplicates='drop')
+                         y_bins = pd.qcut(outcomes_array.ravel(), q=5, labels=False, duplicates='drop')
+                         strata = t_bins * 5 + y_bins # 25 strata
+                         n_strata = 25
+                    else:
+                         # Standard treatment stratification
+                         strata = pd.qcut(treatments_array[:, 0], q=10, labels=False, duplicates='drop')
+                         n_strata = 10
+
+                    # Sample within each stratum
+                    target_size = self.large_dataset_threshold
+                    sample_size_per_stratum = max(10, target_size // n_strata)
+
+                    sample_indices = []
+                    for s in range(n_strata):
+                        s_indices = np.where(strata == s)[0]
+                        if len(s_indices) > 0:
+                            n_sample = min(len(s_indices), sample_size_per_stratum)
+                            s_sampled = np.random.choice(s_indices, size=n_sample, replace=False)
+                            sample_indices.extend(s_sampled)
+
+                else:
+                    # Default: Stratified by treatment (legacy)
+                    treatment_quantiles = pd.qcut(treatments_array[:, 0], q=10, labels=False, duplicates='drop')
+                    sample_size_per_stratum = min(self.large_dataset_threshold // 10, n_samples // 10)
+                    sample_indices = []
+
+                    for stratum in range(10):
+                        stratum_indices = np.where(treatment_quantiles == stratum)[0]
+                        if len(stratum_indices) > 0:
+                            n_sample = min(len(stratum_indices), sample_size_per_stratum)
+                            sampled_indices = np.random.choice(stratum_indices, size=n_sample, replace=False)
+                            sample_indices.extend(sampled_indices)
                 
                 # Convert to arrays and shuffle
                 sample_indices = np.array(sample_indices)
@@ -314,7 +363,7 @@ class CausalTargetComputer:
                 
                 n_samples = len(treatments_array)
                 if self.verbose:
-                    tprint_info(f"   Subsampled to {n_samples:,} samples ({len(sample_indices)} strata)")
+                    tprint_info(f"   Subsampled to {n_samples:,} samples")
             
             # Initialize cross-validation
             kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)
@@ -504,24 +553,46 @@ class CausalTargetComputer:
                 if self.verbose:
                     tprint_info(f"   Using full heterogeneity data: {len(heterogeneity_data)} samples")
             
-            # Fit heterogeneity model
-            cate_model = RandomForestRegressor(
-                n_estimators=100, random_state=self.random_state
-            )
+            # Initialize CATE model based on config
+            if self.cate_model_type == 'xgboost':
+                try:
+                    from xgboost import XGBRegressor
+                    cate_model = XGBRegressor(
+                        random_state=self.random_state,
+                        **self.cate_params
+                    )
+                except ImportError:
+                    tprint_warning("   ⚠️ XGBoost not available, falling back to RandomForest")
+                    cate_model = RandomForestRegressor(
+                        random_state=self.random_state,
+                        **{k: v for k, v in self.cate_params.items() if k in ['n_estimators', 'max_depth', 'min_samples_leaf', 'n_jobs']}
+                    )
+            else:
+                # Default to RandomForest
+                # Filter params to ensure compatibility if they were meant for another model
+                rf_params = {k: v for k, v in self.cate_params.items() if k in ['n_estimators', 'max_depth', 'min_samples_leaf', 'n_jobs', 'max_features']}
+                cate_model = RandomForestRegressor(
+                    random_state=self.random_state,
+                    **rf_params
+                )
             
             # Predict treatment effects using heterogeneity features
-            # This is a simplified CATE estimation
+            # This is a simplified CATE estimation (Residual-on-Residual)
             treatment_effects = outcome_residuals / (treatment_residuals + 1e-8)
             
-            # Filter extreme values
+            # Filter extreme values (outliers in ratio)
             valid_effects = np.abs(treatment_effects) < 10  # Filter extreme values
             X_valid = heterogeneity_data[valid_effects]
             effects_valid = treatment_effects[valid_effects]
             
-            if len(X_valid) > 10:
+            if len(X_valid) > 50: # Ensure enough samples for training
+                if self.verbose:
+                    tprint_info(f"   Fitting {type(cate_model).__name__} for CATE ({len(X_valid)} samples)...")
                 cate_model.fit(X_valid, effects_valid)
                 cate_estimates = cate_model.predict(heterogeneity_data)
             else:
+                if self.verbose:
+                    tprint_warning("   ⚠️ Too few valid effects for CATE model, using constant effect")
                 # Fallback to constant effect
                 cate_estimates = np.full(len(heterogeneity_data), self.causal_effects_["causal_effect"])
             

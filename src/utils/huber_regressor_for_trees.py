@@ -73,6 +73,14 @@ def prepare_huber_production_orchestrator(
         X_imp_ranks = pd.DataFrame(X_tr_scaled[:, keep_mask][:, imp_mask]).rank().values
         corr_matrix = np.corrcoef(X_imp_ranks.T)
         
+        interaction_groups = {}
+        for i, label in enumerate(cluster_labels):
+            idx = int(important_idx[i])
+            # Use feature NAME instead of index for XGBoost/LGBM DataFrame compatibility
+            feat_name = X_train_pruned.columns[idx]
+            interaction_groups.setdefault(label, []).append(feat_name)
+        interaction_constraints = list(interaction_groups.values())
+    else:
         D = np.clip(1 - np.abs(corr_matrix), 0, 1)
         Z = linkage(squareform(D, checks=False), method='complete')
         
@@ -82,6 +90,8 @@ def prepare_huber_production_orchestrator(
         for l in np.unique(labels):
             group = imp_feat_names[labels == l].tolist()
             interaction_constraints.append(group)
+    else:
+        interaction_constraints = None
 
     # 8. Consensus Inference for Validation/Test
     def get_consensus_pred(df):
@@ -99,6 +109,7 @@ def prepare_huber_production_orchestrator(
             'val': get_consensus_pred(X_val),
             'test': get_consensus_pred(X_test)
         },
+        "huber_model": huber, # For future inspection and prediction
         "huber_model": huber, # For future inspection
         'quantile_meta_targets': y_train - warm_start_tr,
         'scaler': scaler,

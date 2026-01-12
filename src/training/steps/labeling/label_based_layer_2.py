@@ -6171,6 +6171,11 @@ class LabelBasedLayer2(BaseStep):
             name = cand['name']
             model = cand['model']
             fit_params = cand['fit_params']
+            best_score = 0.0  # PR-AUC: Higher is better
+            best_model = None
+            best_name = "LGBM_Tree" # Default
+            best_auc = 0.0
+            race_results = {}
             
             try:
                 # Fit with specific params (warm start, eval set)

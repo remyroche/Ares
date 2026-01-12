@@ -655,8 +655,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         
         tprint_success(f"✅ Selected {len(selected_features.columns)} features from {len(gmm_enhanced_features.columns)} GMM-enhanced features")
         
-        # Step 5: Train Ridge and ExtraTrees models on selected features
-        model_results = await self._train_models_on_selected_features(selected_features, config)
+        # Step 5: Train Ensemble models (ExtraTrees, CatBoost, LGBM, XGB) on selected features
+        model_results = await self._train_models_on_selected_features(selected_features, active_market_data, config)
         
         # Step 6: Train individual specialists using GMM-enhanced features
         tprint_info("🔄 Training individual specialists with GMM-enhanced features...")
@@ -680,7 +680,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         
         # Step 7: Save results
         await self._save_results(
-            selected_features, specialist_outputs, config
+            selected_features, specialist_outputs, config,
+            ensemble_results=model_results
         )
         
         # Create results dictionary for return
@@ -1196,47 +1197,311 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             tprint_error(f"❌ Feature selection failed: {e}")
             return features
     
-    async def _train_models_on_selected_features(self, features: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Train Ridge and ExtraTrees models on selected features."""
+    async def _train_models_on_selected_features(self, features: pd.DataFrame, market_data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Train ExtraTrees, CatBoost, LGBM, and XGBoost models on selected features using Huber Teacher
+        for feature pruning, monotonic constraints, and interaction constraints.
+        """
         try:
-            # Create synthetic labels
-            labels = features['returns'].shift(-1).dropna()
-            features_clean = features.iloc[:-1].loc[labels.index]
+            import optuna
+            from optuna.pruners import MedianPruner
+            from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+            from sklearn.ensemble import ExtraTreesRegressor
+            from xgboost import XGBRegressor
+            from lightgbm import LGBMRegressor
+            from catboost import CatBoostRegressor, Pool
+            from sklearn.metrics import roc_auc_score
+            from scipy.stats import spearmanr
+
+            tprint_info(f"🧠 Training ensemble models on {features.shape} features with Huber Teacher...")
+
+            # 1. Prepare Target and Features
+            # Target is forward returns (shift -12 as per original Ridge logic, or next bar?
+            # Original Ridge used shift(-12). Feature selection used shift(-1).
+            # The prompt says "IC to target * AUC". Usually target is next period return or N-period.
+            # I will align with 'returns' column shift(-1) if available, or calc from market_data.
+            # features['returns'] exists from raw extraction.
+            # Using shift(-1) for standard prediction.
+
+            if 'returns' in features.columns:
+                target = features['returns'].shift(-1)
+            else:
+                 target = market_data['close'].pct_change().shift(-1)
+
+            # Align features and target
+            data = features.copy()
+            data['target'] = target
+            data = data.dropna()
+
+            if len(data) < 100:
+                 tprint_error("❌ Insufficient data for training")
+                 return {}
+
+            y = data['target']
+            X = data.drop(columns=['target'])
+
+            # 2. Split Data (70% Train, 30% OOF)
+            split_idx = int(len(X) * 0.70)
+            X_train, X_oof = X.iloc[:split_idx], X.iloc[split_idx:]
+            y_train, y_oof = y.iloc[:split_idx], y.iloc[split_idx:]
+
+            tprint_info(f"📊 Split: Train {len(X_train)}, OOF {len(X_oof)}")
+
+            # 3. Huber Teacher (Feature Pruning, Monotonic, Interactions, Warm Start)
+            tprint_info("👨‍🏫 Running Huber Teacher...")
+            huber_outputs = prepare_huber_teacher_outputs(X_train, y_train, X_val=None, X_test=X_oof)
+
+            selected_features_names = huber_outputs['selected_features']
+            monotonic_constraints = huber_outputs['monotonic_constraints']
+            interaction_constraints = huber_outputs['interaction_constraints']
+            warm_start_train = huber_outputs['warm_start']['train']
+            warm_start_oof = huber_outputs['warm_start']['test']
+
+            # Filter X to selected features
+            X_train_sel = X_train[selected_features_names]
+            X_oof_sel = X_oof[selected_features_names]
+
+            tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(selected_features_names)} features")
             
             results = {}
             
-            # Train Ridge model
-            from sklearn.linear_model import Ridge
-            ridge = Ridge(alpha=1.0)
-            ridge.fit(features_clean, labels)
-            ridge_pred = ridge.predict(features_clean)
+            def calculate_score(y_true, y_pred):
+                ic, _ = spearmanr(y_true, y_pred)
+                auc = roc_auc_score((y_true > 0).astype(int), y_pred)
+                return ic * auc, ic, auc
+
+            # --- Model 1: ExtraTrees ---
+            # Sklearn 1.4+ supports monotonic_cst
+            tprint_info("🌲 Training ExtraTrees...")
             
-            results['ridge'] = {
-                'model': ridge,
-                'predictions': ridge_pred,
-                'mse': ((labels - ridge_pred) ** 2).mean(),
-                'r2': 1 - ((labels - ridge_pred) ** 2).sum() / ((labels - labels.mean()) ** 2).sum()
+            def objective_et(trial):
+                n_estimators = trial.suggest_int('n_estimators', 100, 500)
+                max_depth = trial.suggest_categorical('max_depth', [None, 10, 20, 30])
+                min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 20)
+
+                # Check for monotonic_cst support (sklearn >= 1.4)
+                # If supported, use it. Else warn.
+                try:
+                    et = ExtraTreesRegressor(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_leaf=min_samples_leaf,
+                        monotonic_cst=monotonic_constraints, # Check argument name
+                        n_jobs=-1,
+                        random_state=42
+                    )
+                    et.fit(X_train_sel, y_train)
+                except TypeError:
+                     # Fallback for older sklearn
+                     et = ExtraTreesRegressor(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_leaf=min_samples_leaf,
+                        n_jobs=-1,
+                        random_state=42
+                    )
+                     et.fit(X_train_sel, y_train)
+
+                preds = et.predict(X_oof_sel)
+                score, _, _ = calculate_score(y_oof, preds)
+                return score
+
+            study_et = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_et.optimize(objective_et, n_trials=10) # Limited trials
+
+            # Retrain best ET
+            best_et_params = study_et.best_params
+            try:
+                best_et = ExtraTreesRegressor(**best_et_params, monotonic_cst=monotonic_constraints, n_jobs=-1, random_state=42)
+            except TypeError:
+                best_et = ExtraTreesRegressor(**best_et_params, n_jobs=-1, random_state=42)
+            best_et.fit(X_train_sel, y_train)
+            pred_et = best_et.predict(X_oof_sel)
+            score_et, ic_et, auc_et = calculate_score(y_oof, pred_et)
+            results['ExtraTrees'] = {'score': score_et, 'ic': ic_et, 'auc': auc_et, 'model': best_et}
+
+            # --- Model 2: XGBoost ---
+            tprint_info("🚀 Training XGBoost...")
+            # Fixed params from user
+            xgb_fixed_params = {
+                'num_parallel_tree': 7,
+                'colsample_bynode': 0.4,
+                'subsample': 0.6,
+                'reg_lambda': 50, # "22 regularisation 50" -> lambda
+                'min_child_weight': 10,
+                'gamma': 1.1,
+                'learning_rate': 0.03,
+                'tree_method': 'hist',
+                'n_jobs': -1,
+                'monotone_constraints': monotonic_constraints, # tuple
+                'interaction_constraints': interaction_constraints if interaction_constraints else None
             }
             
-            # Train ExtraTrees model
-            from sklearn.ensemble import ExtraTreesRegressor
-            et = ExtraTreesRegressor(n_estimators=100, random_state=42)
-            et.fit(features_clean, labels)
-            et_pred = et.predict(features_clean)
+            def objective_xgb(trial):
+                n_estimators = trial.suggest_int('n_estimators', 100, 1000)
+                max_depth = trial.suggest_int('max_depth', 3, 10)
+
+                model = XGBRegressor(**xgb_fixed_params, n_estimators=n_estimators, max_depth=max_depth)
+
+                # Warm start using base_margin?
+                # XGBoost uses base_margin for initial prediction.
+                # However, sklearn API uses `fit(X, y, base_margin=...)`
+
+                model.fit(X_train_sel, y_train, base_margin=warm_start_train, verbose=False)
+                pred = model.predict(X_oof_sel, base_margin=warm_start_oof)
+
+                score, _, _ = calculate_score(y_oof, pred)
+                return score
+
+            study_xgb = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_xgb.optimize(objective_xgb, n_trials=10)
             
-            results['extratrees'] = {
-                'model': et,
-                'predictions': et_pred,
-                'mse': ((labels - et_pred) ** 2).mean(),
-                'r2': 1 - ((labels - et_pred) ** 2).sum() / ((labels - labels.mean()) ** 2).sum(),
-                'feature_importance': dict(zip(features_clean.columns, et.feature_importances_))
+            best_xgb = XGBRegressor(**xgb_fixed_params, **study_xgb.best_params)
+            best_xgb.fit(X_train_sel, y_train, base_margin=warm_start_train)
+            pred_xgb = best_xgb.predict(X_oof_sel, base_margin=warm_start_oof)
+            score_xgb, ic_xgb, auc_xgb = calculate_score(y_oof, pred_xgb)
+            results['XGBoost'] = {'score': score_xgb, 'ic': ic_xgb, 'auc': auc_xgb, 'model': best_xgb}
+
+            # --- Model 3: CatBoost ---
+            tprint_info("🐱 Training CatBoost...")
+            # Fixed params
+            cb_fixed_params = {
+                'subsample': 0.6,
+                'colsample_bylevel': 0.5,
+                'leaf_estimation_iterations': 10,
+                'l2_leaf_reg': 20, # "l2_leaf_reg 20"
+                'random_strength': 5,
+                'bootstrap_type': 'MVS',
+                'verbose': False,
+                'allow_writing_files': False,
+                # Monotonic constraints format in CatBoost: string or list.
+                # tuple of -1,0,1 might need conversion to string or list?
+                # CatBoost accepts list/tuple of int.
+                'monotone_constraints': monotonic_constraints
             }
             
-            tprint_success(f"✅ Trained Ridge (R²={results['ridge']['r2']:.3f}) and ExtraTrees (R²={results['extratrees']['r2']:.3f})")
-            return results
+            def objective_cb(trial):
+                iterations = trial.suggest_int('iterations', 100, 1000)
+                depth = trial.suggest_int('depth', 4, 10)
+
+                # CatBoost warm start uses `baseline` argument in Pool or fit.
+                train_pool = Pool(X_train_sel, y_train, baseline=warm_start_train)
+
+                model = CatBoostRegressor(**cb_fixed_params, iterations=iterations, depth=depth)
+                model.fit(train_pool)
+
+                pred = model.predict(X_oof_sel) # No baseline for predict?
+                # If trained with baseline, predict outputs raw + baseline?
+                # CatBoost docs: "If baseline is provided... the model learns the correction..."
+                # When predicting, we must provide baseline?
+                # sklearn API predict() doesn't take baseline easily?
+                # We can use eval_set with Pool?
+                # Or just predict raw and add warm_start_oof?
+                # Actually CatBoost `predict` doesn't strictly require baseline if we want raw leaf sum, but we want full prediction.
+                # If we use `baseline` in fit, the model learns residual.
+                # So Prediction = Baseline + Model(X).
+                # We need to add baseline manually if predict doesn't take it?
+                # `predict` takes `X`. `Pool` can take baseline.
+                # Let's try passing Pool to predict?
+
+                eval_pool = Pool(X_oof_sel, baseline=warm_start_oof)
+                pred = model.predict(eval_pool)
+
+                score, _, _ = calculate_score(y_oof, pred)
+                return score
+
+            study_cb = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_cb.optimize(objective_cb, n_trials=10)
+
+            best_cb = CatBoostRegressor(**cb_fixed_params, **study_cb.best_params)
+            train_pool = Pool(X_train_sel, y_train, baseline=warm_start_train)
+            best_cb.fit(train_pool)
+            eval_pool = Pool(X_oof_sel, baseline=warm_start_oof)
+            pred_cb = best_cb.predict(eval_pool)
+            score_cb, ic_cb, auc_cb = calculate_score(y_oof, pred_cb)
+            results['CatBoost'] = {'score': score_cb, 'ic': ic_cb, 'auc': auc_cb, 'model': best_cb}
+
+            # --- Model 4: LGBM ---
+            tprint_info("🍃 Training LGBM...")
+            # Optuna tuning + Interaction constraints
+
+            def objective_lgbm(trial):
+                n_estimators = trial.suggest_int('n_estimators', 100, 1000)
+                num_leaves = trial.suggest_int('num_leaves', 20, 100)
+                learning_rate = trial.suggest_float('learning_rate', 0.01, 0.1)
+
+                model = LGBMRegressor(
+                    n_estimators=n_estimators,
+                    num_leaves=num_leaves,
+                    learning_rate=learning_rate,
+                    monotone_constraints=monotonic_constraints,
+                    interaction_constraints=interaction_constraints,
+                    n_jobs=-1,
+                    random_state=42,
+                    verbose=-1
+                )
+
+                # LGBM supports init_score
+                model.fit(X_train_sel, y_train, init_score=warm_start_train)
+                # Predict with init_score?
+                # LGBMRegressor predict() supports `init_score`? No, usually not in sklearn API.
+                # But if we trained on residuals (implied by init_score), the model predicts residuals.
+                # So we must add warm_start_oof.
+                raw_pred = model.predict(X_oof_sel)
+                # raw_pred is correction.
+                pred = raw_pred + warm_start_oof
+
+                score, _, _ = calculate_score(y_oof, pred)
+                return score
+
+            study_lgbm = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_lgbm.optimize(objective_lgbm, n_trials=10)
+
+            best_lgbm_params = study_lgbm.best_params
+            best_lgbm = LGBMRegressor(
+                **best_lgbm_params,
+                monotone_constraints=monotonic_constraints,
+                interaction_constraints=interaction_constraints,
+                n_jobs=-1,
+                random_state=42,
+                verbose=-1
+            )
+            best_lgbm.fit(X_train_sel, y_train, init_score=warm_start_train)
+            pred_lgbm_raw = best_lgbm.predict(X_oof_sel)
+            pred_lgbm = pred_lgbm_raw + warm_start_oof
+            score_lgbm, ic_lgbm, auc_lgbm = calculate_score(y_oof, pred_lgbm)
+            results['LGBM'] = {'score': score_lgbm, 'ic': ic_lgbm, 'auc': auc_lgbm, 'model': best_lgbm}
+
+            # 4. Compare and Pick Winner
+            tprint_info("\n🏆 Model Comparison (Winner = IC * AUC on OOF):")
+            best_model_name = None
+            best_model_score = -float('inf')
+
+            for name, res in results.items():
+                tprint_info(f"   - {name}: Score={res['score']:.4f} (IC={res['ic']:.4f}, AUC={res['auc']:.4f})")
+                if res['score'] > best_model_score:
+                    best_model_score = res['score']
+                    best_model_name = name
+
+            tprint_success(f"🎉 Winner: {best_model_name} (Score: {best_model_score:.4f})")
+
+            winner_result = results[best_model_name]
+
+            return {
+                "success": True,
+                "winner_name": best_model_name,
+                "winner_model": winner_result['model'],
+                "winner_score": winner_result['score'],
+                "winner_ic": winner_result['ic'],
+                "winner_auc": winner_result['auc'],
+                "all_results": {k: {'score': v['score'], 'ic': v['ic'], 'auc': v['auc']} for k,v in results.items()},
+                "selected_features": selected_features_names
+            }
             
         except Exception as e:
-            tprint_error(f"❌ Model training failed: {e}")
+            tprint_error(f"❌ Ensemble training failed: {e}")
+            import traceback
+            tprint_error(traceback.format_exc())
             return {}
 
     async def _apply_gmm_enhancement_to_features(self, features: pd.DataFrame, market_data: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
@@ -2506,7 +2771,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         specialist_outputs: Dict[str, pd.DataFrame],
         config: Dict[str, Any],
         ridge_results: Dict[str, Any] = None,
-        extratrees_results: Dict[str, Any] = None
+        extratrees_results: Dict[str, Any] = None,
+        ensemble_results: Dict[str, Any] = None
     ) -> None:
         """Save enhanced features and specialist outputs."""
          
@@ -2606,6 +2872,36 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 
                 tprint_success(f"💾 ExtraTrees model saved to {extratrees_dir}")
             
+            # Save Ensemble results (Winner Model)
+            if ensemble_results and ensemble_results.get("success", False):
+                ensemble_dir = outcomes_dir / "ensemble_winner"
+                ensemble_dir.mkdir(exist_ok=True)
+
+                # Save Winner Model
+                import pickle
+                winner_name = ensemble_results.get("winner_name", "unknown")
+                winner_model = ensemble_results.get("winner_model")
+                if winner_model:
+                    winner_model_path = ensemble_dir / f"{winner_name}_model.pkl"
+                    with open(winner_model_path, 'wb') as f:
+                        pickle.dump(winner_model, f)
+
+                # Save Ensemble Metrics
+                ensemble_metrics = {
+                    "winner_name": winner_name,
+                    "winner_score": ensemble_results.get("winner_score"),
+                    "winner_ic": ensemble_results.get("winner_ic"),
+                    "winner_auc": ensemble_results.get("winner_auc"),
+                    "all_results": ensemble_results.get("all_results"),
+                    "selected_features": ensemble_results.get("selected_features")
+                }
+
+                ensemble_metrics_path = ensemble_dir / "ensemble_metrics.json"
+                with open(ensemble_metrics_path, 'w') as f:
+                    json.dump(ensemble_metrics, f, indent=2, default=str)
+
+                tprint_success(f"💾 Ensemble winner ({winner_name}) saved to {ensemble_dir}")
+
             # Save composite features to versioned artifacts
             # Note: We use the '_analyst' suffix for the main artifact store
             store_name = f"{symbol}_{config.get('exchange')}_{timeframe}_{direction}_analyst" 

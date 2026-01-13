@@ -4482,15 +4482,62 @@ def _persist_gate_diagnostics(
         summary_lines = ["# Layer 2 Geometry Gate Diagnostics\n\n"]
         summary_lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
+        total_rows = len(diag_df)
+        total_failures = int((diag_df['status'] != 'PASS').sum()) if 'status' in diag_df else 0
+        overall_pass_rate = float((diag_df['status'] == 'PASS').mean()) if 'status' in diag_df else 0.0
+        missing_family_rows = int(diag_df['family'].isna().sum()) if 'family' in diag_df else 0
+
         summary_lines.append("## Family Pass Rates\n")
-        family_stats = diag_df.groupby('family').agg({'status': lambda x: (x == 'PASS').mean()})
-        summary_lines.append(_safe_to_markdown(family_stats.sort_values('status', ascending=False)) + "\n\n")
+        family_stats = diag_df.groupby('family').agg(
+            pass_rate=('status', lambda x: (x == 'PASS').mean()),
+            total=('status', 'size'),
+            fail_count=('status', lambda x: (x != 'PASS').sum())
+        )
+        summary_lines.append(_safe_to_markdown(family_stats.sort_values('pass_rate', ascending=False)) + "\n\n")
 
         summary_lines.append("## Top Failure Reasons\n")
         fail_df = diag_df[diag_df['status'] != 'PASS']
         if not fail_df.empty:
-            fail_stats = fail_df['status'].value_counts().to_frame()
+            fail_stats = (
+                fail_df['status']
+                .value_counts()
+                .rename_axis('reason')
+                .reset_index(name='count')
+            )
             summary_lines.append(_safe_to_markdown(fail_stats) + "\n\n")
+        else:
+            summary_lines.append("- No failures recorded.\n\n")
+
+        summary_lines.append("## Failure Reasons by Family\n")
+        if not fail_df.empty and 'family' in fail_df.columns:
+            fail_by_family = (
+                fail_df.groupby(['family', 'status'])
+                .size()
+                .reset_index(name='count')
+                .sort_values(['count', 'family'], ascending=[False, True])
+            )
+            summary_lines.append(_safe_to_markdown(fail_by_family) + "\n\n")
+        else:
+            summary_lines.append("- No failure reasons available by family.\n\n")
+
+        summary_lines.append("## Gate Health Checks\n")
+        summary_lines.append(f"- Total rows: {total_rows}\n")
+        summary_lines.append(f"- Overall pass rate: {overall_pass_rate:.2%}\n")
+        summary_lines.append(f"- Total failures: {total_failures}\n")
+        summary_lines.append(f"- Rows missing family: {missing_family_rows}\n")
+        if 'status' in diag_df:
+            status_values = sorted(set(map(str, diag_df['status'].dropna().unique())))
+            summary_lines.append(f"- Status values: {', '.join(status_values)}\n")
+        if total_failures and not family_stats.empty and family_stats['pass_rate'].min() >= 1.0:
+            summary_lines.append(
+                "- ⚠️ All family pass rates are 1.0 despite failures. "
+                "Failures may be missing family labels or status mapping.\n"
+            )
+        if missing_family_rows:
+            summary_lines.append(
+                "- ⚠️ Some rows lack a family label; include `family` in outcomes_log for clearer diagnostics.\n"
+            )
+        summary_lines.append("\n")
 
         summary_lines.append("## Missing Families In Gate Diagnostics vs Selection\n")
         if missing_families:

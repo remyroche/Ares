@@ -4255,6 +4255,25 @@ def run_diagnostics(
     else:
         X = specialist_df
 
+    constant_features: list[str] = []
+    if not X.empty:
+        nunique = X.nunique(dropna=False)
+        stds = X.std(numeric_only=True)
+        for col in X.columns:
+            col_unique = nunique.get(col, 0)
+            if col_unique <= 1:
+                constant_features.append(col)
+                continue
+            if col in stds and stds.get(col, 0.0) < 1e-9:
+                constant_features.append(col)
+        if constant_features:
+            tprint_warning(
+                "⚠️ Removing "
+                f"{len(constant_features)} constant/near-constant features: "
+                f"{constant_features[:10]}"
+            )
+            X = X.drop(columns=constant_features)
+
     # 3) Compute per-feature metrics and TV-VAR info (Needed for MoE)
     feature_metrics, tv_var_info = _compute_feature_metrics_with_tv_var(
         X=X, y=y, cv_folds=cv_folds, 
@@ -4608,7 +4627,34 @@ def run_diagnostics(
         f"- High-R^2 features (R^2>0.05): {summary['n_high_r2']}",
         "",
     ]
-    
+
+    feature_recommendations: list[str] = []
+    if summary["mi_mean_avg"] < 0.01 or summary["n_high_mi"] == 0:
+        feature_recommendations.extend(
+            [
+                "Engineer non-linear transforms (log, diff, z-scores) and volatility-scaled features.",
+                "Add regime/context signals (trend strength, volatility regime, liquidity stress) to lift MI.",
+                "Introduce interaction features (ratios, spreads, cross-timeframe blends) to capture non-linear structure.",
+            ]
+        )
+    if summary["r2_mean"] < 0.01 or summary["n_high_r2"] == 0:
+        feature_recommendations.extend(
+            [
+                "Create horizon-aligned targets/features (multi-horizon returns, realized volatility, drawdown).",
+                "Incorporate event-driven features (breakouts, mean-reversion markers, imbalance shocks).",
+            ]
+        )
+    if constant_features:
+        feature_recommendations.append(
+            "Repair or regenerate constant features (e.g., momentum prediction) upstream before training."
+        )
+
+    md_lines.extend(["## Feature Engineering Recommendations", ""])
+    if feature_recommendations:
+        md_lines.extend([f"- {rec}" for rec in feature_recommendations])
+    else:
+        md_lines.append("- No major feature engineering risks detected.")
+
     if tv_var_info.get("enabled"):
         md_lines.extend([
             "### TV-VAR System Metrics",
@@ -4945,8 +4991,16 @@ def run_diagnostics(
             "## Constant / Near-Constant Feature Check",
         ]
     )
+    if constant_features:
+        md_lines.append(f"⚠️ Removed {len(constant_features)} constant/near-constant features before scoring:")
+        for feature_name in constant_features[:10]:
+            md_lines.append(f"- {feature_name}")
+        if len(constant_features) > 10:
+            md_lines.append(f"- ... and {len(constant_features) - 10} more")
+        md_lines.append("")
     constant_feats = []
-    for col in X.columns:
+    numeric_cols = X.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
         if np.std(X[col]) < 1e-9:
             val = float(X[col].mean()) if len(X) > 0 else 0.0
             constant_feats.append(f"{col} (val={val:.4f})")

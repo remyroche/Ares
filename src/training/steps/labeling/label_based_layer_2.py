@@ -126,6 +126,8 @@ class EventGenerationTracker:
     generated_events: int = 0
     filtered_events: int = 0
     rejection_reasons: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    stage_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    market_condition_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     family: str = "Unknown"
 
     def log_rejection(self, reason: str, count: int = 1):
@@ -136,8 +138,23 @@ class EventGenerationTracker:
     def summary(self) -> str:
         """Return a summary string."""
         reasons_str = ", ".join([f"{k}: {v}" for k, v in self.rejection_reasons.items()])
-        return (f"[{self.family}] Input: {self.total_input_points} | Generated: {self.generated_events} | "
-                f"Filtered: {self.filtered_events} | Reasons: {{{reasons_str}}}")
+        stages_str = ", ".join([f"{k}: {v}" for k, v in self.stage_counts.items()])
+        market_str = ", ".join([f"{k}: {v}" for k, v in self.market_condition_counts.items()])
+        summary = (f"[{self.family}] Input: {self.total_input_points} | Generated: {self.generated_events} | "
+                   f"Filtered: {self.filtered_events} | Reasons: {{{reasons_str}}}")
+        if stages_str:
+            summary += f" | Stages: {{{stages_str}}}"
+        if market_str:
+            summary += f" | Market: {{{market_str}}}"
+        return summary
+
+    def log_stage(self, stage: str, count: int) -> None:
+        """Track remaining data points after each filter stage."""
+        self.stage_counts[stage] = count
+
+    def log_market_condition(self, condition: str, count: int) -> None:
+        """Track market condition filtering counts."""
+        self.market_condition_counts[condition] += count
 
     def report(self):
         """Log the summary using tprint."""
@@ -686,7 +703,7 @@ class RobustFocalLoss:
 
         if self.verbose:
             pos_pct = n_pos / n_total * 100 if n_total > 0 else 0
-            logger.info(f"[LGBM Focal] Gamma(+):{self.gamma_pos} Gamma(-):{self.gamma_neg} | Alpha:{self.alpha:.4f} | Class Balance:{pos_pct:.1f}% positive")
+            tprint_info(f"[LGBM Focal] Gamma(+):{self.gamma_pos} Gamma(-):{self.gamma_neg} | Alpha:{self.alpha:.4f} | Class Balance:{pos_pct:.1f}% positive")
 
         self._is_init = True
 
@@ -917,7 +934,7 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
         return variance
 
     except Exception as e:
-        logger.warning(f"Failed to calculate tree variance: {e}")
+        tprint_warning(f"Failed to calculate tree variance: {e}")
         return np.zeros(X.shape[0])
 
 
@@ -1220,6 +1237,7 @@ class LabelBasedLayer2(BaseStep):
         self._global_probe_features = {}
         self._probe_data_cache = {}
         self._label_cache = {}
+        self._weight_cache = {}
         self.regime_labels = None
         self._signals_cache = {}
         self._global_feature_cache = {}  # Global feature cache for entire dataset
@@ -1228,6 +1246,7 @@ class LabelBasedLayer2(BaseStep):
         self._feature_selection_cache = {}  # Cache feature selections
         self._label_computation_cache = {}  # Cache label computations
         self._geometry_label_backups = {}  # Preserve labels for downstream stages
+        self._max_cache_entries = int(kwargs.get("layer2_max_cache_entries", 6))
 
         # Composite score blending (structural vs empirical)
         self.structural_score_weight = float(kwargs.get('structural_score_weight', 0.6))
@@ -1263,6 +1282,7 @@ class LabelBasedLayer2(BaseStep):
         
         # Checkpoint manager for sub-step resume capability
         self._checkpoint_manager = Layer2CheckpointManager()
+
         self._checkpoints_enabled = not kwargs.get('layer2_disable_checkpoints', False)
         
         # Comprehensive Modern De Prado Framework Configuration
@@ -1389,6 +1409,18 @@ class LabelBasedLayer2(BaseStep):
         self.use_dollar_bars = kwargs.get('use_dollar_bars', True)
         self.dollar_bar_target_per_day = kwargs.get('dollar_bar_target_per_day', 96)  # ~15 min avg frequency
         self._dollar_bar_cache = {}
+
+    def _prune_cache(self, cache: Dict[str, Any], max_entries: int, cache_name: str) -> None:
+        """Prune cache to manage memory usage."""
+        if max_entries <= 0:
+            return
+        removed = 0
+        while len(cache) > max_entries:
+            cache.pop(next(iter(cache)), None)
+            removed += 1
+        if removed:
+            tprint_info(f"   🧹 Pruned {removed} entries from {cache_name} cache (max {max_entries})")
+            gc.collect()
 
     def _handle_error(self, e: Exception, context: str, fatal: bool = False):
         """
@@ -1686,6 +1718,7 @@ class LabelBasedLayer2(BaseStep):
             return
         key = f"{family}_{X_shape}"
         self._family_feature_cache[key] = features
+        self._prune_cache(self._family_feature_cache, self._max_cache_entries, "family feature")
 
     def _prefilter_correlated_candidates(
         self, 
@@ -3161,7 +3194,7 @@ class LabelBasedLayer2(BaseStep):
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'long')
             
-            self.logger.info(f"🚀 Starting Layer 2 labeling for {symbol}/{exchange}/{timeframe} ({direction})")
+            tprint_info(f"🚀 Starting Layer 2 labeling for {symbol}/{exchange}/{timeframe} ({direction})")
             
             # Load data using artifact manager
             try:
@@ -3170,9 +3203,9 @@ class LabelBasedLayer2(BaseStep):
                 if df is None or len(df) == 0:
                     raise ValueError(f"No data available for {symbol}/{exchange}/{timeframe}")
                 
-                self.logger.info(f"✅ Loaded {len(df)} rows of price data")
+                tprint_success(f"✅ Loaded {len(df)} rows of price data")
             except Exception as e:
-                self.logger.error(f"❌ Failed to load data: {e}")
+                tprint_error(f"❌ Failed to load data: {e}")
                 return {
                     'success': False,
                     'error': f"Data loading failed: {e}",
@@ -3186,7 +3219,7 @@ class LabelBasedLayer2(BaseStep):
             self.signal_weights = self._current_config.get('signal_weights', None)
             
             # Run the Layer 2 pipeline (this will use MEDIUM_TERM_GRID if enabled)
-            self.logger.info("🔄 Running Layer 2 pipeline with range-specific optimization...")
+            tprint_info("🔄 Running Layer 2 pipeline with range-specific optimization...")
             results = await self.run(df)
             
             # Save artifacts
@@ -3202,8 +3235,8 @@ class LabelBasedLayer2(BaseStep):
             }
             
             execution_time = time.time() - start_time
-            self.logger.info(f"✅ Layer 2 labeling completed in {execution_time:.2f}s")
-            self.logger.info(f"📊 Generated {metrics['events_generated']} events with {metrics['geometries_optimized']} geometries")
+            tprint_success(f"✅ Layer 2 labeling completed in {execution_time:.2f}s")
+            tprint_info(f"📊 Generated {metrics['events_generated']} events with {metrics['geometries_optimized']} geometries")
             
             return {
                 'success': True,
@@ -3214,9 +3247,9 @@ class LabelBasedLayer2(BaseStep):
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Layer 2 labeling failed: {e}")
+            tprint_error(f"❌ Layer 2 labeling failed: {e}")
             import traceback
-            self.logger.error(traceback.format_exc())
+            tprint_error(traceback.format_exc())
             return {
                 'success': False,
                 'error': str(e),
@@ -3228,7 +3261,7 @@ class LabelBasedLayer2(BaseStep):
     async def _load_price_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
         """Load price data using BaseStep's data loading infrastructure."""
         try:
-            self.logger.info(f"🔄 Loading real market data for {symbol}/{exchange}/{timeframe}")
+            tprint_info(f"🔄 Loading real market data for {symbol}/{exchange}/{timeframe}")
             
             # Create config for data loading
             config = {
@@ -3246,23 +3279,23 @@ class LabelBasedLayer2(BaseStep):
             
             # Handle different return types from BaseStep
             if isinstance(market_data, dict):
-                self.logger.info(f"🔍 Dict keys: {list(market_data.keys())}")
+                tprint_info(f"🔍 Dict keys: {list(market_data.keys())}")
                 for key, value in market_data.items():
-                    self.logger.info(f"🔍 {key}: {type(value)} - {str(value)[:100] if hasattr(value, '__str__') else 'no str'}")
+                    tprint_info(f"🔍 {key}: {type(value)} - {str(value)[:100] if hasattr(value, '__str__') else 'no str'}")
                 
                 # BaseStep sometimes returns a dict with 'data' key
                 if 'data' in market_data and isinstance(market_data['data'], pd.DataFrame):
                     market_data = market_data['data']
-                    self.logger.info(f"🔍 Extracted DataFrame from dict response")
+                    tprint_info(f"🔍 Extracted DataFrame from dict response")
                 elif 'df' in market_data and isinstance(market_data['df'], pd.DataFrame):
                     market_data = market_data['df']
-                    self.logger.info(f"🔍 Extracted DataFrame from 'df' key")
+                    tprint_info(f"🔍 Extracted DataFrame from 'df' key")
                 else:
                     # Try to find any DataFrame in the dict
                     for key, value in market_data.items():
                         if isinstance(value, pd.DataFrame):
                             market_data = value
-                            self.logger.info(f"🔍 Extracted DataFrame from '{key}' key")
+                            tprint_info(f"🔍 Extracted DataFrame from '{key}' key")
                             break
                     else:
                         raise ValueError(f"Expected DataFrame or dict with DataFrame, got {type(market_data)}: {list(market_data.keys())}")
@@ -3275,18 +3308,18 @@ class LabelBasedLayer2(BaseStep):
             if missing_cols:
                 raise ValueError(f"Missing required columns: {missing_cols}")
             
-            self.logger.info(f"✅ Loaded {len(market_data)} rows of real market data from {source}")
+            tprint_info(f"✅ Loaded {len(market_data)} rows of real market data from {source}")
             
             # Log data range
             if len(market_data) > 0:
                 start_date = market_data.index[0]
                 end_date = market_data.index[-1]
-                self.logger.info(f"📊 Data range: {start_date} to {end_date}")
+                tprint_info(f"📊 Data range: {start_date} to {end_date}")
             
             return market_data
             
         except Exception as e:
-            self.logger.error(f"Failed to load price data: {e}")
+            tprint_error(f"Failed to load price data: {e}")
             raise
     
     def _process_raw_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -3321,21 +3354,21 @@ class LabelBasedLayer2(BaseStep):
                 events_artifact_name = f"layer2_events_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(results['events_df'], events_artifact_name, artifact_type="data")
                 artifacts.append(events_artifact_name)
-                self.logger.info(f"💾 Saved events artifact: {events_artifact_name}")
+                tprint_info(f"💾 Saved events artifact: {events_artifact_name}")
             
             # Save selected trials if available
             if 'selected_trials' in results and results['selected_trials']:
                 trials_artifact_name = f"layer2_trials_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(results['selected_trials'], trials_artifact_name, artifact_type="metadata")
                 artifacts.append(trials_artifact_name)
-                self.logger.info(f"💾 Saved trials artifact: {trials_artifact_name}")
+                tprint_info(f"💾 Saved trials artifact: {trials_artifact_name}")
             
             # Save selected features if available
             if 'production_selected_features' in results and results['production_selected_features']:
                 features_artifact_name = f"layer2_features_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(results['production_selected_features'], features_artifact_name, artifact_type="metadata")
                 artifacts.append(features_artifact_name)
-                self.logger.info(f"💾 Saved features artifact: {features_artifact_name}")
+                tprint_info(f"💾 Saved features artifact: {features_artifact_name}")
             
             # --- EXHAUSTIVE Causal Quality Report ---
             if hasattr(self, '_all_candidate_assessments') and self._all_candidate_assessments:
@@ -3347,7 +3380,7 @@ class LabelBasedLayer2(BaseStep):
                         try:
                             quality_df['timestamp'] = pd.to_datetime(timestamp, format='%Y%m%d_%H%M%S')
                         except Exception as e:
-                            self.logger.warning(f"Timestamp parse failed for {timestamp}: {e}")
+                            tprint_warning(f"Timestamp parse failed for {timestamp}: {e}")
                             quality_df['timestamp'] = pd.Timestamp.now()
                     
                     # CSV suffix handled by ArtifactManager for small DFs
@@ -3366,7 +3399,7 @@ class LabelBasedLayer2(BaseStep):
                     except Exception as e_manual:
                          tprint_warning(f"⚠️ Manual save failed: {e_manual}")
                     
-                    self.logger.info(f"💾 Saved Causal Quality Report: {quality_artifact_name}")
+                    tprint_info(f"💾 Saved Causal Quality Report: {quality_artifact_name}")
                 except Exception as e_report:
                     tprint_error(f"❌ Failed to save causal quality report: {e_report}")
             
@@ -3377,7 +3410,7 @@ class LabelBasedLayer2(BaseStep):
                     oof_artifact_name = f"layer2_oof_predictions_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(individual_geos_df, oof_artifact_name, artifact_type="data")
                     artifacts.append(oof_artifact_name)
-                    self.logger.info(f"💾 Saved OOF predictions artifact: {oof_artifact_name} ({len(individual_geos_df.columns)} geometries)")
+                    tprint_info(f"💾 Saved OOF predictions artifact: {oof_artifact_name} ({len(individual_geos_df.columns)} geometries)")
             
             # Save Layer-12 ML training outputs if available
             if hasattr(self, '_layer12_ml_output') and self._layer12_ml_output is not None:
@@ -3394,21 +3427,21 @@ class LabelBasedLayer2(BaseStep):
                     component_artifact_name = f"layer2_ml_components_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(component_data, component_artifact_name, artifact_type="metadata")
                     artifacts.append(component_artifact_name)
-                    self.logger.info(f"💾 Saved ML components artifact: {component_artifact_name}")
+                    tprint_info(f"💾 Saved ML components artifact: {component_artifact_name}")
                 
                 # Save meta-learner input
                 if hasattr(self._layer12_ml_output, 'meta_X') and self._layer12_ml_output.meta_X is not None:
                     meta_X_artifact_name = f"layer2_meta_learner_input_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(self._layer12_ml_output.meta_X, meta_X_artifact_name, artifact_type="data")
                     artifacts.append(meta_X_artifact_name)
-                    self.logger.info(f"💾 Saved meta-learner input artifact: {meta_X_artifact_name}")
+                    tprint_info(f"💾 Saved meta-learner input artifact: {meta_X_artifact_name}")
                 
                 # Save sample weights
                 if hasattr(self._layer12_ml_output, 'sample_weights') and self._layer12_ml_output.sample_weights is not None:
                     weights_artifact_name = f"layer2_sample_weights_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(self._layer12_ml_output.sample_weights, weights_artifact_name, artifact_type="data")
                     artifacts.append(weights_artifact_name)
-                    self.logger.info(f"💾 Saved sample weights artifact: {weights_artifact_name}")
+                    tprint_info(f"💾 Saved sample weights artifact: {weights_artifact_name}")
             
             # Save Layer-12 output features if available
             if hasattr(self, '_layer12_output') and self._layer12_output is not None:
@@ -3416,33 +3449,33 @@ class LabelBasedLayer2(BaseStep):
                     features_artifact_name = f"layer2_generated_features_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(self._layer12_output.X, features_artifact_name, artifact_type="data")
                     artifacts.append(features_artifact_name)
-                    self.logger.info(f"💾 Saved generated features artifact: {features_artifact_name}")
+                    tprint_info(f"💾 Saved generated features artifact: {features_artifact_name}")
                 
                 if hasattr(self._layer12_output, 'y') and self._layer12_output.y is not None:
                     targets_artifact_name = f"layer2_targets_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(self._layer12_output.y, targets_artifact_name, artifact_type="data")
                     artifacts.append(targets_artifact_name)
-                    self.logger.info(f"💾 Saved targets artifact: {targets_artifact_name}")
+                    tprint_info(f"💾 Saved targets artifact: {targets_artifact_name}")
                 
                 if hasattr(self._layer12_output, 'W') and self._layer12_output.W is not None:
                     tier_weights_artifact_name = f"layer2_tier_weights_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(self._layer12_output.W, tier_weights_artifact_name, artifact_type="data")
                     artifacts.append(tier_weights_artifact_name)
-                    self.logger.info(f"💾 Saved tier weights artifact: {tier_weights_artifact_name}")
+                    tprint_info(f"💾 Saved tier weights artifact: {tier_weights_artifact_name}")
             
             # Save backbone structure information
             if hasattr(self, '_backbone_structure') and self._backbone_structure:
                 backbone_artifact_name = f"layer2_backbone_structure_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(self._backbone_structure, backbone_artifact_name, artifact_type="metadata")
                 artifacts.append(backbone_artifact_name)
-                self.logger.info(f"💾 Saved backbone structure artifact: {backbone_artifact_name}")
+                tprint_info(f"💾 Saved backbone structure artifact: {backbone_artifact_name}")
             
             # Save causal graph if available
             if hasattr(self, '_causal_graph') and self._causal_graph:
                 causal_graph_artifact_name = f"layer2_causal_graph_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(self._causal_graph, causal_graph_artifact_name, artifact_type="metadata")
                 artifacts.append(causal_graph_artifact_name)
-                self.logger.info(f"💾 Saved causal graph artifact: {causal_graph_artifact_name}")
+                tprint_info(f"💾 Saved causal graph artifact: {causal_graph_artifact_name}")
             
             # Save geometry trials with full metadata
             if hasattr(self, "selected_geometries") and self.selected_geometries:
@@ -3469,13 +3502,13 @@ class LabelBasedLayer2(BaseStep):
                         default=json_default
                     )
                 except Exception as e:
-                    self.logger.warning(f"Failed to serialize trials to JSON: {e}")
+                    tprint_warning(f"Failed to serialize trials to JSON: {e}")
                     geometry_trials_data['trials'] = str(geometry_trials_data['trials'])
                 
                 geometry_trials_artifact_name = f"layer2_geometry_trials_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(geometry_trials_data, geometry_trials_artifact_name, artifact_type="metadata")
                 artifacts.append(geometry_trials_artifact_name)
-                self.logger.info(f"💾 Saved geometry trials artifact: {geometry_trials_artifact_name}")
+                tprint_info(f"💾 Saved geometry trials artifact: {geometry_trials_artifact_name}")
             
             # Save specialist predictions if available
             if hasattr(self, '_causal_specialist_predictions') and self._causal_specialist_predictions:
@@ -3484,7 +3517,7 @@ class LabelBasedLayer2(BaseStep):
                     specialist_artifact_name = f"layer2_specialist_predictions_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(specialist_df, specialist_artifact_name, artifact_type="data")
                     artifacts.append(specialist_artifact_name)
-                    self.logger.info(f"💾 Saved specialist predictions artifact: {specialist_artifact_name}")
+                    tprint_info(f"💾 Saved specialist predictions artifact: {specialist_artifact_name}")
             
             # Save AEDL results if available
             if hasattr(self, '_aedl_results_cache') and self._aedl_results_cache:
@@ -3502,19 +3535,19 @@ class LabelBasedLayer2(BaseStep):
                     for k, v in self._aedl_results_cache.items():
                         aedl_results_safe[k] = json.dumps(v, default=json_default_aedl)
                 except Exception as e:
-                     self.logger.warning(f"Failed to serialize AEDL results: {e}")
+                     tprint_warning(f"Failed to serialize AEDL results: {e}")
                      aedl_results_safe = {"error": str(e), "raw": str(self._aedl_results_cache)}
 
                 am.save(aedl_results_safe, aedl_artifact_name, artifact_type="metadata")
                 artifacts.append(aedl_artifact_name)
-                self.logger.info(f"💾 Saved AEDL results artifact: {aedl_artifact_name}")
+                tprint_info(f"💾 Saved AEDL results artifact: {aedl_artifact_name}")
             
             # Save global probe features
             if 'global_probe_features' in results and results['global_probe_features']:
                 probe_features_artifact_name = f"layer2_global_probe_features_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(results['global_probe_features'], probe_features_artifact_name, artifact_type="metadata")
                 artifacts.append(probe_features_artifact_name)
-                self.logger.info(f"💾 Saved global probe features artifact: {probe_features_artifact_name}")
+                tprint_info(f"💾 Saved global probe features artifact: {probe_features_artifact_name}")
             
             # Save comprehensive stage metrics
             if hasattr(self, "_stage_metrics") and self._stage_metrics:
@@ -3522,41 +3555,41 @@ class LabelBasedLayer2(BaseStep):
                 stage_metrics_artifact_name = f"layer2_stage_metrics_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(stage_metrics_df, stage_metrics_artifact_name, artifact_type="metrics")
                 artifacts.append(stage_metrics_artifact_name)
-                self.logger.info(f"💾 Saved stage metrics artifact: {stage_metrics_artifact_name}")
+                tprint_info(f"💾 Saved stage metrics artifact: {stage_metrics_artifact_name}")
             
             # Save geometry optimization metrics
             if hasattr(self, "_geometry_optimization_metrics") and self._geometry_optimization_metrics:
                 geo_opt_artifact_name = f"layer2_geometry_optimization_metrics_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(self._geometry_optimization_metrics, geo_opt_artifact_name, artifact_type="metrics")
                 artifacts.append(geo_opt_artifact_name)
-                self.logger.info(f"💾 Saved geometry optimization metrics: {geo_opt_artifact_name}")
+                tprint_info(f"💾 Saved geometry optimization metrics: {geo_opt_artifact_name}")
             
             # Save model race comparison metrics
             if hasattr(self, "_model_race_metrics") and self._model_race_metrics:
                 race_metrics_artifact_name = f"layer2_model_race_metrics_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(self._model_race_metrics, race_metrics_artifact_name, artifact_type="metrics")
                 artifacts.append(race_metrics_artifact_name)
-                self.logger.info(f"💾 Saved model race metrics: {race_metrics_artifact_name}")
+                tprint_info(f"💾 Saved model race metrics: {race_metrics_artifact_name}")
             
             # Save feature selection evolution
             if hasattr(self, "_feature_selection_evolution") and self._feature_selection_evolution:
                 feature_evolution_artifact_name = f"layer2_feature_selection_evolution_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(self._feature_selection_evolution, feature_evolution_artifact_name, artifact_type="metrics")
                 artifacts.append(feature_evolution_artifact_name)
-                self.logger.info(f"💾 Saved feature selection evolution: {feature_evolution_artifact_name}")
+                tprint_info(f"💾 Saved feature selection evolution: {feature_evolution_artifact_name}")
             
             # Save cross-validation fold metrics
             if hasattr(self, "_cv_fold_metrics") and self._cv_fold_metrics:
                 cv_metrics_artifact_name = f"layer2_cv_fold_metrics_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(self._cv_fold_metrics, cv_metrics_artifact_name, artifact_type="metrics")
                 artifacts.append(cv_metrics_artifact_name)
-                self.logger.info(f"💾 Saved CV fold metrics: {cv_metrics_artifact_name}")
+                tprint_info(f"💾 Saved CV fold metrics: {cv_metrics_artifact_name}")
             return artifacts
             
         except Exception as e:
-            self.logger.error(f"❌ Critical failure in artifact saving: {e}")
+            tprint_error(f"❌ Critical failure in artifact saving: {e}")
             import traceback
-            self.logger.error(traceback.format_exc())
+            tprint_error(traceback.format_exc())
             return artifacts
     
     def _should_use_range_specific_optimization(self) -> bool:
@@ -3674,6 +3707,8 @@ class LabelBasedLayer2(BaseStep):
                     tracker.log_rejection("generator_exception", 1)
                     self._global_event_cache[cache_key] = pd.DatetimeIndex([])
 
+            tracker.log_stage("generated", tracker.generated_events)
+            self._prune_cache(self._global_event_cache, self._max_cache_entries, "global events")
             # Report tracker stats
             tracker.report()
 
@@ -3709,6 +3744,8 @@ class LabelBasedLayer2(BaseStep):
                  # Map family -> events
                  self._orthogonal_cache[df_hash] = {c['family']: c['events'] for c in candidates}
                  tprint_success(f"✅ Cached {len(candidates)} orthogonal candidates.")
+                 if tracker is not None:
+                     tracker.log_stage("orthogonal_candidates", len(candidates))
             except Exception as e:
                  tprint_error(f"❌ Orthogonal generation failed: {e}")
                  self._orthogonal_cache[df_hash] = {}
@@ -3762,7 +3799,7 @@ class LabelBasedLayer2(BaseStep):
                     chunk_size = 50_000
                     if len(df_features) > chunk_size * 2:
                         tprint_info(f"   📦 Chunked processing: {len(df_features)} rows in {len(df_features) // chunk_size + 1} chunks")
-                        X_chunks = []
+                        X_all = None
                         for start in range(0, len(df_features), chunk_size):
                             end = min(start + chunk_size, len(df_features))
                             chunk_df = df_features.iloc[start:end].copy()
@@ -3776,18 +3813,18 @@ class LabelBasedLayer2(BaseStep):
                                     tprint_warning(f"   ⚠️ Index mismatch detected in Chunk {start//chunk_size}. Restoring...")
                                     chunk_X.index = chunk_df.index
                                     
-                                X_chunks.append(chunk_X)
+                                if X_all is None:
+                                    X_all = chunk_X
+                                else:
+                                    X_all = pd.concat([X_all, chunk_X], axis=0)
                             except Exception as chunk_e:
                                 tprint_warning(f"   ⚠️ Chunk {start//chunk_size} failed: {chunk_e}")
                             # Cleanup chunk memory
                             del chunk_df, chunk_signals
                             gc.collect()
                         
-                        if X_chunks:
-                            X_all = pd.concat(X_chunks, axis=0)
+                        if X_all is not None:
                             tprint_info(f"   🐛 X_all shape={X_all.shape}, index type={type(X_all.index)}")
-                            del X_chunks
-                            gc.collect()
                         else:
                             X_all = pd.DataFrame(index=df_features.index)
                     else:
@@ -3812,12 +3849,14 @@ class LabelBasedLayer2(BaseStep):
                     if not hasattr(self, '_cached_global_features'):
                         self._cached_global_features = {}
                     self._cached_global_features[cache_key_global] = X_all
+                    self._prune_cache(self._cached_global_features, self._max_cache_entries, "cached global feature")
                 except Exception as e:
                     tprint_warning(f"⚠️ Global feature generation failed: {e}, using empty cache")
                     # Clear poison from cache - set as empty but allow retry OR set with correct columns placeholder
                     X_all = pd.DataFrame(index=df.index)
                     # Don't cache the failure if we want to retry, but for now we cache the empty frame to avoid loops
                     self._cached_global_features[cache_key_global] = X_all
+                    self._prune_cache(self._cached_global_features, self._max_cache_entries, "cached global feature")
             else:
                 X_all = self._cached_global_features[cache_key_global]
                 if self.verbose:
@@ -3829,6 +3868,7 @@ class LabelBasedLayer2(BaseStep):
             # Optimize memory usage
             features = self._optimize_dataframe_memory(features)
             self._global_feature_cache[cache_key] = features
+            self._prune_cache(self._global_feature_cache, self._max_cache_entries, "global feature")
             tprint_success(f"✅ Global features cached in {time.time() - start_time:.2f}s (shape={features.shape})")
         else:
             if self.verbose:
@@ -3865,6 +3905,7 @@ class LabelBasedLayer2(BaseStep):
                 gen_kwargs = params if params else {}
                 events = gen.generate(df_train, **gen_kwargs)
                 self._events_cache[cache_key] = events
+                self._prune_cache(self._events_cache, self._max_cache_entries, "events")
             else:
                 return pd.DatetimeIndex([])
         else:
@@ -3903,6 +3944,7 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(f"🔄 Generating features for {len(events_df)} events (fold {fold_idx})...")
             features = self._build_geometry_independent_event_features(df, events_df)
             self._feature_cache[cache_key] = features
+            self._prune_cache(self._feature_cache, self._max_cache_entries, "features")
         else:
             tprint_info(f"✅ Using cached features for {len(events_df)} events (fold {fold_idx})")
         
@@ -3998,6 +4040,7 @@ class LabelBasedLayer2(BaseStep):
                 weights_dict[gt.uuid] = pd.Series([], dtype=float)
         
         self._label_batch_cache[cache_key] = (labels_dict, weights_dict)
+        self._prune_cache(self._label_batch_cache, self._max_cache_entries, "label batch")
         return labels_dict, weights_dict
 
     def _get_cached_labels(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
@@ -4029,6 +4072,8 @@ class LabelBasedLayer2(BaseStep):
 
             self._label_cache[cache_key_lbl] = labels
             self._weight_cache[cache_key_wgt] = final_w
+            self._prune_cache(self._label_cache, self._max_cache_entries, "labels")
+            self._prune_cache(self._weight_cache, self._max_cache_entries, "weights")
 
             if self.preserve_candidate_labels and gt.uuid in getattr(self, '_geometry_label_backups', {}):
                 backup = self._geometry_label_backups.get(gt.uuid)
@@ -4051,6 +4096,7 @@ class LabelBasedLayer2(BaseStep):
         """Cache trained model."""
         cache_key = f"model_{geometry_uuid}_fold_{fold_idx}"
         self._model_cache[cache_key] = model
+        self._prune_cache(self._model_cache, self._max_cache_entries, "model")
 
     def _get_cached_feature_selection(self, geometry_uuid: str):
         """Get cached feature selection if available."""
@@ -4059,6 +4105,7 @@ class LabelBasedLayer2(BaseStep):
     def _cache_feature_selection(self, geometry_uuid: str, selected_features: List[str]):
         """Cache feature selection results."""
         self._feature_selection_cache[geometry_uuid] = selected_features
+        self._prune_cache(self._feature_selection_cache, self._max_cache_entries, "feature selection")
 
     def _get_cached_labels_metadata(self, geometry_uuid: str, fold_idx: int):
         """Get cached labels and weights if available."""
@@ -4069,12 +4116,14 @@ class LabelBasedLayer2(BaseStep):
         """Cache computed labels and weights."""
         cache_key = f"labels_{geometry_uuid}_fold_{fold_idx}"
         self._label_computation_cache[cache_key] = (labels, weights)
+        self._prune_cache(self._label_computation_cache, self._max_cache_entries, "label computation")
 
     def clear_caches(self):
         """Clear all performance optimization caches."""
         self._feature_cache.clear()
         self._events_cache.clear()
         self._label_cache.clear()
+        self._weight_cache.clear()
         self._global_feature_cache.clear()
         self._global_event_cache.clear()
         self._model_cache.clear()
@@ -4651,6 +4700,14 @@ class LabelBasedLayer2(BaseStep):
         digest = hashlib.md5(hash_series.values.tobytes()).hexdigest()
         return f"{len(df)}_{df.index.min()}_{df.index.max()}_{digest}"
 
+    def _compute_config_hash(self, config: Dict[str, Any]) -> str:
+        """Create a deterministic fingerprint for configuration."""
+        if not config:
+            return "empty"
+        sanitized = {k: v for k, v in config.items() if not callable(v)}
+        payload = json.dumps(sanitized, sort_keys=True, default=str)
+        return hashlib.md5(payload.encode("utf-8")).hexdigest()
+
     async def run(self, input_data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, Any]:
         """
         Execute the Layer 2 pipeline (causal framework only).
@@ -4721,7 +4778,11 @@ class LabelBasedLayer2(BaseStep):
         
         # Store config for later use
         self._current_config = config
+        self._config_hash = self._compute_config_hash(config)
         
+        # Compute dataset fingerprint before checkpointing for traceability
+        self._dataset_fingerprint = self._compute_dataset_fingerprint(df)
+
         # --- Checkpoint System: Handle cleanup and resume ---
         symbol = config.get('symbol') or getattr(self, 'symbol', None) or 'UNKNOWN'
         resume_from = config.get('layer2_resume_from')
@@ -4755,9 +4816,24 @@ class LabelBasedLayer2(BaseStep):
                 
                 if checkpoint_data:
                     # Restore state from checkpoint
+                    checkpoint_config_hash = checkpoint_data.get('config_hash')
+                    if checkpoint_config_hash and checkpoint_config_hash != self._config_hash:
+                        tprint_error(
+                            "❌ Checkpoint config hash mismatch. Refusing to resume to prevent stale artifacts."
+                        )
+                        raise RuntimeError("Checkpoint config hash mismatch.")
+                    checkpoint_fingerprint = checkpoint_data.get('dataset_fingerprint')
                     if 'df' in checkpoint_data:
                         df = checkpoint_data['df']
                         tprint_info(f"   📂 Restored DataFrame: {df.shape}")
+                        if checkpoint_fingerprint:
+                            current_fingerprint = self._compute_dataset_fingerprint(df)
+                            if current_fingerprint != checkpoint_fingerprint:
+                                tprint_error(
+                                    "❌ Checkpoint dataset fingerprint mismatch. Refusing to resume."
+                                )
+                                raise RuntimeError("Checkpoint dataset fingerprint mismatch.")
+                            self._dataset_fingerprint = checkpoint_fingerprint
                     if 'regime_labels' in checkpoint_data:
                         self.regime_labels = checkpoint_data['regime_labels']
                     if 'causal_graph' in checkpoint_data:
@@ -4774,12 +4850,12 @@ class LabelBasedLayer2(BaseStep):
         if self._checkpoints_enabled and (not resume_from or LAYER2_SUBSTEPS.index(resume_from) <= 0):
             self._checkpoint_manager.save_checkpoint('data_loading', {
                 'df': df,
-                'config': {k: v for k, v in config.items() if not callable(v)}
+                'config': {k: v for k, v in config.items() if not callable(v)},
+                'config_hash': self._config_hash,
+                'dataset_fingerprint': self._dataset_fingerprint
             }, symbol, config)
 
         tprint_info("Starting Layer 2 Pipeline...")
-        self._dataset_fingerprint = self._compute_dataset_fingerprint(df)
-
         if not self.enable_causal_framework:
             tprint_warning("⚠️ AFML path deprecated; enabling causal framework automatically")
             self.enable_causal_framework = True
@@ -4800,7 +4876,9 @@ class LabelBasedLayer2(BaseStep):
             if self._checkpoints_enabled:
                 self._checkpoint_manager.save_checkpoint('regime_generation', {
                     'df': df,
-                    'regime_labels': self.regime_labels
+                    'regime_labels': self.regime_labels,
+                    'config_hash': self._config_hash,
+                    'dataset_fingerprint': self._dataset_fingerprint
                 }, symbol, config)
         
         if 'vol_regime' not in df.columns:
@@ -5954,7 +6032,10 @@ class LabelBasedLayer2(BaseStep):
 
             if geometries:
                 tprint_info("\n🏆 Top Geometry Performance (Causal Metrics):")
-                tprint_info(f"   {'UUID':<10} | {'Family':<15} | {'L2-Score':<8} | {'CI':<5} | {'Stab':<5} | {'IC':<5} | {'DSR':<5}")
+                tprint_info(
+                    f"   {'UUID':<10} | {'Family':<15} | {'L2-Score':<8} | {'CI':<5} | {'Stab':<5} | "
+                    f"{'IC':<5} | {'DSR':<5}"
+                )
                 tprint_info("-" * 85)
                 
                 # Sort geometries by layer2_score for the consolidated leaderboard
@@ -5968,8 +6049,10 @@ class LabelBasedLayer2(BaseStep):
                     stab = m.get('Dir_consistency', 0.0)
                     ic = m.get('IC', 0.0)
                     dsr = m.get('DSR', 0.0)
-                    
-                    tprint_info(f"   {uuid_short:<10} | {geom.family[:15]:<15} | {l2_score:<8.2f} | {ci:<5.2f} | {stab:<5.2f} | {ic:<5.2f} | {dsr:<5.2f}")
+                    tprint_info(
+                        f"   {uuid_short:<10} | {geom.family[:15]:<15} | {l2_score:<8.2f} | {ci:<5.2f} | "
+                        f"{stab:<5.2f} | {ic:<5.2f} | {dsr:<5.2f}"
+                    )
                 tprint_info("-" * 85)
 
                 # Save a CSV summary for analysis
@@ -7145,14 +7228,29 @@ class LabelBasedLayer2(BaseStep):
         
         family = candidates[0].family
         
+        filter_counts = {
+            "initial": len(candidates),
+            "post_correlation": 0,
+            "post_top_k": 0,
+            "post_label": 0,
+            "post_alignment": 0,
+            "post_min_events": 0,
+            "post_tier_filter": 0,
+            "post_nan_filter": 0,
+            "post_probe": 0
+        }
+        rejection_reasons = defaultdict(int)
+
         # 0. PRE-FILTER: Remove highly correlated candidates before probing
         candidates = self._prefilter_correlated_candidates(candidates, df, max_correlation=0.95)
+        filter_counts["post_correlation"] = len(candidates)
         if not candidates:
             tprint_warning(f"⚠️ All candidates for {family} were pruned by correlation filter.")
             return []
         
         # 1. Sort by initial score (purity) and take Top K
         sorted_cands = sorted(candidates, key=lambda x: x.final_score, reverse=True)[:top_k]
+        filter_counts["post_top_k"] = len(sorted_cands)
         
         tprint_info(f"   🔎 Probing top {len(sorted_cands)} candidates for {family}...")
 
@@ -7165,7 +7263,9 @@ class LabelBasedLayer2(BaseStep):
                 if not hasattr(cand, 'labels') or cand.labels is None:
                     # Should have been attached in optimize_production_geometries
                     tprint_warning(f"⚠️ Candidate {cand.uuid} missing labels, skipping probe.")
+                    rejection_reasons["missing_labels"] += 1
                     continue
+                filter_counts["post_label"] += 1
 
                 events_df = pd.DataFrame(index=cand.events)
                 X_cand = self._build_geometry_independent_event_features(df, events_df)
@@ -7188,17 +7288,21 @@ class LabelBasedLayer2(BaseStep):
                 common_idx = X_cand.index.intersection(y_cand.index)
                 if len(common_idx) == 0:
                     tprint_warning(f"⚠️ Candidate {cand.uuid}: No common indices between X and y, skipping.")
+                    rejection_reasons["no_common_index"] += 1
                     continue
                     
                 X_cand = X_cand.loc[common_idx]
                 y_cand = y_cand.loc[common_idx]
+                filter_counts["post_alignment"] += 1
                 
                 # Check Min Length (Bug #6/#12 fix: lower threshold for sparse families)
                 sparse_families = ['CAUSAL_SURPRISE', 'VOLATILITY_SPECIALIST', 'INFORMATION_SPECIALIST']
                 min_events = 20 if cand.family in sparse_families else 50
                 if len(X_cand) < min_events:
                     tprint_warning(f"⚠️ Candidate {cand.uuid}: Too few events ({len(X_cand)} < {min_events}), skipping.")
+                    rejection_reasons["min_events"] += 1
                     continue
+                filter_counts["post_min_events"] += 1
 
                 # 2.2 Run De Prado Causal Quality Assessment
                 # Uses validity, stability, integrity, robustness, and complexity metrics
@@ -7363,11 +7467,13 @@ class LabelBasedLayer2(BaseStep):
                     cand.filtering_status = "FAILED"
                     cand.failure_reasons = failure_reasons
                     
+                    rejection_reasons["tier_filter"] += 1
                     continue  # Skip this candidate entirely
                 
                 # Candidate passed both tiers
                 tprint_success(f"   ✅ {cand.uuid}: PASSED both tiers - Survival: {survival_status}, Causal: {causal_quality_status}")
                 cand.filtering_status = "PASSED"
+                filter_counts["post_tier_filter"] += 1
                 
                 # === END TWO-TIER FILTERING ===
 
@@ -7385,7 +7491,9 @@ class LabelBasedLayer2(BaseStep):
                 
                 if len(X_cand) < min_events:
                     tprint_warning(f"⚠️ Candidate {cand.uuid}: Too many NaNs, remaining events {len(X_cand)} < {min_events}")
+                    rejection_reasons["nan_filtered"] += 1
                     continue
+                filter_counts["post_nan_filter"] += 1
 
                 split_idx = int(len(X_cand) * 0.7)
                 X_tr, X_val = X_cand.iloc[:split_idx], X_cand.iloc[split_idx:]
@@ -7679,16 +7787,24 @@ class LabelBasedLayer2(BaseStep):
 
                 self._mark_geometry_tier(cand, 1)
                 scored_candidates.append(cand)
+                filter_counts["post_probe"] += 1
                 
                 # Cleanup labels to free memory
                 cand.labels = None
 
             except Exception as e:
                 tprint_warning(f"⚠️ Probe failed for {cand.uuid}: {e}")
+                rejection_reasons["probe_exception"] += 1
         
         if not scored_candidates: 
             tprint_warning(f"⚠️ No candidates survived probe for {family}.")
+            if rejection_reasons:
+                tprint_info(f"   🧾 {family} rejection reasons: {dict(rejection_reasons)}")
             return []
+
+        tprint_info(f"   🧭 {family} filter funnel: {filter_counts}")
+        if rejection_reasons:
+            tprint_info(f"   🧾 {family} rejection reasons: {dict(rejection_reasons)}")
         
         # Sort by Composite Layer 2 Score (ranking_score)
         scored_candidates.sort(key=lambda x: getattr(x, 'ranking_score', x.probe_score), reverse=True)
@@ -7838,12 +7954,17 @@ class LabelBasedLayer2(BaseStep):
 
             # Group global candidates by Family
             family_map = defaultdict(list)
+            regime_filter_stats = defaultdict(lambda: {"total": 0, "kept": 0})
+            regime_rejections = defaultdict(int)
 
             for i, og in enumerate(ortho_geoms):
                 # Filter events to regime
                 regime_events = og.events[og.events.isin(df[regime_mask].index)]
+                regime_filter_stats[og.family]["total"] += len(og.events)
+                regime_filter_stats[og.family]["kept"] += len(regime_events)
 
                 if len(regime_events) < 20: # Skip if too few events in this regime
+                    regime_rejections["min_events_regime"] += 1
                     continue
 
                 # Filter labels corresponding to these events
@@ -7858,23 +7979,42 @@ class LabelBasedLayer2(BaseStep):
                     regime_labels = None
 
                 # Calculate Financial Metrics for this regime's events
-                # Use a default horizon (e.g. 120 bars) or from params if available
-                # Assuming simple return calculation for now as we don't have full dominance labels here yet
+                # Use realized returns from triple-barrier style outcomes when possible
                 fin_metrics = {'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'sortino_ratio': 0.0}
                 if len(regime_events) > 5 and 'close' in df.columns:
                     try:
-                        # Quick realize returns at horizon
-                        horizon = og.params.get('horizon', 120)
-                        # We need realized returns.
-                        # Using simple forward returns approximation:
-                        # ret = (close.shift(-horizon) / close - 1)
-                        # But we need it for specific events.
+                        horizon = int(og.params.get('horizon', 120))
+                        pt_mult = og.params.get('pt_mult')
+                        sl_mult = og.params.get('sl_mult')
+                        volatility_series = df['volatility_1d'] if 'volatility_1d' in df.columns else None
 
-                        # Let's use the helper if available or manual
-                        # manual:
-                        entry_prices = df['close'].reindex(regime_events)
-                        exit_prices = df['close'].shift(-horizon).reindex(regime_events)
-                        trade_rets = (exit_prices / entry_prices) - 1.0
+                        if volatility_series is not None and pt_mult is not None:
+                            profit_threshold = volatility_series * float(pt_mult)
+                        else:
+                            profit_threshold = og.params.get('kappa', 0.015)
+
+                        if volatility_series is not None and sl_mult is not None:
+                            stop_threshold = volatility_series * float(sl_mult)
+                        else:
+                            stop_threshold = og.params.get('sl_mult', 0.01)
+
+                        signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
+                        signals.loc[regime_events, 'consensus'] = 1.0
+
+                        realized_returns, *_ = compute_realized_returns(
+                            df,
+                            signals,
+                            profit_threshold=profit_threshold,
+                            stop_threshold=stop_threshold,
+                            horizon=horizon,
+                            transaction_cost=self.transaction_cost,
+                            volatility_series=volatility_series,
+                            close_prices_arr=df['close'].values,
+                            high_prices_arr=df['high'].values if 'high' in df.columns else None,
+                            low_prices_arr=df['low'].values if 'low' in df.columns else None,
+                            consensus_signals_arr=signals['consensus'].values
+                        )
+                        trade_rets = realized_returns.reindex(regime_events).dropna()
                         fin_metrics = self._compute_financial_metrics(trade_rets)
                     except Exception as e:
                         # logger.warning(f"Failed to calc metrics for {og.name}: {e}")
@@ -7901,6 +8041,27 @@ class LabelBasedLayer2(BaseStep):
                 gt.regime = regime # Tag
 
                 family_map[og.family].append(gt)
+
+            total_events = sum(stats["total"] for stats in regime_filter_stats.values())
+            kept_events = sum(stats["kept"] for stats in regime_filter_stats.values())
+            if total_events > 0:
+                kept_pct = kept_events / total_events * 100.0
+                tprint_info(
+                    f"   🧭 Market condition filter ({regime}): {kept_events}/{total_events} events kept ({kept_pct:.1f}%)"
+                )
+                drop_summary = []
+                for fam, stats in regime_filter_stats.items():
+                    if stats["total"] == 0:
+                        continue
+                    drop_rate = 1.0 - (stats["kept"] / stats["total"])
+                    drop_summary.append((drop_rate, fam, stats))
+                drop_summary.sort(reverse=True)
+                for drop_rate, fam, stats in drop_summary[:5]:
+                    tprint_info(
+                        f"      - {fam}: kept {stats['kept']}/{stats['total']} ({(1 - drop_rate) * 100:.1f}%)"
+                    )
+            if regime_rejections:
+                tprint_info(f"   🧾 Regime filter rejections ({regime}): {dict(regime_rejections)}")
 
             # 3. Select Best via Race/Probe (Per Regime)
             regime_winners = []
@@ -8872,6 +9033,7 @@ class LabelBasedLayer2(BaseStep):
 
         # Update cache
         self._feature_cache[cache_key] = result
+        self._prune_cache(self._feature_cache, self._max_cache_entries, "features")
 
         return result
 
@@ -10326,7 +10488,7 @@ class LabelBasedLayer2(BaseStep):
             return result
 
         except Exception as e:
-            logger.warning(f"Vectorized alignment failed: {e}, falling back to simple reindex")
+            tprint_warning(f"Vectorized alignment failed: {e}, falling back to simple reindex")
             try:
                 # Fallback to simple reindex with tolerance
                 fallback = X_all.reindex(events_idx, method='nearest', tolerance=pd.Timedelta('1min')).fillna(0.0)
@@ -10334,7 +10496,7 @@ class LabelBasedLayer2(BaseStep):
                     tprint_warning(f"   ⚠️ Alignment fallback used, result shape {fallback.shape}")
                 return fallback
             except Exception as e2:
-                logger.error(f"Fallback alignment also failed: {e2}")
+                tprint_error(f"Fallback alignment also failed: {e2}")
                 return pd.DataFrame(index=events_idx)
 
     def _mark_geometry_tier(self, geometry, tier_label: int, selection_score: float = None) -> None:
@@ -10353,7 +10515,7 @@ class LabelBasedLayer2(BaseStep):
 
     def _build_geometry_independent_event_features(self, df: pd.DataFrame, events_df: pd.DataFrame) -> pd.DataFrame:
         if len(events_df) == 0:
-            logger.warning("⚠️ Event feature build skipped: events_df empty")
+            tprint_warning("⚠️ Event feature build skipped: events_df empty")
             return pd.DataFrame()
 
         tprint_info(f"   📐 Building geometry-independent features for {len(events_df)} events")
@@ -10363,7 +10525,7 @@ class LabelBasedLayer2(BaseStep):
             X_all = self._get_global_features(df)
 
             if X_all.empty:
-                logger.warning("⚠️ Global features cache empty, returning empty feature frame")
+                tprint_warning("⚠️ Global features cache empty, returning empty feature frame")
                 return pd.DataFrame(index=events_df.index)
 
             tprint_info(f"   🧱 Global feature frame: {X_all.shape}")
@@ -10381,6 +10543,7 @@ class LabelBasedLayer2(BaseStep):
                         self._probe_data_cache[probe_cache_key] = generate_market_state_probe(
                             df['close'], df['volume'], regime_labels=self.regime_labels
                         )
+                        self._prune_cache(self._probe_data_cache, self._max_cache_entries, "probe data")
 
                     probe_feats_all = self._probe_data_cache[probe_cache_key]
 
@@ -10393,7 +10556,7 @@ class LabelBasedLayer2(BaseStep):
                         if any(X.columns.duplicated()):
                             X = X.loc[:, ~X.columns.duplicated(keep='last')]
                 except Exception as e:
-                    logger.warning(f"Probe feature alignment failed: {e}")
+                    tprint_warning(f"Probe feature alignment failed: {e}")
             # -------------------------------
 
             # Drop non-numeric columns that cause LightGBM errors globally
@@ -10418,9 +10581,9 @@ class LabelBasedLayer2(BaseStep):
             return X.fillna(0.0)
 
         except Exception as e:
-            logger.warning(f"Feature generation failed: {e}")
+            tprint_warning(f"Feature generation failed: {e}")
             import traceback
-            logger.warning(traceback.format_exc())
+            tprint_warning(traceback.format_exc())
             return pd.DataFrame(index=events_df.index)
 
     def _compute_dominance_labels(self, df, events_df, **kwargs):
@@ -10530,7 +10693,7 @@ class LabelBasedLayer2(BaseStep):
                 "feature_usage_skewness": float(skew(imp[imp > 0])) if np.sum(imp > 0) > 1 else 0.0
             }
         except Exception as e:
-            logger.warning(f"Failed to extract tree diagnostics: {e}")
+            tprint_warning(f"Failed to extract tree diagnostics: {e}")
             return {'n_features_used': 0.0, 'avg_depth': 0.0, 'max_depth': 0.0}
 
 

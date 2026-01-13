@@ -332,7 +332,7 @@ class EnhancedMLRiskRegimeStep(BaseStep):
 
         # Get market data
         market_data, _source = self.load_market_data_or_fail(
-            config, pipeline_state, allow_config_override=False
+            config, pipeline_state, allow_config_override=True
         )
 
         if market_data is None or market_data.empty:

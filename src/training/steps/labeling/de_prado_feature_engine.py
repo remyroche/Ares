@@ -125,7 +125,8 @@ class DePradoFeatureEngine:
         for k in range(2, max_k + 1):
             try:
                 clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
-                cluster_labels = clusterer.fit_predict(X)
+                clusterer.fit(X)
+                cluster_labels = clusterer.labels_
                 
                 # Debug: Check if clustering actually produced k clusters
                 unique_labels = np.unique(cluster_labels)
@@ -156,15 +157,20 @@ class DePradoFeatureEngine:
                 continue
         
         if best_k == 2 and best_score < 0:
-            tprint_warning("Clustering failed. Using single cluster.")
-            best_k = 1
+            if len(X.columns) > 20:
+                tprint_warning(f"ONC Clustering quality low (best silhouette {best_score:.3f}). Forcing 5 clusters for diversity.")
+                best_k = 5
+            else:
+                tprint_warning("Clustering failed (silhouette < 0). Using single cluster.")
+                best_k = 1
         
         # Final clustering with optimal k
         if best_k == 1:
             final_labels = np.zeros(len(X.columns))
         else:
             final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
-            final_labels = final_clusterer.fit_predict(X)
+            final_clusterer.fit(X)
+            final_labels = final_clusterer.labels_
         
         self.optimal_n_clusters_ = best_k
         self.silhouette_scores_ = scores_history

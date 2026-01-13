@@ -658,6 +658,12 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         # Step 5: Train Ensemble models (ExtraTrees, CatBoost, LGBM, XGB) on selected features
         model_results = await self._train_models_on_selected_features(selected_features, active_market_data, config)
         
+        # Step 5.5: Train Meta Model (Stacking)
+        if model_results.get("success", False) and "y_oof" in model_results:
+            tprint_info("🏗️ Training Meta-Model (Stacking)...")
+            meta_results = await self._train_meta_model(model_results, model_results['y_oof'])
+            model_results['meta_model'] = meta_results
+
         # Step 6: Train individual specialists using GMM-enhanced features
         tprint_info("🔄 Training individual specialists with GMM-enhanced features...")
         specialist_outputs = await self._train_all_specialists_memory_efficient(
@@ -1127,6 +1133,74 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         except Exception as e:
             tprint_error(f"❌ ExtraTrees training failed: {e}")
             return {"success": False, "error": str(e)}
+    async def _train_meta_model(self, model_results: Dict[str, Any], y_true: pd.Series) -> Dict[str, Any]:
+        """Train a meta-model (Stacking) on OOF predictions."""
+        try:
+            tprint_info("🏗️ Training Meta-Model (Stacking)...")
+
+            # Collect OOF predictions
+            meta_features = pd.DataFrame(index=y_true.index)
+            valid_models = False
+
+            if 'all_results' in model_results:
+                results_dict = model_results['all_results']
+            else:
+                results_dict = model_results
+
+            for name, res in results_dict.items():
+                if isinstance(res, dict) and 'oof_pred' in res:
+                    meta_features[name] = res['oof_pred']
+                    valid_models = True
+
+            if not valid_models or meta_features.empty:
+                tprint_warning("⚠️ No OOF predictions available for meta-model")
+                return {"success": False, "error": "No OOF predictions available"}
+
+            # Simple Ridge Regression as Meta Learner (Stacking)
+            from sklearn.linear_model import Ridge
+            from sklearn.preprocessing import StandardScaler
+
+            # Standardize inputs
+            scaler = StandardScaler()
+            X_meta = scaler.fit_transform(meta_features)
+
+            meta_model = Ridge(alpha=1.0)
+            meta_model.fit(X_meta, y_true)
+
+            meta_preds = meta_model.predict(X_meta)
+
+            # Calculate metrics
+            from sklearn.metrics import roc_auc_score
+            from scipy.stats import spearmanr
+
+            ic, _ = spearmanr(y_true, meta_preds)
+            try:
+                auc = roc_auc_score((y_true > 0).astype(int), meta_preds)
+            except:
+                auc = 0.5
+
+            score = ic * auc
+
+            tprint_success(f"✅ Meta-Model: Score={score:.4f}, IC={ic:.4f}, AUC={auc:.4f}")
+            tprint_info(f"   Coefficients: {dict(zip(meta_features.columns, meta_model.coef_))}")
+
+            return {
+                "success": True,
+                "model": meta_model,
+                "scaler": scaler,
+                "score": score,
+                "ic": ic,
+                "auc": auc,
+                "predictions": meta_preds,
+                "feature_names": list(meta_features.columns)
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ Meta-Model training failed: {e}")
+            import traceback
+            tprint_error(traceback.format_exc())
+            return {"success": False, "error": str(e)}
+
     async def _extract_raw_features_from_market_data(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Extract raw features from market data without training specialists."""
         try:
@@ -1342,7 +1416,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             best_et.fit(X_train_sel, y_train)
             pred_et = best_et.predict(X_oof_sel)
             score_et, ic_et, auc_et = calculate_score(y_oof, pred_et)
-            results['ExtraTrees'] = {'score': score_et, 'ic': ic_et, 'auc': auc_et, 'model': best_et}
+            results['ExtraTrees'] = {'score': score_et, 'ic': ic_et, 'auc': auc_et, 'model': best_et, 'oof_pred': pred_et}
             tprint_success(f"   ✅ ExtraTrees: Score={score_et:.4f}, IC={ic_et:.4f}, AUC={auc_et:.4f}")
 
             # --- Model 2: XGBoost ---
@@ -1389,7 +1463,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             best_xgb.fit(X_train_sel, y_train, base_margin=warm_start_train)
             pred_xgb = best_xgb.predict(X_oof_sel, base_margin=warm_start_oof)
             score_xgb, ic_xgb, auc_xgb = calculate_score(y_oof, pred_xgb)
-            results['XGBoost'] = {'score': score_xgb, 'ic': ic_xgb, 'auc': auc_xgb, 'model': best_xgb}
+            results['XGBoost'] = {'score': score_xgb, 'ic': ic_xgb, 'auc': auc_xgb, 'model': best_xgb, 'oof_pred': pred_xgb}
             tprint_success(f"   ✅ XGBoost: Score={score_xgb:.4f}, IC={ic_xgb:.4f}, AUC={auc_xgb:.4f}")
 
             # --- Model 3: CatBoost ---
@@ -1451,7 +1525,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             eval_pool = Pool(X_oof_sel, baseline=warm_start_oof)
             pred_cb = best_cb.predict(eval_pool)
             score_cb, ic_cb, auc_cb = calculate_score(y_oof, pred_cb)
-            results['CatBoost'] = {'score': score_cb, 'ic': ic_cb, 'auc': auc_cb, 'model': best_cb}
+            results['CatBoost'] = {'score': score_cb, 'ic': ic_cb, 'auc': auc_cb, 'model': best_cb, 'oof_pred': pred_cb}
             tprint_success(f"   ✅ CatBoost: Score={score_cb:.4f}, IC={ic_cb:.4f}, AUC={auc_cb:.4f}")
 
             # --- Model 4: LGBM ---
@@ -1507,7 +1581,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             pred_lgbm_raw = best_lgbm.predict(X_oof_sel)
             pred_lgbm = pred_lgbm_raw + warm_start_oof
             score_lgbm, ic_lgbm, auc_lgbm = calculate_score(y_oof, pred_lgbm)
-            results['LGBM'] = {'score': score_lgbm, 'ic': ic_lgbm, 'auc': auc_lgbm, 'model': best_lgbm}
+            results['LGBM'] = {'score': score_lgbm, 'ic': ic_lgbm, 'auc': auc_lgbm, 'model': best_lgbm, 'oof_pred': pred_lgbm}
             tprint_success(f"   ✅ LGBM: Score={score_lgbm:.4f}, IC={ic_lgbm:.4f}, AUC={auc_lgbm:.4f}")
 
             # 4. Compare and Pick Winner
@@ -1532,7 +1606,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 "winner_score": winner_result['score'],
                 "winner_ic": winner_result['ic'],
                 "winner_auc": winner_result['auc'],
-                "all_results": {k: {'score': v['score'], 'ic': v['ic'], 'auc': v['auc']} for k,v in results.items()},
+                "all_results": {k: {'score': v['score'], 'ic': v['ic'], 'auc': v['auc'], 'oof_pred': v['oof_pred']} for k,v in results.items()},
+                "y_oof": y_oof,
                 "selected_features": selected_features_names
             }
             

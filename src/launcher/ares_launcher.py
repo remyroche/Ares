@@ -168,19 +168,19 @@ def import_step_package_for_step(step_name: str) -> bool:
     """Import the appropriate package for a given step name."""
     try:
         # #region agent log - Hypothesis D: Specialist import logging
-        import json
-        import time
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_import_start",
-                "timestamp": int(time.time() * 1000),
-                "location": "ares_launcher.py:import_step_package_for_step",
-                "message": f"Starting import for step: {step_name}",
-                "data": {"step_name": step_name},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "D"
-            }) + '\n')
+        # import json
+        # import time
+        # with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
+        #     f.write(json.dumps({
+        #         "id": "log_import_start",
+        #         "timestamp": int(time.time() * 1000),
+        #         "location": "ares_launcher.py:import_step_package_for_step",
+        #         "message": f"Starting import for step: {step_name}",
+        #         "data": {"step_name": step_name},
+        #         "sessionId": "debug-session",
+        #         "runId": "initial",
+        #         "hypothesisId": "D"
+        #     }) + '\n')
         # #endregion
 
         # Map step names to their packages

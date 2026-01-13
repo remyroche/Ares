@@ -152,7 +152,7 @@ class DePradoFeatureEngine:
                 if k == 2:  # Only print for first failure to avoid spam
                     tprint_warning(f"   Data shape: {X.shape}")
                     tprint_warning(f"   Distance matrix shape: {dist.shape}")
-                    tprint_warning(f"   Distance matrix stats: min={dist.min():.3f}, max={dist.max():.3f}, mean={dist.mean():.3f}")
+                    tprint_warning(f"   Distance matrix stats: min={dist.values.min():.3f}, max={dist.values.max():.3f}, mean={dist.values.mean():.3f}")
                 continue
         
         if best_k == 2 and best_score < 0:

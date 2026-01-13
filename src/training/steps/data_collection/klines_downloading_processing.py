@@ -469,8 +469,8 @@ class KlinesDataProcessingPipeline(BaseStep):
             if not symbol or not interval or years <= 0:
                 raise ValueError("Invalid parameters: symbol, interval, and years must be valid")
 
-            if not api_key or not api_secret:
-                raise ValueError("API credentials are required for data processing")
+            # if not api_key or not api_secret:
+            #     raise ValueError("API credentials are required for data processing")
 
             # Create ExchangeInterface for exchange-agnostic data access
             exchange_config = {
@@ -479,6 +479,13 @@ class KlinesDataProcessingPipeline(BaseStep):
                 'api_secret': api_secret,
                 'testnet': False
             }
+
+            try:
+                from src.trading.execution.exchange_interface import create_exchange_interface
+            except ImportError:
+                # Fallback or mock if not available
+                raise ImportError("Could not import create_exchange_interface")
+
             exchange_interface = create_exchange_interface(exchange_config)
             await exchange_interface.connect()
 

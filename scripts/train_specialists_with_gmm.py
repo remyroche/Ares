@@ -81,7 +81,7 @@ Examples:
         "verbose": args.verbose,
         "lookback_days": args.lookback_days,
     }
-    
+
     # Filter specialists if specified
     if args.specialists:
         config["specialists"] = args.specialists

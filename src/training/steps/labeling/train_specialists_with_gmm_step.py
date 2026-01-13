@@ -62,15 +62,15 @@ SPECIALIST_IMPORTS = {
     "enhanced_ml_smc_regime_step": ("src.training.steps.market_analysis.ml_smc_regime_step_enhanced", "EnhancedMLSMCRegimeStep"),
     "enhanced_ml_volatility_burst_step": ("src.training.steps.market_analysis.ml_volatility_burst_step_enhanced", "EnhancedMLVolatilityBurstStep"),
     "enhanced_ml_volume_force_step": ("src.training.steps.market_analysis.ml_volume_force_step_enhanced", "EnhancedMLVolumeForceStep"),
-    # "enhanced_xgb_macro_regime_step": ("src.training.steps.market_analysis.xgb_macro_regime_step_enhanced", "EnhancedXGBMacroRegimeStep"),
-    # "enhanced_xgb_meso_regime_step": ("src.training.steps.market_analysis.xgb_meso_regime_step_enhanced", "EnhancedXGBMesoRegimeStep"),
-    # "enhanced_ml_liquidity_regime_step": ("src.training.steps.market_analysis.ml_liquidity_regime_step_enhanced", "EnhancedMLLiquidityRegimeStep"),
-    # "enhanced_ml_path_regime_step": ("src.training.steps.market_analysis.ml_path_regime_step_enhanced", "EnhancedMLPathRegimeStep"),
-    # "enhanced_ml_risk_regime_step": ("src.training.steps.market_analysis.ml_risk_regime_step_enhanced", "EnhancedMLRiskRegimeStep"),
-    # "enhanced_ml_microstructure_step": ("src.training.steps.market_analysis.ml_microstructure_step_enhanced", "EnhancedMLMicrostructureStep"),
-    # "enhanced_ml_spectral_step": ("src.training.steps.market_analysis.ml_spectral_step_enhanced", "EnhancedMLSpectralStep"),
+    "enhanced_xgb_macro_regime_step": ("src.training.steps.market_analysis.xgb_macro_regime_step_enhanced", "EnhancedXGBMacroRegimeStep"),
+    "enhanced_xgb_meso_regime_step": ("src.training.steps.market_analysis.xgb_meso_regime_step_enhanced", "EnhancedXGBMesoRegimeStep"),
+    "enhanced_ml_liquidity_regime_step": ("src.training.steps.market_analysis.ml_liquidity_regime_step_enhanced", "EnhancedMLLiquidityRegimeStep"),
+    "enhanced_ml_path_regime_step": ("src.training.steps.market_analysis.ml_path_regime_step_enhanced", "EnhancedMLPathRegimeStep"),
+    "enhanced_ml_risk_regime_step": ("src.training.steps.market_analysis.ml_risk_regime_step_enhanced", "EnhancedMLRiskRegimeStep"),
+    "enhanced_ml_microstructure_step": ("src.training.steps.market_analysis.ml_microstructure_step_enhanced", "EnhancedMLMicrostructureStep"),
+    "enhanced_ml_spectral_step": ("src.training.steps.market_analysis.ml_spectral_step_enhanced", "EnhancedMLSpectralStep"),
     # "enhanced_ml_candlestick_step": ("src.training.steps.market_analysis.ml_candlestick_step_enhanced", "EnhancedMLCandlestickStep"),
-    # "enhanced_ml_reversion_regime_step": ("src.training.steps.market_analysis.ml_reversion_regime_step_enhanced", "EnhancedMLReversionRegimeStep"),
+    "enhanced_ml_reversion_regime_step": ("src.training.steps.market_analysis.ml_reversion_regime_step_enhanced", "EnhancedMLReversionRegimeStep"),
 }
 
 # Import GMM enhanced features
@@ -132,22 +132,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         self._specialist_metrics = {}  # Store detailed metrics for each specialist
         self._specialist_outputs = {}  # Store outputs for each specialist
 
-        # #region agent log - Hypothesis A: Memory management initialization
-        import json
-        import os
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_memory_init",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:__init__",
-                "message": "Initializing memory management configurations",
-                "data": {"step_name": step_name, "kwargs_keys": list(kwargs.keys())},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "A"
-            }) + '\n')
-        # #endregion
-
         # Initialize configurations
         self.memory_config = MemoryConfig()
         self.gmm_config = GMMConfig()
@@ -164,24 +148,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         # Ensure GMM model cache directory exists
         Path(self.gmm_config.model_cache_dir).mkdir(parents=True, exist_ok=True)
-
-        # #region agent log - Hypothesis A: Memory management initialized
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_memory_init_complete",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:__init__",
-                "message": "Memory management initialization completed",
-                "data": {
-                    "memory_config": {"max_memory_usage": self.memory_config.max_memory_usage, "memory_pool_size": self.memory_config.memory_pool_size},
-                    "gmm_config": {"enable_persistence": self.gmm_config.enable_persistence, "max_models_cached": self.gmm_config.max_models_cached},
-                    "batch_config": {"base_batch_size": self.batch_config.base_batch_size, "max_batch_size": self.batch_config.max_batch_size}
-                },
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "A"
-            }) + '\n')
-        # #endregion
 
     def _get_optimal_batch_size(self, base_batch_size: int = None) -> int:
         """Calculate optimal batch size based on system resources and specialist complexity."""
@@ -599,20 +565,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         
         # Use very small batch size to prevent memory issues
         optimal_batch_size = 1  # Process one specialist at a time
-
-        # #region agent log - Hypothesis D: Batch size calculated
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_batch_size_result",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:execute",
-                "message": "Batch size calculation completed",
-                "data": {"optimal_batch_size": optimal_batch_size, "batch_config": {"base_batch_size": self.batch_config.base_batch_size, "max_batch_size": self.batch_config.max_batch_size}},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "D"
-            }) + '\n')
-        # #endregion
 
         # Initialize memory monitoring
         self.batch_count = 0
@@ -1812,20 +1764,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         import tempfile
         import pickle
 
-        # #region agent log - Specialist training start
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_specialist_training_start",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:_train_all_specialists_memory_efficient",
-                "message": "Starting specialist training",
-                "data": {"batch_size": batch_size, "market_data_shape": market_data.shape, "specialist_count": len(SPECIALIST_IMPORTS)},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "H"
-            }) + '\n')
-        # #endregion
-
         tprint_info(f"🔄 Training specialists in memory-efficient mode (batch_size={batch_size})...")
 
         specialist_outputs = {}
@@ -1839,40 +1777,12 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 batch = specialist_items[i:i + batch_size]
                 batch_names = [name for name, _ in batch]
 
-                # #region agent log - Batch processing start
-                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "id": f"log_batch_start_{i//batch_size + 1}",
-                        "timestamp": int(__import__('time').time() * 1000),
-                        "location": "train_specialists_with_gmm_step.py:_train_all_specialists_memory_efficient",
-                        "message": f"Starting batch {i//batch_size + 1}",
-                        "data": {"batch_number": i//batch_size + 1, "batch_names": batch_names, "total_batches": len(specialist_items)//batch_size + 1},
-                        "sessionId": "debug-session",
-                        "runId": "initial",
-                        "hypothesisId": "H"
-                    }) + '\n')
-                # #endregion
-
                 tprint_info(f"📦 Processing batch {i//batch_size + 1}/{len(specialist_items)//batch_size + 1}: {batch_names}")
 
                 # Train batch
                 batch_outputs = await self._train_specialist_batch(
                     batch, market_data, config, force_retrain
                 )
-
-                # #region agent log - Batch processing complete
-                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "id": f"log_batch_complete_{i//batch_size + 1}",
-                        "timestamp": int(__import__('time').time() * 1000),
-                        "location": "train_specialists_with_gmm_step.py:_train_all_specialists_memory_efficient",
-                        "message": f"Completed batch {i//batch_size + 1}",
-                        "data": {"batch_number": i//batch_size + 1, "batch_outputs_count": len(batch_outputs), "successful_outputs": len([k for k, v in batch_outputs.items() if v is not None and not v.empty])},
-                        "sessionId": "debug-session",
-                        "runId": "initial",
-                        "hypothesisId": "H"
-                    }) + '\n')
-                # #endregion
 
                 # Save successful outputs to disk immediately
                 for step_name, outputs in batch_outputs.items():
@@ -1929,20 +1839,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     ) -> Dict[str, pd.DataFrame]:
         """Train a batch of specialists in parallel."""
 
-        # #region agent log - Batch training start
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_batch_train_start",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:_train_specialist_batch",
-                "message": "Starting batch training",
-                "data": {"batch_size": len(batch), "specialist_names": [name for name, _ in batch]},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "H"
-            }) + '\n')
-        # #endregion
-
         batch_outputs = {}
 
         # Create tasks for parallel execution
@@ -1953,36 +1849,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             )
             tasks.append(task)
 
-        # #region agent log - Before asyncio.gather
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_before_gather",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:_train_specialist_batch",
-                "message": "Before asyncio.gather",
-                "data": {"task_count": len(tasks)},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "H"
-            }) + '\n')
-        # #endregion
-
         # Execute batch in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # #region agent log - After asyncio.gather
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": "log_after_gather",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:_train_specialist_batch",
-                "message": "After asyncio.gather",
-                "data": {"result_count": len(results)},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "H"
-            }) + '\n')
-        # #endregion
 
         # Process results
         for i, result in enumerate(results):
@@ -2012,105 +1880,15 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist asynchronously."""
 
-        # #region agent log - Single specialist start
-        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "id": f"log_single_specialist_start_{step_name}",
-                "timestamp": int(__import__('time').time() * 1000),
-                "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                "message": f"Starting training for specialist: {step_name}",
-                "data": {"step_name": step_name, "module_path": module_path, "class_name": class_name},
-                "sessionId": "debug-session",
-                "runId": "initial",
-                "hypothesisId": "H"
-            }) + '\n')
-        # #endregion
-
         try:
-            # #region agent log - Entered try block
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": f"log_entered_try_{step_name}",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                    "message": f"Entered try block for specialist: {step_name}",
-                    "data": {"step_name": step_name},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "H"
-                }) + '\n')
-            # #endregion
-
-            # Debug print - check if function continues
-            print(f"DEBUG: About to enter try block for specialist: {step_name}")
-
-            # #region agent log - Before try block
-            try:
-                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "id": f"log_before_try_{step_name}",
-                        "timestamp": int(__import__('time').time() * 1000),
-                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                        "message": f"About to enter try block for specialist: {step_name}",
-                        "data": {"step_name": step_name},
-                        "sessionId": "debug-session",
-                        "runId": "initial",
-                        "hypothesisId": "H"
-                    }) + '\n')
-            except Exception as log_e:
-                print(f"DEBUG: Failed to write log: {log_e}")
-            # #endregion
-
             start_time = time.time()
 
             # Import specialist class
-            # #region agent log - Import specialist class
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": f"log_import_specialist_{step_name}",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                    "message": f"Importing specialist class: {module_path}.{class_name}",
-                    "data": {"step_name": step_name, "module_path": module_path, "class_name": class_name},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "H"
-                }) + '\n')
-            # #endregion
-
             module = __import__(module_path, fromlist=[class_name])
             specialist_class = getattr(module, class_name)
 
             # Initialize specialist
-            # #region agent log - Specialist initialization
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": f"log_specialist_init_{step_name}",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                    "message": f"Initializing specialist: {step_name}",
-                    "data": {"step_name": step_name, "class_name": class_name},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "H"
-                }) + '\n')
-            # #endregion
-
             specialist = specialist_class(step_name)
-
-            # #region agent log - Specialist initialized successfully
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": f"log_specialist_init_success_{step_name}",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                    "message": f"Specialist initialized successfully: {step_name}",
-                    "data": {"step_name": step_name, "specialist_type": str(type(specialist))},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "H"
-                }) + '\n')
-            # #endregion
 
             # Setup context - enhanced specialists need proper context before execution
             context = {
@@ -2163,65 +1941,10 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 "market_data": market_data  # Pass market data directly to avoid artifact loading
             })
 
-            # #region agent log - Before specialist execute
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": f"log_before_execute_{step_name}",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                    "message": f"Before executing specialist: {step_name}",
-                    "data": {"step_name": step_name, "specialist_config_keys": list(specialist_config.keys())},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "H"
-                }) + '\n')
-            # #endregion
-
             # Run specialist
             try:
-                # #region agent log - About to call execute
-                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "id": f"log_about_to_execute_{step_name}",
-                        "timestamp": int(__import__('time').time() * 1000),
-                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                        "message": f"About to call execute on specialist: {step_name}",
-                        "data": {"step_name": step_name, "config_keys": list(specialist_config.keys())},
-                        "sessionId": "debug-session",
-                        "runId": "initial",
-                        "hypothesisId": "H"
-                    }) + '\n')
-                # #endregion
-
                 result = await specialist.execute(specialist_config)
-
-                # #region agent log - After specialist execute
-                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "id": f"log_after_execute_{step_name}",
-                        "timestamp": int(__import__('time').time() * 1000),
-                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                        "message": f"Specialist executed: {step_name}",
-                        "data": {"step_name": step_name, "result_type": type(result).__name__, "result_success": result.get('success', False) if isinstance(result, dict) else None, "result_keys": list(result.keys()) if isinstance(result, dict) else None, "result_is_none": result is None},
-                        "sessionId": "debug-session",
-                        "runId": "initial",
-                        "hypothesisId": "H"
-                    }) + '\n')
-                # #endregion
             except Exception as e:
-                # #region agent log - Specialist execution failed
-                with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "id": f"log_execute_failed_{step_name}",
-                        "timestamp": int(__import__('time').time() * 1000),
-                        "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
-                        "message": f"Specialist execution failed: {step_name}",
-                        "data": {"step_name": step_name, "error": str(e), "error_type": type(e).__name__},
-                        "sessionId": "debug-session",
-                        "runId": "initial",
-                        "hypothesisId": "H"
-                    }) + '\n')
-                # #endregion
                 tprint_error(f"❌ Specialist {step_name} failed: {e}")
                 return None
 
@@ -2943,16 +2666,24 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 Path("versioned_artifacts") / store_name
             )
             
+            # Create safe config for metadata (remove DataFrames)
+            safe_config = {}
+            for k, v in config.items():
+                if isinstance(v, (pd.DataFrame, pd.Series, np.ndarray)):
+                    safe_config[k] = f"DataFrame/Array (shape={v.shape})"
+                else:
+                    safe_config[k] = v
+
             # Use add_data instead of save
             artifact_store.add_data(
                 enhanced_features,
-                "specialists_enhanced_features",
+                f"specialists_enhanced_features_{timestamp}",
                 metadata={
                     "n_specialists": len(specialist_outputs),
                     "feature_shape": enhanced_features.shape,
                     "specialist_names": list(specialist_outputs.keys()),
                     "timestamp": datetime.now().isoformat(),
-                    "config": config
+                    "config": safe_config
                 }
             )
             
@@ -3115,76 +2846,11 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             model_key = f"gmm_{data_hash}"
             tprint_info(f"🔑 Generated data hash: {data_hash[:8]}...")
 
-            # #region agent log - Hypothesis B: GMM caching operations
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_gmm_cache_start",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Starting GMM model caching operations",
-                    "data": {"data_hash": data_hash, "model_key": model_key, "features_shape": features.shape},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "B"
-                }) + '\n')
-            # #endregion
-
             # Try to load cached model
             cached_model, cached_metadata = self._load_gmm_model(model_key)
-
-            # #region agent log - Hypothesis B: Cached model loading result
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_gmm_cache_loaded",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Cached model loading result",
-                    "data": {
-                        "cached_model_found": cached_model is not None,
-                        "cached_metadata_keys": list(cached_metadata.keys()) if cached_metadata else None,
-                        "model_cache_size": len(self.gmm_model_cache)
-                    },
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "B"
-                }) + '\n')
-            # #endregion
             
             # Calculate adaptive parameters
-            # #region agent log - Hypothesis C: Adaptive parameter calculation start
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_adaptive_params_start",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Starting adaptive parameter calculation",
-                    "data": {"market_data_shape": market_data.shape, "features_shape": features.shape},
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "C"
-                }) + '\n')
-            # #endregion
-
             adaptive_config = self._calculate_adaptive_parameters(market_data, features)
-
-            # #region agent log - Hypothesis C: Adaptive parameter calculation result
-            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "id": "log_adaptive_params_result",
-                    "timestamp": int(__import__('time').time() * 1000),
-                    "location": "train_specialists_with_gmm_step.py:_apply_gmm_enhancement",
-                    "message": "Adaptive parameter calculation completed",
-                    "data": {
-                        "adaptive_config_keys": list(adaptive_config.keys()),
-                        "n_components": adaptive_config.get("n_components"),
-                        "subsample_size": adaptive_config.get("subsample_size"),
-                        "wavelet": adaptive_config.get("wavelet")
-                    },
-                    "sessionId": "debug-session",
-                    "runId": "initial",
-                    "hypothesisId": "C"
-                }) + '\n')
-            # #endregion
             
             # Check if we should use cached model or train new one
             tprint_info("🔍 Step 3/5: Checking model cache...")

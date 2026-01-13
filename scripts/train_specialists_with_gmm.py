@@ -13,6 +13,7 @@ Usage:
 import argparse
 import asyncio
 import sys
+import traceback
 from pathlib import Path
 
 # Add project root to path
@@ -105,6 +106,9 @@ Examples:
             print(f"   - Specialists trained: {result.get('n_specialists', 0)}")
             print(f"   - Raw features shape: {result.get('raw_features_shape', 'N/A')}")
             print(f"   - Enhanced features shape: {result.get('enhanced_features_shape', 'N/A')}")
+            for key in ("run_id", "artifact_id", "output_path"):
+                if result.get(key):
+                    print(f"   - {key.replace('_', ' ').title()}: {result.get(key)}")
             print(f"   - Outputs saved to: outcomes/specialists_with_gmm_*")
             return 0
         else:
@@ -116,6 +120,7 @@ Examples:
         return 1
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
+        traceback.print_exc()
         return 1
 
 

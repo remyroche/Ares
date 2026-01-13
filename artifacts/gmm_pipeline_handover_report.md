@@ -77,44 +77,17 @@ This document provides a comprehensive analysis of the current state of the GMM 
    - Check data alignment and feature compatibility
    - Ensure proper target variable construction
 
-3. **Improve Feature Naming**:
-   - Update parquet file naming to include data type (entropy/timebars)
-   - Add MTF/single timeframe indicator
-   - Include configuration hash for reproducibility
-
 ### 4.2 Model Enhancements (Medium Priority)
 1. **Add Meta Model**:
-   - Implement meta learner to combine ensemble predictions
+   - Implement meta learner to combine ensemble predictions - already exists, we need to wire it
    - Use weighted averaging based on OOF performance
    - Consider stacking with cross-validation
 
-2. **Feature Quality**:
-   - Implement feature importance analysis
-   - Add feature stability testing over time
-   - Remove highly correlated features (>0.8 R²)
-
-3. **Clustering Improvements**:
+2. **Clustering Improvements**:
    - Fix ONC clustering algorithm
-   - Try alternative clustering methods (DBSCAN, HDBSCAN)
    - Add cluster validation metrics
 
-### 4.3 Financial Metrics (High Priority)
-1. **Add Trading Simulation**:
-   - Implement backtesting with realistic costs
-   - Calculate Sharpe, Sortino, Calmar ratios
-   - Track maximum drawdown and recovery time
-
-2. **Risk Management**:
-   - Add position sizing based on volatility
-   - Implement stop-loss and take-profit rules
-   - Calculate portfolio-level metrics
-
-3. **Performance Attribution**:
-   - Track contribution of each specialist
-   - Measure regime-specific performance
-   - Analyze feature importance by regime
-
-### 4.4 Infrastructure Improvements (Medium Priority)
+### 4.3 Infrastructure Improvements (Medium Priority)
 1. **Performance Optimization**:
    - Implement incremental feature updates
    - Add GPU acceleration for model training
@@ -129,22 +102,6 @@ This document provides a comprehensive analysis of the current state of the GMM 
    - Implement data versioning
    - Add data quality checks
    - Create feature lineage tracking
-
-### 4.5 Research Directions (Low Priority)
-1. **Alternative Models**:
-   - Test deep learning approaches (LSTM, Transformers)
-   - Explore reinforcement learning for position sizing
-   - Investigate ensemble methods beyond stacking
-
-2. **Market Regimes**:
-   - Develop adaptive regime detection
-   - Test regime-specific model selection
-   - Implement regime transition probabilities
-
-3. **Feature Engineering**:
-   - Explore alternative feature families
-   - Test automated feature generation
-   - Implement feature selection algorithms
 
 ## 5. Next Steps
 

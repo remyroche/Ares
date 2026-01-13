@@ -259,54 +259,37 @@ Hit rate, profit factor
 Turnover and slippage sensitivity (stress test)
 
 6.3 Step-by-step reporting
-
 Each step must append to a run-level report in outcomes/:
-
 what changed
-
 what improved/regressed (with metrics)
-
 what is the next risk/unknown
 
 7) Debugging: logs + latest report in outcomes/ are the source of truth
 7.1 Troubleshooting workflow (mandatory order)
-
 When something fails or metrics regress:
-
 Read latest run report in outcomes/
-
 Inspect logs (most recent first)
-
 Reproduce with the minimal step command/config that generated the artifact
-
 Fix + add regression test
-
 Re-run the step and confirm metrics + report updated
 
 7.2 No “silent fixes”
-
 Do not “fix forward” by changing many components at once.
-
 Fix the minimal root cause, then re-run to confirm.
 
 8) Trading safety guardrails (always on)
-
 No live trading by default.
-
 Paper/backtest only unless explicitly enabled by configuration and environment gating.
-
 Always include transaction costs and slippage assumptions in evaluation; default pessimistic.
 
 9) Definition of done (for any PR/change)
-
 A change is “done” only when:
-
 tests pass
-
 the relevant step(s) run successfully
-
 outcomes/ contains an updated report + metrics payload
-
 logs show tprint start/end for the step(s)
-
 performance constraints (JIT/caching) are respected for hot paths
+
+10) Versioning
+Use Python 3.11
+Use Poetry for dependency management and update it when adding new dependencies

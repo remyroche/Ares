@@ -153,123 +153,175 @@ When a workflow fails, the agent must:
 
 ---
 
-## 7) Agent Task Completion Checklist (must be output at end of every task)
-- [ ] Traceability Chain provided for any investigated failure.
-- [ ] Hypothesis stated and proven with a minimal reproduction using real pipeline data.
-- [ ] Workaround check completed (if applicable) with justification.
-- [ ] No unexpected metric regressions in `outcomes/` (or explained in the report).
+## Agent Debug Protocol (mandatory, flowchart-style)
 
-
-## 8) Mode-Aware Troubleshooting and Failure Semantics
-
-The agent must adapt its troubleshooting scope based on the active execution mode.  
-Mode awareness is mandatory and must be explicitly stated at the beginning of any investigation or report.
-
-### 8.1 Execution modes (explicit declaration required)
-At the start of any troubleshooting or analysis, the agent must declare one of:
-
-- **Light Mode**
-- **Blank Mode**
-- **Full Mode**
-
-If the mode is not explicitly declared in the task context, default to **Light Mode**.
+This protocol governs **all debugging and troubleshooting behavior**.  
+Deviation is not allowed. If a step fails, the agent must return to the last valid checkpoint.
 
 ---
 
-### 8.2 Light Mode / Blank Mode: Logic-first troubleshooting
-**Objective:** Ensure correctness of code, data flow, and assumptions.
+### STEP 0 — Declare Mode (hard gate)
+Before any investigation, explicitly declare:
 
-In Light or Blank Mode, troubleshooting must focus exclusively on:
-- bugs, exceptions, and crashes
-- logical inconsistencies
-- schema, shape, or alignment errors
-- leakage, lookahead, or indexing violations
-- broken invariants or invalid assumptions
+- **Light Mode** — logic, data, and code correctness only
+- **Blank Mode** — same as Light Mode, minimal assumptions
+- **Full Mode** — includes financial metrics as correctness signals (AFML / causal)
 
-**Rules**
-- Financial performance metrics are **out of scope** unless they directly reveal a logic flaw (e.g., NaN PnL due to upstream bug).
-- A step is considered “fixed” once:
-  - the Traceability Chain is complete,
-  - the root cause is addressed structurally,
-  - regression test symmetry holds.
-
-**Anti-pattern**
-- Do not rationalize poor financial performance in Light/Blank Mode.
-- Do not optimize metrics; fix correctness only.
+If no mode is specified, default to **Light Mode**.
 
 ---
 
-### 8.3 Full Mode: Financial quality is part of correctness
-**Objective:** Ensure the system is both *correct* and *financially meaningful*.
-
-In Full Mode, **financial metrics are first-class debugging signals**, not optional diagnostics.
-
-A troubleshooting task is considered **failed** if:
-- code runs without errors **but**
-- financial metrics violate AFML or causal expectations.
-
-Examples of failures in Full Mode:
-- MI/RMI collapses after a refactor with no explained causal reason.
-- PR-AUC degrades materially out-of-sample while in-sample improves (overfitting signal).
-- Strategy Sharpe improves but drawdown or tail risk worsens unexpectedly.
-- Regime-conditioned performance breaks causal consistency (e.g., signal works only in hindsight regimes).
+### STEP 1 — Identify the Failing Run (input gate)
+- Locate the failing run ID / timestamp in `outcomes/`.
+- Confirm:
+  - git commit hash
+  - config hash/snippet
+  - artifact IDs and versions
+- If any are missing → **STOP** and report “non-reproducible run.”
 
 ---
 
-### 8.4 AFML / causal failure semantics (Full Mode)
-In Full Mode, the following are treated as **troubleshooting failures**, not “model outcomes”:
 
-- Metric instability across time splits or regimes
-- Performance that disappears after purging/embargo
-- Improvements explainable only by leakage, overlap, or threshold tuning
-- Excessive sensitivity to costs, slippage, or minor perturbations
-- Features with high MI but no plausible causal mechanism
+### STEP 2 — Locate the First Assumption Violation (root-cause gate)
+- Scan logs **chronologically**, not from the stack trace.
+- Identify the **first log line** where an assumption breaks:
+  - first NaN introduction
+  - first empty dataframe
+  - first shape/schema mismatch
+  - first invariant failure
 
-**Interpretation rule**
-> Poor or unstable financial metrics imply a *hidden bug, leakage, or invalid assumption* until proven otherwise.
-
-The agent must:
-1. Treat the metric degradation as a signal of a root cause.
-2. Re-enter the troubleshooting loop (Section 7).
-3. Produce a Traceability Chain that includes **metric context**.
+If only a final stack trace is available → **STOP** and add missing logging.
 
 ---
 
-### 8.5 Mode-dependent Definition of “Done”
-A task is only “done” if:
+### STEP 3 — Capture the Traceability Chain (mandatory artifact)
+Produce a Traceability Chain containing:
 
-- **Light / Blank Mode**
-  - All bugs and logic flaws are resolved
-  - Tests pass
-  - No new invariant violations appear
+**3.1 Input State**
+- step ID
 
-- **Full Mode**
-  - All of the above **and**
-  - Financial metrics are:
-    - stable across splits/regimes, or
-    - any degradation is explicitly explained and justified
-  - Metrics align with AFML and causal expectations
+**3.2 First Point of Failure**
+- exact log line (timestamp + excerpt)
+- expected vs observed state
 
-Unexplained poor financial performance in Full Mode is equivalent to:
-> “Troubleshooting incomplete.”
+**3.3 Data Context**
+- shape (rows/cols)
+- missingness summary
+- head/tail
+- relevant statistics
+- time range + timezone
 
----
-
-### 8.6 Mandatory reporting addition
-In Full Mode, the final report in `outcomes/` must include:
-- a short **financial diagnostics section**
-- key metrics before vs after the fix
-- a statement answering:
-  > “Why do these metrics make sense under AFML / causal reasoning?”
-
-Absence of this section means the task is not complete.
+If any element is missing → **STOP** (investigation incomplete).
 
 ---
 
-### 8.7 Checklist extension (mode-aware)
-When outputting the Agent Task Completion Checklist, the agent must also state:
+### STEP 4 — Form a Hypothesis (single sentence, mandatory)
+State exactly **one** hypothesis explaining the failure.
 
-- **Mode used:** Light / Blank / Full
-- **If Full Mode:**  
-  - [ ] Financial metrics reviewed and deemed causally consistent  
-  - [ ] No unexplained metric degradation relative to prior runs
+Example:
+> “The feature step produced NaNs because the raw candle data is missing for this symbol on exchange holidays.”
+
+If multiple hypotheses exist → choose the most upstream one.
+
+---
+
+### STEP 5 — Prove the Hypothesis (proof gate)
+- Create a **minimal reproduction** that fails for the same reason:
+  - must use real pipeline data
+  - must use real configs
+  - no mocks, no synthetic data
+
+If the hypothesis cannot be proven → **STOP** and revise hypothesis.
+
+---
+
+### STEP 6 — Workaround Check (anti-patching gate)
+Before implementing a fix, answer:
+
+- Does the fix introduce:
+  - conditionals (`if`, `try/except`)
+  - data coercions (`fillna`, `clip`, drop rows)
+  - threshold changes
+  - silent fallbacks?
+
+If **yes**, explicitly justify:
+- why this removes the generating cause
+- why it does not hide bad data
+- why it preserves intended semantics
+
+Unjustified workarounds are **forbidden**.
+
+---
+
+### STEP 7 — Implement Structural Fix (minimal-change rule)
+- Fix the **root cause**, not the symptom.
+- Prefer:
+  - correcting upstream data assumptions
+  - enforcing stronger invariants
+  - failing fast with actionable errors
+- Do not refactor unrelated code.
+
+---
+
+### STEP 8 — Regression Test Symmetry (verification gate)
+A fix is invalid unless:
+
+- a new test fails on old code
+- the same test passes on new code
+- existing tests still pass
+
+If this gate fails → return to STEP 8.
+
+---
+
+### STEP 9 — Mode-Specific Validation
+
+**Light / Blank Mode**
+- Confirm:
+  - no exceptions
+  - invariants hold
+  - pipeline completes
+
+**Full Mode**
+- Evaluate financial metrics:
+  - MI / RMI stability
+  - PR-AUC (OOS)
+  - cost-adjusted performance
+  - regime robustness
+
+If metrics degrade unexpectedly:
+- treat as a **hidden bug**
+- return to STEP 3
+
+---
+
+### STEP 10 — Metrics & Report Update (documentation gate)
+- Write updated metrics payload to `outcomes/`.
+- Append a report section including:
+  - root cause
+  - fix summary
+  - test added
+  - metric deltas (if Full Mode)
+  - etc
+
+Missing report → **STOP** (task incomplete).
+
+---
+
+### STEP 11 — Final Checklist (exit gate)
+Output the **Agent Task Completion Checklist**, including:
+- execution mode used
+- confirmation that all protocol steps were satisfied
+
+Unchecked items mean the task is **not complete**.
+
+---
+
+### FAILURE SEMANTICS (global)
+- Poor or unstable financial metrics in Full Mode  
+  ⇒ troubleshooting failure, not a “model result.”
+- Silent workarounds  
+  ⇒ invalid fix.
+- Missing traceability  
+  ⇒ investigation rejected.
+

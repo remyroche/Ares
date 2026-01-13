@@ -62,6 +62,7 @@ Examples:
     # Training options
     parser.add_argument("--force-retrain", action="store_true", help="Force retraining of specialists")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--use-synthetic-data", action="store_true", help="Use synthetic data for testing in environments without historical data")
     
     # Specialist selection
     parser.add_argument("--specialists", nargs="+", help="Specific specialists to train (default: all)")
@@ -81,6 +82,40 @@ Examples:
         "verbose": args.verbose,
         "lookback_days": args.lookback_days,
     }
+
+    # Generate synthetic data for testing if requested
+    if args.use_synthetic_data:
+        import pandas as pd
+        import numpy as np
+
+        print("⚠️ Generating Synthetic Data for Testing...")
+        # Create enough data for 15m timeframe (e.g. 60 days)
+        dates = pd.date_range(start="2024-01-01", end="2024-03-01", freq="15min")
+        n = len(dates)
+
+        # Random walk price with trends
+        returns = np.random.normal(0, 0.001, n)
+        # Add some trendiness
+        trend = np.sin(np.linspace(0, 10, n)) * 0.0005
+        returns += trend
+
+        price = 1000 * np.exp(np.cumsum(returns))
+
+        market_data = pd.DataFrame({
+            'open': price,
+            'high': price * (1 + np.abs(np.random.normal(0, 0.002, n))),
+            'low': price * (1 - np.abs(np.random.normal(0, 0.002, n))),
+            'close': price * (1 + np.random.normal(0, 0.0005, n)),
+            'volume': np.abs(np.random.normal(1000, 500, n)) + 100,
+            'quote_volume': np.abs(np.random.normal(1000000, 500000, n)) + 100000
+        }, index=dates)
+
+        # Ensure high >= low
+        market_data['high'] = np.maximum(market_data['high'], market_data[['open', 'close']].max(axis=1))
+        market_data['low'] = np.minimum(market_data['low'], market_data[['open', 'close']].min(axis=1))
+
+        config["market_data"] = market_data
+        print(f"✅ Generated {len(market_data)} synthetic bars")
     
     # Filter specialists if specified
     if args.specialists:

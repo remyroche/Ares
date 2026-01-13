@@ -44,23 +44,6 @@ except ImportError:
     torch_device = None
 
 # #region agent log - Hypothesis E: GPU acceleration initialization
-import json
-with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-    f.write(json.dumps({
-        "id": "log_gpu_init",
-        "timestamp": int(__import__('time').time() * 1000),
-        "location": "quantitative_regime_engine.py:gpu_imports",
-        "message": "GPU acceleration initialization check",
-        "data": {
-            "torch_available": torch is not None,
-            "mps_available": MPS_AVAILABLE,
-            "torch_version": torch.__version__ if torch else None,
-            "device_type": str(torch_device) if torch_device else None
-        },
-        "sessionId": "debug-session",
-        "runId": "initial",
-        "hypothesisId": "E"
-    }) + '\n')
 # #endregion
 
 # Internal imports

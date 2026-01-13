@@ -55,8 +55,7 @@ def integrate_entropy_bars_into_layer3(
     Integrate entropy bars and specialized features into Layer 3.
     """
     if not ENTROPY_BARS_AVAILABLE:
-        tprint_warning("⚠️ Entropy bars not available, using original data")
-        return df, pd.DataFrame()
+        raise RuntimeError("Entropy bars not available; Layer 3 requires entropy bars.")
     
     cfg = config or {}
     
@@ -82,8 +81,7 @@ def integrate_entropy_bars_into_layer3(
         )
         
         if min_data is None or min_data.empty:
-            tprint_warning("⚠️ No 1-minute data available, skipping entropy bars")
-            return df, pd.DataFrame()
+            raise RuntimeError("No 1-minute data available for entropy bars.")
         
         # Generate entropy bars
         tprint_info("🔄 Generating entropy bars from 1-minute data")
@@ -97,8 +95,7 @@ def integrate_entropy_bars_into_layer3(
         )
         
         if entropy_bars.empty:
-            tprint_warning("⚠️ Failed to generate entropy bars")
-            return df, pd.DataFrame()
+            raise RuntimeError("Failed to generate entropy bars.")
         
         # Calculate specialized entropy features
         tprint_info("🎯 Calculating specialized entropy features")
@@ -108,19 +105,23 @@ def integrate_entropy_bars_into_layer3(
             specialist_prices=df['close'] if 'close' in df.columns else None,
             volatility_window=cfg.get('volatility_window', 20)
         )
-        
+
+        tprint_info("🧭 Resampling Layer 3 inputs to entropy bar timestamps")
+        enhanced_df = df.reindex(entropy_bars.index, method='ffill')
+        entropy_primary_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in entropy_primary_cols:
+            if col in entropy_bars.columns:
+                enhanced_df[col] = entropy_bars[col]
+
         # Merge entropy features back to main dataframe
-        enhanced_df = df.copy()
         for col in entropy_features.columns:
             enhanced_df[col] = entropy_features[col].reindex(enhanced_df.index, method='ffill').fillna(0)
-        
+
         # Add entropy bar OHLCV data as additional columns
         entropy_ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'n_minutes', 'entropy_contribution']
         for col in entropy_ohlcv_cols:
             if col in entropy_bars.columns:
-                enhanced_df[f'entropy_{col}'] = entropy_bars[col].reindex(enhanced_df.index, method='ffill').fillna(
-                    enhanced_df[col] if col in enhanced_df.columns else 0
-                )
+                enhanced_df[f'entropy_{col}'] = entropy_bars[col]
         
         tprint_success(f"✅ Integrated entropy bars: {len(entropy_bars)} bars, {len(entropy_features.columns)} features")
         
@@ -128,7 +129,7 @@ def integrate_entropy_bars_into_layer3(
         
     except Exception as e:
         tprint_error(f"❌ Error integrating entropy bars: {e}")
-        return df, pd.DataFrame()
+        raise
 
 
 def apply_mild_mp_clustering(

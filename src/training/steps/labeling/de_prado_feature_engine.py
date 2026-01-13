@@ -122,6 +122,8 @@ class DePradoFeatureEngine:
         # Test cluster sizes from 2 to max_clusters or n_features//2
         max_k = min(self.max_clusters, max(2, len(X.columns) // 2))
         
+        tprint_info(f"   🔄 Testing cluster counts K=2 to {max_k}...")
+
         for k in range(2, max_k + 1):
             try:
                 clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
@@ -131,7 +133,7 @@ class DePradoFeatureEngine:
                 # Debug: Check if clustering actually produced k clusters
                 unique_labels = np.unique(cluster_labels)
                 if len(unique_labels) != k:
-                    tprint_warning(f"Clustering for k={k}: Expected {k} clusters, got {len(unique_labels)}")
+                    tprint_warning(f"      - K={k}: Expected {k} clusters, got {len(unique_labels)}")
                 
                 # Compute silhouette score
                 if len(unique_labels) > 1:
@@ -140,15 +142,15 @@ class DePradoFeatureEngine:
                     # We should compute silhouette on the feature correlation distance
                     score = silhouette_score(dist.T, cluster_labels, metric='precomputed')
                     scores_history[k] = score
-                    tprint_info(f"   k={k}: silhouette={score:.3f}")
+                    tprint_info(f"      - K={k}: Silhouette={score:.4f} (Valid)")
                     
                     if score > best_score:
                         best_score, best_k = score, k
                 else:
-                    tprint_warning(f"Clustering for k={k}: Only 1 cluster found")
+                    tprint_warning(f"      - K={k}: Only 1 cluster found")
                         
             except Exception as e:
-                tprint_warning(f"Clustering failed for k={k}: {e}")
+                tprint_warning(f"      - K={k}: Failed - {e}")
                 # Debug: Print more details about the data
                 if k == 2:  # Only print for first failure to avoid spam
                     tprint_warning(f"   Data shape: {X.shape}")
@@ -158,6 +160,7 @@ class DePradoFeatureEngine:
         
         if best_k == 2 and best_score < 0:
             if len(X.columns) > 20:
+                tprint_warning(f"   ⚠️ ONC Quality Check: Best K={best_k} has silhouette {best_score:.4f} (Threshold: 0.0)")
                 tprint_warning(f"ONC Clustering quality low (best silhouette {best_score:.3f}). Forcing 5 clusters for diversity.")
                 best_k = 5
             else:
@@ -177,6 +180,13 @@ class DePradoFeatureEngine:
         
         tprint_success(f"✅ ONC: {best_k} optimal clusters found (silhouette: {best_score:.3f})")
         
+        # Log final cluster distribution
+        try:
+            final_dist = pd.Series(final_labels).value_counts().sort_index()
+            tprint_info(f"   📊 Final cluster sizes: {final_dist.to_dict()}")
+        except:
+            pass
+
         return pd.Series(final_labels, index=X.columns)
     
     def _get_tree_hierarchy(self, model: ExtraTreesClassifier, feature_names: List[str]) -> pd.Series:

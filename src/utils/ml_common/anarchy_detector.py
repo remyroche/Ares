@@ -2,8 +2,11 @@ import numpy as np
 import pandas as pd
 from typing import Tuple, Optional
 from sklearn.ensemble import IsolationForest
-import iisignature
-from src.utils.tprint import tprint_info
+try:
+    import iisignature
+except ImportError:
+    iisignature = None
+from src.utils.tprint import tprint_info, tprint_warning
 
 class AnarchyDetector:
     """
@@ -26,6 +29,14 @@ class AnarchyDetector:
         self.is_fit = False
 
     def get_signature_features(self, price_series: np.ndarray, volume_series: np.ndarray, depth: int = 2) -> np.ndarray:
+        if iisignature is None:
+            # Fallback if iisignature is not available
+            # Return zeros of appropriate length (approximation for depth 2)
+            # Depth 2 signature length is (d^(2+1) - 1)/(d-1) - 1 ? No, for dimension d=2
+            # siglength(d, m) is the length.
+            # For d=2, m=2: length is 6 (1st level: 2, 2nd level: 4)
+            return np.zeros(6)
+
         if len(price_series) < 2:
             return np.zeros(iisignature.siglength(2, depth))
         path = np.column_stack([price_series, volume_series])

@@ -53,5 +53,6 @@ def __getattr__(name):
 __all__ = ['KlinesDataProcessingPipeline']
 
 # Register steps after module initialization completes
-import atexit
-atexit.register(_register_steps)
+# import atexit
+# atexit.register(_register_steps)
+_register_steps()

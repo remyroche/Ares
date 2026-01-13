@@ -10,10 +10,9 @@ This module implements:
 3.  Integration with Layer 5 via `layer4_prob` proxy generation.
 4.  Entropy Bars integration for improved information-based sampling.
 
-REFACTORED: Now uses 4-horizon ORF estimates (CATE) and Standard Errors (SE) from Layer 3.
+REFACTORED: Now uses Layer 3 probability outputs (12/48 horizons).
 Enhanced with entropy bars for better market microstructure analysis.
-Estimates: ORF 12/48 Reg/Class.
-Sizing uses Risk-Adjusted CATE (Point Estimate / Standard Error).
+Sizing uses calibrated probability consensus.
 """
 
 import numpy as np
@@ -60,12 +59,11 @@ WEIGHT_CLIP_MAX = 2.0  # Maximum weight clip
 
 class SimpleMultiModelRiskEngine:
     """
-    Simple Multi-Model Risk Engine updated for 4-Horizon ORF inputs with Entropy Bars.
-    
+    Simple Multi-Model Risk Engine updated for Layer 3 probability inputs with Entropy Bars.
+
     Consumes:
-    - CATE (Point Estimates) for 12/48 Reg/Class
-    - SE (Standard Errors) for 12/48 Reg/Class
-    - Disagreement features (e.g. 12 Reg vs 48 Reg)
+    - Layer 3 probability outputs (12/48 horizons, ensemble variants)
+    - Disagreement/dispersion features across horizons
     - Entropy bar features for market microstructure analysis
 
     Updated to use Huber Regressor for Teacher logic, pruning, and constraints.
@@ -96,16 +94,18 @@ class SimpleMultiModelRiskEngine:
         # LGBM params (implicit defaults + warm start handling in train)
         self.lgbm_params = {
             'n_estimators': 1000,
-            'n_jobs': -1,
+            'n_jobs': 2,
             'random_state': 42,
-            'verbosity': -1
+            'verbosity': -1,
+            'reg_alpha': 5.0,
+            'reg_lambda': 50.0
         }
         self.lgbm_model = None
 
         # XGB params
         self.xgb_params = {
             'n_estimators': 1000,
-            'n_jobs': -1,
+            'n_jobs': 2,
             'random_state': 42,
             'num_parallel_tree': 7,
             'colsample_bynode': 0.4,
@@ -145,6 +145,7 @@ class SimpleMultiModelRiskEngine:
         self.selected_features = None
         self.huber_model = None
         self.huber_scaler = None
+        self.huber_feature_columns = None
         self.is_fitted = False
     
     def _compute_financial_weights(self, abs_returns: pd.Series) -> pd.Series:
@@ -153,39 +154,44 @@ class SimpleMultiModelRiskEngine:
         weights = weights / (weights.sum() + 1e-9) * len(weights)
         return weights
     
-    def _extract_orf_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _extract_layer3_prob_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Derives features from ORF outputs:
-        1. Risk-Adjusted CATE (Lift / Uncertainty)
-        2. Horizon Disagreement (12 vs 48)
-        3. Raw Point Estimates
+        Derives features from Layer 3 probability outputs:
+        1. Raw probabilities per horizon/model
+        2. Confidence (distance from 0.5)
+        3. Horizon disagreement (12 vs 48)
+        4. Cross-model dispersion (mean/std/range)
         """
         feats = pd.DataFrame(index=df.index)
-        
-        # Horizons & Types
-        horizons = ['12', '48']
-        types = ['reg', 'cls']
-        
-        for h in horizons:
-            for t in types:
-                cate_col = f'orf_cate_{h}_{t}'
-                se_col = f'orf_se_{h}_{t}'
-                
-                if cate_col in df.columns:
-                    feats[f'cate_{h}_{t}'] = df[cate_col]
-                    
-                    if se_col in df.columns:
-                        # Risk-Adjusted CATE: Higher lift with lower uncertainty = more conviction
-                        feats[f'ra_cate_{h}_{t}'] = df[cate_col] / (df[se_col] + 1e-9)
-        
-        # Disagreement Features (Horizon Spread)
-        if 'orf_cate_12_reg' in df.columns and 'orf_cate_48_reg' in df.columns:
-            feats['reg_horizon_disagreement'] = df['orf_cate_12_reg'] - df['orf_cate_48_reg']
-            
-        if 'orf_cate_12_cls' in df.columns and 'orf_cate_48_cls' in df.columns:
-            feats['cls_horizon_disagreement'] = df['orf_cate_12_cls'] - df['orf_cate_48_cls']
-            
-        return feats.fillna(0)
+
+        base_prob_cols = []
+        if 'meta_prob' in df.columns:
+            base_prob_cols.append('meta_prob')
+        if 'meta_prob_48' in df.columns:
+            base_prob_cols.append('meta_prob_48')
+
+        extra_prob_cols = [c for c in df.columns if c.startswith('meta_prob_') and c not in base_prob_cols]
+        prob_cols = base_prob_cols + extra_prob_cols
+
+        for col in prob_cols:
+            feats[f'{col}_raw'] = df[col]
+            p = df[col].astype(float).clip(1e-6, 1 - 1e-6)
+            feats[f'{col}_logit'] = np.log(p / (1 - p))
+            feats[f'{col}_confidence'] = (p - 0.5).abs() * 2.0
+
+        if 'meta_prob' in df.columns and 'meta_prob_48' in df.columns:
+            feats['horizon_disagreement'] = df['meta_prob'] - df['meta_prob_48']
+            feats['horizon_agreement'] = 1.0 - (df['meta_prob'] - df['meta_prob_48']).abs()
+
+        if prob_cols:
+            probs = df[prob_cols].astype(float)
+            feats['prob_mean'] = probs.mean(axis=1)
+            feats['prob_std'] = probs.std(axis=1).fillna(0.0)
+            feats['prob_min'] = probs.min(axis=1)
+            feats['prob_max'] = probs.max(axis=1)
+            feats['prob_range'] = feats['prob_max'] - feats['prob_min']
+
+        return feats.fillna(0.0)
 
     def _extract_entropy_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -215,16 +221,16 @@ class SimpleMultiModelRiskEngine:
     def train(self, df: pd.DataFrame, market_features: pd.DataFrame,
               y_true: pd.Series, abs_returns: pd.Series) -> Dict[str, Any]:
         """
-        Train risk engine using 4-horizon ORF features, entropy features, and market context.
+        Train risk engine using Layer 3 probability features, entropy features, and market context.
         Uses Huber Regressor for Teacher output generation (constraints, pruning, warm start).
         """
-        tprint_info("🚀 Training Layer 4 Risk Engine (Multi-Horizon ORF + Entropy Bars)...")
-        
-        orf_feats = self._extract_orf_features(df)
+        tprint_info("🚀 Training Layer 4 Risk Engine (Layer 3 Probabilities + Entropy Bars)...")
+
+        prob_feats = self._extract_layer3_prob_features(df)
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
         # Combine all features
-        X_full = pd.concat([orf_feats, entropy_feats, market_features], axis=1).fillna(0)
+        X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
         weights = self._compute_financial_weights(abs_returns)
         
         tprint_info(f"📊 Processing Huber Teacher on {len(X_full.columns)} potential features...")
@@ -240,6 +246,7 @@ class SimpleMultiModelRiskEngine:
         self.selected_features = huber_outputs['selected_features']
         self.huber_model = huber_outputs['huber_model']
         self.huber_scaler = huber_outputs['scaler']
+        self.huber_feature_columns = X_full.columns
 
         X_pruned = X_full[self.selected_features]
         warm_start_train = huber_outputs['warm_start']['train']
@@ -384,10 +391,12 @@ class SimpleMultiModelRiskEngine:
         if not self.is_fitted:
             raise ValueError("RiskEngine must be fitted")
             
-        orf_feats = self._extract_orf_features(df)
+        prob_feats = self._extract_layer3_prob_features(df)
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
-        X_full = pd.concat([orf_feats, entropy_feats, market_features], axis=1).fillna(0)
+        X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+        if self.huber_feature_columns is not None:
+            X_full = X_full.reindex(columns=self.huber_feature_columns, fill_value=0.0)
 
         # Prepare Warm Start for this new data
         X_scaled = pd.DataFrame(self.huber_scaler.transform(X_full), columns=X_full.columns)
@@ -538,10 +547,10 @@ def train_layer4_simple_multimodel(
     config: Optional[Dict[str, Any]] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Train Layer 4 using 4-horizon ORF estimates, entropy bars, and market features.
+    Train Layer 4 using Layer 3 probability outputs, entropy bars, and market features.
     """
     cfg = config or {}
-    tprint_info("🚀 Starting Layer 4 Training (Multi-Horizon ORF + Entropy Bars)...")
+    tprint_info("🚀 Starting Layer 4 Training (Layer 3 Probabilities + Entropy Bars)...")
     
     # Integrate entropy bars if enabled
     symbol = cfg.get('symbol', 'ETHUSDT')

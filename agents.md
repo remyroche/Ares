@@ -1,295 +1,275 @@
-0) Scope and priority
+# agents.md — Engineering Rules for Crypto ML (Troubleshooting + Root-Cause Fixing First)
+
+## 0) Scope and enforcement
+These rules are mandatory for any agent modifying this repository. If a rule conflicts with “make it run,” the rule wins. “Green” is defined by: tests + the designated pipeline command + non-regressing metrics in `outcomes/`.
+
+---
+
+## 1) Troubleshooting is a structured investigation (not a vague task)
+
+### 1.1 Single source of truth
+- Always start from:
+  1) **latest report** in `outcomes/`
+  2) **logs** for the failing run
+- Do not infer causes without reading both.
+
+### 1.2 Standard investigation sequence (must follow in order)
+1. **Locate the failing run**: identify run id / timestamp in `outcomes/`.
+2. **Reproduce**: rerun the minimal failing command/config (no extra steps).
+3. **Find the first assumption violation** (not the last stack trace).
+4. **Capture state** (inputs + data context) at failure.
+5. **Form a hypothesis** (one sentence).
+6. **Prove** the hypothesis with a minimal reproduction using real pipeline data.
+7. **Fix the root cause** with the smallest change that preserves intended semantics.
+8. **Verify**: regression test symmetry + rerun the workflow + check metrics.
+9. **Document**: update the `outcomes/` report snippet with root cause + fix + verification.
+
+---
+
+## 2) Rule 7.3 — The Traceability Chain (mandatory in every error report)
+Every error report from the agent must include:
+
+### 2.1 Input State
+- Exact **artifact IDs and versions** (and/or manifests)
+- Exact **step ID** (if applicable)
+- A **config snippet** sufficient to reproduce (not the full file)
+- Environment fingerprint:
+  - git commit hash
+  - Python version
+  - Poetry lock hash (or lockfile checksum)
+
+### 2.2 First Point of Failure
+- The first log line where an assumption was violated, e.g.:
+  - first NaN introduced (with column name and row index/time)
+  - first shape mismatch (expected vs observed)
+  - first schema deviation (missing/extra columns)
+- Include the log line reference (timestamp + line excerpt), not only the stack trace.
+
+### 2.3 Data Context (at the moment of failure)
+Provide a concise snapshot:
+- shape (rows/cols)
+- missingness summary (overall + key columns)
+- head/tail
+- key stats (min/max/mean/quantiles) as relevant
+- time range and timezone assumptions
+
+**Non-negotiable:** Error reports without this chain are incomplete and must be treated as “not investigated.”
+
+---
+
+## 3) Root-cause fixing: no silent workarounds
+
+### 3.1 Rule 7.4 — Hypothesis-First Fixing (mandatory)
+Before modifying any code to fix a bug, the agent must:
+
+1. **State a hypothesis (one sentence)**  
+   Example: “The data fetcher returned an empty dataframe because the exchange had no candles for that symbol on 2024-12-25.”
+
+2. **Prove the hypothesis with a minimal reproduction**  
+   - Must reproduce the error *by triggering the identified root cause*.
+   - Must use **real pipeline data and configs**.
+   - **Do not** introduce mock/synthetic data to “make the test pass.”
+
+3. **Workaround check (explicit justification required)**  
+   If the proposed fix includes any of the following, the agent must justify why it is structural (not symptom patching):
+   - conditionals: `if`, `try/except`, fallback returns
+   - data transforms: `fillna`, `clip`, winsorization, dropping rows
+   - threshold changes (including model thresholds, filters, min periods)
+   - “ignore errors” flags
+   - broad coercions (casting types, forcing timezone) without diagnosis
+
+**Default assumption:** adding `fillna(0)` or early returns is a workaround unless proven otherwise.
+
+### 3.2 “Structural fix” definition
+A fix is structural only if it:
+- addresses the generating mechanism of the failure (upstream cause), and
+- preserves intended semantics, and
+- increases observability (stronger invariants/validation), and
+- does not hide data quality issues.
+
+Acceptable structural outcomes include:
+- correcting data fetch parameters / calendars / symbol mapping
+- fixing schema contracts between steps
+- adding explicit invariants and failing fast with actionable errors
+- correcting time alignment / timezone / indexing logic
+- adjusting feature/label logic to remove leakage or undefined behavior
+
+---
+
+## 4) Rule 7.5 — Regression Test Symmetry (fix verification is objective)
+A bug is only “fixed” if all are true:
+
+1. **A new test exists that fails on the old code.**
+2. **The same test passes on the new code.**
+3. **No existing metrics in `outcomes/` regressed unexpectedly.**
+   - If a metric changes, the agent must explain whether it is:
+     - expected (due to correcting a bug), or
+     - a regression (unintended behavior change)
+   - The explanation must be added to the run report in `outcomes/`.
 
-This file defines mandatory engineering and research practices for any agent (and humans) modifying this repository. When rules conflict, precedence is:
+---
 
-Safety & correctness (no leakage, no lookahead, reproducibility)
+## 5) Logging requirements that enable root-cause tracing (uses `tprint`)
 
-Step completion criteria (metrics + report + logs)
+### 5.1 Mandatory Logging Standards (Entry / Intermediate / Exit)
+Every significant function and all step entrypoints must use `tprint`:
+
+**Entry**
+- intent (“what this function/step is trying to do”)
+- input fingerprint:
+  - artifact IDs (or dataset identifiers)
+  - config hash/snippet id
+  - shapes/dtypes/time range
+  - input hash (stable fingerprint of the input state)
 
-Performance requirements (Numba/JIT/caching)
+**Intermediate**
+- after each major transformation, log:
+  - shape
+  - NaN ratios (overall + critical columns)
+  - key invariant checks (schema present, monotonic index)
+  - example: “After merge: 10,000 rows, 42 cols, 0.0% NaNs”
 
-Style and maintainability
+**Exit**
+- output artifacts produced (IDs/paths)
+- runtime + cache hit/miss
+- “confidence score” style statement:
+  - schema matches expected
+  - invariants hold
+  - leakage checks passed (when relevant)
 
-1) Good practices (code quality)
-1.1 Structure and readability
+### 5.2 Fail-fast invariants (preferred)
+- Prefer explicit invariant checks that raise actionable errors over silent coercions.
+- When failing, include the traceability chain identifiers (artifact id, step id, config hash).
 
-Prefer small, composable functions with single responsibility.
+---
 
-No “magic” constants: use named constants or config.
+## 6) Where to look first when something breaks (agent behavior)
+When a workflow fails, the agent must:
+1. Read latest report in `outcomes/` for the failing run.
+2. Search logs for the **first point of failure**.
+3. Produce a Traceability Chain report.
+4. State and prove a hypothesis.
+5. Implement a structural fix with regression test symmetry.
 
-All public functions and classes must include docstrings describing:
+---
+
+## 7) Agent Task Completion Checklist (must be output at end of every task)
+- [ ] Traceability Chain provided for any investigated failure.
+- [ ] Hypothesis stated and proven with a minimal reproduction using real pipeline data.
+- [ ] Workaround check completed (if applicable) with justification.
+- [ ] No unexpected metric regressions in `outcomes/` (or explained in the report).
 
-inputs/outputs, shapes and dtypes (where relevant)
+
+## 8) Mode-Aware Troubleshooting and Failure Semantics
+
+The agent must adapt its troubleshooting scope based on the active execution mode.  
+Mode awareness is mandatory and must be explicitly stated at the beginning of any investigation or report.
 
-time index semantics (timezone, bar close/open convention)
+### 8.1 Execution modes (explicit declaration required)
+At the start of any troubleshooting or analysis, the agent must declare one of:
 
-leakage constraints (what the function is allowed to “see”)
+- **Light Mode**
+- **Blank Mode**
+- **Full Mode**
 
-1.2 Types, validation, and errors
+If the mode is not explicitly declared in the task context, default to **Light Mode**.
 
-Add type hints for all non-trivial functions.
+---
 
-Validate assumptions early:
+### 8.2 Light Mode / Blank Mode: Logic-first troubleshooting
+**Objective:** Ensure correctness of code, data flow, and assumptions.
 
-index monotonicity, missing data policy, dtype constraints, expected columns
+In Light or Blank Mode, troubleshooting must focus exclusively on:
+- bugs, exceptions, and crashes
+- logical inconsistencies
+- schema, shape, or alignment errors
+- leakage, lookahead, or indexing violations
+- broken invariants or invalid assumptions
 
-Fail loudly with actionable exceptions (include context: symbol, timeframe, step id).
+**Rules**
+- Financial performance metrics are **out of scope** unless they directly reveal a logic flaw (e.g., NaN PnL due to upstream bug).
+- A step is considered “fixed” once:
+  - the Traceability Chain is complete,
+  - the root cause is addressed structurally,
+  - regression test symmetry holds.
 
-1.3 Testing discipline
+**Anti-pattern**
+- Do not rationalize poor financial performance in Light/Blank Mode.
+- Do not optimize metrics; fix correctness only.
 
-Every bug fix must come with a regression test.
+---
 
-Critical invariants must be covered by tests:
+### 8.3 Full Mode: Financial quality is part of correctness
+**Objective:** Ensure the system is both *correct* and *financially meaningful*.
 
-no lookahead leakage checks
+In Full Mode, **financial metrics are first-class debugging signals**, not optional diagnostics.
 
-deterministic results given fixed seeds and fixed data manifests
+A troubleshooting task is considered **failed** if:
+- code runs without errors **but**
+- financial metrics violate AFML or causal expectations.
 
-stable feature generation schema (column naming, ordering)
+Examples of failures in Full Mode:
+- MI/RMI collapses after a refactor with no explained causal reason.
+- PR-AUC degrades materially out-of-sample while in-sample improves (overfitting signal).
+- Strategy Sharpe improves but drawdown or tail risk worsens unexpectedly.
+- Regime-conditioned performance breaks causal consistency (e.g., signal works only in hindsight regimes).
 
-1.4 Reproducibility and traceability
+---
 
-Every run must record:
+### 8.4 AFML / causal failure semantics (Full Mode)
+In Full Mode, the following are treated as **troubleshooting failures**, not “model outcomes”:
 
-git commit hash
+- Metric instability across time splits or regimes
+- Performance that disappears after purging/embargo
+- Improvements explainable only by leakage, overlap, or threshold tuning
+- Excessive sensitivity to costs, slippage, or minor perturbations
+- Features with high MI but no plausible causal mechanism
 
-config hash / name
+**Interpretation rule**
+> Poor or unstable financial metrics imply a *hidden bug, leakage, or invalid assumption* until proven otherwise.
 
-dataset manifest/version id
+The agent must:
+1. Treat the metric degradation as a signal of a root cause.
+2. Re-enter the troubleshooting loop (Section 7).
+3. Produce a Traceability Chain that includes **metric context**.
 
-random seeds
+---
 
-environment summary (python version, key libs)
+### 8.5 Mode-dependent Definition of “Done”
+A task is only “done” if:
 
-Results must be written into outcomes/ with run identifiers and timestamps.
+- **Light / Blank Mode**
+  - All bugs and logic flaws are resolved
+  - Tests pass
+  - No new invariant violations appear
 
-2) Artifact management & raw data fetching
-2.1 Mandatory base abstractions
+- **Full Mode**
+  - All of the above **and**
+  - Financial metrics are:
+    - stable across splits/regimes, or
+    - any degradation is explicitly explained and justified
+  - Metrics align with AFML and causal expectations
 
-All pipeline steps must inherit from BaseStep (or BaseClass if that is your canonical abstraction).
+Unexplained poor financial performance in Full Mode is equivalent to:
+> “Troubleshooting incomplete.”
 
-No direct ad-hoc fetching in notebooks or random scripts. Raw data fetching must occur only through the designated Base abstraction and its connectors.
+---
 
-2.2 Artifact lifecycle
+### 8.6 Mandatory reporting addition
+In Full Mode, the final report in `outcomes/` must include:
+- a short **financial diagnostics section**
+- key metrics before vs after the fix
+- a statement answering:
+  > “Why do these metrics make sense under AFML / causal reasoning?”
 
-Every step must:
+Absence of this section means the task is not complete.
 
-declare inputs (artifact ids + versions/manifests)
+---
 
-declare outputs (artifact ids + versions)
+### 8.7 Checklist extension (mode-aware)
+When outputting the Agent Task Completion Checklist, the agent must also state:
 
-store metadata: schema, date range, exchange, symbol universe, sampling
-
-Each artifact must be:
-
-content-addressed where feasible (hash-based)
-
-cached on disk (and optionally remote) with explicit invalidation rules
-
-2.3 Data provenance rules
-
-Raw data must be immutable once written (new versions are new manifests).
-
-All transformations must be attributable (step name, parameters, timestamp).
-
-3) Performance: Numba/Numpy/JIT + extensive caching
-3.1 Default performance posture
-
-Vectorize with NumPy first.
-
-Use Numba (or equivalent JIT) for hot loops and path-dependent computations.
-
-Avoid pandas loops and per-row apply in performance-critical code.
-
-3.2 Caching requirements
-
-Any step taking more than a “short run” must implement caching keyed by:
-
-input artifact ids + versions
-
-config parameters
-
-code version (commit hash) if needed for safety
-
-Cache must be:
-
-transparent (clear logs on cache hit/miss)
-
-invalidation-safe (never reuse if inputs/config changed)
-
-Prefer multi-level caching:
-
-in-memory for intra-run
-
-disk for inter-run
-
-optional remote cache for CI/team use
-
-3.3 Performance acceptance checks
-
-Each major step should emit:
-
-runtime
-
-peak memory (where feasible)
-
-cache hit ratio (if applicable)
-
-If performance regresses materially, it is treated as a bug.
-
-4) ML-specific code: de Prado (AFML) and causal frameworks
-4.1 AFML alignment (mandatory patterns)
-
-When implementing ML components, follow AFML principles, including:
-
-Proper labeling and event definition (avoid naive next-bar labels unless justified).
-
-Appropriate cross-validation for financial time series:
-
-purging and embargo to reduce leakage
-
-walk-forward evaluation for model selection
-
-Thoughtful sample weighting and handling of overlapping outcomes.
-
-Emphasis on meta-labeling / decision-layer separation where appropriate.
-
-4.2 Causal and robustness posture
-
-Treat signals as hypotheses; require tests for:
-
-stability across regimes
-
-sensitivity to costs/slippage
-
-adversarial/noise perturbations
-
-Prefer causal-minded feature design:
-
-avoid post-treatment variables
-
-document plausible mechanism
-
-use controlled comparisons / ablations
-
-4.3 Baselines are mandatory
-
-Every new model must be compared against:
-
-buy-and-hold (or equivalent passive baseline for the instrument)
-
-a simple momentum/MA baseline
-
-a turnover-matched random baseline (when applicable)
-
-5) Mandatory logging: tprint on call and completion
-5.1 Logging rule
-
-Every significant function (and all step entrypoints) must:
-
-tprint at start: function name, key parameters, input shapes/date ranges
-
-tprint at end: success, output shapes, key metrics, runtime, cache status
-
-Errors must be logged with enough context to reproduce (step id, artifact ids, config).
-
-5.2 Logging content standards
-
-Include, where relevant:
-
-symbol universe, timeframe, exchange, date range
-
-number of rows, missingness rate, feature count
-
-labels distribution and sample weights summary
-
-seed values and config identifiers
-
-6) Step completion = metrics and financial quality assessment
-6.1 Definition of “step complete”
-
-A step is not complete until it produces:
-
-Output artifacts (with manifests)
-
-A metrics payload (stored and written to outcomes/)
-
-A short step report snippet (also in outcomes/)
-
-6.2 Required metrics by step type
-
-Feature generation / selection
-
-Mutual Information (MI) and/or conditional MI where applicable
-
-Robust/Rank MI (RMI) or equivalent stability-aware variants
-
-Feature stability across time splits (drift indicators)
-
-Redundancy checks (correlation clusters, VIF-style diagnostics where applicable)
-
-Regime discovery
-
-Regime separability/stability metrics (e.g., transition stability, persistence)
-
-Out-of-sample regime predictability checks (avoid hindsight regimes)
-
-Performance conditioning by regime (PnL/risk metrics per regime)
-
-Model training / selection
-
-PR-AUC (especially for imbalanced events)
-
-Calibration metrics (reliability curves / Brier score where relevant)
-
-Out-of-sample performance with purged/embargoed CV
-
-Turnover, capacity proxy, cost-adjusted returns
-
-Tail risk: max drawdown, CVaR (or drawdown distribution)
-
-Backtest / policy evaluation
-
-Sharpe/Sortino (with caveats and consistent sampling)
-
-Max drawdown, Calmar
-
-Hit rate, profit factor
-
-Turnover and slippage sensitivity (stress test)
-
-6.3 Step-by-step reporting
-Each step must append to a run-level report in outcomes/:
-what changed
-what improved/regressed (with metrics)
-what is the next risk/unknown
-
-7) Debugging: logs + latest report in outcomes/ are the source of truth
-7.1 Troubleshooting workflow (mandatory order)
-When something fails or metrics regress:
-Read latest run report in outcomes/
-Inspect logs (most recent first)
-Reproduce with the minimal step command/config that generated the artifact
-Fix + add regression test
-Re-run the step and confirm metrics + report updated
-
-7.2 No “silent fixes”
-Do not “fix forward” by changing many components at once.
-Fix the minimal root cause, then re-run to confirm.
-
-8) Trading safety guardrails (always on)
-No live trading by default.
-Paper/backtest only unless explicitly enabled by configuration and environment gating.
-Always include transaction costs and slippage assumptions in evaluation; default pessimistic.
-
-9) Definition of done (for any PR/change)
-A change is “done” only when:
-tests pass
-the relevant step(s) run successfully
-outcomes/ contains an updated report + metrics payload
-logs show tprint start/end for the step(s)
-performance constraints (JIT/caching) are respected for hot paths
-
-10) Versioning
-Use Python 3.11
-Use Poetry for dependency management and update it when adding new dependencies
+- **Mode used:** Light / Blank / Full
+- **If Full Mode:**  
+  - [ ] Financial metrics reviewed and deemed causally consistent  
+  - [ ] No unexplained metric degradation relative to prior runs

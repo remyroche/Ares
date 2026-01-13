@@ -2349,8 +2349,8 @@ class BaseEventGenerator(UnifiedPriceMixin):
         """
         super().__init__(use_unified_price=use_unified_price, layer0_params=layer0_params)
     
-    def generate(self, data: Union[pd.Series, pd.DataFrame], **params) -> pd.DatetimeIndex: 
-        """Generate events using default parameters."""
+    def generate(self, data: Union[pd.Series, pd.DataFrame], tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        """Generate events using default parameters. Tracker for event accounting."""
         raise NotImplementedError
     
     def _validate_data(self, data: Union[pd.Series, pd.DataFrame]) -> None:
@@ -2532,7 +2532,7 @@ class OrderBlockEvents(BaseEventGenerator):
     """
     
     def generate(self, df: pd.DataFrame, lookback: int = 20, min_move_pct: float = 0.5, 
-                 volume_threshold: float = 2.0) -> pd.DatetimeIndex:
+                 volume_threshold: float = 2.0, tracker: Optional[Any] = None) -> pd.DatetimeIndex:
         try:
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             if not all(col in df.columns for col in required_cols):
@@ -4516,7 +4516,8 @@ def orthogonal_label_generation(
     causal_graph: Optional[Dict[str, List[str]]] = None,
     causal_surprise_threshold: float = 1.8,
     # Pipeline logging parameters
-    enable_pipeline_logging: bool = True
+    enable_pipeline_logging: bool = True,
+    tracker: Optional[Any] = None
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -4885,16 +4886,17 @@ def orthogonal_label_generation(
                         specialist_predictions=specialist_predictions,
                         causal_graph=causal_graph,
                         surprise_threshold=causal_surprise_threshold,
-                        target_signals_per_day=target_signals_per_day
+                        target_signals_per_day=target_signals_per_day,
+                        tracker=tracker
                     )
                 elif param_names:
                     # Convert positional params to kwargs for cleaner API handling
                     # Handles cases where generate(df, **params) is used
                     kwargs = dict(zip(param_names, params))
-                    events = gen.generate(input_data, **kwargs)
+                    events = gen.generate(input_data, tracker=tracker, **kwargs)
                 else:
                     # Fallback to positional for unregistered legacy generators
-                    events = gen.generate(input_data, *params)
+                    events = gen.generate(input_data, tracker=tracker, *params)
             except Exception as e:
                 tprint_warning(f"Generator {fam} failed: {e}")
                 continue
@@ -5387,14 +5389,19 @@ class InventorySpecialistEvents(BaseEventGenerator):
     Causal Role: Estimates the Position (Z). Determines directional commitment of MM.
     Mechanism: Inventory skew leads to mean-reverting pressure.
     """
-    def generate(self, df: pd.DataFrame, *args, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, *args, **params) -> pd.DatetimeIndex:
         threshold = params.get('threshold', 2.7)
         window = params.get('window', 50)
         
         try:
-            return self._get_inventory_causal_events(df, threshold=threshold, window=window)
+            events = self._get_inventory_causal_events(df, threshold=threshold, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("inventory_no_events", 1)
+            return events
         except Exception as e:
             logger.warning(f"InventorySpecialistEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"inventory_exception_{e}", 1)
             return pd.DatetimeIndex([])
             
     def _get_inventory_causal_events(self, df: pd.DataFrame, window=50, threshold=2.7):
@@ -5415,14 +5422,19 @@ class VolumeSpecialistEvents(BaseEventGenerator):
     Enhanced: Uses Order Imbalance z-score instead of raw volume spikes.
     Order Imbalance captures informed trading direction, not just volume magnitude.
     """
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         threshold = params.get('threshold', 2.7)
         window = params.get('window', 20)
         
         try:
-            return self._get_volume_causal_events(df, threshold=threshold, window=window)
+            events = self._get_volume_causal_events(df, threshold=threshold, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("volume_no_events", 1)
+            return events
         except Exception as e:
             logger.warning(f"VolumeSpecialistEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"volume_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
     def _get_volume_causal_events(self, df: pd.DataFrame, window=20, threshold=2.7):
@@ -5465,15 +5477,20 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
     Enhanced: Uses Parkinson range-based volatility with z-score against shifted baseline.
     Avoids self-referential quantile thresholding that suppressed event counts.
     """
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         # Dynamic threshold: top 5% by default, or user specific
         quantile_threshold = params.get('quantile', 0.95)
         window = params.get('window', 20)
         
         try:
-            return self._get_volatility_causal_events(df, quantile=quantile_threshold, window=window)
+            events = self._get_volatility_causal_events(df, quantile=quantile_threshold, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("volatility_no_events", 1)
+            return events
         except Exception as e:
             logger.warning(f"VolatilitySpecialistEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"volatility_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
     def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, quantile=0.95):
@@ -5553,14 +5570,19 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
     illiquidity shocks (crashes). Previous version triggered during panic selling,
     leading to anti-directional consistency (0.34).
     """
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         threshold = params.get('threshold', 2.5)
         window = params.get('window', 20)
         
         try:
-            return self._get_liquidity_causal_events(df, threshold=threshold, window=window)
+            events = self._get_liquidity_causal_events(df, threshold=threshold, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("liquidity_no_events", 1)
+            return events
         except Exception as e:
             logger.warning(f"LiquiditySpecialistEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"liquidity_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
     def _get_liquidity_causal_events(self, df: pd.DataFrame, window=20, threshold=2.5):
@@ -5633,15 +5655,20 @@ class InformationSpecialistEvents(BaseEventGenerator):
     Causal Role: Estimates PIN (Probability of Informed Trading).
     Now uses Dynamic Quantile Thresholding to ensure consistent event density.
     """
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         # Dynamic threshold: top 5% by default
         quantile = params.get('quantile', 0.95)
         window = params.get('window', 50)
         
         try:
-            return self._get_information_causal_events(df, quantile=quantile, window=window)
+            events = self._get_information_causal_events(df, quantile=quantile, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("information_no_events", 1)
+            return events
         except Exception as e:
             logger.warning(f"InformationSpecialistEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"information_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
     def _get_information_causal_events(self, df: pd.DataFrame, window=50, quantile=0.95):
@@ -5677,15 +5704,20 @@ class MomentumDecaySpecialistEvents(BaseEventGenerator):
     This specialist captures the transition from trending to mean-reverting regime,
     which is exactly where orthogonal labeling finds edge (MFE dominance shifts).
     """
-    def generate(self, df: pd.DataFrame, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         threshold = params.get('threshold', 2.0)
         fast_window = params.get('fast_window', 10)
         slow_window = params.get('slow_window', 50)
         
         try:
-            return self._get_momentum_decay_events(df, threshold, fast_window, slow_window)
+            events = self._get_momentum_decay_events(df, threshold, fast_window, slow_window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("momentum_decay_no_events", 1)
+            return events
         except Exception as e:
             logger.warning(f"MomentumDecaySpecialistEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"momentum_decay_exception_{e}", 1)
             return pd.DatetimeIndex([])
     
     def _get_momentum_decay_events(self, df, threshold, fast_window, slow_window):
@@ -5767,6 +5799,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
     def generate(self, df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series] = None,
                 causal_graph: Dict[str, List[str]] = None, surprise_threshold: float = 1.25,
                 zone3_boost: float = 3.0, zone2_boost: float = 2.0, exposure_scalar: float = 1.0,
+                tracker: Optional[Any] = None,
                 **params) -> pd.DatetimeIndex:
         
         # Merge params for convenience

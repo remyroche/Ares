@@ -118,6 +118,33 @@ import logging
 import copy
 import warnings
 import sys
+
+@dataclass
+class EventGenerationTracker:
+    """Tracks event generation statistics and rejection reasons."""
+    total_input_points: int = 0
+    generated_events: int = 0
+    filtered_events: int = 0
+    rejection_reasons: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    family: str = "Unknown"
+
+    def log_rejection(self, reason: str, count: int = 1):
+        """Log a rejection reason."""
+        self.rejection_reasons[reason] += count
+        self.filtered_events += count
+
+    def summary(self) -> str:
+        """Return a summary string."""
+        reasons_str = ", ".join([f"{k}: {v}" for k, v in self.rejection_reasons.items()])
+        return (f"[{self.family}] Input: {self.total_input_points} | Generated: {self.generated_events} | "
+                f"Filtered: {self.filtered_events} | Reasons: {{{reasons_str}}}")
+
+    def report(self):
+        """Log the summary using tprint."""
+        if self.generated_events == 0:
+            tprint_warning(f"   📉 {self.summary()}")
+        else:
+            tprint_info(f"   📊 {self.summary()}")
 from pandas.util import hash_pandas_object
 
 try:
@@ -911,6 +938,9 @@ class GeometryTrial:
     selected_features: Optional[List[str]] = field(default=None)
     race_score: Optional[float] = None
     events: Optional[pd.DatetimeIndex] = None # Added for orthogonality
+    sharpe_ratio: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    sortino_ratio: Optional[float] = None
 
 
 @dataclass
@@ -3572,6 +3602,30 @@ class LabelBasedLayer2(BaseStep):
         """Generate cache key for features."""
         return f"features_{events_hash}_fold_{fold_idx}"
     
+
+    def _compute_financial_metrics(self, returns: pd.Series) -> Dict[str, float]:
+        if returns.empty:
+            return {'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'sortino_ratio': 0.0}
+
+        mean_ret = returns.mean()
+        std_ret = returns.std()
+        sharpe = mean_ret / (std_ret + 1e-9)
+
+        cum_ret = (1 + returns).cumprod()
+        peak = cum_ret.expanding(min_periods=1).max()
+        dd = (cum_ret / peak) - 1
+        max_dd = dd.min()
+
+        downside_ret = returns[returns < 0]
+        downside_std = downside_ret.std()
+        sortino = mean_ret / (downside_std + 1e-9)
+
+        return {
+            'sharpe_ratio': float(sharpe),
+            'max_drawdown': float(max_dd),
+            'sortino_ratio': float(sortino)
+        }
+
     def _get_global_events(self, df: pd.DataFrame, family: str, params: Dict = None) -> pd.DatetimeIndex:
         """Generate events once for the full dataset and cache them."""
         # Create cache key
@@ -3582,30 +3636,50 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(f"🔄 Generating global events for {family}...")
             start_time = time.time()
 
+            # Initialize Tracker
+            tracker = EventGenerationTracker(family=family, total_input_points=len(df))
+
             gen = self.generators.get(family)
             if gen is None:
                 # Fallback: Try to fetch from Orthogonal Label Generation
-                events = self._fetch_orthogonal_candidate_events(df, family)
-                if events is None:
-                    tprint_error(f"❌ Generator for {family} not found and retrieval from Orthogonal Generation failed.")
+                try:
+                    events = self._fetch_orthogonal_candidate_events(df, family, tracker=tracker)
+                    if events is None:
+                        tprint_error(f"❌ Generator for {family} not found and retrieval from Orthogonal Generation failed.")
+                        tracker.log_rejection("not_found", 1)
+                        self._global_event_cache[cache_key] = pd.DatetimeIndex([])
+                    else:
+                        tracker.generated_events = len(events)
+                        self._global_event_cache[cache_key] = events
+                        tprint_success(f"✅ Global events retrieved from Orthogonal Generation for {family}: {len(events)} events")
+                except Exception as e:
+                    tprint_error(f"❌ Orthogonal generation fallback failed: {e}")
+                    tracker.log_rejection("orthogonal_exception", 1)
                     self._global_event_cache[cache_key] = pd.DatetimeIndex([])
-                else:
-                    self._global_event_cache[cache_key] = events
-                    tprint_success(f"✅ Global events retrieved from Orthogonal Generation for {family}: {len(events)} events")
             else:
                 gen_params = params if params else {}
                 # For causal generators, inject stored specialist predictions
-                if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
-                    specialist_preds = getattr(self, '_oof_specialist_predictions', None)
-                    events = gen.generate(df, specialist_predictions=specialist_preds, **gen_params)
-                else:
-                    events = gen.generate(df, **gen_params)
-                self._global_event_cache[cache_key] = events
-                tprint_success(f"✅ Global events cached for {family}: {len(events)} events in {time.time() - start_time:.2f}s")
+                try:
+                    if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
+                        specialist_preds = getattr(self, '_oof_specialist_predictions', None)
+                        events = gen.generate(df, specialist_predictions=specialist_preds, tracker=tracker, **gen_params)
+                    else:
+                        events = gen.generate(df, tracker=tracker, **gen_params)
+
+                    tracker.generated_events = len(events) if events is not None else 0
+                    self._global_event_cache[cache_key] = events
+                    tprint_success(f"✅ Global events cached for {family}: {len(events)} events in {time.time() - start_time:.2f}s")
+                except Exception as e:
+                    tprint_error(f"❌ Generator {family} failed: {e}")
+                    tracker.log_rejection("generator_exception", 1)
+                    self._global_event_cache[cache_key] = pd.DatetimeIndex([])
+
+            # Report tracker stats
+            tracker.report()
 
         return self._global_event_cache[cache_key]
 
-    def _fetch_orthogonal_candidate_events(self, df: pd.DataFrame, family: str) -> Optional[pd.DatetimeIndex]:
+    def _fetch_orthogonal_candidate_events(self, df: pd.DataFrame, family: str, tracker: Any = None) -> Optional[pd.DatetimeIndex]:
         """
         Fetch events for families that are dynamically generated by orthogonal_label_generation
         (e.g., DERIVED_*, OHLCV_*, AGG_SUM_*, SYNTHETIC_*).
@@ -3629,7 +3703,8 @@ class LabelBasedLayer2(BaseStep):
                      enable_causal_events=getattr(self, 'enable_causal_framework', True),
                      specialist_predictions=getattr(self, '_oof_specialist_predictions', None),
                      causal_graph=getattr(self, '_causal_graph', None),
-                     target_signals_per_day=7.5 # Fixed default used in optimize_production_geometries
+                     target_signals_per_day=7.5, # Fixed default used in optimize_production_geometries
+                     tracker=tracker
                  )
                  # Map family -> events
                  self._orthogonal_cache[df_hash] = {c['family']: c['events'] for c in candidates}
@@ -7782,6 +7857,29 @@ class LabelBasedLayer2(BaseStep):
                 else:
                     regime_labels = None
 
+                # Calculate Financial Metrics for this regime's events
+                # Use a default horizon (e.g. 120 bars) or from params if available
+                # Assuming simple return calculation for now as we don't have full dominance labels here yet
+                fin_metrics = {'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'sortino_ratio': 0.0}
+                if len(regime_events) > 5 and 'close' in df.columns:
+                    try:
+                        # Quick realize returns at horizon
+                        horizon = og.params.get('horizon', 120)
+                        # We need realized returns.
+                        # Using simple forward returns approximation:
+                        # ret = (close.shift(-horizon) / close - 1)
+                        # But we need it for specific events.
+
+                        # Let's use the helper if available or manual
+                        # manual:
+                        entry_prices = df['close'].reindex(regime_events)
+                        exit_prices = df['close'].shift(-horizon).reindex(regime_events)
+                        trade_rets = (exit_prices / entry_prices) - 1.0
+                        fin_metrics = self._compute_financial_metrics(trade_rets)
+                    except Exception as e:
+                        # logger.warning(f"Failed to calc metrics for {og.name}: {e}")
+                        pass
+
                 # Create Regime-Specific Candidate
                 gt = GeometryTrial(
                     family=og.family,
@@ -7794,7 +7892,10 @@ class LabelBasedLayer2(BaseStep):
                     raw_metrics=og.metrics,
                     uuid=f"{og.name}_{i}_{regime}", # Unique ID per regime
                     events=regime_events,
-                    selected_features=None
+                    selected_features=None,
+                    sharpe_ratio=fin_metrics['sharpe_ratio'],
+                    max_drawdown=fin_metrics['max_drawdown'],
+                    sortino_ratio=fin_metrics['sortino_ratio']
                 )
                 gt.labels = regime_labels
                 gt.regime = regime # Tag

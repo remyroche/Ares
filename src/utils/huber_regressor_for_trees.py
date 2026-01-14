@@ -18,7 +18,10 @@ def prepare_huber_teacher_outputs(
     alphas: List[float] = [1e-4, 1e-3, 1e-2],
     pruning_percentile: int = 15,
     corr_threshold: float = 0.7,
-    n_jobs: int = -1
+    n_jobs: int = -1,
+    sign_agree_threshold: float = 0.8,  # Same sign in ≥ 80% of splits
+    nonzero_rate_threshold: float = 0.7,  # Non-zero in ≥ 70% of splits
+    n_time_splits: int = 5  # Number of walk-forward time splits for stability
 ) -> Dict:
     """
     Advanced Huber Orchestrator for 15m Crypto Specialists.
@@ -41,36 +44,232 @@ def prepare_huber_teacher_outputs(
     X_tr_scaled = scaler.fit_transform(X_train)
     feature_names = np.asarray(X_train.columns)
 
-    # 3. Vectorized Ensemble Training (Parallel Grid Fit)
-    # 3x3 Grid: 3 Epsilons x 3 Alphas = 9 Teachers
-    def _fit_huber(eps, alpha):
-        h = HuberRegressor(epsilon=eps, alpha=alpha, max_iter=5000)  # Increased max_iter for better convergence
-        if actual_weights is not None:
-            h.fit(X_tr_scaled, y_train, sample_weight=actual_weights)
-        else:
-            h.fit(X_tr_scaled, y_train)
-        return h.coef_, h.predict(X_tr_scaled), h
-
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(_fit_huber)(e, a) for e in epsilons for a in alphas
-    )
+    # 3. Walk-Forward Time Splits for Stability Analysis
+    print(f"\n🔄 Creating {n_time_splits} walk-forward time splits for stability analysis...")
     
-    ensemble_coeffs, ensemble_preds_tr, models = zip(*results)
+    # Create time-based splits (walk-forward)
+    n_samples = len(X_train)
+    split_size = n_samples // n_time_splits
+    
+    split_coeffs = []
+    split_indices = []
+    
+    for split_idx in range(n_time_splits):
+        # Walk-forward: each split uses data up to that point
+        if split_idx == n_time_splits - 1:
+            # Last split uses all data
+            train_end = n_samples
+        else:
+            # Other splits use progressive portions
+            train_end = (split_idx + 1) * split_size
+        
+        # Ensure minimum samples for training
+        train_start = max(0, train_end - split_size * 2)  # Use rolling window
+        
+        X_split = X_train.iloc[train_start:train_end]
+        y_split = y_train.iloc[train_start:train_end]
+        
+        # Get corresponding weights if available
+        if actual_weights is not None:
+            split_weights = actual_weights[train_start:train_end]
+        else:
+            split_weights = None
+        
+        print(f"   📊 Split {split_idx + 1}/{n_time_splits}: {len(X_split)} samples [{train_start}:{train_end}]")
+        
+        # Scale data for this split
+        scaler_split = RobustScaler()
+        X_split_scaled = scaler_split.fit_transform(X_split)
+        
+        # Fit best Huber model for this split (use median parameters)
+        eps_median = np.median(epsilons)
+        alpha_median = np.median(alphas)
+        
+        h_split = HuberRegressor(epsilon=eps_median, alpha=alpha_median, max_iter=5000)
+        if split_weights is not None:
+            h_split.fit(X_split_scaled, y_split, sample_weight=split_weights)
+        else:
+            h_split.fit(X_split_scaled, y_split)
+        
+        split_coeffs.append(h_split.coef_)
+        split_indices.append((train_start, train_end))
+    
+    # Convert to array for analysis
+    coeffs_array = np.array(split_coeffs)  # Shape: (n_splits, n_features)
 
-    # 4. Consensus Logic (Median Coeffs for structural logic)
-    avg_coeffs = np.median(ensemble_coeffs, axis=0)
+    # 4. Consensus Logic (Median Coeffs across time splits)
+    avg_coeffs = np.median(coeffs_array, axis=0)
     abs_avg_coeffs = np.abs(avg_coeffs)
-    warm_start_tr = np.mean(ensemble_preds_tr, axis=0)
+    
+    # Generate warm start predictions using median model on full data
+    scaler_full = RobustScaler()
+    X_full_scaled = scaler_full.fit_transform(X_train)
+    h_full = HuberRegressor(epsilon=np.median(epsilons), alpha=np.median(alphas), max_iter=5000)
+    if actual_weights is not None:
+        h_full.fit(X_full_scaled, y_train, sample_weight=actual_weights)
+    else:
+        h_full.fit(X_full_scaled, y_train)
+    warm_start_tr = h_full.predict(X_full_scaled)
 
     # 5. O(n) Feature Pruning
     kth_val = np.percentile(abs_avg_coeffs, pruning_percentile)
     keep_mask = abs_avg_coeffs > kth_val
     selected_feats = feature_names[keep_mask]
     
-    # 6. Monotonicity via Local Residual Scale
+    # 6. Stability Analysis: Sign Consensus and Nonzero Rate across Time Splits
+    print(f"\n🔍 Huber Stability Analysis across {n_time_splits} time splits:")
+    
+    # Calculate stability metrics for each feature
+    n_splits = len(coeffs_array)
+    
+    # Sign consensus: proportion of splits with same sign as median
+    median_signs = np.sign(avg_coeffs)
+    sign_agreement = np.zeros(len(feature_names))
+    
+    # Nonzero rate: proportion of splits with meaningful coefficients
+    nonzero_threshold = 1e-6  # Threshold for "meaningfully non-zero"
+    nonzero_rate = np.zeros(len(feature_names))
+    
+    for j, feat_name in enumerate(feature_names):
+        feat_coeffs = coeffs_array[:, j]
+        
+        # Sign consensus (exclude zeros from sign calculation)
+        nonzero_mask = np.abs(feat_coeffs) > nonzero_threshold
+        if np.sum(nonzero_mask) > 0:
+            nonzero_signs = np.sign(feat_coeffs[nonzero_mask])
+            if median_signs[j] != 0:
+                sign_agreement[j] = np.mean(nonzero_signs == median_signs[j])
+            else:
+                sign_agreement[j] = 0.0  # No consensus if median is zero
+        else:
+            sign_agreement[j] = 0.0
+        
+        # Nonzero rate
+        nonzero_rate[j] = np.mean(nonzero_mask)
+        
+        # Debug logging for a few features
+        if j < 5:  # Log first 5 features
+            print(f"   📊 {feat_name}: sign_agree={sign_agreement[j]:.2f}, nonzero_rate={nonzero_rate[j]:.2f}, median_coeff={avg_coeffs[j]:.4f}")
+    
+    print(f"   📈 Average sign agreement: {np.mean(sign_agreement):.3f}")
+    print(f"   📈 Average nonzero rate: {np.mean(nonzero_rate):.3f}")
+    
+    # 7. Enhanced Monotonicity: Strength + Stability Criteria
     local_scale = np.mean(abs_avg_coeffs[keep_mask])
-    mono_cst = np.where(abs_avg_coeffs[keep_mask] > max(0.15 * local_scale, np.percentile(abs_avg_coeffs[keep_mask], 10)),
-                        np.sign(avg_coeffs[keep_mask]), 0)
+    strength_threshold = max(0.15 * local_scale, np.percentile(abs_avg_coeffs[keep_mask], 10))
+    
+    # Stability thresholds (configurable parameters)
+    # sign_agree_threshold = 0.8  # Same sign in ≥ 80% of splits
+    # nonzero_rate_threshold = 0.7  # Non-zero in ≥ 70% of splits
+    
+    # Apply constraints only when both strength and stability pass
+    mono_cst = np.zeros(len(selected_feats))  # Default: unconstrained
+    
+    for i, (feat_idx, feat_name) in enumerate(zip(np.where(keep_mask)[0], selected_feats)):
+        # Strength criterion
+        strength_pass = abs_avg_coeffs[feat_idx] > strength_threshold
+        
+        # Stability criteria
+        stability_pass = (sign_agreement[feat_idx] >= sign_agree_threshold and 
+                         nonzero_rate[feat_idx] >= nonzero_rate_threshold)
+        
+        # Apply constraint only if both pass
+        if strength_pass and stability_pass:
+            mono_cst[i] = np.sign(avg_coeffs[feat_idx])
+        else:
+            mono_cst[i] = 0  # Unconstrained
+    
+    # Enhanced logging: Show which features have which constraints
+    negative_features = []
+    positive_features = []
+    unconstrained_features = []
+    
+    # Also track why features were unconstrained
+    strength_failed = []
+    stability_failed = []
+    both_failed = []
+    
+    for i, (feat_name, constraint) in enumerate(zip(selected_feats, mono_cst)):
+        feat_idx = np.where(keep_mask)[0][i]
+        
+        if constraint == -1:
+            negative_features.append(feat_name)
+        elif constraint == 1:
+            positive_features.append(feat_name)
+        else:  # constraint == 0
+            unconstrained_features.append(feat_name)
+            
+            # Track failure reason
+            strength_pass = abs_avg_coeffs[feat_idx] > strength_threshold
+            stability_pass = (sign_agreement[feat_idx] >= sign_agree_threshold and 
+                             nonzero_rate[feat_idx] >= nonzero_rate_threshold)
+            
+            if not strength_pass and not stability_pass:
+                both_failed.append(feat_name)
+            elif not strength_pass:
+                strength_failed.append(feat_name)
+            else:
+                stability_failed.append(feat_name)
+    
+    # Print detailed constraint information
+    print(f"\n🔗 Huber Enhanced Monotonic Constraints Analysis:")
+    print(f"   📊 Total features: {len(selected_feats)}")
+    print(f"   🔻 Negative constraints: {len(negative_features)}")
+    print(f"   🔺 Positive constraints: {len(positive_features)}")
+    print(f"   ⚪ Unconstrained: {len(unconstrained_features)}")
+    
+    # Summary: Candidates by magnitude → Constraints after stability gate
+    magnitude_candidates = len(selected_feats)  # Features that passed magnitude threshold
+    stability_constraints = len(negative_features) + len(positive_features)  # Features that passed stability
+    dropped_instability = magnitude_candidates - stability_constraints  # Dropped due to instability
+    
+    print(f"\n📋 Constraint Summary:")
+    print(f"   🎯 Candidates by magnitude: {magnitude_candidates}")
+    print(f"   ✅ Constraints after stability gate: {stability_constraints}")
+    print(f"   ❌ Dropped due to instability: {dropped_instability}")
+    print(f"   📊 Stability retention rate: {stability_constraints/magnitude_candidates*100:.1f}%")
+    
+    # Print failure breakdown
+    print(f"\n📈 Constraint Failure Analysis:")
+    print(f"   ❌ Strength failed: {len(strength_failed)}")
+    print(f"   🔄 Stability failed: {len(stability_failed)}")
+    print(f"   💥 Both failed: {len(both_failed)}")
+    
+    # Print stability statistics
+    print(f"\n📊 Stability Statistics (Thresholds: sign≥{sign_agree_threshold}, nonzero≥{nonzero_rate_threshold}):")
+    print(f"   🔄 Based on {n_time_splits} walk-forward time splits")
+    constrained_features = negative_features + positive_features
+    if constrained_features:
+        constrained_sign_agree = [sign_agreement[np.where(feature_names == feat)[0][0]] 
+                                for feat in constrained_features]
+        constrained_nonzero_rate = [nonzero_rate[np.where(feature_names == feat)[0][0]] 
+                                  for feat in constrained_features]
+        print(f"   ✅ Constrained features:")
+        print(f"      - Avg sign agreement: {np.mean(constrained_sign_agree):.3f}")
+        print(f"      - Avg nonzero rate: {np.mean(constrained_nonzero_rate):.3f}")
+    
+    if unconstrained_features:
+        unconstrained_sign_agree = [sign_agreement[np.where(feature_names == feat)[0][0]] 
+                                  for feat in unconstrained_features]
+        unconstrained_nonzero_rate = [nonzero_rate[np.where(feature_names == feat)[0][0]] 
+                                    for feat in unconstrained_features]
+        print(f"   ⚪ Unconstrained features:")
+        print(f"      - Avg sign agreement: {np.mean(unconstrained_sign_agree):.3f}")
+        print(f"      - Avg nonzero rate: {np.mean(unconstrained_nonzero_rate):.3f}")
+    
+    if negative_features:
+        print(f"   🔻 Negative features: {negative_features[:5]}{'...' if len(negative_features) > 5 else ''}")
+    if positive_features:
+        print(f"   🔺 Positive features: {positive_features[:5]}{'...' if len(positive_features) > 5 else ''}")
+    if unconstrained_features:
+        print(f"   ⚪ Unconstrained features: {unconstrained_features[:5]}{'...' if len(unconstrained_features) > 5 else ''}")
+    
+    if strength_failed:
+        print(f"   ❌ Strength failed: {strength_failed[:3]}{'...' if len(strength_failed) > 3 else ''}")
+    if stability_failed:
+        print(f"   🔄 Stability failed: {stability_failed[:3]}{'...' if len(stability_failed) > 3 else ''}")
+    if both_failed:
+        print(f"   💥 Both failed: {both_failed[:3]}{'...' if len(both_failed) > 3 else ''}")
 
     # 7. Interaction Constraints (Named Output for Tree Learners)
     # Efficiency: Use Rank-based correlation (O(n log n))
@@ -98,9 +297,9 @@ def prepare_huber_teacher_outputs(
     # 8. Consensus Inference for Validation/Test
     def get_consensus_pred(df):
         if df is None: return None
-        df_s = scaler.transform(df)
-        preds = [m.predict(df_s) for m in models]
-        return np.mean(preds, axis=0)
+        df_s = scaler_full.transform(df)  # Use the full scaler
+        pred = h_full.predict(df_s)  # Use the median model
+        return pred
 
     return {
         'selected_features': selected_feats.tolist(),
@@ -111,9 +310,9 @@ def prepare_huber_teacher_outputs(
             'val': get_consensus_pred(X_val),
             'test': get_consensus_pred(X_test)
         },
-        'huber_models': models, # For future inspection and prediction
+        'huber_models': [h_full], # For future inspection and prediction (median model)
         'quantile_meta_targets': y_train - warm_start_tr,
-        'scaler': scaler
+        'scaler': scaler_full
     }
 
 # Backward compatibility alias

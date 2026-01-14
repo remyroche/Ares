@@ -92,6 +92,45 @@ class Layer2CheckpointManager:
         config_str = json.dumps(filtered, sort_keys=True, default=str)
         return hashlib.md5(config_str.encode()).hexdigest()[:12]
     
+    def validate_checkpoint_data(self, step: str, data: Dict[str, Any]) -> None:
+        """
+        Validate checkpoint data content before saving.
+        
+        Args:
+            step: Name of the sub-step
+            data: Dictionary of data to checkpoint
+            
+        Raises:
+            ValueError: If data is invalid (empty, all zeros, etc.)
+        """
+        if step == 'causal_targets':
+            if 'causal_targets_df' in data:
+                df = data['causal_targets_df']
+                if df.empty:
+                    raise ValueError(f"❌ Invalid checkpoint for {step}: causal_targets_df is empty")
+                
+                # Check for zero values indicating failure
+                if 'cate_estimates' in df.columns:
+                    if (df['cate_estimates'] == 0).all():
+                        raise ValueError(f"❌ Invalid checkpoint for {step}: all cate_estimates are zero")
+                        
+                if 'causal_residuals' in df.columns:
+                    if (df['causal_residuals'] == 0).all():
+                        raise ValueError(f"❌ Invalid checkpoint for {step}: all causal_residuals are zero")
+                        
+        elif step == 'event_generation':
+            if 'causal_events_df' in data:
+                df = data['causal_events_df']
+                if df.empty:
+                    raise ValueError(f"❌ Invalid checkpoint for {step}: causal_events_df is empty")
+                    
+        elif step == 'specialist_training':
+             if 'specialist_predictions' in data:
+                preds = data['specialist_predictions']
+                if not preds and not isinstance(preds, (pd.DataFrame, pd.Series)): # handle dict
+                     raise ValueError(f"❌ Invalid checkpoint for {step}: specialist_predictions is empty")
+
+
     def save_checkpoint(
         self, 
         step: str, 
@@ -113,6 +152,9 @@ class Layer2CheckpointManager:
         Returns:
             Path to the saved checkpoint
         """
+        # Validate data before proceeding
+        self.validate_checkpoint_data(step, data)
+
         step_idx = self._get_step_index(step)
         symbol_dir = self._get_symbol_dir(symbol)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

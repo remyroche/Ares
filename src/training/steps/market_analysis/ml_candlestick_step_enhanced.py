@@ -547,10 +547,11 @@ class EnhancedMLCandlestickStep(MLRiskRegimeStepHMM, SpecialistDiagnosticsMixinE
             suffix="enhanced_candlestick_features"
         )
     
-    def _load_market_data(self, config: Dict[str, Any], timeframe: str) -> pd.DataFrame:
+    def _load_market_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
         """Load market data using BaseStep method."""
+        config = {"symbol": symbol, "exchange": exchange, "timeframe": timeframe}
         market_data, _market_source = self.load_market_data_or_fail(
-            {**config, "timeframe": timeframe},
+            config,
             pipeline_state={},
             allow_config_override=True,
         )

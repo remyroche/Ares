@@ -423,11 +423,13 @@ class EnhancedMLSMCRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpeciali
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute enhanced momentum persistence step."""
+        # Ensure full data coverage by using 'price' filter instead of 'volatility'
+        # This prevents data range restrictions that cause limited coverage
         return await self.execute_standard_specialist_logic(
             config=config,
             specialist_type=SpecialistType.SMC_REGIME, # Assuming exist or fallback
             manual_feature_func=self._get_smc_combined_manual_features,
-            filter_type='volatility',  # Changed from 'volume' to 'volatility' for better coverage
+            filter_type='price',  # Changed from 'volatility' to 'price' for full coverage
             pt_sl_config_key='smc_pt_sl',
             default_pt_sl=[2.0, 1.0],
             suffix="enhanced_smc_features"

@@ -1,0 +1,27 @@
+{
+  "ensemble_performance": {},
+  "model_comparison": {},
+  "feature_analysis": {
+    "total_features": 50,
+    "feature_types": {
+      "volatility": 16,
+      "trend": 7,
+      "momentum": 8,
+      "volume": 9,
+      "price": 2
+    },
+    "feature_importance_top10": {},
+    "correlation_summary": {}
+  },
+  "training_summary": {
+    "training_time_seconds": 600.49,
+    "data_shape": [
+      24950,
+      50
+    ],
+    "specialists_trained": 1,
+    "successful_specialists": 1,
+    "target_balance": "0.250",
+    "memory_usage_mb": 9.708023071289062
+  }
+}

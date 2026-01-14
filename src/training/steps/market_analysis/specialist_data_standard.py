@@ -179,8 +179,9 @@ class SpecialistDataValidator:
         # Check optional columns and warn if missing
         missing_optional = [col for col in optional_columns if col not in df.columns]
         if missing_optional:
-            if not has_predictions and 'target_label' in missing_optional:
-                issues.append(f"Missing optional columns: {missing_optional} (feature-only specialist)")
+            if not has_predictions:
+                # Feature-only specialists don't need target/prediction columns - this is normal
+                logger.debug(f"Feature-only specialist {specialist_name} missing optional columns: {missing_optional}")
             else:
                 issues.append(f"Missing optional columns: {missing_optional}")
         

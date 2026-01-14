@@ -581,6 +581,25 @@ class CausalTargetComputer:
                         random_state=self.random_state,
                         **{k: v for k, v in self.cate_params.items() if k in ['n_estimators', 'max_depth', 'min_samples_leaf', 'n_jobs']}
                     )
+            elif self.cate_model_type in ['lightgbm', 'lgbm']:
+                try:
+                    from lightgbm import LGBMRegressor
+                    # Filter params for LGBM
+                    lgbm_params = {k: v for k, v in self.cate_params.items() if k in ['n_estimators', 'max_depth', 'learning_rate', 'num_leaves', 'n_jobs']}
+                    if 'n_jobs' in lgbm_params and lgbm_params['n_jobs'] == -1:
+                        lgbm_params['n_jobs'] = 4 # Cap threads for safety
+                        
+                    cate_model = LGBMRegressor(
+                        random_state=self.random_state,
+                        verbose=-1,
+                        **lgbm_params
+                    )
+                except ImportError:
+                    tprint_warning("   ⚠️ LightGBM not available, falling back to RandomForest")
+                    cate_model = RandomForestRegressor(
+                        random_state=self.random_state,
+                        **{k: v for k, v in self.cate_params.items() if k in ['n_estimators', 'max_depth', 'min_samples_leaf', 'n_jobs']}
+                    )
             else:
                 # Default to RandomForest
                 # Filter params to ensure compatibility if they were meant for another model

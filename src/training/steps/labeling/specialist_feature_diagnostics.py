@@ -496,7 +496,7 @@ class SpecialistFeatureDiagnostics:
                 label_ranks = clean_labels.rank()
                 
                 # MEMORY OPTIMIZATION: Clean up after ranks
-                ranks_memory_usage = feature_ranks.memory_usage(deep=True).sum() + label_ranks.memory_usage(deep=True).sum()
+                ranks_memory_usage = feature_ranks.memory_usage(deep=True).sum() + label_ranks.memory_usage(deep=True)
                 
                 # Vectorized correlation computation
                 correlations = []
@@ -541,7 +541,7 @@ class SpecialistFeatureDiagnostics:
                 tprint_warning(f"   ⚠️ Fallback: keeping {len(mi_candidates)} features for analysis")
             
             # Compute MI only for promising candidates
-            if mi_candidates:
+            if mi_candidates is not None and len(mi_candidates) > 0:
                 try:
                     # Vectorized mutual information computation
                     mi_scores = mutual_info_regression(

@@ -21,7 +21,7 @@ import time
 from typing import List, Dict, Any, Optional, Tuple
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.cluster import FeatureAgglomeration
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from scipy.stats import norm
 import warnings
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success, tprint_error
@@ -78,7 +78,11 @@ class DePradoFeatureEngine:
         
     def _get_onc_clusters(self, X: pd.DataFrame) -> pd.Series:
         """
-        Finds optimal feature clusters using Silhouette Score.
+        Finds optimal feature clusters using Multi-criteria ONC.
+        
+        Primary: CV Ratio (BCSS/WCSS) - measures cluster separation vs cohesion
+        Secondary: Davies-Bouldin Index - lower is better
+        Tertiary: Silhouette Score - higher is better
         
         Args:
             X: Feature matrix
@@ -86,7 +90,7 @@ class DePradoFeatureEngine:
         Returns:
             Series of cluster labels indexed by feature names
         """
-        tprint_info("🔍 Finding optimal feature clusters (ONC)...")
+        tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
         
         # Compute correlation matrix
         corr = X.corr().fillna(0)
@@ -115,70 +119,151 @@ class DePradoFeatureEngine:
         # Convert to correlation distance
         dist = 1 - np.abs(corr)  # Use absolute correlation for distance
         
-        # Find optimal number of clusters
-        best_k, best_score = 2, -1
+        # Ensure diagonal is exactly zero (fix for the error)
+        np.fill_diagonal(dist.values, 0)
+        
+        # Find optimal number of clusters using multi-criteria scoring
+        best_k, best_composite_score = 2, -1
         scores_history = {}
         
         # Test cluster sizes from 2 to max_clusters or n_features//2
         max_k = min(self.max_clusters, max(2, len(X.columns) // 2))
         
-        tprint_info(f"   🔄 Testing cluster counts K=2 to {max_k}...")
+        tprint_info(f"   🔄 Testing cluster counts K=2 to {max_k} (Multi-criteria)...")
+        tprint_info(f"   📊 Metrics: CV Ratio (primary), DBI (secondary), Silhouette (tertiary)")
 
         for k in range(2, max_k + 1):
             try:
+                # FeatureAgglomeration works on features (columns), not samples (rows)
+                # So we need to transpose X to cluster features, not samples
                 clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
-                clusterer.fit(X)
-                cluster_labels = clusterer.labels_
+                clusterer.fit(X.T)  # Transpose to cluster features (50 features x 1000 samples)
+                cluster_labels = clusterer.labels_  # This should have length = n_features (50)
                 
                 # Debug: Check if clustering actually produced k clusters
                 unique_labels = np.unique(cluster_labels)
                 if len(unique_labels) != k:
                     tprint_warning(f"      - K={k}: Expected {k} clusters, got {len(unique_labels)}")
                 
-                # Compute silhouette score
+                # Debug: Check label length
+                if len(cluster_labels) != len(X.columns):
+                    tprint_warning(f"      - K={k}: Label length mismatch: {len(cluster_labels)} vs {len(X.columns)}")
+                    continue
+                
+                # Compute multiple clustering quality metrics
                 if len(unique_labels) > 1:
-                    # For precomputed distance, we need to pass the distance matrix
-                    # But cluster_labels corresponds to samples, not features
-                    # We should compute silhouette on the feature correlation distance
-                    score = silhouette_score(dist.T, cluster_labels, metric='precomputed')
-                    scores_history[k] = score
-                    tprint_info(f"      - K={k}: Silhouette={score:.4f} (Valid)")
+                    # 1. CV Ratio (BCSS/WCSS) - Primary metric
+                    # Use transposed data (features as samples)
+                    cv_ratio = self._calculate_cv_ratio(X.T, cluster_labels)
                     
-                    if score > best_score:
-                        best_score, best_k = score, k
+                    # 2. Davies-Bouldin Index - Secondary metric (lower is better)
+                    # Use transposed data (features as samples)
+                    dbi = davies_bouldin_score(X.T, cluster_labels)
+                    
+                    # 3. Silhouette Score - Tertiary metric (higher is better)
+                    # Use transposed data with correlation distance
+                    silhouette = silhouette_score(dist, cluster_labels, metric='precomputed')
+                    
+                    # 4. Calinski-Harabasz Index - Additional metric (higher is better)
+                    # Use transposed data
+                    ch = calinski_harabasz_score(X.T, cluster_labels)
+                    
+                    # Normalize each metric for composite scoring
+                    # CV Ratio: higher is better (already normalized 0-1)
+                    cv_score = cv_ratio
+                    
+                    # DBI: lower is better, normalize to 0-1 (invert)
+                    dbi_scores = [davies_bouldin_score(X.T, clusterer.fit(X.T).labels_) 
+                                for _ in range(3)]  # Compute multiple times for stability
+                    dbi_avg = np.mean(dbi_scores)
+                    dbi_score = 1.0 / (1.0 + dbi_avg)  # Invert and normalize
+                    
+                    # Silhouette: higher is better (already -1 to 1, shift to 0-1)
+                    silhouette_score_norm = (silhouette + 1.0) / 2.0
+                    
+                    # CH: higher is better, normalize across all k values
+                    ch_score = ch  # Will be normalized later
+                    
+                    # Store all scores
+                    scores_history[k] = {
+                        'cv_ratio': cv_ratio,
+                        'dbi': dbi_avg,
+                        'silhouette': silhouette,
+                        'ch': ch,
+                        'cv_score': cv_score,
+                        'dbi_score': dbi_score,
+                        'silhouette_score_norm': silhouette_score_norm,
+                        'ch_score': ch_score
+                    }
+                    
+                    # Composite score with CV Ratio as primary (50%), DBI as secondary (30%), Silhouette as tertiary (20%)
+                    composite_score = (
+                        0.50 * cv_score +      # CV Ratio - Primary
+                        0.30 * dbi_score +    # DBI - Secondary  
+                        0.20 * silhouette_score_norm  # Silhouette - Tertiary
+                    )
+                    
+                    scores_history[k]['composite'] = composite_score
+                    
+                    tprint_info(f"      - K={k}: CV={cv_ratio:.3f}, DBI={dbi_avg:.3f}, Sil={silhouette:.3f}, Comp={composite_score:.3f}")
+                    
+                    if composite_score > best_composite_score:
+                        best_composite_score, best_k = composite_score, k
+                        
                 else:
                     tprint_warning(f"      - K={k}: Only 1 cluster found")
                         
             except Exception as e:
                 tprint_warning(f"      - K={k}: Failed - {e}")
-                # Debug: Print more details about the data
-                if k == 2:  # Only print for first failure to avoid spam
-                    tprint_warning(f"   Data shape: {X.shape}")
-                    tprint_warning(f"   Distance matrix shape: {dist.shape}")
-                    tprint_warning(f"   Distance matrix stats: min={dist.values.min():.3f}, max={dist.values.max():.3f}, mean={dist.values.mean():.3f}")
                 continue
         
-        if best_k == 2 and best_score < 0:
-            if len(X.columns) > 20:
-                tprint_warning(f"   ⚠️ ONC Quality Check: Best K={best_k} has silhouette {best_score:.4f} (Threshold: 0.0)")
-                tprint_warning(f"ONC Clustering quality low (best silhouette {best_score:.3f}). Forcing 5 clusters for diversity.")
-                best_k = 5
-            else:
-                tprint_warning("Clustering failed (silhouette < 0). Using single cluster.")
-                best_k = 1
+        # Normalize CH scores across all k values
+        if scores_history:
+            ch_values = [scores_history[k]['ch'] for k in scores_history.keys()]
+            if ch_values and max(ch_values) > 0:
+                ch_min, ch_max = min(ch_values), max(ch_values)
+                ch_range = ch_max - ch_min
+                if ch_range > 0:
+                    for k in scores_history:
+                        scores_history[k]['ch_score'] = (scores_history[k]['ch'] - ch_min) / ch_range
+                        # Recompute composite score
+                        scores_history[k]['composite'] = (
+                            0.50 * scores_history[k]['cv_score'] +
+                            0.30 * scores_history[k]['dbi_score'] +
+                            0.20 * scores_history[k]['silhouette_score_norm']
+                        )
+        
+        # Quality check on best solution
+        if best_k == 2 and best_composite_score < 0.3:
+            # Force more clusters if quality is too low
+            min_clusters = min(3, max(2, len(X.columns) // 2))
+            tprint_warning(f"   ⚠️ ONC Quality Check: Best K={best_k} has composite score {best_composite_score:.3f}")
+            tprint_warning(f"   Forcing {min_clusters} clusters for diversity.")
+            best_k = min_clusters
         
         # Final clustering with optimal k
         if best_k == 1:
             final_labels = np.zeros(len(X.columns))
         else:
             final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
-            final_clusterer.fit(X)
+            final_clusterer.fit(X.T)  # Transpose to cluster features
             final_labels = final_clusterer.labels_
+            
+            # Debug: Check final clustering
+            if len(final_labels) != len(X.columns):
+                tprint_warning(f"   ⚠️ Final clustering label length mismatch: {len(final_labels)} vs {len(X.columns)}")
+                # Fallback: assign each feature to a cluster based on modulo
+                final_labels = np.arange(len(X.columns)) % best_k
+                tprint_warning(f"   🔄 Using fallback clustering assignment")
         
         self.optimal_n_clusters_ = best_k
         self.silhouette_scores_ = scores_history
         
-        tprint_success(f"✅ ONC: {best_k} optimal clusters found (silhouette: {best_score:.3f})")
+        # Enhanced logging of results
+        best_metrics = scores_history.get(best_k, {})
+        tprint_success(f"✅ ONC: {best_k} optimal clusters found")
+        tprint_info(f"   📊 Best metrics: CV={best_metrics.get('cv_ratio', 0):.3f}, DBI={best_metrics.get('dbi', 0):.3f}, Sil={best_metrics.get('silhouette', 0):.3f}")
+        tprint_info(f"   🎯 Composite score: {best_composite_score:.3f}")
         
         # Log final cluster distribution
         try:
@@ -188,6 +273,60 @@ class DePradoFeatureEngine:
             pass
 
         return pd.Series(final_labels, index=X.columns)
+    
+    def _calculate_cv_ratio(self, X: pd.DataFrame, labels: np.ndarray) -> float:
+        """
+        Calculate CV Ratio (BCSS/WCSS) - measures cluster separation vs cohesion.
+        Higher values indicate better clustering.
+        
+        Args:
+            X: Feature matrix (transposed - features as samples)
+            labels: Cluster labels for features
+            
+        Returns:
+            CV Ratio value
+        """
+        try:
+            # X should be features as samples, labels correspond to features
+            # Calculate between-cluster sum of squares (BCSS)
+            overall_centroid = X.mean(axis=0)
+            bcss = 0.0
+            
+            # Calculate within-cluster sum of squares (WCSS)
+            wcss = 0.0
+            
+            for cluster_id in np.unique(labels):
+                cluster_mask = labels == cluster_id
+                cluster_data = X.loc[cluster_mask] if isinstance(X, pd.DataFrame) else X[cluster_mask, :]
+                
+                if len(cluster_data) > 0:
+                    # Within-cluster sum of squares
+                    cluster_centroid = cluster_data.mean(axis=0)
+                    if isinstance(cluster_data, pd.DataFrame):
+                        wcss += ((cluster_data - cluster_centroid) ** 2).sum().sum()
+                    else:
+                        wcss += ((cluster_data - cluster_centroid) ** 2).sum()
+                    
+                    # Between-cluster sum of squares
+                    n_cluster = len(cluster_data)
+                    if isinstance(cluster_centroid, pd.Series):
+                        bcss += n_cluster * ((cluster_centroid - overall_centroid) ** 2).sum()
+                    else:
+                        bcss += n_cluster * np.sum((cluster_centroid - overall_centroid) ** 2)
+            
+            # CV Ratio (higher is better)
+            if wcss > 0:
+                cv_ratio = bcss / wcss
+                # Normalize to roughly 0-1 range for typical financial data
+                cv_ratio = min(cv_ratio / 10.0, 1.0)  # Cap at 1.0
+            else:
+                cv_ratio = 0.0
+                
+            return cv_ratio
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ CV Ratio calculation failed: {e}")
+            return 0.0
     
     def _get_tree_hierarchy(self, model: ExtraTreesClassifier, feature_names: List[str]) -> pd.Series:
         """

@@ -1,0 +1,18 @@
+{
+  "enhanced_ml_risk_regime_step": {
+    "coverage": {
+      "total_rows": 25000,
+      "non_null_rows": "25000",
+      "coverage_ratio": 1.0,
+      "start_date": "2024-09-07 10:45:00",
+      "end_date": "2025-12-10 14:30:00",
+      "date_range_days": 459
+    },
+    "performance": {},
+    "columns": [
+      "risk_regime",
+      "risk_score"
+    ],
+    "memory_usage_mb": 0.57220458984375
+  }
+}

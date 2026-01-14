@@ -45,10 +45,10 @@ def _rolling_mad(values: np.ndarray) -> float:
 class TBMConfig:
     """Triple-barrier configuration shared across specialists."""
 
-    profit_take_multiplier: float = 0.004
-    stop_loss_multiplier: float = 0.0025
-    time_barrier_minutes: int = 90
-    max_lookahead: int = 96
+    profit_take_multiplier: float = 0.015  # Tripled from 0.004
+    stop_loss_multiplier: float = 0.006   # Tripled from 0.0025
+    time_barrier_minutes: int = 720        # 48 bars * 15m = 720m
+    max_lookahead: int = 100               # Cover 48 bars with buffer
     binary_classification: bool = True
     transaction_cost: float = DEFAULT_TRANSACTION_COST
 

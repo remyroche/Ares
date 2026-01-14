@@ -1,0 +1,13 @@
+{
+  "versions": {},
+  "current_version": null,
+  "created_at": "2026-01-13T19:46:55.195372",
+  "context": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "enhanced_xgb_macro_regime_step"
+  },
+  "updated_at": "2026-01-14T01:47:39.282195"
+}

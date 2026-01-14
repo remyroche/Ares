@@ -346,6 +346,21 @@ class ChangeLog:
         """
         return self.get_changes(version_name=version_name)
 
+    def remove_version_changes(self, version_name: str) -> None:
+        """
+        Remove all changes associated with a specific version.
+
+        Args:
+            version_name: Version to remove changes for
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM changes WHERE version_name = ?", (version_name,))
+        
+        conn.commit()
+        conn.close()
+
     def export_to_csv(self, output_path: Union[str, Path]) -> None:
         """
         Export change log to CSV.

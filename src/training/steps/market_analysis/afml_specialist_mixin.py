@@ -164,7 +164,7 @@ class AFMLSpecialistMixin:
             X_resid = X_curr_clean - (0.7 * X_hat)
 
             # Keep both Raw and Resid
-            X_resid.columns = [f"{c}_resid" for c in X_curr.columns]
+            X_resid.columns = [f"{c}_resid" for c in X_curr_clean.columns]
             combined_features = pd.concat([X_curr, X_resid], axis=1)
 
         # Standard Selection

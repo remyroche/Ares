@@ -279,7 +279,7 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
             reversion_quality = (
                 0.25 * reversion_agreement +
                 0.25 * (reversion_persistence >= 5).astype(int) +
-                0.25 * (reversion_success_probability > 0.6).astype(int) +
+                0.25 * (reversion_success > 0.6).astype(int) +
                 0.25 * (volume_ratio > 1.2).astype(int) if 'volume' in df.columns else 0
             )
             manual_features['reversion_quality'] = reversion_quality
@@ -356,7 +356,7 @@ class EnhancedMLReversionRegimeStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSp
                 features[f'reversion_acceleration_{window}'] = reversion_signal.diff().diff()
                 
                 # Reversion exhaustion detection
-                features[f'reversion_exhaustion_{window}'] = (reversion_persistence[f'reversion_persistence_{window}'] < 0.2).astype(int)
+                features[f'reversion_exhaustion_{window}'] = (reversion_signal < 0.2).astype(int)
             
             # Reversion opportunity detection
             for window in [10, 20, 50]:

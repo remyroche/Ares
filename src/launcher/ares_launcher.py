@@ -637,7 +637,7 @@ Examples:
     layer2_substep_choices = [
         'data_loading', 'regime_generation', 'causal_initialization',
         'causal_discovery', 'specialist_training', 'event_generation',
-        'feature_engineering', 'geometry_optimization', 'final_processing'
+        'feature_engineering', 'causal_targets', 'geometry_optimization', 'final_processing'
     ]
     
     parser.add_argument(

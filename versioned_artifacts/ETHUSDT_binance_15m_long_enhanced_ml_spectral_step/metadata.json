@@ -263,9 +263,39 @@
         "reg_lambda": 5,
         "min_child_weight": 40
       }
+    },
+    "enhanced_ml_spectral_prediction_15m": {
+      "created_at": "2026-01-13T23:43:43.065723",
+      "num_rows": 25000,
+      "num_columns": 23,
+      "columns": [
+        "timestamp",
+        "specialist_prediction",
+        "specialist_probability",
+        "target_label",
+        "feature_volume_price_trend",
+        "feature_energy_lf_200",
+        "feature_energy_lf_100",
+        "feature_phase_50",
+        "feature_phase_100",
+        "feature_phase_200",
+        "feature_momentum_diversity_35",
+        "feature_momentum_diversity_25",
+        "feature_mean_reversion_signal",
+        "feature_momentum_diversity_15",
+        "feature_vol_intensity",
+        "feature_vp_efficiency",
+        "feature_roll_vol",
+        "feature_sig_0",
+        "feature_sig_1",
+        "feature_sig_2",
+        "feature_sig_3",
+        "feature_sig_4",
+        "feature_sig_5"
+      ]
     }
   },
-  "current_version": "enhanced_ml_spectral_prediction_15m_20260103_001817_390",
+  "current_version": "enhanced_ml_spectral_prediction_15m",
   "created_at": "2026-01-02T22:31:13.136291",
-  "updated_at": "2026-01-12T20:13:14.584108"
+  "updated_at": "2026-01-13T23:43:43.065829"
 }

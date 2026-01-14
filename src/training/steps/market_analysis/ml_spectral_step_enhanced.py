@@ -209,7 +209,7 @@ class EnhancedMLSpectralStep(SpecialistDiagnosticsMixinEnhancedV2, AFMLSpecialis
             config=config,
             specialist_type=SpecialistType.SPECTRAL,
             manual_feature_func=self._get_spectral_combined_manual_features,
-            filter_type='volatility',
+            filter_type='price',  # Changed from 'volatility' to 'price' for better coverage
             pt_sl_config_key='spectral_pt_sl',
             default_pt_sl=[2.5, 1.0],
             suffix="enhanced_spectral_features"

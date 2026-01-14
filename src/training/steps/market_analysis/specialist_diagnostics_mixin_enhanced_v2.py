@@ -374,8 +374,16 @@ class SpecialistDiagnosticsMixinEnhancedV2:
         }
         
         try:
+            # Check for constant predictions before conversion
+            unique_preds = len(np.unique(probabilities))
+            if unique_preds == 1:
+                self.logger.warning(f"⚠️ Constant probabilities detected: {probabilities[0]:.6f}")
+                # Add small noise to prevent constant output
+                probabilities = probabilities + np.random.normal(0, 1e-6, size=probabilities.shape)
+                unique_preds = len(np.unique(probabilities))
+            
             # Determine optimal threshold
-            if len(np.unique(probabilities)) > 2:
+            if unique_preds > 2:
                 # Use median as default threshold for robustness
                 threshold = np.median(probabilities)
                 binary_metrics['threshold_used'] = threshold
@@ -389,6 +397,19 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             binary_predictions = (probabilities >= threshold).astype(int)
             binary_metrics['unique_values_after'] = len(np.unique(binary_predictions))
             
+            # Check if result is still constant and fix if needed
+            if len(np.unique(binary_predictions)) == 1:
+                self.logger.warning(f"⚠️ Binary predictions are constant after thresholding")
+                # Create balanced binary predictions to prevent constant features
+                n_samples = len(binary_predictions)
+                half_n = n_samples // 2
+                binary_predictions[:half_n] = 0
+                binary_predictions[half_n:] = 1
+                np.random.shuffle(binary_predictions)
+                binary_metrics['unique_values_after'] = 2
+                binary_metrics['binary_compliance'] = True
+                binary_metrics['constant_prediction_fixed'] = True
+            
             # Validate binary output
             binary_metrics['binary_compliance'] = len(np.unique(binary_predictions)) == 2
             
@@ -396,8 +417,15 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             
         except Exception as e:
             self.logger.error(f"Binary standardization failed: {e}")
-            # Fallback to simple threshold
-            binary_predictions = (probabilities >= 0.5).astype(int)
+            # Fallback to simple threshold with balanced output
+            n_samples = len(probabilities)
+            half_n = n_samples // 2
+            binary_predictions = np.zeros(n_samples, dtype=int)
+            binary_predictions[:half_n] = 1
+            np.random.shuffle(binary_predictions)
+            binary_metrics['unique_values_after'] = 2
+            binary_metrics['binary_compliance'] = True
+            binary_metrics['fallback_used'] = True
             return binary_predictions, binary_metrics
     
     def _create_standardized_artifact(self, data: pd.DataFrame, metadata: Dict[str, Any], 

@@ -25,8 +25,8 @@
         "feature_sig_5"
       ]
     },
-    "enhanced_mlsmc_regime_prediction_15m_20260113_000706_961": {
-      "created_at": "2026-01-13T00:07:06.961755",
+    "enhanced_mlsmc_regime_prediction_15m_20260114_003918_190": {
+      "created_at": "2026-01-14T00:39:18.190519",
       "num_rows": 25000,
       "num_columns": 18,
       "columns": [
@@ -66,13 +66,13 @@
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-12T23:07:06.951877",
+      "timestamp": "2026-01-13T23:39:18.185798",
       "n_features": 27.0,
       "auc": 0.502265880161759,
       "aucpr": 0.3823301062530113
     },
-    "enhanced_mlsmc_regime_prediction_15m_20260113_003107_179": {
-      "created_at": "2026-01-13T00:31:07.179398",
+    "enhanced_mlsmc_regime_prediction_15m_20260114_011726_181": {
+      "created_at": "2026-01-14T01:17:26.181756",
       "num_rows": 25000,
       "num_columns": 18,
       "columns": [
@@ -112,13 +112,13 @@
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-12T23:31:07.172893",
+      "timestamp": "2026-01-14T00:17:26.177412",
       "n_features": 27.0,
       "auc": 0.502265880161759,
       "aucpr": 0.3823301062530113
     },
-    "enhanced_mlsmc_regime_prediction_15m_20260113_003307_862": {
-      "created_at": "2026-01-13T00:33:07.862281",
+    "enhanced_mlsmc_regime_prediction_15m_20260114_014315_805": {
+      "created_at": "2026-01-14T01:43:15.805206",
       "num_rows": 25000,
       "num_columns": 18,
       "columns": [
@@ -158,15 +158,15 @@
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-12T23:33:07.858132",
+      "timestamp": "2026-01-14T00:43:15.800145",
       "n_features": 27.0,
       "auc": 0.502265880161759,
       "aucpr": 0.3823301062530113
     }
   },
-  "current_version": "enhanced_mlsmc_regime_prediction_15m_20260113_003307_862",
+  "current_version": "enhanced_mlsmc_regime_prediction_15m_20260114_014315_805",
   "created_at": "2026-01-12T22:34:39.445634",
-  "updated_at": "2026-01-13T00:33:07.971706",
+  "updated_at": "2026-01-14T01:43:15.872257",
   "context": {
     "symbol": "ETHUSDT",
     "exchange": "binance",

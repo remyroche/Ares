@@ -15,8 +15,8 @@ def test_dual_cusum_fix():
         signals = generate_dual_cusum_signals(
             close,
             k=0.01,
-            vol_window=10,
-            er_window=10
+            window_vol=10,
+            window_er=10
         )
         print("Success! DataFrame returned.")
         print("Columns:", signals.columns.tolist())

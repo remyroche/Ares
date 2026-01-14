@@ -300,11 +300,38 @@ class KalmanFilter1D:
         return pd.Series(x_hat, index=series.index), pd.Series(P_hat, index=series.index)
 
 def roll_entropy(series: pd.Series, window: int = 24, bins: int = 10) -> pd.Series:
-    def _entropy_calc(x):
-        if np.max(x) == np.min(x): return 0.0
-        hist_counts, _ = np.histogram(x, bins=bins)
-        return shannon_entropy(hist_counts)
-    return series.rolling(window).apply(_entropy_calc, raw=True)
+    """
+    Calculate rolling Shannon entropy (optimized with Numba).
+    Replaces slow pandas rolling().apply().
+
+    Note: Returns natural entropy (base e) to match original implementation.
+    rolling_entropy_numba returns bits (base 2).
+    """
+    from src.utils.entropy_optimized import rolling_entropy_numba
+
+    # 1. Fill NaNs to ensure Numba stability (ffill + 0)
+    # We use a clean series for calculation
+    s_clean = series.fillna(method='ffill').fillna(0.0)
+
+    # 2. Calculate entropy (returns bits)
+    entropy_bits = rolling_entropy_numba(s_clean.values, window, bins)
+
+    # 3. Convert to nats (base e)
+    entropy_nats = entropy_bits * np.log(2)
+
+    # 4. Restore NaNs where appropriate (match pandas rolling behavior)
+    # Pandas rolling result is NaN if any NaN in window (by default)
+    # We can efficiently detect this by rolling count
+    if series.hasnans:
+        # If full window valid count != window, then set to NaN
+        valid_count = series.rolling(window).count()
+        mask = (valid_count == window).values
+
+        # Apply mask
+        result = np.where(mask, entropy_nats, np.nan)
+        return pd.Series(result, index=series.index)
+    else:
+        return pd.Series(entropy_nats, index=series.index)
 
 def calc_vwap(price: pd.Series, volume: pd.Series, window: int) -> pd.Series:
     pv = price * volume

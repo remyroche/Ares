@@ -111,104 +111,150 @@ def compute_prob_stats_numba(probs):
 def rolling_sadf_score_numba(returns, window):
     """
     Calculate rolling SADF-like score (t-stat of AR(1) coefficient).
-    O(N * window) optimized with Numba.
+    O(N) optimized with Numba using incremental Welford/Sums.
     """
     n = len(returns)
     scores = np.zeros(n, dtype=np.float64)
 
-    # Needs at least window + 2 points
+    # We need at least window points to start producing scores
+    # The regression uses pairs (x, y) = (returns[t-1], returns[t])
+    # The window size 'window' implies 'window' returns, so 'window-1' pairs.
+    n_points = window - 1
+    if n_points < 2:
+        return scores
+
+    # Accumulators for sums
+    sum_x = 0.0
+    sum_y = 0.0
+    sum_xx = 0.0
+    sum_yy = 0.0
+    sum_xy = 0.0
+
+    # Initialize sums for the first window (indices 0 to window-1)
+    # returns[0...window-1]
+    # pairs: (r[0], r[1]), (r[1], r[2]), ..., (r[window-2], r[window-1])
+
+    # Actually, the original code takes returns[i-window : i]
+    # So for i=window, it takes returns[0:window].
+    # x = returns[0:window-1], y = returns[1:window]
+
+    # Pre-fill for the first window
+    for j in range(n_points):
+        val_x = returns[j]
+        val_y = returns[j+1]
+
+        sum_x += val_x
+        sum_y += val_y
+        sum_xx += val_x * val_x
+        sum_yy += val_y * val_y
+        sum_xy += val_x * val_y
+
+    # Now iterate
+    # The first score corresponds to i=window.
+    # The loop in slow version: for i in range(window, n)
+
     for i in range(window, n):
-        # Extract window
-        # We need returns[i-window : i]
-        # x = returns[t-1], y = returns[t]
-        # slice: chunk = returns[i-window : i]
-        # x = chunk[:-1], y = chunk[1:]
+        # 1. Compute stats for current window
 
-        start_idx = i - window
-        end_idx = i
+        # Avoid division by zero
+        # Variance of X: E[X^2] - (E[X])^2
+        # We need sum_sq_diff_x = sum_xx - (sum_x^2)/N
 
-        # Manually compute covariance and variance for regression
-        # y = alpha + beta * x
+        term_x = (sum_x * sum_x) / n_points
+        sum_sq_diff_x = sum_xx - term_x
 
-        n_points = window - 1
-        if n_points < 2:
-            continue
+        # Covariance: sum_xy - (sum_x * sum_y)/N
+        term_xy = (sum_x * sum_y) / n_points
+        sum_prod_diff = sum_xy - term_xy
 
-        mean_x = 0.0
-        mean_y = 0.0
-
-        # First pass: means
-        for j in range(n_points):
-            val_x = returns[start_idx + j]
-            val_y = returns[start_idx + j + 1]
-            mean_x += val_x
-            mean_y += val_y
-
-        mean_x /= n_points
-        mean_y /= n_points
-
-        # Second pass: cov and var
-        cov_xy = 0.0
-        var_x = 0.0
-
-        for j in range(n_points):
-            val_x = returns[start_idx + j]
-            val_y = returns[start_idx + j + 1]
-
-            diff_x = val_x - mean_x
-            diff_y = val_y - mean_y
-
-            cov_xy += diff_x * diff_y
-            var_x += diff_x * diff_x
-
-        var_x /= n_points # Population var or sample? numpy var is usually population by default?
-                          # Code used np.var(x), which is population var (div n).
-        cov_xy /= n_points # np.cov is sample (div n-1).
-
-        # Wait, the original code used:
-        # beta = np.cov(x, y)[0, 1] / np.var(x)
-        # np.cov divides by N-1. np.var divides by N.
-        # This is mixed, but let's stick to standard OLS slope formula:
-        # beta = sum((x-mx)(y-my)) / sum((x-mx)^2)
-        # This cancels out the N or N-1 factor.
-
-        if var_x < 1e-12:
-            scores[i] = 0.0
-            continue
-
-        beta = cov_xy / var_x # wait, if I use the sums directly: sum_xy_diff / sum_xx_diff
-        # But cov_xy above is sum / N. var_x is sum / N. So ratio is correct.
-        # Wait, if np.cov uses N-1 and np.var uses N, then factor is (N)/(N-1).
-        # Let's use sums to be precise.
-
-        sum_sq_diff_x = var_x * n_points
-        sum_prod_diff = cov_xy * n_points
-
-        beta = sum_prod_diff / sum_sq_diff_x
-        alpha = mean_y - beta * mean_x
-
-        # Calculate residuals std
-        sum_sq_resid = 0.0
-        for j in range(n_points):
-            val_x = returns[start_idx + j]
-            val_y = returns[start_idx + j + 1]
-            y_pred = alpha + beta * val_x
-            resid = val_y - y_pred
-            sum_sq_resid += resid * resid
-
-        std_resid = np.sqrt(sum_sq_resid / n_points)
-
-        if std_resid < 1e-12:
+        # Check variance
+        # Using a small epsilon for float stability
+        if sum_sq_diff_x < 1e-12:
             scores[i] = 0.0
         else:
-            # t_stat = beta / (std_resid / sqrt(n * var_x))
-            # The original code: np.std(residuals) / np.sqrt(len(x) * np.var(x))
-            # This is standard error of beta approximation.
-            denom = std_resid / np.sqrt(n_points * var_x)
-            if denom < 1e-12:
-                 scores[i] = 0.0
+            beta = sum_prod_diff / sum_sq_diff_x
+
+            # Alpha = mean_y - beta * mean_x
+            mean_x = sum_x / n_points
+            mean_y = sum_y / n_points
+            alpha = mean_y - beta * mean_x
+
+            # RSS = sum((y - alpha - beta*x)^2)
+            # Expanded: sum(y^2) - 2*alpha*sum(y) - 2*beta*sum(xy) + N*alpha^2 + 2*alpha*beta*sum(x) + beta^2*sum(x^2)
+
+            rss = sum_yy - 2*alpha*sum_y - 2*beta*sum_xy + \
+                  n_points*alpha*alpha + 2*alpha*beta*sum_x + beta*beta*sum_xx
+
+            # Precision issues can make rss slightly negative close to 0
+            if rss < 0:
+                rss = 0.0
+
+            std_resid = np.sqrt(rss / n_points)
+
+            # Variance of x (population) for the denominator formula used in original
+            # var_x = sum_sq_diff_x / n_points
+
+            if std_resid < 1e-12:
+                scores[i] = 0.0
             else:
-                 scores[i] = np.abs(beta / denom)
+                # denom = std_resid / sqrt(n_points * var_x)
+                # var_x = sum_sq_diff_x / n_points
+                # sqrt(n_points * sum_sq_diff_x / n_points) = sqrt(sum_sq_diff_x)
+                denom = std_resid / np.sqrt(sum_sq_diff_x)
+
+                if denom < 1e-12:
+                    scores[i] = 0.0
+                else:
+                    scores[i] = np.abs(beta / denom)
+
+        # 2. Update sums for next step
+        # We are moving from i to i+1.
+        # Current window ends at i (exclusive), so returns[i-window : i]
+        # Next window ends at i+1 (exclusive), so returns[i-window+1 : i+1]
+
+        # Remove old pair: (returns[i-window], returns[i-window+1])
+        # Add new pair: (returns[i-1], returns[i])
+
+        # Be careful with indices.
+        # At step i (current loop), we used pairs up to (returns[i-2], returns[i-1]).
+        # Wait, let's re-verify the indices.
+        # Loop i: range(window, n)
+        # slow version: start_idx = i - window, end_idx = i
+        # chunk = returns[start_idx : end_idx] (length window)
+        # pairs j=0..n_points-1:
+        # x = returns[start_idx + j]
+        # y = returns[start_idx + j + 1]
+        # Last pair j=n_points-1: x = returns[start_idx + window - 2], y = returns[start_idx + window - 1]
+        # i.e., x = returns[i-2], y = returns[i-1].
+
+        # So for loop i, the pairs are from index (i-window) to (i-1).
+
+        # Before moving to i+1:
+        # We need to remove the pair at start_idx:
+        # x_old = returns[i-window], y_old = returns[i-window+1]
+
+        # And add the pair at the end:
+        # x_new = returns[i-1], y_new = returns[i]
+
+        # But wait, the loop continues to n-1.
+        if i < n - 1:
+            # Prepare for next iteration (i+1)
+            idx_old = i - window
+            x_old = returns[idx_old]
+            y_old = returns[idx_old + 1]
+
+            x_new = returns[i-1] # wait, indices?
+            # if i=window, next i=window+1.
+            # pairs should end at returns[window].
+            # so x=returns[window-1], y=returns[window].
+            # i-1 = window-1. Correct.
+            y_new = returns[i]
+
+            sum_x = sum_x - x_old + x_new
+            sum_y = sum_y - y_old + y_new
+            sum_xx = sum_xx - x_old*x_old + x_new*x_new
+            sum_yy = sum_yy - y_old*y_old + y_new*y_new
+            sum_xy = sum_xy - x_old*y_old + x_new*y_new
 
     return scores
 

@@ -69,14 +69,15 @@ WEIGHT_CLIP_MAX = 2.0  # Maximum weight clip
 
 def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
     """Downcast float64 columns to float32 to save memory and speed up processing."""
-    # Faster implementation using astype with dictionary or just applying to numeric cols
     float_cols = df.select_dtypes(include=['float64']).columns
     if len(float_cols) > 0:
-        # Check for infs before casting
-        if np.isinf(df[float_cols]).any().any():
+        # Check for infs before casting (only if necessary to avoid copy if not needed)
+        # Using a more efficient check
+        vals = df[float_cols].values
+        if np.isinf(vals).any():
              df[float_cols] = df[float_cols].replace([np.inf, -np.inf], np.nan)
 
-        # Use simple astype for speed, assume NaNs are handled later or acceptable
+        # Use simple astype
         df[float_cols] = df[float_cols].astype(np.float32)
     return df
 
@@ -199,7 +200,13 @@ class SimpleMultiModelRiskEngine:
             return feats
 
         # Vectorized feature extraction using Numba
-        probs_array = df[prob_cols].values.astype(np.float32)
+        # Optimization: Avoid astype copy if already float32
+        probs_vals = df[prob_cols].values
+        if probs_vals.dtype == np.float32:
+            probs_array = probs_vals
+        else:
+            probs_array = probs_vals.astype(np.float32)
+
         logits, confidences = extract_prob_features_numba(probs_array)
 
         for idx, col in enumerate(prob_cols):

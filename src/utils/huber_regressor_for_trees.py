@@ -4,28 +4,40 @@ from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import RobustScaler
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
+from scipy.stats import rankdata
 from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional, Union
 
-def _fit_single_split(
-    split_idx: int,
-    X_split: pd.DataFrame,
-    y_split: pd.Series,
-    split_weights: Optional[np.ndarray],
+def _fit_single_split_optimized(
+    X_full: np.ndarray,
+    y_full: np.ndarray,
+    sample_weight_full: Optional[np.ndarray],
+    start_idx: int,
+    end_idx: int,
     epsilons: List[float],
     alphas: List[float]
 ) -> np.ndarray:
-    """Helper function to fit a single Huber Regressor split."""
-    # Scale data for this split (ensure float32)
+    """
+    Helper function to fit a single Huber Regressor split.
+    Accepts full numpy arrays and indices to minimize pickling overhead.
+    """
+    # Slice the data (creates a view usually for numpy)
+    X_split = X_full[start_idx:end_idx]
+    y_split = y_full[start_idx:end_idx]
+
+    # Scale data for this split
+    # RobustScaler usually fits on the data.
     scaler_split = RobustScaler()
-    X_split_scaled = scaler_split.fit_transform(X_split).astype(np.float32)
+    X_split_scaled = scaler_split.fit_transform(X_split) # Already float32 if input is float32
 
     # Fit best Huber model for this split (use median parameters)
     eps_median = np.median(epsilons)
     alpha_median = np.median(alphas)
 
     h_split = HuberRegressor(epsilon=eps_median, alpha=alpha_median, max_iter=5000)
-    if split_weights is not None:
+
+    if sample_weight_full is not None:
+        split_weights = sample_weight_full[start_idx:end_idx]
         h_split.fit(X_split_scaled, y_split, sample_weight=split_weights)
     else:
         h_split.fit(X_split_scaled, y_split)
@@ -65,9 +77,9 @@ def prepare_huber_teacher_outputs(
         actual_weights = None
 
     # 2. Robust Scaling (NumPy-first for speed)
-    scaler = RobustScaler()
-    # Force float32
-    X_tr_scaled = scaler.fit_transform(X_train).astype(np.float32)
+    # Convert to float32 numpy array immediately to reduce memory footprint and copy overhead
+    X_train_np = X_train.values.astype(np.float32)
+    y_train_np = y_train.values
     feature_names = np.asarray(X_train.columns)
 
     # 3. Walk-Forward Time Splits for Stability Analysis
@@ -91,23 +103,14 @@ def prepare_huber_teacher_outputs(
         # Ensure minimum samples for training
         train_start = max(0, train_end - split_size * 2)  # Use rolling window
         
-        # Extract slices (avoid copying if possible, but joblib pickles anyway)
-        X_split = X_train.iloc[train_start:train_end]
-        y_split = y_train.iloc[train_start:train_end]
+        print(f"   📊 Split {split_idx + 1}/{n_time_splits}: {train_end - train_start} samples [{train_start}:{train_end}]")
         
-        # Get corresponding weights if available
-        if actual_weights is not None:
-            split_weights = actual_weights[train_start:train_end]
-        else:
-            split_weights = None
-
-        print(f"   📊 Split {split_idx + 1}/{n_time_splits}: {len(X_split)} samples [{train_start}:{train_end}]")
-        
-        tasks.append((split_idx, X_split, y_split, split_weights, epsilons, alphas))
+        # Pass full arrays and indices
+        tasks.append((X_train_np, y_train_np, actual_weights, train_start, train_end, epsilons, alphas))
 
     # Parallel Execution
     split_coeffs = Parallel(n_jobs=n_jobs)(
-        delayed(_fit_single_split)(*args) for args in tasks
+        delayed(_fit_single_split_optimized)(*args) for args in tasks
     )
     
     # Convert to array for analysis
@@ -119,7 +122,7 @@ def prepare_huber_teacher_outputs(
     
     # Generate warm start predictions using median model on full data
     scaler_full = RobustScaler()
-    X_full_scaled = scaler_full.fit_transform(X_train).astype(np.float32)
+    X_full_scaled = scaler_full.fit_transform(X_train_np) # float32
 
     h_full = HuberRegressor(epsilon=np.median(epsilons), alpha=np.median(alphas), max_iter=5000)
     if actual_weights is not None:
@@ -137,7 +140,7 @@ def prepare_huber_teacher_outputs(
     print(f"\n🔍 Huber Stability Analysis across {n_time_splits} time splits:")
     
     # Calculate stability metrics for each feature
-    n_splits = len(coeffs_array)
+    # n_splits = len(coeffs_array)
     
     # Sign consensus: proportion of splits with same sign as median
     median_signs = np.sign(avg_coeffs)
@@ -295,11 +298,21 @@ def prepare_huber_teacher_outputs(
     
     interaction_constraints = []
     if imp_feat_names.size > 1:
-        # Vectorized Rank correlation
-        X_imp_ranks = pd.DataFrame(X_tr_scaled[:, keep_mask][:, imp_mask]).rank().values
+        # Optimized Rank correlation: Use scipy rankdata on numpy array
+        # X_tr_scaled is already numpy float32.
+        # Subset features first
+        X_subset = X_train_np[:, keep_mask][:, imp_mask]
+
+        # rankdata computes rank along axis. We want rank of each feature (column) across samples.
+        # axis=0.
+        X_imp_ranks = rankdata(X_subset, axis=0)
+
+        # Compute correlation on ranks (Spearman)
         corr_matrix = np.corrcoef(X_imp_ranks.T)
         
         D = np.clip(1 - np.abs(corr_matrix), 0, 1)
+        # squareform requires 1D condensed distance matrix or 2D square. D is 2D square.
+        # checks=False skips symmetry check for speed.
         Z = linkage(squareform(D, checks=False), method='complete')
         
         labels = fcluster(Z, corr_threshold, criterion='distance')
@@ -314,7 +327,8 @@ def prepare_huber_teacher_outputs(
     # 8. Consensus Inference for Validation/Test
     def get_consensus_pred(df):
         if df is None: return None
-        df_s = scaler_full.transform(df).astype(np.float32)  # Use the full scaler
+        # Use full scaler on dataframe
+        df_s = scaler_full.transform(df).astype(np.float32)
         pred = h_full.predict(df_s)  # Use the median model
         return pred
 

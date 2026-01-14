@@ -20,6 +20,15 @@ from sklearn.metrics import log_loss, mean_squared_error, roc_auc_score
 from .model_training import train_dual_head_models
 from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
 from .enhanced_reporting import EnhancedLayer3Reporter
+from .feature_engineering import downcast_float
+
+# Import optimized functions
+try:
+    from src.training.steps.labeling.optimized_layer2_functions import _vectorized_variance_scores
+    OPTIMIZED_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_AVAILABLE = False
+    print("⚠️ Optimized Layer 2 functions not available for core")
 
 # Import entropy bars functionality
 try:
@@ -139,18 +148,30 @@ def apply_mild_mp_clustering(
     """
     Phase 3: Mild MP-Clustering.
     Removes purely collinear clusters (correlation > threshold), keeping one redundant predictor.
+    Uses Optimized Numpy operations for speed.
     """
     tprint_info(f"🔍 Phase 3: Mild MP-Clustering (Threshold={threshold})...")
 
     if X.shape[1] < 2:
         return X
 
-    # Compute correlation matrix
-    corr = X.corr().abs().fillna(0)
+    # Ensure float32 for speed
+    X_vals = downcast_float(X).values
+
+    # Compute correlation matrix using numpy (handling NaNs by filling with 0 if any,
+    # though usually features should be clean here. Simple fillna(0) proxy is safest for corr calculation)
+    if np.isnan(X_vals).any():
+        X_vals = np.nan_to_num(X_vals, nan=0.0)
+
+    # Compute correlation matrix (abs)
+    # np.corrcoef calculates correlation of ROWS, so we transpose
+    corr = np.abs(np.corrcoef(X_vals.T))
+    np.fill_diagonal(corr, 1.0)
+    corr = np.nan_to_num(corr, nan=0.0) # Handle constant columns producing NaN
     
     # Distance matrix
-    dist = 1 - corr
-    dist = dist.clip(0, 1) # Ensure valid range
+    dist = 1.0 - corr
+    dist = np.clip(dist, 0, 1) # Ensure valid range
 
     # Hierarchical Clustering
     try:
@@ -167,17 +188,30 @@ def apply_mild_mp_clustering(
         selected_cols = []
         dropped_cols = []
 
+        # Calculate variances efficiently
+        if OPTIMIZED_AVAILABLE:
+            # Re-using X_vals which is filled
+            variances = _vectorized_variance_scores(X_vals)
+        else:
+            variances = np.var(X_vals, axis=0)
+
         for i in range(n_clusters):
             cluster_indices = np.where(labels == i)[0]
-            cluster_features = X.columns[cluster_indices]
 
-            # Select feature with highest variance (or simple first one)
-            # Variance check:
-            variances = X[cluster_features].var()
-            best_feature = variances.idxmax()
+            # If cluster has only 1 element, keep it
+            if len(cluster_indices) == 1:
+                selected_cols.append(X.columns[cluster_indices[0]])
+                continue
+
+            # Select feature with highest variance in the cluster
+            cluster_variances = variances[cluster_indices]
+            best_idx_in_cluster = np.argmax(cluster_variances)
+            best_feature_idx = cluster_indices[best_idx_in_cluster]
+            best_feature = X.columns[best_feature_idx]
 
             selected_cols.append(best_feature)
-            dropped_cols.extend([f for f in cluster_features if f != best_feature])
+            # Add others to dropped
+            dropped_cols.extend([X.columns[idx] for idx in cluster_indices if idx != best_feature_idx])
 
         tprint_success(f"   ✅ Reduced {X.shape[1]} -> {len(selected_cols)} features. Dropped {len(dropped_cols)} redundant features.")
         return X[selected_cols]
@@ -308,7 +342,7 @@ def layer3_analyst_lgbm(
 
     # 12-bar targets
     y_alpha_12_series = calculate_studentized_har_target(ret_series, vol_series)
-    y_alpha_12 = y_alpha_12_series.values
+    y_alpha_12 = y_alpha_12_series.values.astype(np.float32)
     y_prob_12 = (ret_series.values > 0).astype(np.int32)
     
     # 48-bar targets
@@ -316,7 +350,7 @@ def layer3_analyst_lgbm(
         ret_48 = df['close'].shift(-48) / df['close'] - 1
         vol_48 = ret_series.rolling(48).std().fillna(0.001)
         y_alpha_48_series = calculate_studentized_har_target(ret_48.fillna(0), vol_48.fillna(0))
-        y_alpha_48 = y_alpha_48_series.values
+        y_alpha_48 = y_alpha_48_series.values.astype(np.float32)
         y_prob_48 = (ret_48.fillna(0) > 0).astype(np.int32)
     else:
         y_alpha_48 = y_alpha_12 * 1.5
@@ -326,6 +360,7 @@ def layer3_analyst_lgbm(
     cfg['y_prob_48'] = y_prob_48
 
     w_alpha = calculate_sample_weights_efficient(ret_series.values, vol_series.values, layer1_weights=layer1_weight.values if layer1_weight is not None else None)
+    w_alpha = w_alpha.astype(np.float32)
 
     # Phase 3: Mild MP-Clustering (Feature Selection)
     exclude = set(base_model_cols) | {target_col, 'close', 'high', 'low', 'volume', 'regime_label'}
@@ -337,7 +372,7 @@ def layer3_analyst_lgbm(
         if col in df.columns:
             X_full[col] = df[col].reindex(X_full.index)
 
-    # Apply Clustering
+    # Apply Clustering (Optimized)
     X_clustered = apply_mild_mp_clustering(X_full, threshold=0.98)
 
     # Phase 4-8: Multi-Horizon Model Training

@@ -16,6 +16,17 @@ import hashlib
 from pathlib import Path
 import pickle
 
+# Import optimized functions
+try:
+    from src.training.steps.labeling.optimized_layer2_functions import (
+        _vectorized_rolling_features,
+        vectorized_feature_selection
+    )
+    OPTIMIZED_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_AVAILABLE = False
+    print("⚠️ Optimized Layer 2 functions not available, falling back to standard implementation")
+
 # Import tprint functions
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -29,6 +40,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 EPS = 1e-12
+
+def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
+    """Safely downcast float64 columns to float32 to save memory and speed up computation."""
+    cols = df.select_dtypes(include=['float64']).columns
+    if len(cols) > 0:
+        df[cols] = df[cols].astype(np.float32)
+    return df
 
 @njit
 def select_features_by_correlation_jit(corr_matrix: np.ndarray, target_corr: np.ndarray, threshold: float = 0.9) -> np.ndarray:
@@ -61,14 +79,13 @@ def select_features_by_correlation_jit(corr_matrix: np.ndarray, target_corr: np.
     return features_to_keep
 
 def _create_cache_key(df, market_data, operation_name):
-    """Create a cache key based on data characteristics"""
-    # Create a hash based on shape, column names, and some statistical properties
+    """Create a cache key based on data characteristics (Optimized)"""
+    # Optimized: Use simple hash of shape, columns, and index boundaries
     key_components = [
         str(df.shape),
         str(sorted(df.columns.tolist())),
-        str(df.shape[0]),  # number of rows
-        f"{df.values.mean():.6f}",  # mean of all values
-        f"{df.values.std():.6f}",   # std of all values
+        str(df.index[0]) if not df.empty else "empty_start",
+        str(df.index[-1]) if not df.empty else "empty_end",
         operation_name
     ]
 
@@ -76,8 +93,8 @@ def _create_cache_key(df, market_data, operation_name):
         key_components.extend([
             str(market_data.shape),
             str(sorted(market_data.columns.tolist())),
-            f"{market_data.values.mean():.6f}",
-            f"{market_data.values.std():.6f}"
+            str(market_data.index[0]) if not market_data.empty else "empty_m_start",
+            str(market_data.index[-1]) if not market_data.empty else "empty_m_end"
         ])
 
     key_string = "|".join(key_components)
@@ -116,16 +133,31 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     Add optimized Layer 0 feature combinations, noise features, and Layer 1 weight integration.
     
     Uses intelligent combinations of Layer 0 filtering methods rather than individual features.
+    Now optimized with downcasting and Numba.
 
     Args:
         fast_mode: Skip expensive computations for faster execution
     """
+    # Downcast input to float32
+    df = downcast_float(df)
+    if market_data is not None:
+        market_data = downcast_float(market_data.copy())
+
     if fast_mode:
         tprint_info("⚡ Fast mode: minimal Layer 0 feature integration")
         # Add just basic momentum features
         if 'close' in market_data.columns:
-            df['fast_momentum'] = market_data['close'].pct_change()
-            df['fast_volatility'] = market_data['close'].rolling(20).std()
+            close = market_data['close'].values
+            df['fast_momentum'] = np.concatenate([np.array([np.nan]), close[1:] / close[:-1] - 1]).astype(np.float32)
+
+            # Fast rolling std using Numba if available
+            if OPTIMIZED_AVAILABLE:
+                # _vectorized_rolling_features returns [mean, std, range] for each window
+                # We want window 20 std, so index 1
+                features_20 = _vectorized_rolling_features(close.astype(np.float64), np.array([20], dtype=np.int32))
+                df['fast_volatility'] = features_20[:, 1].astype(np.float32)
+            else:
+                df['fast_volatility'] = market_data['close'].rolling(20).std().astype(np.float32)
         return df
 
     tprint_info("🔧 Enhancing Layer 3 with Optimized Layer 0 Features...")
@@ -144,15 +176,12 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     # Show Layer 0 configuration
     enabled_features = []
     if layer0_params.get('adaptive_kalman_enabled', False):
-        # Always enable adaptive Kalman for Layer 3
         enabled_features.append('Adaptive Kalman')
     if layer0_params.get('robust_vwap_enabled', False):
         enabled_features.append('Robust VWAP')
     if layer0_params.get('hampel_filter_enabled', False):
-        # Always enable Hampel filter for Layer 3
         enabled_features.append('Hampel Filter')
     if layer0_params.get('savgol_filter_enabled', False):
-        # Always enable Savitzky-Golay filter for Layer 3
         enabled_features.append('Savitzky-Golay')
     
     tprint_info(f"🔧 Layer 0 enabled features: {enabled_features}")
@@ -161,7 +190,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     
     # === Optimized Layer 0 Feature Combinations ===
     
-    # 1. Unified Filtered Price (combines all enabled methods)
+    # 1. Unified Filtered Price
     tprint_info("📈 Generating Unified Filtered Price...")
     try:
         # Check cache for unified price computation
@@ -174,16 +203,31 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
         else:
             from src.training.steps.labeling.unified_price_layer2 import generate_unified_layer2_price
             unified_price = generate_unified_layer2_price(market_data, layer0_params)
-            unified_price = unified_price.reindex(df.index).fillna(method='ffill')
+            unified_price = unified_price.reindex(df.index).fillna(method='ffill').astype(np.float32)
             # Cache the result
             _save_to_cache(cache_key, unified_price)
             tprint_success("✅ Computed and cached unified price")
         
         # Core unified price features (4 features)
-        df['unified_price_momentum'] = unified_price.pct_change()
-        df['unified_price_strength'] = (unified_price > unified_price.rolling(20).mean()).astype(int)
-        df['unified_volatility_adj'] = unified_price.rolling(20).std() / market_data['volatility_1d']
-        df['unified_regime_confidence'] = 1 - np.abs(unified_price - market_data['close']) / market_data['close']
+        # Use vectorized operations
+        unified_vals = unified_price.values
+        df['unified_price_momentum'] = np.concatenate([np.array([np.nan]), unified_vals[1:] / unified_vals[:-1] - 1]).astype(np.float32)
+
+        if OPTIMIZED_AVAILABLE:
+            # Calculate rolling mean (20) and std (20)
+            feat_20 = _vectorized_rolling_features(unified_vals.astype(np.float64), np.array([20], dtype=np.int32))
+            # feat_20 col 0 = mean, col 1 = std
+            df['unified_price_strength'] = (unified_vals > feat_20[:, 0]).astype(int)
+
+            # Using market_data['volatility_1d'] which should be present
+            vol_1d = market_data['volatility_1d'].values
+            df['unified_volatility_adj'] = (feat_20[:, 1] / (vol_1d + EPS)).astype(np.float32)
+        else:
+            df['unified_price_strength'] = (unified_price > unified_price.rolling(20).mean()).astype(int)
+            df['unified_volatility_adj'] = unified_price.rolling(20).std() / market_data['volatility_1d']
+
+        close_vals = market_data['close'].values.astype(np.float32)
+        df['unified_regime_confidence'] = (1 - np.abs(unified_vals - close_vals) / close_vals).astype(np.float32)
         
         unified_stats = f"mean={unified_price.mean():.4f}, std={unified_price.std():.4f}"
         tprint_success(f"✅ Unified price: {unified_stats}")
@@ -192,12 +236,11 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     except Exception as e:
         tprint_warning(f"⚠️ Unified price features failed: {e}")
     
-    # 2. Adaptive Filtering Score (combines adaptive kalman + robust vwap)
+    # 2. Adaptive Filtering Score
     tprint_info("🔄 Generating Adaptive Filtering Features...")
     adaptive_features = []
     
     if layer0_params.get('adaptive_kalman_enabled', False):
-        # Always enable adaptive Kalman for Layer 3
         try:
             from src.training.steps.labeling.unified_price_layer2 import generate_adaptive_kalman_price
             adaptive_price = generate_adaptive_kalman_price(
@@ -207,13 +250,12 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
                 noise_window=layer0_params.get('adaptive_noise_window', 50),
                 adaptation_rate=layer0_params.get('adaptive_adaptation_rate', 0.1)
             )
-            adaptive_features.append(adaptive_price.reindex(df.index).fillna(method='ffill'))
+            adaptive_features.append(adaptive_price.reindex(df.index).fillna(method='ffill').astype(np.float32))
             tprint_success("✅ Generated adaptive Kalman price")
         except Exception as e:
             tprint_warning(f"⚠️ Adaptive Kalman failed: {e}")
     
     if layer0_params.get('robust_vwap_enabled', False) and 'volume' in market_data.columns:
-        # Always enable robust VWAP when volume available
         try:
             from src.training.steps.labeling.unified_price_layer2 import generate_robust_vwap_price
             robust_vwap = generate_robust_vwap_price(
@@ -223,36 +265,44 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
                 max_lookback=layer0_params.get('robust_max_lookback', 200),
                 volatility_window=layer0_params.get('robust_volatility_window', 20)
             )
-            adaptive_features.append(robust_vwap.reindex(df.index).fillna(method='ffill'))
+            adaptive_features.append(robust_vwap.reindex(df.index).fillna(method='ffill').astype(np.float32))
             tprint_success("✅ Generated robust VWAP price")
         except Exception as e:
             tprint_warning(f"⚠️ Robust VWAP failed: {e}")
     
-    # Combine adaptive features (if multiple available)
+    # Combine adaptive features
     if len(adaptive_features) > 1:
-        # Average of adaptive methods
-        adaptive_combined = pd.concat(adaptive_features, axis=1).mean(axis=1)
+        adaptive_combined = pd.concat(adaptive_features, axis=1).mean(axis=1).astype(np.float32)
         tprint_info(f"🔄 Combined {len(adaptive_features)} adaptive methods")
     elif len(adaptive_features) == 1:
         adaptive_combined = adaptive_features[0]
         tprint_info("🔄 Using single adaptive method")
     else:
-        adaptive_combined = market_data['close'].reindex(df.index)  # Fallback
-    tprint_warning("⚠️ No adaptive features available, using close price")
+        adaptive_combined = market_data['close'].reindex(df.index).astype(np.float32)
+        tprint_warning("⚠️ No adaptive features available, using close price")
     
     # Adaptive filtering features (3 features)
-    df['adaptive_filter_momentum'] = adaptive_combined.pct_change()
-    df['adaptive_filter_distance'] = (market_data['close'] - adaptive_combined) / market_data['close']
-    df['adaptive_filter_regime'] = (adaptive_combined > adaptive_combined.rolling(50).mean()).astype(int)
+    adapt_vals = adaptive_combined.values
+    df['adaptive_filter_momentum'] = np.concatenate([np.array([np.nan]), adapt_vals[1:] / adapt_vals[:-1] - 1]).astype(np.float32)
+
+    # Safe alignment
+    close_vals = market_data['close'].reindex(df.index).values.astype(np.float32)
+    df['adaptive_filter_distance'] = ((close_vals - adapt_vals) / (close_vals + EPS)).astype(np.float32)
+
+    if OPTIMIZED_AVAILABLE:
+        # Rolling mean 50
+        feat_50 = _vectorized_rolling_features(adapt_vals.astype(np.float64), np.array([50], dtype=np.int32))
+        df['adaptive_filter_regime'] = (adapt_vals > feat_50[:, 0]).astype(int)
+    else:
+        df['adaptive_filter_regime'] = (adaptive_combined > adaptive_combined.rolling(50).mean()).astype(int)
     
     tprint_success(f"✅ Added 3 adaptive filtering features")
     
-    # 3. Noise Reduction Score (combines hampel + savgol)
+    # 3. Noise Reduction Score
     tprint_info("🔇 Generating Noise Reduction Features...")
     noise_reduction_features = []
     
     if layer0_params.get('hampel_filter_enabled', False):
-        # Always enable Hampel filter for Layer 3
         try:
             from src.training.steps.labeling.unified_price_layer2 import apply_hampel_filter
             hampel_price = apply_hampel_filter(
@@ -260,13 +310,12 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
                 window=layer0_params.get('hampel_window', 5),
                 threshold=layer0_params.get('hampel_threshold', 3.0)
             )
-            noise_reduction_features.append(hampel_price.reindex(df.index))
+            noise_reduction_features.append(hampel_price.reindex(df.index).astype(np.float32))
             tprint_success("✅ Generated Hampel filtered price")
         except Exception as e:
             tprint_warning(f"⚠️ Hampel filter failed: {e}")
     
     if layer0_params.get('savgol_filter_enabled', False):
-        # Always enable Savitzky-Golay filter for Layer 3
         try:
             from src.training.steps.labeling.unified_price_layer2 import apply_savgol_filter
             savgol_price = apply_savgol_filter(
@@ -274,79 +323,114 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
                 window_length=layer0_params.get('savgol_window', 21),
                 poly_order=layer0_params.get('savgol_order', 3)
             )
-            noise_reduction_features.append(savgol_price.reindex(df.index))
+            noise_reduction_features.append(savgol_price.reindex(df.index).astype(np.float32))
             tprint_success("✅ Generated Savitzky-Golay filtered price")
         except Exception as e:
             tprint_warning(f"⚠️ Savitzky-Golay filter failed: {e}")
     
     # Combine noise reduction features
     if len(noise_reduction_features) > 1:
-        # Average of noise reduction methods
-        noise_combined = pd.concat(noise_reduction_features, axis=1).mean(axis=1)
+        noise_combined = pd.concat(noise_reduction_features, axis=1).mean(axis=1).astype(np.float32)
         tprint_info(f"🔇 Combined {len(noise_reduction_features)} noise reduction methods")
     elif len(noise_reduction_features) == 1:
         noise_combined = noise_reduction_features[0]
         tprint_info("🔇 Using single noise reduction method")
     else:
-        noise_combined = market_data['close'].reindex(df.index)  # Fallback
-    tprint_warning("⚠️ No noise reduction features available, using close price")
+        noise_combined = market_data['close'].reindex(df.index).astype(np.float32)
+        tprint_warning("⚠️ No noise reduction features available, using close price")
     
     # Noise reduction features (3 features)
-    df['noise_reduction_momentum'] = noise_combined.pct_change()
-    df['noise_reduction_smoothness'] = 1 - np.abs(noise_combined - market_data['close']) / market_data['close']
-    df['noise_reduction_stability'] = (np.abs(noise_combined - market_data['close']) < 0.01).astype(int)
+    noise_vals = noise_combined.values
+    df['noise_reduction_momentum'] = np.concatenate([np.array([np.nan]), noise_vals[1:] / noise_vals[:-1] - 1]).astype(np.float32)
+
+    # Safe alignment using already reindexed close_vals
+    df['noise_reduction_smoothness'] = (1 - np.abs(noise_vals - close_vals) / (close_vals + EPS)).astype(np.float32)
+    df['noise_reduction_stability'] = (np.abs(noise_vals - close_vals) < 0.01).astype(int)
     
     tprint_success(f"✅ Added 3 noise reduction features")
     
-    # 4. Filter Consensus Score (agreement across all methods)
+    # 4. Filter Consensus Score
     tprint_info("🤝 Calculating Filter Consensus...")
     all_filtered_prices = []
-    # Ensure we have at least unified_price for consensus
-    if 'unified_price' not in locals() or unified_price is None:
-        unified_price = market_data['close'].reindex(df.index)
     if 'unified_price' in locals():
         all_filtered_prices.append(unified_price)
+    else:
+        unified_price = market_data['close'].reindex(df.index).astype(np.float32)
+        all_filtered_prices.append(unified_price)
+
     all_filtered_prices.extend(adaptive_features)
     all_filtered_prices.extend(noise_reduction_features)
     
     if len(all_filtered_prices) >= 2:
-        # Calculate consensus (agreement) across filtering methods
         filter_matrix = pd.concat(all_filtered_prices, axis=1)
-        filter_consensus = filter_matrix.std(axis=1)  # Low std = high consensus
-        df['filter_consensus_score'] = 1 - (filter_consensus / market_data['close'])
-        # df['filter_disagreement_volatility'] = filter_consensus.rolling(20).std()
+        filter_consensus = filter_matrix.std(axis=1).astype(np.float32)
+        df['filter_consensus_score'] = (1 - (filter_consensus / market_data['close'])).astype(np.float32)
+
+    if len(all_filtered_prices) >= 2:
+        filter_matrix = pd.concat(all_filtered_prices, axis=1)
+        filter_consensus = filter_matrix.std(axis=1).astype(np.float32)
+        # Safe alignment
+        close_vals_idx = market_data['close'].reindex(df.index).values.astype(np.float32)
+        df['filter_consensus_score'] = (1 - (filter_consensus / (close_vals_idx + EPS))).astype(np.float32)
         
         consensus_stats = f"mean={df['filter_consensus_score'].mean():.3f}"
         tprint_success(f"✅ Filter consensus: {consensus_stats}")
         tprint_success(f"✅ Added 1 consensus feature")
     else:
-        df['filter_consensus_score'] = 1.0  # Perfect consensus fallback
-    # df['filter_disagreement_volatility'] = 0.0
-    tprint_warning("⚠️ Insufficient filters for consensus, using fallback values")
+        df['filter_consensus_score'] = 1.0
     
-    # === Advanced Noise Features (4 features) ===
+    # === Advanced Noise Features ===
     tprint_info("📊 Generating Advanced Noise Features...")
     
-    # Price disorder score (market microstructure noise indicator)
-    df['price_disorder_score'] = market_data['close'].rolling(20).std() / market_data['close'].rolling(100).std()
+    # Price disorder score
+    # Ensure market_data is aligned or compute on reindexed series
+    close_series = market_data['close'].reindex(df.index)
     
-    # Note: Removed ensemble-derived features (signal_noise_ratio, volatility_normalized_noise, entropy_based_noise)
-    # These features were using ensemble_prob, ens_uncertainty, and ens_prediction_dispersion
-    # which are aggregations of base model predictions and should not be used in Layer 3
+    if OPTIMIZED_AVAILABLE:
+        # std 20 and std 100
+        close_vals_d = close_series.values.astype(np.float64)
+        feat_noise = _vectorized_rolling_features(close_vals_d, np.array([20, 100], dtype=np.int32))
+        # 20: col 1, 100: col 4
+        df['price_disorder_score'] = (feat_noise[:, 1] / (feat_noise[:, 4] + EPS)).astype(np.float32)
+    else:
+        df['price_disorder_score'] = (close_series.rolling(20).std() / (close_series.rolling(100).std() + EPS)).astype(np.float32)
     
     noise_stats = f"Disorder={df['price_disorder_score'].mean():.3f}"
     tprint_success(f"✅ Advanced noise: {noise_stats}")
     tprint_success(f"✅ Added 1 advanced noise feature")
     
-    # === Layer 1 Weight Features (4 features) ===
+    # === Layer 1 Weight Features ===
     if layer1_weight is not None:
         tprint_info("⚖️  Generating Layer 1 Weight Features...")
-        layer1_w = pd.Series(layer1_weight, index=df.index)
+        layer1_w = pd.Series(layer1_weight, index=df.index).astype(np.float32)
+        w_vals = layer1_w.values
+
+        df['layer1_weight_momentum'] = np.concatenate([np.array([np.nan]), w_vals[1:] / (w_vals[:-1] + EPS) - 1]).astype(np.float32)
         
-        df['layer1_weight_momentum'] = layer1_w.pct_change()
-        df['layer1_weight_volatility_adj'] = layer1_w / (df['volatility_1d'] + EPS)
-        df['weight_confidence_score'] = 1 - np.abs(layer1_w - 1.0)
-        df['weight_regime_indicator'] = (layer1_w > layer1_w.rolling(50).mean()).astype(int)
+        # Use volatility from market_data if not in df
+        if 'volatility_1d' in df.columns:
+            vol_vals = df['volatility_1d'].values
+        elif 'volatility_1d' in market_data.columns:
+            vol_vals = market_data['volatility_1d'].values
+        else:
+            vol_vals = np.ones_like(w_vals) * 0.01 # Fallback
+
+        # Ensure vol_vals is aligned if it came from market_data directly
+        if len(vol_vals) != len(df):
+             # This means we pulled it from unaligned market_data
+             if 'volatility_1d' in market_data.columns:
+                 vol_vals = market_data['volatility_1d'].reindex(df.index).values
+             else:
+                 vol_vals = np.ones_like(w_vals) * 0.01
+
+        df['layer1_weight_volatility_adj'] = (w_vals / (vol_vals + EPS)).astype(np.float32)
+        df['weight_confidence_score'] = (1 - np.abs(w_vals - 1.0)).astype(np.float32)
+
+        if OPTIMIZED_AVAILABLE:
+            feat_w_50 = _vectorized_rolling_features(w_vals.astype(np.float64), np.array([50], dtype=np.int32))
+            df['weight_regime_indicator'] = (w_vals > feat_w_50[:, 0]).astype(int)
+        else:
+            df['weight_regime_indicator'] = (layer1_w > layer1_w.rolling(50).mean()).astype(int)
         
         weight_stats = f"mean={layer1_w.mean():.3f}, std={layer1_w.std():.3f}"
         tprint_success(f"✅ Layer 1 weights: {weight_stats}")
@@ -354,38 +438,26 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     else:
         tprint_info("📊 No Layer 1 weights provided, skipping weight features")
     
-    # Final summary
     final_feature_count = len(df.columns)
     features_added = final_feature_count - initial_feature_count
     
     tprint_success(f"🎉 Feature Enhancement Complete!")
     tprint_success(f"📈 Features: {initial_feature_count} → {final_feature_count} (+{features_added})")
     
-    # Feature category summary
-    feature_summary = {
-        'unified_price': 4,
-        'adaptive_filter': 3,
-        'noise_reduction': 3,
-        'filter_consensus': 2,
-        'advanced_noise': 4,
-        'layer1_weights': 4 if layer1_weight is not None else 0
-    }
-    
-    for category, count in feature_summary.items():
-        if count > 0:
-            tprint_info(f"   - {category}: {count} features")
-    
-    return df
+    return downcast_float(df)
 
 def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.Series, fast_mode: bool = False) -> pd.DataFrame:
     """
     Apply hierarchical feature selection:
     1. Low variance filter
-    2. High correlation filter (redundancy reduction)
+    2. High correlation filter (redundancy reduction) - Using numpy/float32 optimization
     3. Conditional importance filter (CMI proxy)
     """
     tprint_info(f"📊 Running Hierarchical Filtering ({len(X.columns)} features)...")
     
+    # Ensure float32 for speed
+    X = downcast_float(X)
+
     # 1. Variance Filter
     variances = X.var()
     low_var_cols = variances[variances < 1e-6].index
@@ -397,17 +469,40 @@ def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.S
     
     # 2. Correlation Filter (Redundancy)
     if not fast_mode and len(X.columns) > 1:
-        corr_matrix = X.corr().abs()
+        # Optimized correlation calculation
+        # Use np.corrcoef which is faster on float32 arrays than pandas corr()
+        X_vals = X.values.T  # corrcoef expects rows as variables
+
+        # Handle potential NaNs by masking or replacement (fastest is fillna 0 for correlation check proxy)
+        # But properly we should use masked arrays or pandas. corrcoef does not handle NaNs gracefully
+        if np.isnan(X_vals).any():
+             # Fallback to pandas if NaNs exist as it handles them correctly
+             corr_matrix = X.corr().abs().values
+        else:
+             corr_matrix = np.abs(np.corrcoef(X_vals))
+
+        # Calculate target correlation
         target_corr = []
+        y_val = y.values
+        # Handle y NaNs
+        mask_y = ~np.isnan(y_val)
+        y_clean = y_val[mask_y]
+
         for c in X.columns:
+            x_col = X[c].values[mask_y]
+            if len(x_col) < 2:
+                target_corr.append(0.0)
+                continue
+
             try:
-                c_val = np.corrcoef(X[c], y)[0,1]
+                # Fast correlation
+                c_val = np.corrcoef(x_col, y_clean)[0, 1]
                 target_corr.append(abs(c_val) if not np.isnan(c_val) else 0.0)
             except:
                 target_corr.append(0.0)
         target_corr = np.array(target_corr)
         
-        keep_mask = select_features_by_correlation_jit(corr_matrix.values, target_corr, threshold=0.95)
+        keep_mask = select_features_by_correlation_jit(corr_matrix, target_corr, threshold=0.95)
         keep_cols = X.columns[keep_mask]
         X = X[keep_cols]
         tprint_info(f"   📉 Redundancy: Reduced to {len(X.columns)} uncorrelated features.")

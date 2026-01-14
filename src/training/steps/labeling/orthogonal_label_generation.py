@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from src.training.steps.labeling.covariance_denoising import marcenko_pastur_distribution
 from .focal_loss_utils import get_focal_loss_lgbm
+from src.utils.entropy_optimized import rolling_entropy_numba
 from src.training.steps.labeling.composite_event_generators import (
     get_microstructure_generators,
     TradeIntensityEvents,
@@ -300,11 +301,15 @@ class KalmanFilter1D:
         return pd.Series(x_hat, index=series.index), pd.Series(P_hat, index=series.index)
 
 def roll_entropy(series: pd.Series, window: int = 24, bins: int = 10) -> pd.Series:
-    def _entropy_calc(x):
-        if np.max(x) == np.min(x): return 0.0
-        hist_counts, _ = np.histogram(x, bins=bins)
-        return shannon_entropy(hist_counts)
-    return series.rolling(window).apply(_entropy_calc, raw=True)
+    """
+    Calculate rolling Shannon entropy using Numba optimization.
+    Returns natural entropy (nats) to match original implementation.
+    """
+    # rolling_entropy_numba returns bits (base 2)
+    # Convert to nats: bits * ln(2)
+    entropy_bits = rolling_entropy_numba(series.values, window, bins)
+    entropy_nats = entropy_bits * np.log(2)
+    return pd.Series(entropy_nats, index=series.index)
 
 def calc_vwap(price: pd.Series, volume: pd.Series, window: int) -> pd.Series:
     pv = price * volume

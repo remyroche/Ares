@@ -48,12 +48,13 @@ ccxt = "^4.0.0"
 yfinance = "^0.2.18"
 ta = "^0.10.2"
 # pandas-ta = "^0.4.71b0"  # Temporarily disabled due to NumPy 2.x requirement
-# ta-lib = "^0.4.28"  # Temporarily disabled: Python wrapper fails to build with numpy 2.x / Python 3.12
+TA-Lib = "^0.4.28"
 
 # Async and Networking
 aiohttp = "^3.8.0"
 asyncio-throttle = "^1.0.0"
 requests = "^2.31.0"
+urllib3 = "<2"
 
 # Data Processing
 pyarrow = ">=12.0.0"

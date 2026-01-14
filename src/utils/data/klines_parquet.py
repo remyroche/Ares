@@ -888,6 +888,7 @@ class KlinesParquetManager:
 
                             # Get sample of invalid values for debugging
                             invalid_sample = timestamp_series[~valid_mask].head(5).tolist()
+                            invalid_rows_sample = combined_df.loc[~valid_mask].head(5)
 
                             # Analyze types of invalid values
                             nan_count = timestamp_series.isna().sum()
@@ -907,6 +908,11 @@ class KlinesParquetManager:
                                 f"   🔍 Invalid indices (first 10): {invalid_indices[:10]}\n"
                                 f"   🧪 Sample invalid values: {invalid_sample}"
                             )
+                            if not invalid_rows_sample.empty:
+                                self.logger.warning(
+                                    "   🧪 Sample invalid rows:\n%s",
+                                    invalid_rows_sample.to_string()
+                                )
                             timestamp_series = timestamp_series[valid_mask]
                             combined_df = combined_df[valid_mask]
                             self.logger.info(f"🔧 After cleaning invalid timestamps: {len(combined_df):,} records (removed {invalid_count:,})")
@@ -938,6 +944,7 @@ class KlinesParquetManager:
 
                             # Get sample of invalid values for debugging
                             invalid_sample = open_time_series[~valid_mask].head(5).tolist()
+                            invalid_rows_sample = combined_df.loc[~valid_mask].head(5)
 
                             # Analyze types of invalid values
                             nan_count = open_time_series.isna().sum()
@@ -957,6 +964,11 @@ class KlinesParquetManager:
                                 f"   🔍 Invalid indices (first 10): {invalid_indices[:10]}\n"
                                 f"   🧪 Sample invalid values: {invalid_sample}"
                             )
+                            if not invalid_rows_sample.empty:
+                                self.logger.warning(
+                                    "   🧪 Sample invalid rows:\n%s",
+                                    invalid_rows_sample.to_string()
+                                )
                             open_time_series = open_time_series[valid_mask]
                             combined_df = combined_df[valid_mask]
                             self.logger.info(f"🔧 After cleaning invalid open_time values: {len(combined_df):,} records (removed {invalid_count:,})")

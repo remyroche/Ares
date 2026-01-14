@@ -62,24 +62,69 @@ def integrate_entropy_bars_into_layer3(
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Integrate entropy bars and specialized features into Layer 3.
+    Includes caching to avoid re-generating expensive entropy calculations.
     """
     if not ENTROPY_BARS_AVAILABLE:
         raise RuntimeError("Entropy bars not available; Layer 3 requires entropy bars.")
     
     cfg = config or {}
     
+    # Check cache
+    cache_dir = Path(cfg.get('cache_dir', 'cache/entropy_bars'))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine date range from existing data
+    if not df.empty and hasattr(df.index, 'min') and hasattr(df.index, 'max'):
+        start_date = df.index.min().strftime('%Y-%m-%d')
+        end_date = df.index.max().strftime('%Y-%m-%d')
+        start_dt = df.index.min()
+        end_dt = df.index.max()
+    else:
+        # Default to last 30 days if no date range available
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - pd.Timedelta(days=30)).strftime('%Y-%m-%d')
+        start_dt = datetime.now() - pd.Timedelta(days=30)
+        end_dt = datetime.now()
+
+    # Cache key based on symbol, exchange, dates and params
+    cache_key = f"{symbol}_{exchange}_{start_date}_{end_date}_{cfg.get('entropy_target_minutes', 15)}"
+    cache_file = cache_dir / f"entropy_features_{cache_key}.parquet"
+    bars_cache_file = cache_dir / f"entropy_bars_{cache_key}.parquet"
+
+    # Try loading from cache
+    if cache_file.exists() and bars_cache_file.exists() and not cfg.get('force_refresh', False):
+        try:
+            tprint_info(f"♻️ Loading entropy features from cache: {cache_file}")
+            entropy_features = pd.read_parquet(cache_file)
+            entropy_bars = pd.read_parquet(bars_cache_file)
+
+            # Align with requested dataframe if needed (though we usually reindex df to entropy bars)
+            # Reindex DF to entropy bars index
+            tprint_info("🧭 Resampling Layer 3 inputs to entropy bar timestamps")
+            enhanced_df = df.reindex(entropy_bars.index, method='ffill')
+
+            # Restore columns
+            entropy_primary_cols = ['open', 'high', 'low', 'close', 'volume']
+            for col in entropy_primary_cols:
+                if col in entropy_bars.columns:
+                    enhanced_df[col] = entropy_bars[col]
+
+            for col in entropy_features.columns:
+                enhanced_df[col] = entropy_features[col].reindex(enhanced_df.index, method='ffill').fillna(0)
+
+            entropy_ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'n_minutes', 'entropy_contribution']
+            for col in entropy_ohlcv_cols:
+                if col in entropy_bars.columns:
+                    enhanced_df[f'entropy_{col}'] = entropy_bars[col]
+
+            tprint_success(f"✅ Loaded entropy bars from cache: {len(entropy_bars)} bars")
+            return enhanced_df, entropy_bars
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load entropy cache: {e}. Regenerating...")
+
     try:
         # Fetch 1-minute data for entropy bar generation
         tprint_info("🔧 Fetching 1-minute data for entropy bar generation")
-        
-        # Determine date range from existing data
-        if not df.empty and hasattr(df.index, 'min') and hasattr(df.index, 'max'):
-            start_date = df.index.min().strftime('%Y-%m-%d')
-            end_date = df.index.max().strftime('%Y-%m-%d')
-        else:
-            # Default to last 30 days if no date range available
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - pd.Timedelta(days=30)).strftime('%Y-%m-%d')
         
         min_data = fetch_1min_data_for_entropy_bars(
             symbol=symbol,
@@ -132,6 +177,14 @@ def integrate_entropy_bars_into_layer3(
             if col in entropy_bars.columns:
                 enhanced_df[f'entropy_{col}'] = entropy_bars[col]
         
+        # Save to cache
+        try:
+            entropy_features.to_parquet(cache_file)
+            entropy_bars.to_parquet(bars_cache_file)
+            tprint_success(f"💾 Saved entropy bars cache: {cache_file}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save entropy cache: {e}")
+
         tprint_success(f"✅ Integrated entropy bars: {len(entropy_bars)} bars, {len(entropy_features.columns)} features")
         
         return enhanced_df, entropy_bars

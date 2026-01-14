@@ -59,7 +59,7 @@ def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
         df[cols] = df[cols].astype(np.float32)
     return df
 
-@njit
+@njit(fastmath=True)
 def select_features_by_correlation_jit(corr_matrix: np.ndarray, target_corr: np.ndarray, threshold: float = 0.9) -> np.ndarray:
     """
     JIT-compiled feature selection based on correlation filtering.
@@ -76,14 +76,21 @@ def select_features_by_correlation_jit(corr_matrix: np.ndarray, target_corr: np.
     features_to_keep = np.ones(n_features, dtype=np.bool_)
 
     # Find highly correlated pairs
-    high_corr_mask = corr_matrix > threshold
+    # Optimize: Don't create full mask matrix, just iterate
 
     for i in range(n_features):
+        if not features_to_keep[i]:
+            continue
+
         for j in range(i + 1, n_features):  # Only check upper triangle
-            if high_corr_mask[i, j] and features_to_keep[i] and features_to_keep[j]:
+            if not features_to_keep[j]:
+                continue
+
+            if corr_matrix[i, j] > threshold:
                 # Keep the one with higher correlation to target
                 if target_corr[i] < target_corr[j]:
                     features_to_keep[i] = False
+                    break # i is dropped, stop checking j for this i
                 else:
                     features_to_keep[j] = False
 
@@ -428,22 +435,26 @@ def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.S
     # 2. Correlation Filter (Redundancy)
     if not fast_mode and len(X.columns) > 1:
         # Optimized correlation calculation
-        # Use np.corrcoef which is faster on float32 arrays than pandas corr()
         X_vals = X.values.T  # corrcoef expects rows as variables
 
-        # Handle potential NaNs by masking or replacement (fastest is fillna 0 for correlation check proxy)
-        # But properly we should use masked arrays or pandas. corrcoef does not handle NaNs gracefully
+        # Handle NaNs: fill with 0 (assuming standardized or robust) or mean
         if np.isnan(X_vals).any():
-             # Fallback to pandas if NaNs exist as it handles them correctly
-             corr_matrix = X.corr().abs().values
-        else:
-             corr_matrix = np.abs(np.corrcoef(X_vals))
+             X_vals = np.nan_to_num(X_vals, nan=0.0)
+
+        # Compute correlation matrix
+        # For very large N, we might want to subsample?
+        # But here N is usually < 50k, F < 500, so 500x500 matrix is small.
+        try:
+            corr_matrix = np.abs(np.corrcoef(X_vals))
+        except Exception:
+            # Fallback for weird edge cases
+            corr_matrix = X.corr().abs().values
 
         # Calculate target correlation (Vectorized)
         y_val = y.values
+        # Handle NaNs in y
         mask_y = ~np.isnan(y_val)
         
-        # Prepare valid data arrays
         if mask_y.all():
             X_clean_T = X_vals
             y_clean = y_val
@@ -451,8 +462,7 @@ def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.S
             X_clean_T = X_vals[:, mask_y]
             y_clean = y_val[mask_y]
 
-        # Standardize for correlation calculation: (x - mean) / std
-        # Add epsilon to std to avoid division by zero
+        # Standardize for correlation calculation
         if X_clean_T.shape[1] > 0:
             y_mean = np.mean(y_clean)
             y_std = np.std(y_clean) + EPS
@@ -464,11 +474,11 @@ def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.S
 
             # Correlation = dot(X_norm, y_norm) / N
             target_corr = np.abs(np.dot(X_norm, y_norm) / X_clean_T.shape[1])
-            # Handle potential NaNs from zero std
             target_corr = np.nan_to_num(target_corr, nan=0.0)
         else:
             target_corr = np.zeros(X_clean_T.shape[0])
 
+        # Use updated JIT function (faster loop)
         keep_mask = select_features_by_correlation_jit(corr_matrix, target_corr, threshold=0.95)
         keep_cols = X.columns[keep_mask]
         X = X[keep_cols]

@@ -196,9 +196,9 @@ except ImportError as e:
 # Fast Information Theory and Causal Proxy
 try:
     from src.utils.fast_info_theory import vectorized_pairwise_mi, discretize_features_numba, numba_histogram_2d, numba_mutual_info
-    from src.training.steps.labeling.fast_causal_proxy import FastCausalProxy
+    from src.training.steps.labeling.graphical_lasso_filter import GraphicalLassoFilter
     FAST_INFO_THEORY_AVAILABLE = True
-    tprint_info("✅ Fast Info Theory & Causal Proxy loaded")
+    tprint_info("✅ Fast Info Theory & Graphical Lasso Filter loaded")
 except ImportError as e:
     FAST_INFO_THEORY_AVAILABLE = False
     tprint_warning(f"⚠️ Fast Info Theory functions not available: {e}")
@@ -2633,28 +2633,6 @@ class LabelBasedLayer2(BaseStep):
             # Check if Bayesian discovery is enabled
             use_bayesian = getattr(self, 'use_bayesian_discovery', True)
             
-            # --- FAST CAUSAL PROXY OPTIMIZATION ---
-            # If requested or in "fast mode", use Precision Matrix Proxy
-            # This skips the expensive PC algorithm / LiNGAM
-            if getattr(self, 'use_fast_causal_proxy', False) and FAST_INFO_THEORY_AVAILABLE:
-                tprint_info("⚡ Using Fast Causal Proxy (Graphical Lasso) for skeleton discovery...")
-                try:
-                    numeric_df = self._filter_discovery_input(df)
-                    if numeric_df.empty:
-                        return {}
-
-                    proxy = FastCausalProxy(verbose=self.verbose)
-                    causal_graph = proxy.discover_structure_proxy(numeric_df)
-
-                    if causal_graph:
-                        tprint_success(f"   ✅ Fast Proxy Graph: {sum(len(v) for v in causal_graph.values())//2} edges")
-                        return causal_graph
-                    else:
-                        tprint_warning("   ⚠️ Fast Proxy found no edges, falling back to full discovery.")
-                except Exception as e:
-                    tprint_warning(f"   ⚠️ Fast Proxy failed: {e}. Falling back.")
-            # ---------------------------------------
-
             if use_bayesian and self.CAUSAL_MODULES_AVAILABLE:
                 numeric_df = self._filter_discovery_input(df)
                 if numeric_df.empty:
@@ -2687,90 +2665,104 @@ class LabelBasedLayer2(BaseStep):
                 if 'error' in discovery_results:
                     if self.verbose:
                         tprint_warning("   ⚠️ Bayesian discovery failed, falling back to deterministic...")
-                    return self._fallback_causal_discovery(df)
-                
-                # Extract causal graph and uncertainty metrics
-                causal_graph = discovery_results.get('consensus_graph', {})
-                uncertainty_metrics = discovery_results.get('uncertainty_metrics', {})
-                
-                # Extract parents of TARGET_Sharpe
-                sharpe_parents = causal_graph.get('TARGET_Sharpe', [])
-                if self.verbose:
-                    tprint_info(f"   🧬 Identified {len(sharpe_parents)} drivers of Sharpe Ratio: {sharpe_parents}")
+                    causal_graph = self._fallback_causal_discovery(df)
+                else:
+                    # Extract causal graph and uncertainty metrics
+                    causal_graph = discovery_results.get('consensus_graph', {})
+                    uncertainty_metrics = discovery_results.get('uncertainty_metrics', {})
 
-                # Step 2: Validate against TARGET_RET_1
-                if self.verbose:
-                    tprint_info("   STEP 2: Validating drivers against TARGET_RET_1...")
+                    # Extract parents of TARGET_Sharpe
+                    sharpe_parents = causal_graph.get('TARGET_Sharpe', [])
+                    if self.verbose:
+                        tprint_info(f"   🧬 Identified {len(sharpe_parents)} drivers of Sharpe Ratio: {sharpe_parents}")
 
-                ret_parents = causal_graph.get('TARGET_RET_1', [])
+                    # Step 2: Validate against TARGET_RET_1
+                    if self.verbose:
+                        tprint_info("   STEP 2: Validating drivers against TARGET_RET_1...")
 
-                # Merge parents: If Sharpe found valid drivers, they likely drive Returns too
-                # This transfers knowledge from high-SNR target to low-SNR target
-                combined_parents = list(set(ret_parents) | set(sharpe_parents))
+                    ret_parents = causal_graph.get('TARGET_RET_1', [])
 
-                # Explicitly update the graph for TARGET_RET_1
-                if combined_parents:
-                    causal_graph['TARGET_RET_1'] = combined_parents
-                    tprint_success(f"   ✅ Robustness Check: Expanded TARGET_RET_1 parents from {len(ret_parents)} to {len(combined_parents)}")
+                    # Merge parents: If Sharpe found valid drivers, they likely drive Returns too
+                    # This transfers knowledge from high-SNR target to low-SNR target
+                    combined_parents = list(set(ret_parents) | set(sharpe_parents))
 
-                # Ensure Volatility is a standalone node with connections
-                vol_cols = [c for c in numeric_df.columns if 'volatility' in c]
-                for vol_col in vol_cols:
-                    if vol_col in causal_graph:
-                        vol_parents = causal_graph[vol_col]
-                        vol_children = [k for k, v in causal_graph.items() if vol_col in v]
-                        if self.verbose:
-                            tprint_info(f"   📊 Volatility Node '{vol_col}': {len(vol_parents)} parents, {len(vol_children)} children")
+                    # Explicitly update the graph for TARGET_RET_1
+                    if combined_parents:
+                        causal_graph['TARGET_RET_1'] = combined_parents
+                        tprint_success(f"   ✅ Robustness Check: Expanded TARGET_RET_1 parents from {len(ret_parents)} to {len(combined_parents)}")
 
-                # Normalize confidence metrics to [0, 1] for safety
-                if 'avg_confidence' in uncertainty_metrics:
-                    raw_conf = uncertainty_metrics['avg_confidence']
-                    uncertainty_metrics['avg_confidence'] = 1.0 if raw_conf > 1.0 else raw_conf
+                    # Ensure Volatility is a standalone node with connections
+                    vol_cols = [c for c in numeric_df.columns if 'volatility' in c]
+                    for vol_col in vol_cols:
+                        if vol_col in causal_graph:
+                            vol_parents = causal_graph[vol_col]
+                            vol_children = [k for k, v in causal_graph.items() if vol_col in v]
+                            if self.verbose:
+                                tprint_info(f"   📊 Volatility Node '{vol_col}': {len(vol_parents)} parents, {len(vol_children)} children")
+
+                    # Normalize confidence metrics to [0, 1] for safety
+                    if 'avg_confidence' in uncertainty_metrics:
+                        raw_conf = uncertainty_metrics['avg_confidence']
+                        uncertainty_metrics['avg_confidence'] = 1.0 if raw_conf > 1.0 else raw_conf
+
+                    if 'graph_stability' in uncertainty_metrics:
+                        raw_stab = uncertainty_metrics['graph_stability']
+                        uncertainty_metrics['graph_stability'] = 1.0 if raw_stab > 1.0 else raw_stab
                     
-                if 'graph_stability' in uncertainty_metrics:
-                    raw_stab = uncertainty_metrics['graph_stability']
-                    uncertainty_metrics['graph_stability'] = 1.0 if raw_stab > 1.0 else raw_stab
-                
-                # Store uncertainty metrics for reporting
-                self.causal_discovery_uncertainty_ = uncertainty_metrics
-                
-                if self.verbose:
-                    tprint_success(f"   ✅ Bayesian discovery complete:")
-                    tprint_info(f"      - Graph nodes: {len(causal_graph)}")
+                    # Store uncertainty metrics for reporting
+                    self.causal_discovery_uncertainty_ = uncertainty_metrics
                     
-                    # Compute graph density and edge count
-                    total_edges = sum(len(parents) for parents in causal_graph.values())
-                    n_nodes = len(causal_graph)
-                    density = total_edges / (n_nodes * (n_nodes - 1)) if n_nodes > 1 else 0
-                    
-                    tprint_info(f"      - Total edges: {total_edges} (density: {density:.3f})")
-                    tprint_info(f"      - Graph stability: {uncertainty_metrics.get('graph_stability', 0):.3f}")
-                    tprint_info(f"      - Avg confidence: {uncertainty_metrics.get('avg_confidence', 0):.3f}")
-                    
-                    # Topology Table
-                    tprint_info("\n   🕸️ Causal Graph Topology (Top Nodes):")
-                    tprint_info(f"      {'Node':<20} | {'Parents':<3} | {'Children':<3}")
-                    tprint_info(f"      {'-' * 40}")
-                    
-                    # Children map
-                    children_map = defaultdict(list)
-                    for node, parents in causal_graph.items():
-                        for p in parents:
-                            children_map[p].append(node)
-                    
-                    # Sort nodes by importance (deg = in + out)
-                    all_nodes = list(causal_graph.keys())
-                    node_degrees = {n: len(causal_graph.get(n, [])) + len(children_map.get(n, [])) for n in all_nodes}
-                    top_nodes = sorted(all_nodes, key=lambda n: node_degrees[n], reverse=True)[:10]
-                    
-                    for node in top_nodes:
-                        n_p = len(causal_graph.get(node, []))
-                        n_c = len(children_map.get(node, []))
-                        tprint_info(f"      {str(node)[:20]:<20} | {n_p:<7} | {n_c:<8}")
-                    tprint_info(f"      {'-' * 40}\n")
-                
-                return causal_graph
+                    if self.verbose:
+                        tprint_success(f"   ✅ Bayesian discovery complete:")
+                        tprint_info(f"      - Graph nodes: {len(causal_graph)}")
+
+                        # Compute graph density and edge count
+                        total_edges = sum(len(parents) for parents in causal_graph.values())
+                        n_nodes = len(causal_graph)
+                        density = total_edges / (n_nodes * (n_nodes - 1)) if n_nodes > 1 else 0
+
+                        tprint_info(f"      - Total edges: {total_edges} (density: {density:.3f})")
+                        tprint_info(f"      - Graph stability: {uncertainty_metrics.get('graph_stability', 0):.3f}")
+                        tprint_info(f"      - Avg confidence: {uncertainty_metrics.get('avg_confidence', 0):.3f}")
+
+                        # Topology Table
+                        tprint_info("\n   🕸️ Causal Graph Topology (Top Nodes):")
+                        tprint_info(f"      {'Node':<20} | {'Parents':<3} | {'Children':<3}")
+                        tprint_info(f"      {'-' * 40}")
+
+                        # Children map
+                        children_map = defaultdict(list)
+                        for node, parents in causal_graph.items():
+                            for p in parents:
+                                children_map[p].append(node)
+
+                        # Sort nodes by importance (deg = in + out)
+                        all_nodes = list(causal_graph.keys())
+                        node_degrees = {n: len(causal_graph.get(n, [])) + len(children_map.get(n, [])) for n in all_nodes}
+                        top_nodes = sorted(all_nodes, key=lambda n: node_degrees[n], reverse=True)[:10]
+
+                        for node in top_nodes:
+                            n_p = len(causal_graph.get(node, []))
+                            n_c = len(children_map.get(node, []))
+                            tprint_info(f"      {str(node)[:20]:<20} | {n_p:<7} | {n_c:<8}")
+                        tprint_info(f"      {'-' * 40}\n")
             else:
+                causal_graph = self._fallback_causal_discovery(df)
+
+            # --- GRAPHICAL LASSO FILTERING (PRUNING) ---
+            # Apply regularization filter to the discovered graph
+            # This prunes edges that are conditionally independent in the linear Gaussian limit
+            if getattr(self, 'use_glasso_filtering', False) and FAST_INFO_THEORY_AVAILABLE:
+                tprint_info("✂️ Applying Graphical Lasso Filter (Pruning)...")
+                try:
+                    numeric_df = self._filter_discovery_input(df) if 'numeric_df' not in locals() else numeric_df
+                    glasso_filter = GraphicalLassoFilter(verbose=self.verbose)
+                    causal_graph = glasso_filter.filter_graph(causal_graph, numeric_df)
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Glasso filtering failed: {e}. Keeping original graph.")
+            # -------------------------------------------
+
+            return causal_graph
                 if self.verbose:
                     tprint_info("   📊 Using deterministic Causal Discovery...")
                 return self._fallback_causal_discovery(df)

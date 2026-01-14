@@ -842,3 +842,71 @@ def benchmark_optimizations():
 
 if __name__ == "__main__":
     benchmark_optimizations()
+
+
+@njit(parallel=True)
+def vectorized_calculate_innovation(X: np.ndarray, window: int = 20) -> np.ndarray:
+    """
+    Vectorized calculation of innovation (Z-scored Delta) for a matrix X.
+
+    Args:
+        X: Feature matrix (n_samples, n_features)
+        window: Rolling window size
+
+    Returns:
+        Innovation matrix (n_samples, n_features)
+    """
+    n_samples, n_features = X.shape
+    X_innov = np.zeros_like(X)
+
+    for j in prange(n_features):
+        col = X[:, j]
+
+        # Calculate innovation for each column
+        # Innovation = (x_t - rolling_mean) / rolling_std
+        # We can implement this efficiently in a loop
+
+        current_sum = 0.0
+        current_sum_sq = 0.0
+        valid_count = 0
+
+        # Initialize
+        # Note: A pure rolling window approach is tricky with NaNs
+        # We'll use a simpler approach: Welford's algorithm or just accumulating
+        # For speed, we assume dense data or 0.0 fill in caller.
+
+        # Initial window
+        for i in range(min(window, n_samples)):
+            val = col[i]
+            current_sum += val
+            current_sum_sq += val * val
+
+            # Store initial
+            count = i + 1
+            mean = current_sum / count
+            var = (current_sum_sq / count) - (mean * mean)
+            std = np.sqrt(max(0.0, var))
+
+            if std > 1e-9:
+                X_innov[i, j] = (val - mean) / std
+            else:
+                X_innov[i, j] = 0.0
+
+        # Rolling update
+        for i in range(window, n_samples):
+            new_val = col[i]
+            old_val = col[i - window]
+
+            current_sum += new_val - old_val
+            current_sum_sq += new_val * new_val - old_val * old_val
+
+            mean = current_sum / window
+            var = (current_sum_sq / window) - (mean * mean)
+            std = np.sqrt(max(0.0, var))
+
+            if std > 1e-9:
+                X_innov[i, j] = (new_val - mean) / std
+            else:
+                X_innov[i, j] = 0.0
+
+    return X_innov

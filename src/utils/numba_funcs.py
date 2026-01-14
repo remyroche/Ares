@@ -690,3 +690,139 @@ def _numba_streak_persistence(close, window=20):
                 output[i] = mean_val / std_val
                 
     return output
+
+@jit(nopython=True)
+def _numba_rolling_sum(x, window):
+    """
+    Calculate rolling sum using Numba.
+    Results are aligned to the right edge of the window.
+    First (window-1) elements will be 0.
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+
+    current_sum = 0.0
+
+    # Initialize first window (incomplete)
+    # We only output from index 'window-1'
+
+    for i in range(n):
+        current_sum += x[i]
+
+        if i >= window:
+            current_sum -= x[i-window]
+
+        if i >= window - 1:
+            output[i] = current_sum
+
+    return output
+
+@jit(nopython=True)
+def _numba_rolling_mean(x, window):
+    """
+    Calculate rolling mean using Numba.
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+
+    current_sum = 0.0
+
+    for i in range(n):
+        current_sum += x[i]
+
+        if i >= window:
+            current_sum -= x[i-window]
+
+        if i >= window - 1:
+            output[i] = current_sum / window
+
+    return output
+
+@jit(nopython=True)
+def _numba_rolling_std(x, window):
+    """
+    Calculate rolling standard deviation using Numba.
+    Uses Welford's algorithm or standard sum of squares for stability?
+    Standard sum of squares is faster but less numerically stable.
+    Given window sizes are usually small (<1000), sum of squares is fine.
+    Var = E[x^2] - (E[x])^2
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+
+    current_sum = 0.0
+    current_sq_sum = 0.0
+
+    for i in range(n):
+        val = x[i]
+        current_sum += val
+        current_sq_sum += val * val
+
+        if i >= window:
+            rem_val = x[i-window]
+            current_sum -= rem_val
+            current_sq_sum -= rem_val * rem_val
+
+        if i >= window - 1:
+            mean = current_sum / window
+            var = (current_sq_sum / window) - (mean * mean)
+            if var < 1e-12:
+                output[i] = 0.0
+            else:
+                output[i] = np.sqrt(var)
+
+    return output
+
+@jit(nopython=True)
+def _numba_rolling_correlation(x, y, window):
+    """
+    Calculate rolling correlation between two arrays.
+    Corr = Cov(x,y) / (Std(x)*Std(y))
+    Cov(x,y) = E[xy] - E[x]E[y]
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+
+    if len(y) != n:
+        return output
+
+    sum_x = 0.0
+    sum_y = 0.0
+    sum_xx = 0.0
+    sum_yy = 0.0
+    sum_xy = 0.0
+
+    for i in range(n):
+        val_x = x[i]
+        val_y = y[i]
+
+        sum_x += val_x
+        sum_y += val_y
+        sum_xx += val_x * val_x
+        sum_yy += val_y * val_y
+        sum_xy += val_x * val_y
+
+        if i >= window:
+            rem_x = x[i-window]
+            rem_y = y[i-window]
+
+            sum_x -= rem_x
+            sum_y -= rem_y
+            sum_xx -= rem_x * rem_x
+            sum_yy -= rem_y * rem_y
+            sum_xy -= rem_x * rem_y
+
+        if i >= window - 1:
+            mean_x = sum_x / window
+            mean_y = sum_y / window
+
+            var_x = (sum_xx / window) - (mean_x * mean_x)
+            var_y = (sum_yy / window) - (mean_y * mean_y)
+            cov = (sum_xy / window) - (mean_x * mean_y)
+
+            if var_x < 1e-12 or var_y < 1e-12:
+                output[i] = 0.0
+            else:
+                output[i] = cov / np.sqrt(var_x * var_y)
+
+    return output

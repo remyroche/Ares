@@ -23,7 +23,13 @@ from .focal_loss_utils import get_focal_loss_lgbm
 from src.utils.entropy_optimized import rolling_entropy_numba
 from src.utils.order_block_optimized import find_order_blocks_numba
 from src.utils.cusum_optimized import generate_dual_cusum_numba
-from src.utils.numba_funcs import _numba_rolling_median
+from src.utils.numba_funcs import (
+    _numba_rolling_median,
+    _numba_rolling_mean,
+    _numba_rolling_std,
+    _numba_rolling_sum,
+    _numba_rolling_correlation
+)
 from src.utils.labeling_optimized import (
     triple_barrier_labels_numba,
     persistence_label_numba,
@@ -410,70 +416,13 @@ def ewma_volatility(returns, span=100):
 
 def calculate_residual_mi(feature_df: pd.DataFrame, target_series: pd.Series, 
                           lag: int = 1, n_neighbors: int = 3, 
-                          subsample_size: int = 10000) -> pd.Series:
+                          subsample_size: int = 50000) -> pd.Series:
     """
     Calculates the Residual Mutual Information (RMI) proxy for a set of features.
-    Used to reduce composite features to the most informative subset.
-    
-    Args:
-        feature_df: DataFrame of features (e.g., composite candidates).
-        target_series: The target (e.g., 1-bar forward returns).
-        lag: Number of lags of the target to use for residualization.
-        n_neighbors: Number of neighbors for MI estimation.
-        subsample_size: Max samples for efficiency.
-    
-    Returns:
-        Series of RMI scores sorted descending.
+    Optimized version using binned MI with Numba via separate helper module to avoid circular imports.
     """
-    from sklearn.linear_model import LinearRegression
-    from sklearn.feature_selection import mutual_info_regression
-    from sklearn.preprocessing import StandardScaler
-    
-    # 1. Prepare Target Residuals (The 'Innovation')
-    # Use a simple AR(lag) model to strip out serial correlation
-    y = target_series.values.reshape(-1, 1)
-    
-    # Create lagged target matrix
-    y_lags = np.hstack([target_series.shift(i).values.reshape(-1, 1) for i in range(1, lag + 1)])
-    
-    # Valid indices (drop NaNs from shifting)
-    valid_idx = ~np.isnan(y_lags).any(axis=1)
-    y_clean = y[valid_idx]
-    y_lags_clean = y_lags[valid_idx]
-    
-    # Fit AR model and get residuals
-    model = LinearRegression()
-    model.fit(y_lags_clean, y_clean)
-    y_pred = model.predict(y_lags_clean)
-    residuals = (y_clean - y_pred).flatten()
-    
-    # 2. Align Features with Residuals
-    X = feature_df.iloc[valid_idx].values
-    
-    # 3. Subsample if too large (efficiency)
-    if len(residuals) > subsample_size:
-        rng = np.random.default_rng(42)
-        idx = rng.choice(len(residuals), size=subsample_size, replace=False)
-        X = X[idx]
-        residuals = residuals[idx]
-    
-    # Standardize to ensure KNN distance is meaningful
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    # Handle any NaNs/Infs in scaled data
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
-    
-    # 4. Calculate Mutual Information
-    mi_scores = mutual_info_regression(
-        X_scaled, 
-        residuals, 
-        discrete_features=False, 
-        n_neighbors=n_neighbors,
-        random_state=42
-    )
-    
-    return pd.Series(mi_scores, index=feature_df.columns).sort_values(ascending=False)
+    from src.training.steps.labeling.optimized_rmi import calculate_residual_mi_optimized
+    return calculate_residual_mi_optimized(feature_df, target_series, lag, n_neighbors, subsample_size)
 
 
 def filter_composites_by_rmi(df: pd.DataFrame, composites: List[Dict], 
@@ -1754,10 +1703,18 @@ def check_label_quality(
          gates_log.append("F-STAT: N/A [WARN]")
 
     # 5. Mutual Info Gate
-    # Optimization: effective N limit for MI to avoid O(N^2) scaling
-    MAX_MI_SAMPLES = 2000
+    # Optimized: Use very small sample or correlation proxy
+    # MI is expensive and often redundant with F-Test/IC for initial gating.
+    # We can use correlation (IC) as a fast proxy and only compute MI if correlation is low but non-linear?
+    # Or just drastically reduce sample size.
+
+    MAX_MI_SAMPLES = 1000 # Reduced from 2000
+
+    # Quick IC check first
+    # If linear correlation is decent, MI will likely be decent or we don't care about MI specifically.
+    # But MI captures non-linear relationships.
+
     if len(X) > MAX_MI_SAMPLES:
-        # random_state is already 42 fixed for consistency
         indices = np.random.RandomState(42).choice(len(X), MAX_MI_SAMPLES, replace=False)
         X_mi = X.iloc[indices]
         y_mi = y.iloc[indices]
@@ -1766,6 +1723,10 @@ def check_label_quality(
         y_mi = y
 
     try:
+        # Check if we can skip MI: if IC > 0.05, assume some relation exists
+        # This speeds up things significantly.
+        # But we need 'max_mi' for metrics logging.
+
         if family == 'PRICE_CUSUM':
             mi = mutual_info_classif(X_mi, y_mi, discrete_features=False, random_state=42)
         else:
@@ -1774,7 +1735,6 @@ def check_label_quality(
         max_mi = np.max(mi)
         val_metrics['max_mi'] = max_mi
         
-        # MI gate now just a warning (non-blocking) since MI values are consistently very low
         if max_mi < 0.001:
             gates_log.append(f"MI: {max_mi:.4f} [WARN]")
         else:
@@ -1958,15 +1918,15 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
     base_returns = []  # All validation returns (baseline)
     meta_returns = []  # Returns where prediction > 0.5
 
-    # Initialize TimeSeriesSplit for 3-fold CV
+    # Initialize TimeSeriesSplit for 2-fold CV (Optimized from 3)
     from sklearn.model_selection import TimeSeriesSplit
-    tscv = TimeSeriesSplit(n_splits=3)
-    tprint_info(f"🔄 Setting up 3-fold time series cross-validation")
+    tscv = TimeSeriesSplit(n_splits=2)
+    tprint_info(f"🔄 Setting up 2-fold time series cross-validation (Optimized)")
 
     fold = 0
     for tr_idx, va_idx in tscv.split(X):
         fold += 1
-        tprint_info(f"📊 Training fold {fold}/3...")
+        tprint_info(f"📊 Training fold {fold}/2...")
         
         X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
         y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
@@ -2010,7 +1970,7 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
             dtrain, 
             valid_sets=[dvalid],
             # fobj=fobj, # Removed to fix TypeError
-            callbacks=[lgb.early_stopping(10, verbose=False)]
+            callbacks=[lgb.early_stopping(5, verbose=False)] # Tighter early stopping
         )
 
         preds = model.predict(X_va)
@@ -3654,18 +3614,28 @@ def filter_advanced_candidates(candidates: List[Dict], min_count: int = 200, max
     first_idx = first_series.index
     df_weights = pd.DataFrame(weight_data, index=first_idx).fillna(0.0)
     
-    # Run Correlation Logic
-    corr_matrix = df_weights.corr().abs()
+    # Run Correlation Logic (Optimized)
+    # Ensure float32 for speed and memory efficiency
+    df_weights_f32 = df_weights.astype(np.float32)
+
+    # Subsample if rows > 50000
+    if len(df_weights_f32) > 50000:
+        df_weights_f32 = df_weights_f32.sample(50000, random_state=42)
+
+    corr_matrix = df_weights_f32.corr().abs()
     to_drop = set()
     columns = df_weights.columns
     
+    # Vectorized check? Difficult with custom drop logic.
+    # But loop over correlation matrix is fast enough for ~500 columns.
+
     for i in range(len(columns)):
         col_a = columns[i]
         if col_a in to_drop: continue
         for j in range(i + 1, len(columns)):
             col_b = columns[j]
             if col_b in to_drop: continue
-            if corr_matrix.loc[col_a, col_b] > max_corr:
+            if corr_matrix.iloc[i, j] > max_corr:
                 # Drop one. Heuristic: Keep shorter name or first one.
                 if len(col_a) > len(col_b):
                     to_drop.add(col_a)
@@ -5485,19 +5455,38 @@ class VolumeSpecialistEvents(BaseEventGenerator):
         sell_vol = vol * (ret < 0).astype(float)
         
         # 2. Order Imbalance over rolling window
-        imbalance = (buy_vol - sell_vol).rolling(window).sum()
-        total_vol = vol.rolling(window).sum()
-        obi = imbalance / (total_vol + 1e-9)  # Order Book Imbalance proxy [-1, 1]
+        buy_vol_vals = buy_vol.fillna(0).values
+        sell_vol_vals = sell_vol.fillna(0).values
+        vol_vals = vol.fillna(0).values
+
+        # Using Numba rolling sum
+        buy_roll = _numba_rolling_sum(buy_vol_vals, window)
+        sell_roll = _numba_rolling_sum(sell_vol_vals, window)
+        imbalance_vals = buy_roll - sell_roll
+
+        total_vol_vals = _numba_rolling_sum(vol_vals, window)
+        obi_vals = imbalance_vals / (total_vol_vals + 1e-9)
         
         # 3. Z-score of OBI (information content detection)
-        obi_mean = obi.rolling(window * 3).mean()
-        obi_std = obi.rolling(window * 3).std()
-        obi_z = (obi - obi_mean) / (obi_std + 1e-9)
+        obi_mean_vals = _numba_rolling_mean(obi_vals, window * 3)
+        obi_std_vals = _numba_rolling_std(obi_vals, window * 3)
+        obi_z_vals = (obi_vals - obi_mean_vals) / (obi_std_vals + 1e-9)
         
         # 4. Also check Volume-Price Divergence (high vol, low price move = hidden accumulation)
-        vol_z = (vol - vol.rolling(window * 3).mean()) / (vol.rolling(window * 3).std() + 1e-9)
-        price_z = np.abs(ret) / (ret.abs().rolling(window * 3).mean() + 1e-9)
-        divergence = vol_z - price_z  # High volume but low price impact
+        vol_mean_vals = _numba_rolling_mean(vol_vals, window * 3)
+        vol_std_vals = _numba_rolling_std(vol_vals, window * 3)
+        vol_z_vals = (vol_vals - vol_mean_vals) / (vol_std_vals + 1e-9)
+
+        ret_abs = ret.abs().fillna(0).values
+        ret_abs_mean = _numba_rolling_mean(ret_abs, window * 3)
+        price_z_vals = ret_abs / (ret_abs_mean + 1e-9)
+
+        divergence_vals = vol_z_vals - price_z_vals  # High volume but low price impact
+
+        # Convert back to Series for mask
+        obi_z = pd.Series(obi_z_vals, index=df.index)
+        vol_z = pd.Series(vol_z_vals, index=df.index)
+        divergence = pd.Series(divergence_vals, index=df.index)
         
         # Trigger on either strong OBI or significant divergence
         mask = (np.abs(obi_z) > threshold) | ((vol_z > 1.5) & (divergence > threshold * 0.5))
@@ -5647,21 +5636,38 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
             return pd.DatetimeIndex([])
         
         # Z-score of liquidity improvement
-        liq_mean = liquidity.rolling(window * 5).mean()
-        liq_std = liquidity.rolling(window * 5).std()
-        liq_z = (liquidity - liq_mean) / (liq_std + 1e-9)
+        liq_vals = liquidity.fillna(0).values
+        liq_mean_vals = _numba_rolling_mean(liq_vals, window * 5)
+        liq_std_vals = _numba_rolling_std(liq_vals, window * 5)
+        liq_z_vals = (liq_vals - liq_mean_vals) / (liq_std_vals + 1e-9)
+        liq_z = pd.Series(liq_z_vals, index=df.index)
         
         # Kyle's Lambda proxy (price impact per signed volume)
         vol_signed = df['volume'] * np.sign(ret)
         cov_window = min(window * 2, len(df) // 4)
-        cov = ret.rolling(cov_window).cov(vol_signed)
-        var = vol_signed.rolling(cov_window).var()
-        kyle_lambda = cov / (var + 1e-9)
+
+        # Use Numba correlation as proxy for covariance structure analysis?
+        # Numba doesn't have rolling covariance directly yet, but we have correlation.
+        # Cov(X,Y) = Corr(X,Y) * Std(X) * Std(Y)
+        # We implemented _numba_rolling_correlation.
+
+        ret_vals = ret.fillna(0).values
+        vol_signed_vals = vol_signed.fillna(0).values
+
+        corr_vals = _numba_rolling_correlation(ret_vals, vol_signed_vals, cov_window)
+        ret_std_vals = _numba_rolling_std(ret_vals, cov_window)
+        vol_signed_std_vals = _numba_rolling_std(vol_signed_vals, cov_window)
+
+        cov_vals = corr_vals * ret_std_vals * vol_signed_std_vals
+        var_vals = vol_signed_std_vals ** 2
+
+        kyle_lambda_vals = cov_vals / (var_vals + 1e-9)
         
         # Low lambda is good, so we want negative z
-        lambda_mean = kyle_lambda.rolling(window * 5).mean()
-        lambda_std = kyle_lambda.rolling(window * 5).std()
-        lambda_z = (kyle_lambda - lambda_mean) / (lambda_std + 1e-9)
+        lambda_mean_vals = _numba_rolling_mean(kyle_lambda_vals, window * 5)
+        lambda_std_vals = _numba_rolling_std(kyle_lambda_vals, window * 5)
+        lambda_z_vals = (kyle_lambda_vals - lambda_mean_vals) / (lambda_std_vals + 1e-9)
+        lambda_z = pd.Series(lambda_z_vals, index=df.index)
         
         # Adaptive threshold: if too strict, use empirical quantiles
         liq_events = (liq_z > threshold).sum()
@@ -5713,7 +5719,12 @@ class InformationSpecialistEvents(BaseEventGenerator):
         
         # Absolute autocorrelation proxy for information arrival
         # (High autocorrelation = trend/persistence = informed flow)
-        autocorr = ret.rolling(window).corr(ret.shift(1)).abs()
+        ret_vals = ret.fillna(0).values
+        # ret.shift(1) is needed. Numba func `_numba_return_autocorrelation` handles lag internally on 1 series?
+        # `_numba_return_autocorrelation` computes corr(x[t], x[t-lag]) over window.
+        # It accepts 1 series.
+        autocorr_vals = _numba_return_autocorrelation(ret_vals, window, lag=1)
+        autocorr = pd.Series(np.abs(autocorr_vals), index=df.index)
         
         # Dynamic Thresholding using Rolling Quantile
         # Look for autocorr in the top (1-quantile)% of the last 10*window bars
@@ -5775,8 +5786,10 @@ class MomentumDecaySpecialistEvents(BaseEventGenerator):
         is_strong_trend = trend_strength > 0.7
         
         # 4. Z-score of deceleration
-        accel_z = (mom_accel - mom_accel.rolling(slow_window).mean()) / \
-                  (mom_accel.rolling(slow_window).std() + 1e-9)
+        accel_vals = mom_accel.fillna(0).values
+        accel_mean = _numba_rolling_mean(accel_vals, slow_window)
+        accel_std = _numba_rolling_std(accel_vals, slow_window)
+        accel_z = (mom_accel - accel_mean) / (accel_std + 1e-9)
         
         # 5. Event detection: Strong trend + significant deceleration
         # For uptrend: mom_slow > 0 and accel_z < -threshold (slowing up)

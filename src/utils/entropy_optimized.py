@@ -95,10 +95,11 @@ def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
     return entropy / np.log(2)  # Convert to base-2
 
 
-@njit(fastmath=True, parallel=True)
+@njit(fastmath=True)
 def lempel_ziv_complexity_numba(values: np.ndarray, normalize: bool = True) -> np.ndarray:
     """
-    Calculate Lempel-Ziv complexity for each position in the series.
+    Calculate Lempel-Ziv complexity (LZ76) for each position in the series.
+    Uses the Kaspar-Schuster algorithm for O(N^2) complexity (vs O(N^3) or broken implementation).
     
     Args:
         values: Input time series
@@ -108,29 +109,141 @@ def lempel_ziv_complexity_numba(values: np.ndarray, normalize: bool = True) -> n
         Array of LZ complexity values
     """
     n = len(values)
-    complexity_values = np.zeros(n)
+    complexity_values = np.zeros(n, dtype=np.float64)
     
     if n == 0:
         return complexity_values
     
     # Convert to binary sequence based on median
+    # Use simple median of the entire series for binarization
+    # (Consistent with previous implementation intent)
     median_val = np.median(values)
     binary_seq = (values > median_val).astype(np.int32)
     
-    for i in prange(1, n):
-        # Calculate LZ complexity for subsequence up to i
-        subseq = binary_seq[:i+1]
+    # Kaspar-Schuster Algorithm for LZ76
+    # c: complexity counter
+    # i: current position index
+    # l: length of current phrase being matched
+    # k: length of match found
+    # k_max: max length of match found
+
+    c = 1
+    l = 1
+    i = 0
+    k_max = 1
+
+    # We want expanding window complexity C(t) for t in 0..n-1
+    # But standard LZ computes C for the whole string.
+    # We can approximate the rolling complexity by just reporting 'c' at each step 't'.
+    # This means C(t) is the number of phrases found in S[0..t].
+
+    # Initialize first position
+    complexity_values[0] = 1.0 if normalize else 1.0
+
+    # Iterate through the sequence
+    # This loop tracks the LZ parsing process
+    # We need to fill complexity_values for all t.
+
+    # We will compute the complexity incrementally.
+    # At each step t, we check if S[i:t+1] is a new phrase.
+
+    # Standard Kaspar-Schuster is:
+    # 1. Start with S[0], c=1, i=0, l=1
+    # 2. Consider S[i : i+l] (current phrase candidate)
+    # 3. Search for S[i : i+l] in S[0 : i+l-1]
+    # 4. If found, l <- l + 1
+    # 5. If not found, c <- c + 1, i <- i + l, l <- 1
+
+    # To output a value for every t, we map the current state 'c' to the array.
+
+    # Optimization: pre-calculate complexity array
+    # Since we can parse the string in one pass O(N^2), we can just fill the array.
+
+    current_c = 1
+    current_i = 0
+    current_l = 1
+
+    # We assume first char is first phrase.
+    # We start checking from second char (index 1)
+
+    # We need to fill complexity_values[t] for t from 0 to n-1.
+    # complexity_values[0] is already set.
+
+    # The pointer 't' represents the end of the substring we are currently considering adding to the phrase.
+    # The current candidate phrase is S[current_i : t+1].
+    # Its length is t - current_i + 1.
+
+    for t in range(1, n):
+        # Current candidate phrase: S[current_i : t+1]
+        # Length: current_l = t - current_i + 1
         
-        # Count unique patterns (simplified LZ)
-        unique_patterns = 0
-        for j in range(len(subseq)):
-            for k in range(j+1, len(subseq)+1):
-                pattern = tuple(subseq[j:k].tolist())
-                unique_patterns += 1
+        # Search for S[current_i : t+1] in S[0 : t]
+        # Actually, LZ76 rule: pattern must appear in S[0 : t] (the concatenation of previous phrases + current prefix)
+        # But strictly, we check if S[current_i : t+1] exists in S[0 : t].
+        # If it does, we extend.
+        # If it does not, we effectively close the phrase at t, increment c, and start new phrase at t+1.
+
+        # Optimization: brute force search in Numba is fast enough for N < 100k
+
+        pattern_len = t - current_i + 1
+        found = False
+
+        # Search range: starts from 0 to current_i - 1?
+        # Actually, we search in S[0 : t]. The pattern ends at t.
+        # We look for an occurrence ending before t.
+        # i.e., S[j : j + pattern_len] == S[current_i : t+1]
+        # with j + pattern_len <= t
+
+        # Search loop
+        # We can search backwards for better average performance?
+        # Or forwards.
+
+        # For small alphabet (binary), matches are frequent.
+
+        limit = t - pattern_len
+
+        # Manual search loop (no array slicing to avoid allocations)
+        for j in range(limit + 1):
+            match = True
+            for k in range(pattern_len):
+                if binary_seq[j + k] != binary_seq[current_i + k]:
+                    match = False
+                    break
+            if match:
+                found = True
+                break
+
+        if found:
+            # Continue extending the current phrase
+            # Complexity doesn't increase yet
+            pass
+        else:
+            # Phrase S[current_i : t+1] is unique!
+            # So we close it.
+            # But wait, LZ76 says we close it as soon as it's unique.
+            # So the phrase ends at t.
+            current_c += 1
+            current_i = t + 1
+            # Next phrase starts at t+1.
+            # But we are in the loop for t.
+            # If we increment current_i to t+1, then for loop t+1, pattern_len will be 1.
+
+
+        # Store current complexity
+        if normalize:
+            # Lempel-Ziv normalization: c / (n / log2(n)) approx
+            # Or simply c / n ?
+            # The docstring says "normalize by series length".
+            # Usually means c / n or c.
+            # Standard simple normalization is c.
+            # But previous code did c / (i+1).
+            # We stick to c / (t+1) to match previous intent of "rate".
+            val = current_c / (t + 1)
+        else:
+            val = current_c
+
+        complexity_values[t] = val
         
-        complexity = unique_patterns
-        complexity_values[i] = complexity / (i+1) if normalize else complexity
-    
     return complexity_values
 
 

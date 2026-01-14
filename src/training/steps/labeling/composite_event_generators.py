@@ -15,6 +15,12 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import logging
+from src.utils.composite_signals_optimized import (
+    compute_volume_spike_numba,
+    compute_return_shock_numba,
+    compute_trade_intensity_numba,
+    compute_order_flow_imbalance_numba
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,26 +131,24 @@ class CompositeEventGenerator:
         if close.empty:
             return signals
         
-        # === 1. Return-based signals ===
+        # Prepare arrays for Numba
+        close_arr = close.values.astype(np.float64)
+        high_arr = high.values.astype(np.float64)
+        low_arr = low.values.astype(np.float64)
+        volume_arr = volume.values.astype(np.float64)
+
+        # === 1. Return-based signals (Optimized) ===
         returns = close.pct_change().fillna(0)
-        returns_std = returns.rolling(20).std().fillna(returns.std())
-        signals['return_shock'] = (returns.abs() / (returns_std + 1e-9)).fillna(0)
+        # Numba optimized return shock
+        signals['return_shock'] = compute_return_shock_numba(returns.values.astype(np.float64), 20)
         
-        # === 2. Volume-based signals ===
-        vol_mean = volume.rolling(20).mean().fillna(volume.mean())
-        vol_std = volume.rolling(20).std().fillna(volume.std())
-        signals['volume_spike'] = ((volume - vol_mean) / (vol_std + 1e-9)).fillna(0)
+        # === 2. Volume-based signals (Optimized) ===
+        # Numba optimized volume spike
+        signals['volume_spike'] = compute_volume_spike_numba(volume_arr, 20)
         
         # Trade intensity: Volume / True Range (proxy for order book activity)
-        tr = pd.concat([
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low - close.shift(1)).abs()
-        ], axis=1).max(axis=1)
-        signals['trade_intensity'] = (volume / (tr + 1e-9)).fillna(0)
-        intensity_mean = signals['trade_intensity'].rolling(20).mean()
-        intensity_std = signals['trade_intensity'].rolling(20).std()
-        signals['trade_intensity'] = ((signals['trade_intensity'] - intensity_mean) / (intensity_std + 1e-9)).fillna(0)
+        # Numba optimized trade intensity
+        signals['trade_intensity'] = compute_trade_intensity_numba(volume_arr, high_arr, low_arr, close_arr, 20)
         
         # === 3. Flow Imbalance (OHLCV proxy for order flow) ===
         # High close relative to range suggests buying pressure
@@ -153,10 +157,8 @@ class CompositeEventGenerator:
         signals['flow_imbalance'] = (close_position - 0.5) * 2  # Normalized to [-1, 1]
         
         # Order flow imbalance using volume-weighted bar position
-        volume_weighted_position = close_position * volume
-        vwp_mean = volume_weighted_position.rolling(20).mean()
-        vwp_std = volume_weighted_position.rolling(20).std()
-        signals['order_flow_imbalance'] = ((volume_weighted_position - vwp_mean) / (vwp_std + 1e-9)).fillna(0)
+        # Numba optimized order flow imbalance
+        signals['order_flow_imbalance'] = compute_order_flow_imbalance_numba(close_arr, high_arr, low_arr, volume_arr, 20)
         
         # === 4. Volatility-based signals ===
         realized_vol = returns.rolling(20).std() * np.sqrt(252 * 24 * 4)  # Annualized for 15m bars

@@ -26,6 +26,7 @@ from src.training.steps.labeling.composite_event_generators import (
     OrderFlowImbalanceEvents,
     BarPressureEvents,
 )
+from src.utils.numba_funcs import _numba_return_autocorrelation
 
 # Import causal framework modules for surprise events
 try:
@@ -363,6 +364,21 @@ def generate_probe_features(price: pd.Series, volume: Optional[pd.Series] = None
     ma_down = down.rolling(14).mean()
     rsi = 100 - (100 / (1 + ma_up / (ma_down + 1e-9)))
     df['rsi_14'] = rsi.fillna(50)
+
+    # 1. Momentum Acceleration (10-bar)
+    # 2nd derivative of price: (pct_change(10) - lag(10)) or diff of returns
+    # Standard: accel = pct_change(10).diff(10)
+    mom_10 = df['ret_1'].rolling(10).sum() # Approximation of 10-bar return for accel
+    # Better: price.pct_change(10)
+    mom_10 = price.pct_change(10)
+    df['mom_accel_10'] = mom_10.diff(10)
+
+    # 2. Rolling Autocorrelation (50-bar)
+    # Use Numba JIT function
+    # Numba function requires numpy array
+    ret_values = df['ret_1'].fillna(0).values
+    autocorr_50 = _numba_return_autocorrelation(ret_values, window=50, lag=1)
+    df['autocorr_50'] = pd.Series(autocorr_50, index=df.index)
 
     if volume is not None:
         df['vol_chg'] = volume.pct_change()

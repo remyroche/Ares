@@ -85,7 +85,7 @@ from collections import defaultdict
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
 from src.training.steps.labeling.layer2_validation import validate_geometry_quality, print_validation_report
-from src.training.steps.labeling.focal_loss_utils import get_focal_loss_lgbm, get_focal_loss_xgb, RobustFocalLoss
+from src.training.steps.labeling.focal_loss_utils import get_focal_loss_lgbm, get_focal_loss_xgb, RobustFocalLoss, XGBFocalLoss
 from src.training.steps.labeling.layer2_advanced_logic import (
     vectorized_pct_change_jit,
     rolling_mean_jit,
@@ -6414,6 +6414,8 @@ class LabelBasedLayer2(BaseStep):
                 
             # --- 4. ExtraTrees ---
             from sklearn.ensemble import ExtraTreesClassifier
+            # ExtraTrees does not support gradient-based Focal Loss.
+            # Using 'balanced_subsample' to handle imbalance as best effort.
             et_params = {
                 'n_estimators': 200, 'max_depth': 6,
                 'min_samples_split': 10, 'min_samples_leaf': 5,

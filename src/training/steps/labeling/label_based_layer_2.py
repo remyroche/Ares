@@ -9408,36 +9408,51 @@ class LabelBasedLayer2(BaseStep):
                 indices = np.arange(len(y))
 
             y_innov_subset = y_innov[indices]
-            rmi_scores = {}
+            # Optimized Vectorized RMI Calculation
+            n_cols = len(X.columns)
+            n_subset = len(indices)
+            X_innov_subset = np.zeros((n_subset, n_cols), dtype=np.float64)
+            valid_cols = []
+            valid_col_indices = []
 
-            for col in X.columns:
+            # 1. Calculate Innovation for all columns
+            for idx, col in enumerate(X.columns):
                 try:
-                    # Full feature series
                     x_full = X[col].fillna(0).values.astype(np.float64)
-
-                    # 1. Innovation (Z-scored Delta) via JIT
-                    # Window=20 approx reasonable for short-term innovation
+                    # Innovation (Z-scored Delta) via JIT
                     x_innov = calculate_innovation_jit(x_full, window=20)
-
-                    # 2. Subsample
-                    x_innov_subset = x_innov[indices]
-
-                    # 3. MI calculation (Vectorized across samples, scalar result)
-                    # Reshape for sklearn
-                    mi = mutual_info_regression(
-                        x_innov_subset.reshape(-1, 1),
-                        y_innov_subset,
-                        discrete_features=False,
-                        n_neighbors=n_neighbors,
-                        random_state=42
-                    )[0]
-
-                    rmi_scores[col] = mi
-
+                    X_innov_subset[:, idx] = x_innov[indices]
+                    valid_cols.append(col)
+                    valid_col_indices.append(idx)
                 except Exception:
-                    rmi_scores[col] = 0.0
+                    pass
 
-            return pd.Series(rmi_scores)
+            if not valid_cols:
+                return pd.Series(0.0, index=X.columns)
+
+            # Filter valid columns
+            X_innov_subset = X_innov_subset[:, valid_col_indices]
+
+            # 2. Vectorized MI calculation
+            # mutual_info_regression accepts matrix X and returns MI for each feature
+            try:
+                mi_scores_arr = mutual_info_regression(
+                    X_innov_subset,
+                    y_innov_subset,
+                    discrete_features=False,
+                    n_neighbors=n_neighbors,
+                    random_state=42
+                )
+                rmi_scores = pd.Series(mi_scores_arr, index=valid_cols)
+                # Fill missing columns with 0.0
+                for col in X.columns:
+                    if col not in rmi_scores:
+                        rmi_scores[col] = 0.0
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized MI calculation failed: {e}")
+                return pd.Series(0.0, index=X.columns)
+
+            return rmi_scores
 
         except Exception as e:
             tprint_warning(f"⚠️ RMI computation failed: {e}")
@@ -9492,22 +9507,31 @@ class LabelBasedLayer2(BaseStep):
                 except Exception:
                     feature_entropies[col] = 0.0
             
-            # 2. Build mutual information matrix between features
+            # 2. Build mutual information matrix between features (Optimized)
             n_features = len(X.columns)
             mi_matrix = np.zeros((n_features, n_features))
+
+            # Pre-discretize all features to avoid repeated qcut calls (O(N) instead of O(N^2))
+            X_disc = pd.DataFrame(index=X.index)
+            for col in X.columns:
+                try:
+                    X_disc[col] = pd.qcut(X[col], q=10, duplicates='drop').cat.codes
+                except Exception:
+                    X_disc[col] = np.zeros(len(X), dtype=int)
             
+            # Compute MI matrix using pre-discretized features
             for i, feat1 in enumerate(X.columns):
-                for j, feat2 in enumerate(X.columns):
-                    if i != j:
-                        try:
-                            # Discretize both features
-                            disc1 = pd.qcut(X[feat1], q=10, duplicates='drop').cat.codes
-                            disc2 = pd.qcut(X[feat2], q=10, duplicates='drop').cat.codes
-                            
-                            # Compute mutual information
-                            mi_matrix[i, j] = mutual_info_score(disc1, disc2)
-                        except Exception:
-                            mi_matrix[i, j] = 0.0
+                # Optimization: Exploit symmetry of Mutual Information (MI(X,Y) = MI(Y,X))
+                for j in range(i + 1, n_features):
+                    feat2 = X.columns[j]
+                    try:
+                        # Compute mutual information
+                        score = mutual_info_score(X_disc[feat1], X_disc[feat2])
+                        mi_matrix[i, j] = score
+                        mi_matrix[j, i] = score
+                    except Exception:
+                        mi_matrix[i, j] = 0.0
+                        mi_matrix[j, i] = 0.0
             
             # 3. Convert MI to distance matrix for clustering
             # Distance = 1 - normalized mutual information

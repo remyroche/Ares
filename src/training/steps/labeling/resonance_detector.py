@@ -21,6 +21,13 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 
+# Import optimized functions
+try:
+    from src.utils.numba_funcs import _numba_rolling_correlation
+    NUMBA_FUNCS_AVAILABLE = True
+except ImportError:
+    NUMBA_FUNCS_AVAILABLE = False
+
 # Import tprint functions
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -201,6 +208,7 @@ class ResonanceDetector:
     ) -> np.ndarray:
         """
         Compute rolling coherence series using correlation.
+        Optimized with Numba if available.
         
         Args:
             fast: Fast scale signal
@@ -211,19 +219,27 @@ class ResonanceDetector:
             Coherence series (0-1)
         """
         try:
-            # Use pandas for efficient rolling correlation
-            s1 = pd.Series(fast)
-            s2 = pd.Series(slow)
-            
-            # Rolling correlation
-            corr = s1.rolling(window=window, min_periods=window//2).corr(s2)
+            if NUMBA_FUNCS_AVAILABLE:
+                # Use Numba-optimized rolling correlation
+                corr = _numba_rolling_correlation(
+                    fast.astype(np.float64),
+                    slow.astype(np.float64),
+                    window
+                )
+            else:
+                # Fallback to pandas
+                s1 = pd.Series(fast)
+                s2 = pd.Series(slow)
+                corr = s1.rolling(window=window, min_periods=window//2).corr(s2).fillna(0.0).values
             
             # Convert to coherence (squared correlation) to match magnitude
-            coherence = corr.pow(2).fillna(0.0).values
+            coherence = corr ** 2
             
             return coherence
             
-        except Exception:
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"      ⚠️ Coherence series calc failed: {e}")
             return np.zeros_like(fast)
             
     def calculate_phase_lead_lag(

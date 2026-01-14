@@ -18,7 +18,8 @@ try:
     from src.training.steps.labeling.layer3.optimized_utils import (
         numba_rolling_ols_3factor,
         numba_conditional_correlation,
-        numba_calculate_har_features
+        numba_calculate_har_features,
+        numba_feature_target_correlation
     )
     OPTIMIZED_UTILS_AVAILABLE = True
 except ImportError:
@@ -345,25 +346,28 @@ def fast_cmi_proxy(
 
     # Stage 1: Correlation-based pre-filtering (O(f))
     # Optimized: Compute correlation of all features with target at once
-    # Note: np.corrcoef of (F, N) matrix can be heavy if F is large, but usually here F ~ 500
-    # X.T is (F, N)
-
-    # Using simple correlation calculation: dot(norm(X), norm(y)) / N
-    y_mean = np.mean(y_vals)
-    y_std = np.std(y_vals) + EPS
-    y_norm = (y_vals - y_mean) / y_std
 
     # Handle NaNs in X
     if np.isnan(X_vals).any():
         X_vals = np.nan_to_num(X_vals, nan=0.0)
 
-    X_mean = np.mean(X_vals, axis=0)
-    X_std = np.std(X_vals, axis=0) + EPS
-    X_norm = (X_vals - X_mean) / X_std
+    if OPTIMIZED_UTILS_AVAILABLE:
+        # Use memory-efficient Numba implementation (O(N) memory instead of O(NF))
+        corr_scores = numba_feature_target_correlation(X_vals, y_vals)
+        corr_scores = np.nan_to_num(corr_scores, nan=0.0)
+    else:
+        # Standard implementation (higher memory usage)
+        y_mean = np.mean(y_vals)
+        y_std = np.std(y_vals) + EPS
+        y_norm = (y_vals - y_mean) / y_std
 
-    # Correlation vector (1, F)
-    corr_scores = np.abs(np.dot(y_norm, X_norm) / len(y_vals))
-    corr_scores = np.nan_to_num(corr_scores, nan=0.0)
+        X_mean = np.mean(X_vals, axis=0)
+        X_std = np.std(X_vals, axis=0) + EPS
+        X_norm = (X_vals - X_mean) / X_std
+
+        # Correlation vector (1, F)
+        corr_scores = np.abs(np.dot(y_norm, X_norm) / len(y_vals))
+        corr_scores = np.nan_to_num(corr_scores, nan=0.0)
     
     # Select top percentile
     n_top = max(1, int(top_percentile * n_features))

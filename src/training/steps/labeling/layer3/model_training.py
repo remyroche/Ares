@@ -18,6 +18,7 @@ from sklearn.metrics import roc_auc_score, mean_squared_error, log_loss
 from scipy.special import expit
 
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.training.steps.labeling.layer3.feature_engineering import downcast_float
 
 # Import tprint functions
 try:
@@ -37,7 +38,7 @@ def apply_huber_rotation_logic(X: pd.DataFrame, huber_coeffs: pd.Series, top_n: 
     Optimized to use vectorized operations.
     """
     # Ensure working with float32 if not already
-    X_rotated = X.copy()
+    X_rotated = downcast_float(X.copy())
 
     # 1. Identify top feature pairs based on Huber Absolute Coefficients
     valid_coeffs = huber_coeffs[huber_coeffs.index.isin(X.columns)]

@@ -22,6 +22,18 @@ from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sa
 from .enhanced_reporting import EnhancedLayer3Reporter
 from .feature_engineering import downcast_float
 
+# Import Layer 3 Feature Cache
+try:
+    from src.training.steps.labeling.layer3_feature_cache import (
+        save_layer3_features_to_cache,
+        load_layer3_features_from_cache,
+        should_use_cached_features
+    )
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    print("⚠️ Layer3 Feature Cache not available for core")
+
 # Import optimized functions
 try:
     from src.training.steps.labeling.optimized_layer2_functions import _vectorized_variance_scores
@@ -376,11 +388,54 @@ def layer3_analyst_lgbm(
     # Phase 1: Meta-Features
     tprint_info("🔧 Phase 1: Meta-Features Engineering")
     safe_base_cols = [c for c in base_model_cols if c in df.columns]
-    try:
-        from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
-        df = generate_layer3_features(df, safe_base_cols)
-    except Exception as e:
-        tprint_warning(f"⚠️ Feature generation failed: {e}")
+
+    # Try loading features from cache
+    features_loaded = False
+    if CACHE_AVAILABLE and should_use_cached_features(cfg, symbol, exchange, cfg.get('timeframe', '15m'), 'long'):
+        tprint_info("📦 Checking cache for Layer 3 features...")
+        cached_features, _ = load_layer3_features_from_cache(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=cfg.get('timeframe', '15m'),
+            direction='long',
+            target_index=df.index,
+            market_data=market_data,
+            validate_hash=True
+        )
+
+        if cached_features is not None:
+            # Merge cached features into df
+            # Identify new columns
+            new_cols = [c for c in cached_features.columns if c not in df.columns]
+            if new_cols:
+                df = pd.concat([df, cached_features[new_cols]], axis=1)
+                tprint_success(f"✅ Loaded {len(new_cols)} features from cache")
+                features_loaded = True
+
+    if not features_loaded:
+        try:
+            from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
+            df = generate_layer3_features(df, safe_base_cols)
+
+            # Save to cache if enabled
+            if CACHE_AVAILABLE and cfg.get('use_layer3_feature_cache', True):
+                # Identify generated features (exclude base columns)
+                exclude_cols = set(oof_df.columns) | set(base_model_cols) | {'close', 'high', 'low', 'open', 'volume'}
+                generated_cols = [c for c in df.columns if c not in exclude_cols]
+
+                if generated_cols:
+                    feature_subset = df[generated_cols]
+                    save_layer3_features_to_cache(
+                        meta_features=feature_subset,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=cfg.get('timeframe', '15m'),
+                        direction='long',
+                        market_data=market_data,
+                        config=cfg
+                    )
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature generation failed: {e}")
 
     # Phase 2: Targets + Volatility Weights
     tprint_info("📊 Phase 2: Targets + Volatility Weights")

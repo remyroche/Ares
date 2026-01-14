@@ -14,6 +14,8 @@ Key Features:
 import numpy as np
 import pandas as pd
 from src.utils.numba_funcs import _numba_rolling_mad
+from src.utils.entropy_optimized import rolling_entropy_numba
+from src.utils.structural_breaks_optimized import rolling_chow_test_numba
 from typing import Dict, List, Tuple, Optional, Any, Union
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
@@ -324,24 +326,13 @@ class CausalSurpriseDetector:
             break_indicators = np.zeros(n_samples)
             
             if method == "chow":
-                # Simplified Chow test for structural breaks
-                for i in range(self.structural_break_window, n_samples - self.structural_break_window):
-                    # Split data at potential break point
-                    errors_before = errors[i - self.structural_break_window:i]
-                    errors_after = errors[i:i + self.structural_break_window]
-                    
-                    if len(errors_before) > 10 and len(errors_after) > 10:
-                        # Compare means and variances
-                        mean_before, var_before = np.mean(errors_before), np.var(errors_before)
-                        mean_after, var_after = np.mean(errors_after), np.var(errors_after)
-                        
-                        # Simple break test statistic
-                        mean_diff = abs(mean_before - mean_after)
-                        var_ratio = max(var_before, var_after) / (min(var_before, var_after) + 1e-8)
-                        
-                        # Break if significant difference
-                        if mean_diff > 2 * np.sqrt(var_before) or var_ratio > 3:
-                            break_indicators[i] = 1
+                # Optimized Numba Chow test
+                break_indicators = rolling_chow_test_numba(
+                    errors,
+                    window=self.structural_break_window,
+                    threshold_mean=2.0,
+                    threshold_var=3.0
+                ).astype(float)
             
             elif method == "cusum":
                 # CUSUM-based break detection
@@ -366,12 +357,19 @@ class CausalSurpriseDetector:
             return pd.Series(0, index=self.specialist_errors_[specialist_name].index)
 
     def _compute_rolling_entropy(self, series: pd.Series, window: int = 100, bins: int = 10) -> pd.Series:
-        """Compute rolling Shannon entropy."""
-        def entropy_func(x):
-            counts, _ = np.histogram(x, bins=bins, density=True)
-            return stats.entropy(counts + 1e-10) # 1e-10 to avoid log(0)
-            
-        return series.rolling(window=window).apply(entropy_func, raw=True).fillna(0)
+        """Compute rolling Shannon entropy using Numba."""
+        # Numba function returns natural entropy (nats) if using log
+        # or bits if using log2. rolling_entropy_numba uses log2 (bits).
+        # Original implementation used scipy.stats.entropy which returns nats by default (base e).
+        # To maintain compatibility (if downstream expects nats), we convert.
+        # rolling_entropy_numba returns bits (base 2).
+        # bits * ln(2) = nats.
+
+        values = series.values
+        entropy_bits = rolling_entropy_numba(values, window, bins)
+        entropy_nats = entropy_bits * np.log(2)
+
+        return pd.Series(entropy_nats, index=series.index).fillna(0)
     
     def set_zone_score_weights(
         self,

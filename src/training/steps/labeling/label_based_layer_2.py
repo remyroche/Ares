@@ -193,6 +193,16 @@ except ImportError as e:
     OPTIMIZED_FUNCTIONS_AVAILABLE = False
     tprint_warning(f"⚠️ Optimized functions not available: {e}")
 
+# Fast Information Theory and Causal Proxy
+try:
+    from src.utils.fast_info_theory import vectorized_pairwise_mi, discretize_features_numba, numba_histogram_2d, numba_mutual_info
+    from src.training.steps.labeling.fast_causal_proxy import FastCausalProxy
+    FAST_INFO_THEORY_AVAILABLE = True
+    tprint_info("✅ Fast Info Theory & Causal Proxy loaded")
+except ImportError as e:
+    FAST_INFO_THEORY_AVAILABLE = False
+    tprint_warning(f"⚠️ Fast Info Theory functions not available: {e}")
+
 # Import causal framework modules
 from src.training.steps.labeling.de_prado_causal_features import DePradoCausalFeatures
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
@@ -2623,6 +2633,28 @@ class LabelBasedLayer2(BaseStep):
             # Check if Bayesian discovery is enabled
             use_bayesian = getattr(self, 'use_bayesian_discovery', True)
             
+            # --- FAST CAUSAL PROXY OPTIMIZATION ---
+            # If requested or in "fast mode", use Precision Matrix Proxy
+            # This skips the expensive PC algorithm / LiNGAM
+            if getattr(self, 'use_fast_causal_proxy', False) and FAST_INFO_THEORY_AVAILABLE:
+                tprint_info("⚡ Using Fast Causal Proxy (Graphical Lasso) for skeleton discovery...")
+                try:
+                    numeric_df = self._filter_discovery_input(df)
+                    if numeric_df.empty:
+                        return {}
+
+                    proxy = FastCausalProxy(verbose=self.verbose)
+                    causal_graph = proxy.discover_structure_proxy(numeric_df)
+
+                    if causal_graph:
+                        tprint_success(f"   ✅ Fast Proxy Graph: {sum(len(v) for v in causal_graph.values())//2} edges")
+                        return causal_graph
+                    else:
+                        tprint_warning("   ⚠️ Fast Proxy found no edges, falling back to full discovery.")
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Fast Proxy failed: {e}. Falling back.")
+            # ---------------------------------------
+
             if use_bayesian and self.CAUSAL_MODULES_AVAILABLE:
                 numeric_df = self._filter_discovery_input(df)
                 if numeric_df.empty:
@@ -9528,13 +9560,37 @@ class LabelBasedLayer2(BaseStep):
             # 2. Vectorized MI calculation
             # mutual_info_regression accepts matrix X and returns MI for each feature
             try:
-                mi_scores_arr = mutual_info_regression(
-                    X_innov_subset,
-                    y_innov_subset,
-                    discrete_features=False,
-                    n_neighbors=n_neighbors,
-                    random_state=42
-                )
+                if FAST_INFO_THEORY_AVAILABLE:
+                    # Optimized Path: Discretize and use Numba Histogram MI
+                    # This is O(N) instead of O(N log N) or O(N^2) for k-NN
+
+                    # 1. Discretize Innovation (X)
+                    # Note: X_innov_subset is numpy array
+                    X_disc = discretize_features_numba(X_innov_subset, bins=10)
+
+                    # 2. Discretize Innovation (Y)
+                    # Reshape to (N, 1) for consistent discretization
+                    y_disc = discretize_features_numba(y_innov_subset.reshape(-1, 1), bins=10).flatten()
+
+                    mi_scores_list = []
+                    # 3. Compute MI for each column
+                    for j in range(X_disc.shape[1]):
+                        hist = numba_histogram_2d(X_disc[:, j], y_disc, bins=10)
+                        score = numba_mutual_info(hist)
+                        mi_scores_list.append(score)
+
+                    mi_scores_arr = np.array(mi_scores_list)
+
+                else:
+                    # Fallback: Scikit-learn k-NN MI (Slower)
+                    mi_scores_arr = mutual_info_regression(
+                        X_innov_subset,
+                        y_innov_subset,
+                        discrete_features=False,
+                        n_neighbors=n_neighbors,
+                        random_state=42
+                    )
+
                 rmi_scores = pd.Series(mi_scores_arr, index=valid_cols)
                 # Fill missing columns with 0.0
                 for col in X.columns:
@@ -9601,29 +9657,41 @@ class LabelBasedLayer2(BaseStep):
             
             # 2. Build mutual information matrix between features (Optimized)
             n_features = len(X.columns)
-            mi_matrix = np.zeros((n_features, n_features))
-
-            # Pre-discretize all features to avoid repeated qcut calls (O(N) instead of O(N^2))
-            X_disc = pd.DataFrame(index=X.index)
-            for col in X.columns:
-                try:
-                    X_disc[col] = pd.qcut(X[col], q=10, duplicates='drop').cat.codes
-                except Exception:
-                    X_disc[col] = np.zeros(len(X), dtype=int)
             
-            # Compute MI matrix using pre-discretized features
-            for i, feat1 in enumerate(X.columns):
-                # Optimization: Exploit symmetry of Mutual Information (MI(X,Y) = MI(Y,X))
-                for j in range(i + 1, n_features):
-                    feat2 = X.columns[j]
+            if FAST_INFO_THEORY_AVAILABLE:
+                # FAST PATH: Numba-optimized vectorized calculation
+                # 1. Discretize all features at once
+                X_values = X.values.astype(np.float64)
+                X_disc_arr = discretize_features_numba(X_values, bins=10)
+
+                # 2. Compute full matrix in parallel
+                mi_matrix = vectorized_pairwise_mi(X_disc_arr, bins=10)
+
+            else:
+                # SLOW PATH: Pandas/Sklearn loop
+                mi_matrix = np.zeros((n_features, n_features))
+
+                # Pre-discretize all features to avoid repeated qcut calls (O(N) instead of O(N^2))
+                X_disc = pd.DataFrame(index=X.index)
+                for col in X.columns:
                     try:
-                        # Compute mutual information
-                        score = mutual_info_score(X_disc[feat1], X_disc[feat2])
-                        mi_matrix[i, j] = score
-                        mi_matrix[j, i] = score
+                        X_disc[col] = pd.qcut(X[col], q=10, duplicates='drop').cat.codes
                     except Exception:
-                        mi_matrix[i, j] = 0.0
-                        mi_matrix[j, i] = 0.0
+                        X_disc[col] = np.zeros(len(X), dtype=int)
+
+                # Compute MI matrix using pre-discretized features
+                for i, feat1 in enumerate(X.columns):
+                    # Optimization: Exploit symmetry of Mutual Information (MI(X,Y) = MI(Y,X))
+                    for j in range(i + 1, n_features):
+                        feat2 = X.columns[j]
+                        try:
+                            # Compute mutual information
+                            score = mutual_info_score(X_disc[feat1], X_disc[feat2])
+                            mi_matrix[i, j] = score
+                            mi_matrix[j, i] = score
+                        except Exception:
+                            mi_matrix[i, j] = 0.0
+                            mi_matrix[j, i] = 0.0
             
             # 3. Convert MI to distance matrix for clustering
             # Distance = 1 - normalized mutual information

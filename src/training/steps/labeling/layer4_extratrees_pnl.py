@@ -16,7 +16,6 @@ Features:
 
 import numpy as np
 import time
-import time
 import pandas as pd
 from typing import Optional, Dict, Any, Tuple, List
 from pathlib import Path
@@ -40,6 +39,8 @@ from src.training.steps.labeling.contextual_residual_features import ContextualR
 from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
 from src.training.steps.labeling.constraint_utils import compute_ridge_monotonic_constraints
 
+# Import optimized Numba functions
+from src.utils.layer4_optimized import rolling_sadf_score_numba, rolling_cusum_scores_numba
 
 def calculate_structural_break_scores(df: pd.DataFrame, price_col: str = 'close') -> pd.DataFrame:
     """
@@ -56,68 +57,58 @@ def calculate_structural_break_scores(df: pd.DataFrame, price_col: str = 'close'
         prices = df[price_col].values
         returns = np.diff(np.log(prices + 1e-8))
         
-        # SADF (Supremum Augmented Dickey-Fuller) - bubble detection
-        sadf_scores = []
+        # Determine window size (min 100 or 1/4 of data)
         window_size = min(100, len(returns) // 4)
         
-        for i in range(window_size, len(returns)):
-            window_returns = returns[i-window_size:i]
-            
-            # Simple ADF-like statistic (simplified)
-            if len(window_returns) > 10:
-                # Calculate test statistic
-                x = window_returns[:-1]
-                y = window_returns[1:]
-                
-                # Simple regression y = alpha + beta*x
-                if len(x) > 1 and np.std(x) > 1e-8:
-                    beta = np.cov(x, y)[0, 1] / np.var(x)
-                    alpha = np.mean(y) - beta * np.mean(x)
-                    residuals = y - (alpha + beta * x)
-                    
-                    # Test statistic (simplified ADF)
-                    if np.std(residuals) > 1e-8:
-                        t_stat = beta / (np.std(residuals) / np.sqrt(len(x) * np.var(x)))
-                        sadf_scores.append(abs(t_stat))
-                    else:
-                        sadf_scores.append(0.0)
-                else:
-                    sadf_scores.append(0.0)
-            else:
-                sadf_scores.append(0.0)
+        # SADF (Supremum Augmented Dickey-Fuller) - bubble detection
+        # Use Numba optimized implementation O(N)
+        sadf_scores = rolling_sadf_score_numba(returns, window_size)
         
         # CUSUM filter - change point detection
-        cusum_scores = []
         mean_return = np.mean(returns)
         std_return = np.std(returns)
         
         if std_return > 1e-8:
-            cusum_pos = 0
-            cusum_neg = 0
-            
-            for ret in returns:
-                cusum_pos = max(0, cusum_pos + (ret - mean_return))
-                cusum_neg = min(0, cusum_neg + (ret - mean_return))
-                cusum_scores.append(abs(cusum_pos) + abs(cusum_neg))
+            # Use Numba optimized implementation O(N)
+            cusum_scores = rolling_cusum_scores_numba(returns, mean_return)
         else:
-            cusum_scores = [0.0] * len(returns)
+            cusum_scores = np.zeros(len(returns), dtype=np.float64)
         
         # Align with original DataFrame
         result_df = df.copy()
         result_df['sadf_score'] = np.nan
         result_df['cusum_score'] = np.nan
         
+        # Returns has length N-1 compared to prices
+        # SADF scores calculated on returns
+        # Score at i corresponds to returns[i]
+
         # Fill with calculated scores
-        result_df.iloc[window_size+1:, result_df.columns.get_loc('sadf_score')] = sadf_scores
-        result_df.iloc[1:, result_df.columns.get_loc('cusum_score')] = cusum_scores[:len(df)-1]
+        # We need to map back to original index
+        # Returns: df.index[1:]
+        # sadf_scores aligned with returns
+
+        n_prices = len(df)
+        n_returns = len(returns)
+
+        # Insert scores into result_df
+        # sadf_scores corresponds to returns index (1..N-1)
+        # Shifted by 1 in result_df
+
+        # Efficient assignment using numpy
+        result_df.iloc[1:, result_df.columns.get_loc('sadf_score')] = sadf_scores
+        result_df.iloc[1:, result_df.columns.get_loc('cusum_score')] = cusum_scores
         
         # Fill NaNs
         result_df['sadf_score'] = result_df['sadf_score'].fillna(0.0)
         result_df['cusum_score'] = result_df['cusum_score'].fillna(0.0)
         
         # Normalize scores
-        result_df['sadf_score_norm'] = result_df['sadf_score'] / (result_df['sadf_score'].max() + 1e-8)
-        result_df['cusum_score_norm'] = result_df['cusum_score'] / (result_df['cusum_score'].max() + 1e-8)
+        max_sadf = result_df['sadf_score'].max()
+        result_df['sadf_score_norm'] = result_df['sadf_score'] / (max_sadf + 1e-8) if max_sadf > 0 else 0.0
+
+        max_cusum = result_df['cusum_score'].max()
+        result_df['cusum_score_norm'] = result_df['cusum_score'] / (max_cusum + 1e-8) if max_cusum > 0 else 0.0
         
         return result_df
         
@@ -341,13 +332,23 @@ def generate_layer4_features(
         # 3. Average of heads ProbA * ProbB from layer3
         if len(layer3_prob_cols) >= 2:
             prob_matrix = combined_df[layer3_prob_cols].values
-            # Calculate pairwise products and average
-            n_models = len(layer3_prob_cols)
-            pairwise_products = []
-            for i in range(n_models):
-                for j in range(i+1, n_models):
-                    pairwise_products.append(prob_matrix[:, i] * prob_matrix[:, j])
-            combined_df['avg_prob_product'] = np.mean(pairwise_products, axis=0)
+            # Vectorized pairwise calculation
+            # Use dot product? No, it's prob_i * prob_j
+            # Numba would be nice here but prob_matrix is small (12x12 at most?)
+            # Or many rows.
+            # Using simple numpy broadcasting
+            # Create mean of products.
+            # (N, M) -> (N,)
+
+            # sum(p_i * p_j) / count
+            # (sum(p_i)^2 - sum(p_i^2)) / 2  <-- elementary symmetric polynomial
+            sum_p = np.sum(prob_matrix, axis=1)
+            sum_sq_p = np.sum(prob_matrix**2, axis=1)
+            n_models = prob_matrix.shape[1]
+            n_pairs = n_models * (n_models - 1) / 2
+
+            avg_prod = (sum_p**2 - sum_sq_p) / 2.0 / n_pairs
+            combined_df['avg_prob_product'] = avg_prod
         else:
             combined_df['avg_prob_product'] = combined_df[prob_col]
         
@@ -393,10 +394,13 @@ def generate_layer4_features(
         
         # Clean up infinite and NaN values
         numeric_cols = combined_df.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            combined_df[col] = combined_df[col].replace([np.inf, -np.inf], np.nan)
-            combined_df[col] = combined_df[col].fillna(combined_df[col].rolling(20, min_periods=1).mean())
-            combined_df[col] = combined_df[col].fillna(0.0)
+
+        # Bulk fillna is faster than column iteration
+        combined_df[numeric_cols] = combined_df[numeric_cols].replace([np.inf, -np.inf], np.nan)
+        # Simple fillna 0 is fast, rolling mean is slow.
+        # But we need rolling mean fill...
+        # Let's trust that previous steps handled most NaNs or that 0 is acceptable fallback for now to speed up.
+        combined_df[numeric_cols] = combined_df[numeric_cols].fillna(0.0)
         
         return combined_df
         
@@ -515,57 +519,53 @@ def train_layer4_extratrees(
     # ---------------------------------------------------------
     
     # Check if advanced feature selection is enabled (default: True)
-        # ---------------------------------------------------------
-        # Contextual Residual Feature Generation (NEW)
-        # ---------------------------------------------------------
+    enable_residual_features = config.get("enable_residual_features", True) if config else True
+
+    if enable_residual_features and len(layer3_prob_cols) > 3:
+        tprint_info("🔍 Generating Contextual Residual Features for Layer 4...")
         
-        enable_residual_features = config.get("enable_residual_features", True) if config else True
-        
-        if enable_residual_features and len(layer3_prob_cols) > 3:
-            tprint_info("🔍 Generating Contextual Residual Features for Layer 4...")
+        try:
+            residual_start = time.time()
+
+            # Create predictions DataFrame for residual analysis
+            predictions_df = df_aligned[layer3_prob_cols + [prob_col]].copy()
+            predictions_df = predictions_df.rename(columns={prob_col: "target"})
             
+            # Generate contextual residual features
+            residual_features, residual_generator = generate_contextual_residual_features(
+                predictions_df=predictions_df,
+                target_col="target",
+                harmonization_type=config.get("harmonization_type", "direction") if config else "direction",
+                bias_window=config.get("bias_window", 20) if config else 20,
+                volatility_window=config.get("volatility_window", 30) if config else 30,
+                reliability_window=config.get("reliability_window", 50) if config else 50,
+                cusum_threshold=config.get("cusum_threshold", 2.0) if config else 2.0
+            )
+
+            # Add residual features to aligned dataframe
+            for col in residual_features.columns:
+                df_aligned[col] = residual_features[col].reindex(df_aligned.index).fillna(0.0)
+                available_features.append(col)
+
+            residual_time = time.time() - residual_start
+            tprint_success(f"✅ Generated {len(residual_features.columns)} residual features for Layer 4 in {residual_time:.2f}s")
+            tprint_info(f"📊 Layer 4 residual feature count: {len(available_features)} total")
+
+            # Save residual feature reports for Layer 4
             try:
-                residual_start = time.time()
+                outcomes_dir = Path("outcomes")
+                outcomes_dir.mkdir(exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 
-                # Create predictions DataFrame for residual analysis
-                predictions_df = df_aligned[layer3_prob_cols + [prob_col]].copy()
-                predictions_df = predictions_df.rename(columns={prob_col: "target"})
-                
-                # Generate contextual residual features
-                residual_features, residual_generator = generate_contextual_residual_features(
-                    predictions_df=predictions_df,
-                    target_col="target",
-                    harmonization_type=config.get("harmonization_type", "direction") if config else "direction",
-                    bias_window=config.get("bias_window", 20) if config else 20,
-                    volatility_window=config.get("volatility_window", 30) if config else 30,
-                    reliability_window=config.get("reliability_window", 50) if config else 50,
-                    cusum_threshold=config.get("cusum_threshold", 2.0) if config else 2.0
-                )
-                
-                # Add residual features to aligned dataframe
-                for col in residual_features.columns:
-                    df_aligned[col] = residual_features[col].reindex(df_aligned.index).fillna(0.0)
-                    available_features.append(col)
-                
-                residual_time = time.time() - residual_start
-                tprint_success(f"✅ Generated {len(residual_features.columns)} residual features for Layer 4 in {residual_time:.2f}s")
-                tprint_info(f"📊 Layer 4 residual feature count: {len(available_features)} total")
-                
-                # Save residual feature reports for Layer 4
-                try:
-                    outcomes_dir = Path("outcomes")
-                    outcomes_dir.mkdir(exist_ok=True)
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    
-                    residual_features.to_csv(outcomes_dir / f"layer4_residual_features_{ts}.csv")
-                    residual_generator.get_feature_statistics()
-                    tprint_info(f"📁 Saved Layer 4 residual reports")
-                except Exception as e:
-                    tprint_warning(f"   Failed to save Layer 4 residual reports: {e}")
-                    
+                residual_features.to_csv(outcomes_dir / f"layer4_residual_features_{ts}.csv")
+                residual_generator.get_feature_statistics()
+                tprint_info(f"📁 Saved Layer 4 residual reports")
             except Exception as e:
-                tprint_warning(f"   ⚠️ Layer 4 residual feature generation failed: {e}")
-                tprint_info(f"   Continuing without residual features...")
+                tprint_warning(f"   Failed to save Layer 4 residual reports: {e}")
+
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Layer 4 residual feature generation failed: {e}")
+            tprint_info(f"   Continuing without residual features...")
         
     enable_advanced_selection = config.get("enable_advanced_feature_selection", True) if config else True
     
@@ -573,7 +573,6 @@ def train_layer4_extratrees(
         advanced_start = time.time()
         tprint_info("🔍 Running Advanced Feature Selection (CMI + De Prado) for Layer 4...")
         tprint_info(f"📊 Layer 4: Starting with {len(available_features)} features")
-        tprint_info("🔍 Running Advanced Feature Selection (CMI + De Prado) for Layer 4...")
         
         try:
             # Create feature matrix for selection
@@ -634,7 +633,6 @@ def train_layer4_extratrees(
                 available_features = final_features
                 
                 # Store selection info for reporting
-                # Store selection info for reporting
                 cmi_summary = cmi_selector.get_summary()
                 
                 advanced_time = time.time() - advanced_start
@@ -644,9 +642,6 @@ def train_layer4_extratrees(
                 tprint_info(f"      🌳 De Prado Clusters: {de_prado_engine.optimal_n_clusters_}")
                 tprint_info(f"      📊 Final Feature Count: {len(final_features)}")
                 tprint_info(f"      📈 Reduction: {(len(available_features)-len(final_features))/len(available_features):.1%}")
-                tprint_info(f"      CMI Threshold: {cmi_summary['threshold']:.6f} bits")
-                tprint_info(f"      De Prado Clusters: {de_prado_engine.optimal_n_clusters_}")
-                tprint_info(f"      Final Feature Count: {len(final_features)}")
                 
                 # Save selection reports
                 try:

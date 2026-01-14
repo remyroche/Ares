@@ -21,6 +21,8 @@ from typing import Optional, Dict, Any, Tuple, List
 from pathlib import Path
 from datetime import datetime
 import json
+import os
+import hashlib
 
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from scipy.stats import spearmanr, norm
@@ -64,9 +66,10 @@ WEIGHT_CLIP_MAX = 2.0  # Maximum weight clip
 
 def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
     """Downcast float64 columns to float32 to save memory and speed up processing."""
+    # Faster implementation using astype with dictionary or just applying to numeric cols
     float_cols = df.select_dtypes(include=['float64']).columns
-    for col in float_cols:
-        df[col] = df[col].astype(np.float32)
+    if len(float_cols) > 0:
+        df[float_cols] = df[float_cols].astype(np.float32)
     return df
 
 class SimpleMultiModelRiskEngine:
@@ -369,17 +372,6 @@ class SimpleMultiModelRiskEngine:
             sample_weight=weights,
             baseline=warm_start_train
         )
-        # CatBoost predict: if trained with baseline, does predict() include it?
-        # CatBoost sklearn API usually outputs prediction (raw or probability).
-        # For regression, it outputs the leaf sum.
-        # If baseline used, leaf sum is residual.
-        # We must add baseline manually?
-        # Let's double check. Docs say: "If baseline is not None, the resulting values are the sum of baseline and model prediction."
-        # Wait, that's for fit.
-        # For predict: "If baseline is not None, it is added to the prediction." (if passed to predict?)
-        # predict() doesn't have 'baseline' arg, it has 'data'.
-        # Actually it does NOT have baseline arg in predict().
-        # So we MUST add it manually.
 
         cb_raw_preds = self.catboost_model.predict(X_pruned)
         catboost_preds = warm_start_train + cb_raw_preds
@@ -439,18 +431,11 @@ class SimpleMultiModelRiskEngine:
         et_cal = self.calibrators['extratrees'].transform(et_preds)
         
         # 2. LGBM
-        # For LGBM, if we used init_score in fit, the model is trained on residuals.
-        # Does predict automatically handle it?
-        # In LGBM sklearn API, `fit` with `init_score` -> `predict` assumes you might want to add raw score yourself or it might return raw score.
-        # Actually, for LGBMRegressor, `predict(X)` returns the sum of trees.
-        # If trained with init_score, the trees sum to (Target - InitScore).
-        # So we MUST add the warm_start.
         lgbm_raw = self.lgbm_model.predict(X_pruned)
         lgbm_preds = lgbm_raw + warm_start
         lgbm_cal = self.calibrators['lgbm'].transform(lgbm_preds)
 
         # 3. XGBoost
-        # Similarly, XGBoost trained with base_margin.
         xgb_preds = self.xgb_model.predict(X_pruned, base_margin=warm_start)
         xgb_cal = self.calibrators['xgboost'].transform(xgb_preds)
         
@@ -495,9 +480,6 @@ def integrate_entropy_bars_into_layer4(
     cfg = config or {}
     
     try:
-        # Fetch 1-minute data for entropy bar generation
-        tprint_info("🔧 Layer 4: Fetching 1-minute data for entropy bar generation")
-        
         # Determine date range from existing data
         if not df.empty and hasattr(df.index, 'min') and hasattr(df.index, 'max'):
             start_date = df.index.min().strftime('%Y-%m-%d')
@@ -507,6 +489,43 @@ def integrate_entropy_bars_into_layer4(
             end_date = datetime.now().strftime('%Y-%m-%d')
             start_date = (datetime.now() - pd.Timedelta(days=30)).strftime('%Y-%m-%d')
         
+        # --- Caching Mechanism ---
+        cache_dir = Path("cache/entropy_bars")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create hash of parameters to uniquely identify cache
+        cache_key = f"{symbol}_{exchange}_{start_date}_{end_date}_{cfg.get('entropy_bins', 10)}_{cfg.get('entropy_window', 100)}_{cfg.get('entropy_target_minutes', 15)}"
+        cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
+        cache_file = cache_dir / f"entropy_features_{cache_hash}.parquet"
+
+        if cache_file.exists():
+            tprint_info(f"⚡ Layer 4: Loading entropy features from cache: {cache_file}")
+            try:
+                entropy_features_all = pd.read_parquet(cache_file)
+                # Need to separate enhanced_df and entropy_bars_df?
+                # Actually we just need entropy_features to merge.
+                # But function returns (enhanced_df, entropy_bars_df).
+                # To fully restore, we might need to cache entropy_bars too or just cache the features
+                # and return empty entropy_bars_df if not strictly needed.
+                # Let's re-merge.
+
+                # Filter to match current df index
+                # Ensure index is datetime
+                if not isinstance(entropy_features_all.index, pd.DatetimeIndex):
+                    entropy_features_all.index = pd.to_datetime(entropy_features_all.index)
+
+                # Reindex to match current df
+                # This is fast
+                entropy_features = entropy_features_all.reindex(df.index, method='ffill').fillna(0)
+
+                enhanced_df = df.join(entropy_features, rsuffix='_entropy')
+                return enhanced_df, pd.DataFrame() # We don't return raw bars from cache to save space
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load cache, regenerating: {e}")
+
+        # Fetch 1-minute data for entropy bar generation
+        tprint_info("🔧 Layer 4: Fetching 1-minute data for entropy bar generation")
+
         min_data = fetch_1min_data_for_entropy_bars(
             symbol=symbol,
             exchange=exchange,
@@ -543,24 +562,32 @@ def integrate_entropy_bars_into_layer4(
             volatility_window=cfg.get('volatility_window', 20)
         )
         
-        # Merge entropy features back to main dataframe
-        enhanced_df = df.copy()
-        
-        # Forward-fill entropy features to match main dataframe timestamps
-        for col in entropy_features.columns:
-            enhanced_df[col] = entropy_features[col].reindex(enhanced_df.index, method='ffill').fillna(0)
+        # Prepare feature set to merge
+        features_to_merge = entropy_features.copy()
         
         # Add entropy bar OHLCV data as additional columns
         entropy_ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'n_minutes', 'entropy_contribution']
         for col in entropy_ohlcv_cols:
             if col in entropy_bars.columns:
-                enhanced_df[f'entropy_{col}'] = entropy_bars[col].reindex(enhanced_df.index, method='ffill').fillna(
-                    enhanced_df[col] if col in enhanced_df.columns else 0
-                )
+                 features_to_merge[f'entropy_{col}'] = entropy_bars[col]
+
+        # Cache the raw features (before reindexing to specific df)
+        try:
+            features_to_merge.to_parquet(cache_file)
+            tprint_info(f"💾 Layer 4: Cached entropy features to {cache_file}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to cache entropy features: {e}")
+
+        # Merge entropy features back to main dataframe
+        # Vectorized reindex and ffill using join/reindex
+        # reindex with method='ffill' is efficient
+
+        aligned_features = features_to_merge.reindex(df.index, method='ffill').fillna(0)
+        enhanced_df = df.join(aligned_features)
         
         tprint_success(f"✅ Layer 4: Integrated entropy bars: {len(entropy_bars)} bars, {len(entropy_features.columns)} features")
         
-        return enhanced_df, entropy_bars_df
+        return enhanced_df, entropy_bars
         
     except Exception as e:
         tprint_error(f"❌ Layer 4: Error integrating entropy bars: {e}")

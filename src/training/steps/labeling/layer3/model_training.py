@@ -34,7 +34,9 @@ def apply_huber_rotation_logic(X: pd.DataFrame, huber_coeffs: pd.Series, top_n: 
     """
     Applies Pseudo-Oblique rotation by adding Sum and Difference of top high-signal feature pairs.
     Expected X to be Scaled.
+    Optimized to use vectorized operations.
     """
+    # Ensure working with float32 if not already
     X_rotated = X.copy()
 
     # 1. Identify top feature pairs based on Huber Absolute Coefficients
@@ -42,13 +44,26 @@ def apply_huber_rotation_logic(X: pd.DataFrame, huber_coeffs: pd.Series, top_n: 
     if valid_coeffs.empty:
         return X_rotated
 
+    # Select features and ensure indices align
     top_features = valid_coeffs.abs().sort_values(ascending=False).index[:top_n*2]
 
     # 2. Create Sum and Difference for high-signal pairs
+    # Vectorized approach: select columns, perform operation
+    new_cols = {}
+
     for i in range(0, len(top_features) - 1, 2):
         f1, f2 = top_features[i], top_features[i+1]
-        X_rotated[f"{f1}_{f2}_sum"] = X_rotated[f1] + X_rotated[f2]
-        X_rotated[f"{f1}_{f2}_diff"] = X_rotated[f1] - X_rotated[f2]
+
+        # Using numpy arrays for speed
+        val1 = X_rotated[f1].values
+        val2 = X_rotated[f2].values
+
+        new_cols[f"{f1}_{f2}_sum"] = val1 + val2
+        new_cols[f"{f1}_{f2}_diff"] = val1 - val2
+
+    if new_cols:
+        new_df = pd.DataFrame(new_cols, index=X_rotated.index)
+        X_rotated = pd.concat([X_rotated, new_df], axis=1)
 
     return X_rotated
 
@@ -70,10 +85,11 @@ def train_lgbm_model(
     
     # Feature Selection & Scaling
     selected_features = huber_output['selected_features']
-    X_t = X_train[selected_features].copy()
+    # Downcast and copy
+    X_t = X_train[selected_features].copy().astype(np.float32)
     
     scaler = StandardScaler()
-    X_scaled_np = scaler.fit_transform(X_t)
+    X_scaled_np = scaler.fit_transform(X_t).astype(np.float32)
     X_scaled = pd.DataFrame(X_scaled_np, columns=X_t.columns, index=X_t.index)
 
     # Prepare constraints
@@ -177,17 +193,20 @@ def train_xgboost_model(
     tprint_info(f"   🚀 Training XGBoost ({task_type}): {model_name}...")
 
     selected_features = huber_output['selected_features']
-    X_t = X_train[selected_features].copy()
+    # Downcast
+    X_t = X_train[selected_features].copy().astype(np.float32)
 
     # Scaling BEFORE Rotation
     scaler = StandardScaler()
-    X_scaled_np = scaler.fit_transform(X_t)
+    X_scaled_np = scaler.fit_transform(X_t).astype(np.float32)
     X_scaled = pd.DataFrame(X_scaled_np, columns=X_t.columns, index=X_t.index)
 
     # 1. Apply Huber Rotation Logic
     huber_model = huber_output['huber_model']
     coeffs_series = pd.Series(huber_model.coef_, index=X_t.columns)
     X_rotated = apply_huber_rotation_logic(X_scaled, coeffs_series)
+    # Ensure rotated is float32
+    X_rotated = X_rotated.astype(np.float32)
 
     # 2. Constraints (Only on original features)
     orig_constraints = huber_output['monotonic_constraints']
@@ -292,11 +311,12 @@ def train_extratrees_constrained(
     })
 
     selected_features = huber_output['selected_features']
-    X_t = X_train[selected_features].copy()
+    # Downcast
+    X_t = X_train[selected_features].copy().astype(np.float32)
 
     # Scaling
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_t)
+    X_scaled = scaler.fit_transform(X_t).astype(np.float32)
 
     constraints = np.array(huber_output['monotonic_constraints'])
 
@@ -377,6 +397,8 @@ def train_dual_head_models(
     # Context X
     context_cols = [c for c in X.columns if c not in base_model_cols and c != 'regime_label']
     X_context = X[context_cols].fillna(0).replace([np.inf, -np.inf], 0)
+    # Ensure float32
+    X_context = X_context.astype(np.float32)
     
     # Horizon outcomes
     y_alpha_48 = cfg.get('y_alpha_48', y_alpha * 1.5)

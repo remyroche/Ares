@@ -255,7 +255,7 @@ class CausalDiscovery:
                         if not is_target_related:
                             # Prune edges NOT connected to target if we are in strict target-centric mode
                             # We keep them in the matrix for now but skip expensive tests?
-                            # Actually, we need a skeleton. 
+                            # Actually, we need a skeleton.
                             # If not related, we can just skip or use a very weak threshold.
                             # For efficiency: Skip tests for non-target-related pairs
                             continue
@@ -265,12 +265,12 @@ class CausalDiscovery:
                     
                     # Test unconditional independence
                     is_independent, p_value = self.conditional_independence_test(x, y)
-                    
+
                     if is_independent:
                         adjacency_matrix[i, j] = 0
                         adjacency_matrix[j, i] = 0
                         edges_removed += 1
-                        
+
                         if self.verbose and edges_removed <= 5:  # Show first few
                             tprint_info(f"      ❌ Removed edge {variable_names[i]}-{variable_names[j]} (p={p_value:.4f})")
             
@@ -390,12 +390,6 @@ class CausalDiscovery:
             if self.verbose:
                 tprint_error(f"❌ PC Algorithm failed: {e}")
             raise
-            
-        except Exception as e:
-            if self.verbose:
-                tprint_error(f"❌ PC Algorithm failed: {e}")
-            raise
-    
     def lingam_orientation(self, data: pd.DataFrame) -> np.ndarray:
         """
         Use LiNGAM for edge orientation (simplified implementation).

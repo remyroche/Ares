@@ -668,3 +668,194 @@ def _numba_streak_persistence(close, window=20):
                 output[i] = mean_val / std_val
                 
     return output
+
+@jit(nopython=True)
+def _numba_dual_cusum_signals(diff_arr, h_arr, er_arr, er_min):
+    """
+    Generate Dual CUSUM signals using Numba.
+
+    Args:
+        diff_arr: Price differences array
+        h_arr: Thresholds array
+        er_arr: Efficiency Ratio array
+        er_min: Minimum ER for trend classification
+
+    Returns:
+        trend_signal, reversal_signal arrays
+    """
+    n = len(diff_arr)
+    trend_signal = np.zeros(n, dtype=np.int8)
+    reversal_signal = np.zeros(n, dtype=np.int8)
+
+    s_pos = 0.0
+    s_neg = 0.0
+
+    for i in range(1, n):
+        threshold = h_arr[i]
+        if np.isnan(threshold):
+            continue
+
+        s_pos = max(0.0, s_pos + diff_arr[i])
+        s_neg = min(0.0, s_neg + diff_arr[i])
+
+        if s_pos > threshold:
+            if er_arr[i] > er_min:
+                trend_signal[i] = 1
+            else:
+                reversal_signal[i] = -1
+            s_pos = 0.0
+
+        elif s_neg < -threshold:
+            if er_arr[i] > er_min:
+                trend_signal[i] = -1
+            else:
+                reversal_signal[i] = 1
+            s_neg = 0.0
+
+    return trend_signal, reversal_signal
+
+@jit(nopython=True)
+def _numba_rolling_hurst(x, window):
+    """
+    Calculate rolling Hurst exponent using R/S method (Numba).
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+    # Fill first window elements with 0.5 (random walk default)
+    output[:window-1] = 0.5
+
+    for i in range(window - 1, n):
+        # Get window segment
+        # Pandas rolling(window): result at index i uses window ending at i.
+        # So for i=window-1, we use x[0:window]
+
+        start_idx = i - window + 1
+        end_idx = i + 1
+        segment = x[start_idx:end_idx]
+
+        # R/S calculation
+        seg_len = len(segment)
+        if seg_len < 2:
+            output[i] = 0.5
+            continue
+
+        mean_val = np.mean(segment)
+
+        # Mean-adjusted series
+        mean_adj = segment - mean_val
+
+        # Cumulative deviate series
+        cumdev = np.cumsum(mean_adj)
+
+        # Range
+        R = np.max(cumdev) - np.min(cumdev)
+
+        # Standard deviation
+        S = np.std(segment)
+
+        if S < 1e-9 or R < 1e-9:
+            output[i] = 0.5
+        else:
+            rs = R / S
+            H = np.log(rs) / np.log(seg_len)
+            if H < 0.0: H = 0.0
+            if H > 1.0: H = 1.0
+            output[i] = H
+
+    return output
+
+@jit(nopython=True)
+def _numba_anchored_zscore(values, anchor_indices):
+    """
+    Compute Z-scores anchored to the last event using Welford's algorithm (Numba).
+
+    Args:
+        values: Data array (e.g., price)
+        anchor_indices: Sorted array of integer indices where anchors occur
+
+    Returns:
+        Array of z-scores
+    """
+    n = len(values)
+    result = np.zeros(n, dtype=np.float64)
+
+    if len(anchor_indices) == 0:
+        return result
+
+    # State
+    next_anchor_idx_ptr = 0
+    num_anchors = len(anchor_indices)
+
+    # Welford state
+    # Initialize as invalid until we hit the first anchor
+    active_anchor_idx = -1
+    anchor_val = 0.0
+
+    welford_count = 0
+    welford_mean = 0.0
+    welford_m2 = 0.0
+
+    for i in range(n):
+        # Check if we should switch anchor
+        # We want the *last* anchor strictly less than i
+        # If anchors are [10, 20].
+        # i=10. Last < 10 is None.
+        # i=11. Last < 11 is 10.
+
+        # While there is a next anchor that is < i, update active anchor
+        while next_anchor_idx_ptr < num_anchors and anchor_indices[next_anchor_idx_ptr] < i:
+            new_anchor_idx = anchor_indices[next_anchor_idx_ptr]
+            active_anchor_idx = new_anchor_idx
+            next_anchor_idx_ptr += 1
+
+            # Reset Welford state for new segment
+            # Segment starts at active_anchor_idx.
+            # We initialize with the value AT the anchor.
+            anchor_val = values[active_anchor_idx]
+            welford_count = 1
+            welford_mean = anchor_val
+            welford_m2 = 0.0
+
+        if active_anchor_idx != -1:
+            val = values[i]
+
+            # Update Welford
+            welford_count += 1
+            delta = val - welford_mean
+            welford_mean += delta / welford_count
+            delta2 = val - welford_mean
+            welford_m2 += delta * delta2
+
+            if welford_count > 1:
+                variance = welford_m2 / (welford_count - 1)
+                if variance > 1e-18:
+                    std = np.sqrt(variance)
+                    result[i] = (val - anchor_val) / std
+
+    return result
+
+@jit(nopython=True)
+def _numba_time_since_shock(n_rows, shock_indices, decay_lambda):
+    """
+    Compute time-since-shock with exponential decay (Numba).
+    """
+    result = np.zeros(n_rows, dtype=np.float64)
+
+    if len(shock_indices) == 0:
+        return result
+
+    shock_ptr = 0
+    num_shocks = len(shock_indices)
+    last_shock_idx = -1
+
+    for i in range(n_rows):
+        # Update last shock <= i
+        while shock_ptr < num_shocks and shock_indices[shock_ptr] <= i:
+            last_shock_idx = shock_indices[shock_ptr]
+            shock_ptr += 1
+
+        if last_shock_idx != -1:
+            delta = i - last_shock_idx
+            result[i] = np.exp(-decay_lambda * delta)
+
+    return result

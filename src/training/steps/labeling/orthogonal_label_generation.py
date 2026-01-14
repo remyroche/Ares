@@ -28,7 +28,13 @@ from src.training.steps.labeling.composite_event_generators import (
     OrderFlowImbalanceEvents,
     BarPressureEvents,
 )
-from src.utils.numba_funcs import _numba_return_autocorrelation
+from src.utils.numba_funcs import (
+    _numba_return_autocorrelation,
+    _numba_dual_cusum_signals,
+    _numba_rolling_hurst,
+    _numba_anchored_zscore,
+    _numba_time_since_shock
+)
 
 # Import causal framework modules for surprise events
 try:
@@ -1095,40 +1101,9 @@ class LowVolRegimeFeatures:
         if len(series) < lookback:
             return pd.Series(0.5, index=series.index)
         
-        def rs_hurst(segment):
-            """Compute Hurst exponent for a segment."""
-            if len(segment) < 20:
-                return 0.5
-            
-            try:
-                # Mean-adjusted series
-                mean_adj = segment - np.mean(segment)
-                
-                # Cumulative deviate series
-                cumdev = np.cumsum(mean_adj)
-                
-                # Range
-                R = np.max(cumdev) - np.min(cumdev)
-                
-                # Standard deviation
-                S = np.std(segment)
-                
-                if S < 1e-9 or R < 1e-9:
-                    return 0.5
-                
-                # R/S calculation
-                rs = R / S
-                
-                # Hurst approximation: H = log(R/S) / log(n)
-                n = len(segment)
-                H = np.log(rs) / np.log(n)
-                
-                return np.clip(H, 0.0, 1.0)
-            except Exception:
-                return 0.5
-        
-        hurst = series.rolling(lookback, min_periods=50).apply(rs_hurst, raw=True)
-        return hurst.fillna(0.5)
+        # Use Numba-optimized rolling Hurst
+        hurst_vals = _numba_rolling_hurst(series.values.astype(np.float64), int(lookback))
+        return pd.Series(hurst_vals, index=series.index).fillna(0.5)
     
     def compute_vpin(
         self, 
@@ -1185,38 +1160,19 @@ class LowVolRegimeFeatures:
             return pd.Series(0.0, index=df.index)
         
         values = df[feature_col]
-        result = pd.Series(0.0, index=df.index)
         
-        # Sort anchor events
-        anchor_events = anchor_events.sort_values()
+        # Sort anchor events and map to integer indices
+        valid_anchors = anchor_events[anchor_events.isin(df.index)].sort_values()
+        if len(valid_anchors) == 0:
+            return pd.Series(0.0, index=df.index)
+            
+        anchor_indices = df.index.get_indexer(valid_anchors)
+        anchor_indices.sort() # Ensure sorted
+
+        # Numba optimized calculation
+        z_scores = _numba_anchored_zscore(values.values.astype(np.float64), anchor_indices.astype(np.int64))
         
-        for i, current_time in enumerate(df.index):
-            # Find most recent anchor before this time
-            prior_anchors = anchor_events[anchor_events < current_time]
-            
-            if len(prior_anchors) == 0:
-                continue
-            
-            last_anchor = prior_anchors[-1]
-            anchor_idx = df.index.get_loc(last_anchor)
-            current_idx = df.index.get_loc(current_time)
-            
-            if current_idx <= anchor_idx:
-                continue
-            
-            # Compute z-score from anchor point
-            segment = values.iloc[anchor_idx:current_idx+1]
-            if len(segment) < 5:
-                continue
-            
-            anchor_value = segment.iloc[0]
-            current_value = segment.iloc[-1]
-            segment_std = segment.std()
-            
-            if segment_std > 1e-9:
-                result.iloc[i] = (current_value - anchor_value) / segment_std
-        
-        return result.clip(-5, 5)
+        return pd.Series(z_scores, index=df.index).clip(-5, 5)
     
     def compute_time_since_shock(
         self, 
@@ -1233,34 +1189,18 @@ class LowVolRegimeFeatures:
         - Near 1.0: Recent shock, market has "memory"
         - Near 0.0: Long time since shock, entropy maximized (random walk)
         """
-        result = pd.Series(0.0, index=df.index)
-        
-        if len(shock_events) == 0:
-            return result
-        
-        shock_events = shock_events.sort_values()
-        
-        for i, current_time in enumerate(df.index):
-            # Find most recent shock before this time
-            prior_shocks = shock_events[shock_events <= current_time]
+        # Sort shock events and map to integer indices
+        valid_shocks = shock_events[shock_events.isin(df.index)].sort_values()
+        if len(valid_shocks) == 0:
+            return pd.Series(0.0, index=df.index)
             
-            if len(prior_shocks) == 0:
-                result.iloc[i] = 0.0  # No prior shock = no memory
-                continue
-            
-            last_shock = prior_shocks[-1]
-            
-            # Time difference in bars
-            try:
-                shock_idx = df.index.get_loc(last_shock)
-                delta_t = i - shock_idx
-            except KeyError:
-                delta_t = 100  # Default to high decay if not found
-            
-            # Exponential decay
-            result.iloc[i] = np.exp(-decay_lambda * delta_t)
+        shock_indices = df.index.get_indexer(valid_shocks)
+        shock_indices.sort()
+
+        # Numba optimized calculation
+        decay_vals = _numba_time_since_shock(len(df), shock_indices.astype(np.int64), float(decay_lambda))
         
-        return result
+        return pd.Series(decay_vals, index=df.index)
     
     def compute_relative_volatility_scaling(
         self, 
@@ -5558,44 +5498,18 @@ def generate_dual_cusum_signals(
     # 3. Dynamic Thresholds
     h = k * vol
     
-    # 4. Standard CUSUM logic with ER weighting
-    s_pos = 0
-    s_neg = 0
-    diff = close.diff()
+    # 4. Standard CUSUM logic with ER weighting (Numba Optimized)
+    diff = close.diff().fillna(0)
     
-    trend_signal = pd.Series(0, index=close.index)
-    reversal_signal = pd.Series(0, index=close.index)
+    diff_arr = diff.values.astype(np.float64)
+    h_arr = h.values.astype(np.float64)
+    er_arr = er.values.astype(np.float64)
     
-    diff_arr = diff.values
-    h_arr = h.values
-    er_arr = er.values
+    trend_signal_arr, reversal_signal_arr = _numba_dual_cusum_signals(diff_arr, h_arr, er_arr, float(er_min))
     
-    for i in range(1, len(close)):
-        if np.isnan(h_arr[i]): continue
-        
-        # S+
-        s_pos = max(0, s_pos + diff_arr[i])
-        # S-
-        s_neg = min(0, s_neg + diff_arr[i])
-        
-        if s_pos > h_arr[i]:
-            # Regime Detection
-            if er_arr[i] > er_min:
-                trend_signal.iloc[i] = 1
-            else:
-                reversal_signal.iloc[i] = -1
-            s_pos = 0
-            
-        elif s_neg < -h_arr[i]:
-            if er_arr[i] > er_min:
-                trend_signal.iloc[i] = -1
-            else:
-                reversal_signal.iloc[i] = 1
-            s_neg = 0
-            
     return pd.DataFrame({
-        'trend_signal': trend_signal,
-        'reversal_signal': reversal_signal
+        'trend_signal': pd.Series(trend_signal_arr, index=close.index),
+        'reversal_signal': pd.Series(reversal_signal_arr, index=close.index)
     })
 
 class InventorySpecialistEvents(BaseEventGenerator):
@@ -5893,7 +5807,10 @@ class InformationSpecialistEvents(BaseEventGenerator):
         
         # Absolute autocorrelation proxy for information arrival
         # (High autocorrelation = trend/persistence = informed flow)
-        autocorr = ret.rolling(window).corr(ret.shift(1)).abs()
+        # Use Numba for speed
+        ret_vals = ret.fillna(0).values.astype(np.float64)
+        ac_vals = _numba_return_autocorrelation(ret_vals, window=int(window), lag=1)
+        autocorr = pd.Series(ac_vals, index=ret.index).abs()
         
         # Dynamic Thresholding using Rolling Quantile
         # Look for autocorr in the top (1-quantile)% of the last 10*window bars

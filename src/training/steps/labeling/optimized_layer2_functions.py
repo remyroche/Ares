@@ -582,43 +582,68 @@ def _fallback_geometry_search(returns: pd.Series, volatilities: pd.Series, top_k
 def _vectorized_rolling_features(data: np.ndarray, windows: np.ndarray) -> np.ndarray:
     """
     JIT-compiled rolling feature calculation for multiple windows.
+    Optimized to O(N) using incremental updates for mean and variance.
     
     Args:
         data: Time series data (n_samples,)
         windows: Array of window sizes
         
     Returns:
-        Feature matrix (n_samples, n_windows * 3) for mean, std, min/max
+        Feature matrix (n_samples, n_windows * 3) for mean, std, range
     """
     n_samples = len(data)
     n_windows = len(windows)
-    n_features = n_windows * 3  # mean, std, range for each window
+    n_features = n_windows * 3
     
     features = np.zeros((n_samples, n_features))
     
     for i in prange(n_windows):
         window = int(windows[i])
-        if window >= n_samples:
+        if window >= n_samples or window < 2:
             continue
             
-        # Rolling mean
-        for j in range(window - 1, n_samples):
-            start_idx = j - window + 1
-            window_data = data[start_idx:j + 1]
-            features[j, i * 3] = np.mean(window_data)
+        current_sum = 0.0
+        current_sum_sq = 0.0
         
-        # Rolling std
-        for j in range(window - 1, n_samples):
-            start_idx = j - window + 1
-            window_data = data[start_idx:j + 1]
-            features[j, i * 3 + 1] = np.std(window_data)
+        # First window initialization
+        for j in range(window):
+            val = data[j]
+            current_sum += val
+            current_sum_sq += val * val
+
+        # Store first window result (at index window - 1)
+        idx = window - 1
+        mean_val = current_sum / window
+        var_val = (current_sum_sq / window) - (mean_val * mean_val)
+        std_val = np.sqrt(max(0.0, var_val))
         
-        # Rolling range (max - min)
-        for j in range(window - 1, n_samples):
+        features[idx, i * 3] = mean_val
+        features[idx, i * 3 + 1] = std_val
+
+        # Range for first window (slice)
+        w_slice = data[0:window]
+        features[idx, i * 3 + 2] = np.max(w_slice) - np.min(w_slice)
+
+        # Rolling updates
+        for j in range(window, n_samples):
+            new_val = data[j]
+            old_val = data[j - window]
+
+            current_sum += new_val - old_val
+            current_sum_sq += new_val * new_val - old_val * old_val
+
+            mean_val = current_sum / window
+            var_val = (current_sum_sq / window) - (mean_val * mean_val)
+            std_val = np.sqrt(max(0.0, var_val))
+
+            features[j, i * 3] = mean_val
+            features[j, i * 3 + 1] = std_val
+
+            # Range: still O(W) per step but faster than full recompute
             start_idx = j - window + 1
-            window_data = data[start_idx:j + 1]
-            features[j, i * 3 + 2] = np.max(window_data) - np.min(window_data)
-    
+            w_slice = data[start_idx : j + 1]
+            features[j, i * 3 + 2] = np.max(w_slice) - np.min(w_slice)
+
     return features
 
 

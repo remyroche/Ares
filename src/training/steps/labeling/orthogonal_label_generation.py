@@ -23,13 +23,15 @@ from .focal_loss_utils import get_focal_loss_lgbm
 from src.utils.entropy_optimized import rolling_entropy_numba
 from src.utils.order_block_optimized import find_order_blocks_numba
 from src.utils.cusum_optimized import generate_dual_cusum_numba
+from src.utils.numba_funcs import _numba_rolling_median
 from src.utils.labeling_optimized import (
     triple_barrier_labels_numba,
     persistence_label_numba,
     window_stats_close_numba,
     window_stats_high_low_numba,
     first_hit_numba,
-    first_hit_high_low_numba
+    first_hit_high_low_numba,
+    batch_mi_score_numba
 )
 from src.utils.orthogonal_numba import (
     _numba_kalman_filter_1d,
@@ -1209,7 +1211,11 @@ class LowVolRegimeFeatures:
         current_vol = returns.rolling(20).std()
         
         # Median volatility (5-day window)
-        median_vol = current_vol.rolling(median_window, min_periods=100).median()
+        # Use Numba-optimized rolling median
+        median_vol_arr = _numba_rolling_median(current_vol.fillna(0).values, median_window)
+        # Restore min_periods behavior (first window-1 are 0, set to NaN)
+        median_vol_arr[:median_window-1] = np.nan
+        median_vol = pd.Series(median_vol_arr, index=current_vol.index)
         
         # Relative scaling
         relative = current_vol / (median_vol + 1e-9)
@@ -1475,8 +1481,8 @@ def compute_dominance_labels(
         return tuple([pd.Series(dtype=float)] * 6)
 
     # 3. Compute MFE/MAE & Hits (Numba Optimized)
-    price_vals = price.values
-    vol_vals = volatility.values[valid_idxs]
+    price_vals = price.values.astype(np.float64)
+    vol_vals = volatility.values[valid_idxs].astype(np.float64)
     vol_vals = np.maximum(vol_vals, 1e-6)
 
     # Thresholds as 1D arrays for Numba
@@ -3948,7 +3954,7 @@ def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[st
     scored_candidates = []
     
     if target is not None and mutual_info_score is not None:
-        tprint_info("   🚀 Running Binned MI Selection (Fast Proxy)...")
+        tprint_info("   🚀 Running Binned MI Selection (Fast Proxy - Numba)...")
         
         # Bin Target ONCE (5 bins)
         try:
@@ -3959,11 +3965,14 @@ def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[st
             target_binned = pd.cut(target, 5, labels=False).fillna(-1).astype(int)
 
         # Process per Parent
+        # Convert trigger_df to float array for Numba
+        trigger_vals = trigger_df.values.astype(np.float64)
+
         for p_fam in parent_df.columns:
-            p_vec = parent_df[p_fam].values.reshape(-1, 1) # (N, 1)
+            p_vec = parent_df[p_fam].values.reshape(-1, 1).astype(np.float64) # (N, 1)
             
             # Broadcast Interaction: Parent * Triggers
-            interactions = p_vec * trigger_df.values # (N, T)
+            interactions = p_vec * trigger_vals # (N, T)
             
             # Reduce sample size for speed if > 50k
             if interactions.shape[0] > 50000:
@@ -3972,27 +3981,26 @@ def generate_composite_candidates(df: pd.DataFrame, specialist_families: List[st
                 sub_target = target_binned[indices]
             else:
                 sub_interactions = interactions
-                sub_target = target_binned
+                sub_target = target_binned.values
 
-            # Loop Triggers and compute Discrete MI
+            # Numba-optimized Batch MI calculation
+            # sub_target needs to be numpy array
+            if isinstance(sub_target, (pd.Series, pd.Index)):
+                sub_target = sub_target.values
+
+            scores = batch_mi_score_numba(sub_interactions, sub_target, n_bins=5)
+
+            # Map scores back to triggers
             for i, t_fam in enumerate(trigger_df.columns):
                 # Simple filter: Parent should not be trigger
                 if p_fam == t_fam or p_fam.split('_')[0] == t_fam.split('_')[0]:
                     continue
                 
-                interaction_col = sub_interactions[:, i]
+                # Check for valid score
+                score = scores[i]
+                if np.isnan(score): score = 0.0
                 
-                try:
-                    # Bin Interaction column
-                    # Ensure series for qcut
-                    inter_series = pd.Series(interaction_col)
-                    inter_binned = pd.qcut(inter_series, 5, labels=False, duplicates='drop').fillna(-1).astype(int)
-                    
-                    # Compute Discrete MI
-                    score = mutual_info_score(inter_binned, sub_target)
-                    scored_candidates.append((score, p_fam, t_fam))
-                except Exception:
-                    continue
+                scored_candidates.append((score, p_fam, t_fam))
                 
     else:
         # Fallback: Random selection

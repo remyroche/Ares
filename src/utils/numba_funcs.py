@@ -314,6 +314,28 @@ def _numba_rolling_mad(x, window):
     return output
 
 @jit(nopython=True)
+def _numba_rolling_median(x, window):
+    """
+    Calculate rolling Median using Numba.
+    Results are aligned to the right edge of the window.
+    First (window-1) elements will be 0.
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+
+    # Needs at least 'window' elements
+    for i in range(window, n + 1):
+        # Slice: ending at i (exclusive) -> window size
+        chunk = x[i-window:i]
+
+        # Median
+        med = np.median(chunk)
+
+        output[i-1] = med
+
+    return output
+
+@jit(nopython=True)
 def _numba_rolling_slope(y, window):
     """
     Calculate rolling linear regression slope using Numba.

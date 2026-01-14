@@ -90,9 +90,7 @@ def persistence_label_numba(series_values, events_idx, horizon, threshold):
 def window_stats_close_numba(prices, events_idx, horizon):
     """
     Calculate MFE/MAE/Returns using Close prices only.
-    Returns: mfe, mae, final_ret, hit_high_matrix (simulated), hit_low_matrix (simulated)
-    To match full logic, we return raw arrays to Python for threshold checking.
-    Actually, to save memory, we should compute mfe/mae directly.
+    Returns: mfe, mae, final_ret
     """
     n_events = len(events_idx)
     n_prices = len(prices)
@@ -100,20 +98,6 @@ def window_stats_close_numba(prices, events_idx, horizon):
     mfe = np.zeros(n_events, dtype=np.float64)
     mae = np.zeros(n_events, dtype=np.float64)
     final_ret = np.zeros(n_events, dtype=np.float64)
-
-    # We also need return paths for "first hit" logic if we want to do it in python.
-    # But optimal is to do it here. However, `compute_dominance_labels` logic is complex.
-    # It constructs full boolean matrices `hit_pt` and `hit_sl`.
-    # To avoid O(N*H) memory, we return mfe/mae/final_ret and handle complex logic differently?
-    # No, `compute_dominance_labels` uses `hit_pt` (matrix) to find `first_pt_idx`.
-    # We can compute `first_pt_idx` and `first_sl_idx` here given thresholds.
-    # BUT thresholds depend on `vol`.
-    # So we should pass thresholds or vol arrays.
-
-    # Let's keep this function simple: just MFE, MAE, Returns.
-    # The boolean matrix logic in original code is:
-    # hit_pt = returns_matrix > pt_thresh
-    # first_pt_idx = np.argmax(hit_pt, axis=1)
 
     for i in range(n_events):
         idx = events_idx[i]
@@ -129,7 +113,6 @@ def window_stats_close_numba(prices, events_idx, horizon):
         local_max = -999.0
         local_min = 999.0
 
-        # Scan window
         for k in range(idx + 1, end_idx + 1):
             p = prices[k]
             ret = (p / entry_price) - 1.0
@@ -139,40 +122,10 @@ def window_stats_close_numba(prices, events_idx, horizon):
             if ret < local_min:
                 local_min = ret
 
-        # Final return
         final_ret[i] = (prices[end_idx] / entry_price) - 1.0
 
-        # MFE is max positive excursion
         mfe[i] = max(0.0, local_max) if local_max != -999.0 else 0.0
-
-        # MAE is max negative excursion (magnitude)
-        # Original: mae = np.max(-returns_matrix) -> max of negative returns inverted
-        # i.e., min return is -0.05, mae is 0.05.
-        # But if all returns are positive, mae is 0?
-        # Original: -returns_matrix. So if ret=0.01, -ret=-0.01. max is negative?
-        # No, usually MAE is positive.
-        # If returns are [0.01, 0.02], -returns are [-0.01, -0.02]. max is -0.01.
-        # Wait, the original code: `mae = np.max(-returns_matrix, axis=1)`
-        # If all returns are positive, `mae` would be negative? That seems wrong for "Magnitude".
-        # Let's check original code logic again.
-        # `risk_used = mae / np.maximum(stop_dist, 1e-9)`
-        # If mae is negative, risk_used is negative.
-        # Usually MAE is positive number representing draw-down.
-        # If `returns_matrix` has negative values (drawdowns), `-returns` has positive values.
-        # So `max(-returns)` captures the largest drawdown as a positive number.
-        # If all returns are positive, `max(-returns)` is the least positive return (closest to 0) but negative.
-        # e.g. [-0.01, -0.02]. max is -0.01.
-        # So if price never drops below entry, MAE should be 0?
-        # Standard MAE definition: Maximum Adverse Excursion.
-        # Logic: -min(ret). If min(ret) is positive (never drops), -min is negative.
-        # We should clip at 0.
-
-        val_mae = -local_min if local_min != 999.0 else 0.0
-        # If val_mae is negative (meaning local_min was positive), clamp to 0?
-        # Original code doesn't clamp explicitly but risk logic might handle it.
-        # `risk_used` would be negative, `risk_mask = risk_used <= risk_budget` (negative <= positive) is True.
-        # So it works.
-        mae[i] = val_mae
+        mae[i] = -local_min if local_min != 999.0 else 0.0
 
     return mfe, mae, final_ret
 
@@ -196,7 +149,7 @@ def window_stats_high_low_numba(prices_high, prices_low, prices_close, events_id
         else:
             end_idx = idx + horizon
 
-        entry_price = prices_close[idx] # Entry is always on Close? Or Open of next? Usually Close of signal bar.
+        entry_price = prices_close[idx]
 
         local_max = -999.0
         local_min = 999.0
@@ -240,9 +193,7 @@ def first_hit_numba(prices, events_idx, pt_thresholds, sl_thresholds, horizon):
     for i in range(n_events):
         idx = events_idx[i]
         pt_thresh = pt_thresholds[i]
-        sl_thresh = sl_thresholds[i] # Note: this should be negative value or magnitude?
-        # Based on original: sl_thresh = -vol * sl_mult (so it's negative)
-        # hit_sl = ret < sl_thresh
+        sl_thresh = sl_thresholds[i]
 
         if idx + horizon >= n_prices:
             end_idx = n_prices - 1
@@ -271,9 +222,6 @@ def first_hit_numba(prices, events_idx, pt_thresholds, sl_thresholds, horizon):
                     first_sl[i] = k
                     any_sl_arr[i] = 1
 
-            # Optimization: if both hit, we can stop?
-            # We need the *first* index. If we found both, we are done?
-            # Yes, because we scan sequentially. The first time we see a hit is the min index.
             if first_pt[i] <= k and first_sl[i] <= k:
                 break
 
@@ -327,3 +275,109 @@ def first_hit_high_low_numba(prices_high, prices_low, prices_close, events_idx, 
                 break
 
     return first_pt, first_sl, any_pt_arr, any_sl_arr
+
+@jit(nopython=True)
+def batch_mi_score_numba(interaction_matrix, target_binned, n_bins=5):
+    """
+    Compute Mutual Information for each column in interaction_matrix against target_binned.
+    interaction_matrix: (N, M) float array
+    target_binned: (N,) int array (values 0..n_bins-1)
+    """
+    N, M = interaction_matrix.shape
+    scores = np.zeros(M, dtype=np.float64)
+
+    # Pre-compute target probs
+    target_counts = np.zeros(n_bins, dtype=np.float64)
+    valid_samples_global = 0
+
+    for i in range(N):
+        t = target_binned[i]
+        if t >= 0 and t < n_bins:
+            target_counts[t] += 1
+            valid_samples_global += 1
+
+    # If no valid targets, return 0
+    if valid_samples_global == 0:
+        return scores
+
+    p_target = target_counts / valid_samples_global
+
+    for j in range(M):
+        col = interaction_matrix[:, j]
+
+        # Quantile Binning
+        # Create a copy to sort for quantiles
+        col_sorted = np.sort(col)
+
+        # Find bin edges
+        edges = np.zeros(n_bins + 1, dtype=np.float64)
+        edges[0] = col_sorted[0]
+        edges[n_bins] = col_sorted[N-1]
+
+        # Percentiles
+        for b in range(1, n_bins):
+            idx = int(b * N / n_bins)
+            if idx >= N: idx = N - 1
+            edges[b] = col_sorted[idx]
+
+        # Add small epsilon to max
+        edges[n_bins] += 1e-9
+
+        # Binning and Contingency Table
+        joint_counts = np.zeros((n_bins, n_bins), dtype=np.float64)
+        x_counts = np.zeros(n_bins, dtype=np.float64)
+
+        valid_samples = 0
+
+        for i in range(N):
+            val = col[i]
+            y = target_binned[i]
+            if y < 0 or y >= n_bins: continue
+
+            # Find x bin
+            x = 0
+            found = False
+            for b in range(n_bins):
+                if val <= edges[b+1]:
+                    x = b
+                    found = True
+                    break
+            if not found: x = n_bins - 1
+
+            joint_counts[x, y] += 1
+            x_counts[x] += 1
+            valid_samples += 1
+
+        if valid_samples == 0:
+            scores[j] = 0.0
+            continue
+
+        # Compute MI
+        mi = 0.0
+        for x in range(n_bins):
+            for y in range(n_bins):
+                count = joint_counts[x, y]
+                if count > 0:
+                    px = x_counts[x] / valid_samples
+                    # Recalculate py locally for this filtered set (though mostly same as global if only -1s filtered)
+                    # But wait, target_binned -1s are filtered in global count.
+                    # Is it possible valid_samples != valid_samples_global?
+                    # Only if interaction values are NaN?
+                    # We didn't check for NaN in interaction col. Assuming pre-filled.
+                    # Use global p_target? No, standard MI uses marginals of the joint distribution.
+
+                    # Marginal for y in this joint set
+                    py_local = 0.0
+                    for xx in range(n_bins):
+                        py_local += joint_counts[xx, y]
+                    py = py_local / valid_samples
+
+                    pxy = count / valid_samples
+
+                    if px > 0 and py > 0:
+                        term = pxy * np.log(pxy / (px * py))
+                        mi += term
+
+        scores[j] = mi
+
+    return scores

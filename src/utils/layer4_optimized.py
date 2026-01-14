@@ -237,3 +237,76 @@ def rolling_cusum_scores_numba(returns, mean_ret):
         scores[i] = np.abs(cusum_pos) + np.abs(cusum_neg)
 
     return scores
+
+@njit(cache=True)
+def compute_proxy_entropy_numba(returns, window=100, n_bins=10):
+    """
+    Compute proxy entropy using a rolling histogram of returns.
+    This serves as a fast approximation when granular data is unavailable.
+
+    Args:
+        returns: 1D numpy array of returns
+        window: Rolling window size
+        n_bins: Number of histogram bins
+
+    Returns:
+        1D numpy array of entropy scores
+    """
+    n = len(returns)
+    entropy = np.zeros(n, dtype=np.float32)
+
+    # Pre-allocate histogram array
+    hist = np.zeros(n_bins, dtype=np.int32)
+
+    # Need at least window points
+    for i in range(window, n):
+        # Extract window
+        start_idx = i - window
+        end_idx = i
+
+        # Get min/max for binning
+        min_val = 1000.0
+        max_val = -1000.0
+
+        # Single pass to find range
+        for j in range(start_idx, end_idx):
+            val = returns[j]
+            if val < min_val:
+                min_val = val
+            if val > max_val:
+                max_val = val
+
+        # Handle zero variance
+        if max_val <= min_val:
+            entropy[i] = 0.0
+            continue
+
+        # Reset histogram
+        for b in range(n_bins):
+            hist[b] = 0
+
+        bin_width = (max_val - min_val) / n_bins
+
+        # Fill histogram
+        for j in range(start_idx, end_idx):
+            val = returns[j]
+            bin_idx = int((val - min_val) / bin_width)
+            if bin_idx >= n_bins:
+                bin_idx = n_bins - 1
+            hist[bin_idx] += 1
+
+        # Calculate entropy
+        # H = -sum(p * log(p))
+        ent = 0.0
+        for b in range(n_bins):
+            count = hist[b]
+            if count > 0:
+                p = count / window
+                ent -= p * np.log(p)
+
+        # Normalize by log(n_bins) to get 0-1 range?
+        # Or return raw Shannon entropy (nats).
+        # Let's return raw nats as it's standard.
+        entropy[i] = ent
+
+    return entropy

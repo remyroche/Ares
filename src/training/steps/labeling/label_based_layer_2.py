@@ -6410,43 +6410,21 @@ class LabelBasedLayer2(BaseStep):
                 'fit_params': {}
             })
 
-        # 3. Parallel Race using batch_model_training
-        tprint_info(f"   🚀 Running parallel race with {len(candidates)} models...")
-
-        # Prepare configs for batch_model_training
-        batch_configs = []
-        for cand in candidates:
-            # We must pass fit_params differently or integrate them into the model or wrapper
-            # batch_model_training only calls model.fit(X, y)
-            # So we create a wrapper or use the model as is if it supports fit params in init or context
-
-            # Since batch_model_training is generic, we can't easily pass fit_params like 'eval_set'
-            # unless we modify batch_model_training or wrap the model.
-            # However, for speed, running parallel is better.
-            # Let's use a local wrapper class if needed or just use batch_model_training as is
-            # if we accept standard fit() behavior.
-
-            # But LGBM/XGB early stopping requires fit params.
-            # We can use a ThreadPoolExecutor here directly instead of the simplified batch function
-            # to keep the complex fit_params logic while gaining parallelism.
-            pass
-
-        # Optimized Parallel Execution using ThreadPoolExecutor locally to support complex fit_params
+        # 3. Sequential Race
+        tprint_info(f"   🚀 Running race with {len(candidates)} models...")
         race_results = {}
         best_score = -float('inf')
         best_model = None
         best_name = None
 
-        def _train_evaluate_candidate(cand):
+        for cand in candidates:
             name = cand['name']
             model = cand['model']
             fit_params = cand['fit_params']
             
             try:
+                # Fit with specific params (warm start, eval set)
                 start_fit = time.time()
-                # Ensure model is cloned or fresh to avoid race conditions if reused (though here they are new instances)
-
-                # Fit
                 if fit_params:
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
@@ -6464,44 +6442,24 @@ class LabelBasedLayer2(BaseStep):
                 pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
                 ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
-                return {
-                    'name': name,
+                # Combined score (sort by ROC-AUC)
+                race_results[name] = {
                     'auc': auc_score,
                     'pr_auc': pr_auc,
                     'ic': ic,
                     'model': model,
-                    'fit_time': fit_duration,
-                    'status': 'success'
+                    'fit_time': fit_duration
                 }
-            except Exception as e:
-                return {'name': name, 'status': 'failed', 'error': str(e)}
 
-        # Run in parallel (max 2 workers to avoid memory OOM given these are heavy models)
-        # Using ThreadPoolExecutor as LGBM/XGB release GIL
-        max_race_workers = 2
-        with ThreadPoolExecutor(max_workers=max_race_workers) as executor:
-            futures = [executor.submit(_train_evaluate_candidate, cand) for cand in candidates]
+                tprint_info(f"      - {name.ljust(12)}: ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f}, IC={ic:.4f}")
 
-            for future in as_completed(futures):
-                res = future.result()
-                name = res['name']
-
-                if res['status'] == 'success':
-                    race_results[name] = {
-                        'auc': res['auc'],
-                        'pr_auc': res['pr_auc'],
-                        'ic': res['ic'],
-                        'model': res['model'],
-                        'fit_time': res['fit_time']
-                    }
-                    tprint_info(f"      - {name.ljust(12)}: ROC-AUC={res['auc']:.4f}, PR-AUC={res['pr_auc']:.4f}, IC={res['ic']:.4f}")
+                if auc_score > best_score:
+                    best_score = auc_score
+                    best_model = model
+                    best_name = name
                     
-                    if res['auc'] > best_score:
-                        best_score = res['auc']
-                        best_model = res['model']
-                        best_name = name
-                else:
-                    tprint_warning(f"      ❌ {name} failed: {res.get('error')}")
+            except Exception as e:
+                tprint_warning(f"      ❌ {name} failed: {e}")
 
         # 4. Display Leaderboard
         if race_results:

@@ -184,7 +184,8 @@ try:
         vectorized_feature_selection,
         batch_model_training,
         vectorized_geometry_search,
-        jit_feature_engineering
+        jit_feature_engineering,
+        vectorized_calculate_innovation
     )
     OPTIMIZED_FUNCTIONS_AVAILABLE = True
     tprint_info("✅ Optimized Layer 2 functions loaded successfully")
@@ -194,7 +195,7 @@ except ImportError as e:
 
 # Import causal framework modules
 from src.training.steps.labeling.de_prado_causal_features import DePradoCausalFeatures
-from .adaptive_hunter_router import AdaptiveHunterRouter
+from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
 from src.utils.data.klines_parquet import get_klines_manager
 import math
 # Add ORF imports
@@ -582,11 +583,11 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     CausalSurpriseEvents
 )
 # Layer 2.5 Chaser Integration
-from .layer2_5_integration import Layer25Integration, quick_layer25_setup
-from .causal_residual_computation import compute_causal_residuals
-from .non_causal_feature_selector import NonCausalFeatureSelector
-from .conflict_detection import ConflictDetector
-from .constraint_utils import compute_ridge_monotonic_constraints
+from src.training.steps.labeling.layer2_5_integration import Layer25Integration, quick_layer25_setup
+from src.training.steps.labeling.causal_residual_computation import compute_causal_residuals
+from src.training.steps.labeling.non_causal_feature_selector import NonCausalFeatureSelector
+from src.training.steps.labeling.conflict_detection import ConflictDetector
+from src.training.steps.labeling.constraint_utils import compute_ridge_monotonic_constraints
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1077,99 +1078,88 @@ class OutcomeMatrixCache:
     
     Querying validity of a candidate becomes a simple array slice/mask operation.
     """
-    def __init__(self, price: pd.Series, risk_budget: float = 0.7):
-        self.price = price
-        self.risk_budget = risk_budget
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
+        self.price = df['close']
         self._cache = {}
         
-    def get_outcome_matrix(self, horizon: int, pt: float, sl: float, vol: pd.Series) -> pd.DataFrame:
+    def get_outcomes(self, vol: pd.Series, risk_budget: float, pt_mult: float, sl_mult: float, horizon: int, high: Optional[pd.Series] = None, low: Optional[pd.Series] = None) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
         """
         Get dense outcome matrix for configuration.
         Computes if not present.
         """
-        key = (horizon, round(pt, 2), round(sl, 2))
+        # Round floats to avoid cache misses on tiny diffs
+        key = (
+            int(horizon),
+            round(float(risk_budget), 2),
+            round(float(pt_mult), 2),
+            round(float(sl_mult), 2)
+        )
+
         if key in self._cache:
             return self._cache[key]
             
-        # Compute Dense Outcomes
-        # We simulate the Triple Barrier Method on the ENTIRE series at once
-        # Logic adapted from compute_dominance_labels but vectorized for all t
+        # Compute Dense Outcomes on FULL series
+        # We pass the full index as events
+        events = self.price.index
         
-        # 1. Forward Max/Min (Vectorized MFE/MAE)
-        # rolling(horizon).max() is backward looking, we need forward looking.
-        # Use shifting: shift(-horizon) handles the window alignment? 
-        # Actually: .rolling(window).max().shift(-window) gives forward max from t to t+window
+        # Use high/low from df if available and not passed
+        if high is None:
+            high = self.df.get('high', self.price)
+        if low is None:
+            low = self.df.get('low', self.price)
+
+        # Calculate
+        labels, weights, returns, mfe, mae, vol_out = compute_dominance_labels(
+            self.price, events, vol,
+            risk_budget=risk_budget, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
+            high=high, low=low
+        )
         
-        indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=horizon)
-        f_max = self.price.rolling(window=indexer).max()
-        f_min = self.price.rolling(window=indexer).min()
-        f_ret = self.price.pct_change(horizon).shift(-horizon) # Return at horizon
+        res = (labels, weights, returns, mfe, mae, vol_out)
         
-        # 2. Dynamic Thresholds
-        upper = self.price * (1 + pt * vol * np.sqrt(horizon/24)) # approx scaling
-        lower = self.price * (1 - sl * vol * np.sqrt(horizon/24))
-        
-        # 3. Touch Logic
-        # Simplification: Did we touch upper before lower?
-        # A full path path-dependent barrier is hard to fully vectorize without loop.
-        # Approximation: Check if MFE >= upper AND (MAE > lower OR first_touch_upper < first_touch_lower)
-        # For strict correctness we need the loop or specialized cython.
-        # For cache purposes, we can stick to standard compute_dominance_labels logic in a loop 
-        # but do it ONCE per configuration and store the result series.
-        
-        # Actually, let's just use the existing function but run it on the FULL index as "events"
-        # and store the result.
-        
-        from src.training.steps.labeling.orthogonal_label_generation import compute_dominance_labels
-        
-        # Generate dummy events for every bar? Too expensive (100k events).
-        # We only need it for the specific events requested later.
-        # A partial cache might be better?
-        # But user asked for "Pre-computation".
-        
-        # Let's cache the "Validation Series".
-        # We can optimize by only computing for "valid" bars (e.g. market hours)?
-        # For now, we lazily cache the result of a "dense pass" if affordable, 
-        # or we just cache the PARAMETERS and provide a memoized wrapper.
-        
-        # Implementation decision:
-        # Since we can't easily vectorize the *path dependency* (one-touch) with pure pandas without bias,
-        # we will use a memoized approach for the Triple Barrier function itself 
-        # wrapped in this class, but optimized to reuse barrier computations.
-        
-        pass 
+        # Cache (limit size?)
+        if len(self._cache) > 20:
+            # Simple eviction
+            self._cache.pop(next(iter(self._cache)))
+
+        self._cache[key] = res
+        return res
     
-    def get_labels_for_events(self, events: pd.DatetimeIndex, horizon: int, pt: float, sl: float, vol: pd.Series) -> pd.DataFrame:
+    def get_labels_for_events(self, events: pd.DatetimeIndex, vol: pd.Series, risk_budget: float, pt_mult: float, sl_mult: float, horizon: int, high: Optional[pd.Series] = None, low: Optional[pd.Series] = None) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
         """
-        Vectorized lookup/compute.
+        Vectorized lookup from cached dense matrix.
         """
-        key = (horizon, round(pt, 2), round(sl, 2))
+        # Get dense series
+        labels, weights, returns, mfe, mae, vol_out = self.get_outcomes(
+            vol, risk_budget, pt_mult, sl_mult, horizon, high, low
+        )
         
-        # If we Cached the "Outcome Series" (1=Win, -1=Loss, 0=None) for all T,
-        # we could just .reindex(events).
+        # Reindex to specific events
+        # Note: events might contain timestamps not in original index (e.g. if generated on different freq)
+        # But usually in Layer 2 events are subsets of bar index.
+        # We use reindex which handles missing keys by putting NaN.
         
-        # To do valid pre-computation, we'd need to run Triple Barrier on all T.
-        # On 5-min data for 5 years = ~100k-200k bars.
-        # Running triple barrier loop 200k times is slow (~10s).
-        # But we do it ONLY ONCE per (H, PT, SL) tuple.
-        # Total tuples = 3 (H) * 2 (PT) * 1 (SL) = 6 combinations.
-        # 6 * 10s = 60s total setup time.
-        # Vs running it for 3000 candidates * 500 events = 1.5M event loops.
-        # Pre-computation is HUGE win.
+        # Align Timezones if needed
+        if not labels.index.empty and not events.empty:
+            if labels.index.tz != events.tz:
+                if events.tz is None:
+                    events = events.tz_localize(labels.index.tz)
+                else:
+                    events = events.tz_convert(labels.index.tz)
+
+        # Slice
+        # Intersection is safer than reindex if we only want valid existing events
+        valid_events = events.intersection(labels.index)
         
-        if key not in self._cache:
-            # Run Dense Labeling (Full Grid)
-            # Create a dense index of every bar
-            dense_events = self.price.index
-            
-            # Use chunks to avoid memory spike if needed, but 200k is fine.
-            from src.training.steps.labeling.orthogonal_label_generation import compute_dominance_labels
-            
-            # We assume high/low available in class instance or passed
-            # For this strict interface, we'll need to update init to take high/low
-            pass
-            
-        return None # Placeholder for structure
+        return (
+            labels.loc[valid_events],
+            weights.loc[valid_events],
+            returns.loc[valid_events],
+            mfe.loc[valid_events],
+            mae.loc[valid_events],
+            vol_out.loc[valid_events]
+        )
 
 
 # _numba_generate_dollar_bars moved to src/utils/numba_funcs.py
@@ -1184,6 +1174,59 @@ class LabelBasedLayer2(BaseStep):
     _specialist_registration_cache: Dict[str, Tuple[str, int]] = {}
     _model_race_seed_models: Dict[str, Dict[str, Any]] = {}
 
+    def _precompute_geometry_base_features(self, df: pd.DataFrame):
+        """
+        Pre-compute common rolling features for the entire dataset ONCE using JIT.
+        """
+        # If already computed for this exact dataframe (by length/index), return
+        # Simple heuristic: check length
+        if self._geometry_base_features is not None and len(self._geometry_base_features) == len(df):
+            return
+
+        tprint_info(f"   ⚡ Pre-computing vectorized base features for {len(df)} bars...")
+
+        # Prepare data for JIT
+        price = df['close'].values.astype(np.float64)
+        price_pct = vectorized_pct_change_jit(price)
+        price_abs_pct = np.abs(price_pct)
+
+        # Calculate features using JIT
+        # Windows: 5, 10, 20, 100
+        roll5_sum = rolling_mean_jit(price_pct, 5) * 5
+        roll10_sum = rolling_mean_jit(price_pct, 10) * 10
+        roll10_sum_abs = rolling_mean_jit(price_abs_pct, 10) * 10
+        roll20_mean = rolling_mean_jit(price_pct, 20)
+        roll20_std = rolling_std_jit(price_pct, 20)
+        roll100_std = rolling_std_jit(price_pct, 100)
+        roll5_std = rolling_std_jit(price_pct, 5)
+
+        # Store in a dense DataFrame aligned with df.index
+        # We use simple dict -> DataFrame construction
+        base_df = pd.DataFrame({
+            'roll5_sum': roll5_sum,
+            'roll10_sum': roll10_sum,
+            'roll10_sum_abs': roll10_sum_abs,
+            'roll20_mean': roll20_mean,
+            'roll20_std': roll20_std,
+            'roll100_std': roll100_std,
+            'roll5_std': roll5_std,
+            'price_pct': price_pct,
+            'price_abs_pct': price_abs_pct
+        }, index=df.index)
+
+        # Additional expensive rolling max/min for Range families
+        roll20_max = df['close'].rolling(20).max()
+        roll20_min = df['close'].rolling(20).min()
+        roll5_max = df['close'].rolling(5).max()
+        roll5_min = df['close'].rolling(5).min()
+
+        base_df['roll20_max'] = roll20_max
+        base_df['roll20_min'] = roll20_min
+        base_df['roll5_max'] = roll5_max
+        base_df['roll5_min'] = roll5_min
+
+        self._geometry_base_features = base_df
+
     def __init__(self, step_name: str = 'label_based_layer_2', **kwargs):
         # Initialize BaseStep with step name
         super().__init__(step_name)
@@ -1192,6 +1235,7 @@ class LabelBasedLayer2(BaseStep):
         self._dataset_fingerprint: Optional[str] = None
         self._label_batch_cache: Dict[str, Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]] = {}
         self._confounder_cache: Dict[str, pd.DataFrame] = {}
+        self._geometry_base_features = None  # Cache for vectorized geometry base features
 
         # Initialize LabelBasedLayer2 specific parameters
         transaction_cost = kwargs.get('transaction_cost', None)
@@ -4808,6 +4852,11 @@ class LabelBasedLayer2(BaseStep):
             df = input_data
             # Extract config from input if it's a dict, otherwise create minimal config
             config = input_data if isinstance(input_data, dict) else {}
+
+        # Initialize Outcome Matrix Cache with full data
+        tprint_info("   🧠 Initializing Outcome Matrix Cache and Feature Bank...")
+        self.outcome_cache = OutcomeMatrixCache(df)
+        self._precompute_geometry_base_features(df)
 
         # Merge initialization config into run configuration (init config serves as default)
         if hasattr(self, 'init_config'):
@@ -9440,22 +9489,41 @@ class LabelBasedLayer2(BaseStep):
             valid_col_indices = []
 
             # 1. Calculate Innovation for all columns
-            for idx, col in enumerate(X.columns):
-                try:
-                    x_full = X[col].fillna(0).values.astype(np.float64)
-                    # Innovation (Z-scored Delta) via JIT
-                    x_innov = calculate_innovation_jit(x_full, window=20)
-                    X_innov_subset[:, idx] = x_innov[indices]
-                    valid_cols.append(col)
-                    valid_col_indices.append(idx)
-                except Exception:
-                    pass
+            # Vectorized implementation for speed (parallelized over columns)
+            try:
+                # Prepare full matrix
+                X_values = X.fillna(0).values.astype(np.float64)
+
+                # Use vectorized innovation calculation if available
+                if OPTIMIZED_FUNCTIONS_AVAILABLE:
+                    X_innov_full = vectorized_calculate_innovation(X_values, window=20)
+                else:
+                    # Fallback to loop
+                    X_innov_full = np.zeros_like(X_values)
+                    for idx in range(X.shape[1]):
+                        X_innov_full[:, idx] = calculate_innovation_jit(X_values[:, idx], window=20)
+
+                # Subsample rows
+                X_innov_subset = X_innov_full[indices, :]
+                valid_cols = list(X.columns)
+                valid_col_indices = list(range(X.shape[1]))
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized innovation calculation failed: {e}")
+                # Fallback to original loop
+                for idx, col in enumerate(X.columns):
+                    try:
+                        x_full = X[col].fillna(0).values.astype(np.float64)
+                        x_innov = calculate_innovation_jit(x_full, window=20)
+                        X_innov_subset[:, idx] = x_innov[indices]
+                        valid_cols.append(col)
+                        valid_col_indices.append(idx)
+                    except Exception:
+                        pass
+                X_innov_subset = X_innov_subset[:, valid_col_indices]
 
             if not valid_cols:
                 return pd.Series(0.0, index=X.columns)
-
-            # Filter valid columns
-            X_innov_subset = X_innov_subset[:, valid_col_indices]
 
             # 2. Vectorized MI calculation
             # mutual_info_regression accepts matrix X and returns MI for each feature

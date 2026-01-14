@@ -147,8 +147,6 @@ def _should_use_range_specific_optimization() -> bool:
     except Exception:
         return False
 
-
-
 # ==========================================
 # 0. Data Structures & Configuration
 # ==========================================
@@ -4549,6 +4547,148 @@ def _persist_gate_diagnostics(
         diag_path.write_text("".join(summary_lines))
         tprint_success(f"💾 Gate diagnostics report saved to {diag_path}")
 
+
+def score_candidates(
+    candidates: List[Dict],
+    df_full: pd.DataFrame,
+    price: pd.Series,
+    X_probe: pd.DataFrame,
+    outcomes_log: List[Dict],
+    transaction_cost: float = 0.003
+) -> List[Dict]:
+    """
+    Compute labels and quality metrics for a list of candidates.
+    Returns the list with populated labels, weights, and metrics.
+    """
+    scored = []
+
+    # Use standard institutional params for scoring
+    pt, sl, horizon, risk_budget = 2.0, 1.0, 48, 0.7
+
+    # Volatility for TBM
+    if 'volatility_1d' in df_full.columns:
+        vol_series = df_full['volatility_1d']
+    else:
+        # Simple fallback
+        vol_series = price.pct_change().rolling(96).std().bfill().fillna(0.01)
+
+    high = df_full.get('high')
+    low = df_full.get('low')
+
+    for cand in candidates:
+        try:
+            # Skip if already scored
+            if 'labels' in cand and not cand['labels'].empty:
+                scored.append(cand)
+                continue
+
+            # Compute TBM Labels
+            labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
+                price, cand['events'], vol_series,
+                risk_budget=risk_budget, pt_mult=pt, sl_mult=sl, horizon=horizon,
+                transaction_cost=transaction_cost,
+                high=high, low=low
+            )
+
+            if labels.empty: continue
+
+            # Use weight_vector if available and valid
+            if 'weight_vector' in cand:
+                final_weights = cand['weight_vector'].reindex(cand['events']).fillna(1.0)
+            else:
+                final_weights = weights
+
+            # Quality Check
+            passed, metrics, status = check_label_quality(
+                cand['events'], labels, returns, df_full, X_probe, None, cand.get('params', {}), family=cand['family']
+            )
+
+            # Store metrics in candidate
+            cand['labels'] = labels
+            cand['weights'] = final_weights
+            cand['returns'] = returns
+            cand['mfe'] = mfe
+            cand['mae'] = mae
+            cand['vol'] = vol
+            cand['status'] = status
+            cand['min_p'] = metrics.get('min_p', 1.0) # Store for verification
+            cand['metrics'] = metrics # Store full metrics
+
+            # Log outcome
+            outcomes_log.append({
+                'family': cand['family'],
+                'params': str(cand.get('params', {})),
+                'pt_mult': pt,
+                'sl_mult': sl,
+                'horizon': horizon,
+                'risk_budget': risk_budget,
+                'status': status,
+                'n': metrics.get('n', 0),
+                'pos_rate': metrics.get('pos_rate', 0),
+                'min_p': metrics.get('min_p', 1.0),
+                'max_mi': metrics.get('max_mi', 0.0),
+                'signals_per_day': round(len(cand['events']) / 360, 2),
+                'target_signals_per_day': 0,
+                'adaptive_used': False
+            })
+
+            scored.append(cand)
+
+        except Exception as e:
+            # logger.warning(f"Scoring failed for {cand.get('family', 'unknown')}: {e}")
+            continue
+
+    return scored
+
+def select_robust_candidates_quantile(candidates: List[Dict], quantile: float = 0.5) -> List[Dict]:
+    """
+    Select top quantile of candidates per family based on statistical confidence.
+
+    Score = 1.0 - min_p (F-Statistic p-value)
+    Constraint: Status must NOT be 'FAIL'.
+    """
+    if not candidates:
+        return []
+
+    # 1. Filter out FAILED gates (Absolute Floor)
+    passed_candidates = [c for c in candidates if c.get('status') != 'FAIL']
+
+    if not passed_candidates:
+        return []
+
+    # 2. Group by Family
+    by_family = {}
+    for c in passed_candidates:
+        fam = c['family']
+        if fam not in by_family:
+            by_family[fam] = []
+        by_family[fam].append(c)
+
+    selected = []
+
+    # 3. Select Top Quantile per Family
+    for fam, family_cands in by_family.items():
+        # Calculate Score: 1.0 - min_p (Higher is better)
+        # Default min_p to 1.0 (worst score 0.0) if missing
+        for c in family_cands:
+            metrics = c.get('metrics', {}) or {}
+            min_p = metrics.get('min_p', 1.0)
+            c['_ranking_score'] = 1.0 - min_p
+
+        # Sort descending
+        family_cands.sort(key=lambda x: x['_ranking_score'], reverse=True)
+
+        # Keep top K (at least 1 if any passed)
+        n_keep = max(1, int(len(family_cands) * quantile))
+
+        # If quantile resulted in 0 but we have candidates, keep 1 (best of worst logic? No, passed_candidates already filtered FAIL)
+        # But 'max(1, ...)' handles it.
+
+        selected.extend(family_cands[:n_keep])
+
+    return selected
+
+
 def orthogonal_label_generation(
     data: Union[pd.Series, pd.DataFrame],
     volume: Optional[pd.Series] = None,
@@ -5123,8 +5263,37 @@ def orthogonal_label_generation(
     for cand in regime_candidates:
         tprint_info(f"   🏗️ Added {cand['family']} with {len(cand['events'])} events")
     
+    # outcomes_log initialized earlier
+    # --- PRUNING PHASE: Score and Filter Base Candidates ---
+    tprint_info("✂️ Pruning Phase: Scoring base candidates for robustness...")
+
+    # Define transaction cost for scoring
+    tx_cost = 0.003
+
+    # Score candidates
+    scored_ohlcv = score_candidates(ohlcv_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
+    scored_continuous = score_candidates(continuous_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
+    scored_advanced = score_candidates(advanced_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
+    scored_horizon = score_candidates(horizon_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
+    scored_regime = score_candidates(regime_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
+
+    # Filter robust candidates (Per-Family Quantile)
+    # Score = 1.0 - min_p (F-Stat). Keep Top 50%.
+    robust_ohlcv = select_robust_candidates_quantile(scored_ohlcv, quantile=0.5)
+    robust_continuous = select_robust_candidates_quantile(scored_continuous, quantile=0.5)
+    robust_advanced = select_robust_candidates_quantile(scored_advanced, quantile=0.5)
+    robust_horizon = select_robust_candidates_quantile(scored_horizon, quantile=0.5)
+    robust_regime = select_robust_candidates_quantile(scored_regime, quantile=0.5)
+
+    tprint_info(f"   OHLCV: {len(ohlcv_candidates)} -> {len(robust_ohlcv)} robust")
+    tprint_info(f"   Continuous: {len(continuous_candidates)} -> {len(robust_continuous)} robust")
+    tprint_info(f"   Advanced: {len(advanced_candidates)} -> {len(robust_advanced)} robust")
+    tprint_info(f"   Horizon: {len(horizon_candidates)} -> {len(robust_horizon)} robust")
+    tprint_info(f"   Regime: {len(regime_candidates)} -> {len(robust_regime)} robust")
+
     # Combine base candidates for initial filtering (Level 7)
-    pre_generated_candidates = ohlcv_candidates + continuous_candidates + advanced_candidates + horizon_candidates + regime_candidates
+    # Use robust versions to reduce noise downstream
+    pre_generated_candidates = robust_ohlcv + robust_continuous + robust_advanced + robust_horizon + robust_regime
     
     # 9. Feature Filtering (Level 7) & Smart Selection
     # Filter the final set before Labeling
@@ -5145,10 +5314,10 @@ def orthogonal_label_generation(
         composite_candidates = generate_composite_candidates(
             df_full, 
             spec_families,
-            ohlcv_candidates=ohlcv_candidates, 
-            derived_candidates=derived_candidates,
-            horizon_candidates=horizon_candidates,
-            regime_candidates=regime_candidates,
+            ohlcv_candidates=robust_ohlcv,
+            derived_candidates=robust_advanced, # derived + aggregates are in advanced
+            horizon_candidates=robust_horizon,
+            regime_candidates=robust_regime,
             validated_candidates=filtered_candidates # Validated seeds
         )
         tprint_success(f"   ✅ Generated {len(composite_candidates)} composite interactions.")

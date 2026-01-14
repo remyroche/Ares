@@ -36,6 +36,11 @@ from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.utils.layer4_optimized import (
+    compute_financial_weights_numba,
+    extract_prob_features_numba,
+    compute_prob_stats_numba
+)
 
 # Import entropy bars functionality
 try:
@@ -56,6 +61,13 @@ VOLATILITY_SAFETY_FLOOR = 1e-4  # Prevent division by zero
 HOME_RUN_MULTIPLIER = 3.0  # Multiplier for home run detection
 WEIGHT_CLIP_MIN = 0.5  # Minimum weight clip
 WEIGHT_CLIP_MAX = 2.0  # Maximum weight clip
+
+def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
+    """Downcast float64 columns to float32 to save memory and speed up processing."""
+    float_cols = df.select_dtypes(include=['float64']).columns
+    for col in float_cols:
+        df[col] = df[col].astype(np.float32)
+    return df
 
 class SimpleMultiModelRiskEngine:
     """
@@ -149,10 +161,9 @@ class SimpleMultiModelRiskEngine:
         self.is_fitted = False
     
     def _compute_financial_weights(self, abs_returns: pd.Series) -> pd.Series:
-        weights = abs_returns / (abs_returns.sum() + 1e-9) * len(abs_returns)
-        weights = weights.clip(weights.quantile(0.01), weights.quantile(0.99))
-        weights = weights / (weights.sum() + 1e-9) * len(weights)
-        return weights
+        # Use Numba-optimized implementation
+        weights_array = compute_financial_weights_numba(abs_returns.values.astype(np.float64))
+        return pd.Series(weights_array, index=abs_returns.index)
     
     def _extract_layer3_prob_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -173,23 +184,33 @@ class SimpleMultiModelRiskEngine:
         extra_prob_cols = [c for c in df.columns if c.startswith('meta_prob_') and c not in base_prob_cols]
         prob_cols = base_prob_cols + extra_prob_cols
 
-        for col in prob_cols:
-            feats[f'{col}_raw'] = df[col]
-            p = df[col].astype(float).clip(1e-6, 1 - 1e-6)
-            feats[f'{col}_logit'] = np.log(p / (1 - p))
-            feats[f'{col}_confidence'] = (p - 0.5).abs() * 2.0
+        if not prob_cols:
+            return feats
+
+        # Vectorized feature extraction using Numba
+        probs_array = df[prob_cols].values.astype(np.float32)
+        logits, confidences = extract_prob_features_numba(probs_array)
+
+        for idx, col in enumerate(prob_cols):
+            feats[f'{col}_raw'] = probs_array[:, idx]
+            feats[f'{col}_logit'] = logits[:, idx]
+            feats[f'{col}_confidence'] = confidences[:, idx]
 
         if 'meta_prob' in df.columns and 'meta_prob_48' in df.columns:
-            feats['horizon_disagreement'] = df['meta_prob'] - df['meta_prob_48']
-            feats['horizon_agreement'] = 1.0 - (df['meta_prob'] - df['meta_prob_48']).abs()
+            # Vectorized horizon features
+            p12 = df['meta_prob'].values
+            p48 = df['meta_prob_48'].values
+            diff = p12 - p48
+            feats['horizon_disagreement'] = diff
+            feats['horizon_agreement'] = 1.0 - np.abs(diff)
 
-        if prob_cols:
-            probs = df[prob_cols].astype(float)
-            feats['prob_mean'] = probs.mean(axis=1)
-            feats['prob_std'] = probs.std(axis=1).fillna(0.0)
-            feats['prob_min'] = probs.min(axis=1)
-            feats['prob_max'] = probs.max(axis=1)
-            feats['prob_range'] = feats['prob_max'] - feats['prob_min']
+        # Numba-optimized statistics
+        means, stds, mins, maxs, ranges = compute_prob_stats_numba(probs_array)
+        feats['prob_mean'] = means
+        feats['prob_std'] = stds
+        feats['prob_min'] = mins
+        feats['prob_max'] = maxs
+        feats['prob_range'] = ranges
 
         return feats.fillna(0.0)
 
@@ -231,6 +252,10 @@ class SimpleMultiModelRiskEngine:
         
         # Combine all features
         X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # Downcast to float32
+        X_full = downcast_float(X_full)
+
         weights = self._compute_financial_weights(abs_returns)
         
         tprint_info(f"📊 Processing Huber Teacher on {len(X_full.columns)} potential features...")
@@ -395,6 +420,10 @@ class SimpleMultiModelRiskEngine:
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
         X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # Downcast to float32
+        X_full = downcast_float(X_full)
+
         if self.huber_feature_columns is not None:
             X_full = X_full.reindex(columns=self.huber_feature_columns, fill_value=0.0)
 

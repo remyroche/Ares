@@ -9358,7 +9358,6 @@ class LabelBasedLayer2(BaseStep):
             # Create lags for Y history
             lags = [1, 2, 3, 5]
             y_hist_list = []
-            valid_len = len(y_clean)
 
             # Create lagged matrix manually to avoid pandas overhead here
             for lag in lags:
@@ -9384,9 +9383,11 @@ class LabelBasedLayer2(BaseStep):
                 indices = np.arange(len(y))
 
             y_innov_subset = y_innov[indices]
-            rmi_scores = {}
 
-            for col in X.columns:
+            # Optimized: Pre-calculate innovation for all columns and batch MI computation
+            X_innov_subset = np.zeros((len(indices), X.shape[1]))
+
+            for i, col in enumerate(X.columns):
                 try:
                     # Full feature series
                     x_full = X[col].fillna(0).values.astype(np.float64)
@@ -9395,25 +9396,22 @@ class LabelBasedLayer2(BaseStep):
                     # Window=20 approx reasonable for short-term innovation
                     x_innov = calculate_innovation_jit(x_full, window=20)
 
-                    # 2. Subsample
-                    x_innov_subset = x_innov[indices]
-
-                    # 3. MI calculation (Vectorized across samples, scalar result)
-                    # Reshape for sklearn
-                    mi = mutual_info_regression(
-                        x_innov_subset.reshape(-1, 1),
-                        y_innov_subset,
-                        discrete_features=False,
-                        n_neighbors=n_neighbors,
-                        random_state=42
-                    )[0]
-
-                    rmi_scores[col] = mi
-
+                    # 2. Subsample and store
+                    X_innov_subset[:, i] = x_innov[indices]
                 except Exception:
-                    rmi_scores[col] = 0.0
+                    X_innov_subset[:, i] = 0.0
 
-            return pd.Series(rmi_scores)
+            # 3. MI calculation (Vectorized across features)
+            # mutual_info_regression supports X as (n_samples, n_features) and returns (n_features,)
+            mi_scores = mutual_info_regression(
+                X_innov_subset,
+                y_innov_subset,
+                discrete_features=False,
+                n_neighbors=n_neighbors,
+                random_state=42
+            )
+
+            return pd.Series(mi_scores, index=X.columns)
 
         except Exception as e:
             tprint_warning(f"⚠️ RMI computation failed: {e}")
@@ -9472,18 +9470,32 @@ class LabelBasedLayer2(BaseStep):
             n_features = len(X.columns)
             mi_matrix = np.zeros((n_features, n_features))
             
+            # Optimization: Pre-discretize all features once
+            X_disc = pd.DataFrame(index=X.index)
+            for col in X.columns:
+                try:
+                    X_disc[col] = pd.qcut(X[col], q=10, duplicates='drop').cat.codes
+                except Exception:
+                    # Fallback for constant columns or errors
+                    X_disc[col] = 0
+
             for i, feat1 in enumerate(X.columns):
-                for j, feat2 in enumerate(X.columns):
-                    if i != j:
-                        try:
-                            # Discretize both features
-                            disc1 = pd.qcut(X[feat1], q=10, duplicates='drop').cat.codes
-                            disc2 = pd.qcut(X[feat2], q=10, duplicates='drop').cat.codes
-                            
-                            # Compute mutual information
-                            mi_matrix[i, j] = mutual_info_score(disc1, disc2)
-                        except Exception:
-                            mi_matrix[i, j] = 0.0
+                # Use pre-discretized series
+                disc1 = X_disc[feat1]
+
+                # Exploit symmetry: calculate only for j > i
+                for j in range(i + 1, n_features):
+                    feat2 = X.columns[j]
+                    try:
+                        disc2 = X_disc[feat2]
+
+                        # Compute mutual information
+                        score = mutual_info_score(disc1, disc2)
+                        mi_matrix[i, j] = score
+                        mi_matrix[j, i] = score
+                    except Exception:
+                        mi_matrix[i, j] = 0.0
+                        mi_matrix[j, i] = 0.0
             
             # 3. Convert MI to distance matrix for clustering
             # Distance = 1 - normalized mutual information

@@ -31,6 +31,17 @@ from src.utils.labeling_optimized import (
     first_hit_numba,
     first_hit_high_low_numba
 )
+from src.utils.orthogonal_numba import (
+    _numba_kalman_filter_1d,
+    _numba_apply_fracdiff,
+    _numba_rolling_hurst,
+    _numba_anchored_zscore,
+    _numba_time_since_shock,
+    _numba_build_indicator_matrix,
+    _numba_get_uniqueness,
+    _numba_create_ridge_targets,
+    _numba_create_tree_targets
+)
 from src.training.steps.labeling.composite_event_generators import (
     get_microstructure_generators,
     TradeIntensityEvents,
@@ -290,23 +301,13 @@ class KalmanFilter1D:
         self.P = 1.0
 
     def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
-        values = series.values
-        n = len(values)
-        x_hat = np.zeros(n)
-        P_hat = np.zeros(n)
-        x, P = self.x, self.P
-        Q, R = self.Q, self.R
-
-        for i in range(n):
-            x_pred = x
-            P_pred = P + Q
-            z = values[i]
-            K = P_pred / (P_pred + R)
-            x = x_pred + K * (z - x_pred)
-            P = (1 - K) * P_pred
-            x_hat[i] = x
-            P_hat[i] = P
-
+        x_hat, P_hat = _numba_kalman_filter_1d(
+            series.values.astype(np.float64),
+            float(self.Q),
+            float(self.R),
+            float(self.x),
+            float(self.P)
+        )
         return pd.Series(x_hat, index=series.index), pd.Series(P_hat, index=series.index)
 
 def roll_entropy(series: pd.Series, window: int = 24, bins: int = 10) -> pd.Series:
@@ -347,19 +348,14 @@ def average_uniqueness(indicator: pd.DataFrame) -> float:
     return (1.0 / valid_c).mean()
 
 def build_indicator_matrix(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 1) -> pd.DataFrame:
-    arr = np.zeros(len(index), dtype=int)
     valid_events = events.intersection(index)
     if valid_events.empty:
         return pd.DataFrame(0, index=index, columns=[0])
     
     event_locs = index.get_indexer(valid_events)
     event_locs = event_locs[event_locs != -1]
-    n_bars = len(index)
 
-    # Fill indicator matrix
-    for loc in event_locs:
-        end_loc = min(loc + horizon, n_bars)
-        arr[loc:end_loc] = 1 # Use binary indicator for set operations
+    arr = _numba_build_indicator_matrix(event_locs, len(index), horizon, binary=True)
     
     return pd.DataFrame(arr, index=index, columns=[0])
 
@@ -625,12 +621,9 @@ def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) 
     
     # Get weights
     w = _get_weights(d, len(series), threshold)
-    width = len(w)
     
-    # Apply convolution
-    result = np.full(len(series), np.nan)
-    for i in range(width - 1, len(series)):
-        result[i] = np.dot(w, series.iloc[i - width + 1:i + 1].values[::-1])
+    # Apply convolution (Numba)
+    result = _numba_apply_fracdiff(series.values, w)
     
     return pd.Series(result, index=series.index)
 
@@ -1104,40 +1097,9 @@ class LowVolRegimeFeatures:
         if len(series) < lookback:
             return pd.Series(0.5, index=series.index)
         
-        def rs_hurst(segment):
-            """Compute Hurst exponent for a segment."""
-            if len(segment) < 20:
-                return 0.5
-            
-            try:
-                # Mean-adjusted series
-                mean_adj = segment - np.mean(segment)
-                
-                # Cumulative deviate series
-                cumdev = np.cumsum(mean_adj)
-                
-                # Range
-                R = np.max(cumdev) - np.min(cumdev)
-                
-                # Standard deviation
-                S = np.std(segment)
-                
-                if S < 1e-9 or R < 1e-9:
-                    return 0.5
-                
-                # R/S calculation
-                rs = R / S
-                
-                # Hurst approximation: H = log(R/S) / log(n)
-                n = len(segment)
-                H = np.log(rs) / np.log(n)
-                
-                return np.clip(H, 0.0, 1.0)
-            except Exception:
-                return 0.5
-        
-        hurst = series.rolling(lookback, min_periods=50).apply(rs_hurst, raw=True)
-        return hurst.fillna(0.5)
+        # Use Numba-optimized rolling Hurst
+        hurst = _numba_rolling_hurst(series.values, lookback)
+        return pd.Series(hurst, index=series.index).fillna(0.5)
     
     def compute_vpin(
         self, 
@@ -1193,39 +1155,15 @@ class LowVolRegimeFeatures:
         if feature_col not in df.columns:
             return pd.Series(0.0, index=df.index)
         
-        values = df[feature_col]
-        result = pd.Series(0.0, index=df.index)
+        # Numba-optimized
+        anchor_indices = df.index.get_indexer(anchor_events)
+        anchor_indices = anchor_indices[anchor_indices != -1]
+        anchor_indices.sort()
         
-        # Sort anchor events
-        anchor_events = anchor_events.sort_values()
+        current_indices = np.arange(len(df))
         
-        for i, current_time in enumerate(df.index):
-            # Find most recent anchor before this time
-            prior_anchors = anchor_events[anchor_events < current_time]
-            
-            if len(prior_anchors) == 0:
-                continue
-            
-            last_anchor = prior_anchors[-1]
-            anchor_idx = df.index.get_loc(last_anchor)
-            current_idx = df.index.get_loc(current_time)
-            
-            if current_idx <= anchor_idx:
-                continue
-            
-            # Compute z-score from anchor point
-            segment = values.iloc[anchor_idx:current_idx+1]
-            if len(segment) < 5:
-                continue
-            
-            anchor_value = segment.iloc[0]
-            current_value = segment.iloc[-1]
-            segment_std = segment.std()
-            
-            if segment_std > 1e-9:
-                result.iloc[i] = (current_value - anchor_value) / segment_std
-        
-        return result.clip(-5, 5)
+        result = _numba_anchored_zscore(df[feature_col].values, current_indices, anchor_indices)
+        return pd.Series(result, index=df.index).clip(-5, 5)
     
     def compute_time_since_shock(
         self, 
@@ -1242,34 +1180,13 @@ class LowVolRegimeFeatures:
         - Near 1.0: Recent shock, market has "memory"
         - Near 0.0: Long time since shock, entropy maximized (random walk)
         """
-        result = pd.Series(0.0, index=df.index)
+        shock_indices = df.index.get_indexer(shock_events)
+        shock_indices = shock_indices[shock_indices != -1]
+        shock_indices.sort()
         
-        if len(shock_events) == 0:
-            return result
-        
-        shock_events = shock_events.sort_values()
-        
-        for i, current_time in enumerate(df.index):
-            # Find most recent shock before this time
-            prior_shocks = shock_events[shock_events <= current_time]
-            
-            if len(prior_shocks) == 0:
-                result.iloc[i] = 0.0  # No prior shock = no memory
-                continue
-            
-            last_shock = prior_shocks[-1]
-            
-            # Time difference in bars
-            try:
-                shock_idx = df.index.get_loc(last_shock)
-                delta_t = i - shock_idx
-            except KeyError:
-                delta_t = 100  # Default to high decay if not found
-            
-            # Exponential decay
-            result.iloc[i] = np.exp(-decay_lambda * delta_t)
-        
-        return result
+        current_indices = np.arange(len(df))
+        result = _numba_time_since_shock(len(df), current_indices, shock_indices, decay_lambda)
+        return pd.Series(result, index=df.index)
     
     def compute_relative_volatility_scaling(
         self, 
@@ -1416,47 +1333,20 @@ def _create_ridge_targets(
     
     # Get volatility for normalization
     if 'volatility_1d' in df.columns:
-        vol = df['volatility_1d']
+        vol = df['volatility_1d'].values
     else:
-        vol = df['close'].pct_change().rolling(20).std()
+        vol = df['close'].pct_change().rolling(20).std().fillna(0).values
     
-    # Multi-horizon weighted returns
-    horizons = [horizon // 4, horizon // 2, horizon, horizon * 2]
-    horizons = [max(1, h) for h in horizons]  # Ensure positive
-    weights = np.exp(-0.1 * np.arange(len(horizons)))  # Exponential decay
+    close = df['close'].values
+    event_indices = df.index.get_indexer(events)
+    
+    weights = np.exp(-0.1 * np.arange(4))
     weights = weights / weights.sum()
     
-    # Calculate returns at each horizon
-    close = df['close']
-    engineered = pd.Series(index=events, dtype=float)
-    
-    for event in events:
-        if event not in df.index:
-            engineered[event] = np.nan
-            continue
-        
-        event_loc = df.index.get_loc(event)
-        event_vol = vol.iloc[event_loc] if event_loc < len(vol) else vol.mean()
-        
-        if not np.isfinite(event_vol) or event_vol <= 0:
-            event_vol = vol.mean()
-        
-        horizon_returns = []
-        for h in horizons:
-            end_loc = min(event_loc + h, len(df) - 1)
-            ret = (close.iloc[end_loc] / close.iloc[event_loc]) - 1.0
-            horizon_returns.append(ret)
-        
-        # Weighted average
-        weighted_ret = np.average(horizon_returns, weights=weights)
-        
-        # Volatility normalization (z-score like)
-        normalized_ret = weighted_ret / (event_vol * np.sqrt(horizon) + 1e-9)
-        
-        engineered[event] = normalized_ret
-    
+    res = _numba_create_ridge_targets(close, vol, event_indices, horizon, weights)
+    engineered = pd.Series(res, index=events).dropna()
+
     # Winsorization (clip to 3 std)
-    engineered = engineered.dropna()
     if len(engineered) > 10:
         mean_val = engineered.mean()
         std_val = engineered.std()
@@ -1476,65 +1366,21 @@ def _create_tree_targets(
 ) -> pd.Series:
     """
     Tree-optimized: Sharpe-like targets that capture risk-adjusted alpha.
-    
-    Transforms:
-    1. Return / Volatility ratio (Sharpe-like)
-    2. Path quality adjustment (penalize choppy paths)
-    3. Preserves non-linearity trees can exploit
     """
     if raw_returns.empty or len(events) == 0:
         return raw_returns
     
     # Get volatility
     if 'volatility_1d' in df.columns:
-        vol = df['volatility_1d']
+        vol = df['volatility_1d'].values
     else:
-        vol = df['close'].pct_change().rolling(20).std()
+        vol = df['close'].pct_change().rolling(20).std().fillna(0).values
     
-    close = df['close']
-    engineered = pd.Series(index=events, dtype=float)
+    close = df['close'].values
+    event_indices = df.index.get_indexer(events)
     
-    for event in events:
-        if event not in df.index:
-            engineered[event] = np.nan
-            continue
-        
-        event_loc = df.index.get_loc(event)
-        end_loc = min(event_loc + horizon, len(df) - 1)
-        
-        # Basic return
-        ret = (close.iloc[end_loc] / close.iloc[event_loc]) - 1.0
-        
-        # Path volatility over horizon
-        if end_loc > event_loc + 1:
-            path_returns = close.iloc[event_loc:end_loc+1].pct_change().dropna()
-            path_vol = path_returns.std() if len(path_returns) > 1 else vol.iloc[event_loc]
-        else:
-            path_vol = vol.iloc[event_loc]
-        
-        if not np.isfinite(path_vol) or path_vol <= 0:
-            path_vol = vol.mean()
-        
-        # Sharpe-like ratio: return / volatility
-        # Scale by sqrt(horizon) for time-normalization
-        sharpe_target = ret / (path_vol * np.sqrt(horizon) + 1e-9)
-        
-        # Path quality: consistency of direction
-        if end_loc > event_loc + 2:
-            path_prices = close.iloc[event_loc:end_loc+1]
-            # Efficiency ratio: net movement / total movement
-            net_move = abs(path_prices.iloc[-1] - path_prices.iloc[0])
-            total_move = path_prices.diff().abs().sum()
-            efficiency = net_move / (total_move + 1e-9) if total_move > 0 else 1.0
-        else:
-            efficiency = 1.0
-        
-        # Adjust Sharpe by path quality (boost clean moves, penalize choppy)
-        adjusted_target = sharpe_target * (0.5 + 0.5 * efficiency)
-        
-        engineered[event] = adjusted_target
-    
-    return engineered.dropna()
+    res = _numba_create_tree_targets(close, vol, event_indices, horizon)
+    return pd.Series(res, index=events).dropna()
 
 
 def get_target_for_model_type(model_name: str) -> str:
@@ -2974,23 +2820,14 @@ def tail_cusum_weight(df: pd.DataFrame, events: pd.DatetimeIndex, window: int = 
     return weight.reindex(events).fillna(0)
 
 def get_uniqueness_weight(events: pd.DatetimeIndex, index: pd.DatetimeIndex, horizon: int = 24) -> pd.Series:
-    indicator = build_indicator_matrix(events, index, horizon=horizon)
-    concurrency = indicator.sum(axis=1)
-    # uniqueness = 1 / concurrency
-    # average uniqueness over event lifespan
-    uniqueness = pd.Series(0.0, index=events)
-    if events.empty: return uniqueness
+    event_locs = index.get_indexer(events)
 
-    # Map events to index locations
-    evt_locs = index.get_indexer(events)
-    for i, loc in enumerate(evt_locs):
-        if loc == -1: continue
-        end_loc = min(loc + horizon, len(index))
-        c = concurrency.iloc[loc:end_loc]
-        if len(c) > 0:
-            uniqueness.iloc[i] = (1.0 / c).mean()
+    # Generate concurrency array (count of overlaps)
+    concurrency_arr = _numba_build_indicator_matrix(event_locs, len(index), horizon, binary=False)
 
-    return uniqueness
+    # Calculate uniqueness per event
+    uniq = _numba_get_uniqueness(event_locs, concurrency_arr, horizon)
+    return pd.Series(uniq, index=events)
 
 def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_levels: list = None,
                                component_weights: Dict[str, float] = None, family: str = None) -> pd.Series:

@@ -7,6 +7,31 @@ from scipy.spatial.distance import squareform
 from joblib import Parallel, delayed
 from typing import Dict, List, Tuple, Optional, Union
 
+def _fit_single_split(
+    split_idx: int,
+    X_split: pd.DataFrame,
+    y_split: pd.Series,
+    split_weights: Optional[np.ndarray],
+    epsilons: List[float],
+    alphas: List[float]
+) -> np.ndarray:
+    """Helper function to fit a single Huber Regressor split."""
+    # Scale data for this split (ensure float32)
+    scaler_split = RobustScaler()
+    X_split_scaled = scaler_split.fit_transform(X_split).astype(np.float32)
+
+    # Fit best Huber model for this split (use median parameters)
+    eps_median = np.median(epsilons)
+    alpha_median = np.median(alphas)
+
+    h_split = HuberRegressor(epsilon=eps_median, alpha=alpha_median, max_iter=5000)
+    if split_weights is not None:
+        h_split.fit(X_split_scaled, y_split, sample_weight=split_weights)
+    else:
+        h_split.fit(X_split_scaled, y_split)
+
+    return h_split.coef_
+
 def prepare_huber_teacher_outputs(
     X_train: pd.DataFrame, 
     y_train: pd.Series,
@@ -41,18 +66,18 @@ def prepare_huber_teacher_outputs(
 
     # 2. Robust Scaling (NumPy-first for speed)
     scaler = RobustScaler()
-    X_tr_scaled = scaler.fit_transform(X_train)
+    # Force float32
+    X_tr_scaled = scaler.fit_transform(X_train).astype(np.float32)
     feature_names = np.asarray(X_train.columns)
 
     # 3. Walk-Forward Time Splits for Stability Analysis
-    print(f"\n🔄 Creating {n_time_splits} walk-forward time splits for stability analysis...")
+    print(f"\n🔄 Creating {n_time_splits} walk-forward time splits for stability analysis (Parallel n_jobs={n_jobs})...")
     
     # Create time-based splits (walk-forward)
     n_samples = len(X_train)
     split_size = n_samples // n_time_splits
     
-    split_coeffs = []
-    split_indices = []
+    tasks = []
     
     for split_idx in range(n_time_splits):
         # Walk-forward: each split uses data up to that point
@@ -66,6 +91,7 @@ def prepare_huber_teacher_outputs(
         # Ensure minimum samples for training
         train_start = max(0, train_end - split_size * 2)  # Use rolling window
         
+        # Extract slices (avoid copying if possible, but joblib pickles anyway)
         X_split = X_train.iloc[train_start:train_end]
         y_split = y_train.iloc[train_start:train_end]
         
@@ -74,25 +100,15 @@ def prepare_huber_teacher_outputs(
             split_weights = actual_weights[train_start:train_end]
         else:
             split_weights = None
-        
+
         print(f"   📊 Split {split_idx + 1}/{n_time_splits}: {len(X_split)} samples [{train_start}:{train_end}]")
         
-        # Scale data for this split
-        scaler_split = RobustScaler()
-        X_split_scaled = scaler_split.fit_transform(X_split)
-        
-        # Fit best Huber model for this split (use median parameters)
-        eps_median = np.median(epsilons)
-        alpha_median = np.median(alphas)
-        
-        h_split = HuberRegressor(epsilon=eps_median, alpha=alpha_median, max_iter=5000)
-        if split_weights is not None:
-            h_split.fit(X_split_scaled, y_split, sample_weight=split_weights)
-        else:
-            h_split.fit(X_split_scaled, y_split)
-        
-        split_coeffs.append(h_split.coef_)
-        split_indices.append((train_start, train_end))
+        tasks.append((split_idx, X_split, y_split, split_weights, epsilons, alphas))
+
+    # Parallel Execution
+    split_coeffs = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_single_split)(*args) for args in tasks
+    )
     
     # Convert to array for analysis
     coeffs_array = np.array(split_coeffs)  # Shape: (n_splits, n_features)
@@ -103,7 +119,8 @@ def prepare_huber_teacher_outputs(
     
     # Generate warm start predictions using median model on full data
     scaler_full = RobustScaler()
-    X_full_scaled = scaler_full.fit_transform(X_train)
+    X_full_scaled = scaler_full.fit_transform(X_train).astype(np.float32)
+
     h_full = HuberRegressor(epsilon=np.median(epsilons), alpha=np.median(alphas), max_iter=5000)
     if actual_weights is not None:
         h_full.fit(X_full_scaled, y_train, sample_weight=actual_weights)
@@ -297,7 +314,7 @@ def prepare_huber_teacher_outputs(
     # 8. Consensus Inference for Validation/Test
     def get_consensus_pred(df):
         if df is None: return None
-        df_s = scaler_full.transform(df)  # Use the full scaler
+        df_s = scaler_full.transform(df).astype(np.float32)  # Use the full scaler
         pred = h_full.predict(df_s)  # Use the median model
         return pred
 

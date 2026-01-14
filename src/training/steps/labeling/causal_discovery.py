@@ -239,44 +239,62 @@ class CausalDiscovery:
             
             # Phase 1: Edge removal (skeleton discovery)
             if self.verbose:
-                tprint_info("   🔍 Phase 1: Skeleton discovery...")
+                tprint_info("   🔍 Phase 1: Skeleton discovery (Parallelized)...")
             
             target_idx = None
             if self.target_variable and self.target_variable in variable_names:
                 target_idx = variable_names.index(self.target_variable)
 
-            edges_removed = 0
+            # Generate all pairs for testing
+            pairs_to_test = []
             for i in range(n_vars):
                 for j in range(i + 1, n_vars):
-                    # TARGET-CENTRIC OPTIMIZATION:
-                    # Only test pairs involving the target or existing neighbors of the target
+                    # TARGET-CENTRIC OPTIMIZATION
                     if target_idx is not None:
                         is_target_related = (i == target_idx or j == target_idx)
                         if not is_target_related:
-                            # Prune edges NOT connected to target if we are in strict target-centric mode
-                            # We keep them in the matrix for now but skip expensive tests?
-                            # Actually, we need a skeleton. 
-                            # If not related, we can just skip or use a very weak threshold.
-                            # For efficiency: Skip tests for non-target-related pairs
                             continue
+                    pairs_to_test.append((i, j))
 
-                    x = data.iloc[:, i].values
-                    y = data.iloc[:, j].values
+            # Parallelize unconditional independence tests
+            from joblib import Parallel, delayed
+
+            def test_pair(i, j):
+                x = data.iloc[:, i].values
+                y = data.iloc[:, j].values
+                is_indep, p_val = self.conditional_independence_test(x, y)
+                return i, j, is_indep, p_val
+
+            # Use threading backend as numpy releases GIL often, avoids pickling huge data
+            # But 'data' dataframe access might be slow in threads?
+            # 'data.iloc[:, i].values' creates a numpy view/copy.
+            # Using 'loky' (process) is safer for CPU bound, but passing 'data' is heavy.
+            # Convert to numpy array first
+            data_values = data.values
+
+            def test_pair_numpy(i, j, data_arr):
+                x = data_arr[:, i]
+                y = data_arr[:, j]
+                is_indep, p_val = self.conditional_independence_test(x, y)
+                return i, j, is_indep, p_val
+
+            results = Parallel(n_jobs=4, prefer="threads")(
+                delayed(test_pair_numpy)(i, j, data_values) for i, j in pairs_to_test
+            )
+
+            edges_removed = 0
+            for i, j, is_independent, p_value in results:
+                if is_independent:
+                    adjacency_matrix[i, j] = 0
+                    adjacency_matrix[j, i] = 0
+                    edges_removed += 1
                     
-                    # Test unconditional independence
-                    is_independent, p_value = self.conditional_independence_test(x, y)
-                    
-                    if is_independent:
-                        adjacency_matrix[i, j] = 0
-                        adjacency_matrix[j, i] = 0
-                        edges_removed += 1
-                        
-                        if self.verbose and edges_removed <= 5:  # Show first few
-                            tprint_info(f"      ❌ Removed edge {variable_names[i]}-{variable_names[j]} (p={p_value:.4f})")
+                    if self.verbose and edges_removed <= 5:
+                        tprint_info(f"      ❌ Removed edge {variable_names[i]}-{variable_names[j]} (p={p_value:.4f})")
             
             tprint_info(f"   ✅ Phase 1: Removed {edges_removed} edges, {initial_edges - edges_removed} remaining")
             
-            # Phase 2: Conditional independence tests
+            # Phase 2: Conditional independence tests (Iterative - hard to parallelize fully due to dependency on current graph state, keeping serial for safety)
             if self.verbose:
                 tprint_info("   🔍 Phase 2: Conditional independence tests...")
             
@@ -390,12 +408,6 @@ class CausalDiscovery:
             if self.verbose:
                 tprint_error(f"❌ PC Algorithm failed: {e}")
             raise
-            
-        except Exception as e:
-            if self.verbose:
-                tprint_error(f"❌ PC Algorithm failed: {e}")
-            raise
-    
     def lingam_orientation(self, data: pd.DataFrame) -> np.ndarray:
         """
         Use LiNGAM for edge orientation (simplified implementation).

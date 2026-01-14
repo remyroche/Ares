@@ -668,3 +668,44 @@ def _numba_streak_persistence(close, window=20):
                 output[i] = mean_val / std_val
                 
     return output
+
+@jit(nopython=True)
+def _numba_rolling_correlation(x, y, window):
+    """
+    Calculate rolling correlation between two arrays using Numba.
+    x, y: Input arrays (must be same length)
+    window: Rolling window size
+    """
+    n = len(x)
+    # Check length
+    if len(y) != n:
+        # For simplicity in nopython mode, just return zeros if mismatch
+        # Ideally caller ensures matching lengths
+        return np.zeros(n, dtype=np.float64)
+
+    output = np.zeros(n, dtype=np.float64)
+
+    # We need at least 'window' elements
+    # i represents the end index (exclusive) of the window
+    # Loop from window to n (inclusive for slice end)
+    for i in range(window, n + 1):
+        # Slice window [start:end]
+        x_chunk = x[i-window:i]
+        y_chunk = y[i-window:i]
+
+        # Calculate correlation manually
+        x_mean = np.mean(x_chunk)
+        y_mean = np.mean(y_chunk)
+
+        x_dev = x_chunk - x_mean
+        y_dev = y_chunk - y_mean
+
+        numerator = np.sum(x_dev * y_dev)
+        denominator = np.sqrt(np.sum(x_dev**2) * np.sum(y_dev**2))
+
+        if denominator > 1e-10:
+            output[i-1] = numerator / denominator
+        else:
+            output[i-1] = 0.0
+
+    return output

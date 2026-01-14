@@ -50,7 +50,7 @@ try:
     import xgboost as xgb
     TREESHAP_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"⚠️ TreeSHAP not available: {e}")
+    print(f"⚠️ TreeSHAP not available: {e}")
     TREESHAP_AVAILABLE = False
 
 from src.training.steps.base_step import BaseStep

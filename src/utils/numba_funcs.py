@@ -691,43 +691,157 @@ def _numba_streak_persistence(close, window=20):
                 
     return output
 
-@jit(nopython=True)
-def _numba_rolling_correlation(x, y, window):
+  @jit(nopython=True)
+def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
     """
-    Calculate rolling correlation between two arrays using Numba.
-    x, y: Input arrays (must be same length)
-    window: Rolling window size
+    Rolling sum aligned to the right edge of the window.
+    First (window-1) elements are 0.0.
     """
     n = len(x)
-    # Check length
+    out = np.zeros(n, dtype=np.float64)
+
+    if window <= 0:
+        return out
+    if window == 1:
+        # Right-aligned sum with window=1 is the value itself
+        for i in range(n):
+            out[i] = x[i]
+        return out
+
+    s = 0.0
+    for i in range(n):
+        s += x[i]
+        if i >= window:
+            s -= x[i - window]
+        if i >= window - 1:
+            out[i] = s
+    return out
+
+
+@jit(nopython=True)
+def _numba_rolling_mean(x: np.ndarray, window: int) -> np.ndarray:
+    """
+    Rolling mean aligned to the right edge of the window.
+    First (window-1) elements are 0.0.
+    """
+    n = len(x)
+    out = np.zeros(n, dtype=np.float64)
+
+    if window <= 0:
+        return out
+    if window == 1:
+        for i in range(n):
+            out[i] = x[i]
+        return out
+
+    s = 0.0
+    inv_w = 1.0 / window
+    for i in range(n):
+        s += x[i]
+        if i >= window:
+            s -= x[i - window]
+        if i >= window - 1:
+            out[i] = s * inv_w
+    return out
+
+
+@jit(nopython=True)
+def _numba_rolling_std(x: np.ndarray, window: int) -> np.ndarray:
+    """
+    Rolling standard deviation aligned to the right edge of the window.
+    Uses E[x^2] - (E[x])^2 (fast; fine for typical small windows).
+    """
+    n = len(x)
+    out = np.zeros(n, dtype=np.float64)
+
+    if window <= 0:
+        return out
+    if window == 1:
+        # Std over a single point is 0
+        return out
+
+    s = 0.0
+    ss = 0.0
+    inv_w = 1.0 / window
+
+    for i in range(n):
+        v = x[i]
+        s += v
+        ss += v * v
+
+        if i >= window:
+            r = x[i - window]
+            s -= r
+            ss -= r * r
+
+        if i >= window - 1:
+            mean = s * inv_w
+            var = (ss * inv_w) - (mean * mean)
+            if var <= _EPS:
+                out[i] = 0.0
+            else:
+                out[i] = np.sqrt(var)
+
+    return out
+
+
+@jit(nopython=True)
+def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
+    """
+    Rolling correlation Corr(x,y) aligned to the right edge of the window.
+
+    Corr = Cov(x,y) / (Std(x)*Std(y))
+    Cov(x,y) = E[xy] - E[x]E[y]
+    """
+    n = len(x)
+    out = np.zeros(n, dtype=np.float64)
+
+    if window <= 0:
+        return out
     if len(y) != n:
-        # For simplicity in nopython mode, just return zeros if mismatch
-        # Ideally caller ensures matching lengths
-        return np.zeros(n, dtype=np.float64)
+        # In nopython mode, avoid raising; caller should ensure matching lengths.
+        return out
+    if window == 1:
+        # Correlation over a single point is undefined; return 0s (consistent with other kernels)
+        return out
 
-    output = np.zeros(n, dtype=np.float64)
+    sx = 0.0
+    sy = 0.0
+    sxx = 0.0
+    syy = 0.0
+    sxy = 0.0
+    inv_w = 1.0 / window
 
-    # We need at least 'window' elements
-    # i represents the end index (exclusive) of the window
-    # Loop from window to n (inclusive for slice end)
-    for i in range(window, n + 1):
-        # Slice window [start:end]
-        x_chunk = x[i-window:i]
-        y_chunk = y[i-window:i]
+    for i in range(n):
+        vx = x[i]
+        vy = y[i]
 
-        # Calculate correlation manually
-        x_mean = np.mean(x_chunk)
-        y_mean = np.mean(y_chunk)
+        sx += vx
+        sy += vy
+        sxx += vx * vx
+        syy += vy * vy
+        sxy += vx * vy
 
-        x_dev = x_chunk - x_mean
-        y_dev = y_chunk - y_mean
+        if i >= window:
+            rx = x[i - window]
+            ry = y[i - window]
+            sx -= rx
+            sy -= ry
+            sxx -= rx * rx
+            syy -= ry * ry
+            sxy -= rx * ry
 
-        numerator = np.sum(x_dev * y_dev)
-        denominator = np.sqrt(np.sum(x_dev**2) * np.sum(y_dev**2))
+        if i >= window - 1:
+            mx = sx * inv_w
+            my = sy * inv_w
 
-        if denominator > 1e-10:
-            output[i-1] = numerator / denominator
-        else:
-            output[i-1] = 0.0
+            varx = (sxx * inv_w) - (mx * mx)
+            vary = (syy * inv_w) - (my * my)
+            cov = (sxy * inv_w) - (mx * my)
 
-    return output
+            if varx <= _EPS or vary <= _EPS:
+                out[i] = 0.0
+            else:
+                out[i] = cov / np.sqrt(varx * vary)
+
+    return out

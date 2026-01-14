@@ -16,6 +16,7 @@ Principles:
 4.  **Huber as a Detector:** Uses Huber loss to handle outliers robustly. Edges are
     detected based on coefficient stability, not just magnitude.
 5.  **Persistence:** Saves discovery artifacts.
+6.  **Strict Stability:** Enforces sign consistency and out-of-sample validation per split.
 """
 
 import numpy as np
@@ -24,11 +25,13 @@ from typing import Dict, List, Optional, Any, Tuple
 from sklearn.linear_model import HuberRegressor
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 from joblib import Parallel, delayed
 import warnings
 from collections import defaultdict
 import os
 import json
+import math
 from datetime import datetime
 
 # Import tprint functions
@@ -47,12 +50,14 @@ class HuberCausalDiscovery:
     """
 
     def __init__(self,
-                 max_lag: int = 1,
-                 n_splits: int = 5,
+                 max_lag: int = 2,
+                 n_splits: int = 7,
                  epsilon: float = 1.35,
                  alpha: float = 0.0001,
-                 stability_threshold: float = 0.4,
-                 detection_threshold: float = 0.01,
+                 stability_threshold: float = 0.7,
+                 sign_stability_threshold: float = 0.8,
+                 detection_threshold: float = 0.05, # Normalized scale
+                 validation_threshold: float = 0.05, # Min OOS correlation
                  n_jobs: int = -1,
                  verbose: bool = True):
         """
@@ -64,7 +69,9 @@ class HuberCausalDiscovery:
             epsilon: Huber epsilon (robustness parameter).
             alpha: L2 regularization strength.
             stability_threshold: Fraction of splits an edge must appear in (0.0 to 1.0).
-            detection_threshold: Minimum coefficient magnitude to count as an edge.
+            sign_stability_threshold: Fraction of sign agreement required.
+            detection_threshold: Minimum coefficient magnitude (std dev units) to count as an edge.
+            validation_threshold: Minimum Out-of-Sample correlation to accept a split's model.
             n_jobs: Parallel jobs.
             verbose: Logging verbosity.
         """
@@ -73,80 +80,157 @@ class HuberCausalDiscovery:
         self.epsilon = epsilon
         self.alpha = alpha
         self.stability_threshold = stability_threshold
+        self.sign_stability_threshold = sign_stability_threshold
         self.detection_threshold = detection_threshold
+        self.validation_threshold = validation_threshold
         self.n_jobs = n_jobs
         self.verbose = verbose
 
         # Artifact storage
         self.discovery_artifacts = {}
 
-    def _fit_target_split(self, X_train: np.ndarray, y_train: np.ndarray,
-                          predictor_names: List[str]) -> Dict[str, float]:
-        """Fit Huber for a single target on a single split."""
+    def _fit_and_validate_split(self, X_train: np.ndarray, y_train: np.ndarray,
+                                X_test: np.ndarray, y_test: np.ndarray,
+                                predictor_names: List[str]) -> Tuple[Dict[str, float], float]:
+        """
+        Fit Huber on Train, Validate on Test.
+        Returns coefficients and OOS correlation.
+        """
         if len(y_train) < 50:
-            return {} # Too few samples
+            return {}, 0.0 # Too few samples
 
         try:
+            # Scale per split to prevent leakage
+            scaler_X = StandardScaler()
+            scaler_y = StandardScaler()
+
+            X_train_scaled = scaler_X.fit_transform(X_train)
+            y_train_scaled = scaler_y.fit_transform(y_train.reshape(-1, 1)).flatten()
+
             # Fit Huber
-            # Note: Data should be standardized before this call
             model = HuberRegressor(epsilon=self.epsilon, alpha=self.alpha, fit_intercept=True, max_iter=200)
-            model.fit(X_train, y_train)
+            model.fit(X_train_scaled, y_train_scaled)
+
+            # Validate on Test
+            if len(y_test) > 10:
+                X_test_scaled = scaler_X.transform(X_test)
+                y_test_scaled = scaler_y.transform(y_test.reshape(-1, 1)).flatten()
+
+                y_pred = model.predict(X_test_scaled)
+
+                # Check OOS correlation
+                # Handle edge cases (constant pred)
+                if np.std(y_pred) < 1e-9 or np.std(y_test_scaled) < 1e-9:
+                    oos_score = 0.0
+                else:
+                    oos_score = np.corrcoef(y_test_scaled, y_pred)[0, 1]
+            else:
+                oos_score = 0.0 # Cannot validate
 
             # Extract significant coefs
             coeffs = {}
             for name, coef in zip(predictor_names, model.coef_):
                 if abs(coef) > self.detection_threshold:
                     coeffs[name] = coef
-            return coeffs
+
+            return coeffs, oos_score
+
         except Exception:
-            return {}
+            return {}, 0.0
 
     def _process_target_variable(self, target_col: str, X_lagged: np.ndarray,
                                  y_target: np.ndarray, predictor_names: List[str]) -> Tuple[str, Dict[str, Any]]:
-        """Process a single target variable across all splits."""
+        """Process a single target variable across all splits with validation."""
 
         tscv = TimeSeriesSplit(n_splits=self.n_splits)
-        split_results = []
+        split_coeffs = []
+        valid_splits = 0
 
         # Execute splits
-        # We can parallelize splits, but since we parallelize targets, we do splits sequentially here
-        # to avoid oversubscription if n_jobs is global.
-        # Actually, sklearn models release GIL, but overhead matters.
-        # Let's run splits sequentially inside this function.
+        for train_index, test_index in tscv.split(X_lagged):
+            X_train, X_test = X_lagged[train_index], X_lagged[test_index]
+            y_train, y_test = y_target[train_index], y_target[test_index]
 
-        for train_index, _ in tscv.split(X_lagged):
-            X_train_split = X_lagged[train_index]
-            y_train_split = y_target[train_index]
+            coeffs, oos_score = self._fit_and_validate_split(
+                X_train, y_train, X_test, y_test, predictor_names
+            )
 
-            coeffs = self._fit_target_split(X_train_split, y_train_split, predictor_names)
-            split_results.append(coeffs)
+            # Only count splits where the model learned something generalizable
+            if oos_score > self.validation_threshold:
+                split_coeffs.append(coeffs)
+                valid_splits += 1
 
         # Aggregation / Stability Selection
-        # Count occurrences of each edge
-        edge_counts = defaultdict(int)
-        edge_magnitudes = defaultdict(list)
+        # Track counts, magnitudes, and signs
+        edge_stats = defaultdict(lambda: {'count': 0, 'magnitudes': [], 'signs': []})
 
-        for res in split_results:
+        for res in split_coeffs:
             for pred, coef in res.items():
-                edge_counts[pred] += 1
-                edge_magnitudes[pred].append(abs(coef))
+                edge_stats[pred]['count'] += 1
+                edge_stats[pred]['magnitudes'].append(abs(coef))
+                edge_stats[pred]['signs'].append(np.sign(coef))
 
-        # Filter by stability
+        # Filter by stability gates
         stable_parents = []
         parent_strengths = {}
 
-        threshold_count = int(self.n_splits * self.stability_threshold)
+        # Hard stability gate: ceil(threshold * n_splits)
+        # Note: We use total n_splits for threshold, or valid_splits?
+        # User said: "stability gate = >= 4/5 splits". Usually implies total.
+        # But if validation fails, the edge wasn't stable/predictive.
+        # So we stick to n_splits base.
+        required_count = math.ceil(self.n_splits * self.stability_threshold)
 
-        for pred, count in edge_counts.items():
-            if count >= threshold_count:
-                stable_parents.append(pred)
-                parent_strengths[pred] = np.mean(edge_magnitudes[pred])
+        for pred, stats in edge_stats.items():
+            count = stats['count']
+            signs = np.array(stats['signs'])
+
+            # 1. Existence Stability
+            if count < required_count:
+                continue
+
+            # 2. Sign Consistency
+            pos_count = np.sum(signs > 0)
+            neg_count = np.sum(signs < 0)
+            major_sign_count = max(pos_count, neg_count)
+            sign_agreement = major_sign_count / count
+
+            if sign_agreement < self.sign_stability_threshold:
+                continue
+
+            # Passed all gates
+            stable_parents.append(pred)
+            parent_strengths[pred] = np.mean(stats['magnitudes'])
 
         return target_col, {
             'parents': stable_parents,
             'strengths': parent_strengths,
-            'stability_counts': dict(edge_counts)
+            'valid_splits': valid_splits
         }
+
+    def _inject_market_mode(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add a 'Market_Mode' proxy if no obvious market index exists."""
+        # Simple heuristic: First Principal Component of all returns
+        # This captures the common factor driving the system
+        try:
+            scaler = StandardScaler()
+            df_scaled = scaler.fit_transform(df)
+
+            pca = PCA(n_components=1)
+            market_mode = pca.fit_transform(df_scaled).flatten()
+
+            # Orient market mode to be positively correlated with mean return
+            # (PCA sign is arbitrary)
+            mean_ret = np.mean(df_scaled, axis=1)
+            corr = np.corrcoef(market_mode, mean_ret)[0, 1]
+            if corr < 0:
+                market_mode = -market_mode
+
+            df_aug = df.copy()
+            df_aug['Market_Mode_PCA'] = market_mode
+            return df_aug
+        except Exception:
+            return df
 
     def discover_causal_structure(self, df: pd.DataFrame, target_variable: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -154,7 +238,7 @@ class HuberCausalDiscovery:
 
         Args:
             df: Input dataframe (numeric).
-            target_variable: (Optional) Focus variable, though we discover full skeleton.
+            target_variable: (Optional) Focus variable.
 
         Returns:
             Dictionary with 'causal_graph' (adjacency list) and metadata.
@@ -166,25 +250,23 @@ class HuberCausalDiscovery:
         if self.verbose:
             tprint_info(f"🚀 Huber Causal Discovery: {df.shape[1]} variables, {len(df)} samples")
             tprint_info(f"   ⚙️ Config: lag={self.max_lag}, splits={self.n_splits}, epsilon={self.epsilon}")
+            tprint_info(f"   🛡️ Stability: >{self.stability_threshold:.0%} freq, >{self.sign_stability_threshold:.0%} sign agree")
 
         # 1. Data Preparation
-        # Standardize inputs
-        scaler = StandardScaler()
-        df_scaled = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
+        # Inject Market Mode to capture confounders
+        df_proc = self._inject_market_mode(df)
 
         # Create Lagged Features
-        # For each variable X, create X_lag1, X_lag2...
-        # We predict Y_t using X_{t-k}
-
+        # We do NOT scale globally here. We scale inside splits.
         lagged_data = {}
-        target_data = df_scaled.iloc[self.max_lag:].copy() # Align targets (drop first k rows)
+        # Target data must align (drop first max_lag rows)
+        target_data = df_proc.iloc[self.max_lag:].copy()
 
         predictor_names = []
 
         # Build lagged matrix
-        # Optimize: Shift whole DF
         for lag in range(1, self.max_lag + 1):
-            df_shifted = df_scaled.shift(lag).iloc[self.max_lag:]
+            df_shifted = df_proc.shift(lag).iloc[self.max_lag:]
             for col in df_shifted.columns:
                 name = f"{col}_L{lag}"
                 lagged_data[name] = df_shifted[col].values
@@ -196,9 +278,7 @@ class HuberCausalDiscovery:
             tprint_info(f"   📊 Feature Matrix: {X_matrix.shape} (lags construction)")
 
         # 2. Parallel Node-wise Regression
-        # We predict *every* column in df (at time t) using X_matrix (time t-k)
-
-        targets = df.columns.tolist()
+        targets = df_proc.columns.tolist()
 
         results = Parallel(n_jobs=self.n_jobs)(
             delayed(self._process_target_variable)(
@@ -209,10 +289,7 @@ class HuberCausalDiscovery:
         # 3. Construct Graph
         causal_graph = {}
         causal_strength = {}
-        stability_stats = {}
-
-        # Map back lagged names to variables
-        # "FeatureA_L1" -> "FeatureA" is parent of Target
+        valid_split_stats = {}
 
         total_edges = 0
 
@@ -221,81 +298,42 @@ class HuberCausalDiscovery:
             strengths_clean = {}
 
             for pred_name in res['parents']:
-                # Parse original variable name
-                # Format: {col}_L{lag}
-                # Find last occurrence of _L
                 if "_L" in pred_name:
                     parent_var = pred_name.rsplit("_L", 1)[0]
-                    # Edge: parent_var -> target
+                    # Self-loops allowed in lags (Autoregression)
+                    # But if we want purely cross-sectional structure, we might filter.
+                    # Usually autoregression is good to keep as it explains variance.
+
                     parents_clean.add(parent_var)
 
-                    # Aggregate strength (max or mean across lags if multi-lag)
                     s = res['strengths'][pred_name]
                     if parent_var in strengths_clean:
                         strengths_clean[parent_var] = max(strengths_clean[parent_var], s)
                     else:
                         strengths_clean[parent_var] = s
 
-            causal_graph[target] = list(parents_clean)
-            # Store strength tuples (parent, strength)
-            causal_strength[target] = strengths_clean
-            stability_stats[target] = res['stability_counts']
+            if parents_clean:
+                causal_graph[target] = list(parents_clean)
+                causal_strength[target] = strengths_clean
+
+            valid_split_stats[target] = res['valid_splits']
             total_edges += len(parents_clean)
 
         # 4. Persistence
-        self.save_checkpoints(causal_graph, stability_stats)
+        self.save_checkpoints(causal_graph, valid_split_stats)
 
         if self.verbose:
-            tprint_success(f"✅ Huber Discovery Complete: {total_edges} edges found.")
-            # Show top node degree
-            degrees = {k: len(v) for k, v in causal_graph.items()}
-            if degrees:
-                max_deg = max(degrees.values())
-                max_node = max(degrees, key=degrees.get)
-                tprint_info(f"   ℹ️ Max In-Degree: {max_node} ({max_deg} parents)")
+            tprint_success(f"✅ Huber Discovery Complete: {total_edges} lagged dependency edges found.")
+            avg_valid = np.mean(list(valid_split_stats.values())) if valid_split_stats else 0
+            tprint_info(f"   ℹ️ Avg Valid Splits: {avg_valid:.1f}/{self.n_splits}")
 
         return {
-            'causal_graph': causal_graph,  # {child: [parents]} format matching existing usage?
-            # Wait, CausalDiscovery.discover_causal_structure returned adjacency list {parent: [children]}?
-            # PC algorithm returns undirected/directed graph.
-            # Let's check previous code.
-            # CausalDiscovery.pc_algorithm returns `graph = {var: []}` where list contains children?
-            # "graph[variable_names[i]].append(variable_names[j])" -> adjacency_matrix[i,j]=1
-            # Usually adj[i,j]=1 means i->j.
-            # Let's verify standard.
-            # My logic above constructed {child: [parents]}.
-            # I should invert it to {parent: [children]} to match standard "Causal Graph" format if that's what's expected.
-            # Or clarify return dict.
-            # LabelBasedLayer2 uses it to find parents of 'target'.
-            # It calls `sharpe_parents = causal_graph.get('TARGET_Sharpe', [])`.
-            # If the dict is {node: [parents]}, then `get('TARGET')` returns parents.
-            # If the dict is {node: [children]}, then `get('TARGET')` returns children.
-            # Let's check `_run_causal_discovery` in `label_based_layer_2.py`:
-            # "Extract parents of TARGET_Sharpe ... sharpe_parents = causal_graph.get('TARGET_Sharpe', [])"
-            # AND "discovery_results = quick_bayesian_causal_discovery(...)"
-            # "consensus_graph": {var: [parents]} usually for Bayesian networks.
-            # BUT `CausalDiscovery.pc_algorithm` code showed: `graph[variable_names[i]].append(variable_names[j])`.
-            # This looks like `i -> j`. So {parent: [children]}.
-            # However, `LabelBasedLayer2` code:
-            # "sharpe_parents = causal_graph.get('TARGET_Sharpe', [])"
-            # If the graph was parent->children, getting 'TARGET' would give its children.
-            # Context implies we want drivers (parents).
-            # The Bayesian discovery usually returns parents list.
-            # Let's standardize on returning **{Child: [Parents]}** which is more useful for "What drives X?".
-            # Wait, if `LabelBasedLayer2` expects {Child: [Parents]}, and PC returns {Parent: [Children]}, there is a mismatch.
-            # Let's check `_run_causal_discovery` again.
-            # It prints: "Identified {len} drivers of Sharpe Ratio".
-            # Drivers = Parents.
-            # So `causal_graph` must be {Child: [Parents]}.
-            # My `Huber` implementation produces {Child: [Parents]} naturally.
-            # So I will return `causal_graph` as is (Child -> Parents).
-
-            # Additional metadata
-            'stability_stats': stability_stats,
-            'causal_strength': causal_strength
+            'causal_graph': causal_graph,  # {Child: [Parents]}
+            'causal_strength': causal_strength,
+            'valid_split_stats': valid_split_stats
         }
 
-    def save_checkpoints(self, graph: Dict, stability: Dict):
+    def save_checkpoints(self, graph: Dict, stats: Dict):
         """Persist discovery artifacts."""
         try:
             out_dir = "outcomes/causal_discovery"
@@ -303,17 +341,11 @@ class HuberCausalDiscovery:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # Save graph
-            with open(f"{out_dir}/huber_graph_{ts}.json", 'w') as f:
+            with open(f"{out_dir}/lagged_dependency_skeleton_{ts}.json", 'w') as f:
                 json.dump(graph, f, indent=2)
 
-            # Save stability
-            # Convert stability keys to string if needed
-            safe_stability = {k: {str(p): c for p, c in v.items()} for k, v in stability.items()}
-            with open(f"{out_dir}/huber_stability_{ts}.json", 'w') as f:
-                json.dump(safe_stability, f, indent=2)
-
             if self.verbose:
-                tprint_info(f"   💾 Checkpoints saved to {out_dir}")
+                tprint_info(f"   💾 Lagged skeleton saved to {out_dir}")
         except Exception as e:
             tprint_warning(f"   ⚠️ Failed to save checkpoints: {e}")
 

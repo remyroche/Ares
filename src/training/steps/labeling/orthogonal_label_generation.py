@@ -22,6 +22,15 @@ from src.training.steps.labeling.covariance_denoising import marcenko_pastur_dis
 from .focal_loss_utils import get_focal_loss_lgbm
 from src.utils.entropy_optimized import rolling_entropy_numba
 from src.utils.order_block_optimized import find_order_blocks_numba
+from src.utils.cusum_optimized import generate_dual_cusum_numba
+from src.utils.labeling_optimized import (
+    triple_barrier_labels_numba,
+    persistence_label_numba,
+    window_stats_close_numba,
+    window_stats_high_low_numba,
+    first_hit_numba,
+    first_hit_high_low_numba
+)
 from src.training.steps.labeling.composite_event_generators import (
     get_microstructure_generators,
     TradeIntensityEvents,
@@ -1619,58 +1628,50 @@ def compute_dominance_labels(
              logger.warning(f"DEBUG: n_bars={n_bars}, horizon={horizon}")
         return tuple([pd.Series(dtype=float)] * 6)
 
-    # 2. Construct Window Matrix (N x Horizon)
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-
-    # Get Prices
+    # 3. Compute MFE/MAE & Hits (Numba Optimized)
     price_vals = price.values
-    entry_prices = price_vals[valid_idxs]
-
-    # 3. Compute MFE/MAE & Hits
     vol_vals = volatility.values[valid_idxs]
     vol_vals = np.maximum(vol_vals, 1e-6)
 
-    pt_thresh = (vol_vals * pt_mult)[:, None]
-    sl_thresh = (-vol_vals * sl_mult)[:, None]
+    # Thresholds as 1D arrays for Numba
+    pt_thresh_arr = (vol_vals * pt_mult)
+    sl_thresh_arr = (-vol_vals * sl_mult)
 
     # Check if High/Low provided
     if high is not None and low is not None:
         high_vals = high.values
         low_vals = low.values
-        window_highs = high_vals[window_idxs]
-        window_lows = low_vals[window_idxs]
 
-        # Returns relative to entry
-        high_ret = window_highs / entry_prices[:, None] - 1.0
-        low_ret = window_lows / entry_prices[:, None] - 1.0
+        # Calculate stats
+        mfe, mae, final_ret = window_stats_high_low_numba(
+            high_vals, low_vals, price_vals, valid_idxs, horizon
+        )
 
-        mfe = np.max(high_ret, axis=1)
-        # MAE is max negative excursion (magnitude)
-        mae = -np.min(low_ret, axis=1)
-
-        hit_pt = high_ret > pt_thresh
-        hit_sl = low_ret < sl_thresh
+        # Calculate hits
+        first_pt_idx, first_sl_idx, any_pt_arr, any_sl_arr = first_hit_high_low_numba(
+            high_vals, low_vals, price_vals, valid_idxs, pt_thresh_arr, sl_thresh_arr, horizon
+        )
     else:
-        window_prices = price_vals[window_idxs]
-        returns_matrix = window_prices / entry_prices[:, None] - 1.0
+        # Calculate stats
+        mfe, mae, final_ret = window_stats_close_numba(
+            price_vals, valid_idxs, horizon
+        )
 
-        mfe = np.max(returns_matrix, axis=1)
-        mae = np.max(-returns_matrix, axis=1)
+        # Calculate hits
+        first_pt_idx, first_sl_idx, any_pt_arr, any_sl_arr = first_hit_numba(
+            price_vals, valid_idxs, pt_thresh_arr, sl_thresh_arr, horizon
+        )
 
-        hit_pt = returns_matrix > pt_thresh
-        hit_sl = returns_matrix < sl_thresh
+    # Convert to boolean/numpy arrays for downstream logic
+    any_pt = any_pt_arr.astype(bool)
+    any_sl = any_sl_arr.astype(bool)
+    # first_pt_idx, first_sl_idx are already 1-based indices relative to start.
+    # Logic below compares them: first_pt_idx < first_sl_idx.
+    # Note: If not hit, numba returns horizon + 1. So comparison works.
 
-    # For outcome calculation, we use Close prices if neither hit
-    window_closes = price_vals[window_idxs]
-    close_returns = window_closes / entry_prices[:, None] - 1.0
-
-    # Identify first hit indices
-    any_pt = np.any(hit_pt, axis=1)
-    any_sl = np.any(hit_sl, axis=1)
-
-    first_pt_idx = np.argmax(hit_pt, axis=1)
-    first_sl_idx = np.argmax(hit_sl, axis=1)
+    # We need 'close_returns' last value for timeout case.
+    # In Numba 'final_ret' is exactly that.
+    timeout_returns = final_ret
 
     # TBM Logic (Ternary +1, -1, 0)
     # Case 1: Proft hit first (relative to SL)
@@ -1693,7 +1694,7 @@ def compute_dominance_labels(
     
     # Case 3: Timeout
     timeout_mask = (~any_pt) & (~any_sl)
-    timeout_returns = close_returns[:, -1]
+    # timeout_returns already set to final_ret
     FEE_THRESHOLD = transaction_cost
     labels[timeout_mask & (timeout_returns > FEE_THRESHOLD)] = 1.0
     labels[timeout_mask & (timeout_returns < -FEE_THRESHOLD)] = -1.0
@@ -1709,7 +1710,7 @@ def compute_dominance_labels(
     # 6. Returns (use win_mask)
     out_returns = np.where(win_mask, pt_mult * vol_vals, -sl_mult * vol_vals)
     timeout_mask = (~any_pt) & (~any_sl)
-    out_returns[timeout_mask] = close_returns[timeout_mask, -1]
+    out_returns[timeout_mask] = timeout_returns[timeout_mask]
 
     # Construct Series
     idx = valid_events
@@ -5558,44 +5559,18 @@ def generate_dual_cusum_signals(
     # 3. Dynamic Thresholds
     h = k * vol
     
-    # 4. Standard CUSUM logic with ER weighting
-    s_pos = 0
-    s_neg = 0
-    diff = close.diff()
-    
-    trend_signal = pd.Series(0, index=close.index)
-    reversal_signal = pd.Series(0, index=close.index)
-    
-    diff_arr = diff.values
+    # 4. Standard CUSUM logic with ER weighting (Numba Optimized)
+    diff = close.diff().fillna(0).values
     h_arr = h.values
-    er_arr = er.values
+    er_arr = er.fillna(0).values
     
-    for i in range(1, len(close)):
-        if np.isnan(h_arr[i]): continue
-        
-        # S+
-        s_pos = max(0, s_pos + diff_arr[i])
-        # S-
-        s_neg = min(0, s_neg + diff_arr[i])
-        
-        if s_pos > h_arr[i]:
-            # Regime Detection
-            if er_arr[i] > er_min:
-                trend_signal.iloc[i] = 1
-            else:
-                reversal_signal.iloc[i] = -1
-            s_pos = 0
-            
-        elif s_neg < -h_arr[i]:
-            if er_arr[i] > er_min:
-                trend_signal.iloc[i] = -1
-            else:
-                reversal_signal.iloc[i] = 1
-            s_neg = 0
+    trend_arr, reversal_arr = generate_dual_cusum_numba(
+        diff, h_arr, er_arr, er_min
+    )
             
     return pd.DataFrame({
-        'trend_signal': trend_signal,
-        'reversal_signal': reversal_signal
+        'trend_signal': pd.Series(trend_arr, index=close.index),
+        'reversal_signal': pd.Series(reversal_arr, index=close.index)
     })
 
 class InventorySpecialistEvents(BaseEventGenerator):
@@ -6120,17 +6095,12 @@ def apply_persistence_label(df: pd.DataFrame, events: pd.DatetimeIndex, series_c
     if len(valid_idxs) == 0:
         return pd.Series(0, index=df.index)
 
-    # Window Matrix
-    offsets = np.arange(1, horizon + 1)
-    window_idxs = valid_idxs[:, None] + offsets[None, :]
-
-    vals = df[series_col].values[window_idxs]
-    avg_vals = np.mean(vals, axis=1)
-
-    labels = (avg_vals > threshold).astype(int)
+    # Numba Optimized
+    vals = df[series_col].values
+    labels_arr = persistence_label_numba(vals, valid_idxs, horizon, threshold)
 
     out = pd.Series(0, index=df.index)
-    out.loc[final_events] = labels
+    out.loc[final_events] = labels_arr
     return out
 
 def apply_triple_barrier_multi(df: pd.DataFrame, events: pd.DatetimeIndex,
@@ -6165,62 +6135,19 @@ def apply_triple_barrier_multi(df: pd.DataFrame, events: pd.DatetimeIndex,
     valid_idxs = event_idxs[valid_mask]
 
     for h in horizons:
-        # Filter for horizon
-        h_mask = valid_idxs < (len(close) - h)
-        h_idxs = valid_idxs[h_mask]
+        # Filter for horizon (not strictly needed for Numba func as it checks bounds,
+        # but needed for aligning timestamps for assignment)
+        # Numba func returns labels for all input events. If bound error, it returns 0.
+        # But we need to assign back to specific timestamps.
 
-        if len(h_idxs) == 0:
-            continue
-
-        # Vectorized Window
-        offsets = np.arange(1, h + 1)
-        window_idxs = h_idxs[:, None] + offsets[None, :]
-
-        window_prices = close[window_idxs]
-        entry_prices = close[h_idxs]
-        entry_vols = vol[h_idxs]
-
-        # Avoid zero vol
-        entry_vols = np.maximum(entry_vols, 1e-6)
-
-        ret = window_prices / entry_prices[:, None] - 1.0
-
-        up_barrier = pt_sl[0] * entry_vols
-        down_barrier = pt_sl[1] * entry_vols
-
-        hit_up = ret >= up_barrier[:, None]
-        hit_down = ret <= -down_barrier[:, None]
-
-        # First hit logic
-        first_up = np.argmax(hit_up, axis=1)
-        first_down = np.argmax(hit_down, axis=1)
-
-        # Mask where no hit occurred (argmax returns 0 if all false, need to check if actually hit)
-        any_up = np.any(hit_up, axis=1)
-        any_down = np.any(hit_down, axis=1)
-
-        labels = np.zeros(len(h_idxs), dtype=int)
-
-        # Vectorized check
-        # Case 1: Only Up
-        mask_up = any_up & ~any_down
-        labels[mask_up] = 1
-
-        # Case 2: Only Down
-        mask_down = any_down & ~any_up
-        labels[mask_down] = -1
-
-        # Case 3: Both
-        mask_both = any_up & any_down
-        # first_up < first_down -> 1
-        sub_mask_up = mask_both & (first_up < first_down)
-        labels[sub_mask_up] = 1
-
-        sub_mask_down = mask_both & (first_down < first_up)
-        labels[sub_mask_down] = -1
+        # We pass ALL valid_idxs to numba. It returns array of same size.
+        # It handles partial/bound errors by skipping (returning 0).
+        labels = triple_barrier_labels_numba(
+            close, valid_idxs, vol, pt_sl[0], pt_sl[1], h
+        )
 
         # Assign to output
-        evt_timestamps = events_norm[valid_mask][h_mask]
+        evt_timestamps = events_norm[valid_mask]
 
         # Align TZ if needed
         if df.index.tz is not None and evt_timestamps.tz is None:

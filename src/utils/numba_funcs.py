@@ -691,7 +691,7 @@ def _numba_streak_persistence(close, window=20):
                 
     return output
 
-  @jit(nopython=True)
+@jit(nopython=True)
 def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling sum aligned to the right edge of the window.

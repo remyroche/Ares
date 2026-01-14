@@ -9,6 +9,43 @@ Conditional Mutual Information (CMI), and other statistical features.
 import numpy as np
 from numba import njit, prange
 
+@njit(parallel=True, fastmath=True)
+def numba_feature_target_correlation(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Calculate Pearson correlation between each column of X and target y in parallel.
+    Memory efficient: avoids creating large (N, F) normalized matrices.
+
+    Args:
+        X: Feature matrix (N, F)
+        y: Target vector (N,)
+
+    Returns:
+        Array of correlation scores (F,)
+    """
+    n_samples, n_features = X.shape
+    correlations = np.zeros(n_features, dtype=np.float32)
+
+    # Pre-calculate target stats
+    y_mean = np.mean(y)
+    y_std = np.std(y) + 1e-12
+    y_norm = (y - y_mean) / y_std
+
+    for i in prange(n_features):
+        col = X[:, i]
+        col_mean = np.mean(col)
+        col_std = np.std(col) + 1e-12
+
+        # Pearson correlation: mean((x - mean(x))/std(x) * (y - mean(y))/std(y))
+        # = sum((x - mean(x)) * y_norm) / (std(x) * N)
+
+        acc = 0.0
+        for j in range(n_samples):
+            acc += (col[j] - col_mean) * y_norm[j]
+
+        correlations[i] = acc / (col_std * n_samples)
+
+    return np.abs(correlations)
+
 @njit(fastmath=True)
 def numba_rolling_ols_3factor(y: np.ndarray, x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, window: int) -> np.ndarray:
     """

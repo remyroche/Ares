@@ -27,6 +27,12 @@ except ImportError:
     OPTIMIZED_AVAILABLE = False
     print("⚠️ Optimized Layer 2 functions not available, falling back to standard implementation")
 
+try:
+    from src.training.steps.labeling.layer3.optimized_utils import numba_feature_target_correlation
+    OPTIMIZED_UTILS_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_UTILS_AVAILABLE = False
+
 # Import Unified Cache
 try:
     from src.training.steps.labeling.layer3_feature_cache import (
@@ -464,17 +470,22 @@ def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.S
 
         # Standardize for correlation calculation
         if X_clean_T.shape[1] > 0:
-            y_mean = np.mean(y_clean)
-            y_std = np.std(y_clean) + EPS
-            y_norm = (y_clean - y_mean) / y_std
+            if OPTIMIZED_UTILS_AVAILABLE:
+                 # Transpose back to (N, F) for numba function which expects that
+                 target_corr = numba_feature_target_correlation(X_clean_T.T, y_clean)
+                 target_corr = np.nan_to_num(target_corr, nan=0.0)
+            else:
+                y_mean = np.mean(y_clean)
+                y_std = np.std(y_clean) + EPS
+                y_norm = (y_clean - y_mean) / y_std
 
-            X_mean = np.mean(X_clean_T, axis=1, keepdims=True)
-            X_std = np.std(X_clean_T, axis=1, keepdims=True) + EPS
-            X_norm = (X_clean_T - X_mean) / X_std
+                X_mean = np.mean(X_clean_T, axis=1, keepdims=True)
+                X_std = np.std(X_clean_T, axis=1, keepdims=True) + EPS
+                X_norm = (X_clean_T - X_mean) / X_std
 
-            # Correlation = dot(X_norm, y_norm) / N
-            target_corr = np.abs(np.dot(X_norm, y_norm) / X_clean_T.shape[1])
-            target_corr = np.nan_to_num(target_corr, nan=0.0)
+                # Correlation = dot(X_norm, y_norm) / N
+                target_corr = np.abs(np.dot(X_norm, y_norm) / X_clean_T.shape[1])
+                target_corr = np.nan_to_num(target_corr, nan=0.0)
         else:
             target_corr = np.zeros(X_clean_T.shape[0])
 

@@ -21,6 +21,7 @@ from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_s
 from src.training.steps.labeling.covariance_denoising import marcenko_pastur_distribution
 from .focal_loss_utils import get_focal_loss_lgbm
 from src.utils.entropy_optimized import rolling_entropy_numba
+from src.utils.order_block_optimized import find_order_blocks_numba
 from src.training.steps.labeling.composite_event_generators import (
     get_microstructure_generators,
     TradeIntensityEvents,
@@ -2548,50 +2549,27 @@ class OrderBlockEvents(BaseEventGenerator):
                 logger.warning(f"Insufficient data for Order Block analysis: need {lookback * 2}, got {len(df)}")
                 return pd.DatetimeIndex([])
             
-            events = []
             volume_ma = df['volume'].rolling(lookback).mean()
             
-            # Scan for order blocks
-            for i in range(lookback, len(df) - lookback):
-                current_candle = df.iloc[i]
-                
-                # Check for bullish order block (last down candle before up move)
-                if (current_candle['close'] < current_candle['open'] and  # Red candle
-                    current_candle['volume'] > volume_ma.iloc[i] * volume_threshold):  # High volume
-                    
-                    # Check if strong up move follows
-                    future_move = True
-                    for j in range(i + 1, min(i + lookback, len(df))):
-                        move_pct = (df.iloc[j]['close'] - current_candle['close']) / current_candle['close']
-                        if move_pct > min_move_pct / 100:  # Convert percentage to decimal
-                            future_move = True
-                            break
-                        elif move_pct < -min_move_pct / 100:  # Move against
-                            future_move = False
-                            break
-                    
-                    if future_move:
-                        events.append(df.index[i])
-                
-                # Check for bearish order block (last up candle before down move)
-                elif (current_candle['close'] > current_candle['open'] and  # Green candle
-                      current_candle['volume'] > volume_ma.iloc[i] * volume_threshold):  # High volume
-                    
-                    # Check if strong down move follows
-                    future_move = True
-                    for j in range(i + 1, min(i + lookback, len(df))):
-                        move_pct = (df.iloc[j]['close'] - current_candle['close']) / current_candle['close']
-                        if move_pct < -min_move_pct / 100:  # Convert percentage to decimal
-                            future_move = True
-                            break
-                        elif move_pct > min_move_pct / 100:  # Move against
-                            future_move = False
-                            break
-                    
-                    if future_move:
-                        events.append(df.index[i])
+            # Prepare numpy arrays for Numba
+            open_arr = df['open'].values
+            close_arr = df['close'].values
+            volume_arr = df['volume'].values
+            # Handle NaN in volume_ma (start of series)
+            volume_ma_arr = volume_ma.fillna(0).values
+
+            # Call Numba function
+            events_mask = find_order_blocks_numba(
+                open_arr,
+                close_arr,
+                volume_arr,
+                volume_ma_arr,
+                lookback,
+                min_move_pct,
+                volume_threshold
+            )
             
-            event_index = pd.DatetimeIndex(events)
+            event_index = df.index[events_mask]
             
             # Post-processing to avoid clustered events
             if len(event_index) > 1:

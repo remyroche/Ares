@@ -22,6 +22,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import warnings
 from scipy.stats import norm
+from joblib import Parallel, delayed
+from sklearn.base import clone
 
 # Import tprint functions
 try:
@@ -32,6 +34,101 @@ except ImportError:
     def tprint_success(msg): print(f"[SUCCESS] {msg}")
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
+
+def _reshape_prediction(prediction: Any, expected_width: int) -> np.ndarray:
+    """
+    Reshape prediction output to expected 2D shape.
+
+    Args:
+        prediction: Raw prediction output
+        expected_width: Expected number of columns
+
+    Returns:
+        Reshaped prediction array (n_samples, expected_width)
+    """
+    pred_array = np.asarray(prediction)
+    if pred_array.ndim == 1:
+        pred_array = pred_array.reshape(-1, 1)
+    if pred_array.shape[1] != expected_width:
+        raise ValueError(
+            f"Prediction width mismatch: expected {expected_width}, got {pred_array.shape[1]}"
+        )
+    return pred_array
+
+def _process_dml_fold(
+    fold_idx: int,
+    train_idx: np.ndarray,
+    val_idx: np.ndarray,
+    X_data: np.ndarray,
+    T_data: np.ndarray,
+    Y_data: np.ndarray,
+    treatment_model_template,
+    outcome_model_template,
+    treatment_width: int,
+    outcome_width: int,
+    verbose: bool = False
+) -> Dict[str, Any]:
+    """
+    Process a single fold for DML cross-validation.
+    Helper function for parallel execution.
+
+    Args:
+        fold_idx: Fold index
+        train_idx: Training indices
+        val_idx: Validation indices
+        X_data: Confounders array (n_samples, n_features)
+        T_data: Treatments array (n_samples, n_treatments)
+        Y_data: Outcomes array (n_samples, n_outcomes)
+        treatment_model_template: Unfitted treatment model
+        outcome_model_template: Unfitted outcome model
+        treatment_width: Width of treatment variable
+        outcome_width: Width of outcome variable
+        verbose: Verbosity flag
+
+    Returns:
+        Dictionary with fold results: val_idx, treatment_pred, outcome_pred, trained_models
+    """
+    if verbose:
+        tprint_info(f"   Processing fold {fold_idx + 1}...")
+
+    # Split data using numpy indexing
+    X_train, X_val = X_data[train_idx], X_data[val_idx]
+    T_train = T_data[train_idx]
+    Y_train = Y_data[train_idx]
+
+    # Clone models to ensure independence
+    treatment_model = clone(treatment_model_template)
+    outcome_model = clone(outcome_model_template)
+
+    # Fit treatment model
+    # Handle multi-output training
+    if T_train.shape[1] > 1:
+        treatment_model.fit(X_train, T_train)
+    else:
+        treatment_model.fit(X_train, T_train.ravel())
+
+    # Predict
+    t_pred = treatment_model.predict(X_val)
+    t_pred_reshaped = _reshape_prediction(t_pred, treatment_width)
+
+    # Fit outcome model
+    if Y_train.shape[1] > 1:
+        outcome_model.fit(X_train, Y_train)
+    else:
+        outcome_model.fit(X_train, Y_train.ravel())
+
+    # Predict
+    y_pred = outcome_model.predict(X_val)
+    y_pred_reshaped = _reshape_prediction(y_pred, outcome_width)
+
+    return {
+        'fold_idx': fold_idx,
+        'val_idx': val_idx,
+        'treatment_pred': t_pred_reshaped,
+        'outcome_pred': y_pred_reshaped,
+        'treatment_model': treatment_model,
+        'outcome_model': outcome_model
+    }
 
 class CausalTargetComputer:
     """
@@ -248,7 +345,7 @@ class CausalTargetComputer:
         confounders: Optional[pd.DataFrame] = None
     ) -> Dict[str, Any]:
         """
-        Compute causal effects using Double Machine Learning.
+        Compute causal effects using Double Machine Learning with parallelization.
         
         Args:
             X: Feature matrix
@@ -365,66 +462,56 @@ class CausalTargetComputer:
                 if self.verbose:
                     tprint_info(f"   Subsampled to {n_samples:,} samples")
             
+            # === Vectorized DML Optimization ===
+
+            # Convert confounders to float32 numpy array for efficient sharing and processing
+            if self.verbose:
+                tprint_info("   Preparing data for parallel DML execution...")
+            X_array = confounders.values.astype(np.float32)
+
+            # Get model templates (unfitted)
+            treatment_model_template = self._get_model("treatment", self.treatment_model)
+            outcome_model_template = self._get_model("outcome", self.outcome_model)
+
             # Initialize cross-validation
             kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)
             
-            # Initialize arrays for predictions
+            # Initialize output arrays
             treatment_pred = np.zeros((n_samples, treatment_width), dtype=float)
             outcome_pred = np.zeros((n_samples, outcome_width), dtype=float)
-
-            def _reshape_prediction(prediction: Any, expected_width: int) -> np.ndarray:
-                pred_array = np.asarray(prediction)
-                if pred_array.ndim == 1:
-                    pred_array = pred_array.reshape(-1, 1)
-                if pred_array.shape[1] != expected_width:
-                    raise ValueError(
-                        f"Prediction width mismatch: expected {expected_width}, got {pred_array.shape[1]}"
-                    )
-                return pred_array
             
-            # Cross-validation for out-of-fold predictions
-            for fold, (train_idx, val_idx) in enumerate(kf.split(confounders)):
-                if self.verbose:
-                    tprint_info(f"   Processing fold {fold + 1}/{self.n_folds}...")
-                
-                # Split data
-                X_train, X_val = confounders.iloc[train_idx], confounders.iloc[val_idx]
-                
-                T_train, T_val = treatments_array[train_idx], treatments_array[val_idx]
-                Y_train, Y_val = outcomes_array[train_idx], outcomes_array[val_idx]
-                
-                # Fit treatment model
-                treatment_model = self._get_model("treatment", self.treatment_model)
-                
-                # Handle multi-output training
-                if T_train.shape[1] > 1:
-                    treatment_model.fit(X_train, T_train)
-                else:
-                    treatment_model.fit(X_train, T_train.ravel())
-                
-                treatment_pred[val_idx] = _reshape_prediction(
-                    treatment_model.predict(X_val),
-                    treatment_width
-                )
-                
-                # Fit outcome model
-                outcome_model = self._get_model("outcome", self.outcome_model)
-                
-                # Handle multi-output training (unlikely for outcomes but safe)
-                if Y_train.shape[1] > 1:
-                    outcome_model.fit(X_train, Y_train)
-                else:
-                    outcome_model.fit(X_train, Y_train.ravel())
+            # Parallel Execution
+            if self.verbose:
+                tprint_info(f"   🚀 Starting parallel DML across {self.n_folds} folds...")
 
-                outcome_pred[val_idx] = _reshape_prediction(
-                    outcome_model.predict(X_val),
-                    outcome_width
+            results = Parallel(n_jobs=min(self.n_folds, 8))(
+                delayed(_process_dml_fold)(
+                    fold, train_idx, val_idx,
+                    X_array, treatments_array, outcomes_array,
+                    treatment_model_template, outcome_model_template,
+                    treatment_width, outcome_width,
+                    verbose=self.verbose
                 )
+                for fold, (train_idx, val_idx) in enumerate(kf.split(X_array))
+            )
+
+            # Aggregate results
+            last_fold_result = None
+            max_fold_idx = -1
+
+            for res in results:
+                val_idx = res['val_idx']
+                treatment_pred[val_idx] = res['treatment_pred']
+                outcome_pred[val_idx] = res['outcome_pred']
                 
-                # Store models for last fold
-                if fold == self.n_folds - 1:
-                    self.treatment_models_["final"] = treatment_model
-                    self.outcome_models_["final"] = outcome_model
+                # Identify last fold to save models
+                if res['fold_idx'] > max_fold_idx:
+                    max_fold_idx = res['fold_idx']
+                    last_fold_result = res
+
+            if last_fold_result:
+                self.treatment_models_["final"] = last_fold_result['treatment_model']
+                self.outcome_models_["final"] = last_fold_result['outcome_model']
             
             # Compute residuals
             treatment_residuals = treatments_array - treatment_pred
@@ -789,7 +876,7 @@ class CausalTargetComputer:
         cate_estimates: Optional[pd.Series] = None
     ) -> Dict[str, Any]:
         """
-        Analyze treatment effect heterogeneity.
+        Analyze treatment effect heterogeneity using vectorized correlation.
         
         Args:
             X: Feature matrix
@@ -800,7 +887,7 @@ class CausalTargetComputer:
         """
         try:
             if self.verbose:
-                tprint_info("📊 Analyzing Treatment Effect Heterogeneity...")
+                tprint_info("📊 Analyzing Treatment Effect Heterogeneity (Vectorized)...")
             
             if cate_estimates is None:
                 if self.cate_estimates_ is not None and isinstance(self.cate_estimates_, pd.Series):
@@ -819,16 +906,30 @@ class CausalTargetComputer:
                 "negative_effects": (cate_estimates < 0).mean()
             }
             
-            # Feature heterogeneity analysis
-            feature_heterogeneity = {}
+            # Feature heterogeneity analysis - Vectorized
+            # Select numeric features only
+            X_numeric = X.select_dtypes(include=[np.number])
+
+            if X_numeric.empty:
+                tprint_warning("   No numeric features available for heterogeneity analysis")
+                return {"overall_stats": heterogeneity_stats, "feature_heterogeneity": {}}
+
+            # Align cate_estimates with X index if needed (though usually aligned by design)
+            if not X_numeric.index.equals(cate_estimates.index):
+                cate_aligned = cate_estimates.reindex(X_numeric.index).fillna(0)
+            else:
+                cate_aligned = cate_estimates
+
+            # Calculate correlations efficiently using pandas corrwith
+            correlations = X_numeric.corrwith(cate_aligned)
             
-            for feature in X.columns:
-                if X[feature].dtype in ['int64', 'float64']:
-                    # Correlation with CATE
-                    correlation = X[feature].corr(cate_estimates)
-                    feature_heterogeneity[feature] = {
-                        "correlation": correlation,
-                        "abs_correlation": abs(correlation)
+            # Build feature heterogeneity dictionary
+            feature_heterogeneity = {}
+            for feat, corr in correlations.items():
+                if not np.isnan(corr):
+                    feature_heterogeneity[feat] = {
+                        "correlation": corr,
+                        "abs_correlation": abs(corr)
                     }
             
             # Sort features by absolute correlation

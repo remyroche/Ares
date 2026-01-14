@@ -13,6 +13,17 @@ from functools import lru_cache
 import hashlib
 from numba import njit, prange
 
+# Import optimized functions
+try:
+    from src.training.steps.labeling.layer3.optimized_utils import (
+        numba_rolling_ols_3factor,
+        numba_conditional_correlation,
+        numba_calculate_har_features
+    )
+    OPTIMIZED_UTILS_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_UTILS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 EPS = 1e-12
@@ -127,97 +138,55 @@ def calculate_studentized_har_target(
         volatility = pd.Series(volatility, index=returns.index)
 
     # --- Step 1: Feature Generation (Variance Components) ---
-    # Using realized variance proxies (squared returns or squared volatility)
-    # Volatility input is usually rolling std dev. Squared is variance.
-    # We construct HAR components:
-    # RV_d (Daily)
-    # RV_w (Weekly)
-    # RV_m (Monthly)
+    if OPTIMIZED_UTILS_AVAILABLE:
+        # Fast Numba path
+        vol_values = volatility.values.astype(np.float64)
+        ret_values = returns.values.astype(np.float64)
 
-    # Construct lagged variance features to predict current return
-    # We use realized variance over the past window
-    var_d = (volatility ** 2).rolling(window=daily_period, min_periods=1).mean()
-    var_w = (volatility ** 2).rolling(window=weekly_period, min_periods=1).mean()
-    var_m = (volatility ** 2).rolling(window=monthly_period, min_periods=1).mean()
+        # Calculate features (var_d, var_w, var_m) lagged by 1
+        # periods = [daily, weekly, monthly]
+        periods = np.array([daily_period, weekly_period, monthly_period], dtype=np.int32)
+        X_features = numba_calculate_har_features(vol_values, periods)
 
-    # Lag features by 1 step to ensure no lookahead for prediction
-    X = pd.DataFrame({
-        'var_d': var_d.shift(1),
-        'var_w': var_w.shift(1),
-        'var_m': var_m.shift(1)
-    }).fillna(0)
+        # --- Step 2: Rolling OLS ---
+        window_size = monthly_period * 2
+        y_hat_values = numba_rolling_ols_3factor(
+            ret_values,
+            X_features[:, 0],
+            X_features[:, 1],
+            X_features[:, 2],
+            window_size
+        )
+        y_hat = pd.Series(y_hat_values, index=returns.index)
 
-    # --- Step 2: Rolling OLS to estimate Expected Return ---
-    # We use a rolling window OLS to estimate the relationship between past variance and return.
-    # Using a large window (e.g., 2000 bars) or expanding window.
-    # For efficiency and stability, we'll use Recursive Least Squares (RLS) via expanding window
-    # or a Rolling OLS if feasible. Given performance constraints, we can use a simpler approach:
-    # We'll use sklearn's LinearRegression in a rolling fashion or statsmodels RollingOLS.
-    # To keep dependencies light and fast, we can use a simpler expanding window proxy
-    # or just assume a global relationship if stationarity holds (but it rarely does).
+    else:
+        # Fallback path
+        var_d = (volatility ** 2).rolling(window=daily_period, min_periods=1).mean()
+        var_w = (volatility ** 2).rolling(window=weekly_period, min_periods=1).mean()
+        var_m = (volatility ** 2).rolling(window=monthly_period, min_periods=1).mean()
 
-    # Let's use a rolling window regression (window = monthly_period * 2 for stability)
-    # Implementation using statsmodels if available, else expanding window loop (slow).
-    # Faster approach: Rolling correlation/covariance math.
+        # Lag features by 1 step to ensure no lookahead for prediction
+        X = pd.DataFrame({
+            'var_d': var_d.shift(1),
+            'var_w': var_w.shift(1),
+            'var_m': var_m.shift(1)
+        }).fillna(0)
 
-    # However, simpler robust approach for target generation in labeling (which happens once):
-    # Use a large rolling window (e.g. 2000) for OLS.
-    try:
-        from statsmodels.regression.rolling import RollingOLS
-        import statsmodels.api as sm
+        try:
+            from statsmodels.regression.rolling import RollingOLS
+            import statsmodels.api as sm
 
-        # Add constant
-        X_const = sm.add_constant(X)
-        model = RollingOLS(returns, X_const, window=monthly_period * 2)
-        params = model.fit(params_only=True).params
+            # Add constant
+            X_const = sm.add_constant(X)
+            model = RollingOLS(returns, X_const, window=monthly_period * 2)
+            params = model.fit(params_only=True).params
 
-        # Compute predicted return: Y_hat = sum(X * params)
-        y_hat = (X_const * params).sum(axis=1)
+            # Compute predicted return: Y_hat = sum(X * params)
+            y_hat = (X_const * params).sum(axis=1)
 
-    except ImportError:
-        # Fallback if statsmodels not installed: Simple expanding window mean subtraction (dumb proxy)
-        # or just standardizing by volatility directly (fallback to old method)
-        # But let's try to do a simple recursive calculation or block-based OLS.
-
-        # Block-based fallback: Re-fit every N bars
-        y_hat = pd.Series(0.0, index=returns.index)
-        window = monthly_period * 2
-        step = daily_period
-
-        from sklearn.linear_model import LinearRegression
-        model = LinearRegression()
-
-        # Initial fit
-        # We can't do true rolling easily without library, so we'll just do a global fit
-        # on past data to prevent lookahead?
-        # Or just fit on the whole dataset? Fitting on whole dataset introduces lookahead bias
-        # for the 'Surprise' component.
-        # Let's use an expanding window approach with a stride.
-
-        # FAST APPROXIMATION:
-        # Expected return due to variance is likely small/noisy.
-        # The main 'HAR' effect is usually on Volatility prediction, not Return prediction.
-        # If the user insists on "strip out expected return based on variance",
-        # and we lack fast rolling OLS, we might assume beta=0 (Efficient Market)
-        # and just subtract moving average of returns?
-        # But the prompt is specific.
-
-        # Let's implement a simple expanding OLS:
-        # Iterate in chunks.
-        # This is slow in Python.
-
-        # Alternative: Use the entire past expanding window mean of returns conditioned on variance?
-        # Too complex.
-
-        # Let's try to assume we can use the whole dataset for the *structure*
-        # (betas constant) but locally adaptive?
-        # No, strict HAR requires rolling.
-
-        # Let's implement a simplified vectorised Rolling OLS using numpy stride tricks if needed,
-        # but statsmodels is likely available in this environment.
-        # If imports fail inside try, we log warning and fallback to 0 expected return (pure residual).
-        logger.warning("Statsmodels RollingOLS not available/failed. Using raw returns as residual.")
-        y_hat = pd.Series(0.0, index=returns.index)
+        except ImportError:
+            logger.warning("Statsmodels RollingOLS not available/failed. Using raw returns as residual.")
+            y_hat = pd.Series(0.0, index=returns.index)
 
     # Calculate Residual (The Surprise)
     # Fill NaNs in y_hat (start of window) with 0
@@ -356,6 +325,7 @@ def fast_cmi_proxy(
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
     Fast CMI approximation using correlation and mutual information.
+    Optimized with Numba if available.
     
     Args:
         X: Feature matrix
@@ -366,34 +336,70 @@ def fast_cmi_proxy(
     Returns:
         Tuple of (filtered features, selected indices)
     """
+    # Prepare data
+    X_vals = X.values.astype(np.float64)
+    y_vals = y.values.astype(np.float64)
+    base_preds_vals = base_predictions.values.astype(np.float64) if hasattr(base_predictions, 'values') else base_predictions
+
+    n_features = X.shape[1]
+
     # Stage 1: Correlation-based pre-filtering (O(f))
-    corr_scores = np.abs([np.corrcoef(X.iloc[:, i], y)[0, 1] for i in range(X.shape[1])])
+    # Optimized: Compute correlation of all features with target at once
+    # Note: np.corrcoef of (F, N) matrix can be heavy if F is large, but usually here F ~ 500
+    # X.T is (F, N)
+
+    # Using simple correlation calculation: dot(norm(X), norm(y)) / N
+    y_mean = np.mean(y_vals)
+    y_std = np.std(y_vals) + EPS
+    y_norm = (y_vals - y_mean) / y_std
+
+    # Handle NaNs in X
+    if np.isnan(X_vals).any():
+        X_vals = np.nan_to_num(X_vals, nan=0.0)
+
+    X_mean = np.mean(X_vals, axis=0)
+    X_std = np.std(X_vals, axis=0) + EPS
+    X_norm = (X_vals - X_mean) / X_std
+
+    # Correlation vector (1, F)
+    corr_scores = np.abs(np.dot(y_norm, X_norm) / len(y_vals))
     corr_scores = np.nan_to_num(corr_scores, nan=0.0)
     
-    # Select top percentile by correlation
-    top_corr_idx = np.argsort(corr_scores)[-int(top_percentile * X.shape[1]):]
-    X_filtered = X.iloc[:, top_corr_idx]
+    # Select top percentile
+    n_top = max(1, int(top_percentile * n_features))
+    top_corr_idx = np.argsort(corr_scores)[-n_top:]
     
     # Stage 2: Conditional correlation filtering
-    conditional_scores = []
-    for i in range(len(top_corr_idx)):
-        feature_col = X_filtered.columns[i]
-        feature_values = X_filtered[feature_col].values
+    if OPTIMIZED_UTILS_AVAILABLE:
+        # Use parallel Numba implementation
+        conditional_scores = numba_conditional_correlation(
+            X_vals, y_vals, base_preds_vals, top_corr_idx
+        )
+    else:
+        # Slow python loop
+        conditional_scores = np.zeros(n_top)
+        X_filtered = X.iloc[:, top_corr_idx]
         
-        # Calculate conditional correlation
-        residual_y = y - base_predictions
-        residual_feature = feature_values - base_predictions
+        residual_y = y_vals - base_preds_vals
         
-        if np.std(residual_feature) > EPS:
-            conditional_corr = np.corrcoef(residual_feature, residual_y)[0, 1]
-            conditional_scores.append(abs(conditional_corr))
-        else:
-            conditional_scores.append(0.0)
+        for i in range(n_top):
+            feature_col = X_filtered.columns[i]
+            feature_values = X_filtered[feature_col].values
+
+            residual_feature = feature_values - base_preds_vals
+
+            if np.std(residual_feature) > EPS:
+                conditional_corr = np.corrcoef(residual_feature, residual_y)[0, 1]
+                conditional_scores[i] = abs(conditional_corr)
+            else:
+                conditional_scores[i] = 0.0
     
     # Select top features by conditional correlation
-    final_top_idx = np.argsort(conditional_scores)[-int(0.4 * len(conditional_scores)):]
-    selected_features = X_filtered.iloc[:, final_top_idx]
-    selected_indices = top_corr_idx[final_top_idx]
+    n_final = max(1, int(0.4 * len(conditional_scores)))
+    final_top_idx_local = np.argsort(conditional_scores)[-n_final:]
+
+    selected_indices = top_corr_idx[final_top_idx_local]
+    selected_features = X.iloc[:, selected_indices]
     
     return selected_features, selected_indices
 

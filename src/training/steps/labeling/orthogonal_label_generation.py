@@ -37,7 +37,13 @@ from src.training.steps.labeling.composite_event_generators import (
     OrderFlowImbalanceEvents,
     BarPressureEvents,
 )
-from src.utils.numba_funcs import _numba_return_autocorrelation
+from src.utils.numba_funcs import (
+    _numba_return_autocorrelation,
+    _numba_rolling_hurst,
+    _numba_fracdiff,
+    _numba_anchored_zscore,
+    _numba_time_since_shock
+)
 
 # Import causal framework modules for surprise events
 try:
@@ -1093,51 +1099,21 @@ class LowVolRegimeFeatures:
         lookback: int = 200
     ) -> pd.Series:
         """
-        Compute rolling Hurst exponent using Rescaled Range (R/S) method.
+        Compute rolling Hurst exponent using Numba-optimized Rescaled Range (R/S) method.
         
         H < 0.5: Mean-reverting (trapped)
         H = 0.5: Random walk
         H > 0.5: Trending (hidden persistence)
-        
-        This tells the model if current sideways movement is a trap or accumulation.
         """
         if len(series) < lookback:
             return pd.Series(0.5, index=series.index)
-        
-        def rs_hurst(segment):
-            """Compute Hurst exponent for a segment."""
-            if len(segment) < 20:
-                return 0.5
             
-            try:
-                # Mean-adjusted series
-                mean_adj = segment - np.mean(segment)
-                
-                # Cumulative deviate series
-                cumdev = np.cumsum(mean_adj)
-                
-                # Range
-                R = np.max(cumdev) - np.min(cumdev)
-                
-                # Standard deviation
-                S = np.std(segment)
-                
-                if S < 1e-9 or R < 1e-9:
-                    return 0.5
-                
-                # R/S calculation
-                rs = R / S
-                
-                # Hurst approximation: H = log(R/S) / log(n)
-                n = len(segment)
-                H = np.log(rs) / np.log(n)
-                
-                return np.clip(H, 0.0, 1.0)
-            except Exception:
-                return 0.5
+        values = series.values.astype(np.float64)
+
+        # Use Numba function
+        hurst_values = _numba_rolling_hurst(values, lookback)
         
-        hurst = series.rolling(lookback, min_periods=50).apply(rs_hurst, raw=True)
-        return hurst.fillna(0.5)
+        return pd.Series(hurst_values, index=series.index).fillna(0.5)
     
     def compute_vpin(
         self, 
@@ -1184,48 +1160,31 @@ class LowVolRegimeFeatures:
         feature_col: str = 'close'
     ) -> pd.Series:
         """
-        Compute z-scores anchored to the last causal surprise event.
-        
-        In low-vol, the market "remembers" the price level where the last
-        major consensus was reached. This provides a coordinate system
-        relative to the "Memory Anchor" of the last 48 hours.
+        Compute z-scores anchored to the last causal surprise event (Numba optimized).
         """
         if feature_col not in df.columns:
             return pd.Series(0.0, index=df.index)
         
-        values = df[feature_col]
-        result = pd.Series(0.0, index=df.index)
+        values = df[feature_col].values.astype(np.float64)
         
-        # Sort anchor events
-        anchor_events = anchor_events.sort_values()
+        # Create boolean mask for anchors aligned to df index
+        # Normalize timezone to ensure matching
+        if df.index.tz is not None and anchor_events.tz is None:
+             anchor_events = anchor_events.tz_localize(df.index.tz)
+        elif df.index.tz is None and anchor_events.tz is not None:
+             anchor_events = anchor_events.tz_localize(None)
+
+        # Get indices of anchors that exist in df
+        anchor_locs = df.index.get_indexer(anchor_events)
+        anchor_locs = anchor_locs[anchor_locs != -1]
         
-        for i, current_time in enumerate(df.index):
-            # Find most recent anchor before this time
-            prior_anchors = anchor_events[anchor_events < current_time]
+        anchor_mask = np.zeros(len(df), dtype=bool)
+        if len(anchor_locs) > 0:
+            anchor_mask[anchor_locs] = True
             
-            if len(prior_anchors) == 0:
-                continue
-            
-            last_anchor = prior_anchors[-1]
-            anchor_idx = df.index.get_loc(last_anchor)
-            current_idx = df.index.get_loc(current_time)
-            
-            if current_idx <= anchor_idx:
-                continue
-            
-            # Compute z-score from anchor point
-            segment = values.iloc[anchor_idx:current_idx+1]
-            if len(segment) < 5:
-                continue
-            
-            anchor_value = segment.iloc[0]
-            current_value = segment.iloc[-1]
-            segment_std = segment.std()
-            
-            if segment_std > 1e-9:
-                result.iloc[i] = (current_value - anchor_value) / segment_std
+        z_scores = _numba_anchored_zscore(values, anchor_mask)
         
-        return result.clip(-5, 5)
+        return pd.Series(z_scores, index=df.index).clip(-5, 5)
     
     def compute_time_since_shock(
         self, 
@@ -1234,42 +1193,28 @@ class LowVolRegimeFeatures:
         decay_lambda: float = 0.02
     ) -> pd.Series:
         """
-        Compute time-since-shock with exponential decay.
-        
-        Formula: e^(-λ * ΔT) where ΔT is bars since last 2.7σ shock
-        
-        This acts as a Confidence Weight:
-        - Near 1.0: Recent shock, market has "memory"
-        - Near 0.0: Long time since shock, entropy maximized (random walk)
+        Compute time-since-shock with exponential decay (Numba optimized).
         """
-        result = pd.Series(0.0, index=df.index)
-        
+        n = len(df)
         if len(shock_events) == 0:
-            return result
+            return pd.Series(0.0, index=df.index)
         
-        shock_events = shock_events.sort_values()
+        # Create boolean mask for shocks
+        if df.index.tz is not None and shock_events.tz is None:
+             shock_events = shock_events.tz_localize(df.index.tz)
+        elif df.index.tz is None and shock_events.tz is not None:
+             shock_events = shock_events.tz_localize(None)
+
+        shock_locs = df.index.get_indexer(shock_events)
+        shock_locs = shock_locs[shock_locs != -1]
         
-        for i, current_time in enumerate(df.index):
-            # Find most recent shock before this time
-            prior_shocks = shock_events[shock_events <= current_time]
+        shock_mask = np.zeros(n, dtype=bool)
+        if len(shock_locs) > 0:
+            shock_mask[shock_locs] = True
             
-            if len(prior_shocks) == 0:
-                result.iloc[i] = 0.0  # No prior shock = no memory
-                continue
-            
-            last_shock = prior_shocks[-1]
-            
-            # Time difference in bars
-            try:
-                shock_idx = df.index.get_loc(last_shock)
-                delta_t = i - shock_idx
-            except KeyError:
-                delta_t = 100  # Default to high decay if not found
-            
-            # Exponential decay
-            result.iloc[i] = np.exp(-decay_lambda * delta_t)
+        decay_values = _numba_time_since_shock(n, shock_mask, decay_lambda)
         
-        return result
+        return pd.Series(decay_values, index=df.index)
     
     def compute_relative_volatility_scaling(
         self, 

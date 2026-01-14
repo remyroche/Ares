@@ -668,3 +668,176 @@ def _numba_streak_persistence(close, window=20):
                 output[i] = mean_val / std_val
                 
     return output
+
+@jit(nopython=True)
+def _numba_rolling_hurst(arr, window):
+    """
+    Compute rolling Hurst exponent using Rescaled Range (R/S) method.
+    """
+    n = len(arr)
+    output = np.full(n, 0.5, dtype=np.float64)
+
+    # Needs at least 'window' elements
+    for i in range(window, n + 1):
+        # Slice window
+        chunk = arr[i-window:i]
+
+        # Check segment length
+        m = len(chunk)
+        if m < 20:
+            continue
+
+        # Mean-adjusted series
+        mean_val = np.mean(chunk)
+        mean_adj = chunk - mean_val
+
+        # Cumulative deviate series
+        cumdev = np.cumsum(mean_adj)
+
+        # Range
+        R = np.max(cumdev) - np.min(cumdev)
+
+        # Standard deviation
+        S = np.std(chunk)
+
+        if S < 1e-9 or R < 1e-9:
+            output[i-1] = 0.5
+            continue
+
+        # R/S calculation
+        rs = R / S
+
+        # Hurst approximation: H = log(R/S) / log(n)
+        H = np.log(rs) / np.log(m)
+
+        if H < 0.0: H = 0.0
+        if H > 1.0: H = 1.0
+
+        output[i-1] = H
+
+    return output
+
+@jit(nopython=True)
+def _numba_fracdiff(arr, d, threshold=1e-5):
+    """
+    Apply fractional differentiation using fixed-width window.
+    """
+    n = len(arr)
+    output = np.full(n, np.nan, dtype=np.float64)
+
+    # 1. Calculate weights
+    # We don't know the size of weights beforehand, but it won't exceed n
+    w = np.empty(n, dtype=np.float64)
+    w[0] = 1.0
+    width = 1
+
+    for k in range(1, n):
+        w_k = -w[k-1] * (d - k + 1) / k
+        if np.abs(w_k) < threshold:
+            break
+        w[k] = w_k
+        width += 1
+
+    # Slice valid weights
+    weights = w[:width]
+
+    # 2. Apply convolution
+    # For each point i >= width - 1
+    for i in range(width - 1, n):
+        # Segment: arr[i-width+1 : i+1] reversed
+        # Dot product with weights
+        val = 0.0
+        for j in range(width):
+            val += weights[j] * arr[i - j]
+
+        output[i] = val
+
+    return output
+
+@jit(nopython=True)
+def _numba_anchored_zscore(values, anchor_mask):
+    """
+    Compute z-scores anchored to the last event in the mask.
+    values: float array
+    anchor_mask: boolean array (True where anchor event occurs)
+    """
+    n = len(values)
+    output = np.zeros(n, dtype=np.float64)
+    last_anchor_idx = -1
+
+    # Pre-calculate accumulators for running variance if needed?
+    # Or just recompute on segment? Recomputing on segment O(N^2) worst case if no anchors.
+    # But usually anchors appear periodically.
+    # Also, we can optimize running mean/std from anchor.
+    # Let's use running Welford's algorithm from the anchor point.
+
+    count = 0
+    mean_val = 0.0
+    m2_val = 0.0
+    anchor_val = 0.0
+
+    for i in range(n):
+        if anchor_mask[i]:
+            last_anchor_idx = i
+            count = 1
+            anchor_val = values[i]
+            mean_val = anchor_val
+            m2_val = 0.0
+            output[i] = 0.0
+            continue
+
+        if last_anchor_idx != -1:
+            val = values[i]
+
+            # Update running stats
+            count += 1
+            delta = val - mean_val
+            mean_val += delta / count
+            delta2 = val - mean_val
+            m2_val += delta * delta2
+
+            # Compute Z-score
+            # z = (val - anchor_val) / std_dev
+            # std_dev = sqrt(m2 / (count - 1)) if count > 1 else 0
+
+            if count > 4: # Min observations
+                variance = m2_val / (count - 1)
+                if variance > 1e-9:
+                    std_dev = np.sqrt(variance)
+                    z = (val - anchor_val) / std_dev
+
+                    # Clip
+                    if z > 5.0: z = 5.0
+                    if z < -5.0: z = -5.0
+
+                    output[i] = z
+                else:
+                    output[i] = 0.0
+            else:
+                output[i] = 0.0
+        else:
+            output[i] = 0.0
+
+    return output
+
+@jit(nopython=True)
+def _numba_time_since_shock(n, shock_mask, decay_lambda=0.02):
+    """
+    Compute time-since-shock with exponential decay.
+    n: length of array
+    shock_mask: boolean array
+    """
+    output = np.zeros(n, dtype=np.float64)
+    last_shock_idx = -1
+
+    for i in range(n):
+        if shock_mask[i]:
+            last_shock_idx = i
+
+        if last_shock_idx != -1:
+            delta_t = i - last_shock_idx
+            output[i] = np.exp(-decay_lambda * delta_t)
+        else:
+            output[i] = 0.0
+
+    return output

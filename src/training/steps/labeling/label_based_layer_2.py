@@ -64,7 +64,8 @@ from src.utils.numba_funcs import (
     _numba_generate_dollar_bars, 
     _numba_rolling_slope,
     _numba_streak_persistence,
-    _numba_rolling_entropy
+    _numba_rolling_entropy,
+    _numba_return_autocorrelation
 )
 try:
     from numba import jit
@@ -984,13 +985,26 @@ class Layer2StageMetrics:
 
 def roll_entropy(series: pd.Series, window: int = 20, bins: int = 10) -> pd.Series:
     """Rolling Entropy to detect structural breaks."""
-    def _ent(x):
-        hist, bin_edges = np.histogram(x, bins=bins, density=True)
-        # Avoid log(0)
-        hist = hist[hist > 0]
-        return -np.sum(hist * np.log2(hist))
+    try:
+        # Optimized Numba implementation
+        # Note: _numba_rolling_entropy uses log10, so we scale by log2(10) to match bit units
+        # log2(x) = log10(x) / log10(2) approx log10(x) * 3.3219
+        entropy_vals = _numba_rolling_entropy(series.values.astype(np.float64), window=window, bins=bins)
+        entropy_vals = entropy_vals * np.log2(10)
 
-    return series.rolling(window).apply(_ent, raw=True)
+        result = pd.Series(entropy_vals, index=series.index)
+        # Match rolling behavior: set first window elements to NaN
+        if len(result) >= window:
+            result.iloc[:window - 1] = np.nan
+        return result
+    except Exception as e:
+        # Fallback if Numba fails
+        def _ent(x):
+            hist, bin_edges = np.histogram(x, bins=bins, density=True)
+            # Avoid log(0)
+            hist = hist[hist > 0]
+            return -np.sum(hist * np.log2(hist))
+        return series.rolling(window).apply(_ent, raw=True)
 
 
 def get_serial_correlation(series: pd.Series, window: int = 20) -> pd.Series:
@@ -998,7 +1012,17 @@ def get_serial_correlation(series: pd.Series, window: int = 20) -> pd.Series:
     Rolling serial correlation (autocorrelation at lag 1).
     High positive = Trending; Negative = Mean Reverting.
     """
-    return series.rolling(window).apply(lambda x: pd.Series(x).autocorr(lag=1), raw=True)
+    try:
+        # Optimized Numba implementation
+        corr_vals = _numba_return_autocorrelation(series.values.astype(np.float64), window=window, lag=1)
+        result = pd.Series(corr_vals, index=series.index)
+        # Match rolling behavior: set first window elements to NaN
+        if len(result) >= window:
+            result.iloc[:window - 1] = np.nan
+        return result
+    except Exception:
+        # Fallback
+        return series.rolling(window).apply(lambda x: pd.Series(x).autocorr(lag=1), raw=True)
 
 
 

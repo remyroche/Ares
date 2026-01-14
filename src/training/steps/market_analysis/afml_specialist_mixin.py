@@ -365,7 +365,17 @@ class AFMLSpecialistMixin:
             self._BAR_CACHE[cache_key_context] = context_df
         
         if anchor_df is None or anchor_df.empty:
-            tprint_error(f"      [Prepare] anchor_df ({anchor_type}) is empty!")
+            tprint_warning(f"      [Prepare] anchor_df ({anchor_type}) is empty. Falling back to time bars.")
+            anchor_df = self._fallback_time_bars(market_data)
+            if anchor_df is not None and not anchor_df.empty:
+                self._BAR_CACHE[cache_key_anchor] = anchor_df
+            else:
+                tprint_error(f"      [Prepare] anchor_df ({anchor_type}) is empty after fallback!")
+                return pd.DataFrame(), pd.Series(), pd.Series()
+
+        min_anchor_rows = int(config.get('min_anchor_rows', 200))
+        if len(anchor_df) < min_anchor_rows:
+            tprint_error(f"      [Prepare] anchor_df has {len(anchor_df)} rows (< {min_anchor_rows}). Aborting.")
             return pd.DataFrame(), pd.Series(), pd.Series()
         
         tprint_info(f"      [Prepare] anchor_df: {len(anchor_df)} rows, context_df: {len(context_df) if context_df is not None else 0} rows")
@@ -390,6 +400,11 @@ class AFMLSpecialistMixin:
         sampled_df, t_events = self.apply_afml_sampling(market_data_anchor, config, filter_type=filter_type)
         if len(t_events) == 0:
             tprint_error(f"      [Prepare] t_events is empty after sampling!")
+            return pd.DataFrame(), pd.Series(), pd.Series()
+
+        min_event_samples = int(config.get('min_event_samples', 100))
+        if len(t_events) < min_event_samples:
+            tprint_error(f"      [Prepare] t_events has {len(t_events)} samples (< {min_event_samples}). Aborting.")
             return pd.DataFrame(), pd.Series(), pd.Series()
             
         tprint_info(f"      [Prepare] sampled events: {len(t_events)}")
@@ -521,6 +536,21 @@ class AFMLSpecialistMixin:
         elif bar_type == 'range': return self._generate_range_bars(df, config)
         elif bar_type == 'pit': return self.generate_pit_bars(df, config)
         else: raise ValueError(f"Unknown bar type: {bar_type}")
+
+    def _fallback_time_bars(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Fallback to time-based bars when specialized bar generation fails."""
+        if df is None or df.empty:
+            return None
+        required_cols = {'open', 'high', 'low', 'close'}
+        if not required_cols.issubset(df.columns):
+            return None
+        base_cols = ['open', 'high', 'low', 'close']
+        if 'volume' in df.columns:
+            base_cols.append('volume')
+        fallback = df[base_cols].copy()
+        if isinstance(fallback.index, pd.DatetimeIndex):
+            fallback['bar_duration'] = fallback.index.to_series().diff().dt.total_seconds().fillna(60.0)
+        return fallback
 
     def _generate_dynamic_dollar_bars(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """

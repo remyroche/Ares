@@ -57,8 +57,15 @@ try:
     TALIB_AVAILABLE = True
     logger.info("✅ TA-Lib available for enhanced technical indicators")
 except ImportError:
-    logger.info("TA-Lib not available; using optimized numpy/pandas fallbacks for technical indicators")
+    logger.info("TA-Lib not available; attempting ta-based fallbacks before numpy/pandas")
     TALIB_AVAILABLE = False
+
+try:
+    import ta as ta_lib  # type: ignore
+    TA_LIB_AVAILABLE = True
+    logger.info("✅ ta library available for technical indicator fallbacks")
+except ImportError:
+    TA_LIB_AVAILABLE = False
 
 # Feature selection tools - using fallback implementations since optimized versions are not available
 FEATURE_SELECTION_AVAILABLE = False
@@ -1523,12 +1530,19 @@ class FeatureGenerators:
                 close = data['close'].values
                 willr = talib.WILLR(high, low, close, timeperiod=lookback)
                 return pd.Series(willr, index=data.index, name=f'williams_r_{lookback}')
-            else:
-                # Fallback implementation
-                highest_high = data['high'].rolling(lookback).max()
-                lowest_low = data['low'].rolling(lookback).min()
-                williams_r = -100 * (highest_high - data['close']) / (highest_high - lowest_low)
-                return pd.Series(williams_r, index=data.index, name=f'williams_r_{lookback}')
+            if TA_LIB_AVAILABLE:
+                try:
+                    indicator = ta_lib.momentum.WilliamsRIndicator(
+                        high=data['high'], low=data['low'], close=data['close'], lbp=lookback
+                    )
+                    return pd.Series(indicator.williams_r(), index=data.index, name=f'williams_r_{lookback}')
+                except Exception:
+                    pass
+            # Fallback implementation
+            highest_high = data['high'].rolling(lookback).max()
+            lowest_low = data['low'].rolling(lookback).min()
+            williams_r = -100 * (highest_high - data['close']) / (highest_high - lowest_low)
+            return pd.Series(williams_r, index=data.index, name=f'williams_r_{lookback}')
         except Exception as e:
             logger.error(f"Error generating Williams %R: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -1543,13 +1557,20 @@ class FeatureGenerators:
                 close = data['close'].values
                 cci = talib.CCI(high, low, close, timeperiod=lookback)
                 return pd.Series(cci, index=data.index, name=f'cci_{lookback}')
-            else:
-                # Fallback: Simplified CCI calculation
-                tp = (data['high'] + data['low'] + data['close']) / 3
-                sma_tp = tp.rolling(lookback).mean()
-                mad_tp = (tp - sma_tp).abs().rolling(lookback).mean()
-                cci = (tp - sma_tp) / (0.015 * mad_tp)
-                return pd.Series(cci, index=data.index, name=f'cci_{lookback}')
+            if TA_LIB_AVAILABLE:
+                try:
+                    indicator = ta_lib.trend.CCIIndicator(
+                        high=data['high'], low=data['low'], close=data['close'], window=lookback
+                    )
+                    return pd.Series(indicator.cci(), index=data.index, name=f'cci_{lookback}')
+                except Exception:
+                    pass
+            # Fallback: Simplified CCI calculation
+            tp = (data['high'] + data['low'] + data['close']) / 3
+            sma_tp = tp.rolling(lookback).mean()
+            mad_tp = (tp - sma_tp).abs().rolling(lookback).mean()
+            cci = (tp - sma_tp) / (0.015 * mad_tp)
+            return pd.Series(cci, index=data.index, name=f'cci_{lookback}')
         except Exception as e:
             logger.error(f"Error generating CCI: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -1566,9 +1587,25 @@ class FeatureGenerators:
                 ultosc = talib.ULTOSC(high, low, close, timeperiod1=period1,
                                      timeperiod2=period2, timeperiod3=period3)
                 return pd.Series(ultosc, index=data.index, name=f'ultosc_{period1}_{period2}_{period3}')
-            else:
-                # Fallback implementation would be complex - return zeros
-                return pd.Series([0.0] * len(data), index=data.index, name=f'ultosc_{period1}_{period2}_{period3}')
+            if TA_LIB_AVAILABLE:
+                try:
+                    indicator = ta_lib.momentum.UltimateOscillator(
+                        high=data['high'],
+                        low=data['low'],
+                        close=data['close'],
+                        window1=period1,
+                        window2=period2,
+                        window3=period3,
+                    )
+                    return pd.Series(
+                        indicator.ultimate_oscillator(),
+                        index=data.index,
+                        name=f'ultosc_{period1}_{period2}_{period3}',
+                    )
+                except Exception:
+                    pass
+            # Fallback implementation would be complex - return zeros
+            return pd.Series([0.0] * len(data), index=data.index, name=f'ultosc_{period1}_{period2}_{period3}')
         except Exception as e:
             logger.error(f"Error generating Ultimate Oscillator: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -1619,15 +1656,20 @@ class FeatureGenerators:
                 close = data['close'].values
                 cmo = talib.CMO(close, timeperiod=lookback)
                 return pd.Series(cmo, index=data.index, name=f'cmo_{lookback}')
-            else:
-                # Fallback: Simplified CMO calculation
-                delta = data['close'].diff()
-                gains = delta.where(delta > 0, 0)
-                losses = -delta.where(delta < 0, 0)
-                avg_gains = gains.rolling(lookback).mean()
-                avg_losses = losses.rolling(lookback).mean()
-                cmo = 100 * (avg_gains - avg_losses) / (avg_gains + avg_losses)
-                return pd.Series(cmo.fillna(0), index=data.index, name=f'cmo_{lookback}')
+            if TA_LIB_AVAILABLE:
+                try:
+                    indicator = ta_lib.momentum.CMOIndicator(close=data['close'], window=lookback)
+                    return pd.Series(indicator.cmo(), index=data.index, name=f'cmo_{lookback}')
+                except Exception:
+                    pass
+            # Fallback: Simplified CMO calculation
+            delta = data['close'].diff()
+            gains = delta.where(delta > 0, 0)
+            losses = -delta.where(delta < 0, 0)
+            avg_gains = gains.rolling(lookback).mean()
+            avg_losses = losses.rolling(lookback).mean()
+            cmo = 100 * (avg_gains - avg_losses) / (avg_gains + avg_losses)
+            return pd.Series(cmo.fillna(0), index=data.index, name=f'cmo_{lookback}')
         except Exception as e:
             logger.error(f"Error generating CMO: {e}")
             return pd.Series([0.0] * len(data), index=data.index, name=f'cmo_{lookback}')
@@ -1642,16 +1684,27 @@ class FeatureGenerators:
                 close = data['close'].values
                 natr = talib.NATR(high, low, close, timeperiod=lookback)
                 return pd.Series(natr, index=data.index, name=f'natr_{lookback}')
-            else:
-                # Fallback: Manual NATR calculation
-                tr = pd.concat([
-                    data['high'] - data['low'],
-                    (data['high'] - data['close'].shift(1)).abs(),
-                    (data['low'] - data['close'].shift(1)).abs()
-                ], axis=1).max(axis=1)
-                atr = tr.rolling(lookback).mean()
-                natr = 100 * atr / data['close']  # Percentage-based
-                return pd.Series(natr.fillna(0), index=data.index, name=f'natr_{lookback}')
+            if TA_LIB_AVAILABLE:
+                try:
+                    indicator = ta_lib.volatility.AverageTrueRange(
+                        high=data['high'],
+                        low=data['low'],
+                        close=data['close'],
+                        window=lookback,
+                    )
+                    natr = (indicator.average_true_range() / data['close']) * 100
+                    return pd.Series(natr.fillna(0), index=data.index, name=f'natr_{lookback}')
+                except Exception:
+                    pass
+            # Fallback: Manual NATR calculation
+            tr = pd.concat([
+                data['high'] - data['low'],
+                (data['high'] - data['close'].shift(1)).abs(),
+                (data['low'] - data['close'].shift(1)).abs()
+            ], axis=1).max(axis=1)
+            atr = tr.rolling(lookback).mean()
+            natr = 100 * atr / data['close']  # Percentage-based
+            return pd.Series(natr.fillna(0), index=data.index, name=f'natr_{lookback}')
         except Exception as e:
             logger.error(f"Error generating NATR: {e}")
             return pd.Series([0.0] * len(data), index=data.index, name=f'natr_{lookback}')
@@ -1749,36 +1802,47 @@ class FeatureGenerators:
                 low = data['low'].values
                 aroonosc = talib.AROONOSC(high, low, timeperiod=lookback)
                 return pd.Series(aroonosc, index=data.index, name=f'aroon_osc_{lookback}')
-            else:
-                # VECTORIZED: Simplified Aroon Oscillator without expensive apply operations
-                # Use rolling max/min with vectorized argmax/argmin calculations
+            if TA_LIB_AVAILABLE:
+                try:
+                    indicator = ta_lib.trend.AroonIndicator(
+                        high=data['high'], low=data['low'], window=lookback
+                    )
+                    return pd.Series(
+                        indicator.aroon_indicator(),
+                        index=data.index,
+                        name=f'aroon_osc_{lookback}',
+                    )
+                except Exception:
+                    pass
+            # VECTORIZED: Simplified Aroon Oscillator without expensive apply operations
+            # Use rolling max/min with vectorized argmax/argmin calculations
 
-                # Calculate rolling windows for high and low
-                high_rolling = data['high'].rolling(window=lookback)
-                low_rolling = data['low'].rolling(window=lookback)
+            # Calculate rolling windows for high and low
+            high_rolling = data['high'].rolling(window=lookback)
+            low_rolling = data['low'].rolling(window=lookback)
 
-                # FULLY VECTORIZED: Calculate Aroon Oscillator without any apply operations
-                # Use rolling max/min directly for much better performance
+            # FULLY VECTORIZED: Calculate Aroon Oscillator without any apply operations
+            # Use rolling max/min directly for much better performance
 
-                # Calculate rolling maximum and minimum
-                high_max = high_rolling.max()
-                low_min = low_rolling.min()
+            # Calculate rolling maximum and minimum
+            high_max = high_rolling.max()
+            low_min = low_rolling.min()
 
-                # For Aroon Oscillator, we need to find how many periods since the highest high
-                # and lowest low occurred. This is more complex to vectorize completely,
-                # but we can optimize it significantly.
+            # For Aroon Oscillator, we need to find how many periods since the highest high
+            # and lowest low occurred. This is more complex to vectorize completely,
+            # but we can optimize it significantly.
 
-                # VECTORIZED APPROACH: Calculate rolling argmax/argmin using pandas built-in methods
-                # This is still more efficient than the lambda approach
-                high_periods_since_max = high_rolling.apply(lambda x: lookback - np.argmax(x) - 1, raw=True)
-                low_periods_since_min = low_rolling.apply(lambda x: lookback - np.argmin(x) - 1, raw=True)
+            # VECTORIZED APPROACH: Calculate rolling argmax/argmin using pandas built-in methods
+            # This is still more efficient than the lambda approach
+            high_periods_since_max = high_rolling.apply(lambda x: lookback - np.argmax(x) - 1, raw=True)
+            low_periods_since_min = low_rolling.apply(lambda x: lookback - np.argmin(x) - 1, raw=True)
 
-                # Aroon Oscillator = Aroon Up - Aroon Down
-                aroon_up = ((lookback - high_periods_since_max) / lookback) * 100
-                aroon_down = ((lookback - low_periods_since_min) / lookback) * 100
-                aroon_osc = aroon_up - aroon_down
+            # Aroon Oscillator = Aroon Up - Aroon Down
+            aroon_up = ((lookback - high_periods_since_max) / lookback) * 100
+            aroon_down = ((lookback - low_periods_since_min) / lookback) * 100
+            aroon_osc = aroon_up - aroon_down
 
-                return pd.Series(aroon_osc.fillna(0), index=data.index, name=f'aroon_osc_{lookback}')
+            return pd.Series(aroon_osc.fillna(0), index=data.index, name=f'aroon_osc_{lookback}')
         except Exception as e:
             logger.error(f"Error generating Aroon Oscillator: {e}")
             return pd.Series([0.0] * len(data), index=data.index, name=f'aroon_osc_{lookback}')

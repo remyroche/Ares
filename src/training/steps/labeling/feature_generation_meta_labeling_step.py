@@ -3842,6 +3842,17 @@ def build_meta_features_for_model(
         setattr(build_meta_features_for_model, "_static_meta_cache", {})
 
     static_cache = getattr(build_meta_features_for_model, "_static_meta_cache")
+    try:
+        max_cache_entries = 3
+        if isinstance(meta_feature_cfg, dict):
+            max_cache_entries = int(meta_feature_cfg.get("static_cache_max_entries", max_cache_entries))
+        if len(static_cache) > max_cache_entries:
+            tprint_warning(f"   🧹 Pruning static meta-feature cache: {len(static_cache)} → {max_cache_entries}")
+            keys = list(static_cache.keys())
+            for key in keys[:-max_cache_entries]:
+                static_cache.pop(key, None)
+    except Exception:
+        pass
 
     cache_key = (
         id(market_data),
@@ -3942,6 +3953,7 @@ def build_meta_features_for_model(
             volume_available,
             include_raw_signals=False,  # CRITICAL: avoid circular behavior
             use_kalman=True,  # Enable Kalman filtering
+            horizon_bars=horizon,
         )
         static_cache[cache_key] = meta_features.copy()
 
@@ -9779,6 +9791,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     volume_available=volume_available,
                     include_raw_signals=False,
                     use_kalman=True,
+                    horizon_bars=horizon,
                 )
                 
                 # Stable features for conditioning
@@ -9891,6 +9904,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     volume_available=volume_available,
                     include_raw_signals=False,
                     use_kalman=True,
+                    horizon_bars=horizon,
                 )
                 
                 # Select stable features for conditioning (avoid noisy/leaky ones)
@@ -11590,4 +11604,3 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 'error': error_msg,
                 'elapsed_seconds': elapsed_time
             }
-

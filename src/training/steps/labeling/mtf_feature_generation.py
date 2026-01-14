@@ -802,6 +802,8 @@ def create_meta_features(
     volume_available: bool = True,
     include_raw_signals: bool = False,
     use_kalman: bool = True,
+    horizon_bars: Optional[int] = None,
+    downsample_long_horizon: bool = True,
     windows: List[int] = [10, 20, 50, 100, 150, 200],
 ) -> pd.DataFrame:
     """
@@ -836,11 +838,37 @@ def create_meta_features(
     features = pd.DataFrame(index=df.index)
     n_features = len(features)
 
+    original_index = df.index
+
     # Log optimization status
     if NUMBA_AVAILABLE:
         print(f"🚀 Using Numba JIT optimizations for {len(df)} rows...")
     else:
         print(f"⚠️  Numba not available, using pandas fallback for {len(df)} rows...")
+
+    # Downsample for long horizon to reduce rolling window cost
+    if (
+        downsample_long_horizon
+        and isinstance(horizon_bars, (int, float))
+        and horizon_bars >= 48
+        and isinstance(df.index, pd.DatetimeIndex)
+        and len(df) > 0
+    ):
+        try:
+            median_delta = df.index.to_series().diff().median()
+            if pd.notna(median_delta) and median_delta <= pd.Timedelta("20min"):
+                print("🧭 Downsampling long-horizon features to 60m bars for efficiency")
+                agg_map = {
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                }
+                df = df.resample("60min").agg({col: agg_map.get(col, "last") for col in df.columns}).dropna()
+                signals = signals.resample("60min").last().ffill().reindex(df.index)
+        except Exception as exc:
+            print(f"⚠️  Downsampling skipped due to error: {exc}")
 
     # Memory optimization: limit data size for feature generation
     MAX_FEATURE_ROWS = 20000  # Further reduced to prevent memory issues
@@ -854,6 +882,10 @@ def create_meta_features(
     # IMPORTANT: Update n_features after limiting
     n_features = len(features)
     
+    long_horizon = bool(isinstance(horizon_bars, (int, float)) and horizon_bars >= 48)
+    if long_horizon:
+        print(f"🧭 Long horizon detected ({int(horizon_bars)} bars); disabling heavy feature families")
+
     # Additional memory optimization: reduce windows for large datasets
     if len(df) > 10000:
         print(f"🔧 Reducing feature windows for large dataset ({len(df)} rows)")
@@ -861,6 +893,41 @@ def create_meta_features(
         print(f"📊 Using reduced windows: {windows}")
     else:
         windows = [10, 20, 50, 100, 150, 200]  # Full windows for smaller datasets
+
+    if not NUMBA_AVAILABLE and len(df) > 10000:
+        print("⚠️  Numba unavailable for long-horizon run; disabling heavy interactions and limiting windows")
+
+    # Limit interactions/cross-timeframe ratios to lower-timeframe windows when data is large
+    interaction_windows = set(windows)
+    if long_horizon:
+        interaction_windows = set()
+        print("🧩 Disabling interaction/cross-timeframe features for long-horizon runs")
+    elif len(df) > 10000:
+        interaction_windows = {w for w in windows if w <= 50}
+        if len(interaction_windows) < len(windows):
+            print(f"🧩 Limiting interaction/cross-timeframe features to windows <= 50: {sorted(interaction_windows)}")
+
+    enable_tail_risk = not long_horizon
+
+    def _downcast_float32(frame: pd.DataFrame) -> pd.DataFrame:
+        float_cols = frame.select_dtypes(include=['float64']).columns
+        if len(float_cols) > 0:
+            frame[float_cols] = frame[float_cols].astype(np.float32)
+        return frame
+
+    def _flush_family(window_feature_map: Dict[str, np.ndarray], start_idx: int) -> None:
+        nonlocal features
+        if len(window_feature_map) <= start_idx:
+            return
+        family_keys = list(window_feature_map.keys())[start_idx:]
+        family_data = {key: window_feature_map.pop(key) for key in family_keys}
+        family_df = pd.DataFrame(family_data, index=features.index)
+        family_df = _downcast_float32(family_df)
+        feature_chunks.append(family_df)
+        if len(feature_chunks) >= chunk_window_size:
+            features = pd.concat([features] + feature_chunks, axis=1)
+            feature_chunks.clear()
+            features = _downcast_float32(features)
     
     # NOW extract columns and compute returns on the LIMITED data
     close_col = None
@@ -1201,14 +1268,25 @@ def create_meta_features(
 
     # Kaufman ER (Base)
     features['kaufman_efficiency_ratio'] = _align_to_features(_norm(get_efficiency_ratio(close, 30), 'kaufman_efficiency_ratio'), n_features)
+    features = _downcast_float32(features)
 
     # ===== 6. MULTI-TIMEFRAME FEATURES =====
     # User requested multi-timeframe features
     print(f" Computing multi-timeframe features for windows: {windows}")
-    
+
+    feature_chunks: List[pd.DataFrame] = []
+    chunk_window_size = 2
+
+    last_heartbeat = start_time
     for i, w in enumerate(windows):
         if i % 2 == 0:  # Progress update every 2 windows
             print(f"   Processing window {i+1}/{len(windows)}: w={w}")
+        if time.time() - last_heartbeat > 30:
+            print(f"   ⏱️ Heartbeat: processed {i+1}/{len(windows)} windows in {time.time() - start_time:.1f}s")
+            last_heartbeat = time.time()
+
+        window_features: Dict[str, np.ndarray] = {}
+        family_start = len(window_features)
         
         # --- 1. PRICE MOMENTUM ---(MTF Virtual Candle) ---
         # Construct virtual candle for window w
@@ -1228,176 +1306,200 @@ def create_meta_features(
         # Lower: Min(Open, Close) - Low
         win_lower = pd.concat([win_open, win_close], axis=1).min(axis=1) - win_low
 
-        features[f'body_to_range_w{w}'] = _align_to_features(_norm(win_body / (win_range + 1e-9), f'body_to_range_w{w}'), n_features)
-        features[f'shadow_asymmetry_w{w}'] = _align_to_features(_norm((win_upper - win_lower) / (win_range + 1e-9), f'shadow_asymmetry_w{w}'), n_features)
+        window_features[f'body_to_range_w{w}'] = _align_to_features(_norm(win_body / (win_range + 1e-9), f'body_to_range_w{w}'), n_features)
+        window_features[f'shadow_asymmetry_w{w}'] = _align_to_features(_norm((win_upper - win_lower) / (win_range + 1e-9), f'shadow_asymmetry_w{w}'), n_features)
 
         win_clv = ((win_close - win_low) - (win_high - win_close)) / (win_range + 1e-9)
-        features[f'close_location_value_w{w}'] = _align_to_features(_norm(win_clv, f'close_location_value_w{w}'), n_features)
+        window_features[f'close_location_value_w{w}'] = _align_to_features(_norm(win_clv, f'close_location_value_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
         # --- 2. ADVANCED VOLATILITY ---
+        family_start = len(window_features)
         # Yang-Zhang
         yz_vol = compute_yang_zhang_volatility(open_p, high, low, close, window=w)
-        features[f'yang_zhang_volatility_w{w}'] = _align_to_features(_norm(yz_vol, f'yang_zhang_volatility_w{w}'), n_features)
+        window_features[f'yang_zhang_volatility_w{w}'] = _align_to_features(_norm(yz_vol, f'yang_zhang_volatility_w{w}'), n_features)
 
         # Rogers-Satchell
         rs_vol = compute_rogers_satchell_volatility(open_p, high, low, close, window=w)
-        features[f'rogers_satchell_volatility_w{w}'] = _align_to_features(_norm(rs_vol, f'rogers_satchell_volatility_w{w}'), n_features)
+        window_features[f'rogers_satchell_volatility_w{w}'] = _align_to_features(_norm(rs_vol, f'rogers_satchell_volatility_w{w}'), n_features)
 
         # Parkinson
         park_vol = compute_parkinson_volatility(high, low, window=w)
-        features[f'parkinson_volatility_w{w}'] = _align_to_features(_norm(park_vol, f'parkinson_volatility_w{w}'), n_features)
+        window_features[f'parkinson_volatility_w{w}'] = _align_to_features(_norm(park_vol, f'parkinson_volatility_w{w}'), n_features)
 
         # Standard & Z-Score Vol
         vol_w = log_ret.rolling(w).std()
-        features[f'volatility_w{w}'] = _align_to_features(_norm(vol_w, f'volatility_w{w}'), n_features)
+        window_features[f'volatility_w{w}'] = _align_to_features(_norm(vol_w, f'volatility_w{w}'), n_features)
         vol_z = compute_rolling_zscore(vol_w, window=w)
-        features[f'volatility_zscore_w{w}'] = _align_to_features(_norm(vol_z, f'volatility_zscore_w{w}'), n_features)
+        window_features[f'volatility_zscore_w{w}'] = _align_to_features(_norm(vol_z, f'volatility_zscore_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
         # --- 3. VOLATILITY REGIME DYNAMICS ---
+        family_start = len(window_features)
         # Volatility Trend Slope
         vol_slope = vol_w.diff(max(1, w//4))
-        features[f'volatility_trend_slope_w{w}'] = _align_to_features(_norm(vol_slope, f'volatility_trend_slope_w{w}'), n_features)
+        window_features[f'volatility_trend_slope_w{w}'] = _align_to_features(_norm(vol_slope, f'volatility_trend_slope_w{w}'), n_features)
 
         # Vol Acceleration
         vol_accel = vol_slope.diff()
-        features[f'vol_acceleration_w{w}'] = _align_to_features(_norm(vol_accel, f'vol_acceleration_w{w}'), n_features)
+        window_features[f'vol_acceleration_w{w}'] = _align_to_features(_norm(vol_accel, f'vol_acceleration_w{w}'), n_features)
 
         # Compression Duration: Bars since BB Width expanded?
         # Or bars since vol > mean?
         # Let's use Bars Since Vol Spike (Z > 2)
         is_vol_spike = vol_z > 2.0
-        features[f'bars_since_vol_spike_w{w}'] = _align_to_features(_norm(compute_bars_since(is_vol_spike), f'bars_since_vol_spike_w{w}'), n_features)
+        window_features[f'bars_since_vol_spike_w{w}'] = _align_to_features(_norm(compute_bars_since(is_vol_spike), f'bars_since_vol_spike_w{w}'), n_features)
 
         # Compression: Low volatility state. Z < -1.0
         is_compression = vol_z < -1.0
         # Bars since compression ENDED = bars since NOT compression.
         # But commonly we want "Duration of current compression".
         # Which is `bars_since_not_compression`.
-        features[f'vol_compression_duration_w{w}'] = _align_to_features(_norm(compute_bars_since(~is_compression), f'vol_compression_duration_w{w}'), n_features)
+        vol_compression_duration = _align_to_features(
+            _norm(compute_bars_since(~is_compression), f'vol_compression_duration_w{w}'),
+            n_features
+        )
+        window_features[f'vol_compression_duration_w{w}'] = vol_compression_duration
 
         # Bars since compression ended
-        features[f'bars_since_compression_ended_w{w}'] = _align_to_features(_norm(compute_bars_since(is_compression), f'bars_since_compression_ended_w{w}'), n_features)
+        window_features[f'bars_since_compression_ended_w{w}'] = _align_to_features(_norm(compute_bars_since(is_compression), f'bars_since_compression_ended_w{w}'), n_features)
 
         # Breakout after compression: Interaction
         # If we broke out (price change high) AND we were compressed recently
         price_breakout = compute_rolling_zscore(log_ret, w).abs() > 2.0
-        was_compressed = features[f'vol_compression_duration_w{w}'] > w
-        features[f'breakout_after_compression_flag_w{w}'] = _align_to_features(_norm(price_breakout.astype(float) * was_compressed.astype(float), f'breakout_after_compression_flag_w{w}'), n_features)
+        was_compressed = vol_compression_duration > w
+        window_features[f'breakout_after_compression_flag_w{w}'] = _align_to_features(
+            _norm(price_breakout.astype(float) * was_compressed.astype(float), f'breakout_after_compression_flag_w{w}'),
+            n_features
+        )
+        _flush_family(window_features, family_start)
 
         # --- 4. TREND QUALITY & EFFICIENCY ---
+        family_start = len(window_features)
         # Efficiency Ratio (Kaufman)
         er_w = get_efficiency_ratio(close, window=w)
-        features[f'trend_efficiency_ratio_w{w}'] = _align_to_features(_norm(er_w, f'trend_efficiency_ratio_w{w}'), n_features)
+        window_features[f'trend_efficiency_ratio_w{w}'] = _align_to_features(_norm(er_w, f'trend_efficiency_ratio_w{w}'), n_features)
 
         # Directional Consistency: sum(sign(returns)) / w
         dir_consistency = np.sign(log_ret).rolling(w).sum() / w
-        features[f'directional_consistency_w{w}'] = _align_to_features(_norm(dir_consistency.abs(), f'directional_consistency_w{w}'), n_features)
+        window_features[f'directional_consistency_w{w}'] = _align_to_features(_norm(dir_consistency.abs(), f'directional_consistency_w{w}'), n_features)
 
         # Trend Duration: Bars since MA slope flip
         ma_w = close.rolling(w).mean()
         ma_slope = ma_w.diff()
         slope_sign_change = np.sign(ma_slope) != np.sign(ma_slope.shift(1))
-        features[f'trend_duration_w{w}'] = _align_to_features(_norm(compute_bars_since(slope_sign_change), f'trend_duration_w{w}'), n_features)
+        window_features[f'trend_duration_w{w}'] = _align_to_features(_norm(compute_bars_since(slope_sign_change), f'trend_duration_w{w}'), n_features)
 
         # Momentum Decay
         roc = close.pct_change(w)
         max_roc = roc.rolling(w).max()
-        features[f'momentum_decay_w{w}'] = _align_to_features(_norm(roc / (max_roc + 1e-9), f'momentum_decay_w{w}'), n_features)
+        window_features[f'momentum_decay_w{w}'] = _align_to_features(_norm(roc / (max_roc + 1e-9), f'momentum_decay_w{w}'), n_features)
 
         # Trend per Vol (Sharpe proxy)
-        sharpe_w = (log_ret.rolling(w).mean() / (log_ret.rolling(w).std() + 1e-9)).fillna(0)
-        features[f'trend_per_vol_w{w}'] = _align_to_features(_norm(sharpe_w, f'trend_per_vol_w{w}'), n_features)
+        ret_mean_w = log_ret.rolling(w).mean()
+        ret_std_w = log_ret.rolling(w).std()
+        sharpe_w = (ret_mean_w / (ret_std_w + 1e-9)).fillna(0)
+        window_features[f'trend_per_vol_w{w}'] = _align_to_features(_norm(sharpe_w, f'trend_per_vol_w{w}'), n_features)
 
         # Trend Slope Stability: Mean(Slope) / Std(Slope)
         slope = ma_w.diff()
         slope_stab = slope.rolling(w).mean() / (slope.rolling(w).std() + 1e-9)
-        features[f'trend_slope_stability_w{w}'] = _align_to_features(_norm(slope_stab, f'trend_slope_stability_w{w}'), n_features)
+        window_features[f'trend_slope_stability_w{w}'] = _align_to_features(_norm(slope_stab, f'trend_slope_stability_w{w}'), n_features)
 
         # ADX
         adx, pdi, mdi = compute_adx(high, low, close, period=w)
-        features[f'adx_w{w}'] = _align_to_features(_norm(adx, f'adx_w{w}'), n_features)
-        features[f'adx_trend_strength_w{w}'] = _align_to_features(_norm((pdi - mdi) / (adx + 1e-9), f'adx_trend_strength_w{w}'), n_features)
+        window_features[f'adx_w{w}'] = _align_to_features(_norm(adx, f'adx_w{w}'), n_features)
+        window_features[f'adx_trend_strength_w{w}'] = _align_to_features(_norm((pdi - mdi) / (adx + 1e-9), f'adx_trend_strength_w{w}'), n_features)
 
         # MACD (Scaled to window)
         # Fast=w/2, Slow=w, Signal=w/3
         macd, macd_sig, macd_hist = compute_macd(close, fast=max(2, w//2), slow=w, signal=max(2, w//3))
-        features[f'macd_hist_w{w}'] = _align_to_features(_norm(macd_hist, f'macd_hist_w{w}'), n_features)
+        window_features[f'macd_hist_w{w}'] = _align_to_features(_norm(macd_hist, f'macd_hist_w{w}'), n_features)
 
         # Hurst
-        features[f'hurst_proxy_w{w}'] = _align_to_features(_norm(compute_hurst_proxy(close, window=w), f'hurst_proxy_w{w}'), n_features)
+        window_features[f'hurst_proxy_w{w}'] = _align_to_features(_norm(compute_hurst_proxy(close, window=w), f'hurst_proxy_w{w}'), n_features)
 
         # Donchian Channel
         d_upper, d_lower, d_pos = compute_donchian_channel(high, low, close, window=w)
-        features[f'donchian_position_w{w}'] = _align_to_features(_norm(d_pos, f'donchian_position_w{w}'), n_features)
-        features[f'donchian_width_w{w}'] = _align_to_features(_norm((d_upper - d_lower) / (close + 1e-9), f'donchian_width_w{w}'), n_features)
+        window_features[f'donchian_position_w{w}'] = _align_to_features(_norm(d_pos, f'donchian_position_w{w}'), n_features)
+        window_features[f'donchian_width_w{w}'] = _align_to_features(_norm((d_upper - d_lower) / (close + 1e-9), f'donchian_width_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
         # --- 5. CYCLE & REGIME ---
+        family_start = len(window_features)
         # Fisher Transform
         fisher = compute_fisher_transform(high, low, window=w)
-        features[f'ehlers_fisher_transform_w{w}'] = _align_to_features(_norm(fisher, f'ehlers_fisher_transform_w{w}'), n_features)
+        window_features[f'ehlers_fisher_transform_w{w}'] = _align_to_features(
+            _norm(fisher, f'ehlers_fisher_transform_w{w}'),
+            n_features,
+        )
 
         # Hilbert Phase
         # Only compute for one main window to save compute, or cheap version
         if w == 20:
-            features[f'hilbert_transform_phase'] = _align_to_features(_norm(compute_hilbert_phase(close), f'hilbert_transform_phase'), n_features)
+            window_features[f'hilbert_transform_phase'] = _align_to_features(_norm(compute_hilbert_phase(close), f'hilbert_transform_phase'), n_features)
 
         # Aroon
-        features[f'aroon_oscillator_w{w}'] = _align_to_features(_norm(compute_aroon(high, low, w), f'aroon_oscillator_w{w}'), n_features)
+        window_features[f'aroon_oscillator_w{w}'] = _align_to_features(_norm(compute_aroon(high, low, w), f'aroon_oscillator_w{w}'), n_features)
 
         # Stochastic
         stoch_k, stoch_d = compute_stochastic(high, low, close, k_period=w, d_period=max(3, w//5))
-        features[f'stochastic_k_w{w}'] = _align_to_features(_norm(stoch_k, f'stochastic_k_w{w}'), n_features)
+        window_features[f'stochastic_k_w{w}'] = _align_to_features(_norm(stoch_k, f'stochastic_k_w{w}'), n_features)
         
         # CCI
-        features[f'cci_w{w}'] = _align_to_features(_norm(compute_cci(high, low, close, period=w), f'cci_w{w}'), n_features)
+        window_features[f'cci_w{w}'] = _align_to_features(_norm(compute_cci(high, low, close, period=w), f'cci_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
         # --- 6. VOLUME-PRICE EFFICIENCY ---
+        family_start = len(window_features)
         if volume_available:
             # Price Impact: Abs(Ret) / Vol
             # Normalize volume first or ratio?
             # Log Return / Log Volume is better, or Amihud illiquidity
             impact = log_ret.abs() / (volume + 1e-9)
-            features[f'price_impact_w{w}'] = _align_to_features(_norm(impact.rolling(w).mean(), f'price_impact_w{w}'), n_features)
+            window_features[f'price_impact_w{w}'] = _align_to_features(_norm(impact.rolling(w).mean(), f'price_impact_w{w}'), n_features)
 
             # Signed Price Impact
             signed_impact = log_ret / (volume + 1e-9)
-            features[f'signed_price_impact_w{w}'] = _align_to_features(_norm(signed_impact.rolling(w).mean(), f'signed_price_impact_w{w}'), n_features)
+            window_features[f'signed_price_impact_w{w}'] = _align_to_features(_norm(signed_impact.rolling(w).mean(), f'signed_price_impact_w{w}'), n_features)
 
             # Range per Volume (Kyber's liquidity metric)
             rpv = (high - low) / (volume + 1e-9)
-            features[f'range_per_volume_w{w}'] = _align_to_features(_norm(rpv.rolling(w).mean(), f'range_per_volume_w{w}'), n_features)
+            window_features[f'range_per_volume_w{w}'] = _align_to_features(_norm(rpv.rolling(w).mean(), f'range_per_volume_w{w}'), n_features)
 
             # Volume without progress (Churn): Vol * (1 - Efficiency)
             churn = volume * (1 - er_w)
-            features[f'volume_without_progress_w{w}'] = _align_to_features(_norm(churn.rolling(w).mean(), f'volume_without_progress_w{w}'), n_features)
+            window_features[f'volume_without_progress_w{w}'] = _align_to_features(_norm(churn.rolling(w).mean(), f'volume_without_progress_w{w}'), n_features)
 
             # Delta-Volume Divergence: Corr(PriceChange, VolDelta)
             # Or Divergence between Price Trend and Vol Trend
             vol_trend = volume.rolling(w).mean().diff()
             price_trend = close.rolling(w).mean().diff()
             # Simple interaction
-            features[f'delta_volume_divergence_w{w}'] = _align_to_features(_norm(vol_trend * price_trend, f'delta_volume_divergence_w{w}'), n_features)
+            window_features[f'delta_volume_divergence_w{w}'] = _align_to_features(_norm(vol_trend * price_trend, f'delta_volume_divergence_w{w}'), n_features)
 
             # Climax Volume: Vol > 3 * mean
             vol_mean = volume.rolling(w).mean()
             is_climax = volume > 3 * vol_mean
-            features[f'climax_volume_flag_w{w}'] = _align_to_features(_norm(is_climax.astype(float), f'climax_volume_flag_w{w}'), n_features)
+            window_features[f'climax_volume_flag_w{w}'] = _align_to_features(_norm(is_climax.astype(float), f'climax_volume_flag_w{w}'), n_features)
 
             # CMF
-            features[f'cmf_w{w}'] = _align_to_features(_norm(compute_cmf(high, low, close, volume, period=w), f'cmf_w{w}'), n_features)
+            window_features[f'cmf_w{w}'] = _align_to_features(_norm(compute_cmf(high, low, close, volume, period=w), f'cmf_w{w}'), n_features)
 
             # Force Index
-            features[f'force_index_w{w}'] = _align_to_features(_norm(compute_force_index(close, volume, period=w), f'force_index_w{w}'), n_features)
+            window_features[f'force_index_w{w}'] = _align_to_features(_norm(compute_force_index(close, volume, period=w), f'force_index_w{w}'), n_features)
 
             # Volume Delta (Rolling Sum)
             vol_delta = compute_volume_delta(close, open_p, volume)
-            features[f'volume_delta_w{w}'] = _align_to_features(_norm(vol_delta.rolling(w).sum(), f'volume_delta_w{w}'), n_features)
+            window_features[f'volume_delta_w{w}'] = _align_to_features(_norm(vol_delta.rolling(w).sum(), f'volume_delta_w{w}'), n_features)
 
             # OBV (Slope)
             obv = compute_obv(close, volume)
-            features[f'obv_slope_w{w}'] = _align_to_features(_norm(obv.diff(w), f'obv_slope_w{w}'), n_features)
+            window_features[f'obv_slope_w{w}'] = _align_to_features(_norm(obv.diff(w), f'obv_slope_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
         # --- 7. VWAP & CONTEXT ---
+        family_start = len(window_features)
         if volume_available:
             # VWAP Z-Score
             tp = (high + low + close) / 3
@@ -1405,15 +1507,17 @@ def create_meta_features(
             pv = tp * volume
             vwap = pv.rolling(w).sum() / (volume.rolling(w).sum() + 1e-9)
             vwap_std = tp.rolling(w).std() # Approx std dev of price
-            features[f'vwap_zscore_w{w}'] = _align_to_features(_norm((close - vwap)/(vwap_std+1e-9), f'vwap_zscore_w{w}'), n_features)
+            window_features[f'vwap_zscore_w{w}'] = _align_to_features(_norm((close - vwap)/(vwap_std+1e-9), f'vwap_zscore_w{w}'), n_features)
 
             # EOM
-            features[f'ease_of_movement_w{w}'] = _align_to_features(_norm(compute_ease_of_movement(high, low, volume, w), f'ease_of_movement_w{w}'), n_features)
+            window_features[f'ease_of_movement_w{w}'] = _align_to_features(_norm(compute_ease_of_movement(high, low, volume, w), f'ease_of_movement_w{w}'), n_features)
 
             # MFI
-            features[f'volume_weighted_rsi_w{w}'] = _align_to_features(_norm(compute_mfi(high, low, close, volume, w), f'volume_weighted_rsi_w{w}'), n_features)
+            window_features[f'volume_weighted_rsi_w{w}'] = _align_to_features(_norm(compute_mfi(high, low, close, volume, w), f'volume_weighted_rsi_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
         # --- 8. STRUCTURAL SR ---
+        family_start = len(window_features)
         # Touch count: Count close near High/Low of window
         win_high = high.rolling(w).max()
         win_low = low.rolling(w).min()
@@ -1424,23 +1528,23 @@ def create_meta_features(
         touch_high = (high > (win_high - thresh)).astype(float)
         touch_low = (low < (win_low + thresh)).astype(float)
         # Sum touches in window
-        features[f'touch_count_near_price_w{w}'] = _align_to_features(_norm((touch_high + touch_low).rolling(w).sum(), f'touch_count_near_price_w{w}'), n_features)
+        window_features[f'touch_count_near_price_w{w}'] = _align_to_features(_norm((touch_high + touch_low).rolling(w).sum(), f'touch_count_near_price_w{w}'), n_features)
 
         # Time-weighted SR strength
         # Weighted sum of touches (decay over time)
         # Touch event series
         touch_series = (touch_high + touch_low)
         # Exponential moving sum
-        features[f'time_weighted_sr_strength_w{w}'] = _align_to_features(_norm(touch_series.ewm(span=w).sum(), f'time_weighted_sr_strength_w{w}'), n_features)
+        window_features[f'time_weighted_sr_strength_w{w}'] = _align_to_features(_norm(touch_series.ewm(span=w).sum(), f'time_weighted_sr_strength_w{w}'), n_features)
 
         # Range Expansion Ratio: Range / Avg Range
         avg_range = (high - low).rolling(w).mean()
-        features[f'range_expansion_ratio_w{w}'] = _align_to_features(_norm((high - low) / (avg_range + 1e-9), f'range_expansion_ratio_w{w}'), n_features)
+        window_features[f'range_expansion_ratio_w{w}'] = _align_to_features(_norm((high - low) / (avg_range + 1e-9), f'range_expansion_ratio_w{w}'), n_features)
 
         # Breakout Follow Through: (Close - BreakLevel) / BreakCandleSize
         # Defined as momentum continuity
         # Simplified: Return(t) * Return(t-1) > 0 ?
-        features[f'breakout_follow_through_w{w}'] = _align_to_features(_norm((log_ret * log_ret.shift(1)), f'breakout_follow_through_w{w}'), n_features)
+        window_features[f'breakout_follow_through_w{w}'] = _align_to_features(_norm((log_ret * log_ret.shift(1)), f'breakout_follow_through_w{w}'), n_features)
 
         # False Break Rate (Proxy)
         # Breakout: High > Rolling Max High (w)
@@ -1449,95 +1553,122 @@ def create_meta_features(
         breakout = high > roll_high
         failed_break = breakout & (close < roll_high)
         # Rate in window
-        features[f'false_break_rate_w{w}'] = _align_to_features(_norm(failed_break.rolling(w).sum() / (breakout.rolling(w).sum() + 1e-9), f'false_break_rate_w{w}'), n_features)
+        window_features[f'false_break_rate_w{w}'] = _align_to_features(_norm(failed_break.rolling(w).sum() / (breakout.rolling(w).sum() + 1e-9), f'false_break_rate_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
-        # --- 9. TAIL RISK ---
-        # Rolling Skew/Kurt
-        features[f'rolling_skewness_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).skew(), f'rolling_skewness_w{w}'), n_features)
-        features[f'rolling_kurtosis_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).kurt(), f'rolling_kurtosis_w{w}'), n_features)
+        if enable_tail_risk:
+            # --- 9. TAIL RISK ---
+            family_start = len(window_features)
+            # Rolling Skew/Kurt
+            window_features[f'rolling_skewness_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).skew(), f'rolling_skewness_w{w}'), n_features)
+            window_features[f'rolling_kurtosis_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).kurt(), f'rolling_kurtosis_w{w}'), n_features)
 
-        # Downside Semivariance
-        neg_ret = log_ret.where(log_ret < 0, 0)
-        downside_var = neg_ret.rolling(w).var()
-        features[f'downside_semivariance_w{w}'] = _align_to_features(_norm(downside_var, f'downside_semivariance_w{w}'), n_features)
+            # Downside Semivariance
+            neg_ret = log_ret.where(log_ret < 0, 0)
+            downside_var = neg_ret.rolling(w).var()
+            window_features[f'downside_semivariance_w{w}'] = _align_to_features(_norm(downside_var, f'downside_semivariance_w{w}'), n_features)
 
-        # Left Tail Var Ratio
-        total_var = log_ret.rolling(w).var()
-        features[f'left_tail_var_ratio_w{w}'] = _align_to_features(_norm(downside_var / (total_var + 1e-9), f'left_tail_var_ratio_w{w}'), n_features)
+            # Left Tail Var Ratio
+            total_var = log_ret.rolling(w).var()
+            window_features[f'left_tail_var_ratio_w{w}'] = _align_to_features(_norm(downside_var / (total_var + 1e-9), f'left_tail_var_ratio_w{w}'), n_features)
 
-        # Max Runup (MFE Proxy)
-        # Max high relative to close
-        # "How high did it go in last w bars?" relative to min in window?
-        # Rolling Max - Rolling Min / Rolling Min
-        win_min = low.rolling(w).min()
-        win_max = high.rolling(w).max()
-        features[f'max_runup_w{w}'] = _align_to_features(_norm((win_max - win_min) / (win_min + 1e-9), f'max_runup_w{w}'), n_features)
-        # This is effectively max amplitude
+            # Max Runup (MFE Proxy)
+            # Max high relative to close
+            # "How high did it go in last w bars?" relative to min in window?
+            # Rolling Max - Rolling Min / Rolling Min
+            win_min = low.rolling(w).min()
+            win_max = high.rolling(w).max()
+            window_features[f'max_runup_w{w}'] = _align_to_features(_norm((win_max - win_min) / (win_min + 1e-9), f'max_runup_w{w}'), n_features)
+            # This is effectively max amplitude
 
-        # Drawdown Depth (Current price vs Rolling Max)
-        dd_w = (close / close.rolling(w).max()) - 1.0
-        features[f'drawdown_w{w}'] = _align_to_features(_norm(dd_w, f'drawdown_w{w}'), n_features)
+            # Drawdown Depth (Current price vs Rolling Max)
+            dd_w = (close / close.rolling(w).max()) - 1.0
+            window_features[f'drawdown_w{w}'] = _align_to_features(_norm(dd_w, f'drawdown_w{w}'), n_features)
 
-        # Max Adverse Excursion (MAE) Proxy -> Alias to Drawdown
-        features[f'max_adverse_excursion_w{w}'] = features[f'drawdown_w{w}']
+            # Max Adverse Excursion (MAE) Proxy -> Alias to Drawdown
+            window_features[f'max_adverse_excursion_w{w}'] = window_features[f'drawdown_w{w}']
 
-        # Tail Event Flag
-        is_tail = log_ret.abs() > (log_ret.rolling(w).std() * 3)
-        features[f'tail_event_flag_w{w}'] = _align_to_features(_norm(is_tail.astype(float), f'tail_event_flag_w{w}'), n_features)
+            # Tail Event Flag
+            is_tail = log_ret.abs() > (log_ret.rolling(w).std() * 3)
+            window_features[f'tail_event_flag_w{w}'] = _align_to_features(_norm(is_tail.astype(float), f'tail_event_flag_w{w}'), n_features)
+            _flush_family(window_features, family_start)
 
         # --- 11. EVENT BASED TIME IN STATE ---
+        family_start = len(window_features)
         # Bars since breakout
         # Breakout = Close > Rolling High (prev)
         is_breakout = close > high.shift(1).rolling(w).max()
-        features[f'bars_since_breakout_attempt_w{w}'] = _align_to_features(_norm(compute_bars_since(is_breakout), f'bars_since_breakout_attempt_w{w}'), n_features)
+        window_features[f'bars_since_breakout_attempt_w{w}'] = _align_to_features(_norm(compute_bars_since(is_breakout), f'bars_since_breakout_attempt_w{w}'), n_features)
 
         # Bars since trend exhaustion (e.g. RSI > 80 or < 20)
         # Use RSI of window w
         rsi_w = compute_rsi(close, period=w)
         is_exhaustion = (rsi_w > 80) | (rsi_w < 20)
-        features[f'bars_since_trend_exhaustion_signal_w{w}'] = _align_to_features(_norm(compute_bars_since(is_exhaustion), f'bars_since_trend_exhaustion_signal_w{w}'), n_features)
+        window_features[f'bars_since_trend_exhaustion_signal_w{w}'] = _align_to_features(_norm(compute_bars_since(is_exhaustion), f'bars_since_trend_exhaustion_signal_w{w}'), n_features)
+        _flush_family(window_features, family_start)
 
-        # --- 12. INTERACTIONS ---
-        # Trend Alignment: RSI direction == Slope direction
-        rsi_slope = rsi_w.diff(max(1, w//4)) # Use window-aligned slope for RSI
-        aligned = np.sign(rsi_slope) == np.sign(ma_slope)
-        features[f'trend_alignment_score_w{w}'] = _align_to_features(_norm(aligned.astype(float), f'trend_alignment_score_w{w}'), n_features)
+        if w in interaction_windows:
+            family_start = len(window_features)
+            # --- 12. INTERACTIONS ---
+            # Trend Alignment: RSI direction == Slope direction
+            rsi_slope = rsi_w.diff(max(1, w//4)) # Use window-aligned slope for RSI
+            aligned = np.sign(rsi_slope) == np.sign(ma_slope)
+            window_features[f'trend_alignment_score_w{w}'] = _align_to_features(_norm(aligned.astype(float), f'trend_alignment_score_w{w}'), n_features)
 
-        # Price-Volume Correlation
-        if volume_available:
-             # Correlation between Returns and Volume Change
-             vol_chg = volume.pct_change()
-             pv_corr = log_ret.rolling(w).corr(vol_chg).fillna(0)
-             features[f'price_vol_correlation_w{w}'] = _align_to_features(_norm(pv_corr, f'price_vol_correlation_w{w}'), n_features)
+            # Price-Volume Correlation
+            if volume_available:
+                # Correlation between Returns and Volume Change
+                vol_chg = volume.pct_change()
+                pv_corr = log_ret.rolling(w).corr(vol_chg).fillna(0)
+                window_features[f'price_vol_correlation_w{w}'] = _align_to_features(_norm(pv_corr, f'price_vol_correlation_w{w}'), n_features)
 
-        # --- 13. CROSS-TIMEFRAME RATIOS ---
-        # Compare w vs w_long (e.g. w*4)
-        w_long = w * 4
-        # SMA Ratio (Trend Extension)
-        sma_w = close.rolling(w).mean()
-        sma_long = close.rolling(w_long).mean()
-        features[f'sma_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(sma_w / (sma_long + 1e-9), f'sma_ratio_w{w}_vs_w{w_long}'), n_features)
+            # --- 13. CROSS-TIMEFRAME RATIOS ---
+            # Compare w vs w_long (e.g. w*4)
+            w_long = w * 4
+            # SMA Ratio (Trend Extension)
+            sma_w = ma_w
+            sma_long = close.rolling(w_long).mean()
+            window_features[f'sma_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(sma_w / (sma_long + 1e-9), f'sma_ratio_w{w}_vs_w{w_long}'), n_features)
 
-        # RSI Ratio (Momentum Divergence)
-        rsi_long = compute_rsi(close, period=w_long)
-        features[f'rsi_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(rsi_w / (rsi_long + 1e-9), f'rsi_ratio_w{w}_vs_w{w_long}'), n_features)
+            # RSI Ratio (Momentum Divergence)
+            rsi_long = compute_rsi(close, period=w_long)
+            window_features[f'rsi_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(rsi_w / (rsi_long + 1e-9), f'rsi_ratio_w{w}_vs_w{w_long}'), n_features)
 
-        # Volatility Ratio (Vol Compression/Expansion)
-        vol_long = log_ret.rolling(w_long).std()
-        features[f'vol_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(vol_w / (vol_long + 1e-9), f'vol_ratio_w{w}_vs_w{w_long}'), n_features)
+            # Volatility Ratio (Vol Compression/Expansion)
+            vol_long = log_ret.rolling(w_long).std()
+            window_features[f'vol_ratio_w{w}_vs_w{w_long}'] = _align_to_features(_norm(vol_w / (vol_long + 1e-9), f'vol_ratio_w{w}_vs_w{w_long}'), n_features)
 
-        # Vol Trend Conflict: Vol rising, Price falling (Panic?) or Vol falling, Price rising (Drift)
-        # Vol Slope * Price Slope
-        features[f'vol_trend_conflict_w{w}'] = _align_to_features(_norm(vol_slope * ma_slope, f'vol_trend_conflict_w{w}'), n_features)
+            # Vol Trend Conflict: Vol rising, Price falling (Panic?) or Vol falling, Price rising (Drift)
+            # Vol Slope * Price Slope
+            window_features[f'vol_trend_conflict_w{w}'] = _align_to_features(_norm(vol_slope * ma_slope, f'vol_trend_conflict_w{w}'), n_features)
 
-        # Compression x Momentum (Already partially done)
-        bb_width = compute_bollinger_bands(close, w)[3] # raw width
-        mom_abs = roc.abs()
-        features[f'compression_x_momentum_w{w}'] = _align_to_features(_norm(mom_abs / (bb_width + 1e-9), f'compression_x_momentum_w{w}'), n_features)
+            # Compression x Momentum (Already partially done)
+            bb_width = compute_bollinger_bands(close, w)[3] # raw width
+            mom_abs = roc.abs()
+            window_features[f'compression_x_momentum_w{w}'] = _align_to_features(_norm(mom_abs / (bb_width + 1e-9), f'compression_x_momentum_w{w}'), n_features)
 
-        # Absorption x Vol Spike
-        if volume_available:
-            features[f'absorption_x_vol_spike_w{w}'] = _align_to_features(_norm(rpv * is_vol_spike.astype(float), f'absorption_x_vol_spike_w{w}'), n_features)
+            # Absorption x Vol Spike
+            if volume_available:
+                window_features[f'absorption_x_vol_spike_w{w}'] = _align_to_features(_norm(rpv * is_vol_spike.astype(float), f'absorption_x_vol_spike_w{w}'), n_features)
+            _flush_family(window_features, family_start)
+
+        if window_features:
+            window_df = pd.DataFrame(window_features, index=features.index)
+            window_df = _downcast_float32(window_df)
+            feature_chunks.append(window_df)
+            window_features.clear()
+
+        if len(feature_chunks) >= chunk_window_size:
+            features = pd.concat([features] + feature_chunks, axis=1)
+            feature_chunks.clear()
+            features = _downcast_float32(features)
+
+    if feature_chunks:
+        features = pd.concat([features] + feature_chunks, axis=1)
+        features = _downcast_float32(features)
+
+    if isinstance(original_index, pd.DatetimeIndex) and not features.index.equals(original_index):
+        features = features.reindex(original_index, method="ffill").fillna(0.0)
 
     # ===== LEGACY SUPPORT / CROSS-TIMEFRAME SPECIFIC =====
     # Add back some key legacy features if not covered

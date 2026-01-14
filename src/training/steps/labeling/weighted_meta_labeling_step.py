@@ -1935,6 +1935,15 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
         
         tprint_info(f"   Total raw features: {meta_features.shape[1]} ({n_base_features} base + {n_kalman_features} Kalman)")
 
+        # Downcast numeric features early to reduce memory pressure
+        try:
+            numeric_cols = meta_features.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                meta_features[numeric_cols] = meta_features[numeric_cols].astype(np.float32)
+                tprint_info(f"   🧮 Downcasted numeric meta-features to float32 ({len(numeric_cols)} columns)")
+        except Exception as downcast_exc:
+            tprint_warning(f"   ⚠️ Failed to downcast meta-features: {downcast_exc}")
+
         # ------------------------------------------------------------------
         # 7c(0). Prefer HPO-selected feature set (from meta_labeling_hpo_sample_weighted)
         # ------------------------------------------------------------------
@@ -1964,6 +1973,7 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
                     if config.get("enable_multi_horizon_features", True):
                         try:
                             n_before = int(df_expanded.shape[1])
+                            tprint_info(f"   🔍 Expanding multi-horizon features for HPO: input shape {df_expanded.shape}")
                             df_expanded = generate_multi_horizon_features(df_expanded, horizon_config)
                             tprint_info(
                                 f"   Expanded features for HPO application: {n_before} → {int(df_expanded.shape[1])}"
@@ -1973,6 +1983,7 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
 
                     if config.get("enable_cross_features", True):
                         try:
+                            tprint_info(f"   🔍 Expanding cross-features for HPO: input shape {df_expanded.shape}")
                             kalman_cols = [c for c in df_expanded.columns if str(c).startswith("KF_")]
                             base_cols = [c for c in df_expanded.columns if not str(c).startswith("KF_")]
 
@@ -1991,6 +2002,7 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
                             for col in cross_features_df.columns:
                                 if col not in df_expanded.columns:
                                     df_expanded[col] = cross_features_df[col]
+                            tprint_info(f"   ✅ Cross-feature expansion complete for HPO: output shape {df_expanded.shape}")
                         except Exception as e_cross:
                             tprint_warning(f"   ⚠️ Failed to generate cross-features for HPO application: {e_cross}")
 

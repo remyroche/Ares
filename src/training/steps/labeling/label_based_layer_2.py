@@ -3795,6 +3795,12 @@ class LabelBasedLayer2(BaseStep):
                     # Fix: create_meta_features 3rd arg is volume_available (bool), not events.
                     # We generate features for the whole DF then reindex to events.
                     volume_available = 'volume' in df_features.columns and not df_features['volume'].isna().all()
+                    horizon_bars = None
+                    try:
+                        if isinstance(self.config, dict) and self.config.get("horizon") is not None:
+                            horizon_bars = int(self.config.get("horizon"))
+                    except Exception:
+                        horizon_bars = None
                     
                     # CHUNKED PROCESSING: Process large DataFrames in chunks to reduce memory pressure
                     chunk_size = 50_000
@@ -3806,7 +3812,12 @@ class LabelBasedLayer2(BaseStep):
                             chunk_df = df_features.iloc[start:end].copy()
                             chunk_signals = signals.iloc[start:end].copy()
                             try:
-                                chunk_X = create_meta_features(chunk_df, chunk_signals, volume_available=volume_available)
+                                chunk_X = create_meta_features(
+                                    chunk_df,
+                                    chunk_signals,
+                                    volume_available=volume_available,
+                                    horizon_bars=horizon_bars,
+                                )
                                 
                                 # DEBUG LOGGING
                                 tprint_info(f"   🐛 Chunk {start//chunk_size}: raw X shape={chunk_X.shape}, index type={type(chunk_X.index)}")
@@ -3829,7 +3840,12 @@ class LabelBasedLayer2(BaseStep):
                         else:
                             X_all = pd.DataFrame(index=df_features.index)
                     else:
-                        X_all = create_meta_features(df_features, signals, volume_available=volume_available)
+                        X_all = create_meta_features(
+                            df_features,
+                            signals,
+                            volume_available=volume_available,
+                            horizon_bars=horizon_bars,
+                        )
                         tprint_info(f"   🐛 No-chunk X_all shape={X_all.shape}")
                     
                     # PRESERVE EXTRA COLUMNS from input df (e.g. specialist/spectral features)
@@ -6113,7 +6129,18 @@ class LabelBasedLayer2(BaseStep):
                 vol_avail = True
                 
             # Use MTF feature generation (create_meta_features is already imported)
-            X_engineered = create_meta_features(df_out, signals_empty, volume_available=vol_avail)
+            horizon_bars = None
+            try:
+                if isinstance(self.config, dict) and self.config.get("horizon") is not None:
+                    horizon_bars = int(self.config.get("horizon"))
+            except Exception:
+                horizon_bars = None
+            X_engineered = create_meta_features(
+                df_out,
+                signals_empty,
+                volume_available=vol_avail,
+                horizon_bars=horizon_bars,
+            )
             
             if not X_engineered.empty:
                 # Merge features that are not already in df_out
@@ -6209,6 +6236,14 @@ class LabelBasedLayer2(BaseStep):
         
         # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
         tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
+        tprint_info(f"   🧪 Huber checkpoint: X_train={X_train.shape}, X_val={X_val.shape}, y_train={y_train.shape}")
+        if w_train is not None:
+            try:
+                w_sum = float(np.sum(w_train))
+                w_eff = float((w_sum ** 2) / np.sum(np.square(w_train))) if np.sum(np.square(w_train)) > 0 else 0.0
+                tprint_info(f"   📚 De Prado weights: sum={w_sum:.2f}, effective_n={w_eff:.1f}")
+            except Exception:
+                pass
         try:
             # Pass w_train to Huber as sample_weight
             huber_outputs = prepare_huber_teacher_outputs(
@@ -6233,13 +6268,8 @@ class LabelBasedLayer2(BaseStep):
             monotone_constraints = [monotone_constraints_dict.get(f, 0) for f in selected_features]
 
         except Exception as e:
-            tprint_warning(f"   ⚠️ Huber Teacher failed: {e}. Using all features.")
-            X_train_final = X_train
-            X_val_final = X_val
-            monotone_constraints = None
-            interaction_constraints = None
-            warm_start_train = None
-            warm_start_val = None
+            tprint_error(f"   ❌ Huber Teacher failed: {e}. Aborting model race to prevent over-allocation.")
+            raise RuntimeError("Huber Teacher failed; aborting model race.") from e
 
         # Compute dynamic scale_pos_weight
         pos_count = np.sum(y_train == 1)
@@ -7570,28 +7600,39 @@ class LabelBasedLayer2(BaseStep):
                     try:
                         # Get event indices for training set
                         train_events = X_tr.index
-                        
+
                         # Compute sequential bootstrap weights
                         sample_weights = self._sequential_bootstrap_sample_weights(
                             train_events, X_tr, lookback=100
                         )
-                        
+
                         # Apply class balancing to sequential bootstrap weights
                         # Boost minority class weights to handle imbalance
                         class_counts = y_tr.value_counts()
                         minority_class = 1 if class_counts.get(1, 0) < class_counts.get(0, 0) else 0
                         majority_class = 1 - minority_class
-                        
+
                         if minority_class in class_counts and majority_class in class_counts:
                             class_ratio = class_counts[majority_class] / class_counts[minority_class]
                             # Apply class balancing factor
                             sample_weights[y_tr == minority_class] *= class_ratio
-                        
+
                         # Renormalize weights
                         sample_weights = sample_weights / sample_weights.sum() * len(sample_weights)
-                        
-                        tprint_info(f"   🔄 Sequential Bootstrap: weights range [{sample_weights.min():.3f}, {sample_weights.max():.3f}]")
-                        
+
+                        tprint_info(
+                            f"   🔄 Sequential Bootstrap: weights range "
+                            f"[{sample_weights.min():.3f}, {sample_weights.max():.3f}]"
+                        )
+                        if hasattr(self, "_last_bootstrap_diag"):
+                            diag = getattr(self, "_last_bootstrap_diag") or {}
+                            tprint_info(
+                                "   📚 De Prado metrics: "
+                                f"avg_uniqueness={diag.get('avg_uniqueness', 'n/a')}, "
+                                f"effective_n={diag.get('effective_n', 'n/a')}, "
+                                f"overlap_mean={diag.get('overlap_mean', 'n/a')}"
+                            )
+
                     except Exception as e:
                         tprint_warning(f"⚠️ Sequential bootstrap failed, using uniform weights: {e}")
                         sample_weights = np.ones(len(X_tr))
@@ -9465,9 +9506,20 @@ class LabelBasedLayer2(BaseStep):
             
             # Log statistics
             tprint_success(f"✅ Sequential Bootstrap weights computed (Optimized)")
-            tprint_info(f"   - Avg uniqueness: {np.mean(uniqueness_values):.3f}")
+            avg_uniqueness = float(np.mean(uniqueness_values)) if len(uniqueness_values) > 0 else 0.0
+            eff_n = float(1.0 / np.sum(weights**2)) if np.sum(weights**2) > 0 else 0.0
+            overlap_mean = float(np.mean(overlap_matrix)) if overlap_matrix.size > 0 else 0.0
+            tprint_info(f"   - Avg uniqueness: {avg_uniqueness:.3f}")
             tprint_info(f"   - Weight range: [{weights.min():.4f}, {weights.max():.4f}]")
-            tprint_info(f"   - Effective sample size: {1.0 / np.sum(weights**2):.1f}")
+            tprint_info(f"   - Effective sample size: {eff_n:.1f}")
+            tprint_info(f"   - Avg overlap: {overlap_mean:.3f}")
+            self._last_bootstrap_diag = {
+                "avg_uniqueness": avg_uniqueness,
+                "effective_n": eff_n,
+                "overlap_mean": overlap_mean,
+                "weight_min": float(weights.min()),
+                "weight_max": float(weights.max()),
+            }
             
             return weights
             
@@ -9994,6 +10046,19 @@ class LabelBasedLayer2(BaseStep):
                     if fold_idx == 0:
                         tprint_info(f"   📊 Training {gt.uuid} with {len(valid_cols)} features. Shape: {X_train_final.shape}")
 
+                if fold_idx == 0:
+                    pos_rate = float((y_train == 1).mean()) if len(y_train) > 0 else 0.0
+                    weight_sum = float(w_train.sum()) if w_train is not None else 0.0
+                    horizon_cfg = None
+                    if isinstance(self.config, dict):
+                        horizon_cfg = self.config.get("horizon")
+                    params = getattr(gt, "params", {}) or {}
+                    tprint_info(
+                        f"   📌 Geometry context: uuid={gt.uuid} family={getattr(gt, 'family', 'unknown')} "
+                        f"events={len(y_train)} pos_rate={pos_rate:.1%} weight_sum={weight_sum:.2f} "
+                        f"horizon={horizon_cfg} params={params}"
+                    )
+
                 # === SAFEGUARD: Enforce binary labels ===
                 # This fixes "Multiclass objective and metrics don't match" crash
                 unique_labels = np.unique(y_train.dropna())
@@ -10036,6 +10101,11 @@ class LabelBasedLayer2(BaseStep):
                     )
 
                     tprint_success(f"🏆 Model race winner: {best_name}")
+                    if isinstance(race_results, dict) and race_results:
+                        tprint_info(
+                            f"   📈 Race metrics ({gt.uuid}): "
+                            + ", ".join(f"{k}={v}" for k, v in list(race_results.items())[:5])
+                        )
 
                     # HPO - run on the winning model (different HPO strategies per model type)
                     if self.enable_focal_hpo and len(X_train_final) > 200:
@@ -10503,12 +10573,66 @@ class LabelBasedLayer2(BaseStep):
             return idx.tz_localize(None)
         return idx
 
+    def _compute_alignment_tolerance(self, idx: pd.Index) -> pd.Timedelta:
+        """Compute a conservative merge_asof tolerance based on index spacing."""
+        if len(idx) < 2:
+            return pd.Timedelta('12h')
+        try:
+            diffs = idx.to_series().diff().dropna()
+            median_diff = diffs.median()
+            if pd.isna(median_diff):
+                return pd.Timedelta('12h')
+            min_tol = pd.Timedelta('30min')
+            max_tol = pd.Timedelta('12h')
+            tol = median_diff * 4
+            if tol < min_tol:
+                tol = min_tol
+            if tol > max_tol:
+                tol = max_tol
+            return tol
+        except Exception:
+            return pd.Timedelta('12h')
+
+    def _merge_asof_in_batches(
+        self,
+        events_df: pd.DataFrame,
+        X_temp: pd.DataFrame,
+        tolerance: pd.Timedelta,
+        batch_size: int = 20000,
+    ) -> pd.DataFrame:
+        """Merge features to events in batches to limit peak memory usage."""
+        if len(events_df) <= batch_size:
+            return pd.merge_asof(
+                events_df,
+                X_temp,
+                left_index=True,
+                right_index=True,
+                direction='backward',
+                tolerance=tolerance,
+            )
+        batches = []
+        for start in range(0, len(events_df), batch_size):
+            batch = events_df.iloc[start:start + batch_size]
+            if self.verbose:
+                tprint_info(f"   🔁 merge_asof batch {start // batch_size + 1} / {int(np.ceil(len(events_df) / batch_size))}")
+            merged_batch = pd.merge_asof(
+                batch,
+                X_temp,
+                left_index=True,
+                right_index=True,
+                direction='backward',
+                tolerance=tolerance,
+            )
+            batches.append(merged_batch)
+        return pd.concat(batches, axis=0)
+
     def _align_features_efficiently(self, X_all: pd.DataFrame, events_idx: pd.DatetimeIndex) -> pd.DataFrame:
         """Fast feature alignment using pandas merge_asof with simplified logic."""
         if len(events_idx) == 0:
             return pd.DataFrame()
 
         try:
+            self._limit_cache_sizes()
             if self.verbose:
                 tprint_info(f"   🔁 Aligning {len(events_idx)} events with feature frame {X_all.shape}")
 
@@ -10522,7 +10646,10 @@ class LabelBasedLayer2(BaseStep):
 
             # Simplified merge_asof logic without excessive copying
             # Use a view or minimal DataFrame for events
-            events_df = pd.DataFrame(index=events_naive.sort_values())
+            if events_naive.is_monotonic_increasing:
+                events_df = pd.DataFrame(index=events_naive)
+            else:
+                events_df = pd.DataFrame(index=events_naive.sort_values())
 
             # Using X_all directly but with naive index for alignment
             # We avoid full copy if possible, but set_index makes a copy usually
@@ -10532,16 +10659,27 @@ class LabelBasedLayer2(BaseStep):
                 X_temp = X_all.copy(deep=False) # Shallow copy
                 X_temp.index = features_naive
 
-            X_temp = X_temp.sort_index()
+            if not X_temp.index.is_monotonic_increasing:
+                X_temp = X_temp.sort_index()
 
-            # Use merge_asof
-            merged = pd.merge_asof(
-                events_df,
-                X_temp,
-                left_index=True,
-                right_index=True,
-                direction='backward',  # CAUSAL FIX: STRICTLY BACKWARD LOOKING
-                tolerance=pd.Timedelta('12h')  # CAUSAL FIX: Allow looking back up to 12h for last known state (don't drop events just because features are sparse)
+            # Convert categorical columns before merge to avoid post-merge coercion overhead
+            cat_cols = X_temp.select_dtypes(include=['category']).columns
+            if len(cat_cols) > 0:
+                X_temp = X_temp.copy()
+                for col in cat_cols:
+                    try:
+                        X_temp[col] = X_temp[col].cat.codes.astype(float).replace(-1.0, np.nan)
+                    except Exception:
+                        X_temp[col] = pd.to_numeric(X_temp[col].astype(str), errors='coerce')
+
+            tolerance = self._compute_alignment_tolerance(X_temp.index)
+
+            # Use merge_asof (batched for large event sets)
+            merged = self._merge_asof_in_batches(
+                events_df=events_df,
+                X_temp=X_temp,
+                tolerance=tolerance,
+                batch_size=20000,
             )
 
             # Restore original order (events_idx)
@@ -10560,23 +10698,13 @@ class LabelBasedLayer2(BaseStep):
             if any(merged.columns.duplicated()):
                 merged = merged.loc[:, ~merged.columns.duplicated(keep='last')]
 
-            # Handle categorical columns safely before fillna (Bug #10 fix)
-            # If a column is categorical and contains NaNs (alignment gaps), fillna(0.0) will fail
-            # if 0.0 is not in the categories. Also, categorical dtype doesn't support std() operations
-            for col in merged.select_dtypes(include=['category']).columns:
-                try:
-                    # Convert categorical to numeric codes to avoid std() errors
-                    merged[col] = merged[col].cat.codes.astype(float).replace(-1.0, np.nan)
-                except Exception:
-                    # Fallback: convert to object then to numeric if possible
-                    try:
-                        merged[col] = pd.to_numeric(merged[col].astype(str), errors='coerce')
-                    except:
-                        merged[col] = merged[col].astype(object)
+            # Fill numeric NaNs only to reduce temporary allocations
+            numeric_cols = merged.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                merged[numeric_cols] = merged[numeric_cols].fillna(0.0)
 
             # Optimize memory and cleanup
-            # merged.fillna(0.0) creates a copy, so inplace=True is safe and efficient
-            result = self._optimize_dataframe_memory(merged.fillna(0.0), inplace=True)
+            result = self._optimize_dataframe_memory(merged, inplace=True)
 
             if self.verbose:
                 tprint_info(f"   ✅ Alignment produced feature frame {result.shape}")
@@ -10610,6 +10738,12 @@ class LabelBasedLayer2(BaseStep):
         if selection_score is not None:
             geometry.params['selection_score'] = selection_score
             geometry.selection_score = selection_score
+        if getattr(self, "verbose", False):
+            family = getattr(geometry, "family", "unknown")
+            tprint_info(
+                f"   🏷️ Geometry tiered: {getattr(geometry, 'uuid', 'unknown')} "
+                f"family={family} tier={label} score={selection_score}"
+            )
 
     def _build_geometry_independent_event_features(self, df: pd.DataFrame, events_df: pd.DataFrame) -> pd.DataFrame:
         if len(events_df) == 0:

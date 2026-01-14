@@ -492,6 +492,18 @@ def run_layer0_kalman_vwap(
         # _objective not defined because optimization was skipped (loaded from bundle)
         best_diagnostics = {}
         best_loss_components = {}
+
+    try:
+        nan_metrics = [
+            key for key, value in best_diagnostics.items()
+            if isinstance(value, (int, float)) and np.isnan(value)
+        ]
+        if nan_metrics:
+            tprint_warning(f"⚠️ Layer0 diagnostics contain NaNs: {nan_metrics}")
+            if bool(config.get("fail_on_layer0_nan_diagnostics", False)):
+                raise RuntimeError("Layer0 diagnostics contain NaNs")
+    except Exception:
+        pass
     
     try:
         md_path = outcomes_dir / f"layer0_report_{symbol}_{timeframe}_{ts}.md"

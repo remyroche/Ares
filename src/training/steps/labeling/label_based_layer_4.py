@@ -41,7 +41,10 @@ from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.utils.layer4_optimized import (
     compute_financial_weights_numba,
     extract_prob_features_numba,
-    compute_prob_stats_numba
+    compute_prob_stats_numba,
+    rolling_sadf_score_numba,
+    rolling_cusum_scores_numba,
+    compute_proxy_entropy_numba
 )
 
 # Import entropy bars functionality
@@ -69,6 +72,11 @@ def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
     # Faster implementation using astype with dictionary or just applying to numeric cols
     float_cols = df.select_dtypes(include=['float64']).columns
     if len(float_cols) > 0:
+        # Check for infs before casting
+        if np.isinf(df[float_cols]).any().any():
+             df[float_cols] = df[float_cols].replace([np.inf, -np.inf], np.nan)
+
+        # Use simple astype for speed, assume NaNs are handled later or acceptable
         df[float_cols] = df[float_cols].astype(np.float32)
     return df
 
@@ -227,7 +235,7 @@ class SimpleMultiModelRiskEngine:
         entropy_feature_cols = [
             'staleness_seconds', 'staleness_minutes', 'drift_proxy', 
             'lz_complexity', 'trend_conviction_index', 'staleness_adjusted_drift',
-            'entropy_ma', 'entropy_std', 'entropy_zscore'
+            'entropy_ma', 'entropy_std', 'entropy_zscore', 'proxy_entropy'
         ]
         
         for col in entropy_feature_cols:
@@ -473,10 +481,6 @@ def integrate_entropy_bars_into_layer4(
     Returns:
         Tuple of (enhanced_df, entropy_bars_df)
     """
-    if not ENTROPY_BARS_AVAILABLE:
-        tprint_warning("⚠️ Entropy bars not available in Layer 4, using original data")
-        return df, pd.DataFrame()
-    
     cfg = config or {}
     
     try:
@@ -502,12 +506,6 @@ def integrate_entropy_bars_into_layer4(
             tprint_info(f"⚡ Layer 4: Loading entropy features from cache: {cache_file}")
             try:
                 entropy_features_all = pd.read_parquet(cache_file)
-                # Need to separate enhanced_df and entropy_bars_df?
-                # Actually we just need entropy_features to merge.
-                # But function returns (enhanced_df, entropy_bars_df).
-                # To fully restore, we might need to cache entropy_bars too or just cache the features
-                # and return empty entropy_bars_df if not strictly needed.
-                # Let's re-merge.
 
                 # Filter to match current df index
                 # Ensure index is datetime
@@ -523,22 +521,69 @@ def integrate_entropy_bars_into_layer4(
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to load cache, regenerating: {e}")
 
-        # Fetch 1-minute data for entropy bar generation
-        tprint_info("🔧 Layer 4: Fetching 1-minute data for entropy bar generation")
+        # Try to fetch 1-min data if allowed
+        use_proxy = False
+        min_data = None
+        
+        if ENTROPY_BARS_AVAILABLE:
+            tprint_info("🔧 Layer 4: Fetching 1-minute data for entropy bar generation")
+            try:
+                min_data = fetch_1min_data_for_entropy_bars(
+                    symbol=symbol,
+                    exchange=exchange,
+                    start_date=start_date,
+                    end_date=end_date,
+                    data_dir=cfg.get('data_dir', 'historical_data')
+                )
+            except Exception as e:
+                tprint_warning(f"⚠️ Layer 4: Failed to fetch 1-min data: {e}. Switching to Proxy Entropy.")
+                use_proxy = True
+        else:
+            tprint_info("ℹ️ Layer 4: Entropy Bars module not available. Switching to Proxy Entropy.")
+            use_proxy = True
 
-        min_data = fetch_1min_data_for_entropy_bars(
-            symbol=symbol,
-            exchange=exchange,
-            start_date=start_date,
-            end_date=end_date,
-            data_dir=cfg.get('data_dir', 'historical_data')
-        )
+        if use_proxy or min_data is None or min_data.empty:
+            if not use_proxy:
+                tprint_warning("⚠️ Layer 4: No 1-minute data available. Switching to Proxy Entropy.")
+
+            # --- PROXY ENTROPY CALCULATION ---
+            tprint_info("🔄 Layer 4: Calculating Proxy Entropy (Numba Optimized) on base timeframe...")
+
+            # Calculate returns on the base dataframe
+            if 'close' in df.columns:
+                price_col = 'close'
+            elif 'Close' in df.columns:
+                price_col = 'Close'
+            else:
+                tprint_error("❌ Layer 4: No price column found for proxy entropy.")
+                return df, pd.DataFrame()
+
+            # Calculate log returns
+            prices = df[price_col].values.astype(np.float64)
+            returns = np.zeros_like(prices)
+            returns[1:] = np.diff(np.log(prices + 1e-9))
+
+            # Use Numba function
+            proxy_entropy = compute_proxy_entropy_numba(
+                returns,
+                window=cfg.get('entropy_window', 100),
+                n_bins=cfg.get('entropy_bins', 10)
+            )
+
+            entropy_features = pd.DataFrame(index=df.index)
+            entropy_features['proxy_entropy'] = proxy_entropy
+
+            # Cache the proxy features too
+            try:
+                entropy_features.to_parquet(cache_file)
+                tprint_info(f"💾 Layer 4: Cached proxy entropy features to {cache_file}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to cache proxy entropy features: {e}")
+
+            enhanced_df = df.join(entropy_features, rsuffix='_entropy')
+            return enhanced_df, pd.DataFrame()
         
-        if min_data is None or min_data.empty:
-            tprint_warning("⚠️ Layer 4: No 1-minute data available, skipping entropy bars")
-            return df, pd.DataFrame()
-        
-        # Generate entropy bars
+        # Generate entropy bars (Normal Path)
         tprint_info("🔄 Layer 4: Generating entropy bars from 1-minute data")
         entropy_bars = generate_entropy_bars_from_ohlcv(
             ohlcv_data=min_data,
@@ -550,7 +595,7 @@ def integrate_entropy_bars_into_layer4(
         )
         
         if entropy_bars.empty:
-            tprint_warning("⚠️ Layer 4: Failed to generate entropy bars")
+            tprint_warning("⚠️ Layer 4: Failed to generate entropy bars. Using empty features.")
             return df, pd.DataFrame()
         
         # Calculate specialized entropy features
@@ -594,6 +639,48 @@ def integrate_entropy_bars_into_layer4(
         return df, pd.DataFrame()
 
 
+class MetaLearnerFeatures:
+    """
+    Generates structural market features for Layer 4 meta-learning.
+    Uses Numba-optimized SADF and CUSUM scores to detect structural breaks and regimes.
+    """
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = config or {}
+        self.window_sadf = self.config.get('window_sadf', 100)
+
+    def generate(self, df: pd.DataFrame, raw_price_col: str = 'close', **kwargs) -> pd.DataFrame:
+        """
+        Generate structural features.
+        """
+        if raw_price_col not in df.columns:
+            return pd.DataFrame(index=df.index)
+
+        # Calculate returns
+        prices = df[raw_price_col].values.astype(np.float64)
+        returns = np.zeros_like(prices)
+        returns[1:] = np.diff(np.log(prices + 1e-9))
+
+        # SADF Scores (Numba Optimized)
+        sadf_scores = rolling_sadf_score_numba(returns, self.window_sadf)
+
+        # CUSUM Scores (Numba Optimized)
+        mean_ret = np.mean(returns)
+        cusum_scores = rolling_cusum_scores_numba(returns, mean_ret)
+
+        # Normalize
+        max_sadf = np.max(sadf_scores)
+        sadf_norm = sadf_scores / (max_sadf + 1e-9) if max_sadf > 0 else sadf_scores
+
+        max_cusum = np.max(cusum_scores)
+        cusum_norm = cusum_scores / (max_cusum + 1e-9) if max_cusum > 0 else cusum_scores
+
+        features = pd.DataFrame(index=df.index)
+        features['sadf_score_norm'] = sadf_norm
+        features['cusum_score_norm'] = cusum_norm
+
+        return features
+
+
 def train_layer4_simple_multimodel(
     oof_df: pd.DataFrame,
     market_data: pd.DataFrame,
@@ -620,17 +707,12 @@ def train_layer4_simple_multimodel(
         entropy_bars_df = pd.DataFrame()
     
     # Generate market features
-    try:
-        from .layer4_extratrees_pnl import MetaLearnerFeatures
-        generator = MetaLearnerFeatures(config=config)
-        market_features = generator.generate(
-            df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
-            raw_price_col='close',
-            denoised_price_col='denoised_price'
-        )
-    except ImportError:
-        tprint_warning("⚠️ MetaLearnerFeatures not available, using empty market features")
-        market_features = pd.DataFrame(index=oof_df.index)
+    # Use the local MetaLearnerFeatures class which is now properly implemented
+    generator = MetaLearnerFeatures(config=config)
+    market_features = generator.generate(
+        df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
+        raw_price_col='close'
+    )
     
     y_binary = (oof_df[target_col] > 0).astype(int)
     abs_returns = oof_df[target_col].abs()
@@ -662,12 +744,6 @@ def train_layer4_simple_multimodel(
     # Add entropy bars information to metrics
     if not entropy_bars_df.empty:
         final_metrics['entropy_bars_count'] = len(entropy_bars_df)
-        final_metrics['entropy_features_count'] = len([col for col in oof_df_out.columns if col.startswith(('staleness_', 'drift_', 'lz_', 'trend_', 'entropy_'))])
+        final_metrics['entropy_features_count'] = len([col for col in oof_df_out.columns if col.startswith(('staleness_', 'drift_', 'lz_', 'trend_', 'entropy_', 'proxy_entropy'))])
     
     return oof_df_out, final_metrics
-
-class MetaLearnerFeatures:
-    def __init__(self, **kwargs):
-        pass
-    def generate(self, df, **kwargs):
-        return pd.DataFrame(index=df.index)

@@ -1,27 +1,34 @@
 {
   "versions": {
     "enhanced_ml_momentum_persistence_prediction_15m": {
-      "created_at": "2026-01-08T23:14:59.065254",
-      "num_rows": 142619,
-      "num_columns": 17,
+      "created_at": "2026-01-14T19:47:05.168465",
+      "num_rows": 175202,
+      "num_columns": 24,
       "columns": [
         "timestamp",
         "specialist_prediction",
         "specialist_probability",
         "target_label",
-        "feature_open_squared",
         "feature_volume_price_trend",
         "feature_structural_inertia_60",
         "feature_structural_inertia_40",
+        "feature_enhanced_path_acceleration",
+        "feature_enhanced_path_volatility",
+        "feature_structural_inertia_20",
+        "feature_enhanced_path_volatility_resid",
+        "feature_momentum_diversity_35",
+        "feature_momentum_diversity_25",
+        "feature_mean_reversion_signal",
+        "feature_momentum_diversity_15",
+        "feature_enhanced_path_smoothness",
+        "feature_inertia_accel_20",
+        "feature_momentum_diversity_5",
+        "feature_open_rank_magnitude",
         "feature_vol_intensity",
         "feature_vp_efficiency",
         "feature_roll_vol",
         "feature_sig_0",
-        "feature_sig_1",
-        "feature_sig_2",
-        "feature_sig_3",
-        "feature_sig_4",
-        "feature_sig_5"
+        "feature_sig_1"
       ]
     }
   },
@@ -34,5 +41,5 @@
     "direction": "long",
     "model": "enhanced_ml_momentum_persistence_step"
   },
-  "updated_at": "2026-01-14T01:41:41.230944"
+  "updated_at": "2026-01-14T22:25:12.584697"
 }

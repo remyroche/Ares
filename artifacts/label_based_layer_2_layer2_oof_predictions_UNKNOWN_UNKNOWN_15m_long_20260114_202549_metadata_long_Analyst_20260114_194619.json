@@ -1,0 +1,17 @@
+{
+  "row_count": 7814,
+  "column_count": 8,
+  "has_datetime_index": true,
+  "index_type": "DatetimeIndex",
+  "index_start": "2023-05-23 03:20:00",
+  "index_end": "2025-10-31 21:47:00",
+  "index_frequency": "None",
+  "index_tz": null,
+  "index_is_monotonic": true,
+  "artifact_name": "layer2_oof_predictions_UNKNOWN_UNKNOWN_15m_long_20260114_202549",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/label_based_layer_2/label_based_layer_2_layer2_oof_predictions_UNKNOWN_UNKNOWN_15m_long_20260114_202549_long_Analyst_20260114_194619.parquet",
+  "file_size": 99600,
+  "timestamp": "2026-01-14T20:25:49.716236",
+  "compression": "auto"
+}

@@ -31,11 +31,30 @@ import asyncio
 from datetime import datetime
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import brier_score_loss, average_precision_score
+from sklearn.metrics import brier_score_loss, average_precision_score, roc_auc_score
 from sklearn.isotonic import IsotonicRegression
+from scipy.stats import spearmanr
 import psutil
-import numba
-from numba import jit, prange
+
+try:
+    import numba  # noqa: F401
+    from numba import jit, prange, njit
+    NUMBA_AVAILABLE = True
+except ImportError:  # pragma: no cover - fallback when numba missing
+    NUMBA_AVAILABLE = False
+
+    def jit(*args, **kwargs):  # type: ignore
+        def decorator(func):
+            return func
+        return decorator
+
+    def prange(n):  # type: ignore
+        return range(n)
+
+    def njit(*args, **kwargs):  # type: ignore
+        def decorator(func):
+            return func
+        return decorator
 import warnings
 import pickle
 import hashlib
@@ -43,6 +62,243 @@ from dataclasses import dataclass
 warnings.filterwarnings('ignore')
 
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+
+
+def _ensure_contiguous_float64(values: np.ndarray) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    if not arr.flags['C_CONTIGUOUS']:
+        arr = np.ascontiguousarray(arr)
+    return arr
+
+
+def _safe_divide(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
+    out = np.full_like(numerator, np.nan, dtype=np.float64)
+    mask = np.isfinite(denominator) & (np.abs(denominator) > 1e-12)
+    out[mask] = numerator[mask] / denominator[mask]
+    return out
+
+
+if NUMBA_AVAILABLE:
+
+    @njit(cache=True)
+    def _rolling_mean_fast(values: np.ndarray, window: int) -> np.ndarray:
+        n = values.shape[0]
+        out = np.empty(n, dtype=np.float64)
+        csum = 0.0
+        for i in range(n):
+            v = values[i]
+            if np.isnan(v):
+                v = 0.0
+            csum += v
+            if i >= window:
+                prev = values[i - window]
+                if np.isnan(prev):
+                    prev = 0.0
+                csum -= prev
+            if i >= window - 1:
+                out[i] = csum / window
+            else:
+                out[i] = np.nan
+        return out
+
+
+    @njit(cache=True)
+    def _rolling_std_fast(values: np.ndarray, window: int) -> np.ndarray:
+        n = values.shape[0]
+        out = np.empty(n, dtype=np.float64)
+        sum_x = 0.0
+        sum_x2 = 0.0
+        for i in range(n):
+            v = values[i]
+            if np.isnan(v):
+                v = 0.0
+            sum_x += v
+            sum_x2 += v * v
+            if i >= window:
+                prev = values[i - window]
+                if np.isnan(prev):
+                    prev = 0.0
+                sum_x -= prev
+                sum_x2 -= prev * prev
+            if i >= window - 1:
+                mean = sum_x / window
+                variance = (sum_x2 / window) - mean * mean
+                variance = variance if variance > 0 else 0.0
+                out[i] = np.sqrt(variance)
+            else:
+                out[i] = np.nan
+        return out
+
+
+    @njit(cache=True)
+    def _pct_change_fast(values: np.ndarray) -> np.ndarray:
+        n = values.shape[0]
+        out = np.empty(n, dtype=np.float64)
+        out[0] = 0.0
+        for i in range(1, n):
+            prev = values[i - 1]
+            curr = values[i]
+            if np.isnan(prev) or np.isnan(curr) or prev == 0.0:
+                out[i] = 0.0
+            else:
+                out[i] = (curr - prev) / prev
+        return out
+
+
+    @njit(cache=True)
+    def _log_return_fast(values: np.ndarray) -> np.ndarray:
+        n = values.shape[0]
+        out = np.empty(n, dtype=np.float64)
+        out[0] = 0.0
+        for i in range(1, n):
+            prev = values[i - 1]
+            curr = values[i]
+            if np.isnan(prev) or np.isnan(curr) or prev == 0.0 or curr == 0.0:
+                out[i] = 0.0
+            else:
+                out[i] = np.log(curr / prev)
+        return out
+
+
+    @njit(cache=True)
+    def _rsi_fast(values: np.ndarray, window: int) -> np.ndarray:
+        n = values.shape[0]
+        out = np.empty(n, dtype=np.float64)
+        for i in range(n):
+            out[i] = np.nan
+        avg_gain = 0.0
+        avg_loss = 0.0
+        for i in range(1, n):
+            change = values[i] - values[i - 1]
+            gain = change if change > 0 else 0.0
+            loss = -change if change < 0 else 0.0
+            if i < window:
+                avg_gain += gain
+                avg_loss += loss
+            elif i == window:
+                avg_gain = (avg_gain + gain) / window
+                avg_loss = (avg_loss + loss) / window
+            else:
+                avg_gain = (avg_gain * (window - 1) + gain) / window
+                avg_loss = (avg_loss * (window - 1) + loss) / window
+
+            if i >= window:
+                rs = avg_gain / (avg_loss + 1e-12)
+                out[i] = 100.0 - (100.0 / (1.0 + rs))
+        return out
+
+
+    @njit(cache=True)
+    def _rank_normalize_fast(values: np.ndarray) -> np.ndarray:
+        n = values.shape[0]
+        ranks = np.empty(n, dtype=np.float64)
+        order = np.argsort(values)
+        i = 0
+        while i < n:
+            start = i
+            current = values[order[i]]
+            while i < n and values[order[i]] == current:
+                i += 1
+            avg_rank = (start + i - 1) / 2.0
+            for j in range(start, i):
+                ranks[order[j]] = avg_rank
+        if n > 1:
+            ranks = ranks / (n - 1)
+        else:
+            ranks = np.zeros(n, dtype=np.float64)
+        return ranks
+
+else:
+
+    def _rolling_mean_fast(values: np.ndarray, window: int) -> np.ndarray:
+        return pd.Series(values).rolling(window).mean().to_numpy()
+
+
+    def _rolling_std_fast(values: np.ndarray, window: int) -> np.ndarray:
+        return pd.Series(values).rolling(window).std().to_numpy()
+
+
+    def _pct_change_fast(values: np.ndarray) -> np.ndarray:
+        series = pd.Series(values)
+        return series.pct_change().fillna(0.0).to_numpy()
+
+
+    def _log_return_fast(values: np.ndarray) -> np.ndarray:
+        series = pd.Series(values)
+        return np.log(series / series.shift(1)).replace([np.inf, -np.inf], 0.0).fillna(0.0).to_numpy()
+
+
+    def _rsi_fast(values: np.ndarray, window: int) -> np.ndarray:
+        series = pd.Series(values)
+        delta = series.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(window=window, min_periods=window).mean()
+        avg_loss = loss.rolling(window=window, min_periods=window).mean()
+        rs = avg_gain / (avg_loss + 1e-12)
+        rsi = 100 - (100 / (1 + rs))
+        return rsi.to_numpy()
+
+
+    def _rank_normalize_fast(values: np.ndarray) -> np.ndarray:
+        series = pd.Series(values)
+        ranks = series.rank(method="average").to_numpy()
+        if len(ranks) > 1:
+            ranks = (ranks - 1) / (len(ranks) - 1)
+        else:
+            ranks = np.zeros(len(ranks), dtype=np.float64)
+        return ranks
+
+
+def _compute_ic_auc_score(y_true: Any, y_pred: Any) -> Tuple[float, float, float, float]:
+    """Compute IC * AUC score along with IC, AUC, and positive ratio."""
+    y_true_arr = _ensure_contiguous_float64(np.asarray(y_true, dtype=np.float64))
+    y_pred_arr = _ensure_contiguous_float64(np.asarray(y_pred, dtype=np.float64))
+
+    mask = np.isfinite(y_true_arr) & np.isfinite(y_pred_arr)
+    valid = np.sum(mask)
+    if valid <= 1:
+        raise ValueError(f"Insufficient predictions for evaluation: {valid} predictions")
+
+    y_true_clean = y_true_arr[mask]
+    y_pred_clean = y_pred_arr[mask]
+
+    y_true_rank = _rank_normalize_fast(y_true_clean)
+    y_pred_rank = _rank_normalize_fast(y_pred_clean)
+
+    std_true = np.std(y_true_rank)
+    std_pred = np.std(y_pred_rank)
+    if std_true < 1e-12 or std_pred < 1e-12:
+        ic = 0.0
+    else:
+        ic = float(np.corrcoef(y_true_rank, y_pred_rank)[0, 1])
+        if not np.isfinite(ic):
+            ic = 0.0
+
+    # Derive balanced binary target
+    threshold = np.quantile(y_true_clean, 0.75)
+    binary_target = (y_true_clean > threshold).astype(int)
+    pos_ratio = float(binary_target.mean())
+
+    if pos_ratio <= 0.0 or pos_ratio >= 1.0:
+        threshold = np.quantile(y_true_clean, 0.5)
+        binary_target = (y_true_clean > threshold).astype(int)
+        pos_ratio = float(binary_target.mean())
+
+    if pos_ratio <= 0.0 or pos_ratio >= 1.0:
+        top_k = max(1, int(len(y_true_clean) * 0.05))
+        binary_target = np.zeros_like(y_true_clean, dtype=int)
+        order = np.argsort(y_true_clean)
+        binary_target[order[-top_k:]] = 1
+        pos_ratio = float(binary_target.mean())
+
+    try:
+        auc = float(roc_auc_score(binary_target, y_pred_rank))
+    except ValueError:
+        auc = 0.5
+
+    score = ic * auc
+    return score, ic, auc, pos_ratio
 
 # Importations pour TreeSHAP
 try:
@@ -54,9 +310,8 @@ except ImportError as e:
     TREESHAP_AVAILABLE = False
 
 from src.training.steps.base_step import BaseStep
-from src.utils.versioned_artifacts import VersionedArtifactStore
-from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecialistMixin
 from src.training.steps.market_analysis.gmm_report_generator import GMMReportGenerator
+from src.training.steps.market_analysis.enhanced_feature_generators import EnhancedFeaturePipeline
 from src.utils.data.entropy_bars import build_entropy_bars_15min
 
 # Import all enhanced specialists
@@ -72,8 +327,6 @@ SPECIALIST_IMPORTS = {
     "enhanced_ml_risk_regime_step": ("src.training.steps.market_analysis.ml_risk_regime_step_enhanced", "EnhancedMLRiskRegimeStep"),
     "enhanced_ml_microstructure_step": ("src.training.steps.market_analysis.ml_microstructure_step_enhanced", "EnhancedMLMicrostructureStep"),
     "enhanced_ml_spectral_step": ("src.training.steps.market_analysis.ml_spectral_step_enhanced", "EnhancedMLSpectralStep"),
-    "enhanced_ml_candlestick_step": ("src.training.steps.market_analysis.ml_candlestick_step_enhanced", "EnhancedMLCandlestickStep"),
-    "enhanced_ml_reversion_regime_step": ("src.training.steps.market_analysis.ml_reversion_regime_step_enhanced", "EnhancedMLReversionRegimeStep"),
 }
 
 # Import GMM enhanced features
@@ -156,10 +409,37 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         self.gmm_config = GMMConfig()
         self.batch_config = BatchConfig()
 
+        # Pipeline caching configuration
+        self.cache_enabled = kwargs.get("enable_pipeline_cache", True)
+        cache_dir_value = kwargs.get("pipeline_cache_dir", "artifacts/cache/train_specialists_with_gmm")
+        self.pipeline_cache_dir = Path(cache_dir_value)
+        self.cache_dirs = {
+            "enhanced_market": self.pipeline_cache_dir / "enhanced_market_data",
+            "raw_features": self.pipeline_cache_dir / "raw_features",
+            "gmm_features": self.pipeline_cache_dir / "gmm_features",
+            "huber_outputs": self.pipeline_cache_dir / "huber_outputs",
+            "optuna_params": self.pipeline_cache_dir / "optuna_params"
+        }
+
+        if self.cache_enabled:
+            for cache_path in self.cache_dirs.values():
+                cache_path.mkdir(parents=True, exist_ok=True)
+
+        cpu_cores = psutil.cpu_count() or 1
+        default_concurrency = max(
+            self.batch_config.min_batch_size,
+            min(self.batch_config.max_batch_size, max(1, cpu_cores // 2))
+        )
+        self.concurrent_specialist_limit = kwargs.get(
+            "concurrent_specialist_limit",
+            default_concurrency
+        )
+
         # Initialize memory management
         self.memory_pool = {}
         self.batch_count = 0
         self.memory_usage_history = []
+        self._specialist_semaphore = None
 
         # Initialize GMM model cache
         self.gmm_model_cache = {}
@@ -266,6 +546,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 
         except Exception as e:
             tprint_warning(f"⚠️ Memory optimization failed: {e}")
+
+    def _get_specialist_semaphore(self) -> asyncio.Semaphore:
+        """Return a semaphore limiting concurrent specialist execution."""
+        if self._specialist_semaphore is None:
+            limit = max(1, int(self.concurrent_specialist_limit))
+            self._specialist_semaphore = asyncio.Semaphore(limit)
+            tprint_info(f"🔒 Specialist concurrency limited to {limit}")
+        return self._specialist_semaphore
     
     def _get_memory_pool_array(self, shape: Tuple[int, ...], dtype: np.dtype) -> np.ndarray:
         """Get array from memory pool or create new one."""
@@ -275,7 +563,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             if array_key in self.memory_pool:
                 array = self.memory_pool[array_key]
                 if array.shape == shape and array.dtype == dtype:
-                    # Clear existing data
                     array.fill(0)
                     return array
             
@@ -284,7 +571,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             
             # Add to pool if space available
             if len(self.memory_pool) < self.memory_config.memory_pool_size:
-                self.memory_pool[array_key] = array.copy()
+                self.memory_pool[array_key] = array
             
             return array
             
@@ -309,6 +596,99 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             tprint_warning(f"⚠️ Hash generation failed: {e}")
             return f"fallback_{len(data)}_{len(data.columns)}"
 
+    def _generate_series_hash(self, series: Optional[pd.Series]) -> str:
+        """Generate hash for a pandas Series."""
+        if series is None:
+            return "series_none"
+        try:
+            hash_data = {
+                'shape': series.shape,
+                'name': series.name,
+                'dtype': str(series.dtype),
+                'head': series.head().values.tobytes(),
+                'tail': series.tail().values.tobytes()
+            }
+            hash_string = str(sorted(hash_data.items())).encode()
+            return hashlib.md5(hash_string).hexdigest()
+        except Exception as e:
+            tprint_warning(f"⚠️ Series hash generation failed: {e}")
+            return f"series_fallback_{len(series)}"
+
+    def _can_use_cache(self, force_retrain: bool) -> bool:
+        """Determine if cache should be used for current run."""
+        return self.cache_enabled and not force_retrain
+
+    def _build_cache_key(self, stage: str, data_hash: str, config: Dict[str, Any]) -> str:
+        """Build deterministic cache key for a pipeline stage."""
+        symbol = config.get("symbol", "UNKNOWN")
+        exchange = config.get("exchange", "unknown")
+        timeframe = config.get("timeframe", "unknown")
+        direction = config.get("direction", "unknown")
+        return "__".join([stage, symbol, exchange, timeframe, direction, data_hash])
+
+    def _get_cache_file_path(self, cache_type: str, cache_key: str) -> Optional[Path]:
+        """Return cache file path for given cache type and key."""
+        if not self.cache_enabled:
+            return None
+        cache_dir = self.cache_dirs.get(cache_type)
+        if cache_dir is None:
+            return None
+        return cache_dir / f"{cache_key}.pkl"
+
+    def _load_cached_dataframe(self, cache_type: str, cache_key: str) -> Optional[pd.DataFrame]:
+        """Load cached dataframe if available."""
+        cache_path = self._get_cache_file_path(cache_type, cache_key)
+        if not cache_path or not cache_path.exists():
+            return None
+        try:
+            df = pd.read_pickle(cache_path)
+            tprint_info(f"💾 Cache hit for {cache_type} ({cache_key[:12]}...)")
+            return df
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load cache {cache_path}: {e}")
+            return None
+
+    def _save_cached_dataframe(self, data: pd.DataFrame, cache_type: str, cache_key: str) -> None:
+        """Persist dataframe to cache."""
+        if data is None or data.empty:
+            return
+        cache_path = self._get_cache_file_path(cache_type, cache_key)
+        if not cache_path:
+            return
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            data.to_pickle(cache_path)
+            tprint_info(f"💾 Cached {cache_type} ({cache_key[:12]}...) at {cache_path}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save cache {cache_path}: {e}")
+
+    def _load_cached_object(self, cache_type: str, cache_key: str) -> Optional[Any]:
+        """Load arbitrary Python object from cache."""
+        cache_path = self._get_cache_file_path(cache_type, cache_key)
+        if not cache_path or not cache_path.exists():
+            return None
+        try:
+            with open(cache_path, "rb") as f:
+                obj = pickle.load(f)
+            tprint_info(f"💾 Cache hit for {cache_type} ({cache_key[:12]}...)")
+            return obj
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load cached object {cache_path}: {e}")
+            return None
+
+    def _save_cached_object(self, obj: Any, cache_type: str, cache_key: str) -> None:
+        """Persist arbitrary Python object to cache."""
+        cache_path = self._get_cache_file_path(cache_type, cache_key)
+        if not cache_path:
+            return
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_path, "wb") as f:
+                pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+            tprint_info(f"💾 Cached {cache_type} ({cache_key[:12]}...) at {cache_path}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save cached object {cache_path}: {e}")
+
     def _perform_treeshap_analysis(self, features: pd.DataFrame, target: pd.Series, max_features: int = 100) -> List[str]:
         """Perform TreeSHAP analysis to identify most important features."""
         if not TREESHAP_AVAILABLE:
@@ -324,19 +704,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             y = target.values
             
             # Train a simple XGBoost model for SHAP analysis
-            params = {
-                'objective': 'reg:squarederror',
+            lgbm_fixed_params = {
                 'n_estimators': 100,
-                'max_depth': 5,
+                'num_leaves': 31,
                 'learning_rate': 0.1,
-                'subsample': 0.8,
-                'colsample_bytree': 0.8,
-                'random_state': 42,
-                'tree_method': 'hist',
-                'device': 'cpu'
+                'verbose': -1,
             }
             
-            model = xgb.XGBRegressor(**params)
+            model = lgb.LGBMRegressor(**lgbm_fixed_params)
             model.fit(X, y)
             
             # Calculate SHAP values
@@ -545,6 +920,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         timeframe = config.get("timeframe", "15m")
         direction = config.get("direction", "long")
         force_retrain = config.get("force_retrain", False)
+        config["force_retrain"] = force_retrain
         
         tprint_info(f"📊 Configuration: {symbol} {exchange} {timeframe} {direction}")
         
@@ -586,66 +962,80 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             active_market_data = active_market_data.tail(max_training_samples)
             tprint_success(f"✅ Reduced data to {len(active_market_data)} samples")
 
-        # Step 1.5: Generate enhanced features for all specialists
-        tprint_info("🔧 Generating Enhanced Features for All Specialists...")
-        enhanced_market_data = self._generate_enhanced_features(active_market_data)
-        tprint_success(f"✅ Enhanced features generated: {enhanced_market_data.shape}")
-        
+        cache_usable = self._can_use_cache(force_retrain)
+
+        # Step 1.5: Generate enhanced features for all specialists (with cache)
+        tprint_info("🔧 Preparing Enhanced Features for All Specialists...")
+        enhanced_market_data = None
+        market_data_hash = self._generate_data_hash(active_market_data)
+        enhanced_cache_key = self._build_cache_key("enhanced_market", market_data_hash, config)
+
+        if cache_usable:
+            enhanced_market_data = self._load_cached_dataframe("enhanced_market", enhanced_cache_key)
+
+        if enhanced_market_data is None:
+            tprint_info("🔧 Generating Enhanced Features for All Specialists...")
+            enhanced_market_data = self._generate_enhanced_features(active_market_data)
+            tprint_success(f"✅ Enhanced features generated: {enhanced_market_data.shape}")
+            if cache_usable:
+                self._save_cached_dataframe(enhanced_market_data, "enhanced_market", enhanced_cache_key)
+        else:
+            tprint_success(f"✅ Loaded enhanced features from cache: {enhanced_market_data.shape}")
+
         # Memory optimization: Clear references and collect garbage after heavy feature generation
         import gc
         gc.collect()
 
 
+        # Step 2: Extract raw features from market data (without training specialists) with cache
+        raw_features = None
+        enhanced_features_hash = self._generate_data_hash(enhanced_market_data)
+        raw_cache_key = self._build_cache_key("raw_features", enhanced_features_hash, config)
 
-        # Step 2: Train all specialists and collect per-specialist features
-        tprint_info("🎯 Training 11 Specialist Models and collecting features...")
-        
-        # Use very small batch size to prevent memory issues
-        optimal_batch_size = 1  # Process one specialist at a time
+        if cache_usable:
+            raw_features = self._load_cached_dataframe("raw_features", raw_cache_key)
 
-#        # #region agent log - Hypothesis D: Batch size calculated
-#        with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-#            f.write(json.dumps({
-#                "id": "log_batch_size_result",
-#                "timestamp": int(__import__('time').time() * 1000),
-#                "location": "train_specialists_with_gmm_step.py:execute",
-#                "message": "Batch size calculation completed",
-#                "data": {"optimal_batch_size": optimal_batch_size, "batch_config": {"base_batch_size": self.batch_config.base_batch_size, "max_batch_size": self.batch_config.max_batch_size}},
-#                "sessionId": "debug-session",
-#                "runId": "initial",
-#                "hypothesisId": "D"
-#            }) + '\n')
-#        # #endregion
+        if raw_features is None:
+            tprint_info("🔍 Extracting raw features from market data...")
+            raw_features = await self._extract_raw_features_from_market_data(enhanced_market_data, config)
+            tprint_success(f"✅ Extracted raw features: {raw_features.shape}")
+            if cache_usable and raw_features is not None and not raw_features.empty:
+                self._save_cached_dataframe(raw_features, "raw_features", raw_cache_key)
+        else:
+            tprint_success(f"✅ Loaded raw features from cache: {raw_features.shape}")
 
-        # Initialize memory monitoring
-        self.batch_count = 0
-        
-        # Step 2: Extract raw features from market data (without training specialists)
-        tprint_info("🔍 Extracting raw features from market data...")
-        raw_features = await self._extract_raw_features_from_market_data(enhanced_market_data, config)
-        tprint_success(f"✅ Extracted raw features: {raw_features.shape}")
-        
         if raw_features is None or raw_features.empty:
             error_msg = "❌ No raw features extracted"
             tprint_error(error_msg)
             return {"success": False, "error": error_msg}
-        
-        # Step 3: Apply GMM enhancement to raw features
+
+        # Step 3: Apply GMM enhancement to raw features (with cache)
         gmm_enhanced_features = None
-        if GMM_AVAILABLE:
-            tprint_info("🧠 Applying GMM enhancement to raw features (before specialist training)...")
-            gmm_enhanced_features = await self._apply_gmm_enhancement_to_features(
-                raw_features, active_market_data, config
-            )
-            
-            if gmm_enhanced_features is None or gmm_enhanced_features.empty:
-                tprint_warning("⚠️ GMM enhancement failed, using raw features")
-                gmm_enhanced_features = raw_features
+        raw_features_hash = self._generate_data_hash(raw_features)
+        gmm_cache_key = self._build_cache_key("gmm_features", raw_features_hash, config)
+
+        if GMM_AVAILABLE and cache_usable:
+            gmm_enhanced_features = self._load_cached_dataframe("gmm_features", gmm_cache_key)
+
+        if gmm_enhanced_features is None:
+            if GMM_AVAILABLE:
+                tprint_info("🧠 Applying GMM enhancement to raw features (before specialist training)...")
+                gmm_enhanced_features = await self._apply_gmm_enhancement_to_features(
+                    raw_features, active_market_data, config
+                )
+                
+                if gmm_enhanced_features is None or gmm_enhanced_features.empty:
+                    tprint_warning("⚠️ GMM enhancement failed, using raw features")
+                    gmm_enhanced_features = raw_features
+                else:
+                    tprint_success(f"✅ GMM enhanced raw features: {gmm_enhanced_features.shape}")
+                    if cache_usable:
+                        self._save_cached_dataframe(gmm_enhanced_features, "gmm_features", gmm_cache_key)
             else:
-                tprint_success(f"✅ GMM enhanced raw features: {gmm_enhanced_features.shape}")
+                gmm_enhanced_features = raw_features
+                tprint_info("⚠️ GMM not available, using raw features")
         else:
-            gmm_enhanced_features = raw_features
-            tprint_info("⚠️ GMM not available, using raw features")
+            tprint_success(f"✅ Loaded GMM-enhanced features from cache: {gmm_enhanced_features.shape}")
         
         # Step 4: Feature selection on GMM-enhanced features
         tprint_info("🎯 Applying feature selection to GMM-enhanced features...")
@@ -670,7 +1060,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         # Step 6: Train individual specialists using GMM-enhanced features
         tprint_info("🔄 Training individual specialists with GMM-enhanced features...")
         specialist_outputs = await self._train_all_specialists_memory_efficient(
-            enhanced_market_data, config, force_retrain, batch_size=optimal_batch_size
+            enhanced_market_data, config, force_retrain, batch_size=self._get_optimal_batch_size(self.batch_config.base_batch_size)
         )
         
         # Log post-selection characteristics
@@ -1209,36 +1599,38 @@ class TrainSpecialistsWithGMMStep(BaseStep):
     async def _extract_raw_features_from_market_data(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Extract raw features from market data without training specialists."""
         try:
-            # Generate basic technical features from market data
-            features = pd.DataFrame(index=market_data.index)
-            
-            # Price-based features
-            features['returns'] = market_data['close'].pct_change()
-            features['log_returns'] = np.log(market_data['close'] / market_data['close'].shift(1))
-            features['high_low_ratio'] = market_data['high'] / market_data['low']
-            features['volume_price_ratio'] = market_data['volume'] / market_data['close']
-            
-            # Moving averages
+            close = _ensure_contiguous_float64(market_data['close'].to_numpy())
+            high = _ensure_contiguous_float64(market_data['high'].to_numpy())
+            low = _ensure_contiguous_float64(market_data['low'].to_numpy())
+            volume = _ensure_contiguous_float64(market_data['volume'].to_numpy())
+
+            returns = _pct_change_fast(close)
+            log_returns = _log_return_fast(close)
+            high_low_ratio = _safe_divide(high, low)
+            volume_price_ratio = _safe_divide(volume, close)
+
+            feature_data = {
+                'returns': returns,
+                'log_returns': log_returns,
+                'high_low_ratio': high_low_ratio,
+                'volume_price_ratio': volume_price_ratio,
+            }
+
             for window in [5, 10, 20, 50]:
-                features[f'ma_{window}'] = market_data['close'].rolling(window).mean()
-                features[f'ma_{window}_ratio'] = market_data['close'] / features[f'ma_{window}']
-            
-            # Volatility features
+                ma_values = _rolling_mean_fast(close, window)
+                feature_data[f'ma_{window}'] = ma_values
+                feature_data[f'ma_{window}_ratio'] = _safe_divide(close, ma_values)
+
             for window in [5, 10, 20]:
-                features[f'vol_{window}'] = features['returns'].rolling(window).std()
-            
-            # RSI
-            delta = market_data['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            features['rsi'] = 100 - (100 / (1 + rs))
-            
-            # Drop NaN values
-            features = features.dropna()
-            
-            tprint_info(f"📊 Generated {len(features.columns)} raw features from market data")
-            return features
+                feature_data[f'vol_{window}'] = _rolling_std_fast(returns, window)
+
+            feature_data['rsi'] = _rsi_fast(close, 14)
+
+            features_df = pd.DataFrame(feature_data, index=market_data.index)
+            features_df = features_df.replace([np.inf, -np.inf], np.nan).dropna()
+
+            tprint_info(f"📊 Generated {len(features_df.columns)} raw features from market data")
+            return features_df
             
         except Exception as e:
             tprint_error(f"❌ Failed to extract raw features: {e}")
@@ -1291,8 +1683,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             from xgboost import XGBRegressor
             from lightgbm import LGBMRegressor
             from catboost import CatBoostRegressor, Pool
-            from sklearn.metrics import roc_auc_score
-            from scipy.stats import spearmanr
 
             tprint_info(f"🧠 Training ensemble models on {features.shape} features with Huber Teacher...")
 
@@ -1328,6 +1718,10 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
             tprint_info(f"📊 Split: Train {len(X_train)}, OOF {len(X_oof)}")
 
+            cache_usable = self._can_use_cache(config.get("force_retrain", False))
+            X_train_hash = self._generate_data_hash(X_train)
+            y_train_hash = self._generate_series_hash(y_train)
+
             # 3. Huber Teacher (Feature Pruning, Monotonic, Interactions, Warm Start)
             tprint_info("👨‍🏫 Running Huber Teacher...")
             
@@ -1350,27 +1744,27 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             min_features = max(10, int(len(X_train.columns) * (1 - pruning_percentile / 100)))
             tprint_info(f"   🎯 Minimum features: {min_features}")
             
-            huber_outputs = prepare_huber_teacher_outputs(
-                X_train, y_train, 
-                X_val=None, 
-                X_test=X_oof,
-                pruning_percentile=pruning_percentile
-            )
+            huber_cache_seed = f"{X_train_hash}_{y_train_hash}_{pruning_percentile}"
+            huber_cache_key = self._build_cache_key("huber_outputs", huber_cache_seed, config)
+            huber_outputs = None
 
-            selected_features_names = huber_outputs['selected_features']
-            monotonic_constraints = huber_outputs['monotonic_constraints']
-            interaction_constraints = huber_outputs['interaction_constraints']
-            warm_start_train = huber_outputs['warm_start']['train']
-            warm_start_oof = huber_outputs['warm_start']['test']
+            if cache_usable:
 
-            # Filter X to selected features
-            X_train_sel = X_train[selected_features_names]
-            X_oof_sel = X_oof[selected_features_names]
-
-            tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(selected_features_names)} features")
+        tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(X_train_sel.columns)} features")
+        
+        # Convert monotonic_constraints dict to array for tree models that need it
+        if isinstance(mono_cst_array_list, dict):
+            # Map selected features to their monotonic constraints
+            mono_cst_array = []
+            for feat in X_train_sel.columns:
+                mono_cst_array.append(mono_cst_array_list.get(feat, 0))
+            mono_cst_array_np = np.array(mono_cst_array)  # numpy array for sklearn
+            mono_cst_array_list = mono_cst_array_np.tolist()  # list for CatBoost
             
-            # Convert monotonic_constraints dict to array for tree models that need it
-            if isinstance(monotonic_constraints, dict):
+            # Enhanced logging: Show which features have which constraints
+            negative_features = []
+            positive_features = []
+            unconstrained_features = []
                 # Map selected features to their monotonic constraints
                 mono_cst_array = []
                 for feat in selected_features_names:
@@ -1402,31 +1796,32 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 mono_cst_array_np = np.array(monotonic_constraints) if not isinstance(monotonic_constraints, np.ndarray) else monotonic_constraints
                 mono_cst_array_list = mono_cst_array_np.tolist()
             
+            # Signature for downstream caching (depends on selected feature order)
+            features_signature = hashlib.md5("|".join(selected_features_names).encode()).hexdigest() if selected_features_names else "no_features"
+
+            def _load_cached_params(model_name: str) -> Optional[Dict[str, Any]]:
+                if not cache_usable:
+                    return None
+                params_seed = f"{features_signature}_{y_train_hash}_{model_name}"
+                cache_key = self._build_cache_key(f"{model_name}_params", params_seed, config)
+                return self._load_cached_object("optuna_params", cache_key)
+
+            def _save_cached_params(model_name: str, params: Dict[str, Any]) -> None:
+                if not cache_usable or not params:
+                    return
+                params_seed = f"{features_signature}_{y_train_hash}_{model_name}"
+                cache_key = self._build_cache_key(f"{model_name}_params", params_seed, config)
+                self._save_cached_object(params, "optuna_params", cache_key)
+
             results = {}
             
             def calculate_score(y_true, y_pred):
-                ic, _ = spearmanr(y_true, y_pred)
-                # Convert predictions to probabilities for AUC calculation
-                # Use rank normalization to ensure values are in [0,1]
-                if len(y_pred) <= 1:
-                    raise ValueError(f"Insufficient predictions for evaluation: {len(y_pred)} predictions")
-                # Rank normalize predictions to [0,1]
-                rank_pred = (y_pred - y_pred.min()) / (y_pred.max() - y_pred.min() + 1e-8)
-                
-                # Use quantile-based thresholding for balanced binary labels
-                # Instead of >0, use 75th percentile to create more balanced classes
-                threshold = np.percentile(y_true, 75)
-                binary_target = (y_true > threshold).astype(int)
-                
-                # Log class distribution for monitoring
-                pos_ratio = binary_target.mean()
+                score, ic, auc, pos_ratio = _compute_ic_auc_score(y_true, y_pred)
                 if pos_ratio < 0.05 or pos_ratio > 0.95:
                     tprint_warning(f"⚠️ Highly imbalanced binary target: {pos_ratio:.3f} positive class")
                 else:
                     tprint_info(f"📊 Binary target balance: {pos_ratio:.3f} positive class")
-                
-                auc = roc_auc_score(binary_target, rank_pred)
-                return ic * auc, ic, auc
+                return score, ic, auc
 
             # --- Model 1: ExtraTrees ---
             # Sklearn 1.4+ supports monotonic_cst
@@ -1483,12 +1878,16 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 
                 return final_score
 
-            study_et = optuna.create_study(direction='maximize', pruner=MedianPruner())
-            study_et.optimize(objective_et, n_trials=10) # Limited trials
+            best_et_params = _load_cached_params("ExtraTrees")
+            if best_et_params is None:
+                study_et = optuna.create_study(direction='maximize', pruner=MedianPruner())
+                study_et.optimize(objective_et, n_trials=10) # Limited trials
+                best_et_params = study_et.best_params
+                _save_cached_params("ExtraTrees", best_et_params)
+                tprint_info(f"   🏆 Best ET params (new): {best_et_params}")
+            else:
+                tprint_info("   💾 Using cached ExtraTrees hyperparameters")
 
-            # Retrain best ET
-            best_et_params = study_et.best_params
-            tprint_info(f"   🏆 Best ET params: {best_et_params}")
             try:
                 best_et = ExtraTreesRegressor(**best_et_params, monotonic_cst=mono_cst_array_np, n_jobs=-1, random_state=42)
                 tprint_info("   ✅ Using monotonic constraints")
@@ -1536,11 +1935,15 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 score, _, _ = calculate_score(y_oof, pred)
                 return score
 
-            study_xgb = optuna.create_study(direction='maximize', pruner=MedianPruner())
-            study_xgb.optimize(objective_xgb, n_trials=10)
-            
-            best_xgb_params = study_xgb.best_params
-            tprint_info(f"   🏆 Best XGB params: {best_xgb_params}")
+            best_xgb_params = _load_cached_params("XGBoost")
+            if best_xgb_params is None:
+                study_xgb = optuna.create_study(direction='maximize', pruner=MedianPruner())
+                study_xgb.optimize(objective_xgb, n_trials=10)
+                best_xgb_params = study_xgb.best_params
+                _save_cached_params("XGBoost", best_xgb_params)
+                tprint_info(f"   🏆 Best XGB params (new): {best_xgb_params}")
+            else:
+                tprint_info("   💾 Using cached XGBoost hyperparameters")
             best_xgb = XGBRegressor(**xgb_fixed_params, **best_xgb_params)
             best_xgb.fit(X_train_sel, y_train, base_margin=warm_start_train)
             pred_xgb = best_xgb.predict(X_oof_sel, base_margin=warm_start_oof)
@@ -1560,6 +1963,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 'bootstrap_type': 'MVS',
                 'verbose': False,
                 'allow_writing_files': False,
+                'model_shrink_rate': 0,  # Disable shrinkage when using baseline
                 # Monotonic constraints format in CatBoost: list/tuple of int
                 'monotone_constraints': mono_cst_array_list
             }
@@ -1580,13 +1984,10 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 # If trained with baseline, predict outputs raw + baseline?
                 # CatBoost docs: "If baseline is provided... the model learns the correction..."
                 # When predicting, we must provide baseline?
-                # sklearn API predict() doesn't take baseline easily?
                 # We can use eval_set with Pool?
                 # Or just predict raw and add warm_start_oof?
                 # Actually CatBoost `predict` doesn't strictly require baseline if we want raw leaf sum, but we want full prediction.
-                # If we use `baseline` in fit, the model learns residual.
-                # So Prediction = Baseline + Model(X).
-                # We need to add baseline manually if predict doesn't take it?
+                # So we must add baseline manually if predict doesn't take it?
                 # `predict` takes `X`. `Pool` can take baseline.
                 # Let's try passing Pool to predict?
 
@@ -1596,11 +1997,15 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 score, _, _ = calculate_score(y_oof, pred)
                 return score
 
-            study_cb = optuna.create_study(direction='maximize', pruner=MedianPruner())
-            study_cb.optimize(objective_cb, n_trials=10)
-
-            best_cb_params = study_cb.best_params
-            tprint_info(f"   🏆 Best CB params: {best_cb_params}")
+            best_cb_params = _load_cached_params("CatBoost")
+            if best_cb_params is None:
+                study_cb = optuna.create_study(direction='maximize', pruner=MedianPruner())
+                study_cb.optimize(objective_cb, n_trials=10)
+                best_cb_params = study_cb.best_params
+                _save_cached_params("CatBoost", best_cb_params)
+                tprint_info(f"   🏆 Best CB params (new): {best_cb_params}")
+            else:
+                tprint_info("   💾 Using cached CatBoost hyperparameters")
             best_cb = CatBoostRegressor(**cb_fixed_params, **best_cb_params)
             train_pool = Pool(X_train_sel, y_train, baseline=warm_start_train)
             best_cb.fit(train_pool)
@@ -1649,14 +2054,17 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 score, _, _ = calculate_score(y_oof, pred)
                 return score
 
-            study_lgbm = optuna.create_study(direction='maximize', pruner=MedianPruner())
-            study_lgbm.optimize(objective_lgbm, n_trials=10)
-
-            best_lgbm_params = study_lgbm.best_params
-            tprint_info(f"   🏆 Best LGBM params: {best_lgbm_params}")
+            best_lgbm_params = _load_cached_params("LGBM")
+            if best_lgbm_params is None:
+                study_lgbm = optuna.create_study(direction='maximize', pruner=MedianPruner())
+                study_lgbm.optimize(objective_lgbm, n_trials=10)
+                best_lgbm_params = study_lgbm.best_params
+                _save_cached_params("LGBM", best_lgbm_params)
+                tprint_info(f"   🏆 Best LGBM params (new): {best_lgbm_params}")
+            else:
+                tprint_info("   💾 Using cached LGBM hyperparameters")
             best_lgbm = LGBMRegressor(
                 **best_lgbm_params,
-                monotone_constraints=monotonic_constraints,
                 interaction_constraints=interaction_constraints,
                 n_jobs=-1,
                 random_state=42,
@@ -1988,6 +2396,15 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         tprint_info(f"🔄 Training specialists in memory-efficient mode (batch_size={batch_size})...")
 
+        # Generate base features once and enhance with GMM
+        from src.training.steps.market_analysis.enhanced_feature_generators import EnhancedFeaturePipeline
+        enhanced_feature_generators = EnhancedFeaturePipeline()
+        base_feature_df = enhanced_feature_generators.generate_feature_df(market_data, config)
+        tprint_info("🧠 Applying GMM enhancement to base features...")
+        enhanced_feature_df = await self._apply_gmm_enhancement_to_features(base_feature_df, market_data, config)
+
+        mono_cst_array_list = [monotonic_constraints[col] for col in enhanced_feature_df.columns]
+
         specialist_outputs = {}
         temp_dir = Path(tempfile.mkdtemp(prefix="specialist_outputs_"))
 
@@ -2017,7 +2434,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
                 # Train batch
                 batch_outputs = await self._train_specialist_batch(
-                    batch, market_data, config, force_retrain
+                    batch, market_data, config, force_retrain, enhanced_feature_df, mono_cst_array_list, interaction_constraints, warm_start_train, warm_start_oof
                 )
 
 #                # #region agent log - Batch processing complete
@@ -2085,7 +2502,12 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         batch: List[Tuple[str, Tuple[str, str]]],
         market_data: pd.DataFrame,
         config: Dict[str, Any],
-        force_retrain: bool
+        force_retrain: bool,
+        enhanced_feature_df: pd.DataFrame,
+        mono_cst_array_list: List[int],
+        interaction_constraints: List,
+        warm_start_train: np.ndarray,
+        warm_start_oof: np.ndarray
     ) -> Dict[str, pd.DataFrame]:
         """Train a batch of specialists in parallel."""
 
@@ -2107,9 +2529,21 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         # Create tasks for parallel execution
         tasks = []
+        semaphore = self._get_specialist_semaphore()
         for step_name, (module_path, class_name) in batch:
-            task = self._train_single_specialist_async(
-                step_name, module_path, class_name, market_data, config, force_retrain
+            task = self._train_single_specialist_guarded(
+                semaphore,
+                step_name,
+                module_path,
+                class_name,
+                market_data,
+                config,
+                force_retrain,
+                enhanced_feature_df,
+                mono_cst_array_list,
+                interaction_constraints,
+                warm_start_train,
+                warm_start_oof
             )
             tasks.append(task)
 
@@ -2161,6 +2595,37 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         return batch_outputs
 
+    async def _train_single_specialist_guarded(
+        self,
+        semaphore: asyncio.Semaphore,
+        step_name: str,
+        module_path: str,
+        class_name: str,
+        market_data: pd.DataFrame,
+        config: Dict[str, Any],
+        force_retrain: bool,
+        enhanced_feature_df: pd.DataFrame,
+        mono_cst_array_list: List[int],
+        interaction_constraints: List,
+        warm_start_train: np.ndarray,
+        warm_start_oof: np.ndarray
+    ) -> Optional[pd.DataFrame]:
+        """Train a single specialist while respecting concurrency limits."""
+        async with semaphore:
+            return await self._train_single_specialist_async(
+                step_name,
+                module_path,
+                class_name,
+                market_data,
+                config,
+                force_retrain,
+                enhanced_feature_df,
+                mono_cst_array_list,
+                interaction_constraints,
+                warm_start_train,
+                warm_start_oof
+            )
+
     async def _train_single_specialist_async(
         self,
         step_name: str,
@@ -2168,7 +2633,12 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         class_name: str,
         market_data: pd.DataFrame,
         config: Dict[str, Any],
-        force_retrain: bool
+        force_retrain: bool,
+        enhanced_feature_df: pd.DataFrame,
+        mono_cst_array_list: List[int],
+        interaction_constraints: List,
+        warm_start_train: np.ndarray,
+        warm_start_oof: np.ndarray
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist asynchronously."""
 
@@ -2320,15 +2790,34 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             specialist_config.update({
                 "force_retrain": force_retrain,
                 "verbose": False,  # Reduce verbosity for batch training
-                "market_data": market_data  # Pass market data directly to avoid artifact loading
+                "market_data": market_data,  # Pass market data directly to avoid artifact loading
+                "enhanced_feature_df": enhanced_feature_df,
+                "mono_cst_array_list": mono_cst_array_list,
+                "interaction_constraints": interaction_constraints,
+                "warm_start_train": warm_start_train,
+                "warm_start_oof": warm_start_oof
             })
 
-#            # #region agent log - Before specialist execute
-#            with open('/Users/remyroche/Documents/Ares/.cursor/debug.log', 'a') as f:
-#                f.write(json.dumps({
-#                    "id": f"log_before_execute_{step_name}",
-#                    "timestamp": int(__import__('time').time() * 1000),
-#                    "location": "train_specialists_with_gmm_step.py:_train_single_specialist_async",
+            # 1. Huber-based preprocessing
+            huber_results = prepare_huber_teacher_outputs(
+                X_train=X,
+                y_train=y,
+                X_val=None,
+                X_test=None,
+                vol_proxy=None,
+                epsilons=[1.1, 1.35, 1.75],
+                alphas=[1e-4, 1e-3, 1e-2],
+                pruning_percentile=15,
+                corr_threshold=0.7,
+                n_jobs=-1
+            )
+
+            selected_features = huber_results['selected_features']
+            monotonic_constraints = huber_results['monotonic_constraints']
+            interaction_constraints = huber_results['interaction_constraints']
+            warm_start = huber_results['warm_start']
+
+            X_train_sel = X[selected_features]
 #                    "message": f"Before executing specialist: {step_name}",
 #                    "data": {"step_name": step_name, "specialist_config_keys": list(specialist_config.keys())},
 #                    "sessionId": "debug-session",

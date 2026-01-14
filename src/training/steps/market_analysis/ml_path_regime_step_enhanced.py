@@ -88,6 +88,10 @@ class EnhancedMLPathRegimeStep(AFMLSpecialistMixin, SpecialistDiagnosticsMixinEn
         self._market_data_cache = {}
         tprint(f"✅ Initialized Enhanced {step_name} (MI-Optimized)", "SUCCESS")
     
+    def _get_anchor_type(self, specialist_type: str) -> str:
+        """Override to use full historical data instead of volume-based anchor bars."""
+        return "TIME"
+    
     def _get_path_combined_manual_features(self, df: pd.DataFrame, pipeline_features: pd.DataFrame) -> pd.DataFrame:
         """Combine path features and manual enhancements."""
         # 1. Pipeline Features + Efficiency Ratio (Base Path Features)

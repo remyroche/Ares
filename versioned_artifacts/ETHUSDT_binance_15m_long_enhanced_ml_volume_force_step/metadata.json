@@ -1,8 +1,8 @@
 {
   "versions": {
     "enhanced_ml_volume_force_prediction_15m": {
-      "created_at": "2026-01-11T15:53:38.684131",
-      "num_rows": 142619,
+      "created_at": "2026-01-14T19:51:15.011009",
+      "num_rows": 25000,
       "num_columns": 24,
       "columns": [
         "timestamp",
@@ -10,17 +10,16 @@
         "specialist_probability",
         "target_label",
         "feature_volume_delta_div_force_index_norm",
-        "feature_force_index_norm_div_cmf",
+        "feature_vfi_div_force_index_norm",
         "feature_cmf_div_force_index_norm_resid",
+        "feature_force_index_norm_div_cmf",
         "feature_volume_price_trend",
-        "feature_cmf_trend_strength",
+        "feature_volume_delta_div_vfi",
         "feature_imbalance_trend_strength",
         "feature_vfi_trend_strength",
         "feature_cmf_div_force_index_norm",
-        "feature_volume_delta_div_vfi",
         "feature_force_index_norm_div_volume_delta",
-        "feature_vfi_div_volume_delta",
-        "feature_cmf_div_volume_delta",
+        "feature_cmf_trend_strength",
         "feature_force_index_norm_div_vfi",
         "feature_cmf_momentum",
         "feature_vol_intensity",
@@ -28,7 +27,8 @@
         "feature_roll_vol",
         "feature_sig_0",
         "feature_sig_1",
-        "feature_sig_2"
+        "feature_sig_2",
+        "feature_sig_3"
       ]
     }
   },
@@ -41,5 +41,5 @@
     "direction": "long",
     "model": "enhanced_ml_volume_force_step"
   },
-  "updated_at": "2026-01-14T01:46:03.126512"
+  "updated_at": "2026-01-14T21:16:14.222973"
 }

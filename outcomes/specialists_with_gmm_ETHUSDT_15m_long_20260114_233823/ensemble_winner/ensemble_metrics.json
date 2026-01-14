@@ -1,0 +1,79 @@
+{
+  "winner_name": "CatBoost",
+  "winner_score": 0.025515430490718527,
+  "winner_ic": 0.04711829680369827,
+  "winner_auc": 0.5415185229852333,
+  "all_results": {
+    "ExtraTrees": {
+      "score": 0.007523283995795715,
+      "ic": 0.015258569895661324,
+      "auc": 0.4930530218257815,
+      "oof_pred": "[1.33155839e-04 1.58617687e-04 1.57055253e-04 ... 8.46077294e-06\n 1.87969239e-05 2.82834813e-05]"
+    },
+    "XGBoost": {
+      "score": 0.017041595951725514,
+      "ic": 0.03114257519164532,
+      "auc": 0.5472121636330607,
+      "oof_pred": "[-4.7630601e-05  4.5354376e-05  1.5210462e-04 ... -3.8722795e-04\n -3.9758254e-04 -2.8558561e-04]"
+    },
+    "CatBoost": {
+      "score": 0.025515430490718527,
+      "ic": 0.04711829680369827,
+      "auc": 0.5415185229852333,
+      "oof_pred": "[-7.60160652e-04  1.35997036e-04 -3.16910715e-05 ... -5.87694351e-04\n -5.42448271e-04 -9.77176761e-05]"
+    },
+    "LGBM": {
+      "score": 0.011417636873877215,
+      "ic": 0.022012425956978512,
+      "auc": 0.5186905294396925,
+      "oof_pred": "[ 0.00086147 -0.00024963  0.00033809 ...  0.00010527  0.00067766\n -0.00072142]"
+    }
+  },
+  "selected_features": [
+    "returns",
+    "volume_price_ratio",
+    "ma_20_ratio",
+    "rsi",
+    "smoothed_return",
+    "residual_return",
+    "rolling_efficiency_ratio",
+    "dist_to_long_proxy",
+    "momentum_30",
+    "volatility_w10",
+    "volatility_zscore_w10",
+    "trend_efficiency_ratio_w10",
+    "hurst_proxy_w10",
+    "ehlers_fisher_transform_w10",
+    "cmf_w10",
+    "force_index_w10",
+    "volume_delta_w10",
+    "volume_weighted_rsi_w10",
+    "time_weighted_sr_strength_w10",
+    "trend_alignment_score_w10",
+    "sma_ratio_w10_vs_w40",
+    "rsi_ratio_w10_vs_w40",
+    "vol_ratio_w10_vs_w40",
+    "trend_efficiency_ratio_w20",
+    "ehlers_fisher_transform_w20",
+    "aroon_oscillator_w20",
+    "delta_volume_divergence_w20",
+    "force_index_w20",
+    "volume_delta_w20",
+    "vwap_zscore_w20",
+    "volume_weighted_rsi_w20",
+    "rolling_kurtosis_w20",
+    "shadow_asymmetry_w50",
+    "volatility_trend_slope_w50",
+    "bars_since_compression_ended_w50",
+    "trend_slope_stability_w50",
+    "macd_hist_w50",
+    "ehlers_fisher_transform_w50",
+    "aroon_oscillator_w50",
+    "force_index_w50",
+    "volume_delta_w50",
+    "vwap_zscore_w50",
+    "bars_since_trend_exhaustion_signal_w50",
+    "trend_alignment_score_w50",
+    "returns_4h"
+  ]
+}

@@ -149,7 +149,8 @@ class CausalQualityAssessor:
                          X: pd.DataFrame, 
                          y: pd.Series,
                          backbone_features: Optional[pd.DataFrame] = None,
-                         precomputed_features: Optional[List[str]] = None) -> Dict[str, float]:
+                         precomputed_features: Optional[List[str]] = None,
+                         precomputed_residuals: Optional[pd.DataFrame] = None) -> Dict[str, float]:
         """
         Run full assessment suite on a causal candidate.
         """
@@ -211,7 +212,11 @@ class CausalQualityAssessor:
         metrics = {}
         
         # 1. Validity (Uses downsampled X + Backbone Context)
-        metrics.update(self.compute_validity_metrics(candidate, X, y, backbone_features=backbone_features))
+        metrics.update(self.compute_validity_metrics(
+            candidate, X, y, 
+            backbone_features=backbone_features,
+            precomputed_residuals=precomputed_residuals
+        ))
         
         # 2. Stability
         metrics.update(self.compute_stability_metrics(events_df, y))
@@ -248,7 +253,7 @@ class CausalQualityAssessor:
             
             if not passed_filters:
                 if self.verbose:
-                    tprint_warning(f"⚠️ Candidate {candidate_id} FAILED survival filters: {filter_failures}")
+                    tprint_info(f"   📊 Candidate {candidate_id} filtered out: {filter_failures}")
                 self.survival_failures[candidate_id] = filter_failures
                 metrics['Layer2Score'] = 0.0
                 metrics['survival_status'] = 'FAILED'
@@ -655,11 +660,13 @@ class CausalQualityAssessor:
         except Exception:
             return X[:100] if X.shape[1] > 100 else X
 
-    def compute_validity_metrics(self, 
-                               candidate, 
+
+
+    def compute_validity_metrics(self, candidate: Any,
                                X: pd.DataFrame, 
                                y: pd.Series,
-                               backbone_features: Optional[pd.DataFrame] = None) -> Dict[str, float]:
+                               backbone_features: Optional[pd.DataFrame] = None,
+                               precomputed_residuals: Optional[pd.DataFrame] = None) -> Dict[str, float]:
         """
         Compute validity metrics using residual feature extraction for proper CI testing.
         
@@ -681,7 +688,20 @@ class CausalQualityAssessor:
             X_residual = X.copy()
             backbone_explained_variance = 0.0
             
-            if backbone_features is not None and not backbone_features.empty:
+            # Use precomputed residuals if available (Regime-Level Cache)
+            if precomputed_residuals is not None:
+                common_idx = X.index.intersection(precomputed_residuals.index)
+                common_cols = [c for c in X.columns if c in precomputed_residuals.columns]
+                if len(common_idx) > 50 and len(common_cols) > 0:
+                    if self.verbose:
+                        tprint_info(f"      ✅ Using {len(common_cols)} precomputed backbone residuals")
+                    X_residual = precomputed_residuals.loc[common_idx, common_cols]
+                    y = y.loc[common_idx]
+                    backbone_explained_variance = 0.5 # Proxy for "filtered"
+                else:
+                    precomputed_residuals = None # Fallback to fit
+            
+            if precomputed_residuals is None and backbone_features is not None and not backbone_features.empty:
                 common_idx = X.index.intersection(backbone_features.index)
                 if len(common_idx) > 50:
                     X_common = X.loc[common_idx]

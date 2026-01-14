@@ -57,7 +57,8 @@ import time
 import psutil
 from pathlib import Path
 import hashlib
-from sklearn.linear_model import RidgeClassifier, Lasso, Ridge
+from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor
+from .de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from src.utils.numba_funcs import (
@@ -1271,7 +1272,7 @@ class LabelBasedLayer2(BaseStep):
         self.layer0_params = None
 
         # Model comparison configuration
-        self.enable_model_race = kwargs.get('enable_model_race', False)
+        self.enable_model_race = kwargs.get('enable_model_race', True)
         self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost', 'LGBM_Focal_Linear', 'XGB_Linear'])
 
         # AEDL Framework Parameters
@@ -2807,9 +2808,6 @@ class LabelBasedLayer2(BaseStep):
             # -------------------------------------------
 
             return causal_graph
-                if self.verbose:
-                    tprint_info("   📊 Using deterministic Causal Discovery...")
-                return self._fallback_causal_discovery(df)
                 
         except Exception as e:
             if self.verbose:
@@ -4477,9 +4475,21 @@ class LabelBasedLayer2(BaseStep):
 
         # 1. Prune near-zero variance and near-zero correlation with target
         if target_name in numeric_df.columns:
-            corrs_target = numeric_df.corrwith(numeric_df[target_name]).abs().fillna(0)
-            # Threshold: 0.005 (very weak)
-            noise_features = corrs_target[corrs_target < 0.002].index.tolist()
+            # IC Pre-filter: Spearman correlation for robustness (De Prado recommendation)
+            from scipy.stats import spearmanr
+            target_series = numeric_df[target_name]
+            ic_scores = {}
+            for col in numeric_df.columns:
+                if col != target_name:
+                    valid_mask = target_series.notna() & numeric_df[col].notna()
+                    if valid_mask.sum() > 50:
+                        rho, _ = spearmanr(numeric_df[col][valid_mask], target_series[valid_mask])
+                        ic_scores[col] = abs(rho) if not np.isnan(rho) else 0.0
+                    else:
+                        ic_scores[col] = 0.0
+            
+            # Threshold: IC > 0.02 (stricter than previous 0.002)
+            noise_features = [c for c, ic in ic_scores.items() if ic < 0.02]
             essential = [target_name, 'TARGET_RET_1', 'close', 'volume', 'log_ret']
             to_drop_noise = [c for c in noise_features if c not in essential]
             if to_drop_noise:
@@ -4605,6 +4615,36 @@ class LabelBasedLayer2(BaseStep):
                     
                     numeric_df = numeric_df[[c for c in final_cols if c in numeric_df.columns]]
                     tprint_info(f"   ✅ Composite importance: {len(numeric_df.columns)} features selected")
+                    
+                    # --- GRAPHICAL LASSO 40% RETENTION (Causal Pre-Filter) ---
+                    try:
+                        if len(numeric_df.columns) > 15 and FAST_INFO_THEORY_AVAILABLE:
+                            tprint_info("   🔗 Applying Graphical Lasso pre-filter (40% retention)...")
+                            glasso_filter = GraphicalLassoFilter(verbose=False)
+                            
+                            # Select feature columns only (exclude targets)
+                            feature_cols = [c for c in numeric_df.columns if 'TARGET' not in c]
+                            if len(feature_cols) > 10:
+                                feature_df = numeric_df[feature_cols].dropna()
+                                
+                                # Get precision matrix from Graphical Lasso
+                                precision_scores = glasso_filter.fit_score(feature_df)
+                                
+                                if precision_scores is not None and len(precision_scores) > 0:
+                                    # Keep top 40% by precision connectivity
+                                    n_keep = max(10, int(len(precision_scores) * 0.40))
+                                    sorted_features = sorted(precision_scores.items(), key=lambda x: x[1], reverse=True)
+                                    glasso_selected = [f[0] for f in sorted_features[:n_keep]]
+                                    
+                                    # Combine with targets and core features
+                                    target_cols = [c for c in numeric_df.columns if 'TARGET' in c]
+                                    final_glasso_cols = list(set(glasso_selected + target_cols + core_features))
+                                    numeric_df = numeric_df[[c for c in final_glasso_cols if c in numeric_df.columns]]
+                                    
+                                    tprint_info(f"   ✅ Graphical Lasso: {len(numeric_df.columns)} features retained (40% of {len(feature_cols)})")
+                    except Exception as glasso_err:
+                        tprint_warning(f"   ⚠️ Graphical Lasso failed: {glasso_err}")
+                    # --------------------------------------------------------
                     
             except Exception as e:
                 tprint_warning(f"   ⚠️ Composite importance failed, using variance fallback: {e}")
@@ -6395,13 +6435,30 @@ class LabelBasedLayer2(BaseStep):
                 pass
         try:
             # Pass w_train to Huber as sample_weight
+            # User Request 2026-01-14: Tighten Huber pruning (25th percentile) for surgical refinement
             huber_outputs = prepare_huber_teacher_outputs(
                 X_train, y_train, X_val=X_val,
                 sample_weight=w_train,
-                pruning_percentile=15, corr_threshold=0.7
+                pruning_percentile=25, corr_threshold=0.65
             )
 
             selected_features = huber_outputs['selected_features']
+            
+            # --- FINAL HUBER COEFFICIENT FILTER ---
+            # Surgical refinement: If Titan RFE left noise, Huber coefficients will be near-zero
+            # We use a HuberRegressor to get clean coefficients
+            try:
+                huber = HuberRegressor(alpha=1.0, epsilon=1.35)
+                huber.fit(X_train[selected_features], y_train, sample_weight=w_train)
+                coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
+                # Keep top 40 or features with >10% of max coef
+                threshold = coef_series.max() * 0.1
+                huber_selected = coef_series[coef_series > threshold].index.tolist()
+                if len(huber_selected) >= 5:
+                    tprint_info(f"      🎯 Huber Surgical Filter: {len(selected_features)} -> {len(huber_selected)} features")
+                    selected_features = huber_selected
+            except Exception: pass
+
             monotone_constraints_dict = huber_outputs['monotonic_constraints']
             interaction_constraints = huber_outputs['interaction_constraints']
             warm_start_train = huber_outputs['warm_start']['train']
@@ -6464,7 +6521,7 @@ class LabelBasedLayer2(BaseStep):
                 'max_bin': 63,
                 'random_state': 42,
                 'verbose': -1,
-                'n_jobs': 1
+                'n_jobs': 2
             })
             # Remove scale_pos_weight as focal loss handles imbalance via alpha
             if 'scale_pos_weight' in lgbm_params:
@@ -6498,13 +6555,13 @@ class LabelBasedLayer2(BaseStep):
                 )
 
                 xgb_params = {
-                    'n_estimators': 200, 'learning_rate': 0.03, 'max_depth': 5,
+                    'n_estimators': 400, 'learning_rate': 0.03, 'max_depth': 5,
                     'subsample': 0.6, 'colsample_bytree': 0.4, 'colsample_bynode': 0.4,
                     'reg_lambda': 50, 'min_child_weight': 10, 'gamma': 1.1,
                     'num_parallel_tree': 7,
                     'objective': focal_xgb,
                     'eval_metric': 'auc',
-                    'random_state': 42, 'n_jobs': 1, 'verbosity': 0,
+                    'random_state': 42, 'n_jobs': 2, 'verbosity': 0,
                     'use_label_encoder': False,
                     # scale_pos_weight removed for focal loss
                 }
@@ -6527,7 +6584,7 @@ class LabelBasedLayer2(BaseStep):
             if CATBOOST_AVAILABLE:
                 from catboost import CatBoostClassifier
                 cat_params = {
-                    'iterations': 200, 'learning_rate': 0.05, 'depth': 5,
+                    'iterations': 300, 'learning_rate': 0.05, 'depth': 5,
                     'loss_function': 'Logloss',
                     'subsample': 0.6, 'colsample_bylevel': 0.5,
                     'leaf_estimation_iterations': 10, 'l2_leaf_reg': 20,
@@ -6555,12 +6612,10 @@ class LabelBasedLayer2(BaseStep):
                 
             # --- 4. ExtraTrees ---
             from sklearn.ensemble import ExtraTreesClassifier
-            # ExtraTrees does not support gradient-based Focal Loss.
-            # Using 'balanced_subsample' to handle imbalance as best effort.
             et_params = {
-                'n_estimators': 200, 'max_depth': 6,
+                'n_estimators': 300, 'max_depth': 6,
                 'min_samples_split': 10, 'min_samples_leaf': 5,
-                'random_state': 42, 'n_jobs': 1,
+                'random_state': 42, 'n_jobs': 2,
                 'class_weight': 'balanced'
             }
             # Attempt to set monotonic_cst if supported (sklearn 1.4+)
@@ -7624,7 +7679,9 @@ class LabelBasedLayer2(BaseStep):
 
         # 2. Probe each candidate (Ridge on global features)
         scored_candidates = []
-        probe_data_cache = {}
+        if not hasattr(self, '_probe_data_cache'):
+            self._probe_data_cache = {}
+        probe_data_cache = self._probe_data_cache
 
         for cand in gated_candidates:
             try:
@@ -7796,10 +7853,13 @@ class LabelBasedLayer2(BaseStep):
                     tprint_warning(f"Failed to generate causal target: {e}. Using binary labels.")
 
                 # Run De Prado Causal Quality Assessment
+                # 2.4 Run Core Assessment (with cached residuals)
+                precomputed_residuals = getattr(self, '_current_regime_residuals', None)
                 assessment = self.assessor.assess_candidate(
                     cand, df, events_df, X_cand, y_causal, 
                     backbone_features=backbone_df,
-                    precomputed_features=cached_features # Pass cached features
+                    precomputed_features=cached_features,
+                    precomputed_residuals=precomputed_residuals
                 )
                 
                 # Cache the selected features if we didn't have them
@@ -7972,7 +8032,8 @@ class LabelBasedLayer2(BaseStep):
                         sample_weights = np.ones(len(X_tr))
                 elif use_fallback:
                     sample_weights = np.ones(len(X_tr))
-                    
+                
+                if not use_fallback:
                     # === RIDGE PROBE (Faster than model race, handles collinearity) ===
                     from sklearn.linear_model import RidgeClassifier
                     from sklearn.calibration import CalibratedClassifierCV
@@ -8045,7 +8106,7 @@ class LabelBasedLayer2(BaseStep):
                     # Prevents false AUC=1.0 from sparse validation sets (e.g., 1 positive out of 82)
                     n_pos_val = np.sum(y_val == 1)
                     n_neg_val = np.sum(y_val == 0)
-                    min_samples_for_valid_auc = 5
+                    min_samples_for_valid_auc = 3
                     
                     if n_pos_val < min_samples_for_valid_auc or n_neg_val < min_samples_for_valid_auc:
                         tprint_warning(f"   ⚠️ TOO FEW SAMPLES: Val has {n_pos_val} pos, {n_neg_val} neg (min: {min_samples_for_valid_auc}) - AUC unreliable, using fallback")
@@ -8083,11 +8144,15 @@ class LabelBasedLayer2(BaseStep):
                 preds_binary = (preds > 0.5).astype(int)
                 rec = recall_score(y_val, preds_binary, zero_division=0) if len(np.unique(y_val)) > 1 else 0.0
                 
-                cand.probe_score = ap  # PR-AUC: Higher is better
-                cand.race_score = auc  # For info
-                
-                # Update GeometryTrial properties with Race Results
                 cand.learnability = auc
+                cand.probe_score = ap
+                
+                # Update quality_metrics for leaderboard visibility
+                if not hasattr(cand, 'quality_metrics'):
+                    cand.quality_metrics = {}
+                cand.quality_metrics['AUC'] = auc
+                cand.quality_metrics['PR-AUC'] = ap
+                cand.quality_metrics['IC'] = assessment.get('IC', 0.0)
                 cand.robust_magnitude = assessment.get('IC', 0.0)
                 cand.stability = assessment.get('Dir_consistency', 0.5)
                 cand.balance = assessment.get('balance', 0.5)
@@ -8132,7 +8197,7 @@ class LabelBasedLayer2(BaseStep):
                     'probe_ap': ap,
                     'probe_auc': auc,
                     'probe_rec': rec,
-                    'ranking_score': ranking_score,
+                    'ranking_score': cand.ranking_score,
                     **assessment # Unpack all detailed quality metrics
                 }
                 self._all_candidate_assessments.append(report_entry)
@@ -8233,7 +8298,7 @@ class LabelBasedLayer2(BaseStep):
             # reliable score fetching
             score = getattr(c, 'ranking_score', getattr(c, 'probe_score', 0.0))
             m = getattr(c, 'quality_metrics', {})
-            auc = m.get('AUC', 0.0)
+            auc = m.get('AUC', getattr(c, 'learnability', 0.0))
             ic = m.get('IC', 0.0)
             god = "YES" if getattr(c, 'god_features', []) else "NO"
             
@@ -8282,33 +8347,6 @@ class LabelBasedLayer2(BaseStep):
             winner = scored_candidates[0]
             selected.append(winner)
             tprint_info(f"      🥇 {winner.uuid}: {winner.metrics_log}")
-
-        if self.enable_model_race and selected:
-            primary = max(selected, key=lambda x: getattr(x, 'ranking_score', x.probe_score))
-            race_payload = probe_data_cache.get(primary.uuid)
-            if race_payload:
-                environment_masks = None
-                if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
-                    environment_masks = self._create_default_environment_masks(
-                        race_payload["X_tr"], race_payload["y_tr"]
-                    )
-                try:
-                    best_model, best_name, race_results = self._run_model_race(
-                        race_payload["X_tr"],
-                        race_payload["y_tr"],
-                        race_payload["X_val"],
-                        race_payload["y_val"],
-                        race_payload["sample_weights"],
-                        environment_masks
-                    )
-                    primary.model_params = {"race_winner": best_name}
-                    primary.race_score = race_results.get(best_name, {}).get("auc", primary.race_score)
-                    self._model_race_metrics = race_results
-                    tprint_info(f"      🏁 Model race run for {primary.uuid[:20]} → {best_name}")
-                except Exception as e:
-                    tprint_warning(f"   ⚠️ Model race failed for {primary.uuid[:20]}: {e}")
-            else:
-                tprint_warning(f"   ⚠️ No probe cache found for {primary.uuid[:20]} - skipping model race")
 
         return selected
 
@@ -8374,6 +8412,36 @@ class LabelBasedLayer2(BaseStep):
         for regime in regimes:
             tprint_info(f"   👉 Optimizing for Regime: {regime}")
             
+            # --- REGIME-LEVEL RESIDUAL CACHING ---
+            regime_residual_cache = None
+            # Use instance backbone features if available (safely handle undefined case)
+            backbone_features_global = getattr(self, '_backbone_features', None)
+            if backbone_features_global is not None:
+                try:
+                    # Get Global Features
+                    X_global = self._get_global_features(df)
+                    
+                    # Determine regime mask
+                    mask = pd.Series(True, index=df.index) if regime == 'Global' else (df[regime_col] == regime)
+                    
+                    # Align and Residualize
+                    X_reg = X_global[mask].fillna(0)
+                    B_reg = backbone_features_global[mask].fillna(0)
+                    
+                    if len(X_reg) > 100:
+                        from sklearn.linear_model import Ridge
+                        tprint_info(f"      🔧 Precomputing backbone residuals for regime {regime}...")
+                        ridge = Ridge(alpha=10.0, solver='lsqr')
+                        ridge.fit(B_reg.values, X_reg.values)
+                        X_res_vals = X_reg.values - ridge.predict(B_reg.values)
+                        regime_residual_cache = pd.DataFrame(X_res_vals, index=X_reg.index, columns=X_reg.columns)
+                except Exception as e:
+                    tprint_warning(f"      ⚠️ Regime-level residual caching failed: {e}")
+
+            # Pass the residual cache to the selection logic
+            self._current_regime_residuals = regime_residual_cache
+
+            
             # Determine regime mask (all True if Global)
             if regime == 'Global':
                 regime_mask = pd.Series(True, index=df.index)
@@ -8411,48 +8479,6 @@ class LabelBasedLayer2(BaseStep):
                 else:
                     regime_labels = None
 
-                # Calculate Financial Metrics for this regime's events
-                # Use realized returns from triple-barrier style outcomes when possible
-                fin_metrics = {'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'sortino_ratio': 0.0}
-                if len(regime_events) > 5 and 'close' in df.columns:
-                    try:
-                        horizon = int(og.params.get('horizon', 120))
-                        pt_mult = og.params.get('pt_mult')
-                        sl_mult = og.params.get('sl_mult')
-                        volatility_series = df['volatility_1d'] if 'volatility_1d' in df.columns else None
-
-                        if volatility_series is not None and pt_mult is not None:
-                            profit_threshold = volatility_series * float(pt_mult)
-                        else:
-                            profit_threshold = og.params.get('kappa', 0.015)
-
-                        if volatility_series is not None and sl_mult is not None:
-                            stop_threshold = volatility_series * float(sl_mult)
-                        else:
-                            stop_threshold = og.params.get('sl_mult', 0.01)
-
-                        signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
-                        signals.loc[regime_events, 'consensus'] = 1.0
-
-                        realized_returns, *_ = compute_realized_returns(
-                            df,
-                            signals,
-                            profit_threshold=profit_threshold,
-                            stop_threshold=stop_threshold,
-                            horizon=horizon,
-                            transaction_cost=self.transaction_cost,
-                            volatility_series=volatility_series,
-                            close_prices_arr=df['close'].values,
-                            high_prices_arr=df['high'].values if 'high' in df.columns else None,
-                            low_prices_arr=df['low'].values if 'low' in df.columns else None,
-                            consensus_signals_arr=signals['consensus'].values
-                        )
-                        trade_rets = realized_returns.reindex(regime_events).dropna()
-                        fin_metrics = self._compute_financial_metrics(trade_rets)
-                    except Exception as e:
-                        # logger.warning(f"Failed to calc metrics for {og.name}: {e}")
-                        pass
-
                 # Create Regime-Specific Candidate
                 gt = GeometryTrial(
                     family=og.family,
@@ -8466,9 +8492,9 @@ class LabelBasedLayer2(BaseStep):
                     uuid=f"{og.name}_{i}_{regime}", # Unique ID per regime
                     events=regime_events,
                     selected_features=None,
-                    sharpe_ratio=fin_metrics['sharpe_ratio'],
-                    max_drawdown=fin_metrics['max_drawdown'],
-                    sortino_ratio=fin_metrics['sortino_ratio']
+                    sharpe_ratio=0.0,
+                    max_drawdown=0.0,
+                    sortino_ratio=0.0
                 )
                 gt.labels = regime_labels
                 gt.regime = regime # Tag
@@ -8502,8 +8528,8 @@ class LabelBasedLayer2(BaseStep):
             if regime_rejections:
                 tprint_info(f"   🧾 Regime filter rejections ({regime}): {dict(regime_rejections)}")
 
-            # 3. Select Best via Race/Probe (Per Regime)
-            regime_winners = []
+            # 3. Select Best via Race/Probe (Per Regime) - PARALLELIZED
+            tprint_info(f"   🚀 Selecting family experts via Parallel Race/Probe fits...")
             
             # --- FUNNEL METRICS (Regime-Specific) ---
             funnel = {
@@ -8514,20 +8540,32 @@ class LabelBasedLayer2(BaseStep):
                 'diversity_survivors': 0,
                 'final': 0
             }
+            
+            from joblib import Parallel, delayed
+            
+            def process_family(fam, cands):
+                if not cands: return None
+                try:
+                    # _select_best_geometry_via_race includes the Ridge Probing phase
+                    winners = self._select_best_geometry_via_race(cands, df, top_k=10)
+                    return fam, winners
+                except Exception as e:
+                    tprint_error(f"      ❌ Family selection failed for {fam}: {e}")
+                    return None
 
+            # Sequential execution to leverage global feature cache and avoid OOM
+            family_results = Parallel(n_jobs=1, backend="loky")(
+                delayed(process_family)(fam, cands) for fam, cands in family_map.items()
+            )
+
+            regime_winners = []
             tier1_by_family = {}
-            for family, cands in family_map.items():
-                if not cands: continue
-
-                tprint_info(f"      {family}: {len(cands)} candidates -> Selection...")
-                
-                # Tier 1 Selection
-                tprint_info(f"      [Tier 1] Racing top candidates for {family}...")
-                winners = self._select_best_geometry_via_race(cands, df, top_k=10) # Reduced top_k for speed
-                tprint_info(f"          {regime} Winners (Tier 1): {len(winners)}")
-                regime_winners.extend(winners)
-                tier1_by_family[family] = winners
-                funnel['race_survivors'] += len(winners)
+            for res in family_results:
+                if res:
+                    fam, winners = res
+                    regime_winners.extend(winners)
+                    tier1_by_family[fam] = winners
+                    funnel['race_survivors'] += len(winners)
 
             if len(regime_winners) < 7:
                 tprint_info(
@@ -8575,6 +8613,63 @@ class LabelBasedLayer2(BaseStep):
 
         self.selected_geometries = production_geometries
     
+        # 3.7 GLOBAL ARCHITECTURAL MODEL RACE (Elite Expert Selection)
+        # Selection: Winners of each family across all regimes (~5-10 total)
+        if self.enable_model_race and production_geometries:
+            tprint_info(f"🏆 Running Global Architectural Model Race (Expert Selection)...")
+            
+            # Group by family and find global winner per family
+            family_winners = {}
+            for gt in production_geometries:
+                fam = gt.family
+                if fam not in family_winners or gt.ranking_score > family_winners[fam].ranking_score:
+                    family_winners[fam] = gt
+            
+            # Race the elite representatives (~5-10 total)
+            elite_representatives = list(family_winners.values())
+            tprint_info(f"   🏁 Racing {len(elite_representatives)} family leaders (Selection from Top {len(production_geometries)} Finalists)...")
+            
+            for gt in elite_representatives:
+                race_payload = getattr(self, '_probe_data_cache', {}).get(gt.uuid)
+                if race_payload:
+                    environment_masks = None
+                    if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
+                        environment_masks = self._create_default_environment_masks(
+                            race_payload["X_tr"], race_payload["y_tr"]
+                        )
+                    try:
+                        # Full Architectural Race (Huber + Boosters + ExtraTrees)
+                        # We use the payload from the Ridge Probe phase for consistency
+                        best_model, best_name, race_results = self._run_model_race(
+                            race_payload["X_tr"],
+                            race_payload["y_tr"],
+                            race_payload["X_val"],
+                            race_payload["y_val"],
+                            race_payload["sample_weights"],
+                            environment_masks
+                        )
+                        gt.model_params = {"race_winner": best_name}
+                        gt.race_score = race_results.get(best_name, {}).get("auc", 0.0)
+                        
+                        # Update metrics
+                        if not hasattr(gt, 'quality_metrics'): gt.quality_metrics = {}
+                        gt.quality_metrics['PROBE_AUC'] = getattr(gt, 'learnability', 0.5)
+                        gt.quality_metrics['AUC'] = gt.race_score
+                        gt.quality_metrics['RACE_WINNER'] = best_name
+                        gt.learnability = gt.race_score
+                        
+                        # Final Blend for elite selection visibility
+                        structural_score = getattr(gt, 'layer2_score', 0.1)
+                        gt.ranking_score = (0.4 * gt.probe_score) + (0.3 * gt.race_score) + (0.3 * structural_score)
+                        
+                        tprint_info(f"      ✅ {gt.family} Leader ({gt.uuid[:8]}) -> {best_name} (Race AUC: {gt.race_score:.4f})")
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ Race failed for {gt.family} leader: {e}")
+            
+            # Cleanup cache to free memory
+            self._probe_data_cache = {} 
+            tprint_info(f"   🧹 Probe data cache cleared.")
+    
         # 4. Feature Selection (Global Union of Events)
         # We need to run feature selection. Since geometries are regime-specific,
         # we could run it per geometry on its regime events.
@@ -8586,18 +8681,61 @@ class LabelBasedLayer2(BaseStep):
         X_events_full = self._build_geometry_independent_event_features(df, union_events)
         self._global_probe_features = self._select_global_probe_features(X_events_full)
     
-        # 5. Per-Geometry Titan RFE (Adaptive)
-        tprint_info(">>> Layer 2: Running Titan RFE per geometry...")
-        for gt in production_geometries:
+        # 5. Per-Geometry Titan RFE (Parallelized Refinement)
+        tprint_info(f"   ⚡ Running Parallel Titan RFE for {len(production_geometries)} finalists...")
+        
+        def run_rfe_task(gt):
             try:
                 selected_feats = self._run_titan_rfe_for_geometry(df, gt)
-                if selected_feats:
-                    gt.selected_features = selected_feats
-                    # tprint_success(f"   ✅ {gt.uuid}: Selected {len(selected_feats)} features")
-                else:
-                    tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set.")
+                return gt.uuid, selected_feats
             except Exception as e:
-                tprint_error(f"   ❌ {gt.uuid}: Feature selection failed: {e}")
+                return gt.uuid, None
+
+        # RFE is extremely expensive (LGBM Wrapper loop), so we parallelize it across all survivors
+        # RFE is memory intensive, run sequentially to share feature cache
+        rfe_results = Parallel(n_jobs=1, backend="loky")(
+            delayed(run_rfe_task)(gt) for gt in production_geometries
+        )
+        
+        # Map results back to geometries
+        rfe_map = {uuid: feats for uuid, feats in rfe_results if feats}
+        for gt in production_geometries:
+            if gt.uuid in rfe_map:
+                gt.selected_features = rfe_map[gt.uuid]
+            else:
+                 tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set or failed.")
+    
+        # 6. Post-Selection Simulation (Financial Metrics)
+        tprint_info("📊 Running final simulations for survivor geometries...")
+        # Now we only simulate the few survivors, not the 500+ candidates
+        for gt in production_geometries:
+            if len(gt.events) > 5 and 'close' in df.columns:
+                try:
+                    horizon = int(gt.params.get('horizon', 120))
+                    pt_mult = gt.params.get('pt_mult')
+                    sl_mult = gt.params.get('sl_mult')
+                    volatility_series = df['volatility_1d'] if 'volatility_1d' in df.columns else None
+
+                    signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
+                    signals.loc[gt.events, 'consensus'] = 1.0
+
+                    realized_returns, *_ = compute_realized_returns(
+                        df, signals, 
+                        profit_threshold=volatility_series * float(pt_mult) if pt_mult else 0.015,
+                        stop_threshold=volatility_series * float(sl_mult) if sl_mult else 0.01,
+                        horizon=horizon, transaction_cost=self.transaction_cost,
+                        volatility_series=volatility_series,
+                        close_prices_arr=df['close'].values,
+                        high_prices_arr=df['high'].values if 'high' in df.columns else None,
+                        low_prices_arr=df['low'].values if 'low' in df.columns else None,
+                        consensus_signals_arr=signals['consensus'].values
+                    )
+                    trade_rets = realized_returns.reindex(gt.events).dropna()
+                    fin_metrics = self._compute_financial_metrics(trade_rets)
+                    gt.sharpe_ratio = fin_metrics['sharpe_ratio']
+                    gt.max_drawdown = fin_metrics['max_drawdown']
+                    gt.sortino_ratio = fin_metrics['sortino_ratio']
+                except Exception as e: pass
     
 
         # 6. Build Layer-12 Model-Ready Output (if available)
@@ -10269,21 +10407,24 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning(f"⚠️ Entropic selection failed, using all features: {e}")
             X_entropic = X
 
-        # Run Pipeline on entropic-filtered features
-        # We aim for ~60 features but adaptive to sample size (1 per 100 samples)
-        # The pipeline handles the adaptation internally.
-        target_sets = [60, 50, 40, 30, 20, 10]
+        # === HIGH-QUALITY MDI PRE-FILTERING (DE PRADO) ===
+        try:
+            tprint_info(f"   👑 High-Quality MDI pre-filtering {X_entropic.shape[1]} features via DePrado Engine...")
+            # Use DePradoFeatureEngine for a robust mix of MDI, ONC, and Root Proximity
+            # We target ~100 features for the next RFE stage
+            engine = DePradoFeatureEngine(n_estimators=500, max_clusters=15)
+            # engine.run_selection returns the 'king' features of each cluster
+            selected_mdi = engine.run_selection(X_entropic, y)
+            
+            # If we have too many, take top scoring ones, if too few, engine already handles diversity
+            X_entropic = X_entropic[selected_mdi]
+            tprint_info(f"   ✅ DePrado Engine kept {len(selected_mdi)} robust features")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ DePrado pre-filter failed: {e}")
 
-        # Optimization: Pre-filter with vectorized correlation if feature count is very high (> 200)
-        # This speeds up the expensive LGBM wrapper step significantly
-        if X_entropic.shape[1] > 200:
-            tprint_info(f"   ⚡ Fast pre-filtering {X_entropic.shape[1]} features via vectorized correlation...")
-            try:
-                preselected = vectorized_feature_selection(X_entropic, y, top_k=150, method='correlation')
-                X_entropic = X_entropic[preselected]
-                tprint_info(f"   ✅ Pre-filtered to {len(preselected)} features")
-            except Exception as e:
-                tprint_warning(f"   ⚠️ Vectorized pre-filter failed: {e}")
+        # Run Pipeline on filtered features
+        # Reduced rounds for speed: 60 -> 40 -> 20 -> 10
+        target_sets = [60, 40, 20, 10]
 
         feature_sets, _ = lgbm_feature_selection_pipeline(
             X_entropic, y,

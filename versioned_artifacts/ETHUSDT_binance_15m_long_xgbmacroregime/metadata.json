@@ -1,7 +1,7 @@
 {
   "versions": {
     "enhanced_xgb_macro_regime_prediction_15m": {
-      "created_at": "2026-01-13T19:46:55.179861",
+      "created_at": "2026-01-14T19:52:24.438610",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -31,8 +31,8 @@
         "feature_sig_2"
       ]
     },
-    "enhanced_xgb_macro_regime_prediction_15m_20260114_004501_341": {
-      "created_at": "2026-01-14T00:45:01.341291",
+    "enhanced_xgb_macro_regime_prediction_15m_20260114_195634_512": {
+      "created_at": "2026-01-14T19:56:34.512106",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -71,20 +71,20 @@
       "specialist_name": "EnhancedXGBMacroRegimeStep",
       "model_type": "EnhancedXGBMacroRegimeStep",
       "target_range": "1.5-3%",
-      "n_samples": 54974.0,
-      "mi_score": 0.0014036220000228639,
+      "n_samples": 45487.0,
+      "mi_score": 0.0022024832047993215,
       "hsic_score": 0.0,
       "binary_output": true,
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-13T23:45:01.335555",
+      "timestamp": "2026-01-14T18:56:34.508133",
       "n_features": 36.0,
-      "auc": 0.5086986392650246,
-      "aucpr": 0.3765209544646344
+      "auc": 0.49852386044727887,
+      "aucpr": 0.3724976257649372
     },
-    "enhanced_xgb_macro_regime_prediction_15m_20260114_012344_724": {
-      "created_at": "2026-01-14T01:23:44.724675",
+    "enhanced_xgb_macro_regime_prediction_15m_20260114_205155_289": {
+      "created_at": "2026-01-14T20:51:55.289848",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -123,20 +123,20 @@
       "specialist_name": "EnhancedXGBMacroRegimeStep",
       "model_type": "EnhancedXGBMacroRegimeStep",
       "target_range": "1.5-3%",
-      "n_samples": 54974.0,
-      "mi_score": 0.0014269309329986157,
+      "n_samples": 45487.0,
+      "mi_score": 0.002271637325293341,
       "hsic_score": 0.0,
       "binary_output": true,
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-14T00:23:44.719996",
+      "timestamp": "2026-01-14T19:51:55.285521",
       "n_features": 36.0,
-      "auc": 0.5086986392650246,
-      "aucpr": 0.3765209544646344
+      "auc": 0.49852386044727887,
+      "aucpr": 0.3724976257649372
     },
-    "enhanced_xgb_macro_regime_prediction_15m_20260114_014739_171": {
-      "created_at": "2026-01-14T01:47:39.171691",
+    "enhanced_xgb_macro_regime_prediction_15m_20260114_211720_737": {
+      "created_at": "2026-01-14T21:17:20.737349",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -175,22 +175,22 @@
       "specialist_name": "EnhancedXGBMacroRegimeStep",
       "model_type": "EnhancedXGBMacroRegimeStep",
       "target_range": "1.5-3%",
-      "n_samples": 54974.0,
-      "mi_score": 0.001403088493194815,
+      "n_samples": 45487.0,
+      "mi_score": 0.002197086384310154,
       "hsic_score": 0.0,
       "binary_output": true,
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-14T00:47:39.167147",
+      "timestamp": "2026-01-14T20:17:20.733113",
       "n_features": 36.0,
-      "auc": 0.5086986392650246,
-      "aucpr": 0.3765209544646344
+      "auc": 0.49852386044727887,
+      "aucpr": 0.3724976257649372
     }
   },
-  "current_version": "enhanced_xgb_macro_regime_prediction_15m_20260114_014739_171",
+  "current_version": "enhanced_xgb_macro_regime_prediction_15m_20260114_211720_737",
   "created_at": "2026-01-13T19:46:55.023149",
-  "updated_at": "2026-01-14T01:47:39.262656",
+  "updated_at": "2026-01-14T21:17:20.812230",
   "context": {
     "symbol": "ETHUSDT",
     "exchange": "binance",

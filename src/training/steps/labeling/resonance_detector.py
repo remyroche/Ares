@@ -582,8 +582,19 @@ class ResonanceDetector:
             tprint_error("❌ CRITICAL: No resonance scores computed")
             return
             
-        # Basic statistics
-        resonance_values = list(all_resonances.values())
+        # Basic statistics - extract 'summary' float from each resonance dict
+        # Handle both dict values (from compute_specialist_resonance) and float values
+        resonance_values = []
+        for v in all_resonances.values():
+            if isinstance(v, dict):
+                resonance_values.append(v.get('summary', 0.0))
+            else:
+                resonance_values.append(float(v) if v is not None else 0.0)
+        
+        if not resonance_values:
+            tprint_error("❌ CRITICAL: No valid resonance values found")
+            return
+            
         mean_resonance = np.mean(resonance_values)
         std_resonance = np.std(resonance_values)
         max_resonance = np.max(resonance_values)

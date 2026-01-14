@@ -1,53 +1,14 @@
 {
   "step_name": "data_loading",
   "step_index": 0,
-  "timestamp": "20260113_003442",
+  "timestamp": "20260114_210325",
   "symbol": "ETHUSDT",
-  "config_hash": "2b62410f9152",
+  "config_hash": "40cb201e3be3",
   "data_keys": [
     "df",
-    "config"
+    "config",
+    "config_hash",
+    "dataset_fingerprint"
   ],
-  "json_data": {
-    "config": {
-      "symbol": "ETHUSDT",
-      "exchange": "binance",
-      "timeframe": "15m",
-      "direction": "long",
-      "execution_mode": "light",
-      "regime_timeframe": "15m",
-      "lookback_days": 30,
-      "use_wavelets": true,
-      "enable_causal_framework": true,
-      "causal_discovery_enabled": true,
-      "irm_enabled": true,
-      "causal_surprise_enabled": true,
-      "interventionist_sampling_enabled": true,
-      "causal_specialists_enabled": true,
-      "enable_aedl": true,
-      "run_layer1_optimization": true,
-      "enable_pipeline_logging": true,
-      "layer0_params": {
-        "kalman_Q": 1e-08,
-        "kalman_R": 1e-06,
-        "volume_weight": 0.0,
-        "volume_adaptive": true
-      },
-      "layer1_params": {
-        "mag_compression": 1.0123620356542087,
-        "learn_slope": 1.0,
-        "learn_center": 0.5,
-        "uniq_intensity": 2.9014286128198323,
-        "quality_intensity": 3.6599697090570253,
-        "quality_floor": 0.37926216630837006,
-        "exp_mag": 1.0653039046287323,
-        "exp_learn": 0.23399178050430397,
-        "exp_uniq": 1.0238303899532655,
-        "exp_cross": 1.7992642186624028,
-        "downside_multiplier": 1.2404460046972834,
-        "mag_clip_pct": 0.9783229031118418,
-        "time_decay_halflife": 0.041168988591604894
-      }
-    }
-  }
+  "json_data": {}
 }

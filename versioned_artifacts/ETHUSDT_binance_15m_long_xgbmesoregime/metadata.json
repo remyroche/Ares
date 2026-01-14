@@ -1,7 +1,7 @@
 {
   "versions": {
     "enhanced_xgb_meso_regime_prediction_15m": {
-      "created_at": "2026-01-13T19:47:45.657801",
+      "created_at": "2026-01-14T19:53:36.398982",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -31,8 +31,8 @@
         "feature_sig_4"
       ]
     },
-    "enhanced_xgb_meso_regime_prediction_15m_20260114_004732_288": {
-      "created_at": "2026-01-14T00:47:32.288192",
+    "enhanced_xgb_meso_regime_prediction_15m_20260114_195748_810": {
+      "created_at": "2026-01-14T19:57:48.810363",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -71,20 +71,20 @@
       "specialist_name": "EnhancedXGBMesoRegimeStep",
       "model_type": "EnhancedXGBMesoRegimeStep",
       "target_range": "1.5-3%",
-      "n_samples": 54974.0,
-      "mi_score": 0.0030208634345090246,
+      "n_samples": 45487.0,
+      "mi_score": 0.004473606935436081,
       "hsic_score": 0.0,
       "binary_output": true,
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-13T23:47:32.282002",
+      "timestamp": "2026-01-14T18:57:48.806142",
       "n_features": 34.0,
-      "auc": 0.5093449861916449,
-      "aucpr": 0.3914941753661491
+      "auc": 0.5061762035725915,
+      "aucpr": 0.39297350794906866
     },
-    "enhanced_xgb_meso_regime_prediction_15m_20260114_012524_930": {
-      "created_at": "2026-01-14T01:25:24.930547",
+    "enhanced_xgb_meso_regime_prediction_15m_20260114_205305_575": {
+      "created_at": "2026-01-14T20:53:05.575333",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -123,20 +123,20 @@
       "specialist_name": "EnhancedXGBMesoRegimeStep",
       "model_type": "EnhancedXGBMesoRegimeStep",
       "target_range": "1.5-3%",
-      "n_samples": 54974.0,
-      "mi_score": 0.003007030133657551,
+      "n_samples": 45487.0,
+      "mi_score": 0.004287927261207969,
       "hsic_score": 0.0,
       "binary_output": true,
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-14T00:25:24.926274",
+      "timestamp": "2026-01-14T19:53:05.570393",
       "n_features": 34.0,
-      "auc": 0.5093449861916449,
-      "aucpr": 0.3914941753661491
+      "auc": 0.5061762035725915,
+      "aucpr": 0.39297350794906866
     },
-    "enhanced_xgb_meso_regime_prediction_15m_20260114_014916_099": {
-      "created_at": "2026-01-14T01:49:16.099994",
+    "enhanced_xgb_meso_regime_prediction_15m_20260114_211835_126": {
+      "created_at": "2026-01-14T21:18:35.126085",
       "num_rows": 25000,
       "num_columns": 24,
       "columns": [
@@ -175,22 +175,22 @@
       "specialist_name": "EnhancedXGBMesoRegimeStep",
       "model_type": "EnhancedXGBMesoRegimeStep",
       "target_range": "1.5-3%",
-      "n_samples": 54974.0,
-      "mi_score": 0.0030207059762581423,
+      "n_samples": 45487.0,
+      "mi_score": 0.004505458949974894,
       "hsic_score": 0.0,
       "binary_output": true,
       "orthogonal_features": 0,
       "high_correlation_pairs": 0,
       "requirements_met": 0,
-      "timestamp": "2026-01-14T00:49:16.095850",
+      "timestamp": "2026-01-14T20:18:35.122294",
       "n_features": 34.0,
-      "auc": 0.5093449861916449,
-      "aucpr": 0.3914941753661491
+      "auc": 0.5061762035725915,
+      "aucpr": 0.39297350794906866
     }
   },
-  "current_version": "enhanced_xgb_meso_regime_prediction_15m_20260114_014916_099",
+  "current_version": "enhanced_xgb_meso_regime_prediction_15m_20260114_211835_126",
   "created_at": "2026-01-13T19:47:45.492655",
-  "updated_at": "2026-01-14T01:49:16.187279",
+  "updated_at": "2026-01-14T21:18:35.191874",
   "context": {
     "symbol": "ETHUSDT",
     "exchange": "binance",

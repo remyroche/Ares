@@ -1,0 +1,20 @@
+{
+  "step_name": "causal_model_training",
+  "step_index": 11,
+  "timestamp": "20260114_201237",
+  "symbol": "ETHUSDT",
+  "config_hash": "40cb201e3be3",
+  "data_keys": [
+    "df",
+    "engineered_df",
+    "causal_events_df",
+    "causal_targets_df",
+    "causal_geometries",
+    "causal_selected_features",
+    "causal_graph",
+    "augmented_graph",
+    "causal_metadata",
+    "specialist_predictions"
+  ],
+  "json_data": {}
+}

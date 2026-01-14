@@ -22,7 +22,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.cluster import FeatureAgglomeration
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-from scipy.stats import norm
+from scipy.stats import norm, entropy, spearmanr
 import warnings
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success, tprint_error
 
@@ -34,6 +34,8 @@ class DePradoFeatureEngine:
     1. ONC Clustering (Redundancy Filter)
     2. Advanced MDI (Gain/Cover - Power Filter)  
     3. Root Proximity (Hierarchy Filter)
+    4. Information Coefficient (Predictive Filter)
+    5. Shannon Entropy (Information Content Filter)
     """
     
     def __init__(
@@ -42,8 +44,10 @@ class DePradoFeatureEngine:
         max_clusters: int = 12,
         min_cluster_size: int = 2,
         random_state: int = 42,
-        gain_weight: float = 0.5,
-        depth_weight: float = 0.5,
+        gain_weight: float = 0.4,
+        depth_weight: float = 0.2,
+        ic_weight: float = 0.2,
+        entropy_weight: float = 0.2,
         min_samples_leaf: int = 30,
         max_features: str = 'log2'
     ):
@@ -55,8 +59,10 @@ class DePradoFeatureEngine:
             max_clusters: Maximum number of clusters to consider
             min_cluster_size: Minimum samples per cluster
             random_state: Random seed for reproducibility
-            gain_weight: Weight for gain in composite score (default: 0.5)
-            depth_weight: Weight for depth proximity in composite score (default: 0.5)
+            gain_weight: Weight for gain in composite score (default: 0.4)
+            depth_weight: Weight for depth proximity in composite score (default: 0.2)
+            ic_weight: Weight for Information Coefficient in composite score (default: 0.2)
+            entropy_weight: Weight for Shannon Entropy in composite score (default: 0.2)
             min_samples_leaf: Minimum samples per leaf in ExtraTrees
             max_features: Max features considered for each split
         """
@@ -66,6 +72,8 @@ class DePradoFeatureEngine:
         self.random_state = random_state
         self.gain_weight = gain_weight
         self.depth_weight = depth_weight
+        self.ic_weight = ic_weight
+        self.entropy_weight = entropy_weight
         self.min_samples_leaf = min_samples_leaf
         self.max_features = max_features
         
@@ -92,15 +100,14 @@ class DePradoFeatureEngine:
         """
         tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
 
-        if X.shape[1] > X.shape[0]:
-            tprint_warning(
-                "⚠️ ONC received data with more columns than rows; "
-                "transposing to enforce (samples, features)."
-            )
-            X = X.T
-        
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
+
         # Compute correlation matrix
         corr = X.corr().fillna(0)
+        
+        # Representation where each feature becomes a "sample" vector for metrics
+        feature_sample_matrix = X.T
         
         # Debug: Check correlation matrix properties
         tprint_info(f"🔍 Correlation matrix shape: {corr.shape}")
@@ -141,10 +148,9 @@ class DePradoFeatureEngine:
 
         for k in range(2, max_k + 1):
             try:
-                # FeatureAgglomeration works on features (columns), not samples (rows)
-                # So we need to transpose X to cluster features, not samples
                 clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
-                clusterer.fit(X.T)  # Transpose to cluster features (50 features x 1000 samples)
+                # Fit directly on (n_samples, n_features); FeatureAgglomeration clusters columns
+                clusterer.fit(X)
                 cluster_labels = clusterer.labels_  # This should have length = n_features (50)
                 
                 # Debug: Check if clustering actually produced k clusters
@@ -160,30 +166,25 @@ class DePradoFeatureEngine:
                 # Compute multiple clustering quality metrics
                 if len(unique_labels) > 1:
                     # 1. CV Ratio (BCSS/WCSS) - Primary metric
-                    # Use transposed data (features as samples)
-                    cv_ratio = self._calculate_cv_ratio(X.T, cluster_labels)
+                    # Use feature_sample_matrix (features as samples)
+                    cv_ratio = self._calculate_cv_ratio(feature_sample_matrix, cluster_labels)
                     
                     # 2. Davies-Bouldin Index - Secondary metric (lower is better)
-                    # Use transposed data (features as samples)
-                    dbi = davies_bouldin_score(X.T, cluster_labels)
+                    dbi = davies_bouldin_score(feature_sample_matrix, cluster_labels)
                     
                     # 3. Silhouette Score - Tertiary metric (higher is better)
                     # Use transposed data with correlation distance
                     silhouette = silhouette_score(dist, cluster_labels, metric='precomputed')
                     
                     # 4. Calinski-Harabasz Index - Additional metric (higher is better)
-                    # Use transposed data
-                    ch = calinski_harabasz_score(X.T, cluster_labels)
+                    ch = calinski_harabasz_score(feature_sample_matrix, cluster_labels)
                     
                     # Normalize each metric for composite scoring
                     # CV Ratio: higher is better (already normalized 0-1)
                     cv_score = cv_ratio
                     
                     # DBI: lower is better, normalize to 0-1 (invert)
-                    dbi_scores = [davies_bouldin_score(X.T, clusterer.fit(X.T).labels_) 
-                                for _ in range(3)]  # Compute multiple times for stability
-                    dbi_avg = np.mean(dbi_scores)
-                    dbi_score = 1.0 / (1.0 + dbi_avg)  # Invert and normalize
+                    dbi_score = 1.0 / (1.0 + dbi)
                     
                     # Silhouette: higher is better (already -1 to 1, shift to 0-1)
                     silhouette_score_norm = (silhouette + 1.0) / 2.0
@@ -194,7 +195,7 @@ class DePradoFeatureEngine:
                     # Store all scores
                     scores_history[k] = {
                         'cv_ratio': cv_ratio,
-                        'dbi': dbi_avg,
+                        'dbi': dbi,
                         'silhouette': silhouette,
                         'ch': ch,
                         'cv_score': cv_score,
@@ -241,7 +242,7 @@ class DePradoFeatureEngine:
                         )
         
         # Quality check on best solution
-        if best_k == 2 and best_composite_score < 0.3:
+        if best_k == 2 and best_composite_score < 0.3 and scores_history:
             # Force more clusters if quality is too low
             min_clusters = min(3, max(2, len(X.columns) // 2))
             tprint_warning(f"   ⚠️ ONC Quality Check: Best K={best_k} has composite score {best_composite_score:.3f}")
@@ -424,17 +425,47 @@ class DePradoFeatureEngine:
             'cover': dict(zip(feature_names, cover_importances))
         }
     
-    def run_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
+    # Class-level cache to prevent re-running selection on identical data
+    _CACHE = {}
+
+    def _compute_input_hash(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool) -> str:
+        """Compute a hash of the inputs for caching."""
+        try:
+            from pandas.util import hash_pandas_object
+            import hashlib
+            
+            # Hash data content (values only to be fast, or index+values for safety)
+            # Use columns + shape + sample of values for speed if X is huge? 
+            # Ideally hash_pandas_object is safe.
+            h_X = hashlib.md5(hash_pandas_object(X, index=True).values.tobytes()).hexdigest()
+            h_y = hashlib.md5(hash_pandas_object(y, index=True).values.tobytes()).hexdigest()
+            
+            # Hash config
+            config_str = f"{self.n_estimators}_{self.max_features}_{self.gain_weight}_{self.depth_weight}_{self.ic_weight}_{self.entropy_weight}_{use_entropy_as_king}"
+            
+            return f"{h_X}_{h_y}_{config_str}"
+        except Exception:
+            return None
+
+    def run_selection(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool = False) -> List[str]:
         """
         Run complete De Prado feature selection pipeline.
+        With caching support.
         
         Args:
             X: Feature matrix
             y: Target labels
+            use_entropy_as_king: If True, entropy is the sole criterion for intra-cluster selection
             
         Returns:
             List of selected feature names
         """
+        # --- CACHE CHECK ---
+        cache_key = self._compute_input_hash(X, y, use_entropy_as_king)
+        if cache_key and cache_key in self._CACHE:
+            tprint_success(f"⚡ [DePrado] Cache Hit! Returning pre-computed selection for {len(X.columns)} features")
+            return self._CACHE[cache_key]
+        
         start_time = time.time()
         tprint_info("🚀 Starting De Prado Feature Selection Engine...")
         tprint_info(f"📊 Input: {len(X.columns)} features, {len(X)} samples")
@@ -443,6 +474,9 @@ class DePradoFeatureEngine:
         if X.empty or len(X) == 0:
             tprint_error("❌ Empty feature matrix provided to De Prado engine")
             raise ValueError("Empty feature matrix")
+        
+        # ... (rest of method) ...
+
         
         missing_values = X.isnull().sum().sum()
         if missing_values > 0:
@@ -456,18 +490,6 @@ class DePradoFeatureEngine:
         if unique_classes < 2:
             tprint_error("❌ Target variable has less than 2 classes")
             raise ValueError("Target variable must have at least 2 classes")
-        """
-        Run complete De Prado feature selection pipeline.
-        
-        Args:
-            X: Feature matrix
-            y: Target labels
-            
-        Returns:
-            List of selected feature names
-        """
-        tprint_info("🚀 Starting De Prado Feature Selection Engine...")
-        tprint_info(f"📊 Input: {len(X.columns)} features, {len(X)} samples")
         
         # 1. Cluster Features (Redundancy Control)
         tprint_info("🔍 Step 1: Finding optimal feature clusters (ONC)...")
@@ -508,11 +530,6 @@ class DePradoFeatureEngine:
             
             model.set_params(class_weight=class_weight)
             
-            # Check for empty data
-            if X.empty or len(X) == 0:
-                tprint_error("❌ Empty feature matrix provided to De Prado engine")
-                raise ValueError("Empty feature matrix")
-            
             tprint_info(f"🔄 Training {self.n_estimators} trees...")
             model.fit(X, y)
             
@@ -522,118 +539,121 @@ class DePradoFeatureEngine:
         except Exception as e:
             tprint_error(f"❌ ExtraTrees training failed: {e}")
             raise
-            
-        except Exception as e:
-            tprint_error(f"❌ ExtraTrees training failed: {e}")
-            raise
         
         # 3. Collect Advanced Metrics
-        tprint_info("📈 Step 3: Computing advanced MDI metrics...")
+        tprint_info("📈 Step 3: Computing advanced metrics (MDI, IC, Entropy)...")
         metrics_start = time.time()
         
-        # Get feature names
         feature_names = X.columns.tolist()
         
-        # Compute MDI metrics
+        # 3a. MDI metrics
         mdi_metrics = self._compute_advanced_mdi(model, feature_names)
         gain = pd.Series(mdi_metrics["gain"])
         cover = pd.Series(mdi_metrics["cover"])
         
-        # Compute hierarchy (Root Proximity)
-        tprint_info("🌳 Computing tree hierarchy metrics...")
+        # 3b. Hierarchy (Root Proximity)
         depth = self._get_tree_hierarchy(model, feature_names)
+        
+        # 3c. Information Coefficient (Spearman)
+        tprint_info("📊 Computing Information Coefficient (Spearman IC)...")
+        ic_scores = {}
+        for col in X.columns:
+            try:
+                ic_val, _ = spearmanr(X[col], y)
+                ic_scores[col] = abs(ic_val) if not np.isnan(ic_val) else 0.0
+            except Exception:
+                ic_scores[col] = 0.0
+        ic_series = pd.Series(ic_scores)
+        
+        # 3d. Shannon Entropy
+        tprint_info("📊 Computing Shannon Entropy (10-quantile discretization)...")
+        entropy_scores = {}
+        for col in X.columns:
+            try:
+                # Discretize into 10 quantiles
+                discretized = pd.qcut(X[col], q=10, duplicates='drop')
+                if discretized.nunique() < 2:
+                    entropy_scores[col] = 0.0
+                else:
+                    value_counts = discretized.value_counts(normalize=True)
+                    entropy_scores[col] = entropy(value_counts)
+            except Exception:
+                entropy_scores[col] = 0.0
+        ent_series = pd.Series(entropy_scores)
         
         metrics_time = time.time() - metrics_start
         tprint_info(f"⏱️  Metrics computation completed in {metrics_time:.2f}s")
-        tprint_info(f"📊 Gain range: {gain.min():.6f} - {gain.max():.6f}")
-        tprint_info(f"📊 Depth range: {depth.min():.1f} - {depth.max():.1f}")
         
         # 4. Normalize and Score
         tprint_info("⚖️  Step 4: Computing composite scores...")
         scoring_start = time.time()
         
-        # Normalize Gain (higher is better)
-        gain_range = gain.max() - gain.min()
-        if gain_range > EPS:
-            score_gain = (gain - gain.min()) / gain_range
-        else:
-            tprint_warning("⚠️  All gain values are equal, using uniform scores")
-            score_gain = pd.Series(1.0, index=gain.index)
-        
-        # Normalize Depth (lower depth = higher proximity to root = better)
-        depth_range = depth.max() - depth.min()
-        if depth_range > EPS:
-            score_depth = (depth.max() - depth) / depth_range
-        else:
-            tprint_warning("⚠️  All depth values are equal, using uniform scores")
-            score_depth = pd.Series(1.0, index=depth.index)
+        def normalize_series(s, invert=False):
+            s_range = s.max() - s.min()
+            if s_range > EPS:
+                if invert:
+                    return (s.max() - s) / s_range
+                return (s - s.min()) / s_range
+            return pd.Series(1.0, index=s.index)
+
+        score_gain = normalize_series(gain)
+        score_depth = normalize_series(depth, invert=True)
+        score_ic = normalize_series(ic_series)
+        score_ent = normalize_series(ent_series)
         
         # Composite Score: weighted combination
-        composite = (self.gain_weight * score_gain) + (self.depth_weight * score_depth)
+        composite = (
+            self.gain_weight * score_gain + 
+            self.depth_weight * score_depth + 
+            self.ic_weight * score_ic + 
+            self.entropy_weight * score_ent
+        )
         
         scoring_time = time.time() - scoring_start
-        tprint_info(f"⏱️  Scoring completed in {scoring_time:.2f}s")
-        tprint_info(f"⚖️  Weights: Gain={self.gain_weight:.1f}, Depth={self.depth_weight:.1f}")
-        tprint_info(f"📊 Composite score range: {composite.min():.3f} - {composite.max():.3f}")
+        tprint_info(f"⏱️  Scoring completed: Gain={self.gain_weight:.1f}, Depth={self.depth_weight:.1f}, IC={self.ic_weight:.1f}, Ent={self.entropy_weight:.1f}")
         
         # 5. Store Results
-        tprint_info("💾 Step 5: Storing feature statistics...")
-        
         self.feature_stats_ = pd.DataFrame({
             "Cluster": cluster_map,
             "Gain": gain,
-            "Cover": cover,
+            "IC": ic_series,
+            "Entropy": ent_series,
             "MeanDepth": depth,
             "GainScore": score_gain,
             "DepthScore": score_depth,
+            "ICScore": score_ic,
+            "EntropyScore": score_ent,
             "CompositeScore": composite
         })
         
         # 6. Intra-Cluster Selection: Pick the "King" of each cluster
-        tprint_info("👑 Step 6: Selecting king features from each cluster...")
+        tprint_info(f"👑 Step 6: Picking kings (use_entropy_as_king={use_entropy_as_king})...")
         selection_start = time.time()
         
         selected_features = []
         cluster_summary = {}
-        total_clusters_processed = 0
-        skipped_clusters = 0
-        cluster_summary = {}
         
         for cluster_id in sorted(cluster_map.unique()):
             cluster_features = self.feature_stats_[self.feature_stats_["Cluster"] == cluster_id]
-            
-            if len(cluster_features) == 0:
-                continue
-            
-            total_clusters_processed += 1
-            
-            # Skip clusters that are too small (optional)
-            if len(cluster_features) < self.min_cluster_size and len(cluster_features) < len(X.columns) * 0.05:
-                tprint_warning(f"   Skipping small cluster {cluster_id} ({len(cluster_features)} features)")
-                skipped_clusters += 1
-                continue
+            if len(cluster_features) == 0: continue
             
             # Select best feature from cluster
-            best_feature = cluster_features.loc[cluster_features["CompositeScore"].idxmax()]
+            if use_entropy_as_king:
+                # Sole criterion is entropy
+                best_feature = cluster_features.loc[cluster_features["EntropyScore"].idxmax()]
+            else:
+                # Use composite score
+                best_feature = cluster_features.loc[cluster_features["CompositeScore"].idxmax()]
+            
             selected_features.append(best_feature.name)
             
             cluster_summary[cluster_id] = {
                 "n_features": len(cluster_features),
                 "best_feature": best_feature.name,
-                "best_score": best_feature["CompositeScore"],
-                "avg_gain": cluster_features["Gain"].mean(),
-                "avg_depth": cluster_features["MeanDepth"].mean()
+                "best_score": best_feature["CompositeScore"] if not use_entropy_as_king else best_feature["EntropyScore"]
             }
             
-            tprint_info(f"   Cluster {cluster_id}: {len(cluster_features)} → {best_feature.name} (score: {best_feature['CompositeScore']:.3f})")
-            
-            cluster_summary[cluster_id] = {
-                'n_features': len(cluster_features),
-                'best_feature': best_feature.name,
-                'best_score': best_feature['CompositeScore'],
-                'avg_gain': cluster_features['Gain'].mean(),
-                'avg_depth': cluster_features['MeanDepth'].mean()
-            }
+            tprint_info(f"   Cluster {cluster_id}: {len(cluster_features)} → {best_feature.name}")
         
         self.selected_features_ = selected_features
         
@@ -644,12 +664,13 @@ class DePradoFeatureEngine:
         selection_time = time.time() - selection_start
         total_time = time.time() - start_time
         
-        # 7. Report Results
         tprint_success(f"✅ De Prado Selection completed in {total_time:.2f}s")
-        tprint_success(f"📊 Selected {len(selected_features)}/{len(X.columns)} features ({len(selected_features)/len(X.columns):.1%})")
-        tprint_info(f"👑 Clusters processed: {total_clusters_processed}, Skipped: {skipped_clusters}")
-        tprint_info(f"⏱️  Feature selection: {selection_time:.2f}s")
-        tprint_info(f"📊 Average cluster size: {np.mean([s['n_features'] for s in cluster_summary.values()]):.1f}")
+        tprint_success(f"📊 Selected {len(selected_features)}/{len(X.columns)} features")
+        
+        # --- UPDATE CACHE ---
+        if cache_key:
+            self._CACHE[cache_key] = selected_features
+            tprint_info(f"⚡ [DePrado] Caching results for future use")
         
         return selected_features
     

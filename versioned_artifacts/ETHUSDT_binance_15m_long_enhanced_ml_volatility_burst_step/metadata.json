@@ -1,8 +1,8 @@
 {
   "versions": {
     "enhanced_ml_volatility_burst_prediction_15m": {
-      "created_at": "2026-01-11T15:51:43.509013",
-      "num_rows": 142619,
+      "created_at": "2026-01-14T19:49:56.660055",
+      "num_rows": 175202,
       "num_columns": 24,
       "columns": [
         "timestamp",
@@ -10,6 +10,7 @@
         "specialist_probability",
         "target_label",
         "feature_volume_price_trend",
+        "feature_volatility_depth_resid",
         "feature_rsi_10",
         "feature_rsi_20",
         "feature_rsi_40",
@@ -27,8 +28,7 @@
         "feature_vp_efficiency",
         "feature_roll_vol",
         "feature_sig_0",
-        "feature_sig_1",
-        "feature_sig_2"
+        "feature_sig_1"
       ]
     }
   },
@@ -41,5 +41,5 @@
     "direction": "long",
     "model": "enhanced_ml_volatility_burst_step"
   },
-  "updated_at": "2026-01-14T01:44:48.028891"
+  "updated_at": "2026-01-14T21:15:14.899723"
 }

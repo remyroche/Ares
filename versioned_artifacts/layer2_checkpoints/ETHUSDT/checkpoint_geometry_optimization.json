@@ -1,0 +1,15 @@
+{
+  "step_name": "geometry_optimization",
+  "step_index": 12,
+  "timestamp": "20260114_201237",
+  "symbol": "ETHUSDT",
+  "config_hash": "40cb201e3be3",
+  "data_keys": [
+    "df",
+    "engineered_df",
+    "causal_events_df",
+    "causal_geometries",
+    "causal_selected_features"
+  ],
+  "json_data": {}
+}

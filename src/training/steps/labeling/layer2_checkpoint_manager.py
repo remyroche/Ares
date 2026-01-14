@@ -417,6 +417,36 @@ class Layer2CheckpointManager:
         
         return sorted(checkpoints, key=lambda x: x[1].step_index)
     
+    def get_auto_resume_step(self, symbol: str) -> str:
+        """
+        Automatically determine the best step to resume execution from.
+        Finds the latest valid checkpoint and returns the NEXT step in the sequence.
+        
+        Args:
+            symbol: Trading symbol
+            
+        Returns:
+            Name of the step to start/resume execution from. 
+            Returns 'data_loading' (first step) if no checkpoints exist.
+        """
+        latest = self.get_latest_checkpoint(symbol)
+        
+        if not latest:
+            return self.SUBSTEPS[0]  # data_loading
+            
+        step_name, metadata = latest
+        current_idx = metadata.step_index
+        
+        # If we have the last step, we might want to re-run it or just return it?
+        # Typically we want to run the NEXT step.
+        if current_idx < len(self.SUBSTEPS) - 1:
+            next_step = self.SUBSTEPS[current_idx + 1]
+            logger.info(f"🔄 Auto-resume: Found checkpoint '{step_name}', resuming from '{next_step}'")
+            return next_step
+        else:
+            logger.info(f"✅ Pipeline completed (found final checkpoint '{step_name}'). Re-running final step.")
+            return step_name
+
     def get_resume_point(self, symbol: str, requested_step: str) -> Optional[str]:
         """
         Determine the actual step to resume from based on available checkpoints.

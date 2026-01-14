@@ -6,6 +6,11 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import pandas as pd
 import numpy as np
 import logging
+import hashlib
+from pandas.util import hash_pandas_object
+
+# Global cache to prevent redundant MTF generation
+_MTF_CACHE = {}
 try:
     from scipy.signal import hilbert
 except ImportError:
@@ -814,6 +819,28 @@ def create_meta_features(
     import gc
     start_time = time.time()
     
+    # --- CACHE CHECK ---
+    try:
+        # Hash inputs (df index + close column specific values for speed + config)
+        # Using hash_pandas_object on full DF might be slow but 20s vs 1s is worth it.
+        # Let's use index + shape + strict content hash of 'close' to be safe & fast
+        h_idx = hashlib.md5(hash_pandas_object(df.index).values.tobytes()).hexdigest()
+        h_close = "no_close"
+        if 'close' in df.columns:
+            h_close = hashlib.md5(hash_pandas_object(df['close']).values.tobytes()).hexdigest()
+        
+        # Hash config
+        config_str = f"{len(df)}_{len(signals)}_{windows}_{volume_available}_{include_raw_signals}_{use_kalman}_{horizon_bars}_{downsample_long_horizon}"
+        cache_key = f"{h_idx}_{h_close}_{config_str}"
+        
+        if cache_key in _MTF_CACHE:
+            print(f"⚡ [MTF Cache] Returning pre-computed features for {len(df)} rows")
+            return _MTF_CACHE[cache_key].copy()
+            
+    except Exception as e:
+        print(f"⚠️ Cache check failed: {e}")
+        cache_key = None
+    
     # Add progress tracking
     print(f"🔍 Starting MTF feature generation for {len(df)} rows...")
     
@@ -871,7 +898,7 @@ def create_meta_features(
             print(f"⚠️  Downsampling skipped due to error: {exc}")
 
     # Memory optimization: limit data size for feature generation
-    MAX_FEATURE_ROWS = 20000  # Further reduced to prevent memory issues
+    MAX_FEATURE_ROWS = 1_000_000  # Increased to prevent index mismatches in chunked runs
     if len(df) > MAX_FEATURE_ROWS:
         print(f"🧠 Limiting feature generation from {len(df)} to {MAX_FEATURE_ROWS} rows for memory efficiency")
         df = df.tail(MAX_FEATURE_ROWS)
@@ -1669,6 +1696,8 @@ def create_meta_features(
 
     if isinstance(original_index, pd.DatetimeIndex) and not features.index.equals(original_index):
         features = features.reindex(original_index, method="ffill").fillna(0.0)
+        # Update cached length so subsequent alignment helpers use the expanded index
+        n_features = len(features)
 
     # ===== LEGACY SUPPORT / CROSS-TIMEFRAME SPECIFIC =====
     # Add back some key legacy features if not covered
@@ -1692,5 +1721,13 @@ def create_meta_features(
     # Memory cleanup
     gc.collect()
     print(f"🧹 Memory cleanup completed")
+
+    # --- SAVE TO CACHE ---
+    if cache_key:
+        try:
+            _MTF_CACHE[cache_key] = features.copy()
+            print(f"💾 [MTF Cache] Saved {len(features.columns)} features to cache")
+        except Exception:
+            pass
 
     return features

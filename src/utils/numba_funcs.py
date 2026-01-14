@@ -13,6 +13,9 @@ except ImportError:
             return func
         return decorator
 
+# Small epsilon to prevent division by zero in Numba JIT functions
+_EPS = 1e-12
+
 @jit(nopython=True)
 def _numba_generate_dollar_bars(times, opens, highs, lows, closes, vols, thresholds):
     """

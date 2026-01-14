@@ -1,0 +1,272 @@
+{
+  "log_ret": [
+    "log_ret",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "adx_trend_strength_w10": [
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "high_lag_5",
+    "adx_trend_strength_w10",
+    "volatility_1d",
+    "ease_of_movement_w10",
+    "low_mean_5",
+    "vwap_zscore_w10",
+    "dist_to_long_proxy",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "drawdown_w50": [
+    "ehlers_fisher_transform_w50",
+    "drawdown_w50",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "dist_to_long_proxy": [
+    "ehlers_fisher_transform_w50",
+    "dist_to_long_proxy",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "volume": [
+    "volume",
+    "log_ret"
+  ],
+  "TARGET_RET_1": [
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "low_mean_5",
+    "cci_w50",
+    "TARGET_RET_1",
+    "open_std_5",
+    "TARGET_Sharpe"
+  ],
+  "open_std_5": [
+    "low_std_5",
+    "close",
+    "log_ret",
+    "volatility_1d",
+    "low_mean_5",
+    "drawdown_w50",
+    "force_index_w20",
+    "volatility_5d",
+    "smoothed_return",
+    "open_std_5",
+    "open",
+    "high_std_5"
+  ],
+  "high_lag_5": [
+    "low_std_5",
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "high_lag_5",
+    "low_mean_5",
+    "drawdown_w50",
+    "vwap_zscore_w10",
+    "force_index_w20",
+    "volume",
+    "smoothed_return",
+    "cci_w50",
+    "TARGET_RET_1",
+    "open_std_5",
+    "open",
+    "high_std_5",
+    "close"
+  ],
+  "vwap_zscore_w10": [
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "low_mean_5",
+    "vwap_zscore_w10",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "force_index_w20": [
+    "low_mean_5",
+    "log_ret",
+    "force_index_w20",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "open": [
+    "open",
+    "close"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_RET_1",
+    "open",
+    "close",
+    "TARGET_Sharpe"
+  ],
+  "low_std_5": [
+    "log_ret",
+    "drawdown_w50",
+    "dist_to_long_proxy",
+    "TARGET_RET_1",
+    "open_std_5",
+    "high_lag_5",
+    "vwap_zscore_w10",
+    "force_index_w20",
+    "open",
+    "TARGET_Sharpe",
+    "low_std_5",
+    "volatility_5d",
+    "smoothed_return",
+    "open_std_10",
+    "high_std_5",
+    "ehlers_fisher_transform_w50",
+    "volatility_1d",
+    "low_mean_5",
+    "close"
+  ],
+  "volatility_5d": [
+    "smoothed_return",
+    "open",
+    "close"
+  ],
+  "smoothed_return": [
+    "log_ret",
+    "force_index_w20",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "open_std_10": [
+    "low_std_5",
+    "close",
+    "ehlers_fisher_transform_w50",
+    "low_mean_5",
+    "high_lag_5",
+    "drawdown_w50",
+    "vwap_zscore_w10",
+    "dist_to_long_proxy",
+    "force_index_w20",
+    "volatility_5d",
+    "volume",
+    "smoothed_return",
+    "open_std_10",
+    "cci_w50",
+    "open_std_5",
+    "open",
+    "high_std_5"
+  ],
+  "cci_w50": [
+    "ehlers_fisher_transform_w50",
+    "low_mean_5",
+    "log_ret",
+    "drawdown_w50",
+    "vwap_zscore_w10",
+    "dist_to_long_proxy",
+    "force_index_w20",
+    "smoothed_return",
+    "cci_w50",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "ease_of_movement_w20": [
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "ease_of_movement_w10",
+    "low_mean_5",
+    "drawdown_w50",
+    "dist_to_long_proxy",
+    "force_index_w20",
+    "smoothed_return",
+    "cci_w50",
+    "TARGET_RET_1",
+    "ease_of_movement_w20",
+    "open",
+    "close"
+  ],
+  "high_std_5": [
+    "low_std_5",
+    "close",
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "low_mean_5",
+    "high_lag_5",
+    "volatility_1d",
+    "dist_to_long_proxy",
+    "volatility_5d",
+    "smoothed_return",
+    "open_std_10",
+    "TARGET_RET_1",
+    "open_std_5",
+    "open",
+    "high_std_5"
+  ],
+  "ehlers_fisher_transform_w50": [
+    "ehlers_fisher_transform_w50",
+    "low_mean_5",
+    "drawdown_w50",
+    "vwap_zscore_w10",
+    "smoothed_return",
+    "cci_w50",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "volatility_1d": [
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "low_mean_5",
+    "drawdown_w50",
+    "smoothed_return",
+    "TARGET_RET_1"
+  ],
+  "ease_of_movement_w10": [
+    "low_std_5",
+    "close",
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "ease_of_movement_w10",
+    "low_mean_5",
+    "drawdown_w50",
+    "vwap_zscore_w10",
+    "force_index_w20",
+    "smoothed_return",
+    "cci_w50",
+    "TARGET_RET_1",
+    "ease_of_movement_w20",
+    "high_std_5"
+  ],
+  "low_mean_5": [
+    "low_std_5",
+    "close",
+    "ehlers_fisher_transform_w50",
+    "log_ret",
+    "high_lag_5",
+    "low_mean_5",
+    "TARGET_RET_1",
+    "open",
+    "high_std_5"
+  ],
+  "adx_trend_strength_w50": [
+    "volatility_1d",
+    "log_ret",
+    "high_lag_5",
+    "low_mean_5",
+    "force_index_w20",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "adx_trend_strength_w50",
+    "open"
+  ],
+  "close": [
+    "open",
+    "close"
+  ]
+}

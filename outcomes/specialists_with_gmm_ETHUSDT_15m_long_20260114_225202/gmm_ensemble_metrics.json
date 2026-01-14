@@ -1,0 +1,69 @@
+{
+  "ml_ensemble_performance": {},
+  "model_comparison": {},
+  "feature_analysis": {
+    "total_features": 50,
+    "feature_types": {
+      "volatility": 15,
+      "trend": 7,
+      "momentum": 7,
+      "volume": 8,
+      "price": 6
+    },
+    "feature_diversity": {
+      "total_features": 50,
+      "type_distribution": {
+        "volatility": 15,
+        "trend": 7,
+        "momentum": 7,
+        "volume": 8,
+        "price": 6
+      },
+      "type_entropy": 1.5460935051792704,
+      "correlation_diversity": 0.8106133318161681,
+      "diversity_score": 1.1783534184977191
+    },
+    "correlation_analysis": {
+      "mean_correlation": 0.10173684728388775,
+      "std_correlation": 0.2737171255609904,
+      "max_correlation": 0.9453729783536048,
+      "min_correlation": 7.128513998781685e-05,
+      "high_correlation_count": 55,
+      "moderate_correlation_count": 273,
+      "low_correlation_count": 897,
+      "total_pairs": 1225,
+      "correlation_distribution": {
+        "high": 0.044897959183673466,
+        "moderate": 0.22285714285714286,
+        "low": 0.7322448979591837,
+        "mean_abs_correlation": 0.10173684728388775,
+        "high_correlation_pairs": 55,
+        "moderate_correlation_pairs": 273,
+        "low_correlation_pairs": 897
+      }
+    },
+    "uniqueness_metrics": {
+      "average_uniqueness": 0.8106133318161681,
+      "uniqueness_std": 0.06167453102199166,
+      "high_uniqueness_count": 23,
+      "medium_uniqueness_count": 27,
+      "low_uniqueness_count": 0,
+      "uniqueness_distribution": {
+        "high": 0.46,
+        "medium": 0.54,
+        "low": 0.0
+      }
+    }
+  },
+  "training_summary": {
+    "training_time_seconds": 600.49,
+    "data_shape": [
+      17619,
+      50
+    ],
+    "specialists_trained": 1,
+    "successful_specialists": 1,
+    "target_balance": "0.250",
+    "memory_usage_mb": 6.855537414550781
+  }
+}

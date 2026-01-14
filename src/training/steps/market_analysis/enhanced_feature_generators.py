@@ -442,6 +442,10 @@ class EnhancedFeaturePipeline:
             return enhanced_df
         else:
             return pd.DataFrame(index=df.index)
+    
+    def generate_feature_df(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Generate features using the enhanced pipeline with default specialist type."""
+        return self.generate_enhanced_features(df, 'general', config)
 
 class MIOptimizedFeatureGenerator:
     """Generate features specifically optimized for MI improvement."""

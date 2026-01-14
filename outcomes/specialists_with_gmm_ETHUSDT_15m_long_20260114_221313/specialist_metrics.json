@@ -1,0 +1,51 @@
+{
+  "enhanced_ml_momentum_persistence_step": {
+    "coverage": {
+      "total_rows": 175202,
+      "non_null_rows": "175202",
+      "coverage_ratio": 1.0,
+      "start_date": "1970-01-01 00:00:00",
+      "end_date": "2026-01-03 23:30:00",
+      "date_range_days": 20456
+    },
+    "performance": {
+      "prediction_mean": 0.018829693724957478,
+      "prediction_std": 0.13592366170123374,
+      "prediction_min": "0",
+      "prediction_max": "1",
+      "unique_predictions": 2,
+      "is_constant": false,
+      "probability_mean": 0.5016325597945203,
+      "probability_std": 0.011945253839090049,
+      "probability_min": 0.5,
+      "probability_max": 0.6343951625606766,
+      "probability_range": 0.13439516256067663
+    },
+    "columns": [
+      "specialist_prediction",
+      "specialist_probability"
+    ],
+    "memory_usage_mb": 4.0100555419921875
+  },
+  "enhanced_ml_risk_regime_step": {
+    "coverage": {
+      "total_rows": 1403,
+      "non_null_rows": "1403",
+      "coverage_ratio": 1.0,
+      "start_date": "2025-12-05 00:15:00",
+      "end_date": "2026-01-03 23:15:00",
+      "date_range_days": 29
+    },
+    "performance": {
+      "risk_score_mean": 0.29213622376527115,
+      "risk_score_std": 0.175922437941237,
+      "risk_score_min": 0.0,
+      "risk_score_max": 1.0,
+      "risk_score_range": 1.0
+    },
+    "columns": [
+      "risk_score"
+    ],
+    "memory_usage_mb": 0.0214080810546875
+  }
+}

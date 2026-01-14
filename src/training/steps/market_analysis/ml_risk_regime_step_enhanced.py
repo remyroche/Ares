@@ -330,9 +330,10 @@ class EnhancedMLRiskRegimeStep(BaseStep):
             'direction': config.get('direction', 'long')
         }
 
-        # Get market data
+        # Get market data - load full data to match other specialists
+        config_without_filters = {k: v for k, v in config.items() if k not in ['market_data', 'start_date', 'end_date']}
         market_data, _source = self.load_market_data_or_fail(
-            config, pipeline_state, allow_config_override=True
+            config_without_filters, {}, allow_config_override=True
         )
 
         if market_data is None or market_data.empty:

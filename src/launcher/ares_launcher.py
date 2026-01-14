@@ -642,6 +642,7 @@ Examples:
     
     parser.add_argument(
         '--layer2-resume-from',
+        '--start-from-checkpoint',
         type=str,
         default=None,
         choices=layer2_substep_choices,
@@ -1212,13 +1213,36 @@ async def main():
     if getattr(args, 'labeling_hpo_start_at', None) is not None:
         config['labeling_hpo_start_at'] = args.labeling_hpo_start_at
 
-    # Optional: execute specific Layer 2 substep (checkpoint system)
-    if getattr(args, 'layer2_resume_from', None) is not None:
-        config['layer2_resume_from'] = args.layer2_resume_from
+    # Optional: execute specific Layer 2 substep (checkpoint system) & Auto-Resume
+    disable_checkpoints = getattr(args, 'layer2_disable_checkpoints', False)
+    if disable_checkpoints:
+        config['layer2_disable_checkpoints'] = True
+    else:
+        # 1. Check for manual resume argument
+        resume_step = getattr(args, 'layer2_resume_from', None)
+        
+        # 2. If not manual, try Auto-Resume
+        if resume_step is None and args.symbol:
+            try:
+                # Lazy import to avoid circular dependencies or overhead
+                from src.training.steps.labeling.layer2_checkpoint_manager import get_checkpoint_manager
+                mgr = get_checkpoint_manager()
+                auto_step = mgr.get_auto_resume_step(args.symbol)
+                
+                # Only set if we stick to a mid-stream step (skip 'data_loading' which is default start)
+                if auto_step != 'data_loading':
+                    resume_step = auto_step
+                    print(f"🔄 Auto-resume: Configuring pipeline to start from '{resume_step}'")
+            except Exception as e:
+                # Be robust; if auto-resume fails, just start from scratch
+                logging.getLogger(__name__).warning(f"Auto-resume check failed: {e}")
+
+        # 3. Apply to config
+        if resume_step:
+            config['layer2_resume_from'] = resume_step
+
     if getattr(args, 'layer2_delete_from', None) is not None:
         config['layer2_delete_from'] = args.layer2_delete_from
-    if getattr(args, 'layer2_disable_checkpoints', False):
-        config['layer2_disable_checkpoints'] = True
 
     # Hard-cap feature selection at ~200 features for full and blank modes
     if args.execution_mode in ("full", "blank"):
@@ -1258,7 +1282,7 @@ async def main():
         target_steps: List[str] = []
         if args.step:
             target_steps = [args.step]
-        # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+        elif args.steps:
             target_steps = [s.strip() for s in args.steps.split(',') if s.strip()]
         elif args.command:
             target_steps = [args.command]

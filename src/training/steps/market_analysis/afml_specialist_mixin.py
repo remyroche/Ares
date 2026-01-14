@@ -244,8 +244,12 @@ class AFMLSpecialistMixin:
             )
 
             # 4. Centralized Training
+            # Fast fail if insufficient events for training
+            if len(X) < 100:
+                raise ValueError(f"Insufficient events for training specialist {clean_name}: {len(X)} < 100")
+
             tprint_info(f"   [Phase 5/6] Training ExtraTrees Model...")
-            
+
             # Calculate dynamic purge length based on labeling horizon
             # Default to 24h if unclear to be safe
             horizon_bars = config.get('lookforward_bars', 35)
@@ -283,10 +287,13 @@ class AFMLSpecialistMixin:
             # 5. Output Construction
             tprint_info(f"   [Phase 6/6] Finalizing Output & Aligning Probs...")
             oof_probs = training_result.oof_predictions
-            # Align oof_probs (bar-based) to df.index (15m-based)
-            final_probs = oof_probs.reindex(df.index, method='ffill').fillna(0.5)
-            final_preds = (final_probs >= 0.5).astype(int)
-            
+            final_probs, final_preds = self._align_probabilities_to_index(
+                oof_probs=oof_probs,
+                target_index=df.index,
+                neutral_value=0.5,
+                threshold=config.get("binary_threshold", 0.5),
+            )
+
             # Labels also need to be aligned to df.index
             full_labels = pd.Series(0, index=df.index)
             # y is indexed by t_events, which are part of anchor_df index
@@ -324,29 +331,69 @@ class AFMLSpecialistMixin:
             tprint_error(f"[{self.__class__.__name__}] execute_standard_specialist_logic failed: {e}")
             return {"success": False, "error": str(e)}
 
-    def prepare_specialist_data(
+    def _align_probabilities_to_index(
         self,
-        market_data: pd.DataFrame,
-        feature_df: pd.DataFrame,
-        config: Dict[str, Any],
-        filter_type: str = 'price',
-        pt_sl_config_key: Optional[str] = None,
-        default_pt_sl: List[float] = [2.0, 1.0]
-    ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
-        tprint_info(f"[{self.__class__.__name__}] prepare_specialist_data start filter={filter_type}")
+        oof_probs: Optional[pd.Series],
+        target_index: pd.Index,
+        neutral_value: float = 0.5,
+        threshold: float = 0.5,
+    ) -> Tuple[pd.Series, pd.Series]:
+        """Align OOF probabilities to the full market-data index without biasing direction."""
+        if not isinstance(target_index, pd.Index):
+            raise ValueError("target_index must be a pandas Index")
+
+        if oof_probs is None:
+            aligned_probs = pd.Series(neutral_value, index=target_index)
+            binary = pd.Series(0, index=target_index, dtype=int)
+            return aligned_probs, binary
+
+        if not isinstance(oof_probs, pd.Series):
+            oof_probs = pd.Series(oof_probs)
+
+        aligned_probs = oof_probs.reindex(target_index)
+        missing_mask = aligned_probs.isna()
+
+        if missing_mask.all():
+            aligned_probs = pd.Series(neutral_value, index=target_index)
+            binary = pd.Series(0, index=target_index, dtype=int)
+            return aligned_probs, binary
+
+        aligned_probs = aligned_probs.fillna(neutral_value)
+        binary = pd.Series(0, index=target_index, dtype=int)
+        confident_mask = ~missing_mask
         symbol = config.get('symbol', 'BTCUSDT')
         exchange = config.get('exchange', 'binance')
         timeframe = config.get('timeframe', '15m')
-        cache_key_base = (symbol, exchange, timeframe)
+        
+        # [Fix] Explicitly set specialist context to avoid dumping into 'analyst' directory
+        specialist_name = self.__class__.__name__
+        # Clean up name: EnhancedMLMomentumPersistenceStep -> momentum_persistence
+        clean_name = specialist_name.lower().replace('step', '').replace('enhancedml', '').replace('enhanced', '')
+        if clean_name.startswith('_'): clean_name = clean_name[1:]
+        
+        self.set_context(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            model=clean_name
+        )
+        
+        cache_key = (symbol, exchange, timeframe)
 
-        # 1. Determine Anchor
-        specialist_type = config.get('specialist_type', self.specialist_type if hasattr(self, 'specialist_type') else SpecialistType.VOLUME_FORCE)
-        anchor_type = self._get_anchor_type(specialist_type)
+        # 1. Load Market Data
+        tprint_info(f"   [Phase 1/6] Loading Market Data...")
+        if hasattr(self, '_load_market_data_with_cache'):
+            df, market_source = self._load_market_data_with_cache(config, timeframe)
+        elif hasattr(self, '_load_market_data'):
+            df = self._load_market_data(symbol, exchange, timeframe)
+            market_source = "loaded"
+        self._anchor_type = config.get('anchor_type', self._get_anchor_type(specialist_type))
         # Use dollar as context for range, and range as context for dollar
-        context_type = 'range' if anchor_type == 'dollar' else 'dollar'
+        context_type = 'range' if self._anchor_type == 'dollar' else 'dollar'
 
         # 2. Generate Bars (with Caching)
-        tprint_info(f"      [Sub-Phase 4.1] Generating {anchor_type} & {context_type} bars...")
+        tprint_info(f"      [Sub-Phase 4.1] Generating {self._anchor_type} & {context_type} bars...")
+        cache_key_anchor = (*cache_key_base, self._anchor_type)
         cache_key_anchor = (*cache_key_base, anchor_type)
         cache_key_context = (*cache_key_base, context_type)
 
@@ -401,6 +448,11 @@ class AFMLSpecialistMixin:
         if len(t_events) == 0:
             tprint_error(f"      [Prepare] t_events is empty after sampling!")
             return pd.DataFrame(), pd.Series(), pd.Series()
+
+        # Debug logging for investigation
+        tprint_info(f"   [Debug] t_events count: {len(t_events)}")
+        tprint_info(f"   [Debug] anchor_df shape: {anchor_df.shape}, context_df shape: {context_df.shape if context_df is not None else None}")
+        tprint_info(f"   [Debug] X_combined shape: {X_combined.shape}")
 
         min_event_samples = int(config.get('min_event_samples', 100))
         if len(t_events) < min_event_samples:

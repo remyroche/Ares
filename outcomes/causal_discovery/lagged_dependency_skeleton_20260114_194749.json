@@ -1,0 +1,270 @@
+{
+  "smoothed_return": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "force_index_w20",
+    "log_ret",
+    "close"
+  ],
+  "vwap_zscore_w10": [
+    "TARGET_RET_1",
+    "open",
+    "log_ret",
+    "vwap_zscore_w10",
+    "low_mean_5",
+    "ehlers_fisher_transform_w50",
+    "close"
+  ],
+  "low_std_5": [
+    "smoothed_return",
+    "vwap_zscore_w10",
+    "low_std_5",
+    "volatility_5d",
+    "high_lag_5",
+    "open_std_10",
+    "open",
+    "volatility_1d",
+    "force_index_w20",
+    "high_std_5",
+    "log_ret",
+    "ehlers_fisher_transform_w50",
+    "open_std_5",
+    "dist_to_long_proxy",
+    "low_mean_5",
+    "TARGET_RET_1",
+    "TARGET_Sharpe",
+    "close",
+    "drawdown_w50"
+  ],
+  "volatility_5d": [
+    "smoothed_return",
+    "close",
+    "open"
+  ],
+  "high_lag_5": [
+    "smoothed_return",
+    "open_std_5",
+    "volume",
+    "open",
+    "TARGET_RET_1",
+    "force_index_w20",
+    "high_std_5",
+    "drawdown_w50",
+    "log_ret",
+    "vwap_zscore_w10",
+    "low_mean_5",
+    "low_std_5",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "high_lag_5",
+    "cci_w50"
+  ],
+  "open_std_10": [
+    "open_std_10",
+    "open_std_5",
+    "smoothed_return",
+    "volume",
+    "open",
+    "force_index_w20",
+    "high_std_5",
+    "dist_to_long_proxy",
+    "drawdown_w50",
+    "vwap_zscore_w10",
+    "low_mean_5",
+    "low_std_5",
+    "volatility_5d",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "high_lag_5",
+    "cci_w50"
+  ],
+  "open": [
+    "close",
+    "open"
+  ],
+  "volatility_1d": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "log_ret",
+    "low_mean_5",
+    "ehlers_fisher_transform_w50",
+    "drawdown_w50"
+  ],
+  "force_index_w20": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "force_index_w20",
+    "log_ret",
+    "low_mean_5",
+    "close"
+  ],
+  "high_std_5": [
+    "open_std_10",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "volatility_1d",
+    "high_lag_5",
+    "high_std_5",
+    "dist_to_long_proxy",
+    "log_ret",
+    "low_mean_5",
+    "low_std_5",
+    "volatility_5d",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "open_std_5"
+  ],
+  "log_ret": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "log_ret",
+    "close"
+  ],
+  "adx_trend_strength_w10": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "volatility_1d",
+    "dist_to_long_proxy",
+    "log_ret",
+    "ease_of_movement_w10",
+    "low_mean_5",
+    "vwap_zscore_w10",
+    "adx_trend_strength_w10",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "high_lag_5"
+  ],
+  "ehlers_fisher_transform_w50": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "vwap_zscore_w10",
+    "low_mean_5",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "drawdown_w50",
+    "cci_w50"
+  ],
+  "open_std_5": [
+    "smoothed_return",
+    "open",
+    "volatility_1d",
+    "force_index_w20",
+    "high_std_5",
+    "drawdown_w50",
+    "log_ret",
+    "low_mean_5",
+    "low_std_5",
+    "volatility_5d",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "open_std_5"
+  ],
+  "dist_to_long_proxy": [
+    "TARGET_RET_1",
+    "open",
+    "dist_to_long_proxy",
+    "ehlers_fisher_transform_w50",
+    "close"
+  ],
+  "ease_of_movement_w10": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "force_index_w20",
+    "high_std_5",
+    "log_ret",
+    "ease_of_movement_w20",
+    "vwap_zscore_w10",
+    "ease_of_movement_w10",
+    "low_mean_5",
+    "low_std_5",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "drawdown_w50",
+    "cci_w50"
+  ],
+  "low_mean_5": [
+    "TARGET_RET_1",
+    "open",
+    "high_std_5",
+    "log_ret",
+    "low_mean_5",
+    "low_std_5",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "high_lag_5"
+  ],
+  "adx_trend_strength_w50": [
+    "adx_trend_strength_w50",
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "volatility_1d",
+    "force_index_w20",
+    "log_ret",
+    "low_mean_5",
+    "high_lag_5"
+  ],
+  "volume": [
+    "log_ret",
+    "volume"
+  ],
+  "TARGET_RET_1": [
+    "TARGET_RET_1",
+    "log_ret",
+    "low_mean_5",
+    "TARGET_Sharpe",
+    "ehlers_fisher_transform_w50",
+    "open_std_5",
+    "cci_w50"
+  ],
+  "TARGET_Sharpe": [
+    "close",
+    "TARGET_Sharpe",
+    "TARGET_RET_1",
+    "open"
+  ],
+  "ease_of_movement_w20": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "force_index_w20",
+    "dist_to_long_proxy",
+    "log_ret",
+    "ease_of_movement_w20",
+    "ease_of_movement_w10",
+    "low_mean_5",
+    "ehlers_fisher_transform_w50",
+    "drawdown_w50",
+    "cci_w50"
+  ],
+  "close": [
+    "close",
+    "open"
+  ],
+  "drawdown_w50": [
+    "TARGET_RET_1",
+    "open",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "drawdown_w50"
+  ],
+  "cci_w50": [
+    "smoothed_return",
+    "TARGET_RET_1",
+    "open",
+    "force_index_w20",
+    "dist_to_long_proxy",
+    "log_ret",
+    "vwap_zscore_w10",
+    "low_mean_5",
+    "ehlers_fisher_transform_w50",
+    "close",
+    "drawdown_w50",
+    "cci_w50"
+  ]
+}

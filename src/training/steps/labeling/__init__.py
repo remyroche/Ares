@@ -67,27 +67,14 @@ from .generate_weights_per_label import (
 
 # Meta-labeling HPO steps
 # CANONICAL: meta_labeling_hpo_sample_weighted is the primary HPO entry point
-try:
-    from .meta_labeling_hpo_sample_weighted import (
-        MetaLabelingHPOSampleWeightedStep,
-    )
-    from .train_specialists_with_gmm_step import (
-        TrainSpecialistsWithGMMStep,
-    )
-    # Alias for backward compatibility
-    MetaLabelingHPOExperimentStep = MetaLabelingHPOSampleWeightedStep
-except Exception as e:
-    import traceback
-    traceback.print_exc()
-    MetaLabelingHPOSampleWeightedStep = None
-    TrainSpecialistsWithGMMStep = None
-    # Fallback to original if sample-weighted version fails
-    try:
-        from .meta_labeling_hpo_experiment_step import (
-            MetaLabelingHPOExperimentStep,
-        )
-    except Exception:
-        MetaLabelingHPOExperimentStep = None
+from .meta_labeling_hpo_sample_weighted import (
+    MetaLabelingHPOSampleWeightedStep,
+)
+from .train_specialists_with_gmm_step import (
+    TrainSpecialistsWithGMMStep,
+)
+# Alias for backward compatibility
+MetaLabelingHPOExperimentStep = MetaLabelingHPOSampleWeightedStep
 # Global multi-asset meta-labeling HPO step
 try:
     from .global_meta_labeling_hpo_sample_weighted import (

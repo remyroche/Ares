@@ -95,7 +95,7 @@ from src.training.steps.labeling.layer2_advanced_logic import (
     calculate_innovation_jit,
 )
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
@@ -10078,6 +10078,17 @@ class LabelBasedLayer2(BaseStep):
         # The pipeline handles the adaptation internally.
         target_sets = [60, 50, 40, 30, 20, 10]
 
+        # Optimization: Pre-filter with vectorized correlation if feature count is very high (> 200)
+        # This speeds up the expensive LGBM wrapper step significantly
+        if X_entropic.shape[1] > 200:
+            tprint_info(f"   ⚡ Fast pre-filtering {X_entropic.shape[1]} features via vectorized correlation...")
+            try:
+                preselected = vectorized_feature_selection(X_entropic, y, top_k=150, method='correlation')
+                X_entropic = X_entropic[preselected]
+                tprint_info(f"   ✅ Pre-filtered to {len(preselected)} features")
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Vectorized pre-filter failed: {e}")
+
         feature_sets, _ = lgbm_feature_selection_pipeline(
             X_entropic, y,
             target_feature_sets=target_sets,
@@ -10162,7 +10173,6 @@ class LabelBasedLayer2(BaseStep):
         if fold_idx == 0:
             self._log_stage_metrics(f"TrainBatch_{family}", input_shape=X_train.shape)
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         trained_models = {}
         results = {}

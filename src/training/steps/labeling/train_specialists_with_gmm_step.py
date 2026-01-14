@@ -42,6 +42,8 @@ import hashlib
 from dataclasses import dataclass
 warnings.filterwarnings('ignore')
 
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+
 # Importations pour TreeSHAP
 try:
     import shap
@@ -52,7 +54,6 @@ except ImportError as e:
     TREESHAP_AVAILABLE = False
 
 from src.training.steps.base_step import BaseStep
-from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.versioned_artifacts import VersionedArtifactStore
 from src.training.steps.market_analysis.afml_specialist_mixin import AFMLSpecialistMixin
 from src.training.steps.market_analysis.gmm_report_generator import GMMReportGenerator

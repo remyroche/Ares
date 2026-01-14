@@ -94,7 +94,7 @@ from src.training.steps.labeling.layer2_advanced_logic import (
     calculate_innovation_jit,
 )
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
@@ -6410,21 +6410,43 @@ class LabelBasedLayer2(BaseStep):
                 'fit_params': {}
             })
 
-        # 3. Sequential Race
-        tprint_info(f"   🚀 Running race with {len(candidates)} models...")
+        # 3. Parallel Race using batch_model_training
+        tprint_info(f"   🚀 Running parallel race with {len(candidates)} models...")
+
+        # Prepare configs for batch_model_training
+        batch_configs = []
+        for cand in candidates:
+            # We must pass fit_params differently or integrate them into the model or wrapper
+            # batch_model_training only calls model.fit(X, y)
+            # So we create a wrapper or use the model as is if it supports fit params in init or context
+
+            # Since batch_model_training is generic, we can't easily pass fit_params like 'eval_set'
+            # unless we modify batch_model_training or wrap the model.
+            # However, for speed, running parallel is better.
+            # Let's use a local wrapper class if needed or just use batch_model_training as is
+            # if we accept standard fit() behavior.
+
+            # But LGBM/XGB early stopping requires fit params.
+            # We can use a ThreadPoolExecutor here directly instead of the simplified batch function
+            # to keep the complex fit_params logic while gaining parallelism.
+            pass
+
+        # Optimized Parallel Execution using ThreadPoolExecutor locally to support complex fit_params
         race_results = {}
         best_score = -float('inf')
         best_model = None
         best_name = None
 
-        for cand in candidates:
+        def _train_evaluate_candidate(cand):
             name = cand['name']
             model = cand['model']
             fit_params = cand['fit_params']
             
             try:
-                # Fit with specific params (warm start, eval set)
                 start_fit = time.time()
+                # Ensure model is cloned or fresh to avoid race conditions if reused (though here they are new instances)
+
+                # Fit
                 if fit_params:
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
@@ -6442,24 +6464,44 @@ class LabelBasedLayer2(BaseStep):
                 pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
                 ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
-                # Combined score (sort by ROC-AUC)
-                race_results[name] = {
+                return {
+                    'name': name,
                     'auc': auc_score,
                     'pr_auc': pr_auc,
                     'ic': ic,
                     'model': model,
-                    'fit_time': fit_duration
+                    'fit_time': fit_duration,
+                    'status': 'success'
                 }
-
-                tprint_info(f"      - {name.ljust(12)}: ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f}, IC={ic:.4f}")
-
-                if auc_score > best_score:
-                    best_score = auc_score
-                    best_model = model
-                    best_name = name
-                    
             except Exception as e:
-                tprint_warning(f"      ❌ {name} failed: {e}")
+                return {'name': name, 'status': 'failed', 'error': str(e)}
+
+        # Run in parallel (max 2 workers to avoid memory OOM given these are heavy models)
+        # Using ThreadPoolExecutor as LGBM/XGB release GIL
+        max_race_workers = 2
+        with ThreadPoolExecutor(max_workers=max_race_workers) as executor:
+            futures = [executor.submit(_train_evaluate_candidate, cand) for cand in candidates]
+
+            for future in as_completed(futures):
+                res = future.result()
+                name = res['name']
+
+                if res['status'] == 'success':
+                    race_results[name] = {
+                        'auc': res['auc'],
+                        'pr_auc': res['pr_auc'],
+                        'ic': res['ic'],
+                        'model': res['model'],
+                        'fit_time': res['fit_time']
+                    }
+                    tprint_info(f"      - {name.ljust(12)}: ROC-AUC={res['auc']:.4f}, PR-AUC={res['pr_auc']:.4f}, IC={res['ic']:.4f}")
+                    
+                    if res['auc'] > best_score:
+                        best_score = res['auc']
+                        best_model = res['model']
+                        best_name = name
+                else:
+                    tprint_warning(f"      ❌ {name} failed: {res.get('error')}")
 
         # 4. Display Leaderboard
         if race_results:
@@ -10030,6 +10072,17 @@ class LabelBasedLayer2(BaseStep):
         # The pipeline handles the adaptation internally.
         target_sets = [60, 50, 40, 30, 20, 10]
 
+        # Optimization: Pre-filter with vectorized correlation if feature count is very high (> 200)
+        # This speeds up the expensive LGBM wrapper step significantly
+        if X_entropic.shape[1] > 200:
+            tprint_info(f"   ⚡ Fast pre-filtering {X_entropic.shape[1]} features via vectorized correlation...")
+            try:
+                preselected = vectorized_feature_selection(X_entropic, y, top_k=150, method='correlation')
+                X_entropic = X_entropic[preselected]
+                tprint_info(f"   ✅ Pre-filtered to {len(preselected)} features")
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Vectorized pre-filter failed: {e}")
+
         feature_sets, _ = lgbm_feature_selection_pipeline(
             X_entropic, y,
             target_feature_sets=target_sets,
@@ -10114,7 +10167,6 @@ class LabelBasedLayer2(BaseStep):
         if fold_idx == 0:
             self._log_stage_metrics(f"TrainBatch_{family}", input_shape=X_train.shape)
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         trained_models = {}
         results = {}

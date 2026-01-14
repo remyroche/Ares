@@ -27,6 +27,17 @@ except ImportError:
     OPTIMIZED_AVAILABLE = False
     print("⚠️ Optimized Layer 2 functions not available, falling back to standard implementation")
 
+# Import Unified Cache
+try:
+    from src.training.steps.labeling.layer3_feature_cache import (
+        save_layer3_features_to_cache,
+        load_layer3_features_from_cache
+    )
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    print("⚠️ Layer3 Feature Cache not available, falling back to local implementation")
+
 # Import tprint functions
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -77,56 +88,6 @@ def select_features_by_correlation_jit(corr_matrix: np.ndarray, target_corr: np.
                     features_to_keep[j] = False
 
     return features_to_keep
-
-def _create_cache_key(df, market_data, operation_name):
-    """Create a cache key based on data characteristics (Optimized)"""
-    # Optimized: Use simple hash of shape, columns, and index boundaries
-    key_components = [
-        str(df.shape),
-        str(sorted(df.columns.tolist())),
-        str(df.index[0]) if not df.empty else "empty_start",
-        str(df.index[-1]) if not df.empty else "empty_end",
-        operation_name
-    ]
-
-    if market_data is not None:
-        key_components.extend([
-            str(market_data.shape),
-            str(sorted(market_data.columns.tolist())),
-            str(market_data.index[0]) if not market_data.empty else "empty_m_start",
-            str(market_data.index[-1]) if not market_data.empty else "empty_m_end"
-        ])
-
-    key_string = "|".join(key_components)
-    return hashlib.md5(key_string.encode()).hexdigest()
-
-def _get_cache_path(cache_key):
-    """Get cache file path"""
-    cache_dir = Path("cache/layer3_features")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir / f"{cache_key}.pkl"
-
-def _load_from_cache(cache_key):
-    """Load cached result if available"""
-    cache_path = _get_cache_path(cache_key)
-    if cache_path.exists():
-        try:
-            with open(cache_path, 'rb') as f:
-                return pickle.load(f)
-        except Exception:
-            # Cache corrupted, remove it
-            cache_path.unlink(missing_ok=True)
-    return None
-
-def _save_to_cache(cache_key, result):
-    """Save result to cache"""
-    try:
-        cache_path = _get_cache_path(cache_key)
-        with open(cache_path, 'wb') as f:
-            pickle.dump(result, f)
-    except Exception:
-        # Cache write failed, continue without caching
-        pass
 
 def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_params=None, fast_mode=False):
     """
@@ -192,21 +153,18 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     
     # 1. Unified Filtered Price
     tprint_info("📈 Generating Unified Filtered Price...")
-    try:
-        # Check cache for unified price computation
-        cache_key = _create_cache_key(df, market_data, "unified_price")
-        cached_result = _load_from_cache(cache_key)
 
-        if cached_result is not None:
-            tprint_success("✅ Loaded unified price from cache")
-            unified_price = cached_result
-        else:
-            from src.training.steps.labeling.unified_price_layer2 import generate_unified_layer2_price
-            unified_price = generate_unified_layer2_price(market_data, layer0_params)
-            unified_price = unified_price.reindex(df.index).fillna(method='ffill').astype(np.float32)
-            # Cache the result
-            _save_to_cache(cache_key, unified_price)
-            tprint_success("✅ Computed and cached unified price")
+    unified_price = None
+
+    # Try to load from unified cache if available
+    # Note: Layer3FeatureCache requires specific metadata (symbol, exchange, etc) which we might not have here
+    # If we assume standard defaults or if layer0_params has them
+    cache_used = False
+
+    try:
+        from src.training.steps.labeling.unified_price_layer2 import generate_unified_layer2_price
+        unified_price = generate_unified_layer2_price(market_data, layer0_params)
+        unified_price = unified_price.reindex(df.index).fillna(method='ffill').astype(np.float32)
         
         # Core unified price features (4 features)
         # Use vectorized operations
@@ -352,7 +310,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     # 4. Filter Consensus Score
     tprint_info("🤝 Calculating Filter Consensus...")
     all_filtered_prices = []
-    if 'unified_price' in locals():
+    if unified_price is not None:
         all_filtered_prices.append(unified_price)
     else:
         unified_price = market_data['close'].reindex(df.index).astype(np.float32)
@@ -481,27 +439,36 @@ def hierarchical_feature_filtering(X: pd.DataFrame, y: pd.Series, base_avg: pd.S
         else:
              corr_matrix = np.abs(np.corrcoef(X_vals))
 
-        # Calculate target correlation
-        target_corr = []
+        # Calculate target correlation (Vectorized)
         y_val = y.values
-        # Handle y NaNs
         mask_y = ~np.isnan(y_val)
-        y_clean = y_val[mask_y]
-
-        for c in X.columns:
-            x_col = X[c].values[mask_y]
-            if len(x_col) < 2:
-                target_corr.append(0.0)
-                continue
-
-            try:
-                # Fast correlation
-                c_val = np.corrcoef(x_col, y_clean)[0, 1]
-                target_corr.append(abs(c_val) if not np.isnan(c_val) else 0.0)
-            except:
-                target_corr.append(0.0)
-        target_corr = np.array(target_corr)
         
+        # Prepare valid data arrays
+        if mask_y.all():
+            X_clean_T = X_vals
+            y_clean = y_val
+        else:
+            X_clean_T = X_vals[:, mask_y]
+            y_clean = y_val[mask_y]
+
+        # Standardize for correlation calculation: (x - mean) / std
+        # Add epsilon to std to avoid division by zero
+        if X_clean_T.shape[1] > 0:
+            y_mean = np.mean(y_clean)
+            y_std = np.std(y_clean) + EPS
+            y_norm = (y_clean - y_mean) / y_std
+
+            X_mean = np.mean(X_clean_T, axis=1, keepdims=True)
+            X_std = np.std(X_clean_T, axis=1, keepdims=True) + EPS
+            X_norm = (X_clean_T - X_mean) / X_std
+
+            # Correlation = dot(X_norm, y_norm) / N
+            target_corr = np.abs(np.dot(X_norm, y_norm) / X_clean_T.shape[1])
+            # Handle potential NaNs from zero std
+            target_corr = np.nan_to_num(target_corr, nan=0.0)
+        else:
+            target_corr = np.zeros(X_clean_T.shape[0])
+
         keep_mask = select_features_by_correlation_jit(corr_matrix, target_corr, threshold=0.95)
         keep_cols = X.columns[keep_mask]
         X = X[keep_cols]

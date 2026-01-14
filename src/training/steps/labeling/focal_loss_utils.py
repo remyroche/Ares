@@ -194,6 +194,58 @@ class RobustFocalLoss:
             
         return grad, hess
 
+class XGBFocalLoss:
+    """
+    Focal Loss implementation for XGBoost.
+    """
+    def __init__(self, gamma_pos=1.0, gamma_neg=1.0, alpha=None, verbose=False):
+        self.gamma_pos = gamma_pos
+        self.gamma_neg = gamma_neg
+        self.alpha = alpha
+        self.verbose = verbose
+
+    def __call__(self, y_pred, dtrain):
+        if hasattr(dtrain, 'get_label'):
+            y_true = dtrain.get_label()
+        else:
+            y_true = dtrain
+
+        # XGBoost output is logit
+        p = 1.0 / (1.0 + np.exp(-y_pred))
+
+        # Adaptive Alpha
+        if self.alpha is None:
+            pos_ratio = np.mean(y_true)
+            pos_ratio = np.clip(pos_ratio, 0.0001, 0.9999)
+            current_alpha = 1.0 - pos_ratio
+        else:
+            current_alpha = self.alpha
+
+        epsilon = 1e-9
+        log_p = np.log(p + epsilon)
+        log_1_p = np.log(1.0 - p + epsilon)
+
+        grad = np.zeros_like(y_pred)
+        hess = np.zeros_like(y_pred)
+
+        # Positives
+        pos_mask = (y_true == 1)
+        if pos_mask.any():
+            p_pos = p[pos_mask]
+            term_pos = current_alpha * np.power(1 - p_pos, self.gamma_pos)
+            grad[pos_mask] = term_pos * (self.gamma_pos * p_pos * log_p[pos_mask] + p_pos - 1)
+            hess[pos_mask] = p_pos * (1 - p_pos) * term_pos
+
+        # Negatives
+        neg_mask = (y_true == 0)
+        if neg_mask.any():
+            p_neg = p[neg_mask]
+            term_neg = (1 - current_alpha) * np.power(p_neg, self.gamma_neg)
+            grad[neg_mask] = term_neg * (-self.gamma_neg * (1 - p_neg) * log_1_p[neg_mask] + p_neg)
+            hess[neg_mask] = p_neg * (1 - p_neg) * term_neg
+
+        return grad, hess
+
 
 # ==========================================
 # REGRESSION LOSS FUNCTIONS (NEW)

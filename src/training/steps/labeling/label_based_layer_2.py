@@ -86,7 +86,7 @@ from collections import defaultdict
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
 from src.training.steps.labeling.layer2_validation import validate_geometry_quality, print_validation_report
-from src.training.steps.labeling.focal_loss_utils import get_focal_loss_lgbm, get_focal_loss_xgb, RobustFocalLoss
+from src.training.steps.labeling.focal_loss_utils import get_focal_loss_lgbm, get_focal_loss_xgb, RobustFocalLoss, XGBFocalLoss
 from src.training.steps.labeling.layer2_advanced_logic import (
     vectorized_pct_change_jit,
     rolling_mean_jit,
@@ -6324,8 +6324,18 @@ class LabelBasedLayer2(BaseStep):
             ]
         else:
             # --- 1. LightGBM ---
+            # Instantiate RobustFocalLoss for LGBM
+            focal_lgbm = RobustFocalLoss(
+                gamma_pos=self.focal_gamma_pos if hasattr(self, 'focal_gamma_pos') else 1.0,
+                gamma_neg=self.focal_gamma_neg if hasattr(self, 'focal_gamma_neg') else 2.5,
+                alpha=None, # Auto-compute
+                verbose=False
+            )
+
             lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
             lgbm_params.update({
+                'objective': focal_lgbm,
+                'metric': 'auc',
                 'path_smooth': 20,
                 'lambda_l2': 10,
                 'extra_trees': True,
@@ -6335,11 +6345,14 @@ class LabelBasedLayer2(BaseStep):
                 'feature_fraction': 0.6,
                 'lambda_l1': 0.1,
                 'max_bin': 63,
-                'scale_pos_weight': scale_pos_weight,
                 'random_state': 42,
                 'verbose': -1,
                 'n_jobs': 1
             })
+            # Remove scale_pos_weight as focal loss handles imbalance via alpha
+            if 'scale_pos_weight' in lgbm_params:
+                del lgbm_params['scale_pos_weight']
+
             if monotone_constraints is not None:
                 lgbm_params['monotone_constraints'] = list(monotone_constraints)
             if interaction_constraints is not None:
@@ -6359,15 +6372,24 @@ class LabelBasedLayer2(BaseStep):
 
             # --- 2. XGBoost ---
             if XGBClassifier is not None:
+                # Instantiate XGBFocalLoss
+                focal_xgb = XGBFocalLoss(
+                    gamma_pos=self.focal_gamma_pos if hasattr(self, 'focal_gamma_pos') else 1.0,
+                    gamma_neg=self.focal_gamma_neg if hasattr(self, 'focal_gamma_neg') else 2.5,
+                    alpha=None, # Auto-compute
+                    verbose=False
+                )
+
                 xgb_params = {
                     'n_estimators': 200, 'learning_rate': 0.03, 'max_depth': 5,
                     'subsample': 0.6, 'colsample_bytree': 0.4, 'colsample_bynode': 0.4,
                     'reg_lambda': 50, 'min_child_weight': 10, 'gamma': 1.1,
                     'num_parallel_tree': 7,
-                    'objective': 'binary:logistic',
+                    'objective': focal_xgb,
+                    'eval_metric': 'auc',
                     'random_state': 42, 'n_jobs': 1, 'verbosity': 0,
                     'use_label_encoder': False,
-                    'scale_pos_weight': scale_pos_weight
+                    # scale_pos_weight removed for focal loss
                 }
                 if monotone_constraints is not None:
                     xgb_params['monotone_constraints'] = tuple(monotone_constraints)
@@ -6416,6 +6438,8 @@ class LabelBasedLayer2(BaseStep):
                 
             # --- 4. ExtraTrees ---
             from sklearn.ensemble import ExtraTreesClassifier
+            # ExtraTrees does not support gradient-based Focal Loss.
+            # Using 'balanced_subsample' to handle imbalance as best effort.
             et_params = {
                 'n_estimators': 200, 'max_depth': 6,
                 'min_samples_split': 10, 'min_samples_leaf': 5,

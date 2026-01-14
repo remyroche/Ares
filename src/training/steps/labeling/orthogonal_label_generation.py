@@ -2646,9 +2646,6 @@ def final_diversity_filter(
         for geo in geometries:
             all_events.update(geo.events)
 
-        if not all_events:
-            return geometries
-
         sorted_timeline = sorted(list(all_events))
         time_map = {t: i for i, t in enumerate(sorted_timeline)}
 
@@ -2680,13 +2677,13 @@ def final_diversity_filter(
         # Helper to get Jaccard without dense matrix if possible, or convert small chunk
         # Since n_geos is usually small (<100 after selection), dense is fine.
         I_dense = I_mat.toarray()
+        use_sparse = True
 
     except Exception as e:
         tprint_warning(f"Sparse matrix diversity check failed: {e}. Falling back to slow loop.")
-        # Fallback to original implementation logic implicitly via error handling?
-        # Re-implementing slow logic here would duplicate code.
-        # Ideally, we just return the original list if optimization fails, assuming it's better than crash.
-        return geometries
+        use_sparse = False
+        I_dense = None
+        n_events_per_geo = None
 
     # Calculate returns series for each geometry (Sparse cache)
     returns_series = {}
@@ -2746,11 +2743,22 @@ def final_diversity_filter(
                 idx_cand = geo_to_idx[cand.name]
                 idx_sel = geo_to_idx[selected_geo.name]
 
-                # 1. Jaccard Check (Vectorized)
-                intersection = I_dense[idx_cand, idx_sel]
-                union = n_events_per_geo[idx_cand] + n_events_per_geo[idx_sel] - intersection
-                jaccard_sim = intersection / union if union > 0 else 0
-                
+                # 1. Jaccard Check (Hybrid)
+                if use_sparse:
+                    idx_cand = geo_to_idx[cand.name]
+                    idx_sel = geo_to_idx[selected_geo.name]
+
+                    intersection = I_dense[idx_cand, idx_sel]
+                    union = n_events_per_geo[idx_cand] + n_events_per_geo[idx_sel] - intersection
+                    jaccard_sim = intersection / union if union > 0 else 0
+                else:
+                    # Fallback to Set operations
+                    evts_cand = set(cand.events)
+                    evts_sel = set(selected_geo.events)
+                    intersection = len(evts_cand.intersection(evts_sel))
+                    union = len(evts_cand.union(evts_sel))
+                    jaccard_sim = intersection / union if union > 0 else 0
+
                 if jaccard_sim > jaccard_threshold:
                     is_diverse = False
                     break
@@ -4607,14 +4615,12 @@ def score_candidates(
     high = df_full.get('high')
     low = df_full.get('low')
 
-    # Optimize: Parallel scoring
-    from joblib import Parallel, delayed
-
-    def process_single_candidate(cand):
+    for cand in candidates:
         try:
             # Skip if already scored
             if 'labels' in cand and not cand['labels'].empty:
-                return cand, None
+                scored.append(cand)
+                continue
 
             # Compute TBM Labels
             labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
@@ -4624,8 +4630,7 @@ def score_candidates(
                 high=high, low=low
             )
 
-            if labels.empty:
-                return None, None
+            if labels.empty: continue
 
             # Use weight_vector if available and valid
             if 'weight_vector' in cand:
@@ -4650,7 +4655,7 @@ def score_candidates(
             cand['metrics'] = metrics # Store full metrics
 
             # Log outcome
-            log_entry = {
+            outcomes_log.append({
                 'family': cand['family'],
                 'params': str(cand.get('params', {})),
                 'pt_mult': pt,
@@ -4665,27 +4670,15 @@ def score_candidates(
                 'signals_per_day': round(len(cand['events']) / 360, 2),
                 'target_signals_per_day': 0,
                 'adaptive_used': False
-            }
-            return cand, log_entry
+            })
+
+            scored.append(cand)
 
         except Exception as e:
-            return None, None
-
-    # Run Parallel
-    # Limit n_jobs to avoid memory issues with large DataFrames
-    results = Parallel(n_jobs=4, prefer="threads")(
-        delayed(process_single_candidate)(cand) for cand in candidates
-    )
-
-    for res_cand, res_log in results:
-        if res_cand:
-            scored.append(res_cand)
-        if res_log:
-            outcomes_log.append(res_log)
+            # logger.warning(f"Scoring failed for {cand.get('family', 'unknown')}: {e}")
+            continue
 
     return scored
-
-
 def select_robust_candidates_quantile(candidates: List[Dict], quantile: float = 0.5) -> List[Dict]:
     """
     Select top quantile of candidates per family based on statistical confidence.

@@ -197,8 +197,9 @@ except ImportError as e:
 try:
     from src.utils.fast_info_theory import vectorized_pairwise_mi, discretize_features_numba, numba_histogram_2d, numba_mutual_info
     from src.training.steps.labeling.graphical_lasso_filter import GraphicalLassoFilter
+    from src.training.steps.labeling.huber_causal_discovery import HuberCausalDiscovery
     FAST_INFO_THEORY_AVAILABLE = True
-    tprint_info("✅ Fast Info Theory & Graphical Lasso Filter loaded")
+    tprint_info("✅ Fast Info Theory, Graphical Lasso Filter, & Huber Causal Discovery loaded")
 except ImportError as e:
     FAST_INFO_THEORY_AVAILABLE = False
     tprint_warning(f"⚠️ Fast Info Theory functions not available: {e}")
@@ -2250,22 +2251,47 @@ class LabelBasedLayer2(BaseStep):
 
             if self.causal_discovery_enabled:
                 tprint_info("   📊 Layer 2: Initializing Causal Discovery...")
-                discovery_config = {
-                    "max_conditioning_set": self.max_conditioning_set,
-                    "significance_level": self.significance_level,
-                    "use_lingam": self.use_lingam,
-                    "verbose": self.verbose
-                }
-                self._causal_discovery = self._get_component_singleton(
-                    "causal_discovery",
-                    discovery_config,
-                    lambda: CausalDiscovery(
-                        max_conditioning_set=self.max_conditioning_set,
-                        significance_level=self.significance_level,
-                        use_lingam=self.use_lingam,
-                        verbose=self.verbose
+
+                # Check for Huber Discovery request
+                use_huber = getattr(self, 'use_huber_discovery', True)
+
+                if use_huber and FAST_INFO_THEORY_AVAILABLE:
+                    tprint_info("   🚀 Layer 2: Using Huber Node-wise Causal Discovery (Fast & Robust)...")
+                    discovery_config = {
+                        "n_splits": 5,
+                        "stability_threshold": 0.4,
+                        "verbose": self.verbose
+                    }
+                    self._causal_discovery = self._get_component_singleton(
+                        "huber_causal_discovery",
+                        discovery_config,
+                        lambda: HuberCausalDiscovery(
+                            n_splits=5,
+                            stability_threshold=0.4,
+                            verbose=self.verbose
+                        )
                     )
-                )
+                    self.use_huber_discovery = True # Flag for run method
+                else:
+                    tprint_info("   ⚙️ Layer 2: Using Standard PC Algorithm...")
+                    discovery_config = {
+                        "max_conditioning_set": self.max_conditioning_set,
+                        "significance_level": self.significance_level,
+                        "use_lingam": self.use_lingam,
+                        "verbose": self.verbose
+                    }
+                    self._causal_discovery = self._get_component_singleton(
+                        "causal_discovery",
+                        discovery_config,
+                        lambda: CausalDiscovery(
+                            max_conditioning_set=self.max_conditioning_set,
+                            significance_level=self.significance_level,
+                            use_lingam=self.use_lingam,
+                            verbose=self.verbose
+                        )
+                    )
+                    self.use_huber_discovery = False
+
                 tprint_success("   ✅ Layer 2: Causal Discovery initialized")
             else:
                 tprint_info("   ⏭️ Layer 2: Causal Discovery disabled")
@@ -2630,10 +2656,28 @@ class LabelBasedLayer2(BaseStep):
             if self.verbose:
                 tprint_info("🔍 Enhanced Causal Discovery: Starting two-step discovery...")
             
-            # Check if Bayesian discovery is enabled
+            # Check for Huber (Priority 1) or Bayesian (Priority 2)
+            use_huber = getattr(self, 'use_huber_discovery', False)
             use_bayesian = getattr(self, 'use_bayesian_discovery', True)
             
-            if use_bayesian and self.CAUSAL_MODULES_AVAILABLE:
+            causal_graph = {}
+            uncertainty_metrics = {}
+
+            if use_huber and FAST_INFO_THEORY_AVAILABLE and hasattr(self, '_causal_discovery') and isinstance(self._causal_discovery, HuberCausalDiscovery):
+                tprint_info("🚀 Running Huber Node-wise Causal Discovery...")
+
+                numeric_df = self._filter_discovery_input(df)
+                if numeric_df.empty: return {}
+
+                discovery_results = self._causal_discovery.discover_causal_structure(numeric_df)
+
+                if 'causal_graph' in discovery_results:
+                    causal_graph = discovery_results['causal_graph']
+                    tprint_success(f"   ✅ Huber Discovery: Found {sum(len(v) for v in causal_graph.values())} edges")
+                else:
+                    tprint_warning("   ⚠️ Huber discovery returned no graph")
+
+            elif use_bayesian and self.CAUSAL_MODULES_AVAILABLE:
                 numeric_df = self._filter_discovery_input(df)
                 if numeric_df.empty:
                     tprint_warning("   ⚠️ No numeric data available for causal discovery")

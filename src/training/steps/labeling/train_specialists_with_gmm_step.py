@@ -31,6 +31,8 @@ import asyncio
 from datetime import datetime
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import brier_score_loss, average_precision_score
+from sklearn.isotonic import IsotonicRegression
 import psutil
 import numba
 from numba import jit, prange
@@ -687,6 +689,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         # Step 7: Save results
         await self._save_results(
             selected_features, specialist_outputs, config,
+            gmm_raw_features=gmm_enhanced_features,
+            market_data=active_market_data,
             ensemble_results=model_results
         )
         
@@ -2959,6 +2963,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         enhanced_features: pd.DataFrame,
         specialist_outputs: Dict[str, pd.DataFrame],
         config: Dict[str, Any],
+        gmm_raw_features: Optional[pd.DataFrame] = None,
+        market_data: Optional[pd.DataFrame] = None,
         ridge_results: Dict[str, Any] = None,
         extratrees_results: Dict[str, Any] = None,
         ensemble_results: Dict[str, Any] = None
@@ -3139,6 +3145,10 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             specialist_metrics = {}
             specialist_coverage = {}
             specialist_performance = {}
+            regime_metrics = {}
+            forward_returns_20 = None
+            if market_data is not None and 'close' in market_data.columns:
+                forward_returns_20 = market_data['close'].pct_change(20).shift(-20)
             
             # Track each specialist's training results
             for specialist_name, outputs in specialist_outputs.items():
@@ -3167,7 +3177,13 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                                 'unique_predictions': len(preds.unique()),
                                 'is_constant': len(preds.unique()) == 1
                             })
+                            if len(preds.unique()) == 1:
+                                tprint_warning(
+                                    f"⚠️ {specialist_name} produced constant predictions: "
+                                    f"{preds.unique()[0]}"
+                                )
                     
+                    probs = None
                     if 'specialist_probability' in outputs.columns:
                         probs = outputs['specialist_probability'].dropna()
                         if len(probs) > 0:
@@ -3178,6 +3194,73 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                                 'probability_max': probs.max(),
                                 'probability_range': probs.max() - probs.min()
                             })
+                            if performance.get('probability_range', 0.0) <= 1e-6:
+                                tprint_warning(
+                                    f"⚠️ {specialist_name} produced near-constant probabilities "
+                                    f"(range={performance['probability_range']:.6f})"
+                                )
+
+                    if 'target_label' in outputs.columns and probs is not None and len(probs) > 0:
+                        labels = outputs['target_label'].reindex(probs.index).dropna()
+                        aligned_probs = probs.reindex(labels.index)
+                        if len(labels.unique()) >= 2:
+                            try:
+                                calibrator = IsotonicRegression(out_of_bounds='clip')
+                                calibrated_probs = calibrator.fit_transform(labels.values, aligned_probs.values)
+                                performance['brier_score'] = brier_score_loss(labels, calibrated_probs)
+                                performance['pr_auc'] = average_precision_score(labels, calibrated_probs)
+                            except ValueError as exc:
+                                tprint_warning(f"⚠️ {specialist_name} ML metric computation skipped: {exc}")
+
+                    score_columns = [col for col in outputs.columns if col.endswith('_score')]
+                    for score_col in score_columns:
+                        scores = outputs[score_col].dropna()
+                        if len(scores) > 0:
+                            performance[f'{score_col}_mean'] = scores.mean()
+                            performance[f'{score_col}_std'] = scores.std()
+                            performance[f'{score_col}_min'] = scores.min()
+                            performance[f'{score_col}_max'] = scores.max()
+                            performance[f'{score_col}_range'] = scores.max() - scores.min()
+
+                    regime_column = None
+                    for candidate in ['risk_regime', 'regime', 'cluster', 'state']:
+                        if candidate in outputs.columns:
+                            regime_column = candidate
+                            break
+
+                    if regime_column is not None:
+                        score_column = None
+                        for candidate in ['risk_score', 'regime_score', 'state_score']:
+                            if candidate in outputs.columns:
+                                score_column = candidate
+                                break
+
+                        grouped = outputs[[regime_column]].dropna()
+                        if not grouped.empty:
+                            regime_counts = grouped[regime_column].value_counts().to_dict()
+                            regime_stats = {
+                                "regime_column": regime_column,
+                                "regime_counts": regime_counts,
+                            }
+                            if score_column is not None:
+                                scores = outputs[[regime_column, score_column]].dropna()
+                                stats_by_regime = scores.groupby(regime_column)[score_column].agg(
+                                    ['count', 'mean', 'var', 'min', 'max']
+                                )
+                                regime_stats["score_column"] = score_column
+                                regime_stats["score_by_regime"] = stats_by_regime.to_dict(orient='index')
+                            if forward_returns_20 is not None:
+                                aligned_returns = forward_returns_20.reindex(outputs.index)
+                                returns_df = pd.DataFrame({
+                                    regime_column: outputs[regime_column],
+                                    'forward_return_20': aligned_returns
+                                }).dropna()
+                                if not returns_df.empty:
+                                    return_stats = returns_df.groupby(regime_column)['forward_return_20'].agg(
+                                        ['count', 'mean', 'std', 'min', 'max']
+                                    )
+                                    regime_stats["forward_return_20_by_regime"] = return_stats.to_dict(orient='index')
+                            regime_metrics[specialist_name] = regime_stats
                     
                     specialist_performance[specialist_name] = performance
                     
@@ -3215,10 +3298,52 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             with open(specialist_metrics_path, 'w') as f:
                 json.dump(specialist_metrics, f, indent=2, default=str)
             tprint_success(f"💾 Specialist metrics saved to {specialist_metrics_path}")
+
+            gmm_terms = ['gmm', 'cluster', 'regime', 'state', 'probability', 'entropy', 'familiarity']
+
+            def _specialist_key(name: str) -> str:
+                key = name.lower()
+                if key.endswith('_step'):
+                    key = key[:-5]
+                if key.startswith('enhanced_'):
+                    key = key[len('enhanced_'):]
+                return key
+
+            recap_rows = []
+            for specialist_name, metrics in specialist_metrics.items():
+                key = _specialist_key(specialist_name)
+                raw_cols = list(gmm_raw_features.columns) if gmm_raw_features is not None else []
+                selected_cols = list(enhanced_features.columns)
+                gmm_total = [
+                    col for col in raw_cols
+                    if key in col.lower() and any(term in col.lower() for term in gmm_terms)
+                ]
+                gmm_selected = [
+                    col for col in selected_cols
+                    if key in col.lower() and any(term in col.lower() for term in gmm_terms)
+                ]
+                regime_info = regime_metrics.get(specialist_name, {})
+                ml_metrics = metrics.get('performance', {})
+                recap_rows.append({
+                    'specialist_name': specialist_name,
+                    'num_regimes': len(regime_info.get('regime_counts', {})),
+                    'gmm_features_total': len(gmm_total),
+                    'gmm_features_selected': len(gmm_selected),
+                    'gmm_metrics': regime_info,
+                    'ml_metrics': ml_metrics,
+                    'coverage_ratio': metrics['coverage']['coverage_ratio'],
+                    'memory_usage_mb': metrics['memory_usage_mb'],
+                })
+
+            if recap_rows:
+                recap_df = pd.DataFrame(recap_rows)
+                recap_path = outcomes_dir / f"specialist_regime_gmm_recap_{symbol}_{timeframe}.csv"
+                recap_df.to_csv(recap_path, index=False)
+                tprint_success(f"💾 Specialist regime GMM recap saved to {recap_path}")
             
             # --- GMM ENSEMBLE MODEL METRICS ---
             gmm_metrics = {
-                'ensemble_performance': {},
+                'ml_ensemble_performance': {},
                 'model_comparison': {},
                 'feature_analysis': {},
                 'training_summary': {}
@@ -3228,7 +3353,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             if 'results' in locals() and results:
                 for model_name, model_data in results.items():
                     if isinstance(model_data, dict) and 'score' in model_data:
-                        gmm_metrics['ensemble_performance'][model_name] = {
+                        gmm_metrics['ml_ensemble_performance'][model_name] = {
                             'score': model_data.get('score', 0),
                             'ic': model_data.get('ic', 0),
                             'auc': model_data.get('auc', 0),
@@ -3236,14 +3361,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                         }
             
             # Rank models by performance
-            if gmm_metrics['ensemble_performance']:
+            if gmm_metrics['ml_ensemble_performance']:
                 sorted_models = sorted(
-                    gmm_metrics['ensemble_performance'].items(),
+                    gmm_metrics['ml_ensemble_performance'].items(),
                     key=lambda x: x[1]['score'],
                     reverse=True
                 )
                 for rank, (model_name, _) in enumerate(sorted_models, 1):
-                    gmm_metrics['ensemble_performance'][model_name]['rank'] = rank
+                    gmm_metrics['ml_ensemble_performance'][model_name]['rank'] = rank
             
             # Feature analysis
             gmm_metrics['feature_analysis'] = {
@@ -3269,6 +3394,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 'target_balance': '0.250',  # From our fix
                 'memory_usage_mb': enhanced_features.memory_usage(deep=True).sum() / 1024**2
             }
+            if regime_metrics:
+                gmm_metrics['regime_metrics'] = regime_metrics
             
             # Print GMM metrics summary
             tprint_info("\n🧠 === GMM ENSEMBLE METRICS ===")
@@ -3277,9 +3404,9 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             tprint_info(f"⚖️ Target Balance: {gmm_metrics['training_summary']['target_balance']} positive class")
             tprint_info(f"💾 Memory Usage: {gmm_metrics['training_summary']['memory_usage_mb']:.1f} MB")
             
-            if gmm_metrics['ensemble_performance']:
+            if gmm_metrics['ml_ensemble_performance']:
                 tprint_info("\n🏆 Model Performance Rankings:")
-                for model_name, perf in sorted(gmm_metrics['ensemble_performance'].items(), key=lambda x: x[1]['rank']):
+                for model_name, perf in sorted(gmm_metrics['ml_ensemble_performance'].items(), key=lambda x: x[1]['rank']):
                     tprint_info(f"   {perf['rank']}. {model_name}: Score={perf['score']:.4f}, IC={perf['ic']:.4f}, AUC={perf['auc']:.4f}")
             
             tprint_info("\n📈 Feature Types:")
@@ -3364,7 +3491,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             if 'results' in locals() and results:
                 for model_name, model_data in results.items():
                     if isinstance(model_data, dict) and 'score' in model_data:
-                        gmm_metrics['ensemble_performance'][model_name] = {
+                        gmm_metrics['ml_ensemble_performance'][model_name] = {
                             'score': model_data.get('score', 0),
                             'ic': model_data.get('ic', 0),
                             'auc': model_data.get('auc', 0),
@@ -3372,14 +3499,14 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                         }
             
             # Rank models by performance
-            if gmm_metrics['ensemble_performance']:
+            if gmm_metrics['ml_ensemble_performance']:
                 sorted_models = sorted(
-                    gmm_metrics['ensemble_performance'].items(),
+                    gmm_metrics['ml_ensemble_performance'].items(),
                     key=lambda x: x[1]['score'],
                     reverse=True
                 )
                 for rank, (model_name, _) in enumerate(sorted_models, 1):
-                    gmm_metrics['ensemble_performance'][model_name]['rank'] = rank
+                    gmm_metrics['ml_ensemble_performance'][model_name]['rank'] = rank
             
             # Feature analysis
             gmm_metrics['feature_analysis'] = {
@@ -3434,9 +3561,9 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             tprint_success(f"💾 Specialist metrics saved to {specialist_metrics_path}")
             
             # Print ensemble model rankings
-            if gmm_metrics['ensemble_performance']:
+            if gmm_metrics['ml_ensemble_performance']:
                 tprint_info("\n🏆 Model Performance Rankings:")
-                for model_name, perf in sorted(gmm_metrics['ensemble_performance'].items(), key=lambda x: x[1]['rank']):
+                for model_name, perf in sorted(gmm_metrics['ml_ensemble_performance'].items(), key=lambda x: x[1]['rank']):
                     tprint_info(f"   {perf['rank']}. {model_name}: Score={perf['score']:.4f}, IC={perf['ic']:.4f}, AUC={perf['auc']:.4f}")
             
             tprint_info("\n📈 Feature Types:")
@@ -3673,7 +3800,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                         "performance_score": results.get("performance_score", 0.0),
                         "data_hash": data_hash,
                         "specialist_performance": self._specialist_metrics,
-                        "ensemble_performance": self._aggregate_specialist_metrics()
+                        "ml_ensemble_performance": self._aggregate_specialist_metrics()
                     }
                     self._save_gmm_model(model_key, engine, metadata)
                     

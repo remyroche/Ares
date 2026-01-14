@@ -398,11 +398,24 @@ class EnhancedMLRiskRegimeStep(BaseStep):
         }
     
     def generate_risk_predictions(self, features: pd.DataFrame, model_output: Dict[str, Any]) -> pd.DataFrame:
-        """Generate risk regime predictions."""
-        # Placeholder for actual prediction generation
+        """Generate deterministic risk scores (regime assignment is handled at the pipeline level)."""
         predictions = pd.DataFrame(index=features.index)
-        predictions['risk_regime'] = np.random.choice([0, 1, 2], size=len(features))
-        predictions['risk_score'] = np.random.random(len(features))
+
+        numeric_features = features.select_dtypes(include=[np.number])
+        if numeric_features.empty:
+            raise ValueError("Risk regime features are empty; cannot compute risk scores.")
+
+        means = numeric_features.mean(axis=0)
+        stds = numeric_features.std(axis=0).replace(0, 1.0)
+        z_scores = (numeric_features - means) / stds
+        row_score = np.nanmean(np.abs(z_scores), axis=1)
+
+        min_score = np.nanmin(row_score)
+        max_score = np.nanmax(row_score)
+        denom = (max_score - min_score) if max_score > min_score else 1.0
+        predictions['risk_score'] = (row_score - min_score) / denom
+
+        tprint("ℹ️ Risk regime assignments are handled at the pipeline level.", "INFO")
         return predictions
     
     def save_results(self, output_data: pd.DataFrame, model_output: Dict[str, Any]) -> None:

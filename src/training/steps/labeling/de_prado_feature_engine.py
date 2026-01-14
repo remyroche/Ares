@@ -91,6 +91,13 @@ class DePradoFeatureEngine:
             Series of cluster labels indexed by feature names
         """
         tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
+
+        if X.shape[1] > X.shape[0]:
+            tprint_warning(
+                "⚠️ ONC received data with more columns than rows; "
+                "transposing to enforce (samples, features)."
+            )
+            X = X.T
         
         # Compute correlation matrix
         corr = X.corr().fillna(0)
@@ -831,5 +838,4 @@ def de_prado_feature_selection(
     X_selected = X[selected_features].copy()
     
     return X_selected, engine
-
 

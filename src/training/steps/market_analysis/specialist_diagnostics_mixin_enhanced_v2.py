@@ -178,7 +178,9 @@ class SpecialistDiagnosticsMixinEnhancedV2:
             "metrics": metrics,
             "n_samples": len(output_df),
             "artifact_name": artifact_name,
-            "diagnostics": diagnostics_result
+            "diagnostics": diagnostics_result,
+            "outputs": output_df,
+            "predictions": output_df[["specialist_prediction", "specialist_probability"]].copy()
         }
 
     def _load_self_artifacts_enhanced(self, symbol: str, exchange: str, timeframe: str, direction: str) -> Dict[str, Any]:

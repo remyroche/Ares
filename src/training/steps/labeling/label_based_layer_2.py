@@ -14,16 +14,15 @@ It performs:
 7. Enhanced model training with optional multi-algorithm comparison (LGBM, XGB, CatBoost, RF, LogReg).
 
 Advanced Model Comparison & HPO Features:
-- enable_model_race: Enable/disable automatic model selection with RobustFocalLoss
+- enable_model_race: Enable/disable automatic model selection with IRM-aware candidates
 - enable_focal_hpo: Enable/disable HPO for ALL winning models (not just LGBM)
 - focal_hpo_n_trials: Number of HPO trials per winning model
 
-Model Race Candidates (all use adaptive alpha):
-- LGBM_Focal: LGBM with RobustFocalLoss (γ₊=1.0, γ₋=2.5, adaptive α)
-- XGB_Tree: XGBoost with focal loss
-- CatBoost: CatBoost classifier
-- LGBM_Focal_Linear: Linear tree LGBM with RobustFocalLoss
-- XGB_Linear: Linear XGBoost with focal loss
+Model Race Candidates (IRM-aware when environments provided):
+- LGBM: IRM-capable LightGBM with Huber pruning/constraints
+- XGB: IRM-capable XGBoost with monotonic/interaction constraints
+- CatBoost: IRM-capable CatBoost with monotonic constraints
+- ExtraTrees: IRM-compatible ExtraTrees fallback
 
 HPO Optimization (runs on ANY winning model):
 - **LGBM_Focal**: RobustFocalLoss (γ₊, γ₋, α, mix, smoothing) + tree params
@@ -1248,6 +1247,15 @@ class LabelBasedLayer2(BaseStep):
         self._label_computation_cache = {}  # Cache label computations
         self._geometry_label_backups = {}  # Preserve labels for downstream stages
         self._max_cache_entries = int(kwargs.get("layer2_max_cache_entries", 6))
+
+        # Adaptive gating + probe controls
+        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.0))
+        self.layer2_gate_percentile = float(kwargs.get("layer2_gate_percentile", 70.0))
+        self.layer2_gate_jaccard_max = float(kwargs.get("layer2_gate_jaccard_max", 0.90))
+        self.layer2_gate_min_candidates = int(kwargs.get("layer2_gate_min_candidates", 3))
+        self.layer2_gate_max_candidates = int(kwargs.get("layer2_gate_max_candidates", 10))
+        self.probe_max_samples = int(kwargs.get("layer2_probe_max_samples", 5000))
+        self.probe_min_samples = int(kwargs.get("layer2_probe_min_samples", 1000))
 
         # Composite score blending (structural vs empirical)
         self.structural_score_weight = float(kwargs.get('structural_score_weight', 0.6))
@@ -6278,117 +6286,129 @@ class LabelBasedLayer2(BaseStep):
 
         # 2. Configure Candidates manually to inject Huber constraints
         candidates = []
-
-        # --- 1. LightGBM ---
-        lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
-        lgbm_params.update({
-            'path_smooth': 20,
-            'lambda_l2': 10,
-            'extra_trees': True,
-            'linear_tree': True,
-            'min_gain_to_split': 0.01,
-            'bagging_fraction': 0.7,
-            'feature_fraction': 0.6,
-            'lambda_l1': 0.1,
-            'max_bin': 63,
-            'scale_pos_weight': scale_pos_weight,
-            'random_state': 42,
-            'verbose': -1,
-            'n_jobs': 1
-        })
-        if monotone_constraints is not None:
-            lgbm_params['monotone_constraints'] = list(monotone_constraints)
-        if interaction_constraints is not None:
-            lgbm_params['interaction_constraints'] = interaction_constraints
-            
-        candidates.append({
-            'name': 'LGBM_Focal',
-            'model': lgb.LGBMClassifier(**lgbm_params),
-            'fit_params': {
-                'init_score': warm_start_train,
-                'eval_init_score': [warm_start_val] if warm_start_val is not None else None,
-                'eval_set': [(X_val_final, y_val)],
-                'eval_metric': 'auc',
-                'callbacks': [lgb.early_stopping(30, verbose=False)]
-            }
-        })
-
-        # --- 2. XGBoost ---
-        if XGBClassifier is not None:
-            xgb_params = {
-                'n_estimators': 200, 'learning_rate': 0.03, 'max_depth': 5,
-                'subsample': 0.6, 'colsample_bytree': 0.4, 'colsample_bynode': 0.4,
-                'reg_lambda': 50, 'min_child_weight': 10, 'gamma': 1.1,
-                'num_parallel_tree': 7,
-                'objective': 'binary:logistic',
-                'random_state': 42, 'n_jobs': 1, 'verbosity': 0,
-                'use_label_encoder': False,
-                'scale_pos_weight': scale_pos_weight
-            }
+        if environment_masks and self.irm_enabled:
+            candidates = self._create_irm_candidates(
+                scale_pos_weight,
+                X_train_final,
+                y_train,
+                environment_masks=environment_masks,
+                constraints_dict=monotone_constraints_dict
+            )
+            candidates = [
+                {**cand, 'fit_params': {}} if isinstance(cand, dict) else cand
+                for cand in candidates
+            ]
+        else:
+            # --- 1. LightGBM ---
+            lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
+            lgbm_params.update({
+                'path_smooth': 20,
+                'lambda_l2': 10,
+                'extra_trees': True,
+                'linear_tree': True,
+                'min_gain_to_split': 0.01,
+                'bagging_fraction': 0.7,
+                'feature_fraction': 0.6,
+                'lambda_l1': 0.1,
+                'max_bin': 63,
+                'scale_pos_weight': scale_pos_weight,
+                'random_state': 42,
+                'verbose': -1,
+                'n_jobs': 1
+            })
             if monotone_constraints is not None:
-                xgb_params['monotone_constraints'] = tuple(monotone_constraints)
+                lgbm_params['monotone_constraints'] = list(monotone_constraints)
             if interaction_constraints is not None:
-                xgb_params['interaction_constraints'] = interaction_constraints
-
+                lgbm_params['interaction_constraints'] = interaction_constraints
+                
             candidates.append({
-                'name': 'XGB_Tree',
-                'model': XGBClassifier(**xgb_params),
+                'name': 'LGBM_Focal',
+                'model': lgb.LGBMClassifier(**lgbm_params),
                 'fit_params': {
-                    'base_margin': warm_start_train,
+                    'init_score': warm_start_train,
+                    'eval_init_score': [warm_start_val] if warm_start_val is not None else None,
                     'eval_set': [(X_val_final, y_val)],
-                    'verbose': False
+                    'eval_metric': 'auc',
+                    'callbacks': [lgb.early_stopping(30, verbose=False)]
                 }
             })
-            
-        # --- 3. CatBoost ---
-        if CATBOOST_AVAILABLE:
-            from catboost import CatBoostClassifier
-            cat_params = {
-                'iterations': 200, 'learning_rate': 0.05, 'depth': 5,
-                'loss_function': 'Logloss',
-                'subsample': 0.6, 'colsample_bylevel': 0.5,
-                'leaf_estimation_iterations': 10, 'l2_leaf_reg': 20,
-                'random_strength': 5, 'bootstrap_type': 'MVS',
-                'random_state': 42, 'verbose': False,
-                'allow_writing_files': False,
-                'scale_pos_weight': scale_pos_weight
-            }
-            if monotone_constraints is not None:
-                cat_params['monotone_constraints'] = list(monotone_constraints)
 
-            candidates.append({
-                'name': 'CatBoost',
-                'model': CatBoostClassifier(**cat_params),
-                'fit_params': {
-                    'baseline': warm_start_train,
-                    # Fix: Pass eval_set as Pool with baseline if warm_start_val exists
-                    'eval_set': (
-                        catboost.Pool(X_val_final, y_val, baseline=warm_start_val) 
-                        if warm_start_val is not None else (X_val_final, y_val)
-                    ),
-                    'early_stopping_rounds': 30
+            # --- 2. XGBoost ---
+            if XGBClassifier is not None:
+                xgb_params = {
+                    'n_estimators': 200, 'learning_rate': 0.03, 'max_depth': 5,
+                    'subsample': 0.6, 'colsample_bytree': 0.4, 'colsample_bynode': 0.4,
+                    'reg_lambda': 50, 'min_child_weight': 10, 'gamma': 1.1,
+                    'num_parallel_tree': 7,
+                    'objective': 'binary:logistic',
+                    'random_state': 42, 'n_jobs': 1, 'verbosity': 0,
+                    'use_label_encoder': False,
+                    'scale_pos_weight': scale_pos_weight
                 }
+                if monotone_constraints is not None:
+                    xgb_params['monotone_constraints'] = tuple(monotone_constraints)
+                if interaction_constraints is not None:
+                    xgb_params['interaction_constraints'] = interaction_constraints
+
+                candidates.append({
+                    'name': 'XGB_Tree',
+                    'model': XGBClassifier(**xgb_params),
+                    'fit_params': {
+                        'base_margin': warm_start_train,
+                        'eval_set': [(X_val_final, y_val)],
+                        'verbose': False
+                    }
+                })
+                
+            # --- 3. CatBoost ---
+            if CATBOOST_AVAILABLE:
+                from catboost import CatBoostClassifier
+                cat_params = {
+                    'iterations': 200, 'learning_rate': 0.05, 'depth': 5,
+                    'loss_function': 'Logloss',
+                    'subsample': 0.6, 'colsample_bylevel': 0.5,
+                    'leaf_estimation_iterations': 10, 'l2_leaf_reg': 20,
+                    'random_strength': 5, 'bootstrap_type': 'MVS',
+                    'random_state': 42, 'verbose': False,
+                    'allow_writing_files': False,
+                    'scale_pos_weight': scale_pos_weight
+                }
+                if monotone_constraints is not None:
+                    cat_params['monotone_constraints'] = list(monotone_constraints)
+
+                candidates.append({
+                    'name': 'CatBoost',
+                    'model': CatBoostClassifier(**cat_params),
+                    'fit_params': {
+                        'baseline': warm_start_train,
+                        # Fix: Pass eval_set as Pool with baseline if warm_start_val exists
+                        'eval_set': (
+                            catboost.Pool(X_val_final, y_val, baseline=warm_start_val) 
+                            if warm_start_val is not None else (X_val_final, y_val)
+                        ),
+                        'early_stopping_rounds': 30
+                    }
+                })
+                
+            # --- 4. ExtraTrees ---
+            from sklearn.ensemble import ExtraTreesClassifier
+            et_params = {
+                'n_estimators': 200, 'max_depth': 6,
+                'min_samples_split': 10, 'min_samples_leaf': 5,
+                'random_state': 42, 'n_jobs': 1,
+                'class_weight': 'balanced'
+            }
+            # Attempt to set monotonic_cst if supported (sklearn 1.4+)
+            try:
+                model = ExtraTreesClassifier(**et_params, monotonic_cst=monotone_constraints)
+            except TypeError:
+                model = ExtraTreesClassifier(**et_params)
+                
+            candidates.append({
+                'name': 'ExtraTrees',
+                'model': model,
+                'fit_params': {}
             })
-            
-        # --- 4. ExtraTrees ---
-        from sklearn.ensemble import ExtraTreesClassifier
-        et_params = {
-            'n_estimators': 200, 'max_depth': 6,
-            'min_samples_split': 10, 'min_samples_leaf': 5,
-            'random_state': 42, 'n_jobs': 1,
-            'class_weight': 'balanced'
-        }
-        # Attempt to set monotonic_cst if supported (sklearn 1.4+)
-        try:
-            model = ExtraTreesClassifier(**et_params, monotonic_cst=monotone_constraints)
-        except TypeError:
-            model = ExtraTreesClassifier(**et_params)
-            
-        candidates.append({
-            'name': 'ExtraTrees',
-            'model': model,
-            'fit_params': {}
-        })
 
         # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
@@ -6801,6 +6821,34 @@ class LabelBasedLayer2(BaseStep):
 
         candidates = []
         constraints_dict = constraints_dict or {}
+
+        # 0. LGBM with IRM (Wrapper)
+        lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
+        lgbm_params.update({
+            'path_smooth': 20,
+            'lambda_l2': 10,
+            'extra_trees': True,
+            'linear_tree': True,
+            'min_gain_to_split': 0.01,
+            'bagging_fraction': 0.7,
+            'feature_fraction': 0.6,
+            'lambda_l1': 0.1,
+            'max_bin': 63,
+            'scale_pos_weight': scale_pos_weight,
+            'random_state': 42,
+            'verbose': -1,
+            'n_jobs': 1
+        })
+        if constraints_dict:
+            lgbm_params['monotone_constraints'] = [constraints_dict.get(f, 0) for f in X_train.columns]
+        candidates.append({
+            'name': 'LGBM_IRM',
+            'model': IRM_LGBMClassifier(
+                irm_system=self._irm_system,
+                environment_masks=environment_masks,
+                **lgbm_params
+            )
+        })
 
         # Create environment masks if not provided (simplified)
         if environment_masks is None:
@@ -7251,12 +7299,130 @@ class LabelBasedLayer2(BaseStep):
 
         return study.best_params, study.best_value
 
+    def _get_candidate_score(self, cand: GeometryTrial) -> float:
+        ranking_score = getattr(cand, 'ranking_score', None)
+        if ranking_score is not None:
+            return float(ranking_score)
+        layer2_score = getattr(cand, 'layer2_score', None)
+        if layer2_score is not None:
+            return float(layer2_score)
+        return float(getattr(cand, 'final_score', 0.0) or 0.0)
+
+    def _compute_dynamic_top_k(self, candidates: List[GeometryTrial], scores: List[float]) -> int:
+        if not candidates:
+            return 0
+        event_counts = [len(c.events) if getattr(c, 'events', None) is not None else 0 for c in candidates]
+        median_events = float(np.median(event_counts)) if event_counts else 0.0
+        if median_events >= 200:
+            base_top_k = 10
+        elif median_events >= 100:
+            base_top_k = 7
+        elif median_events >= 50:
+            base_top_k = 5
+        else:
+            base_top_k = 3
+
+        score_array = np.array(scores, dtype=float)
+        score_gap = 0.0
+        if len(score_array) > 1:
+            score_gap = (np.max(score_array) - np.median(score_array)) / (abs(np.max(score_array)) + 1e-9)
+        if score_gap > 0.6:
+            base_top_k = max(3, base_top_k - 4)
+        elif score_gap > 0.3:
+            base_top_k = max(3, base_top_k - 2)
+
+        mean_score = float(np.mean(score_array)) if len(score_array) > 0 else 0.0
+        p70_score = float(np.percentile(score_array, self.layer2_gate_percentile)) if len(score_array) > 0 else 0.0
+        if p70_score > 0 and mean_score < (0.6 * p70_score):
+            base_top_k = max(3, base_top_k - 2)
+
+        return min(base_top_k, len(candidates))
+
+    def _apply_adaptive_gate(self, candidates: List[GeometryTrial]) -> List[GeometryTrial]:
+        if not candidates:
+            return []
+        scores = [self._get_candidate_score(c) for c in candidates]
+        score_array = np.array(scores, dtype=float)
+        percentile_threshold = float(np.percentile(score_array, self.layer2_gate_percentile))
+        threshold = max(self.layer2_gate_min_score, percentile_threshold)
+
+        scored_candidates = sorted(
+            candidates,
+            key=lambda c: self._get_candidate_score(c),
+            reverse=True
+        )
+        gated = [c for c in scored_candidates if self._get_candidate_score(c) >= threshold]
+        if len(gated) < self.layer2_gate_min_candidates:
+            gated = scored_candidates[:self.layer2_gate_min_candidates]
+
+        dynamic_top_k = self._compute_dynamic_top_k(gated, [self._get_candidate_score(c) for c in gated])
+        max_candidates = min(self.layer2_gate_max_candidates, max(dynamic_top_k, self.layer2_gate_min_candidates))
+        gated = gated[:max_candidates]
+
+        selected = []
+        for cand in gated:
+            if len(selected) >= max_candidates:
+                break
+            if not selected:
+                selected.append(cand)
+                continue
+            is_diverse = True
+            for chosen in selected:
+                cand_events = getattr(cand, 'events', None)
+                chosen_events = getattr(chosen, 'events', None)
+                if cand_events is None or chosen_events is None:
+                    continue
+                inter = len(cand_events.intersection(chosen_events))
+                union = len(cand_events.union(chosen_events))
+                jaccard = inter / union if union > 0 else 0.0
+                if jaccard > self.layer2_gate_jaccard_max:
+                    is_diverse = False
+                    break
+            if is_diverse:
+                selected.append(cand)
+
+        if len(selected) < self.layer2_gate_min_candidates:
+            for cand in gated:
+                if len(selected) >= self.layer2_gate_min_candidates:
+                    break
+                if cand not in selected:
+                    selected.append(cand)
+
+        return selected
+
+    def _subsample_probe_data(self, X: pd.DataFrame, y: pd.Series, w: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        n_rows = len(X)
+        if n_rows <= self.probe_max_samples:
+            return X, y, w
+
+        target = max(self.probe_min_samples, min(self.probe_max_samples, n_rows))
+        rng = np.random.RandomState(42)
+
+        if len(np.unique(y)) < 2:
+            sample_idx = rng.choice(X.index, size=target, replace=False)
+        else:
+            sample_idx = []
+            for label in [0, 1]:
+                label_idx = y[y == label].index
+                if len(label_idx) == 0:
+                    continue
+                label_target = max(1, int(target * (len(label_idx) / n_rows)))
+                label_target = min(label_target, len(label_idx))
+                sample_idx.extend(rng.choice(label_idx, size=label_target, replace=False))
+            sample_idx = pd.Index(sample_idx)
+
+        X_sub = X.loc[sample_idx]
+        y_sub = y.loc[sample_idx]
+        w_sub = w.loc[sample_idx] if w is not None else None
+        return X_sub, y_sub, w_sub
+
     def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 15) -> List[GeometryTrial]:
         """
-        Selects the best geometry per family using a REAL LGBM Probe.
-        1. Filter Top K by purity/score.
-        2. Train fast LGBM on each.
-        3. Select winner based on LogLoss.
+        Selects the best geometry per family using a lightweight Ridge probe,
+        then runs a single model race for the top candidate only.
+        1. Adaptive gate: threshold + orthogonality-aware filtering.
+        2. Ridge probe for learnability scoring.
+        3. Model race only for top candidate (Tier 1).
         Special Logic for CAUSAL_SURPRISE: Selects 2-3 orthogonal ones.
         """
         if not candidates: return []
@@ -7283,16 +7449,19 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning(f"⚠️ All candidates for {family} were pruned by correlation filter.")
             return []
         
-        # 1. Sort by initial score (purity) and take Top K
-        sorted_cands = sorted(candidates, key=lambda x: x.final_score, reverse=True)[:top_k]
-        filter_counts["post_top_k"] = len(sorted_cands)
-        
-        tprint_info(f"   🔎 Probing top {len(sorted_cands)} candidates for {family}...")
+        # 1. Adaptive gate: threshold + orthogonality-aware filtering
+        gated_candidates = self._apply_adaptive_gate(candidates)
+        if top_k:
+            gated_candidates = gated_candidates[:min(top_k, len(gated_candidates))]
+        filter_counts["post_top_k"] = len(gated_candidates)
 
-        # 2. Probe each candidate (Quick LGBM on global features)
+        tprint_info(f"   🔎 Probing top {len(gated_candidates)} candidates for {family}...")
+
+        # 2. Probe each candidate (Ridge on global features)
         scored_candidates = []
-        
-        for cand in sorted_cands:
+        probe_data_cache = {}
+
+        for cand in gated_candidates:
             try:
                 # 2.1 Prepare Data
                 if not hasattr(cand, 'labels') or cand.labels is None:
@@ -7636,34 +7805,30 @@ class LabelBasedLayer2(BaseStep):
                     except Exception as e:
                         tprint_warning(f"⚠️ Sequential bootstrap failed, using uniform weights: {e}")
                         sample_weights = np.ones(len(X_tr))
+                elif use_fallback:
+                    sample_weights = np.ones(len(X_tr))
                     
-                    # === RIDGE PROBE (Faster than LGBM, handles collinearity) ===
+                    # === RIDGE PROBE (Faster than model race, handles collinearity) ===
                     from sklearn.linear_model import RidgeClassifier
                     from sklearn.calibration import CalibratedClassifierCV
                     from sklearn.preprocessing import StandardScaler
-                    
-                    # --- OPTIMIZED Feature Curation ---
-                    # Use vectorized feature selection for 8x speedup
+
                     if OPTIMIZED_FUNCTIONS_AVAILABLE and X_tr.shape[1] > 20:
                         selected_features = vectorized_feature_selection(
                             X_tr, y_tr, method='correlation', top_k=20, n_jobs=2
                         )
-                        # Ensure we have selected features
                         if selected_features:
                             X_tr = X_tr[selected_features]
                             X_val = X_val[selected_features]
                             if self.verbose:
                                 tprint_info(f"   🚀 Vectorized feature selection: {len(selected_features)} features")
                     else:
-                        # Fallback to original method
-                        # 1. Limit to top 20 features by variance (speed)
                         if X_tr.shape[1] > 20:
                             variances = X_tr.var().sort_values(ascending=False)
                             top_cols = variances.head(20).index.tolist()
                             X_tr = X_tr[top_cols]
                             X_val = X_val[top_cols]
-                        
-                        # 2. Remove collinear features (correlation > 0.8)
+
                         corr_matrix = X_tr.corr().abs()
                         upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
                         to_drop = [col for col in upper_tri.columns if any(upper_tri[col] > 0.8)]
@@ -7672,88 +7837,19 @@ class LabelBasedLayer2(BaseStep):
                             X_val = X_val.drop(columns=to_drop, errors='ignore')
                             if self.verbose:
                                 tprint_info(f"   🧹 Removed {len(to_drop)} collinear features (>0.8 corr)")
-                    
-                    # === MODEL RACE (LGBM/XGB/CatBoost with Huber Constraints) ===
-                    # Replaces simple Ridge probe with robust model race
-                    # Huber constraints and warm start are applied inside _run_model_race
-                    
-                    # Note: X_tr is already pruned to top ~20 features by methods above
-                    # which makes the race computationally feasible
-                    
-                    try:
-                        best_model, best_name, race_results = self._run_model_race(
-                            X_tr, y_tr, X_val, y_val, sample_weights
-                        )
-                        model = best_model
-                        tprint_info(f"   🏁 Race Winner for {cand.uuid[:8]}: {best_name}")
-                        
-                        # Generate predictions for evaluation
-                        # Note: X_val must match features used by model (handled inside race but we need predictions)
-                        # We need to replicate the feature subsetting done inside _run_model_race if it dropped features
-                        # But wait, _run_model_race returns the trained model. 
-                        # That model expects the specific features selected by Huber.
-                        # This mismatch is risky if _run_model_race modified column set.
-                        
-                        # Actually, _run_model_race selects features via Huber.
-                        # We should trust it returned a model that can handle X_val if we pass the same columns.
-                        # BUT, _run_model_race applied selection internally.
-                        # The returned model expects `selected_features` columns.
-                        
-                        # Fix: _run_model_race should return the selected features or we pass full X and let it select?
-                        # _run_model_race (line 6192) takes X terms and selects features internally.
-                        # BUT it creates `X_train_final`, `X_val_final`. It fits the model on those.
-                        # The returned model expects `X_val_final`.
-                        # If we call `model.predict(X_val)`, it might fail if X_val has extra columns.
-                        # We need to extract the features used.
-                        
-                        # Let's verify _run_model_race again.
-                        # It returns `race_results`.
-                        # Maybe I should just take the metric from race_results?
-                        # `race_results[best_name]['pr_auc']` is available.
-                        # But the code below needs `preds` for diagnostics and `validation_result`.
-                        
-                        # Solution: _run_model_race uses Huber pruning.
-                        # I'll rely on the race's internal metrics or re-predict.
-                        # To re-predict, I need the column list.
-                        # `best_model` (LGBM) has `feature_name_` property usually.
-                        
-                        if hasattr(model, 'feature_name_'):
-                            used_cols = model.feature_name_
-                            # Check if X_val has these
-                            if set(used_cols).issubset(X_val.columns):
-                                preds = model.predict_proba(X_val[used_cols])[:, 1]
-                            else:
-                                # Fallback: Assume X_val is correct order if shapes match? No.
-                                preds = np.zeros(len(X_val))
-                        elif hasattr(model, 'feature_names_in_'):
-                             preds = model.predict_proba(X_val[model.feature_names_in_])[:, 1]
-                        else:
-                             # Try predicting with all, ignoring extra if model supports (LGBM does not usually)
-                             # If _run_model_race used "X_val_final" which was subset,
-                             # and we pass X_val (full), it will error.
-                             
-                             # Let's look at _run_model_race return values. 
-                             # It returns `best_model`.
-                             # The easiest way is if _run_model_race RETURNS the predictions or the columns.
-                             # It doesn't.
-                             
-                             # Hacker fix: The model object usually stores feature names.
-                             # For XGB/LGBM, it works.
-                             # For sklearn `ExtraTrees`, `feature_names_in_`.
-                             
-                             preds = model.predict_proba(X_val[model.feature_names_in_])[:, 1]
-                             
-                    except Exception as e:
-                        tprint_warning(f"   ⚠️ Model Race failed: {e}. Fallback to simple Ridge.")
-                        from sklearn.linear_model import RidgeClassifier
-                        base_model = RidgeClassifier(alpha=1.0, class_weight='balanced')
-                        model = CalibratedClassifierCV(base_model, method='sigmoid', cv=3)
-                        # Re-scale for Ridge
-                        scaler = StandardScaler()
-                        X_tr_s = scaler.fit_transform(X_tr)
-                        X_val_s = scaler.transform(X_val)
-                        model.fit(X_tr_s, y_tr, sample_weight=sample_weights)
-                        preds = model.predict_proba(X_val_s)[:, 1]
+
+                    sample_weights_series = pd.Series(sample_weights, index=X_tr.index)
+                    X_tr_sub, y_tr_sub, w_tr_sub = self._subsample_probe_data(X_tr, y_tr, sample_weights_series)
+
+                    scaler = StandardScaler()
+                    X_tr_scaled = scaler.fit_transform(X_tr_sub)
+                    X_val_scaled = scaler.transform(X_val)
+
+                    ridge = RidgeClassifier(alpha=1.0, class_weight='balanced', random_state=42)
+                    ridge_calibrated = CalibratedClassifierCV(ridge, method='sigmoid', cv=3)
+                    ridge_calibrated.fit(X_tr_scaled, y_tr_sub, sample_weight=w_tr_sub)
+                    model = ridge_calibrated
+                    preds = ridge_calibrated.predict_proba(X_val_scaled)[:, 1]
 
                     # === DIAGNOSTIC: Zero Predictions (OOF) ===
                     if preds.max() < 1e-6:
@@ -7834,10 +7930,17 @@ class LabelBasedLayer2(BaseStep):
                 # Update raw_metrics with new causal findings
                 cand.raw_metrics.update(assessment)
                 
-                # Use Composite Layer 2 Score for ranking if available (De Prado Recommendation)
-                # Fallback to PR-AUC if score is low confidence or 0
-                ranking_score = cand.layer2_score if cand.layer2_score > 0 else ap
-                cand.ranking_score = ranking_score
+                # Combine Layer 2 score with probe PR-AUC for ranking
+                base_score = cand.layer2_score if cand.layer2_score > 0 else self._get_candidate_score(cand)
+                cand.ranking_score = (0.6 * base_score) + (0.4 * ap)
+
+                probe_data_cache[cand.uuid] = {
+                    "X_tr": X_tr,
+                    "y_tr": y_tr,
+                    "X_val": X_val,
+                    "y_val": y_val,
+                    "sample_weights": sample_weights
+                }
 
                 # RE-CALCULATE FINAL SCORE: Don't give 100 if learnability is low.
                 # Use a blend of structural Layer2Score and empirical learnability
@@ -7948,8 +8051,8 @@ class LabelBasedLayer2(BaseStep):
         # Sort by Composite Layer 2 Score (ranking_score)
         scored_candidates.sort(key=lambda x: getattr(x, 'ranking_score', x.probe_score), reverse=True)
         
-        # --- ENHANCED REPORTING: RACE LEADERBOARD ---
-        tprint_success(f"🏆 {family} Model Race Leaderboard (Top 5):")
+        # --- ENHANCED REPORTING: PROBE LEADERBOARD ---
+        tprint_success(f"🏆 {family} Probe Leaderboard (Top 5):")
         # Header with wider columns for long composite names
         header = f"   {'Rank':<4} | {'Model Name (UUID)':<60} | {'Score':<8} | {'AUC':<6} | {'IC':<6} | {'God':<4}"
         tprint_info(header)
@@ -7977,7 +8080,7 @@ class LabelBasedLayer2(BaseStep):
         # ---------------------------------------------
 
         selected = []
-        
+
         # 3. Selection Logic
         if family == 'CAUSAL_SURPRISE':
             # ENHANCED: Always select one H=12 and one H=48 geometry
@@ -8014,9 +8117,35 @@ class LabelBasedLayer2(BaseStep):
             winner = scored_candidates[0]
             selected.append(winner)
             tprint_info(f"      🥇 {winner.uuid}: {winner.metrics_log}")
-            
+
+        if self.enable_model_race and selected:
+            primary = max(selected, key=lambda x: getattr(x, 'ranking_score', x.probe_score))
+            race_payload = probe_data_cache.get(primary.uuid)
+            if race_payload:
+                environment_masks = None
+                if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
+                    environment_masks = self._create_default_environment_masks(
+                        race_payload["X_tr"], race_payload["y_tr"]
+                    )
+                try:
+                    best_model, best_name, race_results = self._run_model_race(
+                        race_payload["X_tr"],
+                        race_payload["y_tr"],
+                        race_payload["X_val"],
+                        race_payload["y_val"],
+                        race_payload["sample_weights"],
+                        environment_masks
+                    )
+                    primary.model_params = {"race_winner": best_name}
+                    primary.race_score = race_results.get(best_name, {}).get("auc", primary.race_score)
+                    self._model_race_metrics = race_results
+                    tprint_info(f"      🏁 Model race run for {primary.uuid[:20]} → {best_name}")
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Model race failed for {primary.uuid[:20]}: {e}")
+            else:
+                tprint_warning(f"   ⚠️ No probe cache found for {primary.uuid[:20]} - skipping model race")
+
         return selected
-        self._model_race_metrics = race_results
 
     def optimize_production_geometries(
         self,
@@ -8181,6 +8310,12 @@ class LabelBasedLayer2(BaseStep):
 
                 family_map[og.family].append(gt)
 
+            if family_map:
+                tprint_info(
+                    f"   🧬 {regime}: {len(family_map)} families in selection pool "
+                    f"({', '.join(list(family_map.keys())[:6])}{'...' if len(family_map) > 6 else ''})"
+                )
+
             total_events = sum(stats["total"] for stats in regime_filter_stats.values())
             kept_events = sum(stats["kept"] for stats in regime_filter_stats.values())
             if total_events > 0:
@@ -8215,6 +8350,7 @@ class LabelBasedLayer2(BaseStep):
                 'final': 0
             }
 
+            tier1_by_family = {}
             for family, cands in family_map.items():
                 if not cands: continue
 
@@ -8225,21 +8361,30 @@ class LabelBasedLayer2(BaseStep):
                 winners = self._select_best_geometry_via_race(cands, df, top_k=10) # Reduced top_k for speed
                 tprint_info(f"          {regime} Winners (Tier 1): {len(winners)}")
                 regime_winners.extend(winners)
+                tier1_by_family[family] = winners
                 funnel['race_survivors'] += len(winners)
 
-                # Tier 2 (Diversity)
-                remaining = [c for c in cands if c not in winners and getattr(c, 'filtering_status', 'UNKNOWN') == 'PASSED']
-                if remaining:
-                    tprint_info(f"      [Tier 2] Assessing {len(remaining)} remaining candidates for diversity persistence...")
-                
-                try:
-                    tier2 = self._select_tier2_candidates(winners, remaining, df)
-                    if tier2:
-                        regime_winners.extend(tier2)
-                        tprint_info(f"          + {len(tier2)} Tier-2 Winners (Diversity)")
-                        funnel['tier2_additions'] += len(tier2)
-                except Exception:
-                    pass
+            if len(regime_winners) < 7:
+                tprint_info(
+                    f"      [Tier 2] Regime {regime} has {len(regime_winners)} models (<7). "
+                    "Adding balanced Tier-2 candidates per family..."
+                )
+                for family, cands in family_map.items():
+                    tier1 = tier1_by_family.get(family, [])
+                    remaining = [
+                        c for c in cands
+                        if c not in tier1 and getattr(c, 'filtering_status', 'UNKNOWN') == 'PASSED'
+                    ]
+                    if remaining:
+                        tprint_info(f"      [Tier 2] Assessing {len(remaining)} remaining candidates for {family}...")
+                    try:
+                        tier2 = self._select_tier2_candidates(tier1, remaining, df, max_candidates=1)
+                        if tier2:
+                            regime_winners.extend(tier2)
+                            tprint_info(f"          + {len(tier2)} Tier-2 Winners (Diversity)")
+                            funnel['tier2_additions'] += len(tier2)
+                    except Exception:
+                        pass
 
             # 3.5 Cross-Family Diversity (Per Regime)
             regime_winners = self._enforce_cross_family_diversity(regime_winners, max_similarity=0.90)
@@ -10929,7 +11074,7 @@ class LabelBasedLayer2(BaseStep):
             return {'n_features_used': 0.0, 'avg_depth': 0.0, 'max_depth': 0.0}
 
 
-    def _select_tier2_candidates(self, tier1_geoms, candidates, df):
+    def _select_tier2_candidates(self, tier1_geoms, candidates, df, max_candidates: int = 2):
         """
         Select Tier-2 candidates based on orthogonality to Tier-1 and quality metrics.
         Score = 0.5 * Normalized_Quality + 0.5 * Orthogonality
@@ -11016,8 +11161,8 @@ class LabelBasedLayer2(BaseStep):
                 c = item['candidate']
                 tprint_info(f"   📊 Tier2 Candidate #{i+1}: {c.uuid[:30]} → Score={item['score']:.3f} (Q={item['quality']:.3f}, Orth={item['orthogonality']:.3f}, Div={item['param_diversity']:.3f})")
         
-        # Select top 2 if score > threshold (e.g. 0.1)
-        for item in scored_candidates[:2]:
+        # Select top candidates if score > threshold (e.g. 0.1)
+        for item in scored_candidates[:max_candidates]:
             if item['score'] > 0.1: # Relaxed from 0.3 to allow more Tier 2 models in light mode 
                 # Mark as Tier 2
                 cand = item['candidate']

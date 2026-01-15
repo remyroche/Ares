@@ -1739,58 +1739,66 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             else:
                 pruning_percentile = 20  # Keep 80% of features for very large sets
                 tprint_info(f"   📊 Adaptive pruning: {n_features} features → using {pruning_percentile}th percentile")
-            
             # Ensure minimum 10 features
-            min_features = max(10, int(len(X_train.columns) * (1 - pruning_percentile / 100)))
-            tprint_info(f"   🎯 Minimum features: {min_features}")
-            
-            huber_cache_seed = f"{X_train_hash}_{y_train_hash}_{pruning_percentile}"
-            huber_cache_key = self._build_cache_key("huber_outputs", huber_cache_seed, config)
-            huber_outputs = None
+min_features = max(10, int(len(X_train.columns) * (1 - pruning_percentile / 100)))
+tprint_info(f"    🎯 Minimum features: {min_features}")
 
-            if cache_usable:
-                huber_outputs = self._load_cached_object("huber_outputs", huber_cache_key)
+huber_cache_seed = f"{X_train_hash}_{y_train_hash}_{pruning_percentile}"
+huber_cache_key = self._build_cache_key("huber_outputs", huber_cache_seed, config)
+huber_outputs = None
 
-            if huber_outputs is None:
-                huber_outputs = prepare_huber_teacher_outputs(
-                    X_train,
-                    y_train,
-                    X_val=X_oof, # Use OOF as validation for warm start tuning
-                    pruning_percentile=pruning_percentile
-                )
-                if cache_usable:
-                    self._save_cached_object(huber_outputs, "huber_outputs", huber_cache_key)
+if cache_usable:
+    huber_outputs = self._load_cached_object("huber_outputs", huber_cache_key)
 
-            selected_features_names = huber_outputs['selected_features']
-            monotonic_constraints = huber_outputs['monotonic_constraints']
-            interaction_constraints = huber_outputs['interaction_constraints']
-            warm_start_train = huber_outputs['warm_start']['train']
-            warm_start_oof = huber_outputs['warm_start']['val']
+if huber_outputs is None:
+    # Prepare inputs for Huber Teacher using detailed parameters from main
+    huber_outputs = prepare_huber_teacher_outputs(
+        X_train=X_train,
+        y_train=y_train,
+        X_val=None,                # Not used for pruning logic here
+        X_test=X_oof,              # Using OOF to generate warm start predictions
+        vol_proxy=None,            
+        epsilons=[1.1, 1.35, 1.75],
+        alphas=[1e-4, 1e-3, 1e-2],
+        pruning_percentile=pruning_percentile,
+        corr_threshold=0.7,
+        n_jobs=-1
+    )
 
-            # Apply Feature Selection
-            X_train_sel = X_train[selected_features_names]
-            X_oof_sel = X_oof[selected_features_names]
+    if cache_usable:
+        self._save_cached_object(huber_outputs, "huber_outputs", huber_cache_key)
 
-            tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(X_train_sel.columns)} features")
-            
-            # Convert monotonic_constraints dict to array for tree models that need it
-            mono_cst_array_np = None
-            mono_cst_array_list = None
+# Unpack results
+selected_features_names = huber_outputs['selected_features']
+monotonic_constraints = huber_outputs['monotonic_constraints']
+interaction_constraints = huber_outputs['interaction_constraints']
 
-            if isinstance(monotonic_constraints, dict):
-                # Map selected features to their monotonic constraints
-                mono_cst_array = []
-                for feat in selected_features_names:
-                    mono_cst_array.append(monotonic_constraints.get(feat, 0))
-                mono_cst_array_np = np.array(mono_cst_array)  # numpy array for sklearn
-                mono_cst_array_list = mono_cst_array_np.tolist()  # list for CatBoost
-                
+warm_start_dict = huber_outputs['warm_start']
+warm_start_train = warm_start_dict['train']
+warm_start_oof = warm_start_dict['test'] # X_oof was passed as X_test in the call above
+
+# Apply Feature Selection
+X_train_sel = X_train[selected_features_names]
+X_oof_sel = X_oof[selected_features_names]
+
+tprint_success(f"✅ Huber Pruning: {len(X_train.columns)} -> {len(X_train_sel.columns)} features")
+
+# Convert monotonic_constraints dict to array/list for specific model requirements
+mono_cst_array_np = None
+mono_cst_array_list = monotonic_constraints 
+
+if isinstance(mono_cst_array_list, dict):
+    # Map selected features to their specific monotonic constraints (1, -1, or 0)
+    mono_cst_values = [mono_cst_array_list.get(feat, 0) for feat in X_train_sel.columns]
+    mono_cst_array_np = np.array(mono_cst_values)      # For sklearn-based models
+    mono_cst_array_list = mono_cst_array_np.tolist()  # For CatBoost/XGBoost
+    
                 # Enhanced logging: Show which features have which constraints
                 negative_features = []
                 positive_features = []
                 unconstrained_features = []
                 
-                for feat, constraint in zip(selected_features_names, mono_cst_array):
+                for feat, constraint in zip(X_train_sel.columns, mono_cst_array):
                     if constraint == -1:
                         negative_features.append(feat)
                     elif constraint == 1:
@@ -2409,15 +2417,6 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         tprint_info(f"🔄 Training specialists in memory-efficient mode (batch_size={batch_size})...")
 
-        # Generate base features once and enhance with GMM
-        from src.training.steps.market_analysis.enhanced_feature_generators import EnhancedFeaturePipeline
-        enhanced_feature_generators = EnhancedFeaturePipeline()
-        base_feature_df = enhanced_feature_generators.generate_feature_df(market_data, config)
-        tprint_info("🧠 Applying GMM enhancement to base features...")
-        enhanced_feature_df = await self._apply_gmm_enhancement_to_features(base_feature_df, market_data, config)
-
-        mono_cst_array_list = [monotonic_constraints[col] for col in enhanced_feature_df.columns]
-
         specialist_outputs = {}
         temp_dir = Path(tempfile.mkdtemp(prefix="specialist_outputs_"))
 
@@ -2447,7 +2446,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
                 # Train batch
                 batch_outputs = await self._train_specialist_batch(
-                    batch, market_data, config, force_retrain, enhanced_feature_df, mono_cst_array_list, interaction_constraints, warm_start_train, warm_start_oof
+                    batch, market_data, config, force_retrain
                 )
 
 #                # #region agent log - Batch processing complete
@@ -2515,12 +2514,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         batch: List[Tuple[str, Tuple[str, str]]],
         market_data: pd.DataFrame,
         config: Dict[str, Any],
-        force_retrain: bool,
-        enhanced_feature_df: pd.DataFrame,
-        mono_cst_array_list: List[int],
-        interaction_constraints: List,
-        warm_start_train: np.ndarray,
-        warm_start_oof: np.ndarray
+        force_retrain: bool
     ) -> Dict[str, pd.DataFrame]:
         """Train a batch of specialists in parallel."""
 
@@ -2551,12 +2545,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 class_name,
                 market_data,
                 config,
-                force_retrain,
-                enhanced_feature_df,
-                mono_cst_array_list,
-                interaction_constraints,
-                warm_start_train,
-                warm_start_oof
+                force_retrain
             )
             tasks.append(task)
 
@@ -2616,12 +2605,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         class_name: str,
         market_data: pd.DataFrame,
         config: Dict[str, Any],
-        force_retrain: bool,
-        enhanced_feature_df: pd.DataFrame,
-        mono_cst_array_list: List[int],
-        interaction_constraints: List,
-        warm_start_train: np.ndarray,
-        warm_start_oof: np.ndarray
+        force_retrain: bool
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist while respecting concurrency limits."""
         async with semaphore:
@@ -2631,12 +2615,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 class_name,
                 market_data,
                 config,
-                force_retrain,
-                enhanced_feature_df,
-                mono_cst_array_list,
-                interaction_constraints,
-                warm_start_train,
-                warm_start_oof
+                force_retrain
             )
 
     async def _train_single_specialist_async(
@@ -2646,12 +2625,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         class_name: str,
         market_data: pd.DataFrame,
         config: Dict[str, Any],
-        force_retrain: bool,
-        enhanced_feature_df: pd.DataFrame,
-        mono_cst_array_list: List[int],
-        interaction_constraints: List,
-        warm_start_train: np.ndarray,
-        warm_start_oof: np.ndarray
+        force_retrain: bool
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist asynchronously."""
 
@@ -2755,6 +2729,20 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 #                }) + '\n')
 #            # #endregion
 
+            # Generate specialist-specific base features
+            tprint_info(f"🔧 Generating features for {step_name}...")
+            if hasattr(specialist, 'generate_pipeline_features'):
+                base_features = specialist.generate_pipeline_features(market_data)
+            else:
+                tprint_warning(f"⚠️ {step_name} missing generate_pipeline_features, using fallback.")
+                from src.training.steps.market_analysis.enhanced_feature_generators import EnhancedFeaturePipeline
+                enhanced_feature_generators = EnhancedFeaturePipeline()
+                base_features = enhanced_feature_generators.generate_feature_df(market_data, config)
+
+            # Enhance with GMM
+            tprint_info(f"🧠 Enhancing features for {step_name}...")
+            enhanced_feature_df = await self._apply_gmm_enhancement_to_features(base_features, market_data, config)
+
             # Setup context - enhanced specialists need proper context before execution
             context = {
                 "symbol": config.get("symbol"),
@@ -2770,7 +2758,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
             # Train specialist and get outputs
             outputs = await self._train_single_specialist(
-                specialist, market_data, context, force_retrain, step_name
+                specialist, market_data, context, force_retrain, step_name, enhanced_feature_df
             )
 
             elapsed = time.time() - start_time
@@ -2789,7 +2777,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         market_data: pd.DataFrame,
         context: Dict[str, Any],
         force_retrain: bool,
-        step_name: str
+        step_name: str,
+        enhanced_feature_df: pd.DataFrame = None
     ) -> Optional[pd.DataFrame]:
         """Train a single specialist and return its outputs."""
 
@@ -2804,33 +2793,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 "force_retrain": force_retrain,
                 "verbose": False,  # Reduce verbosity for batch training
                 "market_data": market_data,  # Pass market data directly to avoid artifact loading
-                "enhanced_feature_df": enhanced_feature_df,
-                "mono_cst_array_list": mono_cst_array_list,
-                "interaction_constraints": interaction_constraints,
-                "warm_start_train": warm_start_train,
-                "warm_start_oof": warm_start_oof
+                "enhanced_feature_df": enhanced_feature_df
             })
-
-            # 1. Huber-based preprocessing
-            huber_results = prepare_huber_teacher_outputs(
-                X_train=X,
-                y_train=y,
-                X_val=None,
-                X_test=None,
-                vol_proxy=None,
-                epsilons=[1.1, 1.35, 1.75],
-                alphas=[1e-4, 1e-3, 1e-2],
-                pruning_percentile=15,
-                corr_threshold=0.7,
-                n_jobs=-1
-            )
-
-            selected_features = huber_results['selected_features']
-            monotonic_constraints = huber_results['monotonic_constraints']
-            interaction_constraints = huber_results['interaction_constraints']
-            warm_start = huber_results['warm_start']
-
-            X_train_sel = X[selected_features]
 #                    "message": f"Before executing specialist: {step_name}",
 #                    "data": {"step_name": step_name, "specialist_config_keys": list(specialist_config.keys())},
 #                    "sessionId": "debug-session",

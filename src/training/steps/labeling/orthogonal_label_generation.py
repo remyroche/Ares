@@ -4700,7 +4700,8 @@ def orthogonal_label_generation(
     causal_surprise_threshold: float = 1.8,
     # Pipeline logging parameters
     enable_pipeline_logging: bool = True,
-    tracker: Optional[Any] = None
+    tracker: Optional[Any] = None,
+    disable_subsampling: bool = False
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -4708,6 +4709,7 @@ def orthogonal_label_generation(
     
     Args:
         return_raw_candidates: If True, returns all candidates passing gates without global filtering.
+        disable_subsampling: If True, disables de Prado subsampling optimization (uses full dataset).
     """
     import time
     tprint_info(f"--- Starting Advanced Geometry Generation (Target: {target_signals_per_day} signals/day) ---")
@@ -4747,18 +4749,21 @@ def orthogonal_label_generation(
 
     # 1. Subsampling (de Prado optimization)
     # Target 10% with min 4 months @ 15m (11,520 bars)
-    orig_len = len(df_full)
-    MIN_BARS = 4 * 30 * 24 * 4  # 11,520
-    if orig_len > MIN_BARS:
-        sample_frac = 0.10
-        target_len = max(MIN_BARS, int(orig_len * sample_frac))
-        tprint_info(f"💾 Subsampling enabled: using {target_len} bars (orig: {orig_len})")
-        # We take the most recent bars to ensure we are training on relevant data
-        df_full = df_full.iloc[-target_len:].copy()
-        price = df_full['close']
-        if 'volume' in df_full.columns:
-            volume = df_full['volume']
-        # Update X_probe later or generate it on the sample
+    if not disable_subsampling:
+        orig_len = len(df_full)
+        MIN_BARS = 4 * 30 * 24 * 4  # 11,520
+        if orig_len > MIN_BARS:
+            sample_frac = 0.10
+            target_len = max(MIN_BARS, int(orig_len * sample_frac))
+            tprint_info(f"💾 Subsampling enabled: using {target_len} bars (orig: {orig_len})")
+            # We take the most recent bars to ensure we are training on relevant data
+            df_full = df_full.iloc[-target_len:].copy()
+            price = df_full['close']
+            if 'volume' in df_full.columns:
+                volume = df_full['volume']
+            # Update X_probe later or generate it on the sample
+    else:
+        tprint_info("💾 Subsampling disabled: using full dataset")
     
     # Update X_probe based on (possibly sampled) price/volume
     X_probe = generate_probe_features(price, volume)

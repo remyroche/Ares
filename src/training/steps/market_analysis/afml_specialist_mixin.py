@@ -719,16 +719,47 @@ class AFMLSpecialistMixin:
             threshold_base = get_daily_vol(df['close'], use_volume_time=use_volume_bars)
             tprint_info("      [Sampling] Using Volatility (Price) CUSUM logic")
         
-        target_rate = config.get('afml_target_sampling_rate', 0.20) # Increased target rate
+        # Derive specialist identifiers for flexible config lookups
+        # 1. Full step name (e.g. "enhanced_ml_smc_regime_step")
+        step_name = getattr(self, 'step_name', self.__class__.__name__)
+
+        # 2. Short name (e.g. "smc_regime" from "enhanced_ml_smc_regime_step")
+        short_name = step_name.replace('enhanced_ml_', '').replace('enhanced_', '').replace('_step', '')
+
+        # 3. Mashed name (legacy/fallback, e.g. "smcregime")
+        class_name = self.__class__.__name__
+        mashed_name = class_name.lower().replace('step', '').replace('enhancedml', '').replace('enhanced', '')
+        if mashed_name.startswith('_'): mashed_name = mashed_name[1:]
+
+        # Config lookup with priority: step_name > short_name > mashed_name > global default
+
+        # Target Sampling Rate
+        default_rate = config.get('afml_target_sampling_rate', 0.20)
+        target_rate = config.get(f"{step_name}_target_sampling_rate",
+                        config.get(f"{short_name}_target_sampling_rate",
+                            config.get(f"{mashed_name}_target_sampling_rate", default_rate)))
+
+        # Minimum Event Samples
+        default_min_samples = config.get('min_event_samples', 100)
+        min_samples = int(config.get(f"{step_name}_min_event_samples",
+                            config.get(f"{short_name}_min_event_samples",
+                                config.get(f"{mashed_name}_min_event_samples", default_min_samples))))
+
+        tprint_info(f"      [Sampling Config] {short_name}: target_rate={target_rate}, min_samples={min_samples}")
+
+        # Ensure target count respects minimum samples
+        raw_target = int(len(df) * target_rate)
+        target_count = min(len(df), max(raw_target, min_samples))
+
         low, high = 1e-8, 1.0
-        target_count = int(len(df) * target_rate)
         threshold_base = threshold_base.fillna(method='bfill').fillna(method='ffill')
         
         best_events = df.index[::5] # Default fallback 20%
+        best_diff = float('inf')
         
         # Optimization: Reduce search iterations and exit early if within 5% of target count
         if len(df) > 10:
-            for _ in range(8):
+            for i in range(8):
                 mid = (low + high) / 2
 
                 # Apply filter logic
@@ -751,10 +782,16 @@ class AFMLSpecialistMixin:
                     t_events = get_t_events(df['close'], threshold_base * mid)
 
                 count = len(t_events)
+                diff = abs(count - target_count)
                 
+                # Update best_events using closest match strategy
+                if diff < best_diff:
+                    best_diff = diff
+                    best_events = t_events
+                    # tprint_info(f"      [Sampling] New best: {count} events (diff={diff})")
+
                 if count > target_count:
                     low = mid
-                    best_events = t_events
                 else:
                     high = mid
                 
@@ -764,6 +801,12 @@ class AFMLSpecialistMixin:
                     best_events = t_events
                     break
         
+        # Fast fail for regime sparsity if optimized result is still too sparse
+        if len(best_events) < min_samples:
+            msg = f"Regime sparsity detected: Optimized events {len(best_events)} < {min_samples}. Fast failing."
+            tprint_error(f"      [Sampling] {msg}")
+            raise ValueError(msg)
+
         tprint_info(f"[{self.__class__.__name__}] apply_afml_sampling finished with {len(best_events)} events")
         return df.loc[best_events], best_events
 

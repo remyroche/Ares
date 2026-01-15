@@ -15,6 +15,7 @@ Key upgrades vs. original:
   - Interaction constraints derived from out-of-sample "pair synergy" screening
     (does interaction add beyond additive?) rather than raw feature correlation clustering
   - Output formatted for LightGBM/XGBoost/CatBoost
+  - Two tiers of strictness ("stronger", "conservative") with dynamic capping.
 
 Notes:
   - Interaction constraints are supported by LightGBM and XGBoost.
@@ -27,7 +28,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 from joblib import Parallel, delayed
@@ -58,17 +59,26 @@ class HuberTeacherConfig:
     topk_inclusion_frac: float = 0.35     # for stability: top-K inclusion rate thresholding
 
     # Monotone inference (teacher effect curve)
+    # Defaults set to "Stronger" tier
     mono_bins: int = 10
-    mono_score_threshold: float = 0.9     # fraction of adjacent diffs consistent in sign
-    mono_sign_stability: float = 0.8      # fraction of splits agreeing on direction
-    mono_effect_min_frac: float = 0.10    # effect range >= frac * median(|teacher pred|) or fallback scale
-    mono_use_coeff_fallback: bool = True  # if curve ambiguous but coef sign stable, allow fallback
+    mono_score_threshold: float = 0.8     # (Stronger: 0.8, Conservative: 0.9)
+    mono_sign_stability: float = 0.7      # (Stronger: 0.7, Conservative: 0.9)
+    mono_effect_min_frac: float = 0.05    # (Stronger: 0.05, Conservative: 0.20)
+    mono_use_coeff_fallback: bool = True  # (Stronger: True, Conservative: False)
+
+    # Monotone Capping (New)
+    min_mono_frac: float = 0.4            # (Stronger: 0.4, Conservative: 0.2)
+    max_mono_frac: float = 0.6            # (Stronger: 0.6, Conservative: 0.4)
 
     # Interaction inference (pair synergy screening)
-    interaction_max_features: int = 80    # shortlist size for pair screening
-    interaction_top_pairs: int = 50       # keep strongest pairs for grouping
-    interaction_min_gain: float = 0.0     # minimum MAE improvement (positive means better) per split
-    interaction_sign_stability: float = 0.6  # fraction splits with positive gain
+    interaction_max_features: int = 150   # (Stronger: 150, Conservative: 80)
+    interaction_top_pairs: int = 100      # (Stronger: 100, Conservative: 20)
+
+    # Interaction Gain (Robust Scaling)
+    # Replaces absolute interaction_min_gain.
+    # Threshold = interaction_min_gain_rel * robust_scale(y)
+    interaction_min_gain_rel: float = 0.0 # (Stronger: 0.0, Conservative: 1e-4)
+    interaction_sign_stability: float = 0.6 # (Stronger: 0.6, Conservative: 0.75)
 
     # Correlation grouping fallback (optional)
     corr_group_threshold: float = 0.7     # used only if you enable correlation grouping
@@ -76,6 +86,42 @@ class HuberTeacherConfig:
     # Compute
     n_jobs: int = -1
     verbose: bool = True
+
+def get_huber_tier_config(tier: str = "stronger") -> HuberTeacherConfig:
+    """
+    Returns the configuration for the specified tier.
+
+    Tiers:
+      - "stronger" (default): More aggressive, lower thresholds, coefficient fallback enabled,
+        wider interaction search, higher monotone cap (40-60%).
+      - "conservative": Stricter stability/effect thresholds, no fallback, narrower interaction search,
+        positive interaction gain required, lower monotone cap (20-40%).
+    """
+    base = HuberTeacherConfig()
+
+    if tier == "stronger":
+        # Matches default values of the dataclass
+        return base
+
+    elif tier == "conservative":
+        return replace(
+            base,
+            # Monotone Stricter
+            mono_score_threshold=0.9,
+            mono_sign_stability=0.9,
+            mono_effect_min_frac=0.20,
+            mono_use_coeff_fallback=False,
+            min_mono_frac=0.2,
+            max_mono_frac=0.4,
+
+            # Interaction Stricter
+            interaction_max_features=80,
+            interaction_top_pairs=20,
+            interaction_min_gain_rel=1e-4,
+            interaction_sign_stability=0.75
+        )
+    else:
+        raise ValueError(f"Unknown tier: {tier}. Use 'stronger' or 'conservative'.")
 
 
 # -----------------------------
@@ -100,6 +146,12 @@ def _normalize_weights(w: np.ndarray) -> np.ndarray:
         return w
     return w / mean
 
+def _robust_scale_mad(y: np.ndarray) -> float:
+    """Computes robust scale (sigma estimate) using MAD: 1.4826 * median(|y - median(y)|)"""
+    y = np.asarray(y, dtype=np.float64)
+    med = np.median(y)
+    mad = np.median(np.abs(y - med))
+    return float(1.4826 * mad)
 
 def _make_walkforward_splits(
     n_samples: int,
@@ -259,7 +311,8 @@ def _pair_synergy_gain_mae(
     x_i: np.ndarray,
     x_j: np.ndarray,
     y: np.ndarray,
-    w: Optional[np.ndarray]
+    w: Optional[np.ndarray],
+    base_epsilon: float = 1.35
 ) -> float:
     """
     Measures whether an interaction term improves out-of-sample fit beyond additive.
@@ -274,8 +327,8 @@ def _pair_synergy_gain_mae(
     X_b = np.column_stack([x_i, x_j, x_i * x_j]).astype(np.float64, copy=False)
 
     # Fixed robust params for screening (keep cheap & stable)
-    m_a = HuberRegressor(epsilon=1.35, alpha=1e-3, max_iter=2000)
-    m_b = HuberRegressor(epsilon=1.35, alpha=1e-3, max_iter=2000)
+    m_a = HuberRegressor(epsilon=base_epsilon, alpha=1e-3, max_iter=2000)
+    m_b = HuberRegressor(epsilon=base_epsilon, alpha=1e-3, max_iter=2000)
 
     if w is None:
         m_a.fit(X_a, y)
@@ -343,16 +396,18 @@ def prepare_huber_teacher_outputs(
     vol_proxy: Optional[pd.Series] = None,
     sample_weight: Optional[np.ndarray] = None,
     # Legacy arguments for backward compatibility
-    epsilons: List[float] = [1.1, 1.35, 1.75],
-    alphas: List[float] = [1e-4, 1e-3, 1e-2],
-    pruning_percentile: int = 15,
-    corr_threshold: float = 0.7,
+    # Set to None to avoid overriding tier defaults unintentionally
+    epsilons: Optional[List[float]] = None,
+    alphas: Optional[List[float]] = None,
+    pruning_percentile: Optional[int] = None,
+    corr_threshold: Optional[float] = None,
     n_jobs: int = -1,
-    sign_agree_threshold: float = 0.8,
-    nonzero_rate_threshold: float = 0.7,
-    n_time_splits: int = 5,
+    sign_agree_threshold: Optional[float] = None,
+    nonzero_rate_threshold: Optional[float] = None,
+    n_time_splits: Optional[int] = None,
     # New configuration object
-    config: Optional[HuberTeacherConfig] = None
+    config: Optional[HuberTeacherConfig] = None,
+    tier: str = "stronger"
 ) -> Dict:
     """
     Produces:
@@ -367,24 +422,33 @@ def prepare_huber_teacher_outputs(
       - X_train is time-ordered already (no shuffling).
     """
     # -----------------------------
-    # Config / Backward Compatibility
+    # Config / Tier Resolution
     # -----------------------------
-    if config is None:
-        config = HuberTeacherConfig(
-            epsilons=tuple(epsilons),
-            alphas=tuple(alphas),
-            pruning_percentile=pruning_percentile,
-            corr_group_threshold=corr_threshold,
-            n_jobs=n_jobs,
-            n_time_splits=n_time_splits,
-            mono_sign_stability=sign_agree_threshold,
-            # Note: nonzero_rate_threshold is superseded by topk_inclusion_frac
-            # and other stability metrics in the new logic.
-        )
-    cfg = config
+    if config is not None:
+        cfg = config
+    else:
+        # Get defaults for the requested tier
+        cfg = get_huber_tier_config(tier)
+
+        # Override with legacy args only if they are provided
+        updates = {}
+        if epsilons is not None: updates['epsilons'] = tuple(epsilons)
+        if alphas is not None: updates['alphas'] = tuple(alphas)
+        if pruning_percentile is not None: updates['pruning_percentile'] = pruning_percentile
+        if corr_threshold is not None: updates['corr_group_threshold'] = corr_threshold
+        if n_jobs != -1: updates['n_jobs'] = n_jobs
+        if n_time_splits is not None: updates['n_time_splits'] = n_time_splits
+        if sign_agree_threshold is not None: updates['mono_sign_stability'] = sign_agree_threshold
+
+        # Original defaults fallback logic:
+        # If args are None, we want the tier defaults.
+        # But for n_jobs, default is -1. If passed -1, it's ambiguous, but harmless.
+
+        if updates:
+            cfg = replace(cfg, **updates)
 
     # -----------------------------
-    # Weights
+    # Weights & Y Scale
     # -----------------------------
     if sample_weight is not None:
         w = _normalize_weights(np.asarray(sample_weight))
@@ -394,6 +458,14 @@ def prepare_huber_teacher_outputs(
     else:
         w = None
 
+    y_tr = np.asarray(y_train.values if isinstance(y_train, pd.Series) else y_train, dtype=np.float64)
+    y_scale = _robust_scale_mad(y_tr)
+    if y_scale <= 0:
+        y_scale = 1.0
+
+    if cfg.verbose:
+        print(f"[HuberTeacher] Tier='{tier}', Y_Scale (MAD)={y_scale:.6f}")
+
     # -----------------------------
     # Data to numpy (preserve column order)
     # -----------------------------
@@ -401,7 +473,6 @@ def prepare_huber_teacher_outputs(
     feature_names = np.asarray(train_columns)
 
     X_tr = _as_float32_2d(X_train, columns=train_columns)
-    y_tr = np.asarray(y_train.values if isinstance(y_train, pd.Series) else y_train, dtype=np.float64)
 
     n_samples, n_features = X_tr.shape
     if cfg.verbose:
@@ -476,32 +547,27 @@ def prepare_huber_teacher_outputs(
     warm_test = _predict_df(X_test)
 
     # -----------------------------
-    # Stability metrics: sign stability + top-K inclusion across (splits × grid)
+    # Stability metrics
     # -----------------------------
-    # Top-K inclusion: feature is "important" if in top-K of |coef| for that fit
     K = max(1, int(cfg.topk_inclusion_frac * n_features))
-    flat = coefs_all.reshape(-1, n_features)  # (n_splits*n_grid, n_features)
-    ranks = np.argsort(-np.abs(flat), axis=1)  # descending
+    flat = coefs_all.reshape(-1, n_features)
+    ranks = np.argsort(-np.abs(flat), axis=1)
     topk_sets = ranks[:, :K]
 
     inclusion = np.zeros(n_features, dtype=np.float64)
     for row in topk_sets:
         inclusion[row] += 1
-    inclusion /= topk_sets.shape[0]  # in [0,1]
+    inclusion /= topk_sets.shape[0]
 
     sign_ref = np.sign(median_coef)
     sign_stability = np.zeros(n_features, dtype=np.float64)
     for j in range(n_features):
         s = np.sign(flat[:, j])
-        # ignore zeros by treating as mismatch
         sign_stability[j] = np.mean(s == sign_ref[j]) if sign_ref[j] != 0 else 0.0
 
     # -----------------------------
-    # Monotone constraints via effect curves (split-level)
+    # Monotone constraints: Curve Inference + Capping
     # -----------------------------
-    # We compute per-split effect curve sign/score using the final teacher predictions,
-    # restricted to that split window. This gives regime-aware monotonicity.
-    # (If you want stricter OOS, compute teacher on past and evaluate on forward window.)
     mono_sign_votes = np.zeros((len(splits), n_features), dtype=np.int8)
     mono_scores = np.zeros((len(splits), n_features), dtype=np.float64)
     mono_ranges = np.zeros((len(splits), n_features), dtype=np.float64)
@@ -515,7 +581,6 @@ def prepare_huber_teacher_outputs(
             mono_scores[si, j] = score
             mono_ranges[si, j] = rng
 
-    # Stability of curve sign: fraction of splits agreeing with median curve sign
     curve_median_sign = np.sign(np.median(mono_sign_votes.astype(np.int16), axis=0))
     curve_sign_stability = np.zeros(n_features, dtype=np.float64)
     curve_score_median = np.median(mono_scores, axis=0)
@@ -528,46 +593,114 @@ def prepare_huber_teacher_outputs(
         else:
             curve_sign_stability[j] = np.mean(mono_sign_votes[:, j] == ms)
 
-    # Effect size threshold: scale relative to typical prediction magnitude
     pred_scale = float(np.median(np.abs(warm_train))) if np.median(np.abs(warm_train)) > 0 else float(np.std(warm_train) + 1e-12)
     min_effect = cfg.mono_effect_min_frac * pred_scale
 
-    # Decide monotonic constraint per selected feature
+    # 1. Identify Candidates (Proposed Direction)
+    # We assign a candidate direction to *every* selected feature if possible,
+    # then we filter based on stability/score ranking to meet Min/Max caps.
+
     mono_vec_full = np.zeros(n_features, dtype=int)
+    candidate_indices = []
+
+    # Calculate a ranking score for all selected features
+    # Rank Score = SignStability * CurveScore (Higher is better)
+    rank_scores = np.zeros(n_features, dtype=np.float64)
 
     for j in selected_idx:
-        # Primary: curve-based decision
+        # Curve approach
         ms = int(curve_median_sign[j])
+
+        # Determine candidate direction and score
+        direction = 0
+        score_val = 0.0
+
+        if ms != 0 and curve_range_median[j] >= min_effect:
+            # Curve candidate
+            direction = ms
+            # Score = stability * monotonicity
+            score_val = curve_sign_stability[j] * curve_score_median[j]
+
+            # Check if it passes strict thresholds (for "soft" pass check)
+            # We don't discard yet, we just score it.
+
+        elif cfg.mono_use_coeff_fallback:
+            # Fallback candidate
+            cs = int(np.sign(median_coef[j]))
+            if cs != 0 and inclusion[j] >= cfg.topk_inclusion_frac:
+                direction = cs
+                # Fallback score: sign_stability * (some penalty factor or just sign_stability)
+                # We treat coef stability as slightly weaker than a perfect curve?
+                # Or just use sign_stability as the score.
+                score_val = sign_stability[j] * 0.9 # Small penalty to prioritize curve evidence
+
+        if direction != 0:
+            mono_vec_full[j] = direction
+            rank_scores[j] = score_val
+            candidate_indices.append(j)
+
+    # 2. Apply Dynamic Capping (Min/Max Fractions)
+    # Sort candidates by rank_score descending
+    candidate_indices.sort(key=lambda ix: rank_scores[ix], reverse=True)
+
+    n_selected = len(selected_idx)
+    min_cnt = int(np.ceil(cfg.min_mono_frac * n_selected))
+    max_cnt = int(np.floor(cfg.max_mono_frac * n_selected))
+
+    # Determine which candidates to keep
+    # We want at least min_cnt (if available), at most max_cnt.
+    # Prioritize by rank_score.
+
+    # How many candidates do we have?
+    n_candidates = len(candidate_indices)
+
+    # Count how many pass strict config thresholds
+    strict_pass_count = 0
+    for j in candidate_indices:
+        # Check if it meets the explicit thresholds
+        # Note: We reconstructed the logic above.
+        # Curve check:
         passes_curve = (
-            ms != 0
-            and curve_sign_stability[j] >= cfg.mono_sign_stability
-            and curve_score_median[j] >= cfg.mono_score_threshold
+            rank_scores[j] >= (cfg.mono_sign_stability * cfg.mono_score_threshold)
             and curve_range_median[j] >= min_effect
         )
-
         if passes_curve:
-            mono_vec_full[j] = ms
+            strict_pass_count += 1
             continue
 
-        # Fallback: coefficient sign stability (optional)
+        # Fallback check (if applicable)
         if cfg.mono_use_coeff_fallback:
-            cs = int(np.sign(median_coef[j]))
-            passes_coef = (
-                cs != 0
-                and sign_stability[j] >= cfg.mono_sign_stability
-                and inclusion[j] >= cfg.topk_inclusion_frac
-            )
-            mono_vec_full[j] = cs if passes_coef else 0
-        else:
+             # rank_scores[j] was set to sign_stability * 0.9.
+             # Comparison is tricky. Let's look at raw metrics.
+             passes_coef = (
+                 sign_stability[j] >= cfg.mono_sign_stability
+                 and inclusion[j] >= cfg.topk_inclusion_frac
+             )
+             if passes_coef:
+                 strict_pass_count += 1
+
+    final_k = max(min_cnt, min(max_cnt, strict_pass_count))
+    # Ensure we don't exceed available candidates
+    final_k = min(final_k, n_candidates)
+
+    kept_indices = set(candidate_indices[:final_k])
+
+    # Zero out rejected features
+    for j in selected_idx:
+        if j not in kept_indices:
             mono_vec_full[j] = 0
 
     # Create selected-only monotone vector aligned to selected features
     mono_vec_selected = mono_vec_full[selected_idx].astype(int)
 
+    if cfg.verbose:
+        print(f"[HuberTeacher] Monotonic Constraints: Candidates={n_candidates}, StrictPass={strict_pass_count}, "
+              f"Caps=[{min_cnt}, {max_cnt}] -> Final={len(kept_indices)} ({len(kept_indices)/n_selected:.1%})")
+
     # -----------------------------
-    # Interaction constraints via pair synergy screening (on selected shortlist)
+    # Interaction constraints via pair synergy screening
     # -----------------------------
-    # Shortlist by inclusion + |coef| (stable importance proxy)
+    # Shortlist by inclusion + |coef|
     stable_score = (0.5 * inclusion) + (0.5 * (abs_median_coef / (np.median(abs_median_coef) + 1e-12)))
     shortlist_idx = np.argsort(-stable_score)[: min(cfg.interaction_max_features, n_features)]
     shortlist_names = feature_names[shortlist_idx].tolist()
@@ -575,33 +708,34 @@ def prepare_huber_teacher_outputs(
     if cfg.verbose:
         print(f"[HuberTeacher] interaction shortlist={len(shortlist_idx)} features")
 
-    # Evaluate pair gains across splits; keep stable winners
+    # Threshold for gain
+    min_gain_abs = cfg.interaction_min_gain_rel * y_scale
+
+    # Evaluate pair gains
     def _pair_eval(i_pos: int, j_pos: int) -> Tuple[int, int, float, float]:
         i = shortlist_idx[i_pos]
         j = shortlist_idx[j_pos]
         gains = []
+        # Use median epsilon for screening
+        eps_screen = _median_choice(cfg.epsilons)
         for (start, end) in splits:
-            # Use split window data (scaled) and teacher residual target? Here we screen on y directly.
             Xw = X_tr_scaled[start:end]
             yw = y_tr[start:end]
             ww = None if w is None else w[start:end]
-            gain = _pair_synergy_gain_mae(Xw[:, i], Xw[:, j], yw, ww)
+            gain = _pair_synergy_gain_mae(Xw[:, i], Xw[:, j], yw, ww, base_epsilon=eps_screen)
             gains.append(gain)
 
         gains = np.asarray(gains, dtype=np.float64)
         mean_gain = float(np.mean(gains))
-        pos_rate = float(np.mean(gains > cfg.interaction_min_gain))
+        pos_rate = float(np.mean(gains > min_gain_abs)) # Strict inequality? >
         return i, j, mean_gain, pos_rate
 
-    # Generate pair list (upper triangle)
     pair_positions = []
     m = len(shortlist_idx)
     for a in range(m):
         for b in range(a + 1, m):
             pair_positions.append((a, b))
 
-    # To control cost, cap number of pairs if needed
-    # (You can tune this based on your compute budget.)
     max_pairs = min(len(pair_positions), 5000)
     if len(pair_positions) > max_pairs:
         rng = np.random.default_rng(123)
@@ -611,17 +745,16 @@ def prepare_huber_teacher_outputs(
         delayed(_pair_eval)(a, b) for (a, b) in pair_positions
     )
 
-    # Filter by stability + gain, then select top pairs
+    # Filter
     kept = [
         (i, j, mean_gain, pos_rate)
         for (i, j, mean_gain, pos_rate) in pair_results
-        if (pos_rate >= cfg.interaction_sign_stability and mean_gain > cfg.interaction_min_gain)
+        if (pos_rate >= cfg.interaction_sign_stability and mean_gain > min_gain_abs)
     ]
     kept.sort(key=lambda t: t[2], reverse=True)
     kept = kept[: cfg.interaction_top_pairs]
 
     edges_selected_space: List[Tuple[int, int]] = []
-    # Convert absolute feature indices into indices within selected_feats for constraint grouping
     selected_index_map = {int(ix): pos for pos, ix in enumerate(selected_idx.tolist())}
     for (i, j, _, _) in kept:
         if int(i) in selected_index_map and int(j) in selected_index_map:
@@ -632,7 +765,6 @@ def prepare_huber_teacher_outputs(
         edges=edges_selected_space
     )
 
-    # CatBoost: provide audit pairs as names (no hard constraint parameter)
     interaction_audit = []
     for (i, j, mean_gain, pos_rate) in kept:
         interaction_audit.append({
@@ -648,10 +780,8 @@ def prepare_huber_teacher_outputs(
     # -----------------------------
     # Outputs formatted for LGBM / XGB / Cat
     # -----------------------------
-    # Full vectors aligned to original feature order
     lgbm_mono_full = mono_vec_full.tolist()
-    xgb_mono_full = tuple(int(v) for v in mono_vec_full.tolist())  # XGBoost accepts tuple/list/string
-    # CatBoost accepts list/tuple or sparse string; we provide both
+    xgb_mono_full = tuple(int(v) for v in mono_vec_full.tolist())
     cat_mono_full_list = mono_vec_full.tolist()
     cat_mono_sparse = ",".join(
         f"{train_columns[i]}:{int(mono_vec_full[i])}"
@@ -659,7 +789,6 @@ def prepare_huber_teacher_outputs(
         if int(mono_vec_full[i]) != 0
     )
 
-    # Selected-only vectors aligned to selected_feats
     lgbm_mono_selected = mono_vec_selected.tolist()
     xgb_mono_selected = tuple(int(v) for v in mono_vec_selected.tolist())
     cat_mono_selected_list = mono_vec_selected.tolist()
@@ -669,35 +798,31 @@ def prepare_huber_teacher_outputs(
         if int(mono_vec_selected[i]) != 0
     )
 
-    # Provide dict form for convenience
     mono_dict_selected = dict(zip(selected_feats, [int(v) for v in mono_vec_selected]))
-
-    # Residual meta target (often what you train the tree on)
     residual_target = y_tr - warm_train
 
     # -----------------------------
-    # Construct Return Dictionary with Backward Compatibility
+    # Return
     # -----------------------------
     return {
         # Core (Legacy & New)
         "selected_features": selected_feats,
-        "monotonic_constraints": mono_dict_selected,  # Legacy format: Dict[str, int]
-        "interaction_constraints": interaction_groups, # Legacy format: List[List[str]]
-        
+        "monotonic_constraints": mono_dict_selected,
+        "interaction_constraints": interaction_groups,
+
         "warm_start": {
             "train": warm_train,
             "val": warm_val,
             "test": warm_test,
         },
-        "huber_models": [teacher], # Legacy key
-        "quantile_meta_targets": residual_target, # Legacy key (alias for residual_target)
-        "residual_meta_target": residual_target,  # New key
+        "huber_models": [teacher],
+        "quantile_meta_targets": residual_target,
+        "residual_meta_target": residual_target,
         "scaler": scaler,
 
-        # New Rich Metadata (stored in separate keys to avoid breaking legacy consumers)
+        # New Rich Metadata
         "train_columns": train_columns,
         "selected_feature_indices": selected_idx.tolist(),
-        
         "huber_teacher": teacher,
 
         "stability": {
@@ -709,18 +834,15 @@ def prepare_huber_teacher_outputs(
             "curve_sign_stability": curve_sign_stability.tolist(),
             "curve_score_median": curve_score_median.tolist(),
             "curve_range_median": curve_range_median.tolist(),
+            "rank_scores": rank_scores.tolist(),
         },
 
         "monotonic_constraints_details": {
             "selected_dict": mono_dict_selected,
-
-            # Full vectors aligned to original feature order (X_train columns)
             "lightgbm_full": lgbm_mono_full,
             "xgboost_full": xgb_mono_full,
             "catboost_full_list": cat_mono_full_list,
             "catboost_full_sparse": cat_mono_sparse,
-
-            # Selected-only vectors aligned to selected_features order
             "lightgbm_selected": lgbm_mono_selected,
             "xgboost_selected": xgb_mono_selected,
             "catboost_selected_list": cat_mono_selected_list,
@@ -728,13 +850,8 @@ def prepare_huber_teacher_outputs(
         },
 
         "interaction_constraints_details": {
-            # For LightGBM/XGBoost: list of feature-name groups (allowed interactions within groups)
             "groups_selected": interaction_groups,
-
-            # Audit list you can use for CatBoost governance/feature engineering
             "catboost_interaction_audit": interaction_audit,
-
-            # Convenience: shortlist used for screening
             "shortlist_features": shortlist_names,
         },
     }

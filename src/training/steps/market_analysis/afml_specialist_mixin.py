@@ -720,15 +720,21 @@ class AFMLSpecialistMixin:
             tprint_info("      [Sampling] Using Volatility (Price) CUSUM logic")
         
         target_rate = config.get('afml_target_sampling_rate', 0.20) # Increased target rate
+        min_samples = int(config.get('min_event_samples', 100))
+
+        # Ensure target count respects minimum samples
+        raw_target = int(len(df) * target_rate)
+        target_count = min(len(df), max(raw_target, min_samples))
+
         low, high = 1e-8, 1.0
-        target_count = int(len(df) * target_rate)
         threshold_base = threshold_base.fillna(method='bfill').fillna(method='ffill')
         
         best_events = df.index[::5] # Default fallback 20%
+        best_diff = float('inf')
         
         # Optimization: Reduce search iterations and exit early if within 5% of target count
         if len(df) > 10:
-            for _ in range(8):
+            for i in range(8):
                 mid = (low + high) / 2
 
                 # Apply filter logic
@@ -751,10 +757,16 @@ class AFMLSpecialistMixin:
                     t_events = get_t_events(df['close'], threshold_base * mid)
 
                 count = len(t_events)
+                diff = abs(count - target_count)
                 
+                # Update best_events using closest match strategy
+                if diff < best_diff:
+                    best_diff = diff
+                    best_events = t_events
+                    # tprint_info(f"      [Sampling] New best: {count} events (diff={diff})")
+
                 if count > target_count:
                     low = mid
-                    best_events = t_events
                 else:
                     high = mid
                 
@@ -764,6 +776,13 @@ class AFMLSpecialistMixin:
                     best_events = t_events
                     break
         
+        # Fallback for regime sparsity: if optimized result is still too sparse, force a dense slice
+        if len(best_events) < min_samples:
+            tprint_warning(f"      [Sampling] Optimized events {len(best_events)} < {min_samples}. Using dense fallback.")
+            # Calculate stride to get ~1.5x min_samples
+            stride = max(1, int(len(df) / (min_samples * 1.5)))
+            best_events = df.index[::stride]
+
         tprint_info(f"[{self.__class__.__name__}] apply_afml_sampling finished with {len(best_events)} events")
         return df.loc[best_events], best_events
 

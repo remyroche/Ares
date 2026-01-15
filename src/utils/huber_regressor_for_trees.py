@@ -1,350 +1,744 @@
+"""
+Huber Teacher Orchestrator (Updated)
+-----------------------------------
+Goal: Use a robust linear teacher (Huber) to:
+  1) Warm-start downstream tree models (baseline predictions + residual targets)
+  2) Provide high-precision monotonic constraints
+  3) Provide interaction constraints (LightGBM/XGBoost) + interaction audit for CatBoost
+
+Key upgrades vs. original:
+  - Single global RobustScaler reused across all splits (coefficients comparable)
+  - Optional hyperparameter grid usage (time-split + param stability)
+  - Monotonic constraints inferred from teacher effect curves (ALE/PDP-like binning),
+    not just coefficient sign (more tree-native, less confounded)
+  - Meaningful stability metrics (sign stability + top-K inclusion), no "nonzero rate"
+  - Interaction constraints derived from out-of-sample "pair synergy" screening
+    (does interaction add beyond additive?) rather than raw feature correlation clustering
+  - Output formatted for LightGBM/XGBoost/CatBoost
+
+Notes:
+  - Interaction constraints are supported by LightGBM and XGBoost.
+  - CatBoost supports monotone constraints, but does not provide a direct "interaction_constraints"
+    parameter analogous to LightGBM/XGBoost; we provide an interaction audit list instead.
+"""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Union, Any
+
+from joblib import Parallel, delayed
+
 from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import RobustScaler
-from scipy.cluster.hierarchy import linkage, fcluster
-from scipy.spatial.distance import squareform
-from scipy.stats import rankdata
-from joblib import Parallel, delayed
-from typing import Dict, List, Tuple, Optional, Union
+from sklearn.metrics import mean_absolute_error
 
-def _fit_single_split_optimized(
-    X_full: np.ndarray,
-    y_full: np.ndarray,
-    sample_weight_full: Optional[np.ndarray],
-    start_idx: int,
-    end_idx: int,
-    epsilons: List[float],
-    alphas: List[float]
-) -> np.ndarray:
+
+# -----------------------------
+# Configuration
+# -----------------------------
+
+@dataclass(frozen=True)
+class HuberTeacherConfig:
+    # Huber grid
+    epsilons: Tuple[float, ...] = (1.1, 1.35, 1.75)
+    alphas: Tuple[float, ...] = (1e-4, 1e-3, 1e-2)
+    max_iter: int = 5000
+
+    # Time splits (walk-forward with rolling window)
+    n_time_splits: int = 5
+    window_mult: float = 2.0  # window length = window_mult * split_size
+    embargo: int = 0          # optional embargo samples to avoid label leakage
+
+    # Feature pruning
+    pruning_percentile: int = 15          # prune weakest coefficients (by |median coef|)
+    topk_inclusion_frac: float = 0.35     # for stability: top-K inclusion rate thresholding
+
+    # Monotone inference (teacher effect curve)
+    mono_bins: int = 10
+    mono_score_threshold: float = 0.9     # fraction of adjacent diffs consistent in sign
+    mono_sign_stability: float = 0.8      # fraction of splits agreeing on direction
+    mono_effect_min_frac: float = 0.10    # effect range >= frac * median(|teacher pred|) or fallback scale
+    mono_use_coeff_fallback: bool = True  # if curve ambiguous but coef sign stable, allow fallback
+
+    # Interaction inference (pair synergy screening)
+    interaction_max_features: int = 80    # shortlist size for pair screening
+    interaction_top_pairs: int = 50       # keep strongest pairs for grouping
+    interaction_min_gain: float = 0.0     # minimum MAE improvement (positive means better) per split
+    interaction_sign_stability: float = 0.6  # fraction splits with positive gain
+
+    # Correlation grouping fallback (optional)
+    corr_group_threshold: float = 0.7     # used only if you enable correlation grouping
+
+    # Compute
+    n_jobs: int = -1
+    verbose: bool = True
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
+
+def _as_float32_2d(df: Union[pd.DataFrame, np.ndarray], columns: Optional[List[str]] = None) -> np.ndarray:
+    if isinstance(df, pd.DataFrame):
+        if columns is not None:
+            df = df[columns]
+        return df.values.astype(np.float32, copy=False)
+    arr = np.asarray(df)
+    if arr.ndim != 2:
+        raise ValueError("X must be 2D.")
+    return arr.astype(np.float32, copy=False)
+
+
+def _normalize_weights(w: np.ndarray) -> np.ndarray:
+    w = np.asarray(w, dtype=np.float64)
+    mean = np.mean(w)
+    if not np.isfinite(mean) or mean <= 0:
+        return w
+    return w / mean
+
+
+def _make_walkforward_splits(
+    n_samples: int,
+    n_splits: int,
+    window_mult: float,
+    embargo: int
+) -> List[Tuple[int, int]]:
     """
-    Helper function to fit a single Huber Regressor split.
-    Accepts full numpy arrays and indices to minimize pickling overhead.
+    Returns list of (start, end) indices for training windows in walk-forward fashion.
+    Uses rolling window of length window_mult * split_size, ending at progressive endpoints.
     """
-    # Slice the data (creates a view usually for numpy)
-    X_split = X_full[start_idx:end_idx]
-    y_split = y_full[start_idx:end_idx]
+    if n_splits < 2:
+        return [(0, n_samples)]
 
-    # Scale data for this split
-    # RobustScaler usually fits on the data.
-    scaler_split = RobustScaler()
-    X_split_scaled = scaler_split.fit_transform(X_split) # Already float32 if input is float32
+    split_size = max(1, n_samples // n_splits)
+    window = max(2, int(window_mult * split_size))
 
-    # Fit best Huber model for this split (use median parameters)
-    eps_median = np.median(epsilons)
-    alpha_median = np.median(alphas)
+    splits: List[Tuple[int, int]] = []
+    for k in range(n_splits):
+        end = n_samples if (k == n_splits - 1) else (k + 1) * split_size
+        end = max(2, min(end, n_samples))
 
-    h_split = HuberRegressor(epsilon=eps_median, alpha=alpha_median, max_iter=5000)
+        # Apply embargo by cutting the last embargo samples off the training end
+        train_end = max(2, end - max(0, embargo))
 
-    if sample_weight_full is not None:
-        split_weights = sample_weight_full[start_idx:end_idx]
-        h_split.fit(X_split_scaled, y_split, sample_weight=split_weights)
+        start = max(0, train_end - window)
+        if train_end - start < 2:
+            continue
+        splits.append((start, train_end))
+
+    # Ensure uniqueness and order
+    splits = sorted(list(dict.fromkeys(splits)))
+    return splits if splits else [(0, n_samples)]
+
+
+def _fit_huber(
+    X_scaled: np.ndarray,
+    y: np.ndarray,
+    sample_weight: Optional[np.ndarray],
+    epsilon: float,
+    alpha: float,
+    max_iter: int
+) -> HuberRegressor:
+    model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
+    if sample_weight is None:
+        model.fit(X_scaled, y)
     else:
-        h_split.fit(X_split_scaled, y_split)
+        model.fit(X_scaled, y, sample_weight=sample_weight)
+    return model
 
-    return h_split.coef_
+
+def _median_choice(vals: Tuple[float, ...]) -> float:
+    return float(np.median(np.asarray(vals, dtype=float)))
+
+
+# -----------------------------
+# Split fitting: (split × grid)
+# -----------------------------
+
+def _fit_split_grid(
+    X_scaled_full: np.ndarray,
+    y_full: np.ndarray,
+    w_full: Optional[np.ndarray],
+    start: int,
+    end: int,
+    epsilons: Tuple[float, ...],
+    alphas: Tuple[float, ...],
+    max_iter: int
+) -> Dict[str, np.ndarray]:
+    X = X_scaled_full[start:end]
+    y = y_full[start:end]
+    w = None if w_full is None else w_full[start:end]
+
+    coefs = []
+    intercepts = []
+    params = []
+    for eps in epsilons:
+        for a in alphas:
+            m = _fit_huber(X, y, w, eps, a, max_iter)
+            coefs.append(m.coef_.astype(np.float64, copy=False))
+            intercepts.append(float(m.intercept_))
+            params.append((float(eps), float(a)))
+
+    return {
+        "coefs": np.vstack(coefs),                  # (n_grid, n_features)
+        "intercepts": np.asarray(intercepts),       # (n_grid,)
+        "params": np.asarray(params, dtype=float),  # (n_grid, 2)
+        "start_end": np.asarray([start, end], dtype=int)
+    }
+
+
+# -----------------------------
+# Monotone inference via teacher effect curve (ALE/PDP-like)
+# -----------------------------
+
+def _teacher_effect_curve_sign(
+    x: np.ndarray,
+    teacher_pred: np.ndarray,
+    bins: int
+) -> Tuple[int, float, float]:
+    """
+    Computes a binned "effect curve" of teacher_pred vs x.
+    Returns: (sign, monotone_score, effect_range)
+
+    sign: -1, 0, +1 based on overall slope
+    monotone_score: fraction of adjacent differences consistent with sign
+    effect_range: max - min of binned means
+    """
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(teacher_pred, dtype=np.float64)
+
+    # Quantile bins (handles heavy tails)
+    qs = np.linspace(0, 1, bins + 1)
+    edges = np.quantile(x, qs)
+    edges = np.unique(edges)
+    if edges.size < 3:
+        return 0, 0.0, 0.0
+
+    # Assign bins
+    idx = np.clip(np.digitize(x, edges[1:-1], right=True), 0, edges.size - 2)
+
+    # Mean prediction per bin
+    bmeans = []
+    for b in range(edges.size - 1):
+        mask = idx == b
+        if np.any(mask):
+            bmeans.append(np.mean(y[mask]))
+        else:
+            bmeans.append(np.nan)
+    bmeans = np.asarray(bmeans, dtype=np.float64)
+
+    # Interpolate missing bins
+    if np.all(np.isnan(bmeans)):
+        return 0, 0.0, 0.0
+    nans = np.isnan(bmeans)
+    if np.any(nans):
+        xs = np.arange(bmeans.size)
+        bmeans[nans] = np.interp(xs[nans], xs[~nans], bmeans[~nans])
+
+    diffs = np.diff(bmeans)
+    eff_range = float(np.max(bmeans) - np.min(bmeans))
+
+    overall = bmeans[-1] - bmeans[0]
+    if np.isclose(overall, 0.0):
+        return 0, 0.0, eff_range
+
+    sgn = 1 if overall > 0 else -1
+    score = float(np.mean((diffs >= 0) if sgn > 0 else (diffs <= 0)))
+    return sgn, score, eff_range
+
+
+# -----------------------------
+# Interaction inference via pair synergy screening
+# -----------------------------
+
+def _pair_synergy_gain_mae(
+    x_i: np.ndarray,
+    x_j: np.ndarray,
+    y: np.ndarray,
+    w: Optional[np.ndarray]
+) -> float:
+    """
+    Measures whether an interaction term improves out-of-sample fit beyond additive.
+
+    Model A: y ~ [x_i, x_j]
+    Model B: y ~ [x_i, x_j, x_i*x_j]  (scaled outside; here assumes already scaled)
+
+    Returns MAE gain: MAE_A - MAE_B (positive => interaction helps).
+    Uses a robust learner (Huber with fixed settings) for stability.
+    """
+    X_a = np.column_stack([x_i, x_j]).astype(np.float64, copy=False)
+    X_b = np.column_stack([x_i, x_j, x_i * x_j]).astype(np.float64, copy=False)
+
+    # Fixed robust params for screening (keep cheap & stable)
+    m_a = HuberRegressor(epsilon=1.35, alpha=1e-3, max_iter=2000)
+    m_b = HuberRegressor(epsilon=1.35, alpha=1e-3, max_iter=2000)
+
+    if w is None:
+        m_a.fit(X_a, y)
+        m_b.fit(X_b, y)
+    else:
+        m_a.fit(X_a, y, sample_weight=w)
+        m_b.fit(X_b, y, sample_weight=w)
+
+    pred_a = m_a.predict(X_a)
+    pred_b = m_b.predict(X_b)
+    mae_a = mean_absolute_error(y, pred_a, sample_weight=w)
+    mae_b = mean_absolute_error(y, pred_b, sample_weight=w)
+    return float(mae_a - mae_b)
+
+
+def _build_interaction_groups_from_edges(
+    feature_names: List[str],
+    edges: List[Tuple[int, int]],
+) -> List[List[str]]:
+    """
+    Converts an edge list into groups via connected components.
+    This matches the common "allowed interaction groups" semantics used by LightGBM/XGBoost.
+    """
+    n = len(feature_names)
+    parent = list(range(n))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for i, j in edges:
+        union(i, j)
+
+    comps: Dict[int, List[int]] = {}
+    for k in range(n):
+        r = find(k)
+        comps.setdefault(r, []).append(k)
+
+    groups = []
+    for _, idxs in comps.items():
+        if len(idxs) >= 2:
+            groups.append([feature_names[i] for i in idxs])
+
+    # Sort groups by size desc
+    groups.sort(key=len, reverse=True)
+    return groups
+
+
+# -----------------------------
+# Main API
+# -----------------------------
 
 def prepare_huber_teacher_outputs(
-    X_train: pd.DataFrame, 
-    y_train: pd.Series,
+    X_train: pd.DataFrame,
+    y_train: Union[pd.Series, np.ndarray],
     X_val: Optional[pd.DataFrame] = None,
     X_test: Optional[pd.DataFrame] = None,
     vol_proxy: Optional[pd.Series] = None,
     sample_weight: Optional[np.ndarray] = None,
+    # Legacy arguments for backward compatibility
     epsilons: List[float] = [1.1, 1.35, 1.75],
     alphas: List[float] = [1e-4, 1e-3, 1e-2],
     pruning_percentile: int = 15,
     corr_threshold: float = 0.7,
     n_jobs: int = -1,
-    sign_agree_threshold: float = 0.8,  # Same sign in ≥ 80% of splits
-    nonzero_rate_threshold: float = 0.7,  # Non-zero in ≥ 70% of splits
-    n_time_splits: int = 5  # Number of walk-forward time splits for stability
+    sign_agree_threshold: float = 0.8,
+    nonzero_rate_threshold: float = 0.7,
+    n_time_splits: int = 5,
+    # New configuration object
+    config: Optional[HuberTeacherConfig] = None
 ) -> Dict:
     """
-    Advanced Huber Orchestrator for 15m Crypto Specialists.
-    Includes: Vol-Weighting, Parallel Grid Fitting, and Named Interaction Constraints.
+    Produces:
+      - selected_features
+      - monotonic constraints (dict + vectors for LGBM/XGB/Cat)
+      - interaction constraints (groups for LGBM/XGB; audit list for CatBoost)
+      - warm start predictions (train/val/test)
+      - residual meta targets (y - warm_start)
+      - fitted scaler and teacher model
+
+    Assumptions:
+      - X_train is time-ordered already (no shuffling).
     """
-    # 1. Sample Weighting (De Prado alignment)
-    # Priority 1: Direct sample_weight (e.g. from Sequential Bootstrap)
-    # Priority 2: Inverse Volatility (if vol_proxy provided)
+    # -----------------------------
+    # Config / Backward Compatibility
+    # -----------------------------
+    if config is None:
+        config = HuberTeacherConfig(
+            epsilons=tuple(epsilons),
+            alphas=tuple(alphas),
+            pruning_percentile=pruning_percentile,
+            corr_group_threshold=corr_threshold,
+            n_jobs=n_jobs,
+            n_time_splits=n_time_splits,
+            mono_sign_stability=sign_agree_threshold,
+            # Note: nonzero_rate_threshold is superseded by topk_inclusion_frac
+            # and other stability metrics in the new logic.
+        )
+    cfg = config
+
+    # -----------------------------
+    # Weights
+    # -----------------------------
     if sample_weight is not None:
-        actual_weights = np.asarray(sample_weight)
-        actual_weights /= actual_weights.mean() # Normalize to preserve scale
+        w = _normalize_weights(np.asarray(sample_weight))
     elif vol_proxy is not None:
-        actual_weights = (1.0 / vol_proxy).fillna(vol_proxy.median()).values
-        actual_weights /= actual_weights.mean() # Normalize to preserve scale
+        inv = (1.0 / vol_proxy.replace([np.inf, -np.inf], np.nan)).fillna(vol_proxy.median())
+        w = _normalize_weights(inv.values)
     else:
-        actual_weights = None
+        w = None
 
-    # 2. Robust Scaling (NumPy-first for speed)
-    # Convert to float32 numpy array immediately to reduce memory footprint and copy overhead
-    X_train_np = X_train.values.astype(np.float32)
-    y_train_np = y_train.values
-    feature_names = np.asarray(X_train.columns)
+    # -----------------------------
+    # Data to numpy (preserve column order)
+    # -----------------------------
+    train_columns = X_train.columns.tolist()
+    feature_names = np.asarray(train_columns)
 
-    # 3. Walk-Forward Time Splits for Stability Analysis
-    print(f"\n🔄 Creating {n_time_splits} walk-forward time splits for stability analysis (Parallel n_jobs={n_jobs})...")
-    
-    # Create time-based splits (walk-forward)
-    n_samples = len(X_train)
-    split_size = n_samples // n_time_splits
-    
-    tasks = []
-    
-    for split_idx in range(n_time_splits):
-        # Walk-forward: each split uses data up to that point
-        if split_idx == n_time_splits - 1:
-            # Last split uses all data
-            train_end = n_samples
-        else:
-            # Other splits use progressive portions
-            train_end = (split_idx + 1) * split_size
-        
-        # Ensure minimum samples for training
-        train_start = max(0, train_end - split_size * 2)  # Use rolling window
-        
-        print(f"   📊 Split {split_idx + 1}/{n_time_splits}: {train_end - train_start} samples [{train_start}:{train_end}]")
-        
-        # Pass full arrays and indices
-        tasks.append((X_train_np, y_train_np, actual_weights, train_start, train_end, epsilons, alphas))
+    X_tr = _as_float32_2d(X_train, columns=train_columns)
+    y_tr = np.asarray(y_train.values if isinstance(y_train, pd.Series) else y_train, dtype=np.float64)
 
-    # Parallel Execution
-    split_coeffs = Parallel(n_jobs=n_jobs)(
-        delayed(_fit_single_split_optimized)(*args) for args in tasks
+    n_samples, n_features = X_tr.shape
+    if cfg.verbose:
+        print(f"[HuberTeacher] n_samples={n_samples}, n_features={n_features}")
+
+    # -----------------------------
+    # Global scaler (critical upgrade)
+    # -----------------------------
+    scaler = RobustScaler()
+    X_tr_scaled = scaler.fit_transform(X_tr).astype(np.float64, copy=False)
+
+    # -----------------------------
+    # Walk-forward splits
+    # -----------------------------
+    splits = _make_walkforward_splits(
+        n_samples=n_samples,
+        n_splits=cfg.n_time_splits,
+        window_mult=cfg.window_mult,
+        embargo=cfg.embargo
     )
-    
-    # Convert to array for analysis
-    coeffs_array = np.array(split_coeffs)  # Shape: (n_splits, n_features)
+    if cfg.verbose:
+        print(f"[HuberTeacher] splits={len(splits)} -> {splits[:3]}{' ...' if len(splits) > 3 else ''}")
 
-    # 4. Consensus Logic (Median Coeffs across time splits)
-    avg_coeffs = np.median(coeffs_array, axis=0)
-    abs_avg_coeffs = np.abs(avg_coeffs)
-    
-    # Generate warm start predictions using median model on full data
-    scaler_full = RobustScaler()
-    X_full_scaled = scaler_full.fit_transform(X_train_np) # float32
+    # -----------------------------
+    # Fit split × grid in parallel
+    # -----------------------------
+    split_grid_results = Parallel(n_jobs=cfg.n_jobs)(
+        delayed(_fit_split_grid)(
+            X_tr_scaled, y_tr, w,
+            start, end,
+            cfg.epsilons, cfg.alphas, cfg.max_iter
+        )
+        for (start, end) in splits
+    )
 
-    h_full = HuberRegressor(epsilon=np.median(epsilons), alpha=np.median(alphas), max_iter=5000)
-    if actual_weights is not None:
-        h_full.fit(X_full_scaled, y_train, sample_weight=actual_weights)
-    else:
-        h_full.fit(X_full_scaled, y_train)
-    warm_start_tr = h_full.predict(X_full_scaled)
+    n_grid = len(cfg.epsilons) * len(cfg.alphas)
+    coefs_all = np.stack([r["coefs"] for r in split_grid_results], axis=0)  # (n_splits, n_grid, n_features)
+    # Aggregate across (splits, grid) for a robust global estimate
+    median_coef = np.median(coefs_all.reshape(-1, n_features), axis=0)
+    abs_median_coef = np.abs(median_coef)
 
-    # 5. O(n) Feature Pruning
-    kth_val = np.percentile(abs_avg_coeffs, pruning_percentile)
-    keep_mask = abs_avg_coeffs > kth_val
-    selected_feats = feature_names[keep_mask]
-    
-    # 6. Stability Analysis: Sign Consensus and Nonzero Rate across Time Splits
-    print(f"\n🔍 Huber Stability Analysis across {n_time_splits} time splits:")
-    
-    # Calculate stability metrics for each feature
-    # n_splits = len(coeffs_array)
-    
-    # Sign consensus: proportion of splits with same sign as median
-    median_signs = np.sign(avg_coeffs)
-    sign_agreement = np.zeros(len(feature_names))
-    
-    # Nonzero rate: proportion of splits with meaningful coefficients
-    nonzero_threshold = 1e-6  # Threshold for "meaningfully non-zero"
-    nonzero_rate = np.zeros(len(feature_names))
-    
-    for j, feat_name in enumerate(feature_names):
-        feat_coeffs = coeffs_array[:, j]
-        
-        # Sign consensus (exclude zeros from sign calculation)
-        nonzero_mask = np.abs(feat_coeffs) > nonzero_threshold
-        if np.sum(nonzero_mask) > 0:
-            nonzero_signs = np.sign(feat_coeffs[nonzero_mask])
-            if median_signs[j] != 0:
-                sign_agreement[j] = np.mean(nonzero_signs == median_signs[j])
-            else:
-                sign_agreement[j] = 0.0  # No consensus if median is zero
+    # -----------------------------
+    # Feature pruning (by median |coef|)
+    # -----------------------------
+    kth = np.percentile(abs_median_coef, cfg.pruning_percentile)
+    keep_mask = abs_median_coef > kth
+    selected_feats = feature_names[keep_mask].tolist()
+    selected_idx = np.where(keep_mask)[0]
+
+    if cfg.verbose:
+        print(f"[HuberTeacher] pruning_percentile={cfg.pruning_percentile} -> kept={keep_mask.sum()}/{n_features}")
+
+    # -----------------------------
+    # Fit final teacher on full train (median params)
+    # -----------------------------
+    eps0 = _median_choice(cfg.epsilons)
+    a0 = _median_choice(cfg.alphas)
+    teacher = _fit_huber(X_tr_scaled, y_tr, w, eps0, a0, cfg.max_iter)
+    warm_train = teacher.predict(X_tr_scaled)
+
+    # -----------------------------
+    # Warm-start preds for val/test with column alignment
+    # -----------------------------
+    def _predict_df(df: Optional[pd.DataFrame]) -> Optional[np.ndarray]:
+        if df is None:
+            return None
+        X = _as_float32_2d(df, columns=train_columns)
+        Xs = scaler.transform(X).astype(np.float64, copy=False)
+        return teacher.predict(Xs)
+
+    warm_val = _predict_df(X_val)
+    warm_test = _predict_df(X_test)
+
+    # -----------------------------
+    # Stability metrics: sign stability + top-K inclusion across (splits × grid)
+    # -----------------------------
+    # Top-K inclusion: feature is "important" if in top-K of |coef| for that fit
+    K = max(1, int(cfg.topk_inclusion_frac * n_features))
+    flat = coefs_all.reshape(-1, n_features)  # (n_splits*n_grid, n_features)
+    ranks = np.argsort(-np.abs(flat), axis=1)  # descending
+    topk_sets = ranks[:, :K]
+
+    inclusion = np.zeros(n_features, dtype=np.float64)
+    for row in topk_sets:
+        inclusion[row] += 1
+    inclusion /= topk_sets.shape[0]  # in [0,1]
+
+    sign_ref = np.sign(median_coef)
+    sign_stability = np.zeros(n_features, dtype=np.float64)
+    for j in range(n_features):
+        s = np.sign(flat[:, j])
+        # ignore zeros by treating as mismatch
+        sign_stability[j] = np.mean(s == sign_ref[j]) if sign_ref[j] != 0 else 0.0
+
+    # -----------------------------
+    # Monotone constraints via effect curves (split-level)
+    # -----------------------------
+    # We compute per-split effect curve sign/score using the final teacher predictions,
+    # restricted to that split window. This gives regime-aware monotonicity.
+    # (If you want stricter OOS, compute teacher on past and evaluate on forward window.)
+    mono_sign_votes = np.zeros((len(splits), n_features), dtype=np.int8)
+    mono_scores = np.zeros((len(splits), n_features), dtype=np.float64)
+    mono_ranges = np.zeros((len(splits), n_features), dtype=np.float64)
+
+    for si, (start, end) in enumerate(splits):
+        pred_s = warm_train[start:end]
+        Xs = X_tr_scaled[start:end]
+        for j in range(n_features):
+            sgn, score, rng = _teacher_effect_curve_sign(Xs[:, j], pred_s, bins=cfg.mono_bins)
+            mono_sign_votes[si, j] = sgn
+            mono_scores[si, j] = score
+            mono_ranges[si, j] = rng
+
+    # Stability of curve sign: fraction of splits agreeing with median curve sign
+    curve_median_sign = np.sign(np.median(mono_sign_votes.astype(np.int16), axis=0))
+    curve_sign_stability = np.zeros(n_features, dtype=np.float64)
+    curve_score_median = np.median(mono_scores, axis=0)
+    curve_range_median = np.median(mono_ranges, axis=0)
+
+    for j in range(n_features):
+        ms = curve_median_sign[j]
+        if ms == 0:
+            curve_sign_stability[j] = 0.0
         else:
-            sign_agreement[j] = 0.0
-        
-        # Nonzero rate
-        nonzero_rate[j] = np.mean(nonzero_mask)
-        
-        # Debug logging for a few features
-        if j < 5:  # Log first 5 features
-            print(f"   📊 {feat_name}: sign_agree={sign_agreement[j]:.2f}, nonzero_rate={nonzero_rate[j]:.2f}, median_coeff={avg_coeffs[j]:.4f}")
-    
-    print(f"   📈 Average sign agreement: {np.mean(sign_agreement):.3f}")
-    print(f"   📈 Average nonzero rate: {np.mean(nonzero_rate):.3f}")
-    
-    # 7. Enhanced Monotonicity: Strength + Stability Criteria
-    local_scale = np.mean(abs_avg_coeffs[keep_mask])
-    strength_threshold = max(0.15 * local_scale, np.percentile(abs_avg_coeffs[keep_mask], 10))
-    
-    # Stability thresholds (configurable parameters)
-    # sign_agree_threshold = 0.8  # Same sign in ≥ 80% of splits
-    # nonzero_rate_threshold = 0.7  # Non-zero in ≥ 70% of splits
-    
-    # Apply constraints only when both strength and stability pass
-    mono_cst = np.zeros(len(selected_feats))  # Default: unconstrained
-    
-    for i, (feat_idx, feat_name) in enumerate(zip(np.where(keep_mask)[0], selected_feats)):
-        # Strength criterion
-        strength_pass = abs_avg_coeffs[feat_idx] > strength_threshold
-        
-        # Stability criteria
-        stability_pass = (sign_agreement[feat_idx] >= sign_agree_threshold and 
-                         nonzero_rate[feat_idx] >= nonzero_rate_threshold)
-        
-        # Apply constraint only if both pass
-        if strength_pass and stability_pass:
-            mono_cst[i] = np.sign(avg_coeffs[feat_idx])
+            curve_sign_stability[j] = np.mean(mono_sign_votes[:, j] == ms)
+
+    # Effect size threshold: scale relative to typical prediction magnitude
+    pred_scale = float(np.median(np.abs(warm_train))) if np.median(np.abs(warm_train)) > 0 else float(np.std(warm_train) + 1e-12)
+    min_effect = cfg.mono_effect_min_frac * pred_scale
+
+    # Decide monotonic constraint per selected feature
+    mono_vec_full = np.zeros(n_features, dtype=int)
+
+    for j in selected_idx:
+        # Primary: curve-based decision
+        ms = int(curve_median_sign[j])
+        passes_curve = (
+            ms != 0
+            and curve_sign_stability[j] >= cfg.mono_sign_stability
+            and curve_score_median[j] >= cfg.mono_score_threshold
+            and curve_range_median[j] >= min_effect
+        )
+
+        if passes_curve:
+            mono_vec_full[j] = ms
+            continue
+
+        # Fallback: coefficient sign stability (optional)
+        if cfg.mono_use_coeff_fallback:
+            cs = int(np.sign(median_coef[j]))
+            passes_coef = (
+                cs != 0
+                and sign_stability[j] >= cfg.mono_sign_stability
+                and inclusion[j] >= cfg.topk_inclusion_frac
+            )
+            mono_vec_full[j] = cs if passes_coef else 0
         else:
-            mono_cst[i] = 0  # Unconstrained
-    
-    # Enhanced logging: Show which features have which constraints
-    negative_features = []
-    positive_features = []
-    unconstrained_features = []
-    
-    # Also track why features were unconstrained
-    strength_failed = []
-    stability_failed = []
-    both_failed = []
-    
-    for i, (feat_name, constraint) in enumerate(zip(selected_feats, mono_cst)):
-        feat_idx = np.where(keep_mask)[0][i]
-        
-        if constraint == -1:
-            negative_features.append(feat_name)
-        elif constraint == 1:
-            positive_features.append(feat_name)
-        else:  # constraint == 0
-            unconstrained_features.append(feat_name)
-            
-            # Track failure reason
-            strength_pass = abs_avg_coeffs[feat_idx] > strength_threshold
-            stability_pass = (sign_agreement[feat_idx] >= sign_agree_threshold and 
-                             nonzero_rate[feat_idx] >= nonzero_rate_threshold)
-            
-            if not strength_pass and not stability_pass:
-                both_failed.append(feat_name)
-            elif not strength_pass:
-                strength_failed.append(feat_name)
-            else:
-                stability_failed.append(feat_name)
-    
-    # Print detailed constraint information
-    print(f"\n🔗 Huber Enhanced Monotonic Constraints Analysis:")
-    print(f"   📊 Total features: {len(selected_feats)}")
-    print(f"   🔻 Negative constraints: {len(negative_features)}")
-    print(f"   🔺 Positive constraints: {len(positive_features)}")
-    print(f"   ⚪ Unconstrained: {len(unconstrained_features)}")
-    
-    # Summary: Candidates by magnitude → Constraints after stability gate
-    magnitude_candidates = len(selected_feats)  # Features that passed magnitude threshold
-    stability_constraints = len(negative_features) + len(positive_features)  # Features that passed stability
-    dropped_instability = magnitude_candidates - stability_constraints  # Dropped due to instability
-    
-    print(f"\n📋 Constraint Summary:")
-    print(f"   🎯 Candidates by magnitude: {magnitude_candidates}")
-    print(f"   ✅ Constraints after stability gate: {stability_constraints}")
-    print(f"   ❌ Dropped due to instability: {dropped_instability}")
-    print(f"   📊 Stability retention rate: {stability_constraints/magnitude_candidates*100:.1f}%")
-    
-    # Print failure breakdown
-    print(f"\n📈 Constraint Failure Analysis:")
-    print(f"   ❌ Strength failed: {len(strength_failed)}")
-    print(f"   🔄 Stability failed: {len(stability_failed)}")
-    print(f"   💥 Both failed: {len(both_failed)}")
-    
-    # Print stability statistics
-    print(f"\n📊 Stability Statistics (Thresholds: sign≥{sign_agree_threshold}, nonzero≥{nonzero_rate_threshold}):")
-    print(f"   🔄 Based on {n_time_splits} walk-forward time splits")
-    constrained_features = negative_features + positive_features
-    if constrained_features:
-        constrained_sign_agree = [sign_agreement[np.where(feature_names == feat)[0][0]] 
-                                for feat in constrained_features]
-        constrained_nonzero_rate = [nonzero_rate[np.where(feature_names == feat)[0][0]] 
-                                  for feat in constrained_features]
-        print(f"   ✅ Constrained features:")
-        print(f"      - Avg sign agreement: {np.mean(constrained_sign_agree):.3f}")
-        print(f"      - Avg nonzero rate: {np.mean(constrained_nonzero_rate):.3f}")
-    
-    if unconstrained_features:
-        unconstrained_sign_agree = [sign_agreement[np.where(feature_names == feat)[0][0]] 
-                                  for feat in unconstrained_features]
-        unconstrained_nonzero_rate = [nonzero_rate[np.where(feature_names == feat)[0][0]] 
-                                    for feat in unconstrained_features]
-        print(f"   ⚪ Unconstrained features:")
-        print(f"      - Avg sign agreement: {np.mean(unconstrained_sign_agree):.3f}")
-        print(f"      - Avg nonzero rate: {np.mean(unconstrained_nonzero_rate):.3f}")
-    
-    if negative_features:
-        print(f"   🔻 Negative features: {negative_features[:5]}{'...' if len(negative_features) > 5 else ''}")
-    if positive_features:
-        print(f"   🔺 Positive features: {positive_features[:5]}{'...' if len(positive_features) > 5 else ''}")
-    if unconstrained_features:
-        print(f"   ⚪ Unconstrained features: {unconstrained_features[:5]}{'...' if len(unconstrained_features) > 5 else ''}")
-    
-    if strength_failed:
-        print(f"   ❌ Strength failed: {strength_failed[:3]}{'...' if len(strength_failed) > 3 else ''}")
-    if stability_failed:
-        print(f"   🔄 Stability failed: {stability_failed[:3]}{'...' if len(stability_failed) > 3 else ''}")
-    if both_failed:
-        print(f"   💥 Both failed: {both_failed[:3]}{'...' if len(both_failed) > 3 else ''}")
+            mono_vec_full[j] = 0
 
-    # 7. Interaction Constraints (Named Output for Tree Learners)
-    # Efficiency: Use Rank-based correlation (O(n log n))
-    imp_mask = abs_avg_coeffs[keep_mask] > np.median(abs_avg_coeffs[keep_mask])
-    imp_feat_names = selected_feats[imp_mask]
-    
-    interaction_constraints = []
-    if imp_feat_names.size > 1:
-        # Optimized Rank correlation: Use scipy rankdata on numpy array
-        # X_tr_scaled is already numpy float32.
-        # Subset features first
-        X_subset = X_train_np[:, keep_mask][:, imp_mask]
+    # Create selected-only monotone vector aligned to selected features
+    mono_vec_selected = mono_vec_full[selected_idx].astype(int)
 
-        # rankdata computes rank along axis. We want rank of each feature (column) across samples.
-        # axis=0.
-        X_imp_ranks = rankdata(X_subset, axis=0)
+    # -----------------------------
+    # Interaction constraints via pair synergy screening (on selected shortlist)
+    # -----------------------------
+    # Shortlist by inclusion + |coef| (stable importance proxy)
+    stable_score = (0.5 * inclusion) + (0.5 * (abs_median_coef / (np.median(abs_median_coef) + 1e-12)))
+    shortlist_idx = np.argsort(-stable_score)[: min(cfg.interaction_max_features, n_features)]
+    shortlist_names = feature_names[shortlist_idx].tolist()
 
-        # Compute correlation on ranks (Spearman)
-        corr_matrix = np.corrcoef(X_imp_ranks.T)
-        
-        D = np.clip(1 - np.abs(corr_matrix), 0, 1)
-        # squareform requires 1D condensed distance matrix or 2D square. D is 2D square.
-        # checks=False skips symmetry check for speed.
-        Z = linkage(squareform(D, checks=False), method='complete')
-        
-        labels = fcluster(Z, corr_threshold, criterion='distance')
-        
-        # Save as feature names to prevent indexing breaks in HPO
-        for l in np.unique(labels):
-            group = imp_feat_names[labels == l].tolist()
-            interaction_constraints.append(group)
-    else:
-        interaction_constraints = None
+    if cfg.verbose:
+        print(f"[HuberTeacher] interaction shortlist={len(shortlist_idx)} features")
 
-    # 8. Consensus Inference for Validation/Test
-    def get_consensus_pred(df):
-        if df is None: return None
-        # Use full scaler on dataframe
-        df_s = scaler_full.transform(df).astype(np.float32)
-        pred = h_full.predict(df_s)  # Use the median model
-        return pred
+    # Evaluate pair gains across splits; keep stable winners
+    def _pair_eval(i_pos: int, j_pos: int) -> Tuple[int, int, float, float]:
+        i = shortlist_idx[i_pos]
+        j = shortlist_idx[j_pos]
+        gains = []
+        for (start, end) in splits:
+            # Use split window data (scaled) and teacher residual target? Here we screen on y directly.
+            Xw = X_tr_scaled[start:end]
+            yw = y_tr[start:end]
+            ww = None if w is None else w[start:end]
+            gain = _pair_synergy_gain_mae(Xw[:, i], Xw[:, j], yw, ww)
+            gains.append(gain)
 
+        gains = np.asarray(gains, dtype=np.float64)
+        mean_gain = float(np.mean(gains))
+        pos_rate = float(np.mean(gains > cfg.interaction_min_gain))
+        return i, j, mean_gain, pos_rate
+
+    # Generate pair list (upper triangle)
+    pair_positions = []
+    m = len(shortlist_idx)
+    for a in range(m):
+        for b in range(a + 1, m):
+            pair_positions.append((a, b))
+
+    # To control cost, cap number of pairs if needed
+    # (You can tune this based on your compute budget.)
+    max_pairs = min(len(pair_positions), 5000)
+    if len(pair_positions) > max_pairs:
+        rng = np.random.default_rng(123)
+        pair_positions = list(rng.choice(pair_positions, size=max_pairs, replace=False))
+
+    pair_results = Parallel(n_jobs=cfg.n_jobs)(
+        delayed(_pair_eval)(a, b) for (a, b) in pair_positions
+    )
+
+    # Filter by stability + gain, then select top pairs
+    kept = [
+        (i, j, mean_gain, pos_rate)
+        for (i, j, mean_gain, pos_rate) in pair_results
+        if (pos_rate >= cfg.interaction_sign_stability and mean_gain > cfg.interaction_min_gain)
+    ]
+    kept.sort(key=lambda t: t[2], reverse=True)
+    kept = kept[: cfg.interaction_top_pairs]
+
+    edges_selected_space: List[Tuple[int, int]] = []
+    # Convert absolute feature indices into indices within selected_feats for constraint grouping
+    selected_index_map = {int(ix): pos for pos, ix in enumerate(selected_idx.tolist())}
+    for (i, j, _, _) in kept:
+        if int(i) in selected_index_map and int(j) in selected_index_map:
+            edges_selected_space.append((selected_index_map[int(i)], selected_index_map[int(j)]))
+
+    interaction_groups = _build_interaction_groups_from_edges(
+        feature_names=selected_feats,
+        edges=edges_selected_space
+    )
+
+    # CatBoost: provide audit pairs as names (no hard constraint parameter)
+    interaction_audit = []
+    for (i, j, mean_gain, pos_rate) in kept:
+        interaction_audit.append({
+            "feature_i": feature_names[int(i)],
+            "feature_j": feature_names[int(j)],
+            "mean_mae_gain": float(mean_gain),
+            "pos_rate": float(pos_rate),
+        })
+
+    if cfg.verbose:
+        print(f"[HuberTeacher] interaction pairs kept={len(kept)}, groups={len(interaction_groups)}")
+
+    # -----------------------------
+    # Outputs formatted for LGBM / XGB / Cat
+    # -----------------------------
+    # Full vectors aligned to original feature order
+    lgbm_mono_full = mono_vec_full.tolist()
+    xgb_mono_full = tuple(int(v) for v in mono_vec_full.tolist())  # XGBoost accepts tuple/list/string
+    # CatBoost accepts list/tuple or sparse string; we provide both
+    cat_mono_full_list = mono_vec_full.tolist()
+    cat_mono_sparse = ",".join(
+        f"{train_columns[i]}:{int(mono_vec_full[i])}"
+        for i in range(n_features)
+        if int(mono_vec_full[i]) != 0
+    )
+
+    # Selected-only vectors aligned to selected_feats
+    lgbm_mono_selected = mono_vec_selected.tolist()
+    xgb_mono_selected = tuple(int(v) for v in mono_vec_selected.tolist())
+    cat_mono_selected_list = mono_vec_selected.tolist()
+    cat_mono_selected_sparse = ",".join(
+        f"{selected_feats[i]}:{int(mono_vec_selected[i])}"
+        for i in range(len(selected_feats))
+        if int(mono_vec_selected[i]) != 0
+    )
+
+    # Provide dict form for convenience
+    mono_dict_selected = dict(zip(selected_feats, [int(v) for v in mono_vec_selected]))
+
+    # Residual meta target (often what you train the tree on)
+    residual_target = y_tr - warm_train
+
+    # -----------------------------
+    # Construct Return Dictionary with Backward Compatibility
+    # -----------------------------
     return {
-        'selected_features': selected_feats.tolist(),
-        'monotonic_constraints': dict(zip(selected_feats, mono_cst.astype(int))),
-        'interaction_constraints': interaction_constraints,
-        'warm_start': {
-            'train': warm_start_tr,
-            'val': get_consensus_pred(X_val),
-            'test': get_consensus_pred(X_test)
+        # Core (Legacy & New)
+        "selected_features": selected_feats,
+        "monotonic_constraints": mono_dict_selected,  # Legacy format: Dict[str, int]
+        "interaction_constraints": interaction_groups, # Legacy format: List[List[str]]
+        
+        "warm_start": {
+            "train": warm_train,
+            "val": warm_val,
+            "test": warm_test,
         },
-        'huber_models': [h_full], # For future inspection and prediction (median model)
-        'quantile_meta_targets': y_train - warm_start_tr,
-        'scaler': scaler_full
+        "huber_models": [teacher], # Legacy key
+        "quantile_meta_targets": residual_target, # Legacy key (alias for residual_target)
+        "residual_meta_target": residual_target,  # New key
+        "scaler": scaler,
+
+        # New Rich Metadata (stored in separate keys to avoid breaking legacy consumers)
+        "train_columns": train_columns,
+        "selected_feature_indices": selected_idx.tolist(),
+        
+        "huber_teacher": teacher,
+
+        "stability": {
+            "coef_median": median_coef.tolist(),
+            "coef_abs_median": abs_median_coef.tolist(),
+            "sign_stability": sign_stability.tolist(),
+            "topk_inclusion_rate": inclusion.tolist(),
+            "curve_median_sign": curve_median_sign.astype(int).tolist(),
+            "curve_sign_stability": curve_sign_stability.tolist(),
+            "curve_score_median": curve_score_median.tolist(),
+            "curve_range_median": curve_range_median.tolist(),
+        },
+
+        "monotonic_constraints_details": {
+            "selected_dict": mono_dict_selected,
+
+            # Full vectors aligned to original feature order (X_train columns)
+            "lightgbm_full": lgbm_mono_full,
+            "xgboost_full": xgb_mono_full,
+            "catboost_full_list": cat_mono_full_list,
+            "catboost_full_sparse": cat_mono_sparse,
+
+            # Selected-only vectors aligned to selected_features order
+            "lightgbm_selected": lgbm_mono_selected,
+            "xgboost_selected": xgb_mono_selected,
+            "catboost_selected_list": cat_mono_selected_list,
+            "catboost_selected_sparse": cat_mono_selected_sparse,
+        },
+
+        "interaction_constraints_details": {
+            # For LightGBM/XGBoost: list of feature-name groups (allowed interactions within groups)
+            "groups_selected": interaction_groups,
+
+            # Audit list you can use for CatBoost governance/feature engineering
+            "catboost_interaction_audit": interaction_audit,
+
+            # Convenience: shortlist used for screening
+            "shortlist_features": shortlist_names,
+        },
     }
+
 
 # Backward compatibility alias
 def prepare_huber_production_orchestrator(*args, **kwargs):

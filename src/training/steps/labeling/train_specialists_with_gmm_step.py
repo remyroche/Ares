@@ -1749,6 +1749,18 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             huber_outputs = None
 
             if cache_usable:
+                pass
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Huber Teacher setup failed: {e}")
+            # Fallback if Huber fails
+            X_train_sel = X_train
+            X_oof_sel = X_oof
+            selected_features_names = list(X_train.columns)
+            mono_cst_array_list = None
+            interaction_constraints = None
+            warm_start_train = None
+            warm_start_oof = None
 
         tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(X_train_sel.columns)} features")
         
@@ -1756,8 +1768,8 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         if isinstance(mono_cst_array_list, dict):
             # Map selected features to their monotonic constraints
             mono_cst_array = []
-            for feat in X_train_sel.columns:
-                mono_cst_array.append(mono_cst_array_list.get(feat, 0))
+            for feat in selected_features_names:
+                mono_cst_array.append(monotonic_constraints.get(feat, 0))
             mono_cst_array_np = np.array(mono_cst_array)  # numpy array for sklearn
             mono_cst_array_list = mono_cst_array_np.tolist()  # list for CatBoost
             
@@ -1765,76 +1777,65 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             negative_features = []
             positive_features = []
             unconstrained_features = []
-                # Map selected features to their monotonic constraints
-                mono_cst_array = []
-                for feat in selected_features_names:
-                    mono_cst_array.append(monotonic_constraints.get(feat, 0))
-                mono_cst_array_np = np.array(mono_cst_array)  # numpy array for sklearn
-                mono_cst_array_list = mono_cst_array_np.tolist()  # list for CatBoost
-                
-                # Enhanced logging: Show which features have which constraints
-                negative_features = []
-                positive_features = []
-                unconstrained_features = []
-                
-                for feat, constraint in zip(selected_features_names, mono_cst_array):
-                    if constraint == -1:
-                        negative_features.append(feat)
-                    elif constraint == 1:
-                        positive_features.append(feat)
-                    else:  # constraint == 0
-                        unconstrained_features.append(feat)
-                
-                tprint_info(f"   📊 Constraints: {len(negative_features)} negative, {len(positive_features)} positive, {len(unconstrained_features)} unconstrained")
-                if negative_features:
-                    tprint_info(f"   🔻 Negative features: {negative_features[:5]}{'...' if len(negative_features) > 5 else ''}")
-                if positive_features:
-                    tprint_info(f"   🔺 Positive features: {positive_features[:5]}{'...' if len(positive_features) > 5 else ''}")
-                if unconstrained_features:
-                    tprint_info(f"   ⚪ Unconstrained features: {unconstrained_features[:5]}{'...' if len(unconstrained_features) > 5 else ''}")
+            
+            for feat, constraint in zip(selected_features_names, mono_cst_array):
+                if constraint == -1:
+                    negative_features.append(feat)
+                elif constraint == 1:
+                    positive_features.append(feat)
+                else:  # constraint == 0
+                    unconstrained_features.append(feat)
+
+            tprint_info(f"   📊 Constraints: {len(negative_features)} negative, {len(positive_features)} positive, {len(unconstrained_features)} unconstrained")
+            if negative_features:
+                tprint_info(f"   🔻 Negative features: {negative_features[:5]}{'...' if len(negative_features) > 5 else ''}")
+            if positive_features:
+                tprint_info(f"   🔺 Positive features: {positive_features[:5]}{'...' if len(positive_features) > 5 else ''}")
+            if unconstrained_features:
+                tprint_info(f"   ⚪ Unconstrained features: {unconstrained_features[:5]}{'...' if len(unconstrained_features) > 5 else ''}")
+        else:
+            mono_cst_array_np = np.array(monotonic_constraints) if not isinstance(monotonic_constraints, np.ndarray) else monotonic_constraints
+            mono_cst_array_list = mono_cst_array_np.tolist()
+
+        # Signature for downstream caching (depends on selected feature order)
+        features_signature = hashlib.md5("|".join(selected_features_names).encode()).hexdigest() if selected_features_names else "no_features"
+
+        def _load_cached_params(model_name: str) -> Optional[Dict[str, Any]]:
+            if not cache_usable:
+                return None
+            params_seed = f"{features_signature}_{y_train_hash}_{model_name}"
+            cache_key = self._build_cache_key(f"{model_name}_params", params_seed, config)
+            return self._load_cached_object("optuna_params", cache_key)
+
+        def _save_cached_params(model_name: str, params: Dict[str, Any]) -> None:
+            if not cache_usable or not params:
+                return
+            params_seed = f"{features_signature}_{y_train_hash}_{model_name}"
+            cache_key = self._build_cache_key(f"{model_name}_params", params_seed, config)
+            self._save_cached_object(params, "optuna_params", cache_key)
+
+        results = {}
+            
+        def calculate_score(y_true, y_pred):
+            score, ic, auc, pos_ratio = _compute_ic_auc_score(y_true, y_pred)
+            if pos_ratio < 0.05 or pos_ratio > 0.95:
+                tprint_warning(f"⚠️ Highly imbalanced binary target: {pos_ratio:.3f} positive class")
             else:
-                mono_cst_array_np = np.array(monotonic_constraints) if not isinstance(monotonic_constraints, np.ndarray) else monotonic_constraints
-                mono_cst_array_list = mono_cst_array_np.tolist()
-            
-            # Signature for downstream caching (depends on selected feature order)
-            features_signature = hashlib.md5("|".join(selected_features_names).encode()).hexdigest() if selected_features_names else "no_features"
+                tprint_info(f"📊 Binary target balance: {pos_ratio:.3f} positive class")
+            return score, ic, auc
 
-            def _load_cached_params(model_name: str) -> Optional[Dict[str, Any]]:
-                if not cache_usable:
-                    return None
-                params_seed = f"{features_signature}_{y_train_hash}_{model_name}"
-                cache_key = self._build_cache_key(f"{model_name}_params", params_seed, config)
-                return self._load_cached_object("optuna_params", cache_key)
+        # --- Model 1: ExtraTrees ---
+        # Sklearn 1.4+ supports monotonic_cst
+        tprint_info("🌲 Training ExtraTrees...")
+        tprint_info(f"   🔧 Monotonic constraints: {mono_cst_array_np}")
+        # Count constraint types
+        neg_count = sum(1 for x in mono_cst_array_np if x == -1)
+        pos_count = sum(1 for x in mono_cst_array_np if x == 1)
+        zero_count = sum(1 for x in mono_cst_array_np if x == 0)
+        tprint_info(f"   📊 Constraints: {neg_count} negative, {pos_count} positive, {zero_count} unconstrained")
+        tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
 
-            def _save_cached_params(model_name: str, params: Dict[str, Any]) -> None:
-                if not cache_usable or not params:
-                    return
-                params_seed = f"{features_signature}_{y_train_hash}_{model_name}"
-                cache_key = self._build_cache_key(f"{model_name}_params", params_seed, config)
-                self._save_cached_object(params, "optuna_params", cache_key)
-
-            results = {}
-            
-            def calculate_score(y_true, y_pred):
-                score, ic, auc, pos_ratio = _compute_ic_auc_score(y_true, y_pred)
-                if pos_ratio < 0.05 or pos_ratio > 0.95:
-                    tprint_warning(f"⚠️ Highly imbalanced binary target: {pos_ratio:.3f} positive class")
-                else:
-                    tprint_info(f"📊 Binary target balance: {pos_ratio:.3f} positive class")
-                return score, ic, auc
-
-            # --- Model 1: ExtraTrees ---
-            # Sklearn 1.4+ supports monotonic_cst
-            tprint_info("🌲 Training ExtraTrees...")
-            tprint_info(f"   🔧 Monotonic constraints: {mono_cst_array_np}")
-            # Count constraint types
-            neg_count = sum(1 for x in mono_cst_array_np if x == -1)
-            pos_count = sum(1 for x in mono_cst_array_np if x == 1)
-            zero_count = sum(1 for x in mono_cst_array_np if x == 0)
-            tprint_info(f"   📊 Constraints: {neg_count} negative, {pos_count} positive, {zero_count} unconstrained")
-            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
-            
-            def objective_et(trial):
+        def objective_et(trial):
                 n_estimators = trial.suggest_int('n_estimators', 200, 800)  # Increased range
                 max_depth = trial.suggest_categorical('max_depth', [None, 15, 25, 35])  # Deeper trees
                 min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 10)  # Reduced for better learning
@@ -1878,48 +1879,48 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 
                 return final_score
 
-            best_et_params = _load_cached_params("ExtraTrees")
-            if best_et_params is None:
-                study_et = optuna.create_study(direction='maximize', pruner=MedianPruner())
-                study_et.optimize(objective_et, n_trials=10) # Limited trials
-                best_et_params = study_et.best_params
-                _save_cached_params("ExtraTrees", best_et_params)
-                tprint_info(f"   🏆 Best ET params (new): {best_et_params}")
-            else:
-                tprint_info("   💾 Using cached ExtraTrees hyperparameters")
+        best_et_params = _load_cached_params("ExtraTrees")
+        if best_et_params is None:
+            study_et = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_et.optimize(objective_et, n_trials=10) # Limited trials
+            best_et_params = study_et.best_params
+            _save_cached_params("ExtraTrees", best_et_params)
+            tprint_info(f"   🏆 Best ET params (new): {best_et_params}")
+        else:
+            tprint_info("   💾 Using cached ExtraTrees hyperparameters")
 
-            try:
-                best_et = ExtraTreesRegressor(**best_et_params, monotonic_cst=mono_cst_array_np, n_jobs=-1, random_state=42)
-                tprint_info("   ✅ Using monotonic constraints")
-            except TypeError:
-                best_et = ExtraTreesRegressor(**best_et_params, n_jobs=-1, random_state=42)
-                tprint_info("   ⚠️ Monotonic constraints not supported (older sklearn)")
-            best_et.fit(X_train_sel, y_train)
-            pred_et = best_et.predict(X_oof_sel)
-            score_et, ic_et, auc_et = calculate_score(y_oof, pred_et)
-            results['ExtraTrees'] = {'score': score_et, 'ic': ic_et, 'auc': auc_et, 'model': best_et, 'oof_pred': pred_et}
-            tprint_success(f"   ✅ ExtraTrees: Score={score_et:.4f}, IC={ic_et:.4f}, AUC={auc_et:.4f}")
+        try:
+            best_et = ExtraTreesRegressor(**best_et_params, monotonic_cst=mono_cst_array_np, n_jobs=-1, random_state=42)
+            tprint_info("   ✅ Using monotonic constraints")
+        except TypeError:
+            best_et = ExtraTreesRegressor(**best_et_params, n_jobs=-1, random_state=42)
+            tprint_info("   ⚠️ Monotonic constraints not supported (older sklearn)")
+        best_et.fit(X_train_sel, y_train)
+        pred_et = best_et.predict(X_oof_sel)
+        score_et, ic_et, auc_et = calculate_score(y_oof, pred_et)
+        results['ExtraTrees'] = {'score': score_et, 'ic': ic_et, 'auc': auc_et, 'model': best_et, 'oof_pred': pred_et}
+        tprint_success(f"   ✅ ExtraTrees: Score={score_et:.4f}, IC={ic_et:.4f}, AUC={auc_et:.4f}")
 
-            # --- Model 2: XGBoost ---
-            tprint_info("🚀 Training XGBoost...")
-            # Fixed params from user
-            xgb_fixed_params = {
-                'num_parallel_tree': 7,
-                'colsample_bynode': 0.4,
-                'subsample': 0.6,
-                'reg_lambda': 50, # "22 regularisation 50" -> lambda
-                'min_child_weight': 10,
-                'gamma': 1.1,
-                'learning_rate': 0.03,
-                'tree_method': 'hist',
-                'n_jobs': -1,
-                'monotone_constraints': monotonic_constraints, # tuple
-                'interaction_constraints': interaction_constraints if interaction_constraints else None
-            }
-            tprint_info(f"   🔧 Fixed params: {xgb_fixed_params}")
-            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
-            
-            def objective_xgb(trial):
+        # --- Model 2: XGBoost ---
+        tprint_info("🚀 Training XGBoost...")
+        # Fixed params from user
+        xgb_fixed_params = {
+            'num_parallel_tree': 7,
+            'colsample_bynode': 0.4,
+            'subsample': 0.6,
+            'reg_lambda': 50, # "22 regularisation 50" -> lambda
+            'min_child_weight': 10,
+            'gamma': 1.1,
+            'learning_rate': 0.03,
+            'tree_method': 'hist',
+            'n_jobs': -1,
+            'monotone_constraints': monotonic_constraints, # tuple
+            'interaction_constraints': interaction_constraints if interaction_constraints else None
+        }
+        tprint_info(f"   🔧 Fixed params: {xgb_fixed_params}")
+        tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
+
+        def objective_xgb(trial):
                 n_estimators = trial.suggest_int('n_estimators', 100, 1000)
                 max_depth = trial.suggest_int('max_depth', 3, 10)
 
@@ -1935,42 +1936,42 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 score, _, _ = calculate_score(y_oof, pred)
                 return score
 
-            best_xgb_params = _load_cached_params("XGBoost")
-            if best_xgb_params is None:
-                study_xgb = optuna.create_study(direction='maximize', pruner=MedianPruner())
-                study_xgb.optimize(objective_xgb, n_trials=10)
-                best_xgb_params = study_xgb.best_params
-                _save_cached_params("XGBoost", best_xgb_params)
-                tprint_info(f"   🏆 Best XGB params (new): {best_xgb_params}")
-            else:
-                tprint_info("   💾 Using cached XGBoost hyperparameters")
-            best_xgb = XGBRegressor(**xgb_fixed_params, **best_xgb_params)
-            best_xgb.fit(X_train_sel, y_train, base_margin=warm_start_train)
-            pred_xgb = best_xgb.predict(X_oof_sel, base_margin=warm_start_oof)
-            score_xgb, ic_xgb, auc_xgb = calculate_score(y_oof, pred_xgb)
-            results['XGBoost'] = {'score': score_xgb, 'ic': ic_xgb, 'auc': auc_xgb, 'model': best_xgb, 'oof_pred': pred_xgb}
-            tprint_success(f"   ✅ XGBoost: Score={score_xgb:.4f}, IC={ic_xgb:.4f}, AUC={auc_xgb:.4f}")
+        best_xgb_params = _load_cached_params("XGBoost")
+        if best_xgb_params is None:
+            study_xgb = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_xgb.optimize(objective_xgb, n_trials=10)
+            best_xgb_params = study_xgb.best_params
+            _save_cached_params("XGBoost", best_xgb_params)
+            tprint_info(f"   🏆 Best XGB params (new): {best_xgb_params}")
+        else:
+            tprint_info("   💾 Using cached XGBoost hyperparameters")
+        best_xgb = XGBRegressor(**xgb_fixed_params, **best_xgb_params)
+        best_xgb.fit(X_train_sel, y_train, base_margin=warm_start_train)
+        pred_xgb = best_xgb.predict(X_oof_sel, base_margin=warm_start_oof)
+        score_xgb, ic_xgb, auc_xgb = calculate_score(y_oof, pred_xgb)
+        results['XGBoost'] = {'score': score_xgb, 'ic': ic_xgb, 'auc': auc_xgb, 'model': best_xgb, 'oof_pred': pred_xgb}
+        tprint_success(f"   ✅ XGBoost: Score={score_xgb:.4f}, IC={ic_xgb:.4f}, AUC={auc_xgb:.4f}")
 
-            # --- Model 3: CatBoost ---
-            tprint_info("🐱 Training CatBoost...")
-            # Fixed params
-            cb_fixed_params = {
-                'subsample': 0.6,
-                'colsample_bylevel': 0.5,
-                'leaf_estimation_iterations': 10,
-                'l2_leaf_reg': 20, # "l2_leaf_reg 20"
-                'random_strength': 5,
-                'bootstrap_type': 'MVS',
-                'verbose': False,
-                'allow_writing_files': False,
-                'model_shrink_rate': 0,  # Disable shrinkage when using baseline
-                # Monotonic constraints format in CatBoost: list/tuple of int
-                'monotone_constraints': mono_cst_array_list
-            }
-            tprint_info(f"   🔧 Fixed params: {cb_fixed_params}")
-            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
-            
-            def objective_cb(trial):
+        # --- Model 3: CatBoost ---
+        tprint_info("🐱 Training CatBoost...")
+        # Fixed params
+        cb_fixed_params = {
+            'subsample': 0.6,
+            'colsample_bylevel': 0.5,
+            'leaf_estimation_iterations': 10,
+            'l2_leaf_reg': 20, # "l2_leaf_reg 20"
+            'random_strength': 5,
+            'bootstrap_type': 'MVS',
+            'verbose': False,
+            'allow_writing_files': False,
+            'model_shrink_rate': 0,  # Disable shrinkage when using baseline
+            # Monotonic constraints format in CatBoost: list/tuple of int
+            'monotone_constraints': mono_cst_array_list
+        }
+        tprint_info(f"   🔧 Fixed params: {cb_fixed_params}")
+        tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
+
+        def objective_cb(trial):
                 iterations = trial.suggest_int('iterations', 100, 1000)
                 depth = trial.suggest_int('depth', 4, 10)
 
@@ -1997,32 +1998,32 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 score, _, _ = calculate_score(y_oof, pred)
                 return score
 
-            best_cb_params = _load_cached_params("CatBoost")
-            if best_cb_params is None:
-                study_cb = optuna.create_study(direction='maximize', pruner=MedianPruner())
-                study_cb.optimize(objective_cb, n_trials=10)
-                best_cb_params = study_cb.best_params
-                _save_cached_params("CatBoost", best_cb_params)
-                tprint_info(f"   🏆 Best CB params (new): {best_cb_params}")
-            else:
-                tprint_info("   💾 Using cached CatBoost hyperparameters")
-            best_cb = CatBoostRegressor(**cb_fixed_params, **best_cb_params)
-            train_pool = Pool(X_train_sel, y_train, baseline=warm_start_train)
-            best_cb.fit(train_pool)
-            eval_pool = Pool(X_oof_sel, baseline=warm_start_oof)
-            pred_cb = best_cb.predict(eval_pool)
-            score_cb, ic_cb, auc_cb = calculate_score(y_oof, pred_cb)
-            results['CatBoost'] = {'score': score_cb, 'ic': ic_cb, 'auc': auc_cb, 'model': best_cb, 'oof_pred': pred_cb}
-            tprint_success(f"   ✅ CatBoost: Score={score_cb:.4f}, IC={ic_cb:.4f}, AUC={auc_cb:.4f}")
+        best_cb_params = _load_cached_params("CatBoost")
+        if best_cb_params is None:
+            study_cb = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_cb.optimize(objective_cb, n_trials=10)
+            best_cb_params = study_cb.best_params
+            _save_cached_params("CatBoost", best_cb_params)
+            tprint_info(f"   🏆 Best CB params (new): {best_cb_params}")
+        else:
+            tprint_info("   💾 Using cached CatBoost hyperparameters")
+        best_cb = CatBoostRegressor(**cb_fixed_params, **best_cb_params)
+        train_pool = Pool(X_train_sel, y_train, baseline=warm_start_train)
+        best_cb.fit(train_pool)
+        eval_pool = Pool(X_oof_sel, baseline=warm_start_oof)
+        pred_cb = best_cb.predict(eval_pool)
+        score_cb, ic_cb, auc_cb = calculate_score(y_oof, pred_cb)
+        results['CatBoost'] = {'score': score_cb, 'ic': ic_cb, 'auc': auc_cb, 'model': best_cb, 'oof_pred': pred_cb}
+        tprint_success(f"   ✅ CatBoost: Score={score_cb:.4f}, IC={ic_cb:.4f}, AUC={auc_cb:.4f}")
 
-            # --- Model 4: LGBM ---
-            tprint_info("🍃 Training LGBM...")
-            tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
-            tprint_info(f"   🔧 Monotonic constraints: {monotonic_constraints}")
-            tprint_info(f"   🔧 Interaction constraints: {interaction_constraints}")
-            # Optuna tuning + Interaction constraints
+        # --- Model 4: LGBM ---
+        tprint_info("🍃 Training LGBM...")
+        tprint_info(f"   📊 Feature count: {len(X_train_sel.columns)}")
+        tprint_info(f"   🔧 Monotonic constraints: {monotonic_constraints}")
+        tprint_info(f"   🔧 Interaction constraints: {interaction_constraints}")
+        # Optuna tuning + Interaction constraints
 
-            def objective_lgbm(trial):
+        def objective_lgbm(trial):
                 n_estimators = trial.suggest_int('n_estimators', 100, 1000)
                 num_leaves = trial.suggest_int('num_leaves', 20, 100)
                 learning_rate = trial.suggest_float('learning_rate', 0.01, 0.1)
@@ -2054,61 +2055,56 @@ class TrainSpecialistsWithGMMStep(BaseStep):
                 score, _, _ = calculate_score(y_oof, pred)
                 return score
 
-            best_lgbm_params = _load_cached_params("LGBM")
-            if best_lgbm_params is None:
-                study_lgbm = optuna.create_study(direction='maximize', pruner=MedianPruner())
-                study_lgbm.optimize(objective_lgbm, n_trials=10)
-                best_lgbm_params = study_lgbm.best_params
-                _save_cached_params("LGBM", best_lgbm_params)
-                tprint_info(f"   🏆 Best LGBM params (new): {best_lgbm_params}")
-            else:
-                tprint_info("   💾 Using cached LGBM hyperparameters")
-            best_lgbm = LGBMRegressor(
-                **best_lgbm_params,
-                interaction_constraints=interaction_constraints,
-                n_jobs=-1,
-                random_state=42,
-                verbose=-1
-            )
-            best_lgbm.fit(X_train_sel, y_train, init_score=warm_start_train)
-            pred_lgbm_raw = best_lgbm.predict(X_oof_sel)
-            pred_lgbm = pred_lgbm_raw + warm_start_oof
-            score_lgbm, ic_lgbm, auc_lgbm = calculate_score(y_oof, pred_lgbm)
-            results['LGBM'] = {'score': score_lgbm, 'ic': ic_lgbm, 'auc': auc_lgbm, 'model': best_lgbm, 'oof_pred': pred_lgbm}
-            tprint_success(f"   ✅ LGBM: Score={score_lgbm:.4f}, IC={ic_lgbm:.4f}, AUC={auc_lgbm:.4f}")
+        best_lgbm_params = _load_cached_params("LGBM")
+        if best_lgbm_params is None:
+            study_lgbm = optuna.create_study(direction='maximize', pruner=MedianPruner())
+            study_lgbm.optimize(objective_lgbm, n_trials=10)
+            best_lgbm_params = study_lgbm.best_params
+            _save_cached_params("LGBM", best_lgbm_params)
+            tprint_info(f"   🏆 Best LGBM params (new): {best_lgbm_params}")
+        else:
+            tprint_info("   💾 Using cached LGBM hyperparameters")
+        best_lgbm = LGBMRegressor(
+            **best_lgbm_params,
+            interaction_constraints=interaction_constraints,
+            n_jobs=-1,
+            random_state=42,
+            verbose=-1
+        )
+        best_lgbm.fit(X_train_sel, y_train, init_score=warm_start_train)
+        pred_lgbm_raw = best_lgbm.predict(X_oof_sel)
+        pred_lgbm = pred_lgbm_raw + warm_start_oof
+        score_lgbm, ic_lgbm, auc_lgbm = calculate_score(y_oof, pred_lgbm)
+        results['LGBM'] = {'score': score_lgbm, 'ic': ic_lgbm, 'auc': auc_lgbm, 'model': best_lgbm, 'oof_pred': pred_lgbm}
+        tprint_success(f"   ✅ LGBM: Score={score_lgbm:.4f}, IC={ic_lgbm:.4f}, AUC={auc_lgbm:.4f}")
 
-            # 4. Compare and Pick Winner
-            tprint_info("\n🏆 Model Comparison (Winner = IC * AUC on OOF):")
-            best_model_name = None
-            best_model_score = -float('inf')
+        # 4. Compare and Pick Winner
+        tprint_info("\n🏆 Model Comparison (Winner = IC * AUC on OOF):")
+        best_model_name = None
+        best_model_score = -float('inf')
 
-            for name, res in results.items():
-                tprint_info(f"   - {name}: Score={res['score']:.4f} (IC={res['ic']:.4f}, AUC={res['auc']:.4f})")
-                if res['score'] > best_model_score:
-                    best_model_score = res['score']
-                    best_model_name = name
+        for name, res in results.items():
+            tprint_info(f"   - {name}: Score={res['score']:.4f} (IC={res['ic']:.4f}, AUC={res['auc']:.4f})")
+            if res['score'] > best_model_score:
+                best_model_score = res['score']
+                best_model_name = name
 
-            tprint_success(f"🎉 Winner: {best_model_name} (Score: {best_model_score:.4f})")
+        tprint_success(f"🎉 Winner: {best_model_name} (Score: {best_model_score:.4f})")
 
-            winner_result = results[best_model_name]
+        winner_result = results[best_model_name]
 
-            return {
-                "success": True,
-                "winner_name": best_model_name,
-                "winner_model": winner_result['model'],
-                "winner_score": winner_result['score'],
-                "winner_ic": winner_result['ic'],
-                "winner_auc": winner_result['auc'],
-                "all_results": {k: {'score': v['score'], 'ic': v['ic'], 'auc': v['auc'], 'oof_pred': v['oof_pred']} for k,v in results.items()},
-                "y_oof": y_oof,
-                "selected_features": selected_features_names
-            }
-            
-        except Exception as e:
-            tprint_error(f"❌ Ensemble training failed: {e}")
-            import traceback
-            tprint_error(traceback.format_exc())
-            return {}
+        return {
+            "success": True,
+            "winner_name": best_model_name,
+            "winner_model": winner_result['model'],
+            "winner_score": winner_result['score'],
+            "winner_ic": winner_result['ic'],
+            "winner_auc": winner_result['auc'],
+            "all_results": {k: {'score': v['score'], 'ic': v['ic'], 'auc': v['auc'], 'oof_pred': v['oof_pred']} for k,v in results.items()},
+            "y_oof": y_oof,
+            "selected_features": selected_features_names
+        }
+
 
     async def _apply_gmm_enhancement_to_features(self, features: pd.DataFrame, market_data: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Apply comprehensive GMM enhancement using EnhancedGMMFeatures class."""

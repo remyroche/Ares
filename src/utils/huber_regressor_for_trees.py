@@ -6,7 +6,229 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
 from scipy.stats import rankdata
 from joblib import Parallel, delayed
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Any
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ConstraintSelectionConfig:
+    # Eligibility (Full-mode default)
+    p_min: float = 0.80          # sign-stability gate
+    nz_min: float = 0.00         # optional nonzero-rate gate (set >0 to enforce)
+
+    # Band (your updated choice)
+    band_min: float = 0.20       # minimum constrained fraction (of eligible pool)
+    band_max: float = 0.60       # maximum constrained fraction (of eligible pool)
+
+    # Adaptive-quantile mapping (within eligible pool)
+    # q is the quantile threshold on Q: select Q >= quantile(Q, q)
+    q_low: float = 0.40          # when quality is high, constrain more (lower threshold)
+    q_high: float = 0.80         # when quality is low, constrain fewer (higher threshold)
+
+    # How to compute dataset quality health
+    top_frac_for_H: float = 0.10 # "top 10%" for top-heaviness H
+    H_ref: float = 2.0           # reference top-heaviness where we start tightening
+    H_strength: float = 0.10     # how strongly H pushes q upward (0.0 disables)
+
+    # Quality score details
+    lambda_econ: float = 0.0     # optional economic prior boost (0 disables)
+    eps: float = 1e-12           # numerical stability
+
+    # Behavior controls
+    tie_breaker: str = "stable"  # "stable" or "magnitude": how to break ties near cutoff
+
+
+def _safe_quantile(x: np.ndarray, q: float) -> float:
+    """Robust quantile helper for possibly empty arrays."""
+    if x.size == 0:
+        return np.nan
+    q = float(np.clip(q, 0.0, 1.0))
+    return float(np.quantile(x, q))
+
+
+def compute_constraint_quality(
+    a: np.ndarray,              # |avg_coef| or other strength proxy, shape (N,)
+    p: np.ndarray,              # sign stability in [0,1], shape (N,)
+    nz: np.ndarray,             # nonzero rate in [0,1], shape (N,)
+    e: Optional[np.ndarray],    # economic prior flag in {0,1}, shape (N,)
+    cfg: ConstraintSelectionConfig,
+) -> np.ndarray:
+    """
+    Q_j = a_j * (2 p_j - 1) * nz_j * (1 + lambda * e_j)
+    - a: must be comparable across features (ensure consistent scaling upstream).
+    """
+    a = np.asarray(a, dtype=float)
+    p = np.asarray(p, dtype=float)
+    nz = np.asarray(nz, dtype=float)
+
+    if e is None:
+        econ = 1.0
+    else:
+        e = np.asarray(e, dtype=float)
+        econ = 1.0 + cfg.lambda_econ * e
+
+    stability_penalty = np.clip(2.0 * p - 1.0, 0.0, 1.0)  # maps 0.5->0, 1.0->1
+    Q = a * stability_penalty * np.clip(nz, 0.0, 1.0) * econ
+    return Q
+
+
+def compute_quality_health(Q_eligible: np.ndarray, p_eligible: np.ndarray, cfg: ConstraintSelectionConfig) -> Dict[str, float]:
+    """
+    - S: stability prevalence among all features (or eligible subset if provided)
+    - H: top-heaviness ratio over eligible Q
+    """
+    Qe = np.asarray(Q_eligible, dtype=float)
+    pe = np.asarray(p_eligible, dtype=float)
+
+    # S computed on the same population passed in
+    S = float(np.mean(pe >= cfg.p_min)) if pe.size else 0.0
+
+    # H = mean(top X%) / mean(all)
+    if Qe.size == 0:
+        H = 0.0
+    else:
+        mean_all = float(np.mean(Qe))
+        if mean_all <= cfg.eps:
+            H = 0.0
+        else:
+            k = max(1, int(np.ceil(cfg.top_frac_for_H * Qe.size)))
+            top_vals = np.sort(Qe)[-k:]
+            H = float(np.mean(top_vals) / (mean_all + cfg.eps))
+
+    return {"S": S, "H": H}
+
+
+def adaptive_quantile_from_health(S: float, H: float, cfg: ConstraintSelectionConfig) -> float:
+    """
+    Adaptive quantile q (within eligible pool), primarily driven by S.
+    - Higher S => lower q (constrain more)
+    - Lower S  => higher q (constrain fewer)
+    Optionally: if H is high (quality concentrated), push q upward.
+    """
+    # Map S in [0,1] to q in [q_low, q_high] with inverse relation.
+    # q = q_high - S * (q_high - q_low)
+    q = cfg.q_high - float(np.clip(S, 0.0, 1.0)) * (cfg.q_high - cfg.q_low)
+
+    # Optional H adjustment: if quality is very concentrated (H > H_ref), constrain fewer.
+    if cfg.H_strength > 0.0 and cfg.H_ref > 0.0:
+        excess = max(0.0, H - cfg.H_ref)
+        q += cfg.H_strength * excess
+
+    return float(np.clip(q, 0.0, 1.0))
+
+
+def select_monotonic_constraints(
+    a: np.ndarray,
+    p: np.ndarray,
+    nz: np.ndarray,
+    sign: np.ndarray,                # dominant sign per feature: -1, 0, +1 (0 => unconstrained)
+    feature_names: Optional[np.ndarray] = None,
+    e: Optional[np.ndarray] = None,
+    cfg: ConstraintSelectionConfig = ConstraintSelectionConfig(),
+) -> Dict[str, Any]:
+    """
+    Returns a monotonic constraint vector (same order as inputs), plus diagnostics.
+
+    Band policy (your update):
+    - Apply adaptive quantile cutoff within eligible features.
+    - Clamp constrained fraction to [band_min, band_max] of eligible pool.
+    - Never force constraints on unstable / ineligible features.
+
+    Eligibility:
+    - p >= p_min
+    - nz >= nz_min (optional)
+    - sign != 0
+
+    Selection:
+    - Rank by Q within eligible.
+    - Choose top-K where K is clamped to [ceil(band_min*Ne), floor(band_max*Ne)].
+    """
+    a = np.asarray(a, dtype=float)
+    p = np.asarray(p, dtype=float)
+    nz = np.asarray(nz, dtype=float)
+    sgn = np.asarray(sign, dtype=int)
+
+    N = a.size
+    if feature_names is None:
+        feature_names = np.array([f"f{i}" for i in range(N)], dtype=object)
+    else:
+        feature_names = np.asarray(feature_names, dtype=object)
+
+    Q = compute_constraint_quality(a=a, p=p, nz=nz, e=e, cfg=cfg)
+
+    eligible = (p >= cfg.p_min) & (nz >= cfg.nz_min) & (sgn != 0)
+    idx_eligible = np.where(eligible)[0]
+    Ne = idx_eligible.size
+
+    # Default: no constraints
+    mono = np.zeros(N, dtype=int)
+
+    # If nothing eligible, return early with diagnostics
+    if Ne == 0:
+        return {
+            "monotonic_constraints": mono,
+            "selected_features": [],
+            "selected_fraction_of_eligible": 0.0,
+            "eligible_count": 0,
+            "total_count": N,
+            "q_adaptive": np.nan,
+            "threshold_Q": np.nan,
+            "health": {"S": float(np.mean(p >= cfg.p_min)), "H": 0.0},
+            "Q": Q,
+            "eligible_mask": eligible,
+            "band": {"min": cfg.band_min, "max": cfg.band_max, "K_min": 0, "K_max": 0, "K": 0},
+        }
+
+    Qe = Q[idx_eligible]
+    pe = p[idx_eligible]
+
+    health = compute_quality_health(Q_eligible=Qe, p_eligible=pe, cfg=cfg)
+    q_adaptive = adaptive_quantile_from_health(S=health["S"], H=health["H"], cfg=cfg)
+    threshold_Q = _safe_quantile(Qe, q_adaptive)
+
+    # Initial pick based on quantile threshold
+    pick = idx_eligible[Qe >= threshold_Q]
+
+    # Convert to top-K selection to enforce band robustly
+    K_min = int(np.ceil(cfg.band_min * Ne))
+    K_max = int(np.floor(cfg.band_max * Ne))
+    K_min = max(0, min(K_min, Ne))
+    K_max = max(0, min(K_max, Ne))
+    if K_max < K_min:
+        # If band is inconsistent due to small Ne, collapse to feasible
+        K_max = K_min
+
+    # Rank eligible by Q descending; optional tie breaker
+    order = np.argsort(-Qe)  # descending
+    ranked = idx_eligible[order]
+
+    # Determine K0 from the quantile-based pick
+    K0 = pick.size
+
+    # Clamp K to band
+    K = int(np.clip(K0, K_min, K_max))
+
+    # If quantile pick produced too few/many, use top-K directly
+    selected_idx = ranked[:K]
+
+    # Apply constraints with provided signs
+    mono[selected_idx] = sgn[selected_idx]
+
+    selected_features = [(str(feature_names[i]), int(mono[i]), float(Q[i])) for i in selected_idx]
+    selected_fraction = (K / Ne) if Ne else 0.0
+
+    return {
+        "monotonic_constraints": mono,                  # int vector: -1, 0, +1
+        "selected_features": selected_features,          # (name, direction, Q) tuples
+        "selected_fraction_of_eligible": selected_fraction,
+        "eligible_count": Ne,
+        "total_count": N,
+        "q_adaptive": q_adaptive,
+        "threshold_Q": threshold_Q,
+        "health": health,
+        "Q": Q,
+        "eligible_mask": eligible,
+        "band": {"min": cfg.band_min, "max": cfg.band_max, "K_min": K_min, "K_max": K_max, "K": K},
+    }
 
 def _fit_single_split_optimized(
     X_full: np.ndarray,
@@ -174,124 +396,57 @@ def prepare_huber_teacher_outputs(
     print(f"   📈 Average sign agreement: {np.mean(sign_agreement):.3f}")
     print(f"   📈 Average nonzero rate: {np.mean(nonzero_rate):.3f}")
     
-    # 7. Enhanced Monotonicity: Strength + Stability Criteria
-    local_scale = np.mean(abs_avg_coeffs[keep_mask])
-    strength_threshold = max(0.15 * local_scale, np.percentile(abs_avg_coeffs[keep_mask], 10))
+    # 7. Enhanced Monotonicity: Adaptive Thresholds
+    print(f"\n🔗 Huber Enhanced Monotonic Constraints Analysis (Adaptive):")
     
-    # Stability thresholds (configurable parameters)
-    # sign_agree_threshold = 0.8  # Same sign in ≥ 80% of splits
-    # nonzero_rate_threshold = 0.7  # Non-zero in ≥ 70% of splits
+    # Extract metrics for the selected (pruned) features
+    indices_kept = np.where(keep_mask)[0]
     
-    # Apply constraints only when both strength and stability pass
-    mono_cst = np.zeros(len(selected_feats))  # Default: unconstrained
+    a_kept = abs_avg_coeffs[indices_kept]
+    p_kept = sign_agreement[indices_kept]
+    nz_kept = nonzero_rate[indices_kept]
+    sign_kept = np.sign(avg_coeffs[indices_kept])
     
-    for i, (feat_idx, feat_name) in enumerate(zip(np.where(keep_mask)[0], selected_feats)):
-        # Strength criterion
-        strength_pass = abs_avg_coeffs[feat_idx] > strength_threshold
-        
-        # Stability criteria
-        stability_pass = (sign_agreement[feat_idx] >= sign_agree_threshold and 
-                         nonzero_rate[feat_idx] >= nonzero_rate_threshold)
-        
-        # Apply constraint only if both pass
-        if strength_pass and stability_pass:
-            mono_cst[i] = np.sign(avg_coeffs[feat_idx])
-        else:
-            mono_cst[i] = 0  # Unconstrained
+    # Configure selection
+    # Map function arguments to config
+    sel_cfg = ConstraintSelectionConfig(
+        p_min=sign_agree_threshold,
+        nz_min=nonzero_rate_threshold
+        # default band_min=0.20, band_max=0.60, etc.
+    )
     
-    # Enhanced logging: Show which features have which constraints
-    negative_features = []
-    positive_features = []
-    unconstrained_features = []
+    selection_result = select_monotonic_constraints(
+        a=a_kept,
+        p=p_kept,
+        nz=nz_kept,
+        sign=sign_kept,
+        feature_names=selected_feats,
+        cfg=sel_cfg
+    )
     
-    # Also track why features were unconstrained
-    strength_failed = []
-    stability_failed = []
-    both_failed = []
+    mono_cst = selection_result["monotonic_constraints"]
     
-    for i, (feat_name, constraint) in enumerate(zip(selected_feats, mono_cst)):
-        feat_idx = np.where(keep_mask)[0][i]
-        
-        if constraint == -1:
-            negative_features.append(feat_name)
-        elif constraint == 1:
-            positive_features.append(feat_name)
-        else:  # constraint == 0
-            unconstrained_features.append(feat_name)
-            
-            # Track failure reason
-            strength_pass = abs_avg_coeffs[feat_idx] > strength_threshold
-            stability_pass = (sign_agreement[feat_idx] >= sign_agree_threshold and 
-                             nonzero_rate[feat_idx] >= nonzero_rate_threshold)
-            
-            if not strength_pass and not stability_pass:
-                both_failed.append(feat_name)
-            elif not strength_pass:
-                strength_failed.append(feat_name)
-            else:
-                stability_failed.append(feat_name)
+    # Logging
+    print(f"   📊 Total features: {selection_result['total_count']}")
+    print(f"   ✅ Eligible features: {selection_result['eligible_count']}")
+    print(f"   🎯 Target Band: {selection_result['band']['min']*100:.0f}% - {selection_result['band']['max']*100:.0f}%")
+    print(f"   📏 Adaptive Quantile (q): {selection_result['q_adaptive']:.3f} (Threshold Q: {selection_result['threshold_Q']:.4f})")
+    print(f"   🏥 Quality Health: S={selection_result['health']['S']:.3f}, H={selection_result['health']['H']:.3f}")
+
+    selected_feats_info = selection_result["selected_features"]
+    negative_features = [name for name, d, q in selected_feats_info if d == -1]
+    positive_features = [name for name, d, q in selected_feats_info if d == 1]
     
-    # Print detailed constraint information
-    print(f"\n🔗 Huber Enhanced Monotonic Constraints Analysis:")
-    print(f"   📊 Total features: {len(selected_feats)}")
     print(f"   🔻 Negative constraints: {len(negative_features)}")
     print(f"   🔺 Positive constraints: {len(positive_features)}")
-    print(f"   ⚪ Unconstrained: {len(unconstrained_features)}")
-    
-    # Summary: Candidates by magnitude → Constraints after stability gate
-    magnitude_candidates = len(selected_feats)  # Features that passed magnitude threshold
-    stability_constraints = len(negative_features) + len(positive_features)  # Features that passed stability
-    dropped_instability = magnitude_candidates - stability_constraints  # Dropped due to instability
-    
-    print(f"\n📋 Constraint Summary:")
-    print(f"   🎯 Candidates by magnitude: {magnitude_candidates}")
-    print(f"   ✅ Constraints after stability gate: {stability_constraints}")
-    print(f"   ❌ Dropped due to instability: {dropped_instability}")
-    print(f"   📊 Stability retention rate: {stability_constraints/magnitude_candidates*100:.1f}%")
-    
-    # Print failure breakdown
-    print(f"\n📈 Constraint Failure Analysis:")
-    print(f"   ❌ Strength failed: {len(strength_failed)}")
-    print(f"   🔄 Stability failed: {len(stability_failed)}")
-    print(f"   💥 Both failed: {len(both_failed)}")
-    
-    # Print stability statistics
-    print(f"\n📊 Stability Statistics (Thresholds: sign≥{sign_agree_threshold}, nonzero≥{nonzero_rate_threshold}):")
-    print(f"   🔄 Based on {n_time_splits} walk-forward time splits")
-    constrained_features = negative_features + positive_features
-    if constrained_features:
-        constrained_sign_agree = [sign_agreement[np.where(feature_names == feat)[0][0]] 
-                                for feat in constrained_features]
-        constrained_nonzero_rate = [nonzero_rate[np.where(feature_names == feat)[0][0]] 
-                                  for feat in constrained_features]
-        print(f"   ✅ Constrained features:")
-        print(f"      - Avg sign agreement: {np.mean(constrained_sign_agree):.3f}")
-        print(f"      - Avg nonzero rate: {np.mean(constrained_nonzero_rate):.3f}")
-    
-    if unconstrained_features:
-        unconstrained_sign_agree = [sign_agreement[np.where(feature_names == feat)[0][0]] 
-                                  for feat in unconstrained_features]
-        unconstrained_nonzero_rate = [nonzero_rate[np.where(feature_names == feat)[0][0]] 
-                                    for feat in unconstrained_features]
-        print(f"   ⚪ Unconstrained features:")
-        print(f"      - Avg sign agreement: {np.mean(unconstrained_sign_agree):.3f}")
-        print(f"      - Avg nonzero rate: {np.mean(unconstrained_nonzero_rate):.3f}")
+    print(f"   ⚪ Unconstrained: {selection_result['total_count'] - len(negative_features) - len(positive_features)}")
     
     if negative_features:
         print(f"   🔻 Negative features: {negative_features[:5]}{'...' if len(negative_features) > 5 else ''}")
     if positive_features:
         print(f"   🔺 Positive features: {positive_features[:5]}{'...' if len(positive_features) > 5 else ''}")
-    if unconstrained_features:
-        print(f"   ⚪ Unconstrained features: {unconstrained_features[:5]}{'...' if len(unconstrained_features) > 5 else ''}")
-    
-    if strength_failed:
-        print(f"   ❌ Strength failed: {strength_failed[:3]}{'...' if len(strength_failed) > 3 else ''}")
-    if stability_failed:
-        print(f"   🔄 Stability failed: {stability_failed[:3]}{'...' if len(stability_failed) > 3 else ''}")
-    if both_failed:
-        print(f"   💥 Both failed: {both_failed[:3]}{'...' if len(both_failed) > 3 else ''}")
 
-    # 7. Interaction Constraints (Named Output for Tree Learners)
+    # 8. Interaction Constraints (Named Output for Tree Learners)
     # Efficiency: Use Rank-based correlation (O(n log n))
     imp_mask = abs_avg_coeffs[keep_mask] > np.median(abs_avg_coeffs[keep_mask])
     imp_feat_names = selected_feats[imp_mask]
@@ -324,7 +479,7 @@ def prepare_huber_teacher_outputs(
     else:
         interaction_constraints = None
 
-    # 8. Consensus Inference for Validation/Test
+    # 9. Consensus Inference for Validation/Test
     def get_consensus_pred(df):
         if df is None: return None
         # Use full scaler on dataframe

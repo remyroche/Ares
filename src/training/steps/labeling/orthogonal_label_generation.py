@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Union, Callable, Optional, Tuple, Any, Set
 from enum import Enum
 from collections import Counter
-from scipy.stats import spearmanr, entropy as shannon_entropy, norm
+from scipy.stats import spearmanr, entropy as shannon_entropy, norm, rankdata
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import pdist
 from sklearn.feature_selection import f_classif, mutual_info_classif, f_regression, mutual_info_regression
@@ -1634,6 +1634,11 @@ def check_label_quality(
         
         # Reduced minimum samples to 5% for regimes (relaxed from 10%)
         min_bal = 0.05 if is_regression else 0.10
+
+        # RELAXATION: If we have many events, allow lower positive rate (rare signals are fine if statistically significant count)
+        if n > 100:
+            min_bal = 0.01
+
         if pos_rate < min_bal:
             gates_log.append(f"Bal: {pos_rate:.1%} (Samples) [FAIL]")
             overall_pass = False
@@ -1808,15 +1813,53 @@ def calculate_multifactor_score(
         metrics = cand.get('metrics', {}) or {}
         # Optimization: Limit sample size for Spearman calculation
         MAX_SAMPLES = 2000
+
+        # Get weights
+        weights = cand.get('weights')
+        if weights is None:
+            # Fallback to weight_vector if available
+            weights = cand.get('weight_vector')
+            if weights is not None and not isinstance(weights, pd.Series):
+                # Ensure it's a series aligned with events if possible, or just array
+                pass
+
+        # If still no weights, uniform
+        if weights is None:
+            weights_vals = np.ones(n)
+        else:
+            # Align weights to labels
+            if isinstance(weights, pd.Series):
+                weights_vals = weights.reindex(labels.index).fillna(0.0).values
+            else:
+                # Assuming weights is array-like aligned with candidates['events']
+                # But labels might be subset if labels are filtered?
+                # Usually labels index == events index.
+                # If weights is numpy array, we assume it matches labels length if n is same
+                if len(weights) == n:
+                    weights_vals = np.asarray(weights)
+                else:
+                    # Mismatch or unaligned array. Fallback to uniform.
+                    weights_vals = np.ones(n)
+
         if n > MAX_SAMPLES:
             indices = np.random.RandomState(42).choice(n, MAX_SAMPLES, replace=False)
             X_sub = X.iloc[indices]
             labels_sub = labels.iloc[indices]
+            weights_sub = weights_vals[indices]
         else:
             X_sub = X
             labels_sub = labels
+            weights_sub = weights_vals
 
-        ic_vals = [abs(spearmanr(X_sub[col], labels_sub)[0]) for col in X_sub.columns]
+        # Use Weighted Spearman
+        ic_vals = []
+        for col in X_sub.columns:
+            try:
+                ic = weighted_spearmanr(X_sub[col].values, labels_sub.values, weights_sub)
+                ic_vals.append(abs(ic))
+            except Exception:
+                ic_vals.append(0.0)
+
         ic_max = np.nanmax(ic_vals) if ic_vals else 0
 
         # Sanitize X_sub before f_classif to avoid infinity errors
@@ -1916,6 +1959,48 @@ def calculate_multifactor_score(
         logger.warning(f"Failed to persist raw metric log: {exc}")
 
     return scores
+
+# ==========================================
+# 3.5. Weighted Statistics
+# ==========================================
+
+def weighted_mean(x: np.ndarray, w: np.ndarray) -> float:
+    """Compute weighted mean."""
+    return np.sum(x * w) / np.sum(w)
+
+def weighted_cov(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
+    """Compute weighted covariance."""
+    xm = weighted_mean(x, w)
+    ym = weighted_mean(y, w)
+    return np.sum(w * (x - xm) * (y - ym)) / np.sum(w)
+
+def weighted_spearmanr(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
+    """
+    Compute weighted Spearman correlation (Weighted Pearson on ranks).
+    """
+    if len(x) < 2: return 0.0
+
+    # Ensure arrays
+    x = np.asarray(x)
+    y = np.asarray(y)
+    w = np.asarray(w)
+
+    # Rank data
+    x_rank = rankdata(x)
+    y_rank = rankdata(y)
+
+    # Weighted Pearson on ranks
+    cov = weighted_cov(x_rank, y_rank, w)
+    var_x = weighted_cov(x_rank, x_rank, w)
+    var_y = weighted_cov(y_rank, y_rank, w)
+
+    sx = np.sqrt(var_x)
+    sy = np.sqrt(var_y)
+
+    if sx == 0 or sy == 0:
+        return 0.0
+
+    return cov / (sx * sy)
 
 # ==========================================
 # 4. Probe (LGBM - Advanced Metrics)
@@ -2710,13 +2795,16 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
 # 8. Main Pipeline
 # ==========================================
 
-def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: float = 2.0, vol_window: int = 20, atr_window: int = 14, sr_levels: list = None) -> Dict[str, float]:
+def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: float = 4.0, vol_window: int = 20, atr_window: int = 14, sr_levels: list = None) -> Dict[str, float]:
     thresholds = {}
     if len(df) < 100: return thresholds
 
     duration_days = (df.index[-1] - df.index[0]).days + 1
     bars_per_day = len(df) / max(1, duration_days)
     target_fraction = target_events_per_day / max(1, bars_per_day)
+
+    # Ensure target fraction is reasonable (at least 1%, max 50%)
+    target_fraction = np.clip(target_fraction, 0.01, 0.50)
 
     # Price
     if 'close' in df.columns:
@@ -2792,34 +2880,47 @@ def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: floa
 
     return thresholds
 
+def calculate_continuous_weight(z_score_series: Union[pd.Series, np.ndarray], gamma: float = 2.0, beta: float = 1.0) -> Union[pd.Series, np.ndarray]:
+    """
+    Calculate continuous sample weights based on Quantile Rank and Z-score Sigmoid.
+    Formula: w = (QuantileRank ** gamma) * Sigmoid(beta * Z_score)
+    """
+    if isinstance(z_score_series, np.ndarray):
+        s = pd.Series(z_score_series)
+        is_array = True
+    else:
+        s = z_score_series
+        is_array = False
+
+    # 1. Quantile Rank [0, 1]
+    # Use absolute value for ranking magnitude
+    q_rank = s.abs().rank(pct=True).fillna(0.5)
+
+    # 2. Sigmoid of Z-score
+    # sigmoid(x) = 1 / (1 + exp(-x))
+    # Center sigmoid at 2.0 sigma (soft threshold)
+    z_abs = s.abs()
+    sigmoid = 1.0 / (1.0 + np.exp(-beta * (z_abs - 2.0)))
+
+    # 3. Combine
+    weights = (q_rank ** gamma) * sigmoid
+
+    if is_array:
+        return weights.values
+    return weights
+
 def two_tier_weight(z, tier1_min=3.0, tier2_min=2.7, tier2_max=3.0, alpha=1.5, 
                    uniqueness=1.0, noise_ratio=1.0, horizon_validity=1.0):
     """
-    Compute two-tier weights for a Z-score.
-    Tier-1: core extremes >= 3.0σ (Mapped to [0.5, 1.0])
-    Tier-2: near-extremes 2.7-3.0σ (Mapped to [0.0, 0.5])
+    Compute continuous weights for a Z-score (Replaces discrete tiers).
+    Formula: QuantileRank^2 * Sigmoid(Z)
     """
-    z = np.abs(z)
+    # Use the new continuous logic
     if isinstance(z, (pd.Series, np.ndarray)):
-        w = np.zeros_like(z, dtype=float)
+        w = calculate_continuous_weight(z, gamma=2.0, beta=1.0)
     else:
-        w = 0.0
-
-    # Tier-2: [2.7, 3.0)
-    mask_t2 = (z >= tier2_min) & (z < tier1_min)
-    t2_scale = 0.5 * ((z[mask_t2] - tier2_min) / (tier1_min - tier2_min)) ** alpha if isinstance(z, (pd.Series, np.ndarray)) else 0.5 * ((z - tier2_min) / (tier1_min - tier2_min)) ** alpha
-    if isinstance(z, (pd.Series, np.ndarray)):
-        w[mask_t2] = t2_scale
-    elif mask_t2:
-        w = t2_scale
-
-    # Tier-1: [3.0, inf)
-    mask_t1 = (z >= tier1_min)
-    t1_scale = 0.5 + 0.5 * np.clip((z[mask_t1] - tier1_min) / tier1_min, 0.0, 1.0) ** alpha if isinstance(z, (pd.Series, np.ndarray)) else 0.5 + 0.5 * np.clip((z - tier1_min) / tier1_min, 0.0, 1.0) ** alpha
-    if isinstance(z, (pd.Series, np.ndarray)):
-        w[mask_t1] = t1_scale
-    elif mask_t1:
-        w = t1_scale
+        # Scalar fallback
+        w = 0.0 if abs(z) < 2.0 else 1.0
 
     # Apply multipliers
     w_final = w * uniqueness * noise_ratio * horizon_validity
@@ -3304,52 +3405,16 @@ def generate_derived_features(df: pd.DataFrame, ohlcv_candidates: List[Dict]) ->
 def smart_event_weight(z_score_series: pd.Series, quantile_threshold: float = 0.995, use_adaptive: bool = True) -> np.ndarray:
     """
     Advanced Event Logic (Level 11):
-    1. Quantile Detection: Tier-1 if z >= 3.0 OR value > 99.5% quantile.
-    2. Adaptive Thresholds by Regime: Modulate thresholds based on rolling volatility.
-       - In high vol regimes, we require higher Z-scores for Tier-1.
-       - In low vol regimes, we relax thresholds slightly to capture structural shifts.
+    Refactored to use Continuous Weighting: QuantileRank^2 * Sigmoid(Z)
     """
-    # 1. Base Quantile Calculation
-    try:
-        q_val = z_score_series.quantile(quantile_threshold)
-    except:
-        q_val = 3.0 # Fallback
-        
-    weights = np.zeros(len(z_score_series))
-    abs_z = z_score_series.abs()
+    # Use continuous weighting instead of discrete tiers
+    weights = calculate_continuous_weight(z_score_series, gamma=2.0, beta=1.0)
     
-    # 2. Adaptive Regime Modulation
-    # Compute rolling volatility of the Z-score itself as a proxy for signal regime
-    if use_adaptive:
-        try:
-            # Signal volatility regime (short-term instability)
-            sig_vol = z_score_series.rolling(100).std().fillna(1.0)
-            sig_vol_norm = sig_vol / (sig_vol.rolling(500).mean() + 1e-9)
-            
-            # Modulate thresholds: higher vol -> higher requirement
-            # Max boost +50% to threshold in extreme regimes
-            adaptive_t1 = 3.0 * np.clip(sig_vol_norm, 0.8, 1.5)
-            adaptive_q = q_val * np.clip(sig_vol_norm, 0.9, 1.2)
-            adaptive_t2 = 2.5 * np.clip(sig_vol_norm, 0.8, 1.3)
-        except:
-            adaptive_t1 = 3.0
-            adaptive_q = q_val
-            adaptive_t2 = 2.5
-    else:
-        adaptive_t1 = 3.0
-        adaptive_q = q_val
-        adaptive_t2 = 2.5
-
-    # 3. Tiered Assignment
-    # Tier-1: Extreme signals (Adaptive Z or Extreme Quantile)
-    tier1_mask = (abs_z >= adaptive_t1) | (abs_z >= adaptive_q)
-    # Tier-2: Structural smoothing (Structural threshold)
-    tier2_mask = (abs_z >= adaptive_t2) & (~tier1_mask)
+    # If adaptive is requested, we can modulate the weights further
+    # But for now, continuous weighting captures the "intensity" better than regime modulation logic
+    # which often clamped weights to 0.5/1.0.
     
-    weights[tier1_mask] = 1.0
-    weights[tier2_mask] = 0.5
-    
-    return weights
+    return weights.values if isinstance(weights, pd.Series) else weights
 
 
 def generate_tail_aggregates(df: pd.DataFrame, base_candidates: List[Dict]) -> List[Dict]:

@@ -22,6 +22,50 @@ from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sa
 from .enhanced_reporting import EnhancedLayer3Reporter
 from .feature_engineering import downcast_float
 
+def generate_regime_aware_features(
+    X: pd.DataFrame,
+    volatility_col: str = 'volatility_20',
+    prob_cols: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Generates Regime-Aware Features.
+    1. Volatility Regime Probabilities (Z-Score Bucket).
+    2. Meta-Model Disagreement (if prob_cols provided).
+    3. Conservatism Scores.
+    """
+    X_reg = pd.DataFrame(index=X.index)
+
+    # 1. Volatility Regime (Soft Gated)
+    if volatility_col in X.columns:
+        vol = X[volatility_col]
+        # Robust Z-Score
+        med = vol.rolling(100, min_periods=20).median()
+        mad = (vol - med).abs().rolling(100, min_periods=20).median()
+        z_score = (vol - med) / (mad * 1.4826 + 1e-6)
+
+        # Softmax-like probabilities for regimes
+        # Low Vol (Z < -1), Normal (-1 <= Z <= 1), High (Z > 1)
+        # We use sigmoid to create soft features
+        X_reg['regime_vol_z'] = z_score.fillna(0)
+        X_reg['regime_prob_high_vol'] = expit(z_score - 1.0).fillna(0) # Prob Z > 1
+        X_reg['regime_prob_low_vol'] = expit(-1.0 - z_score).fillna(0) # Prob Z < -1
+
+    # 2. Meta-Disagreement
+    if prob_cols:
+        valid_probs = [c for c in prob_cols if c in X.columns]
+        if len(valid_probs) > 1:
+            probs = X[valid_probs]
+            # Standard deviation of probabilities across models
+            disagreement = probs.std(axis=1)
+            X_reg['meta_disagreement'] = disagreement.fillna(0)
+
+            # Conservatism: min(prob) / mean(prob)
+            mean_prob = probs.mean(axis=1)
+            min_prob = probs.min(axis=1)
+            X_reg['meta_conservatism'] = (min_prob / (mean_prob + 1e-6)).fillna(0)
+
+    return X_reg
+
 # Import Layer 3 Feature Cache
 try:
     from src.training.steps.labeling.layer3_feature_cache import (
@@ -208,12 +252,13 @@ def integrate_entropy_bars_into_layer3(
 
 def apply_mild_mp_clustering(
     X: pd.DataFrame,
-    threshold: float = 0.98
+    threshold: float = 0.98,
+    target: Optional[pd.Series] = None
 ) -> pd.DataFrame:
     """
     Phase 3: Mild MP-Clustering.
-    Removes purely collinear clusters (correlation > threshold), keeping one redundant predictor.
-    Uses Optimized Numpy operations for speed.
+    Removes purely collinear clusters (correlation > threshold).
+    Selection Strategy: Predictive Power (Correlation with Target) if target provided, else Variance.
     """
     tprint_info(f"🔍 Phase 3: Mild MP-Clustering (Threshold={threshold})...")
 
@@ -223,20 +268,18 @@ def apply_mild_mp_clustering(
     # Ensure float32 for speed
     X_vals = downcast_float(X).values
 
-    # Compute correlation matrix using numpy (handling NaNs by filling with 0 if any,
-    # though usually features should be clean here. Simple fillna(0) proxy is safest for corr calculation)
+    # Compute correlation matrix using numpy
     if np.isnan(X_vals).any():
         X_vals = np.nan_to_num(X_vals, nan=0.0)
 
     # Compute correlation matrix (abs)
-    # np.corrcoef calculates correlation of ROWS, so we transpose
     corr = np.abs(np.corrcoef(X_vals.T))
     np.fill_diagonal(corr, 1.0)
-    corr = np.nan_to_num(corr, nan=0.0) # Handle constant columns producing NaN
+    corr = np.nan_to_num(corr, nan=0.0)
     
     # Distance matrix
     dist = 1.0 - corr
-    dist = np.clip(dist, 0, 1) # Ensure valid range
+    dist = np.clip(dist, 0, 1)
 
     # Hierarchical Clustering
     try:
@@ -253,29 +296,45 @@ def apply_mild_mp_clustering(
         selected_cols = []
         dropped_cols = []
 
-        # Calculate variances efficiently
-        if OPTIMIZED_AVAILABLE:
-            # Re-using X_vals which is filled
-            variances = _vectorized_variance_scores(X_vals)
+        # Calculate Scores
+        scores = np.zeros(X.shape[1])
+
+        if target is not None:
+            # Multi-Objective: IC (Predictive Power) * Stability (Proxy: Variance or Autocorr)
+            # For speed, we use absolute correlation with target as proxy for IC
+            y_vals = target.values if hasattr(target, 'values') else np.asarray(target)
+
+            if len(y_vals) == len(X):
+                # Valid target
+                target_corrs = np.zeros(X.shape[1])
+                for j in range(X.shape[1]):
+                    # Check if constant
+                    if np.std(X_vals[:, j]) > 1e-9:
+                        target_corrs[j] = abs(np.corrcoef(X_vals[:, j], y_vals)[0, 1])
+
+                scores = target_corrs
+            else:
+                scores = np.var(X_vals, axis=0) # Fallback to variance
         else:
-            variances = np.var(X_vals, axis=0)
+            if OPTIMIZED_AVAILABLE:
+                scores = _vectorized_variance_scores(X_vals)
+            else:
+                scores = np.var(X_vals, axis=0)
 
         for i in range(n_clusters):
             cluster_indices = np.where(labels == i)[0]
 
-            # If cluster has only 1 element, keep it
             if len(cluster_indices) == 1:
                 selected_cols.append(X.columns[cluster_indices[0]])
                 continue
 
-            # Select feature with highest variance in the cluster
-            cluster_variances = variances[cluster_indices]
-            best_idx_in_cluster = np.argmax(cluster_variances)
+            # Select feature with highest score
+            cluster_scores = scores[cluster_indices]
+            best_idx_in_cluster = np.argmax(cluster_scores)
             best_feature_idx = cluster_indices[best_idx_in_cluster]
             best_feature = X.columns[best_feature_idx]
 
             selected_cols.append(best_feature)
-            # Add others to dropped
             dropped_cols.extend([X.columns[idx] for idx in cluster_indices if idx != best_feature_idx])
 
         tprint_success(f"   ✅ Reduced {X.shape[1]} -> {len(selected_cols)} features. Dropped {len(dropped_cols)} redundant features.")
@@ -480,8 +539,17 @@ def layer3_analyst_lgbm(
         if col in df.columns:
             X_full[col] = df[col].reindex(X_full.index)
 
+    # Phase 3.5: Regime Aware Features
+    # Identify probability columns for disagreement calculation
+    prob_cols = [c for c in X_full.columns if 'prob_' in c and '_oof' not in c]
+    regime_feats = generate_regime_aware_features(X_full, 'volatility_20', prob_cols)
+
+    # Merge Regime Feats into X_full before clustering/training
+    X_full = pd.concat([X_full, regime_feats], axis=1)
+
     # Apply Clustering (Optimized)
-    X_clustered = apply_mild_mp_clustering(X_full, threshold=0.98)
+    # Use 12-bar target for feature selection relevance
+    X_clustered = apply_mild_mp_clustering(X_full, threshold=0.98, target=y_alpha_12_series)
 
     # Phase 4-8: Multi-Horizon Model Training
     # (Huber Teacher -> Rotation -> Train -> Optuna -> Predictions) handled in model_training.py

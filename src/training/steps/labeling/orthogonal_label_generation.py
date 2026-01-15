@@ -5401,27 +5401,64 @@ def generate_dual_cusum_signals(
     """
     Generate CUSUM signals with differentiated weights for trend vs reversal.
     Utilizes Efficiency Ratio (ER) to classify regime.
+    Optimized using Numba-accelerated rolling functions.
     """
-    # 1. Volatility Scaling
-    returns = close.pct_change()
-    vol = returns.rolling(vol_window).std()
+    # Convert close to numpy array
+    close_vals = close.values.astype(np.float64)
+    n = len(close_vals)
+
+    # 1. Volatility Scaling (Manual pct_change)
+    returns_vals = np.zeros(n, dtype=np.float64)
+    # Avoid division by zero
+    if n > 1:
+        close_prev = close_vals[:-1]
+        # Use simple returns logic matching pct_change
+        returns_vals[1:] = (close_vals[1:] - close_prev) / (close_prev + 1e-9)
+
+    # vol = returns.rolling(vol_window).std()
+    # _numba_rolling_std produces 0.0 for the first window-1 elements
+    vol_vals = _numba_rolling_std(returns_vals, vol_window)
+    # Set initial values to NaN to match pandas behavior and ensuring CUSUM skips them
+    if n >= vol_window:
+        vol_vals[:vol_window-1] = np.nan
+    else:
+        vol_vals[:] = np.nan
     
     # 2. Efficiency Ratio (Kaufman)
-    direction = close.diff(window_er).abs()
-    volatility = returns.abs().rolling(window_er).sum()
-    er = direction / (volatility + 1e-9)
-    er = er.fillna(0)
+    # direction = close.diff(window_er).abs()
+    direction_vals = np.zeros(n, dtype=np.float64)
+    if n > window_er:
+        direction_vals[window_er:] = np.abs(close_vals[window_er:] - close_vals[:-window_er])
+    direction_vals[:window_er] = np.nan
+
+    # volatility = returns.abs().rolling(window_er).sum()
+    returns_abs_vals = np.abs(returns_vals)
+    volatility_vals = _numba_rolling_sum(returns_abs_vals, window_er)
+    if n >= window_er:
+        volatility_vals[:window_er-1] = np.nan
+    else:
+        volatility_vals[:] = np.nan
+
+    # er = direction / (volatility + 1e-9)
+    er_vals = np.zeros(n, dtype=np.float64)
+
+    # Calculate ER where valid
+    valid_mask = ~np.isnan(direction_vals) & ~np.isnan(volatility_vals)
+    if np.any(valid_mask):
+        # Only compute where volatility is sufficient to avoid division by zero artifacts
+        safe_volatility = volatility_vals[valid_mask] + 1e-9
+        er_vals[valid_mask] = direction_vals[valid_mask] / safe_volatility
     
     # 3. Dynamic Thresholds
-    h = k * vol
+    h_arr = k * vol_vals
     
     # 4. Standard CUSUM logic with ER weighting (Numba Optimized)
-    diff = close.diff().fillna(0).values
-    h_arr = h.values
-    er_arr = er.fillna(0).values
+    diff_vals = np.zeros(n, dtype=np.float64)
+    if n > 1:
+        diff_vals[1:] = close_vals[1:] - close_vals[:-1]
     
     trend_arr, reversal_arr = generate_dual_cusum_numba(
-        diff, h_arr, er_arr, er_min
+        diff_vals, h_arr, er_vals, er_min
     )
             
     return pd.DataFrame({

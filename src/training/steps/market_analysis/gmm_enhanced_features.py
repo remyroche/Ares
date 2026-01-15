@@ -1982,14 +1982,42 @@ class EnhancedGMMFeatures(BaseStep):
                 tprint_success(f"✅ Original pipeline completed: {original_features.shape if hasattr(original_features, 'shape') else 'Unknown shape'}")
             
             # Pipeline 2: Enhanced
+            enhanced_path = None
             if self.use_enhanced_pipeline:
-                tprint_info("🚀 Running Enhanced GMM Pipeline...")
+                # Create descriptive filename without timestamp for reuse
+                symbol = config.get('symbol', 'ETHUSDT')
+                data_type = 'entropy' if is_entropy_bars else 'timebars'
+                mtf = 'mtf' if self.use_multi_timeframe else 'single'
+                enhanced_path = f"enhanced_gmm_features_{symbol}_{data_type}_{mtf}.parquet"
                 
-                # Enhanced Step A (with FracDiff + Multi-Timeframe)
-                # For now, just return the base features as enhanced features
-                enhanced_features = base_features.copy()
-                all_results['enhanced'] = enhanced_features
-                tprint_success(f"✅ Enhanced pipeline completed: {enhanced_features.shape if hasattr(enhanced_features, 'shape') else 'Unknown shape'}")
+                # Check if file exists to reuse
+                if os.path.exists(enhanced_path):
+                    tprint_success(f"✅ Found existing enhanced features at {enhanced_path}. Reusing...")
+                    try:
+                        enhanced_features = pd.read_parquet(enhanced_path)
+                        all_results['enhanced'] = enhanced_features
+                        tprint_success(f"✅ Loaded enhanced features: {enhanced_features.shape}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to load existing features: {e}. Regenerating...")
+                        # Fallback to generation if load fails
+                        tprint_info("🚀 Running Enhanced GMM Pipeline...")
+                        enhanced_features = base_features.copy()
+                        all_results['enhanced'] = enhanced_features
+                        tprint_success(f"✅ Enhanced pipeline completed: {enhanced_features.shape if hasattr(enhanced_features, 'shape') else 'Unknown shape'}")
+                        all_results['enhanced'].to_parquet(enhanced_path)
+                        tprint_success(f"💾 Enhanced features saved to {enhanced_path}")
+                else:
+                    tprint_info("🚀 Running Enhanced GMM Pipeline...")
+
+                    # Enhanced Step A (with FracDiff + Multi-Timeframe)
+                    # For now, just return the base features as enhanced features
+                    enhanced_features = base_features.copy()
+                    all_results['enhanced'] = enhanced_features
+                    tprint_success(f"✅ Enhanced pipeline completed: {enhanced_features.shape if hasattr(enhanced_features, 'shape') else 'Unknown shape'}")
+
+                    # Save enhanced features to file
+                    all_results['enhanced'].to_parquet(enhanced_path)
+                    tprint_success(f"💾 Enhanced features saved to {enhanced_path}")
             
             # Save results
             results = {
@@ -2003,17 +2031,8 @@ class EnhancedGMMFeatures(BaseStep):
                 'feature_count': len(base_features.columns) if hasattr(base_features, 'columns') else 0
             }
             
-            # Save enhanced features to file
-            if 'enhanced' in all_results:
-                # Create more descriptive filename
-                symbol = config.get('symbol', 'ETHUSDT')
-                data_type = 'entropy' if is_entropy_bars else 'timebars'
-                mtf = 'mtf' if self.use_multi_timeframe else 'single'
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                enhanced_path = f"enhanced_gmm_features_{symbol}_{data_type}_{mtf}_{timestamp}.parquet"
-                all_results['enhanced'].to_parquet(enhanced_path)
+            if enhanced_path and 'enhanced' in all_results:
                 results['enhanced_features_path'] = enhanced_path
-                tprint_success(f"💾 Enhanced features saved to {enhanced_path}")
             
             return results
             

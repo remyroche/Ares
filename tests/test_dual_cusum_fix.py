@@ -15,8 +15,8 @@ def test_dual_cusum_fix():
         signals = generate_dual_cusum_signals(
             close,
             k=0.01,
-            vol_window=10,
-            er_window=10
+            window_vol=10,
+            window_er=10
         )
         print("Success! DataFrame returned.")
         print("Columns:", signals.columns.tolist())
@@ -25,15 +25,15 @@ def test_dual_cusum_fix():
             print("trend_signal present")
         else:
             print("FAIL: trend_signal missing")
-            exit(1)
+            assert False, "trend_signal missing"
 
     except AttributeError as e:
         print(f"FAIL: AttributeError caught: {e}")
         # This confirms if rolling() was called on numpy array
-        exit(1)
+        assert False, f"AttributeError caught: {e}"
     except Exception as e:
         print(f"FAIL: Exception caught: {e}")
-        exit(1)
+        assert False, f"Exception caught: {e}"
 
 if __name__ == "__main__":
     test_dual_cusum_fix()

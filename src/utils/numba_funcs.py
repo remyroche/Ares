@@ -344,6 +344,10 @@ def _numba_rolling_slope(y, window):
     Calculate rolling linear regression slope using Numba.
     Slope = (N*sum(xy) - sum(x)*sum(y)) / (N*sum(x^2) - (sum(x))^2)
     where x = [0, 1, ..., window-1]
+
+    Optimized to O(N) using incremental updates:
+    SumXY_new = SumXY_old - SumY_old + y_leaving + (W-1)*y_entering
+    SumY_new = SumY_old - y_leaving + y_entering
     """
     n = len(y)
     output = np.zeros(n, dtype=np.float64)
@@ -357,17 +361,33 @@ def _numba_rolling_slope(y, window):
     if denom == 0:
         return output
         
-    for i in range(window, n + 1):
-        chunk = y[i-window:i]
+    if n < window:
+        return output
+
+    # Initialize first window
+    sum_y = 0.0
+    sum_xy = 0.0
+    for j in range(window):
+        val = y[j]
+        sum_y += val
+        sum_xy += j * val
+
+    # First result at index window-1
+    output[window-1] = (n_w * sum_xy - sum_x * sum_y) / denom
+
+    # Loop for remaining windows
+    for i in range(window, n):
+        # i is the index of the newly added element (y_entering)
+        # y_leaving is at i - window
         
-        sum_y = 0.0
-        sum_xy = 0.0
-        for j in range(window):
-            sum_y += chunk[j]
-            sum_xy += j * chunk[j]
-            
-        slope = (n_w * sum_xy - sum_x * sum_y) / denom
-        output[i-1] = slope
+        y_leaving = y[i - window]
+        y_entering = y[i]
+
+        # Update sums
+        sum_xy = sum_xy - sum_y + y_leaving + (n_w - 1.0) * y_entering
+        sum_y = sum_y - y_leaving + y_entering
+
+        output[i] = (n_w * sum_xy - sum_x * sum_y) / denom
         
     return output
 

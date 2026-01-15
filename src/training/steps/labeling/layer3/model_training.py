@@ -19,6 +19,7 @@ from scipy.special import expit
 
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.training.steps.labeling.layer3.feature_engineering import downcast_float
+from src.training.steps.labeling.focal_loss_utils import RobustFocalLoss
 
 # Import tprint functions
 try:
@@ -80,7 +81,7 @@ def train_lgbm_model(
 ) -> Dict[str, Any]:
     """
     Trains LightGBM with Pseudo-Oblique Linear Trees, Monotonic & Interaction Constraints, and Warm Start.
-    Uses 'quantile' objective for regression tasks.
+    Uses 'huber' objective for regression tasks (Robustness) and 'RobustFocalLoss' (mix=1.0) for classification (Calibration).
     """
     tprint_info(f"   🍁 Training LGBM ({task_type}): {model_name}...")
     
@@ -94,39 +95,60 @@ def train_lgbm_model(
     X_scaled = pd.DataFrame(X_scaled_np, columns=X_t.columns, index=X_t.index)
 
     # Prepare constraints
-    monotone_constraints = list(huber_output['monotonic_constraints'])
+    # Huber output returns dict {feat: sign}, convert to list matching columns
+    mono_dict = huber_output['monotonic_constraints']
+    monotone_constraints = [mono_dict.get(c, 0) for c in X_t.columns]
+
     interaction_constraints = huber_output['interaction_constraints']
 
     # Warm start
     init_score = huber_output['warm_start']['train']
 
-    # Configure objective
+    # Configure objective and params aligned with Layer 2
     if task_type == 'classification':
-        objective = 'binary'
-        metric = 'binary_logloss'
+        # Use RobustFocalLoss with mix=1.0 (LogLoss) for optimal calibration + Smoothing
+        objective = RobustFocalLoss(gamma_pos=1.0, gamma_neg=2.5, mix=1.0, label_smoothing=0.02, verbose=False)
+        metric = 'binary_logloss' # Track calibration
+        # Layer 2 classification params
+        params = {
+            'boosting_type': 'goss',
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'max_depth': 6,
+            'min_data_in_leaf': 20,
+            'feature_fraction': 0.6,
+            'lambda_l1': 0.5,
+            'lambda_l2': 1.0,
+            'bagging_fraction': 1.0, # Disable bagging for GOSS
+            'bagging_freq': 0
+        }
     else:
-        objective = 'quantile'
-        metric = 'quantile'
+        # Regression: Huber for Robust Statistics (Fat Tails)
+        objective = 'huber'
+        metric = 'l2' # Monitor MSE/IC
+        # Robust regression params
+        params = {
+            'boosting_type': 'gbdt', # Huber doesn't support GOSS usually
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'max_depth': 6,
+            'min_data_in_leaf': 100, # More robust for regression
+            'feature_fraction': 0.6,
+            'lambda_l1': 1.0,
+            'lambda_l2': 2.0, # Higher reg for regression
+            'alpha': 1.35 # Huber delta (tuning param)
+        }
 
-    params = {
-        'objective': objective,
-        'metric': metric,
+    # Common params
+    params.update({
         'verbosity': -1,
-        'linear_tree': True,
-        'path_smooth': 20 if fast_mode else 50,
-        'min_data_in_leaf': 100 if fast_mode else 300,
-        'num_leaves': 7 if fast_mode else 12,
-        'lambda_l1': 1.0,
-        'learning_rate': 0.05,
-        'n_estimators': 100 if fast_mode else 500,
+        'linear_tree': True, # Keep linear tree
+        'n_estimators': 100 if fast_mode else 500, # Aligned with Layer 2 loop limits (usually 200-500)
         'monotone_constraints': monotone_constraints,
         'interaction_constraints': interaction_constraints if interaction_constraints else "",
-        'early_stopping_round': 20,
+        'early_stopping_round': 30,
         'seed': 42
-    }
-
-    if objective == 'quantile':
-        params['alpha'] = 0.5
+    })
 
     if config and 'lgbm_params' in config:
         params.update(config['lgbm_params'])
@@ -148,18 +170,26 @@ def train_lgbm_model(
         lgb.log_evaluation(period=0)
     ]
 
-    # Optuna Integration
-    if config and 'optuna_trial' in config:
-        trial = config['optuna_trial']
-        metric_name = params['metric']
-        callbacks.append(optuna.integration.LightGBMPruningCallback(trial, metric_name, valid_name='valid_0'))
-
-    model = lgb.train(
-        params,
-        dtrain_split,
-        valid_sets=[dval_split],
-        callbacks=callbacks
-    )
+    # Handle custom objective
+    if not isinstance(objective, str):
+        # Pass callable objective via params if fobj arg is not supported
+        params['objective'] = objective
+        params['metric'] = metric
+        model = lgb.train(
+            params,
+            dtrain_split,
+            valid_sets=[dval_split],
+            callbacks=callbacks
+        )
+    else:
+        params['objective'] = objective
+        params['metric'] = metric
+        model = lgb.train(
+            params,
+            dtrain_split,
+            valid_sets=[dval_split],
+            callbacks=callbacks
+        )
     
     # Prediction (Raw Score = Margin)
     raw_margin = model.predict(X_scaled, raw_score=True)
@@ -189,7 +219,7 @@ def train_xgboost_model(
 ) -> Dict[str, Any]:
     """
     Trains XGBoost with Feature-Rotation, Monotonic & Interaction Constraints, and Warm Start.
-    Using objective='reg:quantileerror' for robust regression.
+    Aligned with Layer 2 parameters.
     """
     tprint_info(f"   🚀 Training XGBoost ({task_type}): {model_name}...")
 
@@ -203,38 +233,58 @@ def train_xgboost_model(
     X_scaled = pd.DataFrame(X_scaled_np, columns=X_t.columns, index=X_t.index)
 
     # 1. Apply Huber Rotation Logic
-    huber_model = huber_output['huber_model']
-    coeffs_series = pd.Series(huber_model.coef_, index=X_t.columns)
+    # Use the median model (first in list)
+    huber_model = huber_output['huber_models'][0]
+
+    # Map coefficients to original columns (X_train) before selection
+    # X_t is already subsetted, so we need to map to X_train first
+    all_coeffs = pd.Series(huber_model.coef_, index=X_train.columns)
+
+    # Filter coefficients for selected features only
+    coeffs_series = all_coeffs[selected_features]
+
     X_rotated = apply_huber_rotation_logic(X_scaled, coeffs_series)
-    # Ensure rotated is float32
     X_rotated = X_rotated.astype(np.float32)
 
     # 2. Constraints (Only on original features)
-    orig_constraints = huber_output['monotonic_constraints']
-    cst_dict = dict(zip(selected_features, orig_constraints))
-
+    mono_dict = huber_output['monotonic_constraints']
     final_constraints = []
     for col in X_rotated.columns:
-        final_constraints.append(cst_dict.get(col, 0))
+        # Constraints only apply to original columns, new rotated cols get 0
+        val = mono_dict.get(col, 0)
+        # Ensure standard python int for XGBoost compatibility
+        final_constraints.append(int(val))
 
     # 3. Warm Start
     base_margin = huber_output['warm_start']['train']
 
+    # 4. Parameters Aligned with Layer 2
     params = {
-        'objective': 'reg:quantileerror' if task_type == 'regression' else 'binary:logistic',
-        'quantile_alpha': 0.5,
-        'n_estimators': 100 if fast_mode else 300,
+        'n_estimators': 100 if fast_mode else 500,
         'learning_rate': 0.05,
-        'max_depth': 3 if fast_mode else 4,
+        'max_depth': 4 if task_type == 'classification' else 5,
         'min_child_weight': 10,
-        'gamma': 0.5,
+        'gamma': 0.5, # High regularization
+        'subsample': 0.6,
+        'colsample_bytree': 0.6,
         'colsample_bynode': 0.4,
-        'reg_lambda': 50,
+        'reg_alpha': 0.3, # L1
+        'reg_lambda': 50, # Strong L2
         'num_parallel_tree': 7,
         'monotone_constraints': tuple(final_constraints),
+        'interaction_constraints': huber_output['interaction_constraints'] if huber_output['interaction_constraints'] else None,
         'n_jobs': -1,
-        'verbosity': 0
+        'verbosity': 0,
+        'early_stopping_rounds': 30
     }
+
+    if task_type == 'classification':
+        params['objective'] = 'binary:logistic'
+        params['eval_metric'] = 'logloss' # Calibration focus
+    else:
+        # Robust regression (Pseudo-Huber)
+        params['objective'] = 'reg:pseudohubererror'
+        params['eval_metric'] = 'rmse'
 
     if config and 'xgb_params' in config:
         params.update(config['xgb_params'])
@@ -250,32 +300,38 @@ def train_xgboost_model(
 
     model = xgb.XGBRegressor(**params) if task_type == 'regression' else xgb.XGBClassifier(**params)
 
-    callbacks = []
-    if config and 'optuna_trial' in config:
-        trial = config['optuna_trial']
-        callbacks.append(optuna.integration.XGBoostPruningCallback(trial, "validation_0-" + ("quantile" if task_type == 'regression' else "logloss")))
-
-    model.fit(
-        X_tr, y_tr,
-        sample_weight=w_tr,
-        base_margin=bm_tr,
-        eval_set=[(X_val, y_val)],
-        sample_weight_eval_set=[w_val],
-        base_margin_eval_set=[bm_val],
-        early_stopping_rounds=20,
-        verbose=False,
-        callbacks=callbacks
-    )
+    # Safe Fit with retry on constraints failure
+    try:
+        model.fit(
+            X_tr, y_tr,
+            sample_weight=w_tr,
+            base_margin=bm_tr,
+            eval_set=[(X_val, y_val)],
+            sample_weight_eval_set=[w_val],
+            base_margin_eval_set=[bm_val],
+            verbose=False
+        )
+    except (ValueError, xgb.core.XGBoostError):
+        tprint_warning("   ⚠️ XGBoost constraints failed, retrying without interaction constraints.")
+        params['interaction_constraints'] = None
+        model = xgb.XGBRegressor(**params) if task_type == 'regression' else xgb.XGBClassifier(**params)
+        model.fit(
+            X_tr, y_tr,
+            sample_weight=w_tr,
+            base_margin=bm_tr,
+            eval_set=[(X_val, y_val)],
+            sample_weight_eval_set=[w_val],
+            base_margin_eval_set=[bm_val],
+            verbose=False
+        )
 
     # Prediction
     if task_type == 'regression':
         preds = model.predict(X_rotated, base_margin=base_margin)
     else:
-        # Predict Probabilities for Classification
         try:
              preds = model.predict_proba(X_rotated, base_margin=base_margin)[:, 1]
         except TypeError:
-            # Fallback if base_margin not supported in predict_proba
             dmat = xgb.DMatrix(X_rotated, base_margin=base_margin)
             preds = model.get_booster().predict(dmat)
 
@@ -297,85 +353,72 @@ def train_extratrees_constrained(
     fast_mode: bool = False
 ) -> Dict[str, Any]:
     """
-    Trains ExtraTrees model with Monotonic Constraints and Feature Pruning from Huber Teacher.
+    Trains ExtraTrees model with Monotonic Constraints and IRM-style Robustness.
     """
     tprint_info(f"   🌳 Training ExtraTrees ({task_type}): {model_name} with Constraints...")
 
     cfg = config or {}
     et_params = cfg.get('et_params', {
-        'n_estimators': 100 if fast_mode else 300,
-        'max_depth': 10 if fast_mode else 20,
+        'n_estimators': 100 if fast_mode else 500,
+        'max_depth': 6 if fast_mode else 12, # Constrained depth like Layer 2
         'min_samples_leaf': 20,
+        'max_features': 0.8, # Feature subsampling
         'bootstrap': True,
         'n_jobs': -1,
         'random_state': 42
     })
 
     selected_features = huber_output['selected_features']
-    # Downcast
     X_t = X_train[selected_features].copy().astype(np.float32)
-
-    # Scaling
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_t).astype(np.float32)
 
-    constraints = np.array(huber_output['monotonic_constraints'])
+    # Convert dict to array matching columns
+    mono_dict = huber_output['monotonic_constraints']
+    constraints = np.array([mono_dict.get(c, 0) for c in X_t.columns])
 
+    # Attempt to use monotonic_cst (sklearn 1.4+)
     try:
         if task_type == 'regression':
-            et_model = ExtraTreesRegressor(
-                monotonic_cst=constraints,
-                **et_params
-            )
+            # Use MAE for robustness if possible, but standard is MSE
+            et_model = ExtraTreesRegressor(monotonic_cst=constraints, criterion='squared_error', **et_params)
             et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
             preds = et_model.predict(X_scaled)
         else:
-            et_model = ExtraTreesClassifier(
-                monotonic_cst=constraints,
-                **et_params
-            )
+            et_model = ExtraTreesClassifier(monotonic_cst=constraints, criterion='log_loss', **et_params)
             y_int = (y_train > 0).astype(int)
             et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
             preds = et_model.predict_proba(X_scaled)[:, 1]
 
-        # Calculate approximate SE
-        if hasattr(et_model, 'estimators_'):
-            if task_type == 'regression':
-                tree_preds = np.array([tree.predict(X_scaled) for tree in et_model.estimators_])
-            else:
-                tree_preds = np.array([tree.predict_proba(X_scaled)[:, 1] for tree in et_model.estimators_])
-            se = np.std(tree_preds, axis=0)
+    except TypeError:
+        # Fallback if version mismatch
+        tprint_warning(f"   ⚠️ ExtraTrees constraint fallback.")
+        if task_type == 'regression':
+            et_model = ExtraTreesRegressor(**et_params)
+            et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
+            preds = et_model.predict(X_scaled)
         else:
-            se = np.ones(len(preds))
+            et_model = ExtraTreesClassifier(**et_params)
+            y_int = (y_train > 0).astype(int)
+            et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
+            preds = et_model.predict_proba(X_scaled)[:, 1]
 
-        return {
-            'model': et_model,
-            'cate': preds,
-            'se': se,
-            'scaler': scaler
-        }
-
-    except TypeError as e:
-        if "unexpected keyword argument 'monotonic_cst'" in str(e):
-             tprint_warning(f"   ⚠️ Scikit-learn version does not support monotonic_cst for ExtraTrees. Training without constraints.")
-             if task_type == 'regression':
-                et_model = ExtraTreesRegressor(**et_params)
-                et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
-                preds = et_model.predict(X_scaled)
-             else:
-                et_model = ExtraTreesClassifier(**et_params)
-                y_int = (y_train > 0).astype(int)
-                et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
-                preds = et_model.predict_proba(X_scaled)[:, 1]
-
-             return {
-                'model': et_model,
-                'cate': preds,
-                'se': np.zeros(len(preds)),
-                'scaler': scaler
-             }
+    # Calculate approximate SE
+    if hasattr(et_model, 'estimators_'):
+        if task_type == 'regression':
+            tree_preds = np.array([tree.predict(X_scaled) for tree in et_model.estimators_])
         else:
-            raise e
+            tree_preds = np.array([tree.predict_proba(X_scaled)[:, 1] for tree in et_model.estimators_])
+        se = np.std(tree_preds, axis=0)
+    else:
+        se = np.ones(len(preds)) * 0.1
+
+    return {
+        'model': et_model,
+        'cate': preds,
+        'se': se,
+        'scaler': scaler
+    }
 
 def train_dual_head_models(
     X: pd.DataFrame,
@@ -389,16 +432,16 @@ def train_dual_head_models(
 ) -> Dict[str, Any]:
     """
     Orchestrates the training of ExtraTrees, LGBM, and XGBoost models.
+    Now with Regime-Aware Features and Alignment.
     """
     cfg = config or {}
     base_model_cols = cfg.get('base_model_cols', [])
     if not base_model_cols:
         base_model_cols = [c for c in X.columns if c.startswith('prob_') and not c.endswith('_oof')]
     
-    # Context X
+    # Context X (Meta Features)
     context_cols = [c for c in X.columns if c not in base_model_cols and c != 'regime_label']
     X_context = X[context_cols].fillna(0).replace([np.inf, -np.inf], 0)
-    # Ensure float32
     X_context = X_context.astype(np.float32)
     
     # Horizon outcomes
@@ -417,9 +460,16 @@ def train_dual_head_models(
     for horizon, target_name, y_target, w_target, task_type in tasks:
         suffix = f"{horizon}_{'reg' if task_type == 'regression' else 'cls'}"
 
-        # 1. Prepare Huber Teacher
-        tprint_info(f"🎓 Running Huber Teacher for {suffix}...")
-        huber_out = prepare_huber_teacher_outputs(X_context, y_target, pruning_percentile=15)
+        # 1. Prepare Huber Teacher (Fold-Local & Stability Gated)
+        tprint_info(f"🎓 Running Robust Huber Teacher for {suffix}...")
+
+        # Use existing utility
+        huber_out = prepare_huber_teacher_outputs(
+            X_context,
+            pd.Series(y_target, index=X_context.index),
+            pruning_percentile=15,
+            n_time_splits=5 # Stability check
+        )
 
         # 2. Train ExtraTrees
         et_res = train_extratrees_constrained(

@@ -1739,63 +1739,60 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             else:
                 pruning_percentile = 20  # Keep 80% of features for very large sets
                 tprint_info(f"   📊 Adaptive pruning: {n_features} features → using {pruning_percentile}th percentile")
-            
             # Ensure minimum 10 features
-            min_features = max(10, int(len(X_train.columns) * (1 - pruning_percentile / 100)))
-            tprint_info(f"   🎯 Minimum features: {min_features}")
-            
-            huber_cache_seed = f"{X_train_hash}_{y_train_hash}_{pruning_percentile}"
-            huber_cache_key = self._build_cache_key("huber_outputs", huber_cache_seed, config)
-            huber_outputs = None
+min_features = max(10, int(len(X_train.columns) * (1 - pruning_percentile / 100)))
+tprint_info(f"    🎯 Minimum features: {min_features}")
 
-            if cache_usable:
-                huber_outputs = self._load_cached_object("huber_outputs", huber_cache_key)
+huber_cache_seed = f"{X_train_hash}_{y_train_hash}_{pruning_percentile}"
+huber_cache_key = self._build_cache_key("huber_outputs", huber_cache_seed, config)
+huber_outputs = None
 
-            if huber_outputs is None:
-                # Prepare inputs for Huber Teacher
-                # Note: X_train and y_train are already defined
+if cache_usable:
+    huber_outputs = self._load_cached_object("huber_outputs", huber_cache_key)
 
-                huber_outputs = prepare_huber_teacher_outputs(
-                    X_train=X_train,
-                    y_train=y_train,
-                    X_val=None, # Not used for pruning
-                    X_test=X_oof, # Get predictions for OOF
-                    vol_proxy=None, # Could add if available
-                    epsilons=[1.1, 1.35, 1.75],
-                    alphas=[1e-4, 1e-3, 1e-2],
-                    pruning_percentile=pruning_percentile,
-                    corr_threshold=0.7,
-                    n_jobs=-1
-                )
+if huber_outputs is None:
+    # Prepare inputs for Huber Teacher using detailed parameters from main
+    huber_outputs = prepare_huber_teacher_outputs(
+        X_train=X_train,
+        y_train=y_train,
+        X_val=None,                # Not used for pruning logic here
+        X_test=X_oof,              # Using OOF to generate warm start predictions
+        vol_proxy=None,            
+        epsilons=[1.1, 1.35, 1.75],
+        alphas=[1e-4, 1e-3, 1e-2],
+        pruning_percentile=pruning_percentile,
+        corr_threshold=0.7,
+        n_jobs=-1
+    )
 
-                if cache_usable:
-                    self._save_cached_object(huber_outputs, "huber_outputs", huber_cache_key)
+    if cache_usable:
+        self._save_cached_object(huber_outputs, "huber_outputs", huber_cache_key)
 
-            # Unpack results
-            selected_features_names = huber_outputs['selected_features']
-            monotonic_constraints = huber_outputs['monotonic_constraints']
-            interaction_constraints = huber_outputs['interaction_constraints']
+# Unpack results
+selected_features_names = huber_outputs['selected_features']
+monotonic_constraints = huber_outputs['monotonic_constraints']
+interaction_constraints = huber_outputs['interaction_constraints']
 
-            warm_start_dict = huber_outputs['warm_start']
-            warm_start_train = warm_start_dict['train']
-            warm_start_oof = warm_start_dict['test'] # mapped X_oof to X_test in call
+warm_start_dict = huber_outputs['warm_start']
+warm_start_train = warm_start_dict['train']
+warm_start_oof = warm_start_dict['test'] # X_oof was passed as X_test in the call above
 
-            X_train_sel = X_train[selected_features_names]
-            X_oof_sel = X_oof[selected_features_names]
+# Apply Feature Selection
+X_train_sel = X_train[selected_features_names]
+X_oof_sel = X_oof[selected_features_names]
 
-            mono_cst_array_list = monotonic_constraints
+tprint_success(f"✅ Huber Pruning: {len(X_train.columns)} -> {len(X_train_sel.columns)} features")
 
-            tprint_success(f"✅ Huber Pruning: {len(X.columns)} -> {len(X_train_sel.columns)} features")
-            
-            # Convert monotonic_constraints dict to array for tree models that need it
-            if isinstance(mono_cst_array_list, dict):
-                # Map selected features to their monotonic constraints
-                mono_cst_array = []
-                for feat in X_train_sel.columns:
-                    mono_cst_array.append(mono_cst_array_list.get(feat, 0))
-                mono_cst_array_np = np.array(mono_cst_array)  # numpy array for sklearn
-                mono_cst_array_list = mono_cst_array_np.tolist()  # list for CatBoost
-                
+# Convert monotonic_constraints dict to array/list for specific model requirements
+mono_cst_array_np = None
+mono_cst_array_list = monotonic_constraints 
+
+if isinstance(mono_cst_array_list, dict):
+    # Map selected features to their specific monotonic constraints (1, -1, or 0)
+    mono_cst_values = [mono_cst_array_list.get(feat, 0) for feat in X_train_sel.columns]
+    mono_cst_array_np = np.array(mono_cst_values)      # For sklearn-based models
+    mono_cst_array_list = mono_cst_array_np.tolist()  # For CatBoost/XGBoost
+    
                 # Enhanced logging: Show which features have which constraints
                 negative_features = []
                 positive_features = []

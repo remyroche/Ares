@@ -776,12 +776,11 @@ class AFMLSpecialistMixin:
                     best_events = t_events
                     break
         
-        # Fallback for regime sparsity: if optimized result is still too sparse, force a dense slice
+        # Fast fail for regime sparsity if optimized result is still too sparse
         if len(best_events) < min_samples:
-            tprint_warning(f"      [Sampling] Optimized events {len(best_events)} < {min_samples}. Using dense fallback.")
-            # Calculate stride to get ~1.5x min_samples
-            stride = max(1, int(len(df) / (min_samples * 1.5)))
-            best_events = df.index[::stride]
+            msg = f"Regime sparsity detected: Optimized events {len(best_events)} < {min_samples}. Fast failing."
+            tprint_error(f"      [Sampling] {msg}")
+            raise ValueError(msg)
 
         tprint_info(f"[{self.__class__.__name__}] apply_afml_sampling finished with {len(best_events)} events")
         return df.loc[best_events], best_events

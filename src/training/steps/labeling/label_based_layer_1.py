@@ -144,11 +144,13 @@ def build_layer1_probe_features(
     wavelet_d2_feat = pd.Series(0.0, index=t_events)
     if OptimizedWaveletDecomposition is not None:
         try:
+            # Use Strictly Causal Mode
             wavelet_engine = OptimizedWaveletDecomposition(
                 wavelet='db4',
                 scales=['d1', 'd2'],
                 max_level=2,
                 verbose=False,
+                causal=True
             )
             decomp = wavelet_engine.decompose_signal_vectorized(close.values)
             if 'd1' in decomp:

@@ -1005,3 +1005,134 @@ def _numba_calculate_continuous_weight(vals, gamma, beta, quantile_threshold):
         weights[orig_idx] = np.nan
 
     return weights
+
+@jit(nopython=True)
+def _numba_ewma(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray:
+    """
+    Calculate Exponential Weighted Moving Average (EWMA) using Numba.
+    Matches pandas ewm(alpha=alpha, adjust=adjust).mean().
+
+    Args:
+        x: Input array (1D)
+        alpha: Smoothing factor (0 < alpha <= 1)
+        adjust: Whether to adjust for starting bias (Pandas-style)
+
+    Returns:
+        EWMA array
+    """
+    n = len(x)
+    out = np.empty(n, dtype=np.float64)
+
+    if n == 0:
+        return out
+
+    # Handle first value (and NaNs at start)
+    # Find first valid index
+    first_valid_idx = -1
+    for i in range(n):
+        if not np.isnan(x[i]):
+            first_valid_idx = i
+            break
+
+    if first_valid_idx == -1:
+        # All NaNs
+        out[:] = np.nan
+        return out
+
+    # Fill NaNs before first valid with NaN
+    out[:first_valid_idx] = np.nan
+
+    # Initialize
+    if adjust:
+        # With adjust=True: y[t] = sum(w_i * x[t-i]) / sum(w_i)
+        # Recursive:
+        # weighted_sum[t] = x[t] + (1-alpha)*weighted_sum[t-1]
+        # sum_weights[t] = 1 + (1-alpha)*sum_weights[t-1]
+        # out[t] = weighted_sum[t] / sum_weights[t]
+
+        weighted_sum = x[first_valid_idx]
+        sum_weights = 1.0
+        out[first_valid_idx] = weighted_sum / sum_weights
+
+        for i in range(first_valid_idx + 1, n):
+            val = x[i]
+            if np.isnan(val):
+                out[i] = np.nan
+                # Simplification: if NaN encountered, result becomes NaN for that step.
+                weighted_sum = np.nan
+            else:
+                weighted_sum = val + (1.0 - alpha) * weighted_sum
+                sum_weights = 1.0 + (1.0 - alpha) * sum_weights
+                out[i] = weighted_sum / sum_weights
+    else:
+        # With adjust=False: y[t] = (1-alpha)*y[t-1] + alpha*x[t]
+        # Initialization: y[0] = x[0]
+
+        last_val = x[first_valid_idx]
+        out[first_valid_idx] = last_val
+
+        for i in range(first_valid_idx + 1, n):
+            val = x[i]
+            if np.isnan(val):
+                out[i] = np.nan
+                last_val = np.nan # Propagate NaN
+            else:
+                if np.isnan(last_val):
+                    last_val = val
+                else:
+                    last_val = (1.0 - alpha) * last_val + alpha * val
+                out[i] = last_val
+
+    return out
+
+@jit(nopython=True)
+def _numba_ewm_std(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray:
+    """
+    Calculate Exponential Weighted Moving Standard Deviation using Numba.
+
+    Args:
+        x: Input array (1D)
+        alpha: Smoothing factor
+        adjust: Bias adjustment
+
+    Returns:
+        EWM Std array
+    """
+    n = len(x)
+    out = np.empty(n, dtype=np.float64)
+
+    if n == 0:
+        return out
+
+    # Find first valid
+    first_valid_idx = -1
+    for i in range(n):
+        if not np.isnan(x[i]):
+            first_valid_idx = i
+            break
+
+    if first_valid_idx == -1:
+        out[:] = np.nan
+        return out
+
+    out[:first_valid_idx] = np.nan
+    out[first_valid_idx] = np.nan # Variance is undefined for the first point
+
+    # Re-implementation using Two-Pass approach (E[x] and E[x^2]) is safer for consistency with Pandas
+    # Calculating means
+    ewm_x = _numba_ewma(x, alpha, adjust)
+    x2 = x * x
+    ewm_x2 = _numba_ewma(x2, alpha, adjust)
+
+    for i in range(n):
+        if np.isnan(ewm_x[i]) or np.isnan(ewm_x2[i]):
+            out[i] = np.nan
+        else:
+            # Var = E[x^2] - (E[x])^2
+            # Numerical noise might cause negative small values
+            v = ewm_x2[i] - ewm_x[i]**2
+            if v < 0:
+                v = 0.0
+            out[i] = np.sqrt(v)
+
+    return out

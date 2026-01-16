@@ -43,7 +43,6 @@ from src.utils.labeling_optimized import (
 )
 from src.utils.orthogonal_numba import (
     _numba_kalman_filter_1d,
-    _numba_apply_fracdiff,
     _numba_rolling_hurst,
     _numba_anchored_zscore,
     _numba_time_since_shock,
@@ -60,6 +59,7 @@ from src.training.steps.labeling.composite_event_generators import (
 )
 from src.utils.numba_funcs import _numba_return_autocorrelation
 from .de_prado_feature_engine import DePradoFeatureEngine
+from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
 
 # Import causal framework modules for surprise events
 try:
@@ -491,120 +491,7 @@ def filter_composites_by_rmi(df: pd.DataFrame, composites: List[Dict],
 # ==========================================
 # 0.4.6. Layer 2 Price Processing Pipeline
 # ==========================================
-
-def apply_layer2_price_processing(df: pd.DataFrame, 
-                                   price_col: str = 'close',
-                                   vol_window: int = 20,
-                                   fracdiff_d: float = 0.4,
-                                   wavelet: str = 'db4',
-                                   wavelet_level: int = 2) -> pd.DataFrame:
-    """
-    Apply de Prado-compliant price processing at the end of Layer 2.
-    
-    Pipeline:
-    1. Log-Returns (eliminates price level non-stationarity)
-    2. Vol-Adjusted (GARCH-style normalization for regime invariance)
-    3. FracDiff (fractional differentiation to preserve memory while ensuring stationarity)
-    4. Wavelet Denoising (removes high-frequency noise)
-    
-    Args:
-        df: DataFrame with price data.
-        price_col: Column name for price.
-        vol_window: Window for volatility estimation.
-        fracdiff_d: Fractional differentiation order (0.3-0.5 typical).
-        wavelet: Wavelet family for denoising.
-        wavelet_level: Decomposition level.
-    
-    Returns:
-        DataFrame with processed price features added.
-    """
-    import pywt
-    
-    result = df.copy()
-    price = df[price_col]
-    
-    tprint_info("   🔧 Applying Layer 2 Price Processing Pipeline...")
-    
-    # 1. Log-Returns
-    log_price = np.log(price.replace(0, np.nan))
-    log_returns = log_price.diff().fillna(0)
-    result['log_returns'] = log_returns
-    
-    # 2. Vol-Adjusted Returns
-    vol = log_returns.rolling(vol_window).std()
-    vol = vol.replace(0, np.nan).fillna(vol.median())
-    vol_adjusted_returns = log_returns / (vol + 1e-9)
-    result['vol_adjusted_returns'] = vol_adjusted_returns.clip(-10, 10)
-    
-    # 3. Fractional Differentiation (FracDiff)
-    try:
-        fracdiff_series = _apply_fracdiff(log_price.fillna(method='ffill'), d=fracdiff_d)
-        result['fracdiff_price'] = fracdiff_series
-    except Exception as e:
-        tprint_warning(f"   ⚠️ FracDiff failed: {e}. Skipping.")
-        result['fracdiff_price'] = log_returns  # Fallback to log returns
-    
-    # 4. Wavelet Denoising
-    try:
-        denoised = _wavelet_denoise(vol_adjusted_returns.fillna(0).values, 
-                                     wavelet=wavelet, level=wavelet_level)
-        result['wavelet_denoised_returns'] = pd.Series(denoised, index=df.index)
-    except Exception as e:
-        tprint_warning(f"   ⚠️ Wavelet denoising failed: {e}. Skipping.")
-        result['wavelet_denoised_returns'] = vol_adjusted_returns
-    
-    tprint_success("   ✅ Price processing complete: log_returns, vol_adjusted, fracdiff, wavelet_denoised")
-    
-    return result
-
-
-def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
-    """
-    Apply fractional differentiation using fixed-width window.
-    
-    Uses the approach from AFML Ch. 5:
-    (1-B)^d = sum_{k=0}^{inf} C(d,k) * (-B)^k
-    where C(d,k) = d*(d-1)*...*(d-k+1) / k!
-    """
-    # Calculate weights
-    def _get_weights(d: float, size: int, threshold: float) -> np.ndarray:
-        w = [1.0]
-        for k in range(1, size):
-            w_k = -w[-1] * (d - k + 1) / k
-            if abs(w_k) < threshold:
-                break
-            w.append(w_k)
-        return np.array(w)
-    
-    # Get weights
-    w = _get_weights(d, len(series), threshold)
-    
-    # Apply convolution (Numba)
-    result = _numba_apply_fracdiff(series.values, w)
-    
-    return pd.Series(result, index=series.index)
-
-
-def _wavelet_denoise(signal: np.ndarray, wavelet: str = 'db4', level: int = 2) -> np.ndarray:
-    """
-    Apply wavelet denoising using soft thresholding.
-    """
-    import pywt
-    
-    # Decompose
-    coeffs = pywt.wavedec(signal, wavelet, level=level)
-    
-    # Estimate noise level from finest detail coefficients
-    sigma = np.median(np.abs(coeffs[-1])) / 0.6745
-    threshold = sigma * np.sqrt(2 * np.log(len(signal)))
-    
-    # Apply soft thresholding to detail coefficients
-    denoised_coeffs = [coeffs[0]]  # Keep approximation
-    for c in coeffs[1:]:
-        denoised_coeffs.append(pywt.threshold(c, threshold, mode='soft'))
-    
-    # Reconstruct
-    return pywt.waverec(denoised_coeffs, wavelet)[:len(signal)]
+# Note: apply_layer2_price_processing is imported from feature_engineering_utils
 
 # ==========================================
 # 0.5. Dynamic Event Frequency Adaptation
@@ -4805,11 +4692,14 @@ def orthogonal_label_generation(
         df_full['volume'] = volume
 
     # 0.5. Layer 2 Price Processing
-    # Ensure standard price features (fracdiff, denoised) are available
+    # Ensure standard price features (fracdiff, denoised) and Anti-Explosion features are available
     processed_df = apply_layer2_price_processing(df_full)
-    # Update df_full with new columns
-    for col in ['log_returns', 'vol_adjusted_returns', 'fracdiff_price', 'wavelet_denoised_returns']:
-        if col in processed_df.columns:
+    # Update df_full with all new columns (including Anti-Explosion features)
+    for col in processed_df.columns:
+        if col not in df_full.columns:
+            df_full[col] = processed_df[col]
+        elif col in ['log_returns', 'vol_adjusted_returns', 'fracdiff_log_price', 'causal_denoised_returns']:
+            # Explicitly update base series if they exist but might be stale/raw
             df_full[col] = processed_df[col]
 
     # 1. Subsampling (de Prado optimization)

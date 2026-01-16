@@ -33,6 +33,8 @@ try:
 except ImportError:
     OPTIMIZED_UTILS_AVAILABLE = False
 
+from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
+
 # Import Unified Cache
 try:
     from src.training.steps.labeling.layer3_feature_cache import (
@@ -162,6 +164,28 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     
     initial_feature_count = len(df.columns)
     
+    # === 0. Anti-Explosion Feature Integration (Layer 2 Processing) ===
+    if market_data is not None and 'close' in market_data.columns:
+        try:
+            # Generate price features on market data
+            price_feats = apply_layer2_price_processing(market_data, price_col='close', enable_price_features=True)
+
+            # Select new features (excluding OHLCV if present)
+            new_cols = [c for c in price_feats.columns if c not in market_data.columns and c not in df.columns]
+
+            # Reindex to align with df (df might be subset of market_data, e.g. events)
+            # Use merge_asof or reindex. market_data usually covers full range.
+            # Assuming df index is subset of market_data index.
+
+            aligned_feats = price_feats[new_cols].reindex(df.index).fillna(0.0)
+
+            # Add to df
+            df = pd.concat([df, aligned_feats], axis=1)
+            tprint_success(f"✅ Added {len(new_cols)} Anti-Explosion features from Layer 2 processing")
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Anti-Explosion feature integration failed: {e}")
+
     # === Optimized Layer 0 Feature Combinations ===
     
     # 1. Unified Filtered Price

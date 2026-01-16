@@ -6,10 +6,11 @@ High-performance implementation with:
 - In-place array operations
 - Parallel processing support
 - Memory-efficient operations
+- Strictly Causal Mode (EMA Cascade) to prevent data leakage
 
 Key Features:
-- O(N) multi-scale decomposition instead of O(5N)
-- In-place normalization and cleaning
+- O(N) multi-scale decomposition
+- Causal decomposition using EMA cascade (approximating dyadic filter bank)
 - Parallel specialist processing
 - GPU-ready architecture
 """
@@ -33,6 +34,7 @@ except ImportError:
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
+from src.utils.numba_funcs import _numba_ewma
 
 class OptimizedWaveletDecomposition:
     """
@@ -40,7 +42,7 @@ class OptimizedWaveletDecomposition:
     
     Optimizations:
     1. Vectorized multi-scale decomposition
-    2. In-place array operations
+    2. Causal decomposition mode (EMA Cascade) using Numba
     3. Parallel processing
     4. Memory-efficient operations
     """
@@ -51,16 +53,18 @@ class OptimizedWaveletDecomposition:
         scales: List[str] = ['d1', 'd2', 'd3', 'd4', 's4'],
         max_level: int = 4,
         enable_parallel: bool = True,
+        causal: bool = True, # Enforce causality by default
         verbose: bool = True
     ):
         """
         Initialize Optimized Wavelet Decomposition Engine.
         
         Args:
-            wavelet: Wavelet family for decomposition
+            wavelet: Wavelet family for decomposition (used in non-causal mode)
             scales: List of scale names
             max_level: Maximum decomposition level
             enable_parallel: Enable parallel processing
+            causal: If True, uses Causal EMA Cascade instead of Wavelets to prevent leakage.
             verbose: Whether to print progress information
         """
         self.verbose = verbose
@@ -68,6 +72,7 @@ class OptimizedWaveletDecomposition:
         self.scales = scales
         self.max_level = max_level
         self.enable_parallel = enable_parallel
+        self.causal = causal
         self._modwt_available = hasattr(pywt, "modwt")
         
         # Scale definitions optimized for 2-4h trades
@@ -88,7 +93,8 @@ class OptimizedWaveletDecomposition:
             tprint_info(f"   ⚙️ Decomposition levels: {max_level}")
             tprint_info(f"   ⚙️ Scales: {', '.join(scales)}")
             tprint_info(f"   ⚙️ Parallel processing: {enable_parallel}")
-            if not self._modwt_available:
+            tprint_info(f"   ⚙️ Causal Mode: {self.causal}")
+            if not self.causal and not self._modwt_available:
                 tprint_warning("   ⚠️ pywt.modwt unavailable; using SWT fallback by default")
             tprint_success("   ✅ Optimized Wavelet Decomposition: Initialization complete")
     
@@ -113,19 +119,86 @@ class OptimizedWaveletDecomposition:
             signal[:first_valid] = 0.0
         
         # In-place forward fill
-        for i in range(first_valid + 1, len(signal)):
-            if np.isnan(signal[i]):
-                signal[i] = signal[i-1]
+        # Using pandas ffill logic is faster than python loop for large arrays
+        # if signal is large, convert to series
+        if len(signal) > 1000:
+            # We can use pd.Series(signal).ffill().values but it copies
+            # Use manual loop only for NaNs
+            nans = np.isnan(signal)
+            if np.any(nans):
+                # Basic forward fill in numpy
+                idx = np.where(~nans, np.arange(len(signal)), 0)
+                np.maximum.accumulate(idx, out=idx)
+                signal[:] = signal[idx]
+        else:
+            # Small loop
+            for i in range(first_valid + 1, len(signal)):
+                if np.isnan(signal[i]):
+                    signal[i] = signal[i-1]
         
         return signal
     
+    def _decompose_causal_ema(self, signal: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        Perform strictly causal decomposition using a cascade of EMAs.
+        Approximates dyadic wavelet scales without lookahead bias.
+        Optimized using Numba EWMA.
+
+        Scales:
+        - d1: signal - EMA(2)
+        - d2: EMA(2) - EMA(4)
+        - d3: EMA(4) - EMA(8)
+        - d4: EMA(8) - EMA(16)
+        - s4: EMA(16)
+        """
+        decomposition = {}
+
+        # Calculate alphas for different spans
+        # span -> alpha = 2 / (span + 1)
+        # Numba function takes alpha directly
+
+        alpha2 = 2.0 / (2.0 + 1.0)
+        alpha4 = 2.0 / (4.0 + 1.0)
+        alpha8 = 2.0 / (8.0 + 1.0)
+        alpha16 = 2.0 / (16.0 + 1.0)
+
+        signal_float = signal.astype(np.float64)
+
+        ema2 = _numba_ewma(signal_float, alpha2, adjust=False)
+        ema4 = _numba_ewma(signal_float, alpha4, adjust=False)
+        ema8 = _numba_ewma(signal_float, alpha8, adjust=False)
+        ema16 = _numba_ewma(signal_float, alpha16, adjust=False)
+
+        # Extract scales
+        # d1: Highest frequency (Noise/Micro-shock)
+        if 'd1' in self.scales:
+            decomposition['d1'] = signal_float - ema2
+
+        # d2: High-Medium frequency
+        if 'd2' in self.scales:
+            decomposition['d2'] = ema2 - ema4
+
+        # d3: Medium frequency
+        if 'd3' in self.scales:
+            decomposition['d3'] = ema4 - ema8
+
+        # d4: Medium-Low frequency
+        if 'd4' in self.scales:
+            decomposition['d4'] = ema8 - ema16
+
+        # s4: Trend / Low frequency
+        if 's4' in self.scales:
+            decomposition['s4'] = ema16
+
+        return decomposition
+
     def decompose_signal_vectorized(
         self, 
         signal: np.ndarray,
         timestamps: Optional[pd.DatetimeIndex] = None
     ) -> Dict[str, np.ndarray]:
         """
-        Vectorized signal decomposition into 5 wavelet scales.
+        Vectorized signal decomposition.
         
         Args:
             signal: Input signal to decompose
@@ -141,12 +214,19 @@ class OptimizedWaveletDecomposition:
             # Validate input
             if len(signal) < 32:
                 if self.verbose:
-                    tprint_warning("   ⚠️ Signal too short for wavelet decomposition")
+                    tprint_warning("   ⚠️ Signal too short for decomposition")
                 return self._create_dummy_decomposition(signal)
             
             # In-place cleaning
             signal_clean = self._clean_signal_inplace(signal.copy())
             
+            # CAUSAL MODE
+            if self.causal:
+                if self.verbose:
+                    tprint_info("   🌊 Using Strict Causal Decomposition (EMA Cascade - Numba Optimized)")
+                return self._decompose_causal_ema(signal_clean)
+
+            # NON-CAUSAL (Wavelet) MODE
             # Vectorized MODWT decomposition
             if self._modwt_available:
                 try:
@@ -196,8 +276,7 @@ class OptimizedWaveletDecomposition:
                 tprint_error(f"❌ Vectorized signal decomposition failed: {e}")
             return self._create_dummy_decomposition(signal)
     
-    # Backwards-compatible aliases so the engine can be used wherever the legacy
-    # WaveletDecomposition class was expected.
+    # Backwards-compatible aliases
     def decompose_signal(
         self,
         signal: np.ndarray,
@@ -210,16 +289,7 @@ class OptimizedWaveletDecomposition:
         specialist_data: pd.Series,
         specialist_name: str
     ) -> Dict[str, np.ndarray]:
-        """
-        Vectorized specialist decomposition.
-        
-        Args:
-            specialist_data: Time series data for specialist
-            specialist_name: Name of the specialist
-            
-        Returns:
-            Dictionary with spectral components
-        """
+        """Vectorized specialist decomposition."""
         try:
             if self.verbose:
                 tprint_info(f"🎯 Vectorized {specialist_name} decomposition...")
@@ -256,15 +326,7 @@ class OptimizedWaveletDecomposition:
         self,
         specialists: Dict[str, pd.Series]
     ) -> Dict[str, np.ndarray]:
-        """
-        Vectorized decomposition of all specialists.
-        
-        Args:
-            specialists: Dictionary of specialist time series
-            
-        Returns:
-            Dictionary with all spectral components
-        """
+        """Vectorized decomposition of all specialists."""
         try:
             if self.verbose:
                 tprint_info("🚀 Vectorized multi-specialist decomposition...")
@@ -330,10 +392,9 @@ class OptimizedWaveletDecomposition:
             # Vectorized reconstruction of individual scales
             for i, scale_name in enumerate(self.scale_order):
                 if scale_name in self.scales and i < len(coeffs) - 1:
-                    # Create dummy coefficients WITH CORRECT SHAPES for reconstruction
-                    # Each level has different coefficient length due to downsampling
+                    # Create dummy coefficients WITH CORRECT SHAPES
                     dummy_coeffs = [np.zeros_like(c) for c in coeffs]
-                    dummy_coeffs[i] = coeffs[i]  # Copy actual coefficients for this scale
+                    dummy_coeffs[i] = coeffs[i]
                     
                     try:
                         reconstruction = pywt.waverec(dummy_coeffs, self.wavelet)
@@ -342,7 +403,6 @@ class OptimizedWaveletDecomposition:
                         if len(reconstruction) > len(signal):
                             reconstruction = reconstruction[:len(signal)]
                         elif len(reconstruction) < len(signal):
-                            # In-place padding
                             padded = np.zeros(len(signal))
                             padded[:len(reconstruction)] = reconstruction
                             reconstruction = padded
@@ -356,7 +416,6 @@ class OptimizedWaveletDecomposition:
             if len(coeffs) > 0:
                 scaling_coeffs = coeffs[-1]
                 if len(scaling_coeffs) > 0:
-                    # Vectorized scaling coefficient creation
                     s4_signal = np.full_like(signal, np.mean(scaling_coeffs))
                     decomposition['s4'] = s4_signal
                 else:
@@ -385,16 +444,7 @@ class OptimizedWaveletDecomposition:
         original_signal: np.ndarray,
         decomposition: Dict[str, np.ndarray]
     ) -> Dict[str, float]:
-        """
-        Vectorized decomposition validation.
-        
-        Args:
-            original_signal: Original signal
-            decomposition: Decomposed scales
-            
-        Returns:
-            Validation metrics
-        """
+        """Vectorized decomposition validation."""
         try:
             # Vectorized signal reconstruction
             reconstructed = np.zeros_like(original_signal)
@@ -402,10 +452,8 @@ class OptimizedWaveletDecomposition:
                 if len(coeffs) == len(original_signal):
                     reconstructed += coeffs
             
-            # Vectorized error calculation
             mse = np.mean((original_signal - reconstructed) ** 2)
             
-            # Efficient correlation calculation
             if np.std(original_signal) > 0 and np.std(reconstructed) > 0:
                 correlation = np.corrcoef(original_signal, reconstructed)[0, 1]
             else:
@@ -433,50 +481,50 @@ class OptimizedWaveletDecomposition:
         sigma_est: str = 'mad'
     ) -> np.ndarray:
         """
-        Denoise signal using wavelet thresholding.
+        Denoise signal.
+        If causal mode is enabled, uses strict causal EWMA smoothing.
+        If not, uses Wavelet thresholding (non-causal).
         
         Args:
             signal: Input signal
-            threshold_method: 'visushrink' (universal) or 'bayes'
-            threshold_mode: 'soft' or 'hard'
-            sigma_est: 'mad' (Median Absolute Deviation) or 'std'
             
         Returns:
             Denoised signal
         """
+        # Causal Mode (EWMA Smoothing)
+        if self.causal:
+            if self.verbose:
+                tprint_info("   🌊 Using Strictly Causal Denoising (EMA Cascade - Numba Optimized)")
+            # Use span=10 as standard causal smoother
+            # span=10 -> alpha = 2/11
+            alpha = 2.0 / 11.0
+            return _numba_ewma(signal.astype(np.float64), alpha, adjust=False)
+
+        # Non-Causal Mode (Wavelet)
         try:
-            # 1. Decompose
             coeffs = pywt.wavedec(signal, self.wavelet, level=self.max_level)
-            
-            # 2. Estimate Noise Sigma from d1 (finest scale)
             d1 = coeffs[-1]
             if sigma_est == 'mad':
                 sigma = np.median(np.abs(d1 - np.median(d1))) / 0.6745
             else:
                 sigma = np.std(d1)
                 
-            # 3. Determine Threshold
             if threshold_method == 'visushrink':
                 thresh = sigma * np.sqrt(2 * np.log(len(signal)))
             else:
-                thresh = sigma # Default/Simple
+                thresh = sigma
                 
-            # 4. Thresholding (Soft/Hard) on Detail Coefficients
-            # (Keep approximation coeffs [0] unchanged)
             new_coeffs = [coeffs[0]]
             for i in range(1, len(coeffs)):
                 new_coeffs.append(pywt.threshold(coeffs[i], thresh, mode=threshold_mode))
                 
-            # 5. Reconstruct
             denoised = pywt.waverec(new_coeffs, self.wavelet)
             
-            # Trim/Pad to match original length
             if len(denoised) > len(signal):
                 denoised = denoised[:len(signal)]
             elif len(denoised) < len(signal):
                 padded = np.zeros_like(signal)
                 padded[:len(denoised)] = denoised
-                # Fill tail?
                 padded[len(denoised):] = denoised[-1] 
                 denoised = padded
                 
@@ -484,9 +532,8 @@ class OptimizedWaveletDecomposition:
             
         except Exception as e:
             if self.verbose:
-                tprint_warning(f"⚠️ Wavelet Denoising failed: {e}")
-            return signal # Fallback to original
-
+                tprint_warning(f"   ⚠️ Wavelet Denoising failed: {e}")
+            return signal
 
 
 # Convenience functions for quick usage
@@ -496,10 +543,11 @@ def quick_vectorized_wavelet_decompose(
     enable_parallel: bool = True,
     verbose: bool = True
 ) -> Dict[str, np.ndarray]:
-    """Quick vectorized wavelet decomposition for a single specialist."""
+    """Quick vectorized wavelet decomposition for a single specialist (Causal by default)."""
     engine = OptimizedWaveletDecomposition(
         enable_parallel=enable_parallel,
-        verbose=verbose
+        verbose=verbose,
+        causal=True
     )
     return engine.decompose_specialist_vectorized(specialist_data, specialist_name)
 
@@ -509,29 +557,21 @@ def quick_vectorized_multi_specialist_decompose(
     enable_parallel: bool = True,
     verbose: bool = True
 ) -> Dict[str, np.ndarray]:
-    """Quick vectorized wavelet decomposition for multiple specialists."""
+    """Quick vectorized wavelet decomposition for multiple specialists (Causal by default)."""
     engine = OptimizedWaveletDecomposition(
         enable_parallel=enable_parallel,
-        verbose=verbose
+        verbose=verbose,
+        causal=True
     )
     return engine.decompose_all_specialists_vectorized(specialists)
 
 
 if __name__ == "__main__":
     # Example usage
-    print("Optimized Wavelet Decomposition Engine for AEDL")
+    print("Optimized Wavelet Decomposition Engine for AEDL (Strictly Causal)")
     print("Use quick_vectorized_wavelet_decompose() or quick_vectorized_multi_specialist_decompose() for quick usage")
     
-    # Display optimizations
-    print("\nOptimizations Implemented:")
-    print("1. Vectorized multi-scale decomposition")
-    print("2. In-place array operations")
-    print("3. Parallel specialist processing")
-    print("4. Memory-efficient operations")
-    print("5. Efficient error handling")
-    
-    # Display scale information
-    engine = OptimizedWaveletDecomposition()
-    print("\nScale Definitions:")
+    engine = OptimizedWaveletDecomposition(causal=True)
+    print("\nScale Definitions (Approximated by Causal Filters):")
     for scale, info in engine.get_scale_info().items():
         print(f"  {scale}: {info['name']} ({info['timeframe']}) - {info['description']}")

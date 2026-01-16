@@ -242,14 +242,16 @@ def run_layer0_kalman_vwap(
     if isinstance(volume_series, pd.Series):
         volume_series = pd.to_numeric(volume_series, errors="coerce")
         
-    # --- WAVELET DENOISING INTEGRATION ---
+    # --- CAUSAL DENOISING INTEGRATION (REPLACING WAVELET) ---
     if config.get("use_wavelets", True) and WAVELET_AVAILABLE:
         try:
-            tprint_info("🌊 Running Wavelet Denoising (Soft Threshold, Median, Clip)...")
-            decomposer = OptimizedWaveletDecomposition(verbose=False)
+            tprint_info("🌊 Running Causal Denoising (Strictly Causal EWMA)...")
+            # Force causal mode to prevent lookahead bias
+            decomposer = OptimizedWaveletDecomposition(verbose=False, causal=True)
             close_vals = close_series.to_numpy(dtype=float)
             
-            # 1. Wavelet Soft Thresholding
+            # 1. Causal Denoising (EWMA)
+            # denoise_signal_vectorized handles causal logic when initialized with causal=True
             denoised_wavelet = decomposer.denoise_signal_vectorized(
                 close_vals, 
                 threshold_method='visushrink', 

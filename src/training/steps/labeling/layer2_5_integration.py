@@ -685,6 +685,11 @@ class Layer25Integration:
 
             if self.verbose:
                 tprint_success("✅ Chaser training complete!")
+                if isinstance(training_metrics, dict):
+                    # Log some high-level metrics if available
+                    for k, v in training_metrics.items():
+                        if isinstance(v, (int, float)):
+                            tprint_info(f"   📊 {k}: {v:.4f}")
 
             return training_metrics
 
@@ -961,7 +966,61 @@ class Layer25Integration:
             'feature_selection': self.feature_selection_results or {}
         }
         
+        # Save report automatically
+        try:
+            self._save_chaser_report(summary)
+        except Exception as e:
+            tprint_error(f"❌ Failed to save Chaser report: {e}")
+
         return summary
+
+    def _save_chaser_report(self, summary: Dict[str, Any]):
+        """Save detailed Layer 2.5 Chaser report."""
+        from pathlib import Path
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = outcomes_dir / f"layer2_5_chaser_report_{ts}.md"
+
+        report = [
+            f"# Layer 2.5 Chaser Report ({ts})",
+            "",
+            "## 1. System Status",
+            f"- **Chaser Initialized:** {'✅' if summary['components_initialized']['chaser'] else '❌'}",
+            f"- **Feature Selector:** {'✅' if summary['components_initialized']['feature_selector'] else '❌'}",
+            f"- **Conflict Detector:** {'✅' if summary['components_initialized']['conflict_detector'] else '❌'}",
+            "",
+            "## 2. Data Profile",
+            f"- **Training Samples:** {summary['training_data']['sample_count']}",
+            f"- **Features Used:** {summary['training_data']['feature_count']}",
+            "",
+            "## 3. Residual Analysis",
+        ]
+
+        res = summary.get('residual_analysis', {})
+        if res:
+            report.append(f"- **Mean Residual:** {res.get('residual_mean', 0.0):.6f}")
+            report.append(f"- **Std Residual:** {res.get('residual_std', 0.0):.6f}")
+            report.append(f"- **Skewness:** {res.get('residual_skew', 0.0):.4f}")
+        else:
+            report.append("- No residual analysis available.")
+
+        report.append("")
+        report.append("## 4. Conflict Statistics")
+        conf = summary.get('conflict_statistics', {})
+        if conf:
+            # Conflict stats might be complex, extract high level
+            report.append("Detailed conflict stats available in integration summary.")
+        else:
+            report.append("- No conflict statistics available.")
+
+        # Write report
+        try:
+            report_path.write_text("\n".join(report), encoding="utf-8")
+            if self.verbose:
+                tprint_success(f"✅ Saved Layer 2.5 Chaser report to {report_path}")
+        except Exception as e:
+            tprint_error(f"Failed to write report file: {e}")
 
     def optimize_hyperparameters(self, X_train, y_train, X_val, y_val,
                                causal_anchor_val, n_calls=50):

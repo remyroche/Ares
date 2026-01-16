@@ -1131,7 +1131,7 @@ def engineer_regressor_targets(
     events: pd.DatetimeIndex,
     raw_returns: pd.Series,
     regressor_type: str = 'lgbm',
-    horizon: int = 48
+    horizon: int = 24
 ) -> pd.Series:
     """
     Create optimized targets for different regressor types.
@@ -1263,7 +1263,7 @@ def compute_dominance_labels(
     risk_budget: float = 1.0,
     pt_mult: float = 2.0,
     sl_mult: float = 1.0,
-    horizon: int = 120,
+    horizon: int = 24,
     transaction_cost: float = 0.003,
     high: Optional[pd.Series] = None,
     low: Optional[pd.Series] = None
@@ -2646,41 +2646,41 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
     
     # Horizon options per family (Modern Causal defaults - EXPANDED for higher event density)
     horizon_options = {
-        'default': [24, 48],  # Added 24 for faster signals
-        'CAUSAL_SURPRISE': [12, 24, 48],  # Surprises: medium to slow (removed 6, 8 - too noisy)
-        'VOLUME_SPECIALIST': [12, 24, 48],       # Volume: medium to slow
-        'VOLATILITY_SPECIALIST': [12, 24],    # Volatility: fast-evolving
+        'default': [16, 24, 48],  # Adjusted for 4-6h target
+        'CAUSAL_SURPRISE': [16, 24, 48],  # Surprises: aligned to 4-6h
+        'VOLUME_SPECIALIST': [16, 24, 48],       # Volume: aligned
+        'VOLATILITY_SPECIALIST': [16, 24],    # Volatility: aligned
     }
     
     # Family-specific parameter grids for Causal Specialists - EXPANDED GRIDS
     family_grids = {
         'CAUSAL_SURPRISE': {
             'base_params': [(1.5, 'all'), (1.8, 'all'), (2.2, 'all')],  # Lower thresholds for more events
-            'horizons': [12, 24, 48],  # Multi-horizon (removed 6, 8 - too noisy)
+            'horizons': [16, 24, 48],  # Multi-horizon (aligned to 4-6h)
         },
         'VOLUME_SPECIALIST': {
             'base_params': [(1.8, 20), (2.0, 20), (2.5, 30)],  # Multiple sensitivity levels
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         },
         'VOLATILITY_SPECIALIST': {
             'base_params': [(1.8, 15), (2.0, 20), (2.5, 30)],  # Multiple sensitivity levels
-            'horizons': [12, 24],  # Removed 8 - too noisy
+            'horizons': [16, 24],  # Removed 8 - too noisy
         },
         'LIQUIDITY_SPECIALIST': {
             'base_params': [(1.8, 20), (2.0, 20)],
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         },
         'INFORMATION_SPECIALIST': {
             'base_params': [(1.8, 20), (2.0, 20)],
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         },
         'INVENTORY_SPECIALIST': {
             'base_params': [(2.0, 20), (2.5, 25)],  # Higher threshold since sparse
-            'horizons': [24, 48],
+            'horizons': [24, 48], # Keep longer horizons for inventory
         },
         'MOMENTUM_DECAY_SPECIALIST': {
             'base_params': [(1.5, 10, 50), (2.0, 10, 50), (2.5, 10, 50), (2.0, 5, 30), (2.0, 20, 100)],
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         }
     }
     

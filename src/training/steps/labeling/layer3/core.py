@@ -555,9 +555,10 @@ def layer3_analyst_lgbm(
     vol_series = ret_series.rolling(24).std().fillna(0.001)
 
     # 12-bar targets
-    # Use blended forward returns (15-60m blend) to increase SNR
+    # Use blended forward returns (4-6h blend) to increase SNR per user request
     if 'close' in df.columns:
-        blended_ret_series = calculate_blended_forward_returns(df['close'], [1, 2, 4])
+        # Horizons: 16 (4h) and 24 (6h)
+        blended_ret_series = calculate_blended_forward_returns(df['close'], [16, 24])
     else:
         blended_ret_series = ret_series
 

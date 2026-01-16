@@ -32,15 +32,18 @@ EPS = 1e-12
 @njit
 def calculate_sample_weights_efficient(returns: np.ndarray, volatility: np.ndarray,
                                      layer1_weights: np.ndarray = None,
-                                     layer2_weights: np.ndarray = None) -> np.ndarray:
+                                     layer2_weights: np.ndarray = None,
+                                     volume: np.ndarray = None) -> np.ndarray:
     """
     JIT-compiled efficient sample weight calculation combining multiple sources.
+    Includes robust clipping and quality adjustments.
 
     Args:
         returns: Return series
         volatility: Volatility series
         layer1_weights: Optional layer 1 weights
         layer2_weights: Optional layer 2 weights
+        volume: Optional volume series for quality adjustment
 
     Returns:
         Combined and normalized sample weights
@@ -50,6 +53,37 @@ def calculate_sample_weights_efficient(returns: np.ndarray, volatility: np.ndarr
     # Base volatility weights (inverse variance)
     vol_safe = np.maximum(volatility, 1e-6)
     vol_weights = 1.0 / (vol_safe ** 2)
+
+    # Mitigation 1: Cap the base weight from above (e.g. 99th percentile)
+    # This prevents overweighting periods with artificially low volatility
+    base_cap = np.percentile(vol_weights, 99.0)
+    vol_weights = np.minimum(vol_weights, base_cap)
+
+    # Mitigation 1.5: Quality adjustment (if volume provided)
+    # Downweight if volume is very low (poor tradability)
+    if volume is not None and len(volume) == n_samples:
+        # Simple heuristic: multiply by log(volume) normalized, or penalty for low volume
+        # Use simple rank-based penalty for bottom 10% volume?
+        # Let's use a smoother penalty: weight *= sigmoid((log_vol - mean_log_vol) / std_log_vol)
+        # Or simpler: if volume < percentile(10), weight *= 0.5
+        # Since we are in Numba, we keep it simple.
+
+        # Calculate log volume
+        log_vol = np.log(np.maximum(volume, 1.0))
+        mean_lv = np.nanmean(log_vol)
+        std_lv = np.nanstd(log_vol) + 1e-6
+
+        # Z-score of volume
+        vol_z = (log_vol - mean_lv) / std_lv
+
+        # Penalty factor: logistic function mapped to [0.2, 1.0]
+        # if z < -2 (low vol), factor -> 0.2
+        # if z > 0 (normal), factor -> 1.0
+        quality_factor = 1.0 / (1.0 + np.exp(-2.0 * vol_z)) # Sigmoid centered at 0
+        # Map to [0.1, 1.0] roughly
+        quality_factor = 0.2 + 0.8 * quality_factor
+
+        vol_weights *= quality_factor
 
     # Initialize combined weights
     combined_weights = vol_weights.copy()
@@ -62,7 +96,7 @@ def calculate_sample_weights_efficient(returns: np.ndarray, volatility: np.ndarr
     if layer2_weights is not None and len(layer2_weights) == n_samples:
         combined_weights *= layer2_weights
 
-    # Apply finalize_sample_weights logic inline for efficiency
+    # Mitigation 3: Final robust re-scaling and upper clip
     # MAD scaling
     weights_median = np.median(combined_weights)
     weights_mad = np.median(np.abs(combined_weights - weights_median))
@@ -72,8 +106,19 @@ def calculate_sample_weights_efficient(returns: np.ndarray, volatility: np.ndarr
     else:
         scaled_weights = combined_weights - weights_median
 
-    # Center at 1.0 and ensure positive
-    final_weights = np.maximum(scaled_weights + 1.0, 0.1)
+    # Center at 1.0
+    centered_weights = scaled_weights + 1.0
+
+    # Final clipping: Floor at 0.1, Cap at 10.0 (or 99th percentile of final)
+    # We use a hard cap of 10.0 to prevent explosion from multiplicative components
+    final_weights = np.maximum(centered_weights, 0.1)
+
+    # Robust upper clip on the final distribution
+    final_cap = np.percentile(final_weights, 99.0)
+    final_weights = np.minimum(final_weights, final_cap)
+
+    # Safety: Absolute max cap (e.g. 20.0) just in case
+    final_weights = np.minimum(final_weights, 20.0)
 
     return final_weights
 

@@ -1718,7 +1718,7 @@ def check_label_quality(
             # Fast fail for Jaccard fundamental issues
             logger.debug(f"Jaccard calculation failed for {family}: {e}")
             val_metrics['jaccard'] = 0.0
-            gates_log.append(f"Jaccard: 0.00 (FastFail) [WARN]")
+            gates_log.append(f"Jaccard: 0.00 (Fallback) [WARN]")
 
     # 4. ANOVA Gate
     X = probe_features.loc[labels.index]

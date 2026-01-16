@@ -150,7 +150,8 @@ class CausalQualityAssessor:
                          y: pd.Series,
                          backbone_features: Optional[pd.DataFrame] = None,
                          precomputed_features: Optional[List[str]] = None,
-                         precomputed_residuals: Optional[pd.DataFrame] = None) -> Dict[str, float]:
+                         precomputed_residuals: Optional[pd.DataFrame] = None,
+                         y_causal: Optional[pd.Series] = None) -> Dict[str, float]:
         """
         Run full assessment suite on a causal candidate.
         """
@@ -222,7 +223,7 @@ class CausalQualityAssessor:
         metrics.update(self.compute_stability_metrics(events_df, y))
         
         # 3. Predictive Integrity (Uses downsampled X)
-        metrics.update(self.compute_predictive_integrity(X, y))
+        metrics.update(self.compute_predictive_integrity(X, y, y_causal=y_causal))
         
         # 4. Robustness
         metrics.update(self.compute_robustness_metrics(y))
@@ -945,11 +946,22 @@ class CausalQualityAssessor:
                 tprint_error(f"   ❌ Stability failed: {e}")
             return {'CV_freq': 10.0, 'IR_cv': 10.0, 'Dir_consistency': 0.0}
 
-    def compute_predictive_integrity(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+    def compute_predictive_integrity(self, X: pd.DataFrame, y: pd.Series, y_causal: Optional[pd.Series] = None) -> Dict[str, float]:
         try:
             if self.verbose:
                 tprint_info(f"   🎯 Computing predictive integrity...")
             
+            # Use causal target for IC if available (De Prado recommendation)
+            y_ic = y_causal if y_causal is not None else y
+            # Align y_ic to X if needed
+            if y_causal is not None:
+                common_idx = X.index.intersection(y_ic.index)
+                if len(common_idx) < len(X):
+                     # If alignment is poor, fallback to y
+                     y_ic = y
+                else:
+                     y_ic = y_ic.loc[X.index]
+
             # 1. OOS R-squared with TimeSeriesSplit
             n_splits = 2 if len(y) > 2000 else 3
             tscv = TimeSeriesSplit(n_splits=n_splits)
@@ -963,7 +975,7 @@ class CausalQualityAssessor:
             oos_r2 = np.mean(oos_r2_scores) if oos_r2_scores else 0.0
             
             # 2. Information Coefficient (IC)
-            corrs = X.corrwith(y).abs()
+            corrs = X.corrwith(y_ic).abs()
             ic = corrs.max() if not corrs.empty else 0.0
             best_feat = corrs.idxmax() if not corrs.empty else None
             
@@ -978,7 +990,7 @@ class CausalQualityAssessor:
                     
                     # Manual rolling correlation (faster than pandas rolling().corr())
                     feat_vals = X[best_feat].values
-                    y_vals = y.values
+                    y_vals = y_ic.values
                     rolling_corrs = []
                     
                     for i in range(window, len(y)):

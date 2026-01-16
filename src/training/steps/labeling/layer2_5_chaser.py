@@ -32,6 +32,8 @@ from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianR
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.base import clone
+from sklearn.metrics import roc_auc_score
+from scipy.stats import spearmanr
 
 # Import Huber constraint utilities
 try:
@@ -619,9 +621,7 @@ class Layer25Chaser:
 
             # 2. Students
             students = {}
-            valid_models = []
-
-            # Temporary storage for pruning
+            model_scores = {}
             temp_preds = {}
 
             for m_type in self.models_to_train:
@@ -641,42 +641,56 @@ class Layer25Chaser:
 
                     # Generate OOF preds for correlation check (on training data)
                     # For simplicity, we just predict on full training data here
-                    # (Note: this is biased for pruning but fast. Proper way is OOF predictions during training)
-                    # The student function trains on full data.
-                    # We accept slight bias for pruning redundant models.
-
                     if self.mode == "regression":
                         pred = predict_chaser_student(X_np, teacher.mu_oof, None, student)
+                        # Score: IC (Spearman)
+                        score = float(spearmanr(pred, y_np)[0])
                     else:
                         pred = predict_chaser_student(X_np, None, teacher.margin_oof, student)
+                        # Score: AUC
+                        try:
+                            score = roc_auc_score(y_np, pred, sample_weight=weights)
+                        except Exception:
+                            score = 0.5
 
                     temp_preds[m_type] = pred
                     students[m_type] = student
-                    valid_models.append(m_type)
+                    model_scores[m_type] = score
+
+                    if self.verbose:
+                        tprint_info(f"   📝 {m_type.upper()} Score: {score:.4f}")
 
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Failed to train {m_type} student: {e}")
 
             # 3. Prune redundant models
-            # Greedy selection: Pick best? Or just check correlations.
-            # We keep all if correlation < threshold.
-            if len(valid_models) > 1:
-                kept = [valid_models[0]]
-                for i in range(1, len(valid_models)):
-                    curr = valid_models[i]
+            # 1. Rank by score (IC or AUC)
+            sorted_models = sorted(model_scores.keys(), key=lambda x: model_scores[x], reverse=True)
+
+            kept = []
+            if sorted_models:
+                kept.append(sorted_models[0])  # Always keep best
+
+                for i in range(1, len(sorted_models)):
+                    curr = sorted_models[i]
                     is_redundant = False
+
+                    # Check correlation with higher-ranked kept models
                     for existing in kept:
                         corr = np.corrcoef(temp_preds[curr], temp_preds[existing])[0, 1]
                         if corr > self.correlation_threshold:
                             is_redundant = True
+                            if self.verbose:
+                                tprint_info(f"   ✂️ Pruning {curr} (corr {corr:.3f} with {existing})")
                             break
+
                     if not is_redundant:
                         kept.append(curr)
 
                 # Filter students dictionary
                 students = {k: v for k, v in students.items() if k in kept}
-                if self.verbose and len(kept) < len(valid_models):
-                    tprint_info(f"   ✂️ Pruned redundant models in {prefix}: {len(valid_models)} -> {len(kept)}")
+                if self.verbose and len(kept) < len(sorted_models):
+                    tprint_info(f"   🏁 Final Ensemble: {kept} (Best: {sorted_models[0]})")
 
             return {"teacher": teacher, "students": students}
 
@@ -714,10 +728,18 @@ class Layer25Chaser:
     def predict(
         self,
         X: pd.DataFrame,
-        regime_probs: pd.DataFrame | None = None
-    ) -> np.ndarray:
+        regime_probs: pd.DataFrame | None = None,
+        return_individual: bool = False,
+        return_confidence: bool = False
+    ) -> Union[np.ndarray, Dict[str, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
         """
         Predict using the ensemble.
+
+        Args:
+            X: Input features
+            regime_probs: Regime probabilities for weighting
+            return_individual: If True, returns dict of {model_name: prediction}
+            return_confidence: If True, returns (prediction, confidence) tuple
         """
         # Feature Engineering
         if self.feature_engineering:
@@ -751,56 +773,103 @@ class Layer25Chaser:
                     teacher_margin = teacher_mu
 
             # 2. Student Predictions
-            preds = []
+            preds_dict = {}
+            preds_list = []
+
             for name, student in students.items():
                 p = predict_chaser_student(x_data, teacher_mu, teacher_margin, student)
-                preds.append(p)
+                preds_dict[name] = p
+                preds_list.append(p)
 
             # Average student predictions
-            if not preds:
-                return sigmoid(teacher_margin) if self.mode == "classification" else teacher_mu
+            if not preds_list:
+                # Fallback to teacher
+                baseline = sigmoid(teacher_margin) if self.mode == "classification" else teacher_mu
+                return baseline, {}, np.zeros(len(x_data))
 
-            return np.mean(preds, axis=0)
+            ensemble_mean = np.mean(preds_list, axis=0)
+
+            # Calculate confidence (std dev of ensemble members)
+            # Lower std = higher confidence agreement
+            # We invert it: 1 / (1 + std) or similar
+            if len(preds_list) > 1:
+                ensemble_std = np.std(preds_list, axis=0)
+                confidence = 1.0 / (1.0 + ensemble_std)
+            else:
+                confidence = np.ones(len(x_data)) # Single model = full confidence (relative to self)
+
+            return ensemble_mean, preds_dict, confidence
+
+        # Initialize outputs
+        final_pred = np.zeros(n_samples)
+        total_weight = np.zeros(n_samples)
+        final_confidence = np.zeros(n_samples)
+        all_individual_preds = {} # {model_name: np.zeros(n_samples)}
 
         # 1. Regime-based Prediction
         if self.regime_split and regime_probs is not None and self.regime_models:
-            final_pred = np.zeros(n_samples)
-            total_weight = np.zeros(n_samples)
 
             for k, ensemble in self.regime_models.items():
-                # Get regime probability for these samples
-                # Assuming regime_probs aligns with X
                 if k < regime_probs.shape[1]:
                     prob_k = regime_probs.iloc[:, k].values
-
-                    # Optimization: only predict for samples with non-zero prob
-                    # But for simplicity with vectorization, we compute all (or mask)
-                    # Using mask for speed
                     mask = prob_k > 0.001
+
                     if np.any(mask):
-                        pred_k = predict_ensemble(ensemble, X_np[mask])
+                        pred_k, ind_k, conf_k = predict_ensemble(ensemble, X_np[mask])
+
+                        # Accumulate weighted average
                         final_pred[mask] += pred_k * prob_k[mask]
+                        final_confidence[mask] += conf_k * prob_k[mask]
                         total_weight[mask] += prob_k[mask]
-            
-            # Normalize by total weight (in case sum probs != 1 or missing regimes)
-            # Avoid div by zero
+
+                        # Store individual predictions (weighted)
+                        # Naming: "regime_{k}_{model}"
+                        if return_individual:
+                            for model_name, model_pred in ind_k.items():
+                                key = f"regime{k}_{model_name}"
+                                if key not in all_individual_preds:
+                                    all_individual_preds[key] = np.zeros(n_samples)
+                                all_individual_preds[key][mask] = model_pred
+
+            # Normalize
             nonzero = total_weight > 0
             final_pred[nonzero] /= total_weight[nonzero]
+            final_confidence[nonzero] /= total_weight[nonzero]
             
-            # If any sample had 0 weight (no active regime model), fall back to global or 0
+            # Fill gaps with global or 0
             if not np.all(nonzero):
                 if self.global_models:
-                    global_pred = predict_ensemble(self.global_models, X_np)
-                    final_pred[~nonzero] = global_pred[~nonzero]
-            
-            return final_pred
+                    g_pred, g_ind, g_conf = predict_ensemble(self.global_models, X_np[~nonzero])
+                    final_pred[~nonzero] = g_pred
+                    final_confidence[~nonzero] = g_conf
+                    if return_individual:
+                        for m_name, m_pred in g_ind.items():
+                            key = f"global_{m_name}"
+                            if key not in all_individual_preds:
+                                all_individual_preds[key] = np.zeros(n_samples)
+                            all_individual_preds[key][~nonzero] = m_pred
 
         # 2. Global Prediction
         elif self.global_models:
-            return predict_ensemble(self.global_models, X_np)
+            final_pred, ind_preds, final_confidence = predict_ensemble(self.global_models, X_np)
+            if return_individual:
+                for m_name, m_pred in ind_preds.items():
+                    all_individual_preds[f"global_{m_name}"] = m_pred
 
         else:
             raise ValueError("No trained models available.")
+
+        # Return Logic
+        if return_individual:
+            # We also return the average as "ensemble_mean"
+            all_individual_preds["ensemble_mean"] = final_pred
+            if return_confidence:
+                return all_individual_preds, final_confidence
+            return all_individual_preds
+        elif return_confidence:
+            return final_pred, final_confidence
+        else:
+            return final_pred
 
 # Convenience functions
 def create_chaser(**kwargs):

@@ -32,6 +32,8 @@ from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianR
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.base import clone
+from sklearn.metrics import roc_auc_score
+from scipy.stats import spearmanr
 
 # Import Huber constraint utilities
 try:
@@ -229,7 +231,7 @@ def train_chaser_student(
     winsor_resid_k: float = 3.0,
     model_type: str = "xgb", # "xgb", "lgb", "cat", "et"
     model_params: dict | None = None,
-    num_boost_round: int = 800,
+    num_boost_round: int = 1000, # Default increased to 1000
     # New parameters for weak constraints
     monotone_constraints_weak: dict | None = None,
     interaction_constraints_weak: list[list[str]] | None = None,
@@ -237,6 +239,7 @@ def train_chaser_student(
 ):
     """
     Train a student model (Chaser) on residuals or with margin correction.
+    Uses aggressive early stopping (30 rounds) with an internal validation split.
     """
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y)
@@ -261,22 +264,40 @@ def train_chaser_student(
     else:
         raise ValueError("mode must be 'regression' or 'classification'.")
 
+    # --- Internal Validation Split for Early Stopping ---
+    # We use the last 15% of data as validation set to enable early stopping
+    n_samples = len(X)
+    split_idx = int(n_samples * 0.85)
+
+    X_train, X_valid = X[:split_idx], X[split_idx:]
+    y_train, y_valid = target[:split_idx], target[split_idx:]
+    w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
+
+    init_score_train = init_score[:split_idx] if init_score is not None else None
+    init_score_valid = init_score[split_idx:] if init_score is not None else None
+    baseline_train = baseline[:split_idx] if baseline is not None else None
+    baseline_valid = baseline[split_idx:] if baseline is not None else None
+
     # --- XGBoost ---
     if model_type == "xgb":
-        dtrain = xgb.DMatrix(X, label=target, weight=w_final)
+        dtrain = xgb.DMatrix(X_train, label=y_train, weight=w_train)
+        dvalid = xgb.DMatrix(X_valid, label=y_valid, weight=w_valid)
+
         if mode == "classification":
-            dtrain.set_base_margin(init_score)
+            dtrain.set_base_margin(init_score_train)
+            dvalid.set_base_margin(init_score_valid)
 
         default_params = {
-            "eta": 0.03,  # User-specified learning rate
-            "max_depth": 4,
-            "min_child_weight": 10,  # User-specified
-            "subsample": 0.6,  # User-specified
+            "eta": 0.03,
+            "max_depth": 5, # Increased to 5
+            "min_child_weight": 10,
+            "subsample": 0.6,
             "colsample_bytree": 0.7,
-            "colsample_bynode": 0.4,  # User-specified
-            "reg_lambda": 50.0,  # User-specified strong regularization
+            "colsample_bynode": 0.4,
+            "reg_lambda": 25.0, # Decreased to 25
             "reg_alpha": 0.0,
-            "gamma": 1.1,  # User-specified
+            "gamma": 0.7, # Decreased to 0.7
+            "num_parallel_tree": 15, # Random Forest behavior
             "n_jobs": -1
         }
         if mode == "regression":
@@ -292,7 +313,6 @@ def train_chaser_student(
 
         # Add weak constraints if available
         if monotone_constraints_weak is not None and mode == "classification":
-            # Convert dict to tuple for XGBoost using feature indices
             feature_names = [f"f{i}" for i in range(X.shape[1])]
             mono_tuple = tuple(monotone_constraints_weak.get(f"f{i}", 0) for i in range(X.shape[1]))
             params["monotone_constraints"] = mono_tuple
@@ -300,7 +320,14 @@ def train_chaser_student(
         if interaction_constraints_weak is not None and mode == "classification":
             params["interaction_constraints"] = interaction_constraints_weak
 
-        bst = xgb.train(params, dtrain, num_boost_round=num_boost_round)
+        bst = xgb.train(
+            params,
+            dtrain,
+            num_boost_round=num_boost_round,
+            evals=[(dtrain, "train"), (dvalid, "valid")],
+            early_stopping_rounds=30, # Aggressive early stopping
+            verbose_eval=False
+        )
         return {"model": bst, "mode": mode, "type": "xgb", "params": params}
 
     # --- LightGBM ---
@@ -308,19 +335,26 @@ def train_chaser_student(
         if not LGBM_AVAILABLE:
             raise ImportError("LightGBM not installed")
 
-        train_data = lgb.Dataset(X, label=target, weight=w_final)
+        train_data = lgb.Dataset(X_train, label=y_train, weight=w_train)
+        valid_data = lgb.Dataset(X_valid, label=y_valid, weight=w_valid, reference=train_data)
+
         if mode == "classification":
-            train_data.set_init_score(init_score)
+            train_data.set_init_score(init_score_train)
+            valid_data.set_init_score(init_score_valid)
 
         default_params = {
             "learning_rate": 0.05,
             "num_leaves": 31,
             "min_child_samples": 20,
             "subsample": 0.7,
+            "subsample_freq": 1, # Added
             "colsample_bytree": 0.7,
-            "reg_lambda": 10.0,  # User-specified
-            "path_smooth": 20,  # User-specified
-            "extra_trees": True,  # User-specified
+            "colsample_bynode": 0.7, # Added feature_fraction_bynode
+            "reg_lambda": 10.0,
+            "min_split_gain": 0.005, # Added min_gain_to_split
+            "linear_tree": True, # Added linear=true
+            "path_smooth": 20,
+            "extra_trees": True,
             "n_jobs": -1,
             "verbose": -1
         }
@@ -342,7 +376,17 @@ def train_chaser_student(
         if interaction_constraints_weak is not None and mode == "classification":
             params["interaction_constraints"] = interaction_constraints_weak
 
-        bst = lgb.train(params, train_data, num_boost_round=num_boost_round)
+        # Callbacks for early stopping
+        callbacks = [lgb.early_stopping(stopping_rounds=30, verbose=False)]
+
+        bst = lgb.train(
+            params,
+            train_data,
+            num_boost_round=num_boost_round,
+            valid_sets=[train_data, valid_data],
+            valid_names=["train", "valid"],
+            callbacks=callbacks
+        )
         return {"model": bst, "mode": mode, "type": "lgb", "params": params}
 
     # --- CatBoost ---
@@ -350,19 +394,25 @@ def train_chaser_student(
         if not CATBOOST_AVAILABLE:
             raise ImportError("CatBoost not installed")
 
-        train_pool = cb.Pool(X, label=target, weight=w_final)
+        train_pool = cb.Pool(X_train, label=y_train, weight=w_train)
+        valid_pool = cb.Pool(X_valid, label=y_valid, weight=w_valid)
+
         if mode == "classification":
-            train_pool.set_baseline(baseline)
+            train_pool.set_baseline(baseline_train)
+            valid_pool.set_baseline(baseline_valid)
 
         default_params = {
             "iterations": num_boost_round,
             "learning_rate": 0.05,
             "depth": 6,
-            "l2_leaf_reg": 20.0,  # User-specified
-            "subsample": 0.6,  # User-specified
-            "random_strength": 5.0,  # User-specified
+            "l2_leaf_reg": 20.0,
+            "subsample": 0.6,
+            "rsm": 0.8, # Added rsm
+            "bagging_temperature": 1, # Added bagging_temperature
+            "random_strength": 5.0,
             "verbose": False,
-            "allow_writing_files": False
+            "allow_writing_files": False,
+            "early_stopping_rounds": 30 # Native parameter
         }
         if mode == "regression":
             default_params["loss_function"] = "MAE"
@@ -378,31 +428,42 @@ def train_chaser_student(
             params["monotone_constraints"] = monotone_constraints_weak
 
         model = cb.CatBoost(params)
-        model.fit(train_pool)
+        model.fit(train_pool, eval_set=valid_pool)
         return {"model": model, "mode": mode, "type": "cat", "params": params}
 
     # --- ExtraTrees ---
     elif model_type == "et":
-        # ExtraTrees doesn't support margin/init_score easily for classification
-        # We will use it only for regression on residuals
+        # ExtraTrees doesn't support early stopping in the same way (sklearn)
+        # We train on full set (X, y) or we could simulate it but ET is fast anyway
+        # We stick to full training for ET but update parameters
+
+        # Determine estimators from num_boost_round if passed, but cap/set to 500
+        n_estimators = 500 # Reduced to 500
+
         if mode == "classification":
-            # Fallback: Train on raw binary target with sample weights
-            # This ignores the teacher margin, making it a pure student
-            # Or train on probability residuals? No.
-            # We skip margin correction for ET Classifier here.
-            # print("Warning: ExtraTrees classifier does not support margin correction. Training standard model.")
-            et_model = ExtraTreesRegressor(n_estimators=200, n_jobs=-1, max_depth=10, min_samples_leaf=5)
-            # Train regression on the binary target? Or use Classifier?
-            # Using Regressor on binary target is sometimes robust.
-            # But let's use the residual logic: y_bin - p_oof
-            # This is "regression on probability residuals".
+            # "residual_prob" subtype
             res_target = y.astype(float) - teacher.p_oof
+            et_model = ExtraTreesRegressor(
+                n_estimators=n_estimators,
+                n_jobs=-1,
+                max_depth=6, # Reduced to 6
+                min_samples_leaf=20, # Increased to 20
+                random_state=42
+            )
+            if model_params:
+                et_model.set_params(**model_params)
+
             et_model.fit(X, res_target, sample_weight=w_final)
-            # Store prediction type as "residual_prob"
             return {"model": et_model, "mode": mode, "type": "et", "subtype": "residual_prob"}
         else:
             # Regression on residuals
-            et_model = ExtraTreesRegressor(n_estimators=200, n_jobs=-1, max_depth=10, min_samples_leaf=5, random_state=42)
+            et_model = ExtraTreesRegressor(
+                n_estimators=n_estimators,
+                n_jobs=-1,
+                max_depth=6, # Reduced to 6
+                min_samples_leaf=20, # Increased to 20
+                random_state=42
+            )
             if model_params:
                 et_model.set_params(**model_params)
             et_model.fit(X, target, sample_weight=w_final)
@@ -633,9 +694,7 @@ class Layer25Chaser:
 
             # 2. Students
             students = {}
-            valid_models = []
-
-            # Temporary storage for pruning
+            model_scores = {}
             temp_preds = {}
 
             if self.verbose:
@@ -658,18 +717,24 @@ class Layer25Chaser:
 
                     # Generate OOF preds for correlation check (on training data)
                     # For simplicity, we just predict on full training data here
-                    # (Note: this is biased for pruning but fast. Proper way is OOF predictions during training)
-                    # The student function trains on full data.
-                    # We accept slight bias for pruning redundant models.
-
                     if self.mode == "regression":
                         pred = predict_chaser_student(X_np, teacher.mu_oof, None, student)
+                        # Score: IC (Spearman)
+                        score = float(spearmanr(pred, y_np)[0])
                     else:
                         pred = predict_chaser_student(X_np, None, teacher.margin_oof, student)
+                        # Score: AUC
+                        try:
+                            score = roc_auc_score(y_np, pred, sample_weight=weights)
+                        except Exception:
+                            score = 0.5
 
                     temp_preds[m_type] = pred
                     students[m_type] = student
-                    valid_models.append(m_type)
+                    model_scores[m_type] = score
+
+                    if self.verbose:
+                        tprint_info(f"   📝 {m_type.upper()} Score: {score:.4f}")
 
                     if self.verbose:
                         tprint_success(f"      ✅ {m_type} trained")
@@ -678,25 +743,33 @@ class Layer25Chaser:
                     tprint_warning(f"   ⚠️ Failed to train {m_type} student: {e}")
 
             # 3. Prune redundant models
-            # Greedy selection: Pick best? Or just check correlations.
-            # We keep all if correlation < threshold.
-            if len(valid_models) > 1:
-                kept = [valid_models[0]]
-                for i in range(1, len(valid_models)):
-                    curr = valid_models[i]
+            # 1. Rank by score (IC or AUC)
+            sorted_models = sorted(model_scores.keys(), key=lambda x: model_scores[x], reverse=True)
+
+            kept = []
+            if sorted_models:
+                kept.append(sorted_models[0])  # Always keep best
+
+                for i in range(1, len(sorted_models)):
+                    curr = sorted_models[i]
                     is_redundant = False
+
+                    # Check correlation with higher-ranked kept models
                     for existing in kept:
                         corr = np.corrcoef(temp_preds[curr], temp_preds[existing])[0, 1]
                         if corr > self.correlation_threshold:
                             is_redundant = True
+                            if self.verbose:
+                                tprint_info(f"   ✂️ Pruning {curr} (corr {corr:.3f} with {existing})")
                             break
+
                     if not is_redundant:
                         kept.append(curr)
 
                 # Filter students dictionary
                 students = {k: v for k, v in students.items() if k in kept}
-                if self.verbose and len(kept) < len(valid_models):
-                    tprint_info(f"   ✂️ Pruned redundant models in {prefix}: {len(valid_models)} -> {len(kept)}")
+                if self.verbose and len(kept) < len(sorted_models):
+                    tprint_info(f"   🏁 Final Ensemble: {kept} (Best: {sorted_models[0]})")
 
             return {"teacher": teacher, "students": students}
 
@@ -734,10 +807,18 @@ class Layer25Chaser:
     def predict(
         self,
         X: pd.DataFrame,
-        regime_probs: pd.DataFrame | None = None
-    ) -> np.ndarray:
+        regime_probs: pd.DataFrame | None = None,
+        return_individual: bool = False,
+        return_confidence: bool = False
+    ) -> Union[np.ndarray, Dict[str, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
         """
         Predict using the ensemble.
+
+        Args:
+            X: Input features
+            regime_probs: Regime probabilities for weighting
+            return_individual: If True, returns dict of {model_name: prediction}
+            return_confidence: If True, returns (prediction, confidence) tuple
         """
         # Feature Engineering
         if self.feature_engineering:
@@ -771,56 +852,103 @@ class Layer25Chaser:
                     teacher_margin = teacher_mu
 
             # 2. Student Predictions
-            preds = []
+            preds_dict = {}
+            preds_list = []
+
             for name, student in students.items():
                 p = predict_chaser_student(x_data, teacher_mu, teacher_margin, student)
-                preds.append(p)
+                preds_dict[name] = p
+                preds_list.append(p)
 
             # Average student predictions
-            if not preds:
-                return sigmoid(teacher_margin) if self.mode == "classification" else teacher_mu
+            if not preds_list:
+                # Fallback to teacher
+                baseline = sigmoid(teacher_margin) if self.mode == "classification" else teacher_mu
+                return baseline, {}, np.zeros(len(x_data))
 
-            return np.mean(preds, axis=0)
+            ensemble_mean = np.mean(preds_list, axis=0)
+
+            # Calculate confidence (std dev of ensemble members)
+            # Lower std = higher confidence agreement
+            # We invert it: 1 / (1 + std) or similar
+            if len(preds_list) > 1:
+                ensemble_std = np.std(preds_list, axis=0)
+                confidence = 1.0 / (1.0 + ensemble_std)
+            else:
+                confidence = np.ones(len(x_data)) # Single model = full confidence (relative to self)
+
+            return ensemble_mean, preds_dict, confidence
+
+        # Initialize outputs
+        final_pred = np.zeros(n_samples)
+        total_weight = np.zeros(n_samples)
+        final_confidence = np.zeros(n_samples)
+        all_individual_preds = {} # {model_name: np.zeros(n_samples)}
 
         # 1. Regime-based Prediction
         if self.regime_split and regime_probs is not None and self.regime_models:
-            final_pred = np.zeros(n_samples)
-            total_weight = np.zeros(n_samples)
 
             for k, ensemble in self.regime_models.items():
-                # Get regime probability for these samples
-                # Assuming regime_probs aligns with X
                 if k < regime_probs.shape[1]:
                     prob_k = regime_probs.iloc[:, k].values
-
-                    # Optimization: only predict for samples with non-zero prob
-                    # But for simplicity with vectorization, we compute all (or mask)
-                    # Using mask for speed
                     mask = prob_k > 0.001
+
                     if np.any(mask):
-                        pred_k = predict_ensemble(ensemble, X_np[mask])
+                        pred_k, ind_k, conf_k = predict_ensemble(ensemble, X_np[mask])
+
+                        # Accumulate weighted average
                         final_pred[mask] += pred_k * prob_k[mask]
+                        final_confidence[mask] += conf_k * prob_k[mask]
                         total_weight[mask] += prob_k[mask]
-            
-            # Normalize by total weight (in case sum probs != 1 or missing regimes)
-            # Avoid div by zero
+
+                        # Store individual predictions (weighted)
+                        # Naming: "regime_{k}_{model}"
+                        if return_individual:
+                            for model_name, model_pred in ind_k.items():
+                                key = f"regime{k}_{model_name}"
+                                if key not in all_individual_preds:
+                                    all_individual_preds[key] = np.zeros(n_samples)
+                                all_individual_preds[key][mask] = model_pred
+
+            # Normalize
             nonzero = total_weight > 0
             final_pred[nonzero] /= total_weight[nonzero]
+            final_confidence[nonzero] /= total_weight[nonzero]
             
-            # If any sample had 0 weight (no active regime model), fall back to global or 0
+            # Fill gaps with global or 0
             if not np.all(nonzero):
                 if self.global_models:
-                    global_pred = predict_ensemble(self.global_models, X_np)
-                    final_pred[~nonzero] = global_pred[~nonzero]
-            
-            return final_pred
+                    g_pred, g_ind, g_conf = predict_ensemble(self.global_models, X_np[~nonzero])
+                    final_pred[~nonzero] = g_pred
+                    final_confidence[~nonzero] = g_conf
+                    if return_individual:
+                        for m_name, m_pred in g_ind.items():
+                            key = f"global_{m_name}"
+                            if key not in all_individual_preds:
+                                all_individual_preds[key] = np.zeros(n_samples)
+                            all_individual_preds[key][~nonzero] = m_pred
 
         # 2. Global Prediction
         elif self.global_models:
-            return predict_ensemble(self.global_models, X_np)
+            final_pred, ind_preds, final_confidence = predict_ensemble(self.global_models, X_np)
+            if return_individual:
+                for m_name, m_pred in ind_preds.items():
+                    all_individual_preds[f"global_{m_name}"] = m_pred
 
         else:
             raise ValueError("No trained models available.")
+
+        # Return Logic
+        if return_individual:
+            # We also return the average as "ensemble_mean"
+            all_individual_preds["ensemble_mean"] = final_pred
+            if return_confidence:
+                return all_individual_preds, final_confidence
+            return all_individual_preds
+        elif return_confidence:
+            return final_pred, final_confidence
+        else:
+            return final_pred
 
 # Convenience functions
 def create_chaser(**kwargs):

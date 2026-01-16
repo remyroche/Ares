@@ -727,16 +727,23 @@ class Layer25Integration:
             if self.chaser is None:
                 raise ValueError("Chaser not trained. Call train_chaser() first.")
 
-            # Get Chaser predictions
-            chaser_prediction, chaser_confidence = self.chaser.predict(
-                X_non_causal, return_confidence=True
+            # Get Chaser predictions (including individual models)
+            individual_preds, chaser_confidence = self.chaser.predict(
+                X_non_causal, return_individual=True, return_confidence=True
             )
+
+            # Extract ensemble mean for backward compatibility
+            chaser_prediction = individual_preds.get("ensemble_mean")
+            if chaser_prediction is None:
+                # Fallback if only one model or ensemble_mean not returned
+                chaser_prediction = next(iter(individual_preds.values()))
 
             results = {
                 'chaser_prediction': chaser_prediction,
                 'chaser_confidence': chaser_confidence,
                 'anchor_prediction': causal_anchor_prediction,
-                'total_prediction': causal_anchor_prediction + chaser_prediction
+                'total_prediction': causal_anchor_prediction + chaser_prediction,
+                'individual_predictions': individual_preds
             }
 
             # Conflict detection
@@ -797,6 +804,12 @@ class Layer25Integration:
             meta_features['chaser_confidence'] = prediction_results['chaser_confidence']
             meta_features['anchor_prediction'] = prediction_results['anchor_prediction']
             meta_features['total_prediction'] = prediction_results['total_prediction']
+
+            # Individual Predictions (Feed all surviving models to downstream users)
+            if 'individual_predictions' in prediction_results:
+                for name, pred in prediction_results['individual_predictions'].items():
+                    if name != "ensemble_mean":
+                        meta_features[f"chaser_ind_{name}"] = pred
 
             # Prediction uncertainty measures
             if hasattr(self.chaser, 'xgb_model') and hasattr(self.chaser, 'cat_model'):

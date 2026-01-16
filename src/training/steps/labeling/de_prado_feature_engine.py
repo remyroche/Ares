@@ -120,6 +120,7 @@ class DePradoFeatureEngine:
         self.cluster_labels_ = None
         self.optimal_n_clusters_ = None
         self.silhouette_scores_ = None
+        self.lgbm_importances_ = None
         
         # Extended diagnostics
         self.lgbm_metrics_ = {
@@ -337,6 +338,7 @@ class DePradoFeatureEngine:
                             best_score, best_k = score, k
                 except: continue
 
+            # Final Fit
             final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
             final_clusterer.fit(X_sub)
             return final_clusterer.labels_
@@ -360,7 +362,7 @@ class DePradoFeatureEngine:
                 for m in members: final_map[m] = next_id
                 next_id += 1
 
-        return pd.Series(final_map)
+        return pd.Series(final_map, index=X_train.columns)
 
     def _calculate_cv_ratio(self, X: pd.DataFrame, labels: np.ndarray) -> float:
         """Calculate CV Ratio."""
@@ -400,6 +402,7 @@ class DePradoFeatureEngine:
     
     def _get_tree_hierarchy(self, model: Union[ExtraTreesClassifier, ExtraTreesRegressor], feature_names: List[str]) -> pd.Series:
         """Calculates Mean First Split Depth."""
+
         depths = {name: [] for name in feature_names}
         max_depth_overall = 0
         
@@ -433,6 +436,7 @@ class DePradoFeatureEngine:
     
     def _compute_advanced_mdi(self, model: Union[ExtraTreesClassifier, ExtraTreesRegressor], feature_names: List[str]) -> Dict[str, float]:
         """Compute Advanced MDI metrics."""
+
         gain_importances = model.feature_importances_
         cover_counts = np.zeros(len(feature_names))
         total_samples = 0
@@ -509,7 +513,6 @@ class DePradoFeatureEngine:
                 col_name = f"{group_key_base}_PC1"
                 X_train_groups[col_name] = X_train[features[0]]
                 X_val_groups[col_name] = X_val[features[0]]
-
                 # Dummy loading
                 loadings_map[group_key_base] = pd.DataFrame(
                     [1.0], index=features, columns=["PC1"]
@@ -625,10 +628,10 @@ class DePradoFeatureEngine:
         imp_df = pd.DataFrame(fold_stats).fillna(0.0) # Folds x Features
 
         # 1. Median Log Gain
-        median_log_gain = imp_df.median()
+        median_gain = imp_df.median()
 
         # 2. IQR Log Gain
-        iqr_log_gain = imp_df.apply(iqr)
+        iqr_gain = imp_df.apply(iqr)
 
         # 3. Top-K Frequency
         k = max(1, int(len(imp_df.columns) * 0.2))
@@ -636,38 +639,39 @@ class DePradoFeatureEngine:
         topk_freq = topk_mask.mean()
 
         # 4. Stability
-        stability = median_log_gain / (iqr_log_gain + 1e-9)
+        stability = median_gain / (iqr_gain + 1e-9)
 
         # 5. OOF IC (Model Prediction)
         valid_mask = oof_preds_accum.notna() & y.notna()
         if valid_mask.sum() > 10:
-            oof_ic, _ = spearmanr(y[valid_mask], oof_preds_accum[valid_mask])
+            global_oof_ic, _ = spearmanr(y[valid_mask], oof_preds_accum[valid_mask])
         else:
-            oof_ic = 0.0
+            global_oof_ic = 0.0
 
         # 6. Feature-Level OOF IC (Aggregated)
         ic_df = pd.DataFrame(fold_feature_ics).fillna(0.0)
-        median_feature_ic = ic_df.median()
+        mean_feat_ic = ic_df.median()
 
         tprint_info(f"   📊 MDI OOF Stats:")
-        tprint_info(f"      Median Gain: [{median_log_gain.min():.4f}, {median_log_gain.max():.4f}]")
+        tprint_info(f"      Median Gain: [{median_gain.min():.4f}, {median_gain.max():.4f}]")
         tprint_info(f"      Top-K Freq:  [{topk_freq.min():.2f}, {topk_freq.max():.2f}]")
-        tprint_info(f"      OOF IC (Model): {oof_ic:.4f}")
+        tprint_info(f"      OOF IC (Model): {global_oof_ic:.4f}")
 
         return {
-            'mean_gain': median_log_gain,
+            'mean_gain': median_gain,
             'stability': stability,
-            'oof_ic': oof_ic,
-            'feature_oof_ic': median_feature_ic,
+            'oof_ic': global_oof_ic,
+            'feature_oof_ic': mean_feat_ic,
             'topk_freq': topk_freq,
-            'median_log_gain': median_log_gain,
-            'iqr_log_gain': iqr_log_gain
+            'median_log_gain': median_gain, # Mapping legacy names
+            'iqr_log_gain': iqr_gain
         }
 
     def _rank_normalize(self, s: pd.Series, invert: bool = False) -> pd.Series:
         """Rank (Percentile) Normalization."""
         if s.empty: return s
         ranks = rankdata(s, method='average')
+        norm = (ranks - 1) / (len(s) - 1 + 1e-9)
         norm = (ranks - 1) / (len(s) - 1 + 1e-9)
         if invert:
             return pd.Series(1.0 - norm, index=s.index)
@@ -698,7 +702,6 @@ class DePradoFeatureEngine:
             else:
                 self.is_regression = False
                 tprint_info("   ℹ️ Detected Classification target")
-
         # Cache Check
         cache_key = self._compute_input_hash(X, y, use_entropy_as_king)
         if cache_key and cache_key in self._CACHE:
@@ -782,8 +785,6 @@ class DePradoFeatureEngine:
                 except Exception:
                     ic_scores[col] = 0.0
             ic_series = pd.Series(ic_scores)
-
-        # Entropy (Filter/Penalty)
         entropy_scores = {}
         for col in X.columns:
             try:
@@ -817,7 +818,6 @@ class DePradoFeatureEngine:
             self.depth_weight * score_depth + 
             self.entropy_weight * score_ent
         )
-        
         # 5. Store
         self.feature_stats_ = pd.DataFrame({
             "Cluster": cluster_map,
@@ -902,7 +902,6 @@ class DePradoFeatureEngine:
             'max_cluster_size': cluster_counts.max(),
             'min_cluster_size': cluster_counts.min()
         }
-
     def get_report(self) -> pd.DataFrame:
         if self.feature_stats_ is None: raise ValueError("Run selection first")
         return self.feature_stats_.loc[self.selected_features_].sort_values('CompositeScore', ascending=False)

@@ -35,6 +35,14 @@ from sklearn.base import clone
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
 
+# Import PurgedKFold
+try:
+    from src.utils.purged_kfold import PurgedKFoldTime
+    PURGED_KFOLD_AVAILABLE = True
+except ImportError:
+    PURGED_KFOLD_AVAILABLE = False
+    from sklearn.model_selection import TimeSeriesSplit
+
 # Import Huber constraint utilities
 try:
     from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs, get_huber_tier_config
@@ -62,22 +70,40 @@ from src.utils.fracdiff import FracDiffTransformer
 # -----------------------------
 # Utilities
 # -----------------------------
-def robust_sigma(x: np.ndarray, eps: float = 1e-12) -> float:
-    """Calculate robust standard deviation using MAD."""
+def robust_stats(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float]:
+    """Calculate median and robust sigma (MAD-based)."""
     x = np.asarray(x, dtype=np.float64)
     med = np.median(x)
     mad = np.median(np.abs(x - med)) + eps
-    return 1.4826 * mad
+    sigma = 1.4826 * mad
+    return med, sigma
+
+def clip_with_stats(x: np.ndarray, med: float, sigma: float, k: float = 3.0) -> np.ndarray:
+    """Clip data based on provided robust stats."""
+    return np.clip(x, med - k * sigma, med + k * sigma)
+
+def robust_sigma(x: np.ndarray, eps: float = 1e-12) -> float:
+    """Calculate robust standard deviation using MAD."""
+    _, s = robust_stats(x, eps)
+    return s
 
 def winsorize(x: np.ndarray, k: float = 3.0) -> np.ndarray:
     """Winsorize data based on robust sigma."""
-    s = robust_sigma(x)
-    med = np.median(x)
-    return np.clip(x, med - k * s, med + k * s)
+    med, s = robust_stats(x)
+    return clip_with_stats(x, med, s, k)
 
-def normalize_weights(w: np.ndarray) -> np.ndarray:
-    """Normalize weights to mean 1.0."""
+def normalize_weights(w: np.ndarray, clip_percentile: float = 0.99) -> np.ndarray:
+    """
+    Normalize weights to mean 1.0 with robust clipping to prevent long tails.
+    1. Clip at high percentile to remove extreme outliers.
+    2. Normalize to mean 1.0.
+    """
     w = np.asarray(w, dtype=np.float64)
+    # Clip extreme weights to prevent optimizer instability
+    if clip_percentile < 1.0:
+        limit = np.quantile(w, clip_percentile)
+        w = np.minimum(w, limit)
+
     m = np.mean(w)
     return w if (not np.isfinite(m) or m <= 0) else w / m
 
@@ -135,7 +161,8 @@ def fit_bayes_teacher_oof(
     sample_weight: np.ndarray | None = None,
     n_splits: int = 5,
     winsor_k: float = 4.0,
-    is_classifier: bool = False
+    is_classifier: bool = False,
+    index: pd.Index | None = None
 ) -> TeacherOOF:
     """
     OOF BayesianRidge teacher for:
@@ -148,20 +175,29 @@ def fit_bayes_teacher_oof(
     scaler = RobustScaler()
     Xs = scaler.fit_transform(X).astype(np.float64, copy=False)
 
-    tscv = TimeSeriesSplit(n_splits=n_splits)
+    # Use PurgedKFold if available and index is provided/compatible
+    if PURGED_KFOLD_AVAILABLE and index is not None:
+        cv = PurgedKFoldTime(n_splits=n_splits)
+        splitter = cv.split(pd.DataFrame(Xs, index=index))
+    else:
+        cv = TimeSeriesSplit(n_splits=n_splits)
+        splitter = cv.split(Xs)
+
     mu_oof = np.full(Xs.shape[0], np.nan, dtype=np.float64)
     std_oof = np.full(Xs.shape[0], np.nan, dtype=np.float64)
 
     w = None if sample_weight is None else np.asarray(sample_weight, dtype=np.float64)
 
     # Walk-forward CV
-    for tr, va in tscv.split(Xs):
+    for tr, va in splitter:
         X_tr, X_va = Xs[tr], Xs[va]
         y_tr = y[tr].astype(np.float64)
 
         # If regression on heavy-tailed targets, winsorize for the teacher
         if not is_classifier:
-            y_tr = winsorize(y_tr, k=winsor_k)
+            # Winsorize using stats from training fold only (no leakage)
+            med_tr, s_tr = robust_stats(y_tr)
+            y_tr = clip_with_stats(y_tr, med_tr, s_tr, k=winsor_k)
 
         model = BayesianRidge()
         if w is None:
@@ -248,35 +284,59 @@ def train_chaser_student(
     w_chase = uncertainty_to_chaser_weight(teacher.std_oof, clip=(0.5, 2.0))
     w_final = combine_weights(base_weight, w_chase)
 
+    # Robust normalization of final weights (clip + mean=1.0)
+    w_final = normalize_weights(w_final, clip_percentile=0.99)
+
+    init_score = None
+    baseline = None
+
     if mode == "regression":
         # Residual target
+        # Calculate raw residuals
         r = y.astype(np.float64) - teacher.mu_oof
-        r = winsorize(r, k=winsor_resid_k)
-        target = r
-        init_score = None # For models that support it
-        baseline = None   # For CatBoost
+
+        # --- Internal Validation Split ---
+        n_samples = len(X)
+        split_idx = int(n_samples * 0.85)
+
+        r_train = r[:split_idx]
+        r_valid = r[split_idx:]
+
+        # Calculate robust stats on TRAINING split only
+        med_train, s_train = robust_stats(r_train)
+
+        # Apply winsorization using training stats
+        r_train_wins = clip_with_stats(r_train, med_train, s_train, k=winsor_resid_k)
+        r_valid_wins = clip_with_stats(r_valid, med_train, s_train, k=winsor_resid_k)
+
+        X_train, X_valid = X[:split_idx], X[split_idx:]
+        y_train, y_valid = r_train_wins, r_valid_wins
+        w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
+
     elif mode == "classification":
         if teacher.margin_oof is None:
             raise ValueError("For classification mode, teacher.margin_oof must be available.")
         target = y.astype(np.int32)
         init_score = teacher.margin_oof.astype(np.float64)
         baseline = teacher.margin_oof.astype(np.float64)
+
+        n_samples = len(X)
+        split_idx = int(n_samples * 0.85)
+
+        X_train, X_valid = X[:split_idx], X[split_idx:]
+        y_train, y_valid = target[:split_idx], target[split_idx:]
+        w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
     else:
         raise ValueError("mode must be 'regression' or 'classification'.")
-
-    # --- Internal Validation Split for Early Stopping ---
-    # We use the last 15% of data as validation set to enable early stopping
-    n_samples = len(X)
-    split_idx = int(n_samples * 0.85)
-
-    X_train, X_valid = X[:split_idx], X[split_idx:]
-    y_train, y_valid = target[:split_idx], target[split_idx:]
-    w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
 
     init_score_train = init_score[:split_idx] if init_score is not None else None
     init_score_valid = init_score[split_idx:] if init_score is not None else None
     baseline_train = baseline[:split_idx] if baseline is not None else None
     baseline_valid = baseline[split_idx:] if baseline is not None else None
+
+    # Reconstruct full target for models trained on full dataset (like ET)
+    # y_train and y_valid are already winsorized/processed
+    target_full = np.concatenate([y_train, y_valid])
 
     # --- XGBoost ---
     if model_type == "xgb":
@@ -466,7 +526,7 @@ def train_chaser_student(
             )
             if model_params:
                 et_model.set_params(**model_params)
-            et_model.fit(X, target, sample_weight=w_final)
+            et_model.fit(X, target_full, sample_weight=w_final)
             return {"model": et_model, "mode": mode, "type": "et"}
 
     else:
@@ -674,7 +734,8 @@ class Layer25Chaser:
 
             # 1. Teacher
             teacher = fit_bayes_teacher_oof(
-                X_np, y_np, sample_weight=weights, n_splits=5, is_classifier=(self.mode == "classification")
+                X_np, y_np, sample_weight=weights, n_splits=5, is_classifier=(self.mode == "classification"),
+                index=X.index # Pass index for PurgedKFold
             )
             
             if self.verbose:

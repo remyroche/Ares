@@ -237,7 +237,9 @@ class AdaptiveEventDrivenLabeling:
         """
         try:
             if not self.resonance_analysis:
-                return {'error': 'No resonance analysis available'}
+                if self.verbose:
+                    tprint_warning("   ⚠️ No resonance analysis available for harmonic entries")
+                return {'error': 'No resonance analysis available', 'entry_quality': 0.0}
             
             if self.verbose:
                 tprint_info("🎯 Identifying harmonic entries...")
@@ -322,7 +324,9 @@ class AdaptiveEventDrivenLabeling:
             
             return entry_quality
             
-        except Exception:
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"      ⚠️ Entry quality calculation failed: {e}")
             return 0.0
     
     def get_structural_breakouts(

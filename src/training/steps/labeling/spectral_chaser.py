@@ -166,6 +166,19 @@ class SpectralChaser:
 
             X_alpha = X_alpha.fillna(0)  # Handle NaN values
             
+            # Robustness check: Check for constant features
+            if self.verbose:
+                std_features = X_alpha.std()
+                zero_var_features = std_features[std_features < 1e-9].index.tolist()
+                if zero_var_features:
+                     tprint_warning(f"      ⚠️ Found {len(zero_var_features)} features with near-zero variance")
+                     if len(zero_var_features) < 5:
+                         tprint_warning(f"         {zero_var_features}")
+
+            # Robustness check: Check for constant target
+            if self.verbose and y_residuals.std() < 1e-9:
+                 tprint_warning("      ⚠️ Target residuals are effectively constant! Models may fail to split.")
+
             # Store feature names
             self.feature_names = X_alpha.columns.tolist()
             
@@ -519,17 +532,28 @@ class SpectralChaser:
                 if n_models > 0:
                     importance_scores = {k: v/n_models for k, v in importance_scores.items()}
                 
+                if not importance_scores or all(v == 0 for v in importance_scores.values()):
+                    if self.verbose:
+                         tprint_warning("      ⚠️ Feature importance is all zero (ensemble). Possible causes: constant features/target.")
+
                 return importance_scores
             
             elif model_type in self.models:
                 model = self.models[model_type]
                 if hasattr(model, 'feature_importances_'):
                     importance = model.feature_importances_
-                    return dict(zip(self.feature_names, importance))
+                    scores = dict(zip(self.feature_names, importance))
+
+                    if not scores or all(v == 0 for v in scores.values()):
+                         if self.verbose:
+                             tprint_warning(f"      ⚠️ Feature importance is all zero ({model_type}).")
+                    return scores
             
             return {}
             
         except Exception as e:
+            if self.verbose:
+                tprint_warning(f"      ⚠️ Feature importance retrieval failed: {e}")
             return {}
 
 

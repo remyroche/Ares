@@ -29,7 +29,8 @@ from src.utils.numba_funcs import (
     _numba_rolling_mean,
     _numba_rolling_std,
     _numba_rolling_sum,
-    _numba_rolling_correlation
+    _numba_rolling_correlation,
+    _numba_calculate_continuous_weight
 )
 from src.utils.labeling_optimized import (
     triple_barrier_labels_numba,
@@ -2883,31 +2884,20 @@ def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: floa
 def calculate_continuous_weight(z_score_series: Union[pd.Series, np.ndarray], gamma: float = 2.0, beta: float = 1.0, quantile_threshold: float = 0.0) -> Union[pd.Series, np.ndarray]:
     """
     Calculate continuous sample weights based on Quantile Rank and Z-score Sigmoid.
-    Formula: w = (QuantileRank ** gamma) * Sigmoid(beta * Z_score) if QuantileRank > quantile_threshold else 0
+    Optimized version using Numba.
     """
-    if isinstance(z_score_series, np.ndarray):
-        s = pd.Series(z_score_series)
-        is_array = True
+    if isinstance(z_score_series, pd.Series):
+        vals = z_score_series.values
+        is_series = True
+        index = z_score_series.index
     else:
-        s = z_score_series
-        is_array = False
+        vals = z_score_series
+        is_series = False
 
-    # 1. Quantile Rank [0, 1]
-    # Use absolute value for ranking magnitude
-    q_rank = s.abs().rank(pct=True).fillna(0.5)
+    weights = _numba_calculate_continuous_weight(vals, float(gamma), float(beta), float(quantile_threshold))
 
-    # 2. Sigmoid of Z-score
-    # sigmoid(x) = 1 / (1 + exp(-x))
-    # Center sigmoid at 2.0 sigma (soft threshold)
-    z_abs = s.abs()
-    sigmoid = 1.0 / (1.0 + np.exp(-beta * (z_abs - 2.0)))
-
-    # 3. Combine with quantile threshold filter
-    weights = (q_rank ** gamma) * sigmoid
-    weights = weights.where(q_rank > quantile_threshold, 0.0)
-
-    if is_array:
-        return weights.values
+    if is_series:
+        return pd.Series(weights, index=index)
     return weights
 
 def two_tier_weight(z, tier1_min=3.0, tier2_min=2.7, tier2_max=3.0, alpha=1.5, 

@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 from src.utils.tprint import tprint_warning
 
@@ -936,3 +937,71 @@ def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.
                 out[i] = cov / np.sqrt(varx * vary)
 
     return out
+
+
+@jit(nopython=True)
+def _numba_calculate_continuous_weight(vals, gamma, beta, quantile_threshold):
+    """
+    Calculate continuous sample weights using Numba.
+    Optimized replacement for calculate_continuous_weight.
+    """
+    n = len(vals)
+    weights = np.zeros(n, dtype=np.float64)
+
+    # Work on absolute values
+    abs_vals = np.abs(vals)
+
+    # Sort indices
+    # argsort handles NaNs by putting them at the end
+    sorted_idxs = np.argsort(abs_vals)
+
+    # Count valid entries (non-NaN)
+    valid_count = 0
+    for i in range(n):
+        if not np.isnan(abs_vals[i]):
+            valid_count += 1
+
+    # Process valid entries
+    i = 0
+    while i < valid_count:
+        start = i
+        val = abs_vals[sorted_idxs[i]]
+
+        # Find end of tie group
+        end = i + 1
+        while end < valid_count:
+            if abs_vals[sorted_idxs[end]] != val:
+                break
+            end += 1
+
+        # Average rank for the group
+        avg_rank = (start + 1 + end) / 2.0
+        pct_rank = avg_rank / valid_count
+
+        # Apply to all elements in the tie group
+        for k in range(start, end):
+            orig_idx = sorted_idxs[k]
+            # Re-fetch value to compute sigmoid (it is 'val')
+
+            # Sigmoid: 1 / (1 + exp(-beta * (val - 2.0)))
+            # Use math.exp for scalar speed
+            z = val
+            sig = 1.0 / (1.0 + math.exp(-beta * (z - 2.0)))
+
+            if pct_rank > quantile_threshold:
+                weights[orig_idx] = (pct_rank ** gamma) * sig
+            else:
+                weights[orig_idx] = 0.0
+
+        i = end
+
+    # NaNs (indices >= valid_count) remain 0.0 as initialized
+    # OR should they be NaN?
+    # Original behavior: NaNs resulted in NaN weight?
+    # (0.5 ** gamma) * NaN -> NaN.
+    # So if we want to match exactly, we should set them to NaN.
+    for k in range(valid_count, n):
+        orig_idx = sorted_idxs[k]
+        weights[orig_idx] = np.nan
+
+    return weights

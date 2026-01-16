@@ -172,9 +172,12 @@ class SimpleMultiModelRiskEngine:
         self.huber_feature_columns = None
         self.is_fitted = False
     
-    def _compute_financial_weights(self, abs_returns: pd.Series) -> pd.Series:
+    def _compute_financial_weights(self, abs_returns: pd.Series, volatility: pd.Series) -> pd.Series:
         # Use Numba-optimized implementation
-        weights_array = compute_financial_weights_numba(abs_returns.values.astype(np.float64))
+        weights_array = compute_financial_weights_numba(
+            abs_returns.values.astype(np.float64),
+            volatility.values.astype(np.float64)
+        )
         return pd.Series(weights_array, index=abs_returns.index)
     
     def _extract_layer3_prob_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -274,7 +277,14 @@ class SimpleMultiModelRiskEngine:
         # Downcast to float32
         X_full = downcast_float(X_full)
 
-        weights = self._compute_financial_weights(abs_returns)
+        # Extract volatility for weighting
+        if 'volatility' in market_features.columns:
+            volatility = market_features['volatility']
+        else:
+            tprint_warning("⚠️ Volatility not found in market_features. Using unweighted fallback (1.0).")
+            volatility = pd.Series(np.ones(len(abs_returns)), index=abs_returns.index)
+
+        weights = self._compute_financial_weights(abs_returns, volatility)
         
         tprint_info(f"📊 Processing Huber Teacher on {len(X_full.columns)} potential features...")
 
@@ -667,6 +677,10 @@ class MetaLearnerFeatures:
         returns = np.zeros_like(prices)
         returns[1:] = np.diff(np.log(prices + 1e-9))
 
+        # Volatility (for weighting)
+        vol_window = self.config.get('volatility_window', 20)
+        volatility = pd.Series(returns).rolling(window=vol_window, min_periods=1).std().fillna(0.0).values
+
         # SADF Scores (Numba Optimized)
         sadf_scores = rolling_sadf_score_numba(returns, self.window_sadf)
 
@@ -682,6 +696,7 @@ class MetaLearnerFeatures:
         cusum_norm = cusum_scores / (max_cusum + 1e-9) if max_cusum > 0 else cusum_scores
 
         features = pd.DataFrame(index=df.index)
+        features['volatility'] = volatility
         features['sadf_score_norm'] = sadf_norm
         features['cusum_score_norm'] = cusum_norm
 

@@ -250,7 +250,7 @@ class SimpleMultiModelRiskEngine:
                 feats[col] = df[col]
         
         # Entropy OHLCV features
-        entropy_ohlcv_cols = ['entropy_open', 'entropy_high', 'entropy_low', 'entropy_close', 'entropy_volume']
+        entropy_ohlcv_cols = ['entropy_close', 'entropy_volume']
         for col in entropy_ohlcv_cols:
             if col in df.columns:
                 feats[col] = df[col]
@@ -287,14 +287,27 @@ class SimpleMultiModelRiskEngine:
         )
 
         self.selected_features = huber_outputs['selected_features']
-        self.huber_model = huber_outputs['huber_model']
+        self.huber_model = huber_outputs.get('huber_teacher', huber_outputs.get('huber_model'))
         self.huber_scaler = huber_outputs['scaler']
         self.huber_feature_columns = X_full.columns
 
         X_pruned = X_full[self.selected_features]
         warm_start_train = huber_outputs['warm_start']['train']
 
-        monotonic_cst_tuple = huber_outputs['monotonic_constraints']
+        # Extract monotonic constraints (handle dict return from updated Huber)
+        if isinstance(huber_outputs['monotonic_constraints'], dict):
+             if 'monotonic_constraints_details' in huber_outputs:
+                 # Use the pre-calculated selected list (aligned with selected_features)
+                 monotonic_cst_tuple = huber_outputs['monotonic_constraints_details']['lightgbm_selected']
+             else:
+                 # Fallback: reconstruct
+                 monotonic_cst_tuple = [huber_outputs['monotonic_constraints'][f] for f in self.selected_features]
+        else:
+             monotonic_cst_tuple = huber_outputs['monotonic_constraints']
+
+        # Ensure tuple format
+        monotonic_cst_tuple = tuple(int(x) for x in monotonic_cst_tuple)
+
         interaction_cst = huber_outputs['interaction_constraints']
 
         # DEBUG: Inspect constraints for XGBoost issue
@@ -618,7 +631,7 @@ def integrate_entropy_bars_into_layer4(
         features_to_merge = entropy_features.copy()
         
         # Add entropy bar OHLCV data as additional columns
-        entropy_ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'n_minutes', 'entropy_contribution']
+        entropy_ohlcv_cols = ['close', 'volume', 'n_minutes', 'entropy_contribution']
         for col in entropy_ohlcv_cols:
             if col in entropy_bars.columns:
                  features_to_merge[f'entropy_{col}'] = entropy_bars[col]
@@ -688,6 +701,101 @@ class MetaLearnerFeatures:
         return features
 
 
+class ModelPerformanceFeatures:
+    """
+    Generates features based on the historical performance of the base models.
+    Includes 'Skill' metrics and 'Risk-off' pressure indicators.
+    """
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = config or {}
+        # Configuration for Skill Feature
+        self.skill_window = self.config.get('perf_skill_window', 100)  # Heavy smoothing
+        self.skill_embargo = self.config.get('perf_skill_embargo', 2)  # Strict embargo
+
+        # Configuration for Risk-off Feature
+        self.risk_window = self.config.get('perf_risk_window', 50)
+        self.risk_embargo = self.config.get('perf_risk_embargo', 2)
+        self.dd_scaling = self.config.get('perf_dd_scaling', 0.1) # 'c' in tanh(dd/c)
+
+    def generate(self, df: pd.DataFrame, pred_col: str, target_col: str) -> pd.DataFrame:
+        if pred_col not in df.columns or target_col not in df.columns:
+            return pd.DataFrame(index=df.index)
+
+        preds = df[pred_col]
+        targets = df[target_col]
+
+        # 1. Skill Feature Components
+        # Directional prediction: Long if p > 0.5, Short if p < 0.5
+        pred_dir = np.sign(preds - 0.5)
+
+        # Realized Strategy Return
+        strat_ret = pred_dir * targets
+
+        # Hit Rate (Directional Accuracy)
+        # +1 if signs match, 0 if not
+        hits = ((pred_dir * np.sign(targets)) > 0).astype(float)
+
+        # Rolling IC (Correlation between preds and targets)
+        # Pearson as proxy for Rank IC for efficiency
+        rolling_ic = preds.rolling(window=self.skill_window).corr(targets).fillna(0)
+
+        # Apply Embargo (Shift) BEFORE smoothing to prevent leakage
+        strat_ret_shifted = strat_ret.shift(self.skill_embargo)
+        hits_shifted = hits.shift(self.skill_embargo)
+        rolling_ic_shifted = rolling_ic.shift(self.skill_embargo)
+
+        # Smooth
+        ewma_ret = strat_ret_shifted.ewm(span=self.skill_window, adjust=False).mean()
+        ewma_hit = hits_shifted.ewm(span=self.skill_window, adjust=False).mean()
+        ewma_ic = rolling_ic_shifted.ewm(span=self.skill_window, adjust=False).mean()
+
+        # Combined Skill Feature
+        skill_raw = ewma_ret * ewma_hit * ewma_ic
+        # Apply scaling to make the feature range more useful before tanh?
+        # But tanh is explicitly requested for bounding.
+        # Assuming product is small, tanh will be near linear in 0.
+        skill_score = np.tanh(skill_raw * 100.0)
+
+        # 2. Risk-off Pressure Components
+        # Rolling Drawdown of the strategy
+        cum_ret = strat_ret.cumsum().fillna(0)
+        high_water_mark = cum_ret.expanding().max()
+        drawdown = high_water_mark - cum_ret # Positive value
+
+        # Residual Magnitude (Model Surprise)
+        # Using simple absolute target value weighted by prediction error proxy?
+        # Or |Target - (Pred-0.5)*Scale|?
+        # Using |Target| as volatility proxy when model is wrong?
+        # Let's use |Target - DirectionalPred|.
+        # If Pred > 0.5 (Long), Target > 0 -> Error small. Target < 0 -> Error large.
+        # Residual = |Target - DirectionalPred * (Target)| is 0 if correct sign... no.
+        # Let's use a simpler proxy: |Target| if Miss, 0 if Hit?
+        # Or just |Target - ScaledPred|.
+        # Given "Recent residual magnitude", we'll use |Target - (Pred-0.5)| assuming target is approx same scale?
+        # No, target is return, Pred is prob.
+        # We'll use |Target| (Realized Volatility) as the magnitude base.
+        residual = np.abs(targets)
+
+        # Shift
+        drawdown_shifted = drawdown.shift(self.risk_embargo)
+        residual_shifted = residual.shift(self.risk_embargo)
+
+        # Bounded Drawdown State
+        dd_state = np.tanh(drawdown_shifted / self.dd_scaling)
+
+        # Smooth Residual
+        ewma_resid = residual_shifted.ewm(span=self.risk_window, adjust=False).mean()
+
+        # Combined Risk-off Feature
+        risk_off_pressure = dd_state * ewma_resid
+
+        features = pd.DataFrame(index=df.index)
+        features['perf_skill_score'] = skill_score.fillna(0)
+        features['perf_risk_off_pressure'] = risk_off_pressure.fillna(0)
+
+        return features
+
+
 def train_layer4_simple_multimodel(
     oof_df: pd.DataFrame,
     market_data: pd.DataFrame,
@@ -721,6 +829,21 @@ def train_layer4_simple_multimodel(
         raw_price_col='close'
     )
     
+    # Generate model performance features
+    perf_generator = ModelPerformanceFeatures(config=config)
+    # Prefer 'meta_prob' (L3 output) for performance tracking
+    pred_col = 'meta_prob' if 'meta_prob' in oof_df.columns else None
+
+    if pred_col:
+        perf_features = perf_generator.generate(
+            df=oof_df,
+            pred_col=pred_col,
+            target_col=target_col
+        )
+        market_features = pd.concat([market_features, perf_features], axis=1)
+    else:
+        tprint_warning("⚠️ Layer 4: 'meta_prob' not found, skipping performance features.")
+
     y_binary = (oof_df[target_col] > 0).astype(int)
     abs_returns = oof_df[target_col].abs()
     

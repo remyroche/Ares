@@ -6608,11 +6608,42 @@ class LabelBasedLayer2(BaseStep):
 
         return events_df
 
-    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None):
+    def _generate_causal_target(self, price_series: pd.Series) -> pd.Series:
+        """
+        Generate continuous causal target (Innovation) via HAR(3) + Studentization.
+        Ref: De Prado, Advances in Financial Machine Learning.
+        """
+        # 1. Log Returns
+        ret = np.log(price_series).diff().fillna(0)
+
+        # 2. HAR Lags (1, 5, 22)
+        df_har = pd.DataFrame({'ret': ret})
+        df_har['lag1'] = ret.shift(1)
+        df_har['lag5'] = ret.rolling(5).mean().shift(1)
+        df_har['lag22'] = ret.rolling(22).mean().shift(1)
+        df_har = df_har.dropna()
+
+        if len(df_har) < 100:
+            return ret # Fallback
+
+        from sklearn.linear_model import Ridge
+        model = Ridge(alpha=1.0)
+        model.fit(df_har[['lag1', 'lag5', 'lag22']], df_har['ret'])
+        pred = model.predict(df_har[['lag1', 'lag5', 'lag22']])
+        residuals = df_har['ret'] - pred
+
+        # 4. Studentize (GARCH-proxy: Rolling Std)
+        std = residuals.rolling(60).std()
+        y_causal = residuals / (std + 1e-9)
+
+        return y_causal.reindex(price_series.index).fillna(0)
+
+    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None, y_causal_train=None, y_causal_val=None):
         """
         Run a model race to find the best base model for this geometry.
 
         UPDATED FRAMEWORK (Huber):
+        - Continuous Causal Target (IC)
         - Huber feature pruning
         - Huber monotonic constraints & warm start
         - Integration of sequential bootstrap weights
@@ -6862,7 +6893,16 @@ class LabelBasedLayer2(BaseStep):
                 # Metrics
                 auc_score = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
                 pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
-                ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
+
+                # IC against causal target (if available) or binary target
+                y_ic_target = y_causal_val if y_causal_val is not None else y_val
+                # Align if needed (y_causal_val is Series, preds is array)
+                if isinstance(y_ic_target, pd.Series):
+                    y_ic_vals = y_ic_target.values
+                else:
+                    y_ic_vals = y_ic_target
+
+                ic, _ = spearmanr(y_ic_vals, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
                 # Combined score (sort by ROC-AUC)
                 race_results[name] = {
@@ -8594,6 +8634,13 @@ class LabelBasedLayer2(BaseStep):
         else:
             tprint_info("   🌍 Global Mode: No regime tags found")
     
+        # 0. Generate Continuous Causal Target (Innovation)
+        # Done once globally to ensure consistency
+        y_causal = None
+        if 'close' in df.columns:
+            y_causal = self._generate_causal_target(df['close'])
+            tprint_info("   🎯 Generated global causal target (HAR-Residualized Innovation)")
+
         # 1. Generate Global Candidates (Definitions & Events)
         # We generate candidates globally to ensure continuity of indicators,
         # then evaluate them conditionally per regime.
@@ -8744,6 +8791,7 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   🧾 Regime filter rejections ({regime}): {dict(regime_rejections)}")
 
             # 3. Select Best via Race/Probe (Per Regime) - PARALLELIZED
+            tprint_info("[Tier 1] Racing top candidates...")
             tprint_info(f"   🚀 Selecting family experts via Parallel Race/Probe fits...")
             
             # --- FUNNEL METRICS (Regime-Specific) ---
@@ -8768,7 +8816,7 @@ class LabelBasedLayer2(BaseStep):
                 if not cands: return None
                 try:
                     # _select_best_geometry_via_race includes the Ridge Probing phase
-                    winners = self._select_best_geometry_via_race(cands, df, top_k=10, user_weights=user_weights)
+                    winners = self._select_best_geometry_via_race(cands, df, top_k=10, user_weights=user_weights, y_causal=y_causal)
                     return fam, winners
                 except Exception as e:
                     tprint_error(f"      ❌ Family selection failed for {fam}: {e}")
@@ -8848,6 +8896,7 @@ class LabelBasedLayer2(BaseStep):
             
             # Race the elite representatives (~5-10 total)
             elite_representatives = list(family_winners.values())
+            tprint_info("[Tier 2] Assessing remaining candidates...")
             tprint_info(f"   🏁 Racing {len(elite_representatives)} family leaders (Selection from Top {len(production_geometries)} Finalists)...")
             
             for gt in elite_representatives:
@@ -8859,6 +8908,14 @@ class LabelBasedLayer2(BaseStep):
                             race_payload["X_tr"], race_payload["y_tr"]
                         )
                     try:
+                        # Prepare causal targets for race if available
+                        y_causal_tr_race = None
+                        y_causal_val_race = None
+                        if y_causal is not None:
+                            # Align to training/validation sets using index from payload
+                            y_causal_tr_race = y_causal.reindex(race_payload["X_tr"].index).fillna(0)
+                            y_causal_val_race = y_causal.reindex(race_payload["X_val"].index).fillna(0)
+
                         # Full Architectural Race (Huber + Boosters + ExtraTrees)
                         # We use the payload from the Ridge Probe phase for consistency
                         best_model, best_name, race_results = self._run_model_race(
@@ -8867,7 +8924,9 @@ class LabelBasedLayer2(BaseStep):
                             race_payload["X_val"],
                             race_payload["y_val"],
                             race_payload["sample_weights"],
-                            environment_masks
+                            environment_masks,
+                            y_causal_train=y_causal_tr_race,
+                            y_causal_val=y_causal_val_race
                         )
                         gt.model_params = {"race_winner": best_name}
                         gt.race_score = race_results.get(best_name, {}).get("auc", 0.0)

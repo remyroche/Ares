@@ -735,8 +735,8 @@ class ResonanceDetector:
                                 corr, _ = pearsonr(resonance_i, resonance_j)
                             
                             rsv_matrix[i, j] = abs(corr)
-                            # Track resonance magnitude (using mean of both signals)
-                            avg_res = (np.mean(resonance_i) + np.mean(resonance_j)) / 2.0
+                            # Track resonance magnitude (using mean of absolute signals to avoid sign cancellation)
+                            avg_res = (np.mean(np.abs(resonance_i)) + np.mean(np.abs(resonance_j))) / 2.0
                             total_resonance += avg_res
                             pair_count += 1
                         except Exception:

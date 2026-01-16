@@ -4958,6 +4958,172 @@ class LabelBasedLayer2(BaseStep):
         payload = json.dumps(sanitized, sort_keys=True, default=str)
         return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
+    def _evaluate_baselines(self, df: pd.DataFrame, folds: List[Tuple[int, int]], production_geometries: List[GeometryTrial]) -> Dict[str, Any]:
+        """
+        Evaluate Baseline models (A, B, C) with full metrics (AUC, PnL, Sharpe).
+
+        Baseline A: Random (50/50) / Constant (1)
+        Baseline B: One-feature monotone model (Logistic Regression on Momentum/Vol)
+        Baseline C: Teacher only (HuberRegressor) on FULL features
+        """
+        tprint_info("📉 Evaluating Baseline Models (A, B, C)...")
+
+        baseline_results = {
+            'A_Random': {'preds': [], 'outcomes': []},
+            'A_Constant': {'preds': [], 'outcomes': []},
+            'B_Linear': {'preds': [], 'outcomes': []},
+            'C_Teacher': {'preds': [], 'outcomes': []}
+        }
+
+        if not production_geometries:
+            return {}
+
+        # Use geometry with highest score as reference
+        best_geo = max(production_geometries, key=lambda g: getattr(g, 'final_score', 0))
+        tprint_info(f"   🎯 Using {best_geo.family} ({best_geo.uuid[:8]}) as reference for baselines")
+
+        # Precompute simple features for Baseline B
+        if self._geometry_base_features is None or len(self._geometry_base_features) != len(df):
+            self._precompute_geometry_base_features(df)
+
+        X_simple = self._geometry_base_features[['roll20_mean', 'roll20_std']].copy()
+        X_simple = X_simple.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        for i, (test_start, test_end) in enumerate(folds):
+            # Split
+            train_mask = np.ones(len(df), dtype=bool)
+            train_mask[test_start:test_end] = False
+            # Purging (120 bars)
+            p_start = max(0, test_start - 120)
+            p_end = min(len(df), test_end + 120)
+            train_mask[p_start:p_end] = False
+
+            # Events
+            gen_params = self._extract_gen_params(best_geo)
+            global_events = self._get_global_events(df, best_geo.family, gen_params)
+            if global_events is None: continue
+
+            # Align events
+            train_events = global_events[global_events.isin(df.index[train_mask])]
+            test_indices = df.index[test_start:test_end]
+            # Timezone handling
+            try:
+                if global_events.tz is not None and test_indices.tz is None:
+                    test_indices = test_indices.tz_localize(global_events.tz)
+                elif global_events.tz is None and test_indices.tz is not None:
+                    test_indices = test_indices.tz_localize(None)
+            except: pass
+
+            test_events = global_events[(global_events >= test_indices[0]) & (global_events <= test_indices[-1])]
+
+            if len(train_events) < 10 or len(test_events) < 1: continue
+
+            # Labels & Outcomes
+            # Train
+            train_labels, _, _, _, _, _ = self._compute_dominance_labels(
+                df, pd.DataFrame(index=train_events), **best_geo.params
+            )
+            # Test
+            test_labels, _, test_returns, _, _, _ = self._compute_dominance_labels(
+                df, pd.DataFrame(index=test_events), **best_geo.params
+            )
+
+            # Filter Valid Train
+            valid_train = train_labels.notna()
+            y_train = train_labels[valid_train]
+            train_events_valid = y_train.index
+
+            # Filter Valid Test
+            valid_test = test_labels.notna()
+            y_test = test_labels[valid_test]
+            outcomes_test = test_returns[valid_test]
+            test_events_valid = y_test.index
+
+            if len(y_train) < 10 or len(y_test) == 0: continue
+
+            # Features
+            # Simple (Baseline B)
+            X_train_simple = X_simple.reindex(train_events_valid).fillna(0)
+            X_test_simple = X_simple.reindex(test_events_valid).fillna(0)
+
+            # Full (Baseline C) - Expensive but correct
+            # Use global features cache
+            X_all = self._get_global_features(df)
+            X_train_full = self._align_features_efficiently(X_all, train_events_valid).fillna(0)
+            X_test_full = self._align_features_efficiently(X_all, test_events_valid).fillna(0)
+
+            # --- Predictions ---
+
+            # A_Random
+            preds_rand = np.random.uniform(0, 1, len(y_test))
+            baseline_results['A_Random']['preds'].extend(preds_rand)
+            baseline_results['A_Random']['outcomes'].extend(zip(y_test.values, outcomes_test.values))
+
+            # A_Constant (1.0)
+            preds_const = np.ones(len(y_test))
+            baseline_results['A_Constant']['preds'].extend(preds_const)
+            baseline_results['A_Constant']['outcomes'].extend(zip(y_test.values, outcomes_test.values))
+
+            # B_Linear (Logistic)
+            try:
+                clf_b = LogisticRegression(class_weight='balanced', C=0.01, solver='lbfgs')
+                clf_b.fit(X_train_simple, (y_train > 0.5).astype(int))
+                preds_b = clf_b.predict_proba(X_test_simple)[:, 1]
+                baseline_results['B_Linear']['preds'].extend(preds_b)
+                baseline_results['B_Linear']['outcomes'].extend(zip(y_test.values, outcomes_test.values))
+            except Exception as e:
+                tprint_warning(f"Baseline B failed: {e}")
+
+            # C_Teacher (Huber)
+            try:
+                clf_c = HuberRegressor(epsilon=1.35)
+                clf_c.fit(X_train_full, y_train)
+                preds_c = clf_c.predict(X_test_full)
+                preds_c = np.clip(preds_c, 0, 1)
+                baseline_results['C_Teacher']['preds'].extend(preds_c)
+                baseline_results['C_Teacher']['outcomes'].extend(zip(y_test.values, outcomes_test.values))
+            except Exception as e:
+                tprint_warning(f"Baseline C failed: {e}")
+
+        # Compute Metrics
+        final_metrics = {}
+        for name, res in baseline_results.items():
+            if not res['preds']:
+                continue
+
+            preds = np.array(res['preds'])
+            outcomes = np.array(res['outcomes']) # (n, 2) -> col 0: label, col 1: return
+            labels = outcomes[:, 0]
+            returns = outcomes[:, 1]
+
+            # AUC
+            try:
+                auc = roc_auc_score(labels, preds)
+            except:
+                auc = 0.5
+
+            # PnL / Sharpe (Assume trade if prob > 0.5)
+            trades = (preds > 0.5).astype(float)
+            trade_returns = trades * returns
+            # Replace NaNs (if any) with 0
+            trade_returns = np.nan_to_num(trade_returns)
+
+            total_pnl = np.sum(trade_returns)
+            avg_ret = np.mean(trade_returns)
+            std_ret = np.std(trade_returns)
+            sharpe = avg_ret / (std_ret + 1e-9) * np.sqrt(96*252) # Annualized approx (15m bars)
+
+            final_metrics[name] = {
+                'auc': auc,
+                'sharpe': sharpe,
+                'total_pnl': total_pnl,
+                'n_samples': len(labels),
+                'n_trades': np.sum(trades)
+            }
+
+        tprint_success(f"✅ Baseline Evaluation: {final_metrics}")
+        return final_metrics
+
     async def run(self, input_data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, Any]:
         """
         Execute the Layer 2 pipeline (causal framework only).
@@ -9617,12 +9783,16 @@ class LabelBasedLayer2(BaseStep):
              # Given user request "Fast fail", raising error is appropriate.
              raise RuntimeError("Layer 2 OOF failed: No models trained. Check event generation and filtering.")
 
+        # Evaluate Baselines
+        baseline_metrics = self._evaluate_baselines(df, folds, production_geometries)
+
         # Generate ML Report
         try:
              self._generate_layer2_report(
                  production_geometries, individual_geos, 
                  self._all_tree_stats, datetime.now().strftime("%Y%m%d_%H%M%S"),
-                 candidate_metrics=self._all_candidate_assessments
+                 candidate_metrics=self._all_candidate_assessments,
+                 baseline_metrics=baseline_metrics
              )
              
              # CLEAR ASSESSMENT LOGS AFTER REPORTING to free memory
@@ -9652,11 +9822,12 @@ class LabelBasedLayer2(BaseStep):
             "oof_returns": oof_returns,
             "weights": oof_weights,
             "tree_diagnostics": self._all_tree_stats,
-            "individual_geos": individual_geos
+            "individual_geos": individual_geos,
+            "baseline_metrics": baseline_metrics
         }
     
-    def _generate_layer2_report(self, geometries, predictions, tree_stats, timestamp, candidate_metrics=None):
-        """Generate detailed Layer 2 report with causal + probe diagnostics."""
+    def _generate_layer2_report(self, geometries, predictions, tree_stats, timestamp, candidate_metrics=None, baseline_metrics=None):
+        """Generate detailed Layer 2 report with causal + probe diagnostics and baseline comparisons."""
         tprint_info(" Generating Layer 2 ML Report...")
 
         report_path = f"outcomes/Layer2_ML_report_{timestamp}.md"
@@ -9765,6 +9936,16 @@ class LabelBasedLayer2(BaseStep):
 
         with open(report_path, "w") as f:
             f.write(f"# Layer 2 ML Report ({timestamp})\n\n")
+
+            if baseline_metrics:
+                f.write("## Baseline Comparison\n")
+                f.write("| Model | AUC | Sharpe | Total PnL | Trades | N Samples |\n")
+                f.write("| --- | --- | --- | --- | --- | --- |\n")
+                for name, metrics in baseline_metrics.items():
+                    f.write(f"| {name} | {metrics.get('auc', 0.0):.4f} | {metrics.get('sharpe', 0.0):.2f} | "
+                            f"{metrics.get('total_pnl', 0.0):.4f} | {metrics.get('n_trades', 0)} | {metrics.get('n_samples', 0)} |\n")
+                f.write("\n")
+
             f.write("## Model Performance Summary\n\n")
             f.write("| Geometry Family | Tier | Model Type | Layer2 Score | Probe AUC | PR-AUC | Final Score | Avg Tree AUC | N Features | Top Features | Prob Range | Coverage | Selection Score |\n")
             f.write("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")

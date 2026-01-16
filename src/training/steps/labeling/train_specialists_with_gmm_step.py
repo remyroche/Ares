@@ -1044,7 +1044,11 @@ class TrainSpecialistsWithGMMStep(BaseStep):
 
         # Ensure no duplicate columns
         if combined_features is not None:
+            original_cols = len(combined_features.columns)
             combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+            deduplicated_cols = len(combined_features.columns)
+            if original_cols != deduplicated_cols:
+                tprint_warning(f"⚠️ Removed {original_cols - deduplicated_cols} duplicate columns from combined features")
 
         tprint_success(f"✅ Combined features: {combined_features.shape}")
 

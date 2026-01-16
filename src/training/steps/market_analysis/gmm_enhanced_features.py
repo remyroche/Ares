@@ -1914,6 +1914,15 @@ class EnhancedGMMFeatures(BaseStep):
             
             tprint_success(f"✅ Using provided market data: {len(market_data)} rows, {len(market_data.columns)} columns")
             tprint_info(f"📊 Data range: {market_data.index[0]} to {market_data.index[-1]}")
+
+            # Data quality checks
+            if market_data.isnull().values.any():
+                nan_counts = market_data.isnull().sum()
+                nan_cols = nan_counts[nan_counts > 0]
+                tprint_warning(f"⚠️ Market data contains NaNs in {len(nan_cols)} columns: {nan_cols.to_dict()}")
+
+            if np.isinf(market_data.select_dtypes(include=np.number)).values.any():
+                tprint_warning("⚠️ Market data contains Infinite values")
             
             # Check if we're using entropy bars or time bars
             is_entropy_bars = hasattr(market_data, 'attrs') and hasattr(market_data, 'entropy_threshold')

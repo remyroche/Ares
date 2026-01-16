@@ -4,12 +4,16 @@ import logging
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
 from src.utils.orthogonal_numba import _numba_apply_fracdiff
 
-def _causal_denoise(signal: np.ndarray, span: int = 10) -> np.ndarray:
+def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:
     """
     Apply causal denoising using Exponential Weighted Moving Average (EWMA).
     Replaces non-causal wavelet denoising to prevent lookahead bias.
+
+    Args:
+        signal: Input signal array.
+        halflife: Half-life for EWMA decay (in bars).
     """
-    return pd.Series(signal).ewm(span=span, adjust=False).mean().values
+    return pd.Series(signal).ewm(halflife=halflife, adjust=False).mean().values
 
 def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
     """
@@ -39,9 +43,9 @@ def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) 
 
 def apply_layer2_price_processing(df: pd.DataFrame,
                                    price_col: str = 'close',
-                                   vol_window: int = 20,
+                                   vol_window: int = 20, # Kept for signature compatibility, but overruled by halflife logic
                                    fracdiff_d: float = 0.4,
-                                   wavelet: str = 'db4', # Deprecated, kept for signature compatibility
+                                   wavelet: str = 'db4', # Deprecated
                                    wavelet_level: int = 2, # Deprecated
                                    enable_price_features: bool = True) -> pd.DataFrame:
     """
@@ -49,9 +53,9 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     Pipeline:
     1. Log-Returns (eliminates price level non-stationarity)
-    2. Vol-Adjusted (GARCH-style normalization for regime invariance)
+    2. Vol-Adjusted (GARCH-style normalization for regime invariance) - Using EWMA Volatility (HL=16)
     3. FracDiff (fractional differentiation to preserve memory while ensuring stationarity)
-    4. Causal Denoising (EWMA-based trend extraction)
+    4. Causal Denoising (EWMA-based trend extraction, HL=4)
 
     Anti-Explosion Features:
     - Primary set: log returns, rolling volatility, rolling momentum (10, 20, 50), skew, kurtosis, drawdown
@@ -60,10 +64,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     Args:
         df: DataFrame with price data.
         price_col: Column name for price.
-        vol_window: Window for volatility estimation.
+        vol_window: (Deprecated usage) Window for volatility estimation.
         fracdiff_d: Fractional differentiation order (0.3-0.5 typical).
-        wavelet: (Deprecated) Wavelet family.
-        wavelet_level: (Deprecated) Decomposition level.
         enable_price_features: Flag to enable/disable processing.
 
     Returns:
@@ -83,36 +85,35 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     log_price = np.log(price.replace(0, np.nan).ffill())
     # Leave NaNs where they naturally occur (start of series)
     log_returns = log_price.diff()
-    result['log_returns'] = log_returns.fillna(0) # Fill initial NaN with 0 for downstream safety, but keep awareness
+    result['log_returns'] = log_returns.fillna(0) # Fill initial NaN with 0 for downstream safety
 
     # 2. Vol-Adjusted Returns
-    # Use min_periods to avoid early unstable estimates
-    # ffill() propagates the last valid volatility forward to avoid lookahead median filling
-    vol = log_returns.rolling(vol_window, min_periods=vol_window).std()
+    # Using strictly causal EWMA volatility with Half-Life = 16 bars
+    # min_periods=16 to stabilize initial estimates
+    vol = log_returns.ewm(halflife=16, min_periods=16, adjust=False).std()
 
-    # Fill initial NaNs with an expanding mean or just forward fill the first valid
+    # Backfill warmup period with first valid estimate to avoid NaNs downstream (mild leakage only at very start)
     if vol.first_valid_index() is not None:
         first_valid_vol = vol.loc[vol.first_valid_index()]
-        vol = vol.fillna(first_valid_vol) # Backfill warmup period with first valid estimate (mild leakage only at very start)
+        vol = vol.fillna(first_valid_vol)
     else:
-        vol = vol.fillna(0.01) # Fallback if series is too short
+        vol = vol.fillna(0.01) # Fallback
 
     vol_adjusted_returns = log_returns / (vol + 1e-9)
     result['vol_adjusted_returns'] = vol_adjusted_returns.clip(-10, 10)
 
     # 3. Fractional Differentiation (FracDiff)
     try:
-        # FracDiff on log prices (standard practice)
         fracdiff_series = _apply_fracdiff(log_price.ffill(), d=fracdiff_d)
         result['fracdiff_log_price'] = fracdiff_series
     except Exception as e:
         tprint_warning(f"   ⚠️ FracDiff failed: {e}. Skipping.")
-        result['fracdiff_log_price'] = np.nan  # Explicit failure signal
+        result['fracdiff_log_price'] = np.nan
 
-    # 4. Causal Denoising (formerly Wavelet)
+    # 4. Causal Denoising
     try:
-        # Use a robust EWMA smoother on vol-adjusted returns
-        denoised = _causal_denoise(vol_adjusted_returns.fillna(0).values, span=10)
+        # Robust EWMA smoother on vol-adjusted returns with Half-Life = 4 bars
+        denoised = _causal_denoise(vol_adjusted_returns.fillna(0).values, halflife=4.0)
         result['causal_denoised_returns'] = pd.Series(denoised, index=df.index)
     except Exception as e:
         tprint_warning(f"   ⚠️ Causal denoising failed: {e}. Skipping.")
@@ -122,32 +123,30 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     # A. Primary Set
     # Rolling Volatility
-    result['rolling_volatility_20'] = vol
-    result['rolling_volatility_50'] = log_returns.rolling(50, min_periods=50).std().ffill()
+    result['rolling_volatility_20'] = vol # Renaming conceptually, though it's now EWMA HL=16
+    result['rolling_volatility_50'] = log_returns.ewm(halflife=40, min_periods=40, adjust=False).std().ffill() # Consistent EWMA
 
-    # Rolling Momentum (using sum of log returns = log return over window)
+    # Rolling Momentum (using sum of log returns)
     for w in [10, 20, 50]:
         result[f'rolling_momentum_{w}'] = log_returns.rolling(w, min_periods=w).sum()
 
-    # Skew/Kurtosis
+    # Skew/Kurtosis (Rolling window is fine for these, keeps "Anti-Explosion" semantics)
     result['rolling_skew_50'] = log_returns.rolling(50, min_periods=50).skew()
     result['rolling_kurtosis_50'] = log_returns.rolling(50, min_periods=50).kurt()
 
     # Drawdown
-    # Use min_periods=1 to allow calculation from start
     rolling_max = price.rolling(100, min_periods=1).max()
-    # Avoid zero division
     result['drawdown_100'] = (price / (rolling_max + 1e-9)) - 1.0
 
     # B. Augmentations
 
-    # From vol_adjusted_returns: Tail/exceedance (Rolling max of abs)
+    # From vol_adjusted_returns: Tail/exceedance
     result['vol_adj_tail_20'] = vol_adjusted_returns.abs().rolling(20, min_periods=20).max()
 
     # From denoised_*: Trend/persistence (Divergence from raw)
     result['denoised_divergence'] = result['causal_denoised_returns'] - vol_adjusted_returns
 
-    # From fracdiff_log_price: State/slow features (Rolling mean/Z-score)
+    # From fracdiff_log_price: State/slow features
     fd = result['fracdiff_log_price']
     fd_mean = fd.rolling(50, min_periods=50).mean()
     fd_std = fd.rolling(50, min_periods=50).std()

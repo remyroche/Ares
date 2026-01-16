@@ -362,6 +362,11 @@ class AFMLSpecialistMixin:
         aligned_probs = aligned_probs.fillna(neutral_value)
         binary = pd.Series(0, index=target_index, dtype=int)
         confident_mask = ~missing_mask
+
+        if confident_mask.any():
+            preds = (aligned_probs[confident_mask] >= threshold).astype(int)
+            binary.loc[confident_mask] = preds
+
         return aligned_probs, binary
 
     def prepare_specialist_data(self, market_data, feature_df, config, filter_type, pt_sl_config_key, default_pt_sl, specialist_type):

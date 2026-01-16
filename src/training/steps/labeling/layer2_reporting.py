@@ -86,6 +86,16 @@ class Layer2Reporter:
                 lines.append("No geometries selected.\n")
             lines.append("\n")
 
+            # Baseline Comparison
+            if 'baseline_metrics' in oof_results:
+                lines.append("## Baseline Comparison\n")
+                lines.append("| Model | AUC | Sharpe | Total PnL | Trades | N Samples |\n")
+                lines.append("| --- | --- | --- | --- | --- | --- |\n")
+                for name, metrics in oof_results['baseline_metrics'].items():
+                    lines.append(f"| {name} | {metrics.get('auc', 0.0):.4f} | {metrics.get('sharpe', 0.0):.2f} | "
+                               f"{metrics.get('total_pnl', 0.0):.4f} | {metrics.get('n_trades', 0)} | {metrics.get('n_samples', 0)} |\n")
+                lines.append("\n")
+
             # Model Performance Summary
             lines.append("## Model Performance Summary\n")
             if 'model_metrics' in oof_results:

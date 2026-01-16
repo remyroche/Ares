@@ -208,6 +208,7 @@ except ImportError as e:
 # Import causal framework modules
 from src.training.steps.labeling.de_prado_causal_features import DePradoCausalFeatures
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
+from src.training.steps.labeling.causal_denoising_engine import CausalDenoisingEngine, denoise_causal_features
 from src.utils.data.klines_parquet import get_klines_manager
 import math
 # Add ORF imports
@@ -1381,6 +1382,7 @@ class LabelBasedLayer2(BaseStep):
         self.enable_causal_framework = kwargs.get('enable_causal_framework', True)
         self.causal_discovery_enabled = kwargs.get('causal_discovery_enabled', True)
         self.causal_engineering_enabled = kwargs.get('causal_engineering_enabled', True)
+        self.enable_causal_denoising = kwargs.get('enable_causal_denoising', True) if self.enable_causal_framework else False
         self.irm_enabled = kwargs.get('irm_enabled', True)
         self.causal_surprise_enabled = kwargs.get('causal_surprise_enabled', True)
         self.interventionist_sampling_enabled = kwargs.get('interventionist_sampling_enabled', True)
@@ -4024,6 +4026,27 @@ class LabelBasedLayer2(BaseStep):
                         # Align empty rows if any
                         X_extra = df[extra_cols].reindex(X_all.index).fillna(0.0)
                         X_all = pd.concat([X_all, X_extra], axis=1)
+
+                    # --- CAUSAL FEATURE DENOISING ---
+                    if getattr(self, 'enable_causal_denoising', False):
+                        tprint_info("   🧹 Applying Causal Denoising Engine...")
+                        try:
+                            # Use available causal graph or fallback to sparse covariance
+                            graph_to_use = getattr(self, 'causal_graph', None)
+
+                            # Select denoising methods based on graph availability
+                            methods = ['sparse_covariance']
+                            if graph_to_use:
+                                methods.extend(['causal_constraints', 'graph_filtering'])
+
+                            X_all = denoise_causal_features(
+                                X_all,
+                                causal_graph=graph_to_use,
+                                denoising_methods=methods,
+                                verbose=self.verbose
+                            )
+                        except Exception as e:
+                            tprint_warning(f"   ⚠️ Causal denoising failed: {e}")
 
                     # Cache the full feature set
                     if not hasattr(self, '_cached_global_features'):

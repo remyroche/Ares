@@ -10756,6 +10756,15 @@ class LabelBasedLayer2(BaseStep):
 
                 if weights is not None:
                     w_train = weights.reindex(common_idx).fillna(0.0)
+
+                    # Normalize weights per fold to avoid dominance by extreme events
+                    if len(w_train) > 100:
+                        w_cap = w_train.quantile(0.99)
+                        w_train = w_train.clip(upper=w_cap)
+
+                    w_mean = w_train.mean()
+                    if w_mean > 1e-9:
+                        w_train = w_train / w_mean
                 else:
                     w_train = None
 

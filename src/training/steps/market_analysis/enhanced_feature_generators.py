@@ -13,6 +13,8 @@ from scipy import stats
 from sklearn.preprocessing import PolynomialFeatures
 import logging
 
+from src.utils.tprint import tprint_info, tprint_warning
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,11 +57,11 @@ class NonLinearFeatureGenerator:
                     # This preserves direction but robustifies magnitude
                     features[f'{col}_robust_feature'] = np.sign(df[col]) * features[f'{col}_rank_magnitude']
             
-            logger.info(f"Added {len(features.columns)} robust rank-based features")
+            tprint_info(f"Added {len(features.columns)} robust rank-based features")
             return features
             
         except Exception as e:
-            logger.warning(f"Failed to generate robust features: {e}. Fallback to empty.")
+            tprint_warning(f"Failed to generate robust features: {e}. Fallback to empty.")
             return pd.DataFrame(index=df.index)
     
     @staticmethod
@@ -91,7 +93,7 @@ class NonLinearFeatureGenerator:
                 # Sum interaction
                 features[f'{col1}_plus_{col2}'] = df[col1] + df[col2]
         
-        logger.info(f"Added {len(features.columns)} interaction features")
+        tprint_info(f"Added {len(features.columns)} interaction features")
         return features
 
 
@@ -135,7 +137,7 @@ class MarketRegimeFeatureGenerator:
                 # Volatility momentum
                 features[f'vol_momentum_{window}'] = rolling_vol - rolling_vol.rolling(10).mean()
         
-        logger.info(f"Added {len(features.columns)} volatility regime features")
+        tprint_info(f"Added {len(features.columns)} volatility regime features")
         return features
     
     @staticmethod
@@ -175,7 +177,7 @@ class MarketRegimeFeatureGenerator:
                         # Trend momentum
                         features[f'trend_momentum_{short}_{long}'] = features[f'trend_strength_{short}_{long}'].diff()
         
-        logger.info(f"Added {len(features.columns)} trend regime features")
+        tprint_info(f"Added {len(features.columns)} trend regime features")
         return features
     
     @staticmethod
@@ -218,7 +220,7 @@ class MarketRegimeFeatureGenerator:
             features['is_month_end'] = (df.index.day >= 25).astype(int)
             features['is_month_start'] = (df.index.day <= 5).astype(int)
         
-        logger.info(f"Added {len(features.columns)} time-based features")
+        tprint_info(f"Added {len(features.columns)} time-based features")
         return features
 
 
@@ -275,7 +277,7 @@ class TargetSpecificFeatureGenerator:
                         volume.rolling(window).corr(price_change)
                     )
         
-        logger.info(f"Added {len(features.columns)} breakout features")
+        tprint_info(f"Added {len(features.columns)} breakout features")
         return features
     
     @staticmethod
@@ -328,7 +330,7 @@ class TargetSpecificFeatureGenerator:
                     features[f'money_flow_{window}'] = money_flow.rolling(window).sum()
                     features[f'money_flow_momentum_{window}'] = money_flow.rolling(window).sum() - money_flow.rolling(window*2).sum()
         
-        logger.info(f"Added {len(features.columns)} enhanced volume force features")
+        tprint_info(f"Added {len(features.columns)} enhanced volume force features")
         return features
     
     @staticmethod
@@ -377,7 +379,7 @@ class TargetSpecificFeatureGenerator:
                 rs = avg_gains / (avg_losses + 1e-8)
                 features[f'momentum_rsi_{window}'] = 100 - (100 / (1 + rs))
         
-        logger.info(f"Added {len(features.columns)} momentum features")
+        tprint_info(f"Added {len(features.columns)} momentum features")
         return features
 
 
@@ -438,7 +440,7 @@ class EnhancedFeaturePipeline:
             # Remove any infinite or NaN values
             enhanced_df = enhanced_df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
             
-            logger.info(f"Generated {len(enhanced_df.columns)} enhanced features for {specialist_type}")
+            tprint_info(f"Generated {len(enhanced_df.columns)} enhanced features for {specialist_type}")
             return enhanced_df
         else:
             return pd.DataFrame(index=df.index)

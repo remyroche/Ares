@@ -1039,8 +1039,18 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             tprint_success(f"✅ Loaded GMM-enhanced features from cache: {gmm_enhanced_features.shape}")
         
         # Step 4: Combine fracdiff raw features + GMM-derived features
-        combined_features = pd.concat([raw_features, gmm_enhanced_features], axis=1)
-        tprint_success(f"✅ Combined features: {raw_features.shape} raw + {gmm_enhanced_features.shape} GMM = {combined_features.shape}")
+        # Note: gmm_enhanced_features already contains raw_features from _apply_gmm_enhancement_to_features
+        combined_features = gmm_enhanced_features
+
+        # Ensure no duplicate columns
+        if combined_features is not None:
+            original_cols = len(combined_features.columns)
+            combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+            deduplicated_cols = len(combined_features.columns)
+            if original_cols != deduplicated_cols:
+                tprint_warning(f"⚠️ Removed {original_cols - deduplicated_cols} duplicate columns from combined features")
+
+        tprint_success(f"✅ Combined features: {combined_features.shape}")
 
         # Step 5: Feature selection on combined features
         tprint_info("🎯 Applying feature selection to combined features...")

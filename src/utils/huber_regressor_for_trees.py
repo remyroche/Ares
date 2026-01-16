@@ -37,6 +37,8 @@ from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_absolute_error
 
+from src.utils.tprint import tprint_info
+
 
 # -----------------------------
 # Configuration
@@ -464,7 +466,7 @@ def prepare_huber_teacher_outputs(
         y_scale = 1.0
 
     if cfg.verbose:
-        print(f"[HuberTeacher] Tier='{tier}', Y_Scale (MAD)={y_scale:.6f}")
+        tprint_info(f"[HuberTeacher] Tier='{tier}', Y_Scale (MAD)={y_scale:.6f}")
 
     # -----------------------------
     # Data to numpy (preserve column order)
@@ -476,7 +478,7 @@ def prepare_huber_teacher_outputs(
 
     n_samples, n_features = X_tr.shape
     if cfg.verbose:
-        print(f"[HuberTeacher] n_samples={n_samples}, n_features={n_features}")
+        tprint_info(f"[HuberTeacher] n_samples={n_samples}, n_features={n_features}")
 
     # -----------------------------
     # Global scaler (critical upgrade)
@@ -494,7 +496,7 @@ def prepare_huber_teacher_outputs(
         embargo=cfg.embargo
     )
     if cfg.verbose:
-        print(f"[HuberTeacher] splits={len(splits)} -> {splits[:3]}{' ...' if len(splits) > 3 else ''}")
+        tprint_info(f"[HuberTeacher] splits={len(splits)} -> {splits[:3]}{' ...' if len(splits) > 3 else ''}")
 
     # -----------------------------
     # Fit split × grid in parallel
@@ -523,7 +525,7 @@ def prepare_huber_teacher_outputs(
     selected_idx = np.where(keep_mask)[0]
 
     if cfg.verbose:
-        print(f"[HuberTeacher] pruning_percentile={cfg.pruning_percentile} -> kept={keep_mask.sum()}/{n_features}")
+        tprint_info(f"[HuberTeacher] pruning_percentile={cfg.pruning_percentile} -> kept={keep_mask.sum()}/{n_features}")
 
     # -----------------------------
     # Fit final teacher on full train (median params)
@@ -694,7 +696,7 @@ def prepare_huber_teacher_outputs(
     mono_vec_selected = mono_vec_full[selected_idx].astype(int)
 
     if cfg.verbose:
-        print(f"[HuberTeacher] Monotonic Constraints: Candidates={n_candidates}, StrictPass={strict_pass_count}, "
+        tprint_info(f"[HuberTeacher] Monotonic Constraints: Candidates={n_candidates}, StrictPass={strict_pass_count}, "
               f"Caps=[{min_cnt}, {max_cnt}] -> Final={len(kept_indices)} ({len(kept_indices)/n_selected:.1%})")
 
     # -----------------------------
@@ -706,7 +708,7 @@ def prepare_huber_teacher_outputs(
     shortlist_names = feature_names[shortlist_idx].tolist()
 
     if cfg.verbose:
-        print(f"[HuberTeacher] interaction shortlist={len(shortlist_idx)} features")
+        tprint_info(f"[HuberTeacher] interaction shortlist={len(shortlist_idx)} features")
 
     # Threshold for gain
     min_gain_abs = cfg.interaction_min_gain_rel * y_scale
@@ -775,7 +777,7 @@ def prepare_huber_teacher_outputs(
         })
 
     if cfg.verbose:
-        print(f"[HuberTeacher] interaction pairs kept={len(kept)}, groups={len(interaction_groups)}")
+        tprint_info(f"[HuberTeacher] interaction pairs kept={len(kept)}, groups={len(interaction_groups)}")
 
     # -----------------------------
     # Outputs formatted for LGBM / XGB / Cat

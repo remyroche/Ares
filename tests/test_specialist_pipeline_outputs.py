@@ -28,7 +28,9 @@ def test_onc_clusters_transpose_guard():
     )
     engine = module.DePradoFeatureEngine(max_clusters=3)
 
-    clusters = engine._get_onc_clusters(data.T)
+    # Pass data directly as (n_samples, n_features).
+    # _get_onc_clusters expects (samples, features) input format.
+    clusters = engine._get_onc_clusters(data)
 
     assert len(clusters) == 3
 

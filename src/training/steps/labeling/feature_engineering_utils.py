@@ -4,7 +4,6 @@ import logging
 from numba import jit
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
 from src.utils.orthogonal_numba import _numba_apply_fracdiff, _numba_rolling_hurst, lempel_ziv_complexity_numba
-from src.utils.orthogonal_numba import _numba_apply_fracdiff
 from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt
 
 def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:

@@ -18,7 +18,7 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import log_loss, mean_squared_error, roc_auc_score, brier_score_loss
 
 from .model_training import train_dual_head_models
-from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
+from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target, calculate_blended_forward_returns
 from .enhanced_reporting import EnhancedLayer3Reporter
 from .feature_engineering import downcast_float
 from src.training.steps.labeling.irm_regime_pipeline import (
@@ -555,9 +555,16 @@ def layer3_analyst_lgbm(
     vol_series = ret_series.rolling(24).std().fillna(0.001)
 
     # 12-bar targets
-    y_alpha_12_series = calculate_studentized_har_target(ret_series, vol_series)
+    # Use blended forward returns (15-60m blend) to increase SNR
+    if 'close' in df.columns:
+        blended_ret_series = calculate_blended_forward_returns(df['close'], [1, 2, 4])
+    else:
+        blended_ret_series = ret_series
+
+    y_alpha_12_series = calculate_studentized_har_target(blended_ret_series, vol_series)
     y_alpha_12 = y_alpha_12_series.values.astype(np.float32)
-    y_prob_12 = (ret_series.values > 0).astype(np.int32)
+    # Probability target is also based on blended return (smoothed direction)
+    y_prob_12 = (blended_ret_series.values > 0).astype(np.int32)
     
     # 48-bar targets
     if 'close' in df.columns:

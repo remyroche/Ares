@@ -147,6 +147,29 @@ def finalize_sample_weights(weights: np.ndarray) -> np.ndarray:
     
     return final_weights
 
+def calculate_blended_forward_returns(prices: pd.Series, horizons: List[int] = [1, 2, 4]) -> pd.Series:
+    """
+    Calculate blended forward returns over multiple horizons.
+    Useful for increasing SNR in target generation (e.g. 15-60m blend).
+
+    Args:
+        prices: Price series
+        horizons: List of horizons (in bars) to blend
+
+    Returns:
+        Blended return series (average of forward returns)
+    """
+    blended = pd.Series(0.0, index=prices.index)
+    total_weight = 0.0
+
+    for h in horizons:
+        # Forward return: (p_{t+h} / p_t) - 1
+        ret = prices.shift(-h) / prices - 1.0
+        blended = blended + ret.fillna(0)
+        total_weight += 1.0
+
+    return blended / total_weight
+
 def calculate_studentized_har_target(
     returns: pd.Series,
     volatility: pd.Series,

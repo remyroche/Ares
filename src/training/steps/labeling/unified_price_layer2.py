@@ -9,6 +9,7 @@ import glob
 import numpy as np
 import pandas as pd
 from typing import Dict, Optional
+from .optimized_wavelet_decomposition import OptimizedWaveletDecomposition
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +122,12 @@ def load_layer0_params(df: Optional[pd.DataFrame] = None, outcomes_dir: str = 'o
             'robust_vwap_enabled': summary.get('robust_vwap_enabled', False),
             'robust_min_lookback': summary.get('robust_min_lookback', 20),
             'robust_max_lookback': summary.get('robust_max_lookback', 200),
-            'robust_volatility_window': summary.get('robust_volatility_window', 20)
+            'robust_volatility_window': summary.get('robust_volatility_window', 20),
+            'wavelet_denoising_enabled': summary.get('wavelet_denoising_enabled', True)
         }
         
         logger.info(f"Loaded Layer0 params: Q={enhanced_params['kalman_Q']}, R={enhanced_params['kalman_R']}, vwap_weight={enhanced_params['vwap_weight']}")
-        logger.info(f"Enhanced features: hampel_filter={enhanced_params['hampel_filter_enabled']}, adaptive_kalman={enhanced_params['adaptive_kalman_enabled']}, robust_vwap={enhanced_params['robust_vwap_enabled']}")
+        logger.info(f"Enhanced features: hampel_filter={enhanced_params['hampel_filter_enabled']}, adaptive_kalman={enhanced_params['adaptive_kalman_enabled']}, robust_vwap={enhanced_params['robust_vwap_enabled']}, wavelet={enhanced_params['wavelet_denoising_enabled']}")
         return enhanced_params
         
     except Exception as e:
@@ -146,18 +148,40 @@ def load_layer0_params(df: Optional[pd.DataFrame] = None, outcomes_dir: str = 'o
             'robust_vwap_enabled': False,
             'robust_min_lookback': 20,
             'robust_max_lookback': 200,
-            'robust_volatility_window': 20
+            'robust_volatility_window': 20,
+            'wavelet_denoising_enabled': True
         }
 
-def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None) -> pd.Series:
+def calculate_snr(signal: pd.Series, noise: pd.Series = None) -> float:
+    """
+    Calculate Signal-to-Noise Ratio (SNR) in dB.
+    If noise is not provided, estimate it as residuals from a smoothed version (EMA).
+    """
+    try:
+        signal_power = np.var(signal)
+        if noise is None:
+            # Estimate noise as high-frequency component (residuals from short EMA)
+            smoothed = signal.ewm(span=5).mean()
+            noise = signal - smoothed
+
+        noise_power = np.var(noise)
+        if noise_power < 1e-10: return 100.0 # High SNR
+
+        return 10 * np.log10(signal_power / noise_power)
+    except Exception:
+        return 0.0
+
+def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None, wavelet_denoising_enabled: bool = None) -> pd.Series:
     """
     Generate unified Kalman+VWAP composite price for all Layer2 models.
     
-    Enhanced with Median Filter, Adaptive Kalman, Robust VWAP, and Savitzky-Golay options.
+    Enhanced with Wavelet Denoising (Primary), Median Filter, Adaptive Kalman,
+    Robust VWAP, and Savitzky-Golay options.
     
     Args:
         df: DataFrame with close, volume columns
         layer0_params: Optimized parameters from Layer0 (auto-loaded if None)
+        wavelet_denoising_enabled: Override for wavelet denoising (default: True or from params)
         
     Returns:
         Composite price series for Layer2 context generation
@@ -184,6 +208,10 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None) 
     savgol_window = layer0_params.get('savgol_window', 21)
     savgol_order = layer0_params.get('savgol_order', 3)
     
+    # Determine wavelet setting (argument overrides param)
+    if wavelet_denoising_enabled is None:
+        wavelet_denoising_enabled = layer0_params.get('wavelet_denoising_enabled', True)
+
     # Validate required columns
     if 'close' not in df.columns:
         raise ValueError("DataFrame must contain 'close' column")
@@ -193,6 +221,33 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None) 
         robust_vwap_enabled = False
     
     try:
+        # Initial Price Source
+        base_price = df['close']
+
+        # --- 1. Primary: Wavelet Denoising ---
+        if wavelet_denoising_enabled:
+            logger.debug("Applying Wavelet Denoising as primary step")
+            try:
+                # Calculate Initial SNR
+                initial_snr = calculate_snr(base_price)
+
+                # Apply Wavelet Denoising
+                wavelet_engine = OptimizedWaveletDecomposition(verbose=False)
+                denoised_values = wavelet_engine.denoise_signal_vectorized(
+                    base_price.values,
+                    threshold_method='visushrink',
+                    threshold_mode='soft'
+                )
+                base_price = pd.Series(denoised_values, index=base_price.index)
+
+                # Calculate Final SNR
+                final_snr = calculate_snr(base_price)
+                improvement = final_snr - initial_snr
+                logger.info(f"📊 Wavelet Denoising SNR: {initial_snr:.2f}dB -> {final_snr:.2f}dB (+{improvement:.2f}dB)")
+
+            except Exception as w_err:
+                logger.warning(f"⚠️ Wavelet denoising failed, skipping: {w_err}")
+
         # Import KalmanFilter1D from orthogonal_label_generation
         from .orthogonal_label_generation import KalmanFilter1D, calc_vwap
         
@@ -200,14 +255,23 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None) 
         if adaptive_kalman_enabled:
             # Use Adaptive Kalman with dynamic noise estimation
             logger.debug("Using Adaptive Kalman with dynamic noise estimation")
+            # Create temp DF with potentially wavelet-denoised close
+            df_kalman = df.copy()
+            df_kalman['close'] = base_price
+
             kalman_price = generate_adaptive_kalman_price(
-                df, Q, R, adaptive_noise_window, adaptive_adaptation_rate
+                df_kalman, Q, R, adaptive_noise_window, adaptive_adaptation_rate
             )
         else:
-            # Use standard Kalman filter
-            kalman_price, kalman_uncertainty = KalmanFilter1D(Q=Q, R=R).filter_series(df['close'])
+            # Use standard Kalman filter on potentially wavelet-denoised close
+            kalman_price, kalman_uncertainty = KalmanFilter1D(Q=Q, R=R).filter_series(base_price)
         
         # Generate VWAP price with enhanced robust method if enabled
+        # Note: VWAP usually uses raw price/volume, but we can use denoised close if preferred.
+        # Standard VWAP uses typical price (H+L+C)/3, but here we likely use Close.
+        # We will stick to using df inputs for VWAP to preserve volume-weighted logic,
+        # but mix it with the Kalman-filtered (and possibly Wavelet-denoised) price.
+
         if robust_vwap_enabled and 'volume' in df.columns:
             logger.debug("Using Robust VWAP with adaptive window sizing")
             vwap_price = generate_robust_vwap_price(
@@ -233,7 +297,7 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None) 
         composite_price = composite_price.fillna(method='ffill').fillna(df['close'])
         
         logger.debug(f"Generated unified Layer2 price: Q={Q}, R={R}, vwap_weight={vwap_weight}")
-        logger.debug(f"Enhanced features: hampel_filter={hampel_filter_enabled}, adaptive_kalman={adaptive_kalman_enabled}, robust_vwap={robust_vwap_enabled}, savgol_filter={savgol_filter_enabled}")
+        logger.debug(f"Enhanced features: hampel_filter={hampel_filter_enabled}, adaptive_kalman={adaptive_kalman_enabled}, robust_vwap={robust_vwap_enabled}, savgol_filter={savgol_filter_enabled}, wavelet={wavelet_denoising_enabled}")
         return composite_price
         
     except Exception as e:

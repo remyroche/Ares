@@ -269,7 +269,7 @@ def train_xgboost_model(
         'colsample_bytree': 0.6,
         'colsample_bynode': 0.4,
         'reg_alpha': 0.3, # L1
-        'reg_lambda': 50, # Strong L2
+        'reg_lambda': 30, # Strong L2 (Reduced from 50)
         'num_parallel_tree': 7,
         'monotone_constraints': tuple(final_constraints),
         'interaction_constraints': huber_output['interaction_constraints'] if huber_output['interaction_constraints'] else None,

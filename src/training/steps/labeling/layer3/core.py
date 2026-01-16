@@ -526,7 +526,15 @@ def layer3_analyst_lgbm(
     cfg['y_alpha_48'] = y_alpha_48
     cfg['y_prob_48'] = y_prob_48
 
-    w_alpha = calculate_sample_weights_efficient(ret_series.values, vol_series.values, layer1_weights=layer1_weight.values if layer1_weight is not None else None)
+    # Extract volume for quality adjustment
+    vol_values = df['volume'].values.astype(np.float32) if 'volume' in df.columns else None
+
+    w_alpha = calculate_sample_weights_efficient(
+        ret_series.values,
+        vol_series.values,
+        layer1_weights=layer1_weight.values if layer1_weight is not None else None,
+        volume=vol_values
+    )
     w_alpha = w_alpha.astype(np.float32)
 
     # Phase 3: Mild MP-Clustering (Feature Selection)

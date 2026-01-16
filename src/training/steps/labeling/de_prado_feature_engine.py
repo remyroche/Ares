@@ -120,7 +120,6 @@ class DePradoFeatureEngine:
         self.cluster_labels_ = None
         self.optimal_n_clusters_ = None
         self.silhouette_scores_ = None
-        self.lgbm_importances_ = None
         
         # Extended diagnostics
         self.lgbm_metrics_ = {
@@ -409,6 +408,8 @@ class DePradoFeatureEngine:
         for tree in model.estimators_:
             t = tree.tree_
             max_depth_overall = max(max_depth_overall, t.max_depth)
+
+            # Collect depth of first occurrence in each tree
             first_occurrence = {}
             
             def walk_node(node: int, current_depth: int):
@@ -425,14 +426,15 @@ class DePradoFeatureEngine:
                 if idx < len(feature_names):
                     depths[feature_names[idx]].append(depth)
         
-        mean_depths = {}
+        # Aggregate robustly: Median Depth
+        metric_depths = {}
         for name, depth_list in depths.items():
             if depth_list:
                 mean_depths[name] = np.median(depth_list)
             else:
-                mean_depths[name] = max_depth_overall
+                metric_depths[name] = max_depth_overall # Penalize unused
         
-        return pd.Series(mean_depths)
+        return pd.Series(metric_depths)
     
     def _compute_advanced_mdi(self, model: Union[ExtraTreesClassifier, ExtraTreesRegressor], feature_names: List[str]) -> Dict[str, float]:
         """Compute Advanced MDI metrics."""
@@ -770,6 +772,7 @@ class DePradoFeatureEngine:
             mdi_metrics = self._compute_advanced_mdi(model, feature_names)
             gain = pd.Series(mdi_metrics["gain"])
         
+        # Depth
         depth = self._get_tree_hierarchy(model, feature_names)
         
         # IC - Use OOF if available
@@ -832,6 +835,10 @@ class DePradoFeatureEngine:
         # 6. Selection (Representative Selection)
         tprint_info(f"👑 Step 6: Selection...")
         selected_features = []
+
+        # Group-Aware Selection:
+        # If using Group MDI, blend Group Score + Feature Score?
+        # Current logic: Rank clusters by Max Composite Score of member.
         
         # Top-K Freq Gate
         gate_mask = pd.Series(True, index=X.columns)

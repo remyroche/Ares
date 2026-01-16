@@ -1513,6 +1513,17 @@ def compute_dominance_labels(
     vol_adj = 1.0 / vol_vals
     weights = ratio * magnitude * vol_adj
 
+    # Clip and Normalize weights to prevent noise amplification
+    # Cap at 99th percentile (approx 3-5 sigma) to handle outliers
+    if len(weights) > 100:
+        w_cap = np.percentile(weights, 99)
+        weights = np.clip(weights, 0, w_cap)
+
+    # Normalize to mean=1.0 for stability
+    w_mean = np.mean(weights)
+    if w_mean > 1e-9:
+        weights = weights / w_mean
+
     # 6. Returns (use win_mask)
     out_returns = np.where(win_mask, pt_mult * vol_vals, -sl_mult * vol_vals)
     timeout_mask = (~any_pt) & (~any_sl)

@@ -3,25 +3,32 @@ import pandas as pd
 import logging
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
 from src.utils.orthogonal_numba import _numba_apply_fracdiff
+from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std
 
 def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:
     """
     Apply causal denoising using Exponential Weighted Moving Average (EWMA).
     Replaces non-causal wavelet denoising to prevent lookahead bias.
+    Uses Numba-optimized implementation.
 
     Args:
         signal: Input signal array.
         halflife: Half-life for EWMA decay (in bars).
     """
-    return pd.Series(signal).ewm(halflife=halflife, adjust=False).mean().values
+    if len(signal) == 0:
+        return signal
+
+    # Convert halflife to alpha
+    # alpha = 1 - exp(log(0.5)/halflife)
+    if halflife <= 0:
+        return signal
+
+    alpha = 1.0 - np.exp(np.log(0.5) / halflife)
+    return _numba_ewma(signal.astype(np.float64), alpha=alpha, adjust=False)
 
 def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
     """
     Apply fractional differentiation using fixed-width window.
-
-    Uses the approach from AFML Ch. 5:
-    (1-B)^d = sum_{k=0}^{inf} C(d,k) * (-B)^k
-    where C(d,k) = d*(d-1)*...*(d-k+1) / k!
     """
     # Calculate weights
     def _get_weights(d: float, size: int, threshold: float) -> np.ndarray:
@@ -43,23 +50,14 @@ def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) 
 
 def apply_layer2_price_processing(df: pd.DataFrame,
                                    price_col: str = 'close',
-                                   vol_window: int = 20, # Kept for signature compatibility, but overruled by halflife logic
+                                   vol_window: int = 20, # Deprecated
                                    fracdiff_d: float = 0.4,
                                    wavelet: str = 'db4', # Deprecated
                                    wavelet_level: int = 2, # Deprecated
                                    enable_price_features: bool = True) -> pd.DataFrame:
     """
     Apply de Prado-compliant price processing and "Anti-Explosion" feature generation.
-
-    Pipeline:
-    1. Log-Returns (eliminates price level non-stationarity)
-    2. Vol-Adjusted (GARCH-style normalization for regime invariance) - Using EWMA Volatility (HL=16)
-    3. FracDiff (fractional differentiation to preserve memory while ensuring stationarity)
-    4. Causal Denoising (EWMA-based trend extraction, HL=4)
-
-    Anti-Explosion Features:
-    - Primary set: log returns, rolling volatility, rolling momentum (10, 20, 50), skew, kurtosis, drawdown
-    - Augmentations: vol-adjusted tail, denoised trend, fracdiff state
+    Optimized with Numba for EWMA and Volatility calculations.
 
     Args:
         df: DataFrame with price data.
@@ -87,17 +85,35 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     log_returns = log_price.diff()
     result['log_returns'] = log_returns.fillna(0) # Fill initial NaN with 0 for downstream safety
 
+    # Prepare data for Numba
+    log_ret_vals = log_returns.values.astype(np.float64)
+
     # 2. Vol-Adjusted Returns
     # Using strictly causal EWMA volatility with Half-Life = 16 bars
-    # min_periods=16 to stabilize initial estimates
-    vol = log_returns.ewm(halflife=16, min_periods=16, adjust=False).std()
+    # alpha = 1 - exp(log(0.5)/16) approx 0.042
+    alpha_vol = 1.0 - np.exp(np.log(0.5) / 16.0)
 
-    # Backfill warmup period with first valid estimate to avoid NaNs downstream (mild leakage only at very start)
-    if vol.first_valid_index() is not None:
-        first_valid_vol = vol.loc[vol.first_valid_index()]
-        vol = vol.fillna(first_valid_vol)
+    # Calculate EWMA Std using Numba
+    vol_vals = _numba_ewm_std(log_ret_vals, alpha=alpha_vol, adjust=False)
+
+    # Handle initial NaNs/Warmup (min_periods behavior simulation)
+    # Pandas min_periods=16 means first 15 are NaN.
+    # _numba_ewm_std returns NaNs for first point, then valid.
+    # We should enforce NaN for first 15 points to match "min_periods" safety if desired,
+    # or just accept early noisy estimates.
+    # To match previous logic (min_periods=16):
+    vol_vals[:16] = np.nan
+
+    # Backfill warmup
+    # Find first valid
+    mask = ~np.isnan(vol_vals)
+    if mask.any():
+        first_valid_idx = np.argmax(mask)
+        vol_vals[:first_valid_idx] = vol_vals[first_valid_idx]
     else:
-        vol = vol.fillna(0.01) # Fallback
+        vol_vals[:] = 0.01 # Fallback
+
+    vol = pd.Series(vol_vals, index=df.index)
 
     vol_adjusted_returns = log_returns / (vol + 1e-9)
     result['vol_adjusted_returns'] = vol_adjusted_returns.clip(-10, 10)
@@ -123,14 +139,22 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     # A. Primary Set
     # Rolling Volatility
-    result['rolling_volatility_20'] = vol # Renaming conceptually, though it's now EWMA HL=16
-    result['rolling_volatility_50'] = log_returns.ewm(halflife=40, min_periods=40, adjust=False).std().ffill() # Consistent EWMA
+    result['rolling_volatility_20'] = vol
+
+    # rolling_volatility_50 with HL=40
+    alpha_vol_50 = 1.0 - np.exp(np.log(0.5) / 40.0)
+    vol_50_vals = _numba_ewm_std(log_ret_vals, alpha=alpha_vol_50, adjust=False)
+    vol_50_vals[:40] = np.nan # Simulate min_periods
+
+    # Forward fill NaNs for this one (as per previous logic .ffill())
+    # Use pandas ffill for simplicity or numpy logic
+    result['rolling_volatility_50'] = pd.Series(vol_50_vals, index=df.index).ffill()
 
     # Rolling Momentum (using sum of log returns)
     for w in [10, 20, 50]:
         result[f'rolling_momentum_{w}'] = log_returns.rolling(w, min_periods=w).sum()
 
-    # Skew/Kurtosis (Rolling window is fine for these, keeps "Anti-Explosion" semantics)
+    # Skew/Kurtosis (Keep rolling for now, expensive to implement robustly in Numba without effort)
     result['rolling_skew_50'] = log_returns.rolling(50, min_periods=50).skew()
     result['rolling_kurtosis_50'] = log_returns.rolling(50, min_periods=50).kurt()
 

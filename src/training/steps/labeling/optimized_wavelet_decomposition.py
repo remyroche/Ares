@@ -34,6 +34,7 @@ except ImportError:
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
+from src.utils.numba_funcs import _numba_ewma
 
 class OptimizedWaveletDecomposition:
     """
@@ -41,7 +42,7 @@ class OptimizedWaveletDecomposition:
     
     Optimizations:
     1. Vectorized multi-scale decomposition
-    2. Causal decomposition mode (EMA Cascade)
+    2. Causal decomposition mode (EMA Cascade) using Numba
     3. Parallel processing
     4. Memory-efficient operations
     """
@@ -141,6 +142,7 @@ class OptimizedWaveletDecomposition:
         """
         Perform strictly causal decomposition using a cascade of EMAs.
         Approximates dyadic wavelet scales without lookahead bias.
+        Optimized using Numba EWMA.
 
         Scales:
         - d1: signal - EMA(2)
@@ -150,19 +152,27 @@ class OptimizedWaveletDecomposition:
         - s4: EMA(16)
         """
         decomposition = {}
-        s = pd.Series(signal)
 
-        # Calculate EMAs
-        # adjust=False for strictly causal recursive calculation
-        ema2 = s.ewm(span=2, adjust=False).mean().values
-        ema4 = s.ewm(span=4, adjust=False).mean().values
-        ema8 = s.ewm(span=8, adjust=False).mean().values
-        ema16 = s.ewm(span=16, adjust=False).mean().values
+        # Calculate alphas for different spans
+        # span -> alpha = 2 / (span + 1)
+        # Numba function takes alpha directly
+
+        alpha2 = 2.0 / (2.0 + 1.0)
+        alpha4 = 2.0 / (4.0 + 1.0)
+        alpha8 = 2.0 / (8.0 + 1.0)
+        alpha16 = 2.0 / (16.0 + 1.0)
+
+        signal_float = signal.astype(np.float64)
+
+        ema2 = _numba_ewma(signal_float, alpha2, adjust=False)
+        ema4 = _numba_ewma(signal_float, alpha4, adjust=False)
+        ema8 = _numba_ewma(signal_float, alpha8, adjust=False)
+        ema16 = _numba_ewma(signal_float, alpha16, adjust=False)
 
         # Extract scales
         # d1: Highest frequency (Noise/Micro-shock)
         if 'd1' in self.scales:
-            decomposition['d1'] = signal - ema2
+            decomposition['d1'] = signal_float - ema2
 
         # d2: High-Medium frequency
         if 'd2' in self.scales:
@@ -213,7 +223,7 @@ class OptimizedWaveletDecomposition:
             # CAUSAL MODE
             if self.causal:
                 if self.verbose:
-                    tprint_info("   🌊 Using Strict Causal Decomposition (EMA Cascade)")
+                    tprint_info("   🌊 Using Strict Causal Decomposition (EMA Cascade - Numba Optimized)")
                 return self._decompose_causal_ema(signal_clean)
 
             # NON-CAUSAL (Wavelet) MODE
@@ -484,9 +494,11 @@ class OptimizedWaveletDecomposition:
         # Causal Mode (EWMA Smoothing)
         if self.causal:
             if self.verbose:
-                tprint_info("   🌊 Using Strictly Causal Denoising (EWMA)")
+                tprint_info("   🌊 Using Strictly Causal Denoising (EMA Cascade - Numba Optimized)")
             # Use span=10 as standard causal smoother
-            return pd.Series(signal).ewm(span=10, adjust=False).mean().values
+            # span=10 -> alpha = 2/11
+            alpha = 2.0 / 11.0
+            return _numba_ewma(signal.astype(np.float64), alpha, adjust=False)
 
         # Non-Causal Mode (Wavelet)
         try:

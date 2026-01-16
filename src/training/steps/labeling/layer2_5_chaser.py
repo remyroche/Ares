@@ -571,6 +571,8 @@ class Layer25Chaser:
         if self.feature_engineering:
             if self.verbose: tprint_info("   🛠️ Engineering features (FracDiff + Residuals)...")
             X_proc = self._engineer_features(X)
+            if self.verbose:
+                tprint_info(f"   ✅ Features ready: {X_proc.shape[1]} columns (FracDiff/Residualized)")
         else:
             X_proc = X.copy()
 
@@ -606,11 +608,23 @@ class Layer25Chaser:
 
         # Helper to train a set of models for a specific weight vector
         def train_ensemble(weights, prefix=""):
+            if self.verbose:
+                tprint_info(f"   🎓 Training Teacher (BayesianRidge) for {prefix}...")
+
             # 1. Teacher
             teacher = fit_bayes_teacher_oof(
                 X_np, y_np, sample_weight=weights, n_splits=5, is_classifier=(self.mode == "classification")
             )
             
+            if self.verbose:
+                if teacher.p_oof is not None:
+                    acc = np.mean((teacher.p_oof > 0.5) == y_np)
+                    tprint_info(f"      - Teacher Accuracy: {acc:.4f}")
+                elif teacher.mu_oof is not None:
+                    # Simple R2 proxy
+                    r2 = 1 - np.sum((y_np - teacher.mu_oof)**2) / np.sum((y_np - np.mean(y_np))**2)
+                    tprint_info(f"      - Teacher R2: {r2:.4f}")
+
             # Sanity check uncertainty signal
             if self.mode == "classification" and teacher.p_oof is not None:
                 uncertainty_corr = sanity_check_uncertainty(y_np, teacher.p_oof, teacher.std_oof)
@@ -623,6 +637,9 @@ class Layer25Chaser:
 
             # Temporary storage for pruning
             temp_preds = {}
+
+            if self.verbose:
+                tprint_info(f"   👨‍🎓 Training Students ({len(self.models_to_train)} types) for {prefix}...")
 
             for m_type in self.models_to_train:
                 if m_type == "lgb" and not LGBM_AVAILABLE: continue
@@ -653,6 +670,9 @@ class Layer25Chaser:
                     temp_preds[m_type] = pred
                     students[m_type] = student
                     valid_models.append(m_type)
+
+                    if self.verbose:
+                        tprint_success(f"      ✅ {m_type} trained")
 
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Failed to train {m_type} student: {e}")

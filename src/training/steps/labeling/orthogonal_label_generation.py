@@ -211,6 +211,8 @@ FAMILY_MIN_EVENT_RATE = {
 FIXED_GRID = [
     # --- 1.5-3% Target Range Specific Grid (de Prado Framework) ---
     # ADDED: TBM 32 and Trend Model 150
+    {'id': 'TBM_16', 'pt': 2.0, 'sl': 1.0, 'horizon': 16}, # 4h
+    {'id': 'TBM_24', 'pt': 2.0, 'sl': 1.0, 'horizon': 24}, # 6h
     {'id': 'TBM_32', 'pt': 2.0, 'sl': 1.0, 'horizon': 32},
     {'id': 'Trend_150', 'pt': 4.0, 'sl': 1.5, 'horizon': 150},
     

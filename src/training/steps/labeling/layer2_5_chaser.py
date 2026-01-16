@@ -231,7 +231,7 @@ def train_chaser_student(
     winsor_resid_k: float = 3.0,
     model_type: str = "xgb", # "xgb", "lgb", "cat", "et"
     model_params: dict | None = None,
-    num_boost_round: int = 800,
+    num_boost_round: int = 1000, # Default increased to 1000
     # New parameters for weak constraints
     monotone_constraints_weak: dict | None = None,
     interaction_constraints_weak: list[list[str]] | None = None,
@@ -239,6 +239,7 @@ def train_chaser_student(
 ):
     """
     Train a student model (Chaser) on residuals or with margin correction.
+    Uses aggressive early stopping (30 rounds) with an internal validation split.
     """
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y)
@@ -263,22 +264,40 @@ def train_chaser_student(
     else:
         raise ValueError("mode must be 'regression' or 'classification'.")
 
+    # --- Internal Validation Split for Early Stopping ---
+    # We use the last 15% of data as validation set to enable early stopping
+    n_samples = len(X)
+    split_idx = int(n_samples * 0.85)
+
+    X_train, X_valid = X[:split_idx], X[split_idx:]
+    y_train, y_valid = target[:split_idx], target[split_idx:]
+    w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
+
+    init_score_train = init_score[:split_idx] if init_score is not None else None
+    init_score_valid = init_score[split_idx:] if init_score is not None else None
+    baseline_train = baseline[:split_idx] if baseline is not None else None
+    baseline_valid = baseline[split_idx:] if baseline is not None else None
+
     # --- XGBoost ---
     if model_type == "xgb":
-        dtrain = xgb.DMatrix(X, label=target, weight=w_final)
+        dtrain = xgb.DMatrix(X_train, label=y_train, weight=w_train)
+        dvalid = xgb.DMatrix(X_valid, label=y_valid, weight=w_valid)
+
         if mode == "classification":
-            dtrain.set_base_margin(init_score)
+            dtrain.set_base_margin(init_score_train)
+            dvalid.set_base_margin(init_score_valid)
 
         default_params = {
-            "eta": 0.03,  # User-specified learning rate
-            "max_depth": 4,
-            "min_child_weight": 10,  # User-specified
-            "subsample": 0.6,  # User-specified
+            "eta": 0.03,
+            "max_depth": 5, # Increased to 5
+            "min_child_weight": 10,
+            "subsample": 0.6,
             "colsample_bytree": 0.7,
-            "colsample_bynode": 0.4,  # User-specified
-            "reg_lambda": 50.0,  # User-specified strong regularization
+            "colsample_bynode": 0.4,
+            "reg_lambda": 25.0, # Decreased to 25
             "reg_alpha": 0.0,
-            "gamma": 1.1,  # User-specified
+            "gamma": 0.7, # Decreased to 0.7
+            "num_parallel_tree": 15, # Random Forest behavior
             "n_jobs": -1
         }
         if mode == "regression":
@@ -294,7 +313,6 @@ def train_chaser_student(
 
         # Add weak constraints if available
         if monotone_constraints_weak is not None and mode == "classification":
-            # Convert dict to tuple for XGBoost using feature indices
             feature_names = [f"f{i}" for i in range(X.shape[1])]
             mono_tuple = tuple(monotone_constraints_weak.get(f"f{i}", 0) for i in range(X.shape[1]))
             params["monotone_constraints"] = mono_tuple
@@ -302,7 +320,14 @@ def train_chaser_student(
         if interaction_constraints_weak is not None and mode == "classification":
             params["interaction_constraints"] = interaction_constraints_weak
 
-        bst = xgb.train(params, dtrain, num_boost_round=num_boost_round)
+        bst = xgb.train(
+            params,
+            dtrain,
+            num_boost_round=num_boost_round,
+            evals=[(dtrain, "train"), (dvalid, "valid")],
+            early_stopping_rounds=30, # Aggressive early stopping
+            verbose_eval=False
+        )
         return {"model": bst, "mode": mode, "type": "xgb", "params": params}
 
     # --- LightGBM ---
@@ -310,19 +335,26 @@ def train_chaser_student(
         if not LGBM_AVAILABLE:
             raise ImportError("LightGBM not installed")
 
-        train_data = lgb.Dataset(X, label=target, weight=w_final)
+        train_data = lgb.Dataset(X_train, label=y_train, weight=w_train)
+        valid_data = lgb.Dataset(X_valid, label=y_valid, weight=w_valid, reference=train_data)
+
         if mode == "classification":
-            train_data.set_init_score(init_score)
+            train_data.set_init_score(init_score_train)
+            valid_data.set_init_score(init_score_valid)
 
         default_params = {
             "learning_rate": 0.05,
             "num_leaves": 31,
             "min_child_samples": 20,
             "subsample": 0.7,
+            "subsample_freq": 1, # Added
             "colsample_bytree": 0.7,
-            "reg_lambda": 10.0,  # User-specified
-            "path_smooth": 20,  # User-specified
-            "extra_trees": True,  # User-specified
+            "colsample_bynode": 0.7, # Added feature_fraction_bynode
+            "reg_lambda": 10.0,
+            "min_split_gain": 0.005, # Added min_gain_to_split
+            "linear_tree": True, # Added linear=true
+            "path_smooth": 20,
+            "extra_trees": True,
             "n_jobs": -1,
             "verbose": -1
         }
@@ -344,7 +376,17 @@ def train_chaser_student(
         if interaction_constraints_weak is not None and mode == "classification":
             params["interaction_constraints"] = interaction_constraints_weak
 
-        bst = lgb.train(params, train_data, num_boost_round=num_boost_round)
+        # Callbacks for early stopping
+        callbacks = [lgb.early_stopping(stopping_rounds=30, verbose=False)]
+
+        bst = lgb.train(
+            params,
+            train_data,
+            num_boost_round=num_boost_round,
+            valid_sets=[train_data, valid_data],
+            valid_names=["train", "valid"],
+            callbacks=callbacks
+        )
         return {"model": bst, "mode": mode, "type": "lgb", "params": params}
 
     # --- CatBoost ---
@@ -352,19 +394,25 @@ def train_chaser_student(
         if not CATBOOST_AVAILABLE:
             raise ImportError("CatBoost not installed")
 
-        train_pool = cb.Pool(X, label=target, weight=w_final)
+        train_pool = cb.Pool(X_train, label=y_train, weight=w_train)
+        valid_pool = cb.Pool(X_valid, label=y_valid, weight=w_valid)
+
         if mode == "classification":
-            train_pool.set_baseline(baseline)
+            train_pool.set_baseline(baseline_train)
+            valid_pool.set_baseline(baseline_valid)
 
         default_params = {
             "iterations": num_boost_round,
             "learning_rate": 0.05,
             "depth": 6,
-            "l2_leaf_reg": 20.0,  # User-specified
-            "subsample": 0.6,  # User-specified
-            "random_strength": 5.0,  # User-specified
+            "l2_leaf_reg": 20.0,
+            "subsample": 0.6,
+            "rsm": 0.8, # Added rsm
+            "bagging_temperature": 1, # Added bagging_temperature
+            "random_strength": 5.0,
             "verbose": False,
-            "allow_writing_files": False
+            "allow_writing_files": False,
+            "early_stopping_rounds": 30 # Native parameter
         }
         if mode == "regression":
             default_params["loss_function"] = "MAE"
@@ -380,31 +428,42 @@ def train_chaser_student(
             params["monotone_constraints"] = monotone_constraints_weak
 
         model = cb.CatBoost(params)
-        model.fit(train_pool)
+        model.fit(train_pool, eval_set=valid_pool)
         return {"model": model, "mode": mode, "type": "cat", "params": params}
 
     # --- ExtraTrees ---
     elif model_type == "et":
-        # ExtraTrees doesn't support margin/init_score easily for classification
-        # We will use it only for regression on residuals
+        # ExtraTrees doesn't support early stopping in the same way (sklearn)
+        # We train on full set (X, y) or we could simulate it but ET is fast anyway
+        # We stick to full training for ET but update parameters
+
+        # Determine estimators from num_boost_round if passed, but cap/set to 500
+        n_estimators = 500 # Reduced to 500
+
         if mode == "classification":
-            # Fallback: Train on raw binary target with sample weights
-            # This ignores the teacher margin, making it a pure student
-            # Or train on probability residuals? No.
-            # We skip margin correction for ET Classifier here.
-            # print("Warning: ExtraTrees classifier does not support margin correction. Training standard model.")
-            et_model = ExtraTreesRegressor(n_estimators=200, n_jobs=-1, max_depth=10, min_samples_leaf=5)
-            # Train regression on the binary target? Or use Classifier?
-            # Using Regressor on binary target is sometimes robust.
-            # But let's use the residual logic: y_bin - p_oof
-            # This is "regression on probability residuals".
+            # "residual_prob" subtype
             res_target = y.astype(float) - teacher.p_oof
+            et_model = ExtraTreesRegressor(
+                n_estimators=n_estimators,
+                n_jobs=-1,
+                max_depth=6, # Reduced to 6
+                min_samples_leaf=20, # Increased to 20
+                random_state=42
+            )
+            if model_params:
+                et_model.set_params(**model_params)
+
             et_model.fit(X, res_target, sample_weight=w_final)
-            # Store prediction type as "residual_prob"
             return {"model": et_model, "mode": mode, "type": "et", "subtype": "residual_prob"}
         else:
             # Regression on residuals
-            et_model = ExtraTreesRegressor(n_estimators=200, n_jobs=-1, max_depth=10, min_samples_leaf=5, random_state=42)
+            et_model = ExtraTreesRegressor(
+                n_estimators=n_estimators,
+                n_jobs=-1,
+                max_depth=6, # Reduced to 6
+                min_samples_leaf=20, # Increased to 20
+                random_state=42
+            )
             if model_params:
                 et_model.set_params(**model_params)
             et_model.fit(X, target, sample_weight=w_final)

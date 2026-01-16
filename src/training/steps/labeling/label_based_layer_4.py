@@ -46,6 +46,7 @@ from src.utils.layer4_optimized import (
     rolling_cusum_scores_numba,
     compute_proxy_entropy_numba
 )
+from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
 
 # Import entropy bars functionality
 try:
@@ -712,6 +713,17 @@ class MetaLearnerFeatures:
         features['volatility'] = volatility
         features['sadf_score_norm'] = sadf_norm
         features['cusum_score_norm'] = cusum_norm
+
+        # Integrate Anti-Explosion Features
+        try:
+            processed = apply_layer2_price_processing(df, price_col=raw_price_col, enable_price_features=True)
+            # Select new features
+            new_cols = [c for c in processed.columns if c not in df.columns]
+            if new_cols:
+                features = pd.concat([features, processed[new_cols]], axis=1)
+                # tprint_info(f"   ✨ Layer 4: Added {len(new_cols)} Anti-Explosion features")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Layer 4: Anti-Explosion feature generation failed: {e}")
 
         return features
 

@@ -245,7 +245,14 @@ class AdaptiveEventDrivenLabeling:
             # Find high resonance periods
             high_resonance_periods = {}
             
-            for resonance_name, resonance_scores in self.resonance_analysis.items():
+            for resonance_name, resonance_data in self.resonance_analysis.items():
+                # Extract series from the dictionary if necessary
+                resonance_scores = None
+                if isinstance(resonance_data, dict) and 'series' in resonance_data:
+                    resonance_scores = resonance_data['series']
+                elif isinstance(resonance_data, np.ndarray):
+                    resonance_scores = resonance_data
+
                 if isinstance(resonance_scores, np.ndarray):
                     # Identify periods where resonance > threshold
                     high_resonance_mask = resonance_scores > resonance_threshold
@@ -286,15 +293,24 @@ class AdaptiveEventDrivenLabeling:
     ) -> float:
         """Calculate overall entry quality score."""
         try:
-            if not high_resonance_periods:
-                return 0.0
+            # Removed early return so RSV eigenvalue can contribute even if no high resonance periods
+            # if not high_resonance_periods:
+            #     return 0.0
             
             # Average resonance strength
             resonance_strengths = []
             for resonance_name, resonance_mask in high_resonance_periods.items():
                 if isinstance(resonance_mask, np.ndarray):
-                    resonance_scores = self.resonance_analysis.get(resonance_name, np.array([]))
-                    if len(resonance_scores) > 0:
+                    # Extract series from the dictionary if necessary
+                    resonance_data = self.resonance_analysis.get(resonance_name)
+                    resonance_scores = None
+
+                    if isinstance(resonance_data, dict) and 'series' in resonance_data:
+                        resonance_scores = resonance_data['series']
+                    elif isinstance(resonance_data, np.ndarray):
+                        resonance_scores = resonance_data
+
+                    if isinstance(resonance_scores, np.ndarray) and len(resonance_scores) > 0:
                         high_scores = resonance_scores[resonance_mask]
                         if len(high_scores) > 0:
                             resonance_strengths.append(np.mean(high_scores))

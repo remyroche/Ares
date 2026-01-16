@@ -169,6 +169,22 @@ class CausalQualityAssessor:
         
         events_df, X, y = alignment_result['events_df'], alignment_result['X'], alignment_result['y']
         
+        # Auto-wire Causal Target if missing
+        if y_causal is None:
+            if 'close' in df.columns:
+                try:
+                    # Generate innovation (t)
+                    y_innov = self._generate_causal_target(df['close'])
+                    # Shift to t+1 for prediction target
+                    y_target = y_innov.shift(-1)
+                    # Align with X (events)
+                    y_causal = y_target.reindex(X.index).fillna(0)
+                    if self.verbose:
+                        tprint_info(f"   ✅ Auto-generated causal target (n={len(y_causal)})")
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Failed to generate causal target: {e}")
+
         # ========== EARLY BACKBONE REDUNDANCY CHECK ==========
         # Prune candidates that are just proxies for existing Specialists
         if backbone_features is not None and not backbone_features.empty:
@@ -279,6 +295,40 @@ class CausalQualityAssessor:
         if self.verbose:
             tprint_success(f"✅ Candidate {candidate_id} assessment complete (Layer2Score: {metrics.get('Layer2Score', 0.0):.4f})")
         return metrics
+
+    def _generate_causal_target(self, price_series: pd.Series) -> pd.Series:
+        """
+        Generate continuous causal target (Innovation) via HAR(3) + Studentization.
+        Ref: De Prado, Advances in Financial Machine Learning.
+        """
+        try:
+            # 1. Log Returns
+            ret = np.log(price_series).diff().fillna(0)
+
+            # 2. HAR Lags (1, 5, 22)
+            df_har = pd.DataFrame({'ret': ret})
+            df_har['lag1'] = ret.shift(1)
+            df_har['lag5'] = ret.rolling(5).mean().shift(1)
+            df_har['lag22'] = ret.rolling(22).mean().shift(1)
+            df_har = df_har.dropna()
+
+            if len(df_har) < 100:
+                return ret # Fallback
+
+            model = Ridge(alpha=1.0)
+            model.fit(df_har[['lag1', 'lag5', 'lag22']], df_har['ret'])
+            pred = model.predict(df_har[['lag1', 'lag5', 'lag22']])
+            residuals = df_har['ret'] - pred
+
+            # 4. Studentize (GARCH-proxy: Rolling Std)
+            std = residuals.rolling(60).std()
+            y_causal = residuals / (std + 1e-9)
+
+            return y_causal.reindex(price_series.index).fillna(0)
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ Causal target generation failed: {e}")
+            return pd.Series(0, index=price_series.index)
 
     def _validate_and_align_data(self, candidate_id: str, df: pd.DataFrame, events_df: pd.DataFrame, 
                                 X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:

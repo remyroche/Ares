@@ -2,19 +2,27 @@ import numpy as np
 from numba import njit, prange
 
 @njit(cache=True)
-def compute_financial_weights_numba(abs_returns):
+def compute_financial_weights_numba(abs_returns, volatility):
     """
     Compute financial weights using Numba.
+    Now incorporates volatility normalization to prevent procyclicality.
 
     Args:
         abs_returns: 1D numpy array of absolute returns
+        volatility: 1D numpy array of volatility (must be positive)
 
     Returns:
         1D numpy array of weights
     """
     n = len(abs_returns)
-    total_abs_ret = np.sum(abs_returns) + 1e-9
-    weights = abs_returns / total_abs_ret * n
+
+    # volatility regime normalization: |r| / sigma
+    # Avoid division by zero with small epsilon
+    raw_weights = abs_returns / (volatility + 1e-6)
+
+    # Initial Normalization to mean=1
+    total_raw = np.sum(raw_weights) + 1e-9
+    weights = raw_weights / total_raw * n
 
     # Simple quantile clip
     q01 = np.percentile(weights, 1.0)

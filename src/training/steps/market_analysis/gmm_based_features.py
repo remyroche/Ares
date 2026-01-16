@@ -28,6 +28,7 @@ import joblib
 import os
 import gc
 from datetime import datetime
+import time
 
 # Internal imports
 from src.training.steps.base_step import BaseStep
@@ -303,7 +304,7 @@ class GMMFeaturePipeline(BaseStep):
         results['macro_entropy'] = ent
         results['macro_z_familiarity'] = z_fam
 
-        return results
+        return results.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     def _step_b_causal_experts(self, X: pd.DataFrame, returns: pd.Series) -> pd.DataFrame:
         """
@@ -318,7 +319,7 @@ class GMMFeaturePipeline(BaseStep):
         # 1. Causal Discovery
         tprint_info("   🔍 Running Light Causal Discovery (NOTEARS)...")
         # Use subsample for speed (NOTEARS can handle more, but keeping it light)
-        X_fit = self._subsample_data(X, n_samples=5000)
+        X_fit = self._subsample_data(X, n_samples=2000)
 
         # Initialize Light engine
         cd = CausalDiscoveryLight(verbose=self.verbose, lambda1=0.05)
@@ -403,7 +404,7 @@ class GMMFeaturePipeline(BaseStep):
 
             # tprint_info(f"      - Family {i}: Leader={leader}, Members={len(members)}, Signal Mean={scalar.mean():.5f}")
 
-        return results
+        return results.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     def _step_c_latent_causal_macro(self, X: pd.DataFrame, returns: pd.Series) -> pd.DataFrame:
         """
@@ -561,7 +562,7 @@ class GMMFeaturePipeline(BaseStep):
         # Or just use the Signal acceleration.
         results['latent_kinematics_accel'] = results['latent_macro_signal'].diff().diff().fillna(0)
 
-        return results
+        return results.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     def _step_d_testing_pruning(self, feature_sets: List[pd.DataFrame], target: pd.Series) -> pd.DataFrame:
         """
@@ -695,19 +696,32 @@ class GMMFeaturePipeline(BaseStep):
 
             # 3. Pipelines
             # A: Macro State
+            tprint_info("🚀 Starting GMM Pipeline Steps...")
+            step_a_start = time.time()
             df_a = self._step_a_macro_state(X_clean, returns)
+            step_a_time = time.time() - step_a_start
+            tprint_success(f"✅ Step A completed in {step_a_time:.2f}s")
 
             # B: Causal Experts
+            step_b_start = time.time()
             df_b = self._step_b_causal_experts(X_clean, returns)
+            step_b_time = time.time() - step_b_start
+            tprint_success(f"✅ Step B completed in {step_b_time:.2f}s")
 
             # C: Latent Causal Macro
+            step_c_start = time.time()
             df_c = self._step_c_latent_causal_macro(X_clean, returns)
+            step_c_time = time.time() - step_c_start
+            tprint_success(f"✅ Step C completed in {step_c_time:.2f}s")
 
             # D: Pruning
             # Target for selection: 12-period forward return sign
             target_series = returns.shift(-12).fillna(0)
 
+            step_d_start = time.time()
             final_features = self._step_d_testing_pruning([df_a, df_b, df_c], target_series)
+            step_d_time = time.time() - step_d_start
+            tprint_success(f"✅ Step D completed in {step_d_time:.2f}s")
 
             # 4. Save Artifacts
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -1,12 +1,37 @@
 {
   "step_name": "causal_discovery",
   "step_index": 3,
-  "timestamp": "20260114_210432",
+  "timestamp": "20260115_201445",
   "symbol": "ETHUSDT",
   "config_hash": "40cb201e3be3",
   "data_keys": [
     "df",
     "causal_graph"
   ],
-  "json_data": {}
+  "json_data": {
+    "causal_graph": {
+      "close": [
+        "close",
+        "TARGET_RET_1"
+      ],
+      "volume": [
+        "close",
+        "volume",
+        "TARGET_RET_1"
+      ],
+      "log_ret": [
+        "close",
+        "TARGET_RET_1"
+      ],
+      "TARGET_RET_1": [
+        "TARGET_Sharpe",
+        "TARGET_RET_1"
+      ],
+      "TARGET_Sharpe": [
+        "close",
+        "TARGET_Sharpe",
+        "TARGET_RET_1"
+      ]
+    }
+  }
 }

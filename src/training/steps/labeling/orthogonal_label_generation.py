@@ -2880,10 +2880,10 @@ def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: floa
 
     return thresholds
 
-def calculate_continuous_weight(z_score_series: Union[pd.Series, np.ndarray], gamma: float = 2.0, beta: float = 1.0) -> Union[pd.Series, np.ndarray]:
+def calculate_continuous_weight(z_score_series: Union[pd.Series, np.ndarray], gamma: float = 2.0, beta: float = 1.0, quantile_threshold: float = 0.0) -> Union[pd.Series, np.ndarray]:
     """
     Calculate continuous sample weights based on Quantile Rank and Z-score Sigmoid.
-    Formula: w = (QuantileRank ** gamma) * Sigmoid(beta * Z_score)
+    Formula: w = (QuantileRank ** gamma) * Sigmoid(beta * Z_score) if QuantileRank > quantile_threshold else 0
     """
     if isinstance(z_score_series, np.ndarray):
         s = pd.Series(z_score_series)
@@ -2902,8 +2902,9 @@ def calculate_continuous_weight(z_score_series: Union[pd.Series, np.ndarray], ga
     z_abs = s.abs()
     sigmoid = 1.0 / (1.0 + np.exp(-beta * (z_abs - 2.0)))
 
-    # 3. Combine
+    # 3. Combine with quantile threshold filter
     weights = (q_rank ** gamma) * sigmoid
+    weights = weights.where(q_rank > quantile_threshold, 0.0)
 
     if is_array:
         return weights.values
@@ -2915,9 +2916,9 @@ def two_tier_weight(z, tier1_min=3.0, tier2_min=2.7, tier2_max=3.0, alpha=1.5,
     Compute continuous weights for a Z-score (Replaces discrete tiers).
     Formula: QuantileRank^2 * Sigmoid(Z)
     """
-    # Use the new continuous logic
+    # Use the new continuous logic with 4% quantile threshold
     if isinstance(z, (pd.Series, np.ndarray)):
-        w = calculate_continuous_weight(z, gamma=2.0, beta=1.0)
+        w = calculate_continuous_weight(z.fillna(0.0), gamma=2.0, beta=1.0, quantile_threshold=0.04)
     else:
         # Scalar fallback
         w = 0.0 if abs(z) < 2.0 else 1.0
@@ -3407,8 +3408,8 @@ def smart_event_weight(z_score_series: pd.Series, quantile_threshold: float = 0.
     Advanced Event Logic (Level 11):
     Refactored to use Continuous Weighting: QuantileRank^2 * Sigmoid(Z)
     """
-    # Use continuous weighting instead of discrete tiers
-    weights = calculate_continuous_weight(z_score_series, gamma=2.0, beta=1.0)
+    # Use continuous weighting with 4% quantile threshold
+    weights = calculate_continuous_weight(z_score_series, gamma=2.0, beta=1.0, quantile_threshold=0.04)
     
     # If adaptive is requested, we can modulate the weights further
     # But for now, continuous weighting captures the "intensity" better than regime modulation logic

@@ -518,7 +518,7 @@ DEFAULT_STOP_THRESHOLD = 0.0125  # 1.25% (widened to reduce premature stop outs)
 # Transaction cost: import from centralized module for consistency
 from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
-R_MULTIPLE_POS_THRESHOLD = 0.5
+R_MULTIPLE_POS_THRESHOLD = 0.1
 R_MULTIPLE_NEG_THRESHOLD = -0.25
 # Set to 0.1 (relaxed: capture ANY profit > 0.1 * cost) to fix low trade count
 ECON_MIN_RETURN_MULTIPLE = 0.1

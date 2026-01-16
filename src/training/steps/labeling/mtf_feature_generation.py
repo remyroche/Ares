@@ -11,6 +11,18 @@ from pandas.util import hash_pandas_object
 
 # Global cache to prevent redundant MTF generation
 _MTF_CACHE = {}
+_MAX_MTF_CACHE_SIZE = 3  # Keep only the N most recent entries
+
+def clear_mtf_cache():
+    """Explicitly clear the MTF feature cache to free memory."""
+    global _MTF_CACHE
+    import gc
+    if _MTF_CACHE:
+        count = len(_MTF_CACHE)
+        _MTF_CACHE.clear()
+        gc.collect()
+        print(f"🧹 [MTF Cache] Cleared {count} entries") # Use print as logger might not be configured directly here
+
 try:
     from scipy.signal import hilbert
 except ImportError:
@@ -1729,5 +1741,25 @@ def create_meta_features(
             print(f"💾 [MTF Cache] Saved {len(features.columns)} features to cache")
         except Exception:
             pass
+
+    # --- CACHE MANAGEMENT ---
+    # Enforce size limit
+    if len(_MTF_CACHE) > _MAX_MTF_CACHE_SIZE:
+        # Simple FIFO/Arbitrary pruning (dicts are insertion ordered in modern Python)
+        # Remove oldest entries until we are under the limit
+        num_to_remove = len(_MTF_CACHE) - _MAX_MTF_CACHE_SIZE
+        try:
+            # Create a list of keys to remove to avoid runtime error during iteration
+            # We want to keep the NEWEST ones (last inserted). 
+            # So remove the first 'num_to_remove' keys.
+            keys_to_remove = list(_MTF_CACHE.keys())[:num_to_remove]
+            for k in keys_to_remove:
+                del _MTF_CACHE[k]
+            
+            # Force collection after pruning large objects
+            gc.collect()
+            print(f"🧹 [MTF Cache] Pruned {len(keys_to_remove)} old entries to enforce limit of {_MAX_MTF_CACHE_SIZE}")
+        except Exception as e:
+            print(f"⚠️ [MTF Cache] Pruning failed: {e}")
 
     return features

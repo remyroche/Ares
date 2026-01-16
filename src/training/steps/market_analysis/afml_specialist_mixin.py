@@ -240,7 +240,8 @@ class AFMLSpecialistMixin:
                 config=config,
                 filter_type=filter_type,
                 pt_sl_config_key=pt_sl_config_key,
-                default_pt_sl=default_pt_sl
+                default_pt_sl=default_pt_sl,
+                specialist_type=specialist_type
             )
 
             # 4. Centralized Training
@@ -361,6 +362,9 @@ class AFMLSpecialistMixin:
         aligned_probs = aligned_probs.fillna(neutral_value)
         binary = pd.Series(0, index=target_index, dtype=int)
         confident_mask = ~missing_mask
+        return aligned_probs, binary
+
+    def prepare_specialist_data(self, market_data, feature_df, config, filter_type, pt_sl_config_key, default_pt_sl, specialist_type):
         symbol = config.get('symbol', 'BTCUSDT')
         exchange = config.get('exchange', 'binance')
         timeframe = config.get('timeframe', '15m')

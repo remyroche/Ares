@@ -62,6 +62,7 @@ from dataclasses import dataclass
 warnings.filterwarnings('ignore')
 
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.versioned_artifacts.store import VersionedArtifactStore
 
 
 def _ensure_contiguous_float64(values: np.ndarray) -> np.ndarray:
@@ -1037,36 +1038,40 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         else:
             tprint_success(f"✅ Loaded GMM-enhanced features from cache: {gmm_enhanced_features.shape}")
         
-        # Step 4: Feature selection on GMM-enhanced features
-        tprint_info("🎯 Applying feature selection to GMM-enhanced features...")
-        selected_features = await self._apply_feature_selection(gmm_enhanced_features, config)
+        # Step 4: Combine fracdiff raw features + GMM-derived features
+        combined_features = pd.concat([raw_features, gmm_enhanced_features], axis=1)
+        tprint_success(f"✅ Combined features: {raw_features.shape} raw + {gmm_enhanced_features.shape} GMM = {combined_features.shape}")
+
+        # Step 5: Feature selection on combined features
+        tprint_info("🎯 Applying feature selection to combined features...")
+        selected_features = await self._apply_feature_selection(combined_features, config)
         
         if selected_features is None or selected_features.empty:
             error_msg = "❌ Feature selection failed"
             tprint_error(error_msg)
             return {"success": False, "error": error_msg}
         
-        tprint_success(f"✅ Selected {len(selected_features.columns)} features from {len(gmm_enhanced_features.columns)} GMM-enhanced features")
+        tprint_success(f"✅ Selected {len(selected_features.columns)} features from {len(combined_features.columns)} combined features")
         
-        # Step 5: Train Ensemble models (ExtraTrees, CatBoost, LGBM, XGB) on selected features
+        # Step 6: Train Ensemble models (ExtraTrees, CatBoost, LGBM, XGB) on selected features
         model_results = await self._train_models_on_selected_features(selected_features, active_market_data, config)
         
-        # Step 5.5: Train Meta Model (Stacking)
+        # Step 7: Train Meta Model (Stacking)
         if model_results.get("success", False) and "y_oof" in model_results:
             tprint_info("🏗️ Training Meta-Model (Stacking)...")
             meta_results = await self._train_meta_model(model_results, model_results['y_oof'])
             model_results['meta_model'] = meta_results
 
-        # Step 6: Train individual specialists using GMM-enhanced features
+        # Step 8: Train individual specialists using GMM-enhanced features
         tprint_info("🔄 Training individual specialists with GMM-enhanced features...")
         specialist_outputs = await self._train_all_specialists_memory_efficient(
             enhanced_market_data, config, force_retrain, batch_size=self._get_optimal_batch_size(self.batch_config.base_batch_size)
         )
         
         # Log post-selection characteristics
-        selection_ratio = len(selected_features.columns) / len(gmm_enhanced_features.columns)
-        tprint_success(f"✅ Selected GMM features shape: {selected_features.shape}")
-        tprint_info(f"📈 Feature selection: {len(gmm_enhanced_features.columns)} → {len(selected_features.columns)} ({selection_ratio:.1%} kept)")
+        selection_ratio = len(selected_features.columns) / len(combined_features.columns)
+        tprint_success(f"✅ Selected combined features shape: {selected_features.shape}")
+        tprint_info(f"📈 Feature selection: {len(combined_features.columns)} → {len(selected_features.columns)} ({selection_ratio:.1%} kept)")
         
         post_selection_types = self._analyze_feature_types(selected_features)
         tprint_info(f"🏷️ Post-selection feature types: {post_selection_types}")
@@ -1597,17 +1602,28 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             return {"success": False, "error": str(e)}
 
     async def _extract_raw_features_from_market_data(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Extract raw features from market data without training specialists."""
+        """Extract raw features from market data using fracdiff on price series."""
         try:
+            # Initialize fracdiff transformer if not already set
+            if not hasattr(self, 'fracdiff_transformer'):
+                from src.utils.fracdiff import FracDiffTransformer
+                self.fracdiff_transformer = FracDiffTransformer()
             close = _ensure_contiguous_float64(market_data['close'].to_numpy())
             high = _ensure_contiguous_float64(market_data['high'].to_numpy())
             low = _ensure_contiguous_float64(market_data['low'].to_numpy())
             volume = _ensure_contiguous_float64(market_data['volume'].to_numpy())
 
-            returns = _pct_change_fast(close)
-            log_returns = _log_return_fast(close)
+            # Fracdiff close for stationary features
+            from src.utils.fracdiff import FracDiffTransformer
+            transformer = FracDiffTransformer()
+            optimal_d = transformer.find_optimal_d(market_data['close'], method='binary_search', tolerance=0.1)
+            close_fd_series = transformer.fracdiff(market_data['close'], d=optimal_d, drop_na=False)
+            close_fd = _ensure_contiguous_float64(close_fd_series.to_numpy())
+
+            returns = _pct_change_fast(close_fd)
+            log_returns = _log_return_fast(close_fd)
             high_low_ratio = _safe_divide(high, low)
-            volume_price_ratio = _safe_divide(volume, close)
+            volume_price_ratio = _safe_divide(volume, close_fd)
 
             feature_data = {
                 'returns': returns,
@@ -1617,19 +1633,19 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             }
 
             for window in [5, 10, 20, 50]:
-                ma_values = _rolling_mean_fast(close, window)
+                ma_values = _rolling_mean_fast(close_fd, window)
                 feature_data[f'ma_{window}'] = ma_values
-                feature_data[f'ma_{window}_ratio'] = _safe_divide(close, ma_values)
+                feature_data[f'ma_{window}_ratio'] = _safe_divide(close_fd, ma_values)
 
             for window in [5, 10, 20]:
                 feature_data[f'vol_{window}'] = _rolling_std_fast(returns, window)
 
-            feature_data['rsi'] = _rsi_fast(close, 14)
+            feature_data['rsi'] = _rsi_fast(close_fd, 14)
 
             features_df = pd.DataFrame(feature_data, index=market_data.index)
             features_df = features_df.replace([np.inf, -np.inf], np.nan).dropna()
 
-            tprint_info(f"📊 Generated {len(features_df.columns)} raw features from market data")
+            tprint_info(f"📊 Generated {len(features_df.columns)} raw features from fracdiff market data")
             return features_df
             
         except Exception as e:
@@ -1695,7 +1711,10 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             # Using shift(-1) for standard prediction.
 
             if 'returns' in features.columns:
-                target = features['returns'].shift(-1)
+                returns_col = features['returns']
+                if isinstance(returns_col, pd.DataFrame):
+                    returns_col = returns_col.iloc[:, 0]  # Take first 'returns' column if multiple
+                target = returns_col.shift(-1)
             else:
                  target = market_data['close'].pct_change().shift(-1)
 

@@ -1,7 +1,7 @@
 {
   "step_name": "regime_generation",
   "step_index": 1,
-  "timestamp": "20260114_210326",
+  "timestamp": "20260115_201308",
   "symbol": "ETHUSDT",
   "config_hash": "40cb201e3be3",
   "data_keys": [
@@ -10,5 +10,8 @@
     "config_hash",
     "dataset_fingerprint"
   ],
-  "json_data": {}
+  "json_data": {
+    "config_hash": "ced64cafde28006fb37b6106c1d4d1d6",
+    "dataset_fingerprint": "132484_2021-10-30 22:22:00_2026-01-10 11:53:00_92b105b72406cf228fb2d319190c358a"
+  }
 }

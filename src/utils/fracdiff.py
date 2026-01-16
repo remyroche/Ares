@@ -117,6 +117,12 @@ class FracDiffTransformer:
     
     def _binary_search_d(self, series: pd.Series, tolerance: float) -> float:
         """Binary search for optimal d parameter."""
+        # Subsample for speed if series is too long
+        if len(series) > 5000:
+            indices = np.linspace(0, len(series) - 1, 5000).astype(int)
+            series = series.iloc[indices]
+            tprint_info(f"⚡ Subsampling to {len(series)} samples for d search")
+            
         low, high = self.min_d, self.max_d
         best_d = low
         

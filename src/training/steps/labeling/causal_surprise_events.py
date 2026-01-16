@@ -730,10 +730,10 @@ class CausalSurpriseDetector:
                 return {}
             
             # --- 1. Adaptive Quantile Thresholding ---
-            # Instead of fixed threshold, use rolling 98th percentile of surprise magnitudes
+            # Instead of fixed threshold, use rolling 96th percentile of surprise magnitudes (User: 4% target)
             # But ensure it doesn't fall below hard floor 'event_threshold'
             scores = self.surprise_events_['max_surprise']
-            rolling_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.98) # 30 days of 15m
+            rolling_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96) # 30 days of 15m
             adaptive_threshold = rolling_threshold.fillna(event_threshold).clip(lower=event_threshold)
             
             # Use adaptive threshold

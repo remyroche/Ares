@@ -151,10 +151,17 @@ class CausalDiscovery:
                     cov_zz = cov_matrix[2:, 2:]
                     
                     try:
-                        inv_cov_zz = np.linalg.inv(cov_zz)
+                        # Try standard inversion first
+                        try:
+                            inv_cov_zz = np.linalg.inv(cov_zz)
+                        except np.linalg.LinAlgError:
+                            # Add jitter for numerical stability
+                            jitter = 1e-6 * np.eye(cov_zz.shape[0])
+                            inv_cov_zz = np.linalg.inv(cov_zz + jitter)
+
                         partial_corr = (cov_xy - cov_xz @ inv_cov_zz @ cov_yz) / \
-                                     np.sqrt((cov_matrix[0, 0] - cov_xz @ inv_cov_zz @ cov_xz.T) * \
-                                            (cov_matrix[1, 1] - cov_yz @ inv_cov_zz @ cov_yz.T))
+                                     (np.sqrt((cov_matrix[0, 0] - cov_xz @ inv_cov_zz @ cov_xz.T) * \
+                                            (cov_matrix[1, 1] - cov_yz @ inv_cov_zz @ cov_yz.T)) + 1e-9)
                         
                         # Convert to t-statistic
                         df = n_samples - len(z) - 2

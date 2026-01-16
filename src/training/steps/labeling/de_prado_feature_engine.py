@@ -40,7 +40,7 @@ class DePradoFeatureEngine:
     
     def __init__(
         self,
-        n_estimators: int = 1000,
+        n_estimators: int = 200,
         max_clusters: int = 12,
         min_cluster_size: int = 2,
         random_state: int = 42,
@@ -99,13 +99,19 @@ class DePradoFeatureEngine:
             Series of cluster labels indexed by feature names
         """
         tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
+        onc_start = time.time()
 
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
 
         # Compute correlation matrix
+        corr_start = time.time()
         corr = X.corr().fillna(0)
         
+        # Clamp to [-1, 1] to prevent floating point precision issues
+        corr = np.clip(corr, -1, 1)
+        tprint_info(f"⏱️  Correlation matrix computed in {time.time() - corr_start:.2f}s")
+
         # Representation where each feature becomes a "sample" vector for metrics
         feature_sample_matrix = X.T
         
@@ -136,6 +142,9 @@ class DePradoFeatureEngine:
         # Ensure diagonal is exactly zero (fix for the error)
         np.fill_diagonal(dist.values, 0)
         
+        # Clip to non-negative due to floating point precision
+        dist = np.maximum(dist, 0)
+        
         # Find optimal number of clusters using multi-criteria scoring
         best_k, best_composite_score = 2, -1
         scores_history = {}
@@ -147,6 +156,7 @@ class DePradoFeatureEngine:
         tprint_info(f"   📊 Metrics: CV Ratio (primary), DBI (secondary), Silhouette (tertiary)")
 
         for k in range(2, max_k + 1):
+            k_start = time.time()
             try:
                 clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
                 # Fit directly on (n_samples, n_features); FeatureAgglomeration clusters columns
@@ -213,7 +223,8 @@ class DePradoFeatureEngine:
                     
                     scores_history[k]['composite'] = composite_score
                     
-                    tprint_info(f"      - K={k}: CV={cv_ratio:.3f}, DBI={dbi_avg:.3f}, Sil={silhouette:.3f}, Comp={composite_score:.3f}")
+                    tprint_info(f"      - K={k}: CV={cv_ratio:.3f}, DBI={dbi:.3f}, Sil={silhouette:.3f}, Comp={composite_score:.3f}")
+                    tprint_info(f"        ⏱️ Evaluation time: {time.time() - k_start:.2f}s")
                     
                     if composite_score > best_composite_score:
                         best_composite_score, best_k = composite_score, k
@@ -224,7 +235,9 @@ class DePradoFeatureEngine:
             except Exception as e:
                 tprint_warning(f"      - K={k}: Failed - {e}")
                 continue
-        
+
+        tprint_info(f"⏱️  ONC search loop completed in {time.time() - onc_start:.2f}s")
+
         # Normalize CH scores across all k values
         if scores_history:
             ch_values = [scores_history[k]['ch'] for k in scores_history.keys()]
@@ -296,6 +309,12 @@ class DePradoFeatureEngine:
         """
         try:
             # X should be features as samples, labels correspond to features
+            # Subsample columns (samples) for speed if too many
+            if X.shape[1] > 5000:
+                np.random.seed(42)
+                sample_cols = np.random.choice(X.shape[1], 5000, replace=False)
+                X = X.iloc[:, sample_cols]
+            
             # Calculate between-cluster sum of squares (BCSS)
             overall_centroid = X.mean(axis=0)
             bcss = 0.0
@@ -530,8 +549,19 @@ class DePradoFeatureEngine:
             
             model.set_params(class_weight=class_weight)
             
-            tprint_info(f"🔄 Training {self.n_estimators} trees...")
-            model.fit(X, y)
+            # Subsample for speed if too many samples
+            if len(X) > 7000:
+                np.random.seed(self.random_state)
+                indices = np.random.choice(len(X), 7000, replace=False)
+                X_fit = X.iloc[indices]
+                y_fit = y.iloc[indices]
+                tprint_info(f"⚡ Subsampling to {len(X_fit)} samples for ExtraTrees training")
+            else:
+                X_fit = X
+                y_fit = y
+            
+            tprint_info(f"🔄 Training {self.n_estimators} trees on {len(X_fit)} samples...")
+            model.fit(X_fit, y_fit)
             
             training_time = time.time() - training_start
             tprint_success(f"✅ ExtraTrees training completed in {training_time:.2f}s")
@@ -761,8 +791,14 @@ class DePradoFeatureEngine:
             tprint_info(f"🔍 Cluster {cluster_id} ({cluster_size} features):")
             
             if is_king_selected:
-                tprint_info(f"   👑 KING: {king_feature.name} (score: {king_feature['CompositeScore']:.3f}) ✅ SELECTED")
-                tprint_info(f"      📊 Gain: {king_feature['Gain']:.4f}, Cover: {king_feature['Cover']:.4f}, Depth: {king_feature['MeanDepth']:.2f}")
+                stats_parts = [f"👑 KING: {king_feature.name} (score: {king_feature['CompositeScore']:.3f}) ✅ SELECTED"]
+                if 'Gain' in king_feature.index:
+                    stats_parts.append(f"Gain: {king_feature['Gain']:.4f}")
+                if 'Cover' in king_feature.index:
+                    stats_parts.append(f"Cover: {king_feature['Cover']:.4f}")
+                if 'MeanDepth' in king_feature.index:
+                    stats_parts.append(f"Depth: {king_feature['MeanDepth']:.2f}")
+                tprint_info(f"      📊 {', '.join(stats_parts)}")
             else:
                 tprint_info(f"   ❌ No king selected from cluster {cluster_id}")
             

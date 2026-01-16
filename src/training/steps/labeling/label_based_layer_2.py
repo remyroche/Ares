@@ -249,6 +249,8 @@ except ImportError as e:
     COMPOSITE_GENERATORS_AVAILABLE = False
     tprint_warning(f"⚠️ Composite event generators not available: {e}")
 
+from src.training.steps.labeling.orthogonal_label_generation import calculate_continuous_weight
+
 # Import Layer-12 Model Output
 try:
     from src.training.steps.labeling.layer12_model_output import build_layer12_output, Layer12Output
@@ -545,7 +547,8 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
 )
 from src.training.steps.labeling.mtf_feature_generation import (
     create_meta_features,
-    get_efficiency_ratio
+    get_efficiency_ratio,
+    clear_mtf_cache
 )
 from src.training.steps.labeling.generate_weights_per_label import finalize_sample_weights
 
@@ -3113,7 +3116,8 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("   🎯 Layer 2: Generating causal events from surprise scores...")
             # Retry logic with progressively lower thresholds
             causal_events = {}
-            for thresh in [0.01, 0.005, 0.001, 0.0001]:
+            # Start with 0.04 (4% target) as requested
+            for thresh in [0.04, 0.01, 0.005, 0.001, 0.0001]:
                 tprint_info(f"   🔄 Attempting event generation with threshold={thresh}...")
                 causal_events = self._surprise_detector.generate_causal_events(regime_vol=df, event_threshold=thresh)
                 if causal_events and len(causal_events) > 0:
@@ -3132,9 +3136,26 @@ class LabelBasedLayer2(BaseStep):
 
                     # Add causal event metadata
                     events_df['causal_surprise'] = 1
-                    events_df['surprise_strength'] = [causal_events[idx]['strength'] for idx in event_indices]
+                    strong_scores = [causal_events[idx]['strength'] for idx in event_indices]
+                    events_df['surprise_strength'] = strong_scores
                     events_df['surprise_zone'] = [causal_events[idx]['zone'] for idx in event_indices]
                     events_df['zone_score'] = [causal_events[idx].get('zone_score', 0.0) for idx in event_indices]
+                    
+                    # --- USER REQUEST: Continuous Weighting ---
+                    # Weight = QuantileRank * StdDeviationFromNormal (Z-score)
+                    # surprise_strength IS the Z-score (or equivalent magnitude)
+                    z_scores = pd.Series(strong_scores, index=events_df.index).fillna(0.0)
+                    q_rank = z_scores.rank(pct=True).fillna(0.5)
+                    
+                    # Weight proportional to Quantile * Z
+                    # Clip Z to avoid extreme outliers needed? Maybe clip at 6.0
+                    z_clipped = z_scores.clip(upper=6.0)
+                    continuous_weight = q_rank * z_clipped
+                    
+                    events_df['weight'] = continuous_weight
+                    events_df['weight_vector'] = continuous_weight # Legacy compatibility
+                    
+                    tprint_success(f"   ⚖️ Applied Continuous Weighting (Quantile * Z): Mean={continuous_weight.mean():.4f}, Max={continuous_weight.max():.4f}")
                     events_df['surprise_consensus'] = [causal_events[idx]['consensus'] for idx in event_indices]
 
                     # Inject Continuous Features (for Spectral Chaser & Meta-Learner)
@@ -4289,6 +4310,11 @@ class LabelBasedLayer2(BaseStep):
         self._feature_selection_cache.clear()
         self._label_computation_cache.clear()
         self._global_probe_features.clear()
+        # Also clear the underlying MTF cache to prevent OOM
+        try:
+            clear_mtf_cache()
+        except Exception:
+            pass
         tprint_info("🧹 Cleared all optimization caches")
 
     def _extract_gen_params(self, gt: GeometryTrial) -> Dict:
@@ -5004,53 +5030,82 @@ class LabelBasedLayer2(BaseStep):
         if resume_from:
             actual_resume = self._checkpoint_manager.get_resume_point(symbol, resume_from)
             if actual_resume is None:
-                tprint_error(f"❌ Cannot resume from '{resume_from}': missing required checkpoint")
-                raise RuntimeError(f"Cannot resume from '{resume_from}': no checkpoint found for previous step")
-            
-            # Automatically delete checkpoints from resume step onwards (they'll be regenerated)
-            deleted = self._checkpoint_manager.delete_checkpoints_from(resume_from, symbol)
-            if deleted > 0:
-                tprint_info(f"🗑️ Auto-deleted {deleted} checkpoints from '{resume_from}' onwards (will be regenerated)")
-            
-            tprint_info(f"🔄 Resuming Layer 2 from sub-step: {resume_from}")
-            
-            # Load the appropriate checkpoint based on requested step
-            resume_idx = LAYER2_SUBSTEPS.index(resume_from)
-            if resume_idx > 0:
-                prev_step = LAYER2_SUBSTEPS[resume_idx - 1]
-                checkpoint_data = self._checkpoint_manager.load_checkpoint(prev_step, symbol)
+                tprint_warning(f"⚠️ Cannot resume from '{resume_from}': missing required checkpoint. Searching for anterior checkpoints...")
+                try:
+                    resume_from_idx = LAYER2_SUBSTEPS.index(resume_from)
+                    found_earlier = False
+                    # Search backwards for a valid resume point
+                    for i in range(resume_from_idx - 1, -1, -1):
+                        earlier_step = LAYER2_SUBSTEPS[i]
+                        if self._checkpoint_manager.get_resume_point(symbol, earlier_step):
+                            tprint_info(f"✅ Found earlier valid checkpoint: {earlier_step}")
+                            resume_from = earlier_step
+                            found_earlier = True
+                            break
+                    
+                    if not found_earlier:
+                        tprint_warning("⚠️ No valid anterior checkpoints found. Starting Layer 2 from scratch.")
+                        resume_from = None
+                except Exception as e:
+                     tprint_warning(f"⚠️ Error during checkpoint fallback search: {e}. Starting from scratch.")
+                     resume_from = None
+
+            if resume_from:
+                # Automatically delete checkpoints from resume step onwards (they'll be regenerated)
+                deleted = self._checkpoint_manager.delete_checkpoints_from(resume_from, symbol)
+                if deleted > 0:
+                    tprint_info(f"🗑️ Auto-deleted {deleted} checkpoints from '{resume_from}' onwards (will be regenerated)")
                 
-                if checkpoint_data:
-                    # Restore state from checkpoint
-                    checkpoint_config_hash = checkpoint_data.get('config_hash')
-                    if checkpoint_config_hash and checkpoint_config_hash != self._config_hash:
-                        tprint_error(
-                            "❌ Checkpoint config hash mismatch. Refusing to resume to prevent stale artifacts."
-                        )
-                        raise RuntimeError("Checkpoint config hash mismatch.")
-                    checkpoint_fingerprint = checkpoint_data.get('dataset_fingerprint')
-                    if 'df' in checkpoint_data:
-                        df = checkpoint_data['df']
-                        tprint_info(f"   📂 Restored DataFrame: {df.shape}")
-                        if checkpoint_fingerprint:
-                            current_fingerprint = self._compute_dataset_fingerprint(df)
-                            if current_fingerprint != checkpoint_fingerprint:
-                                tprint_error(
-                                    "❌ Checkpoint dataset fingerprint mismatch. Refusing to resume."
-                                )
-                                raise RuntimeError("Checkpoint dataset fingerprint mismatch.")
-                            self._dataset_fingerprint = checkpoint_fingerprint
-                    if 'regime_labels' in checkpoint_data:
-                        self.regime_labels = checkpoint_data['regime_labels']
-                    if 'causal_graph' in checkpoint_data:
-                        self._causal_graph = checkpoint_data['causal_graph']
-                    if 'specialist_predictions' in checkpoint_data:
-                        self._causal_specialist_predictions = checkpoint_data['specialist_predictions']
-                    if 'causal_events_df' in checkpoint_data:
-                        # Store for use in later steps
-                        self._restored_causal_events_df = checkpoint_data['causal_events_df']
-                    if 'engineered_df' in checkpoint_data:
-                        self._restored_engineered_df = checkpoint_data['engineered_df']
+                tprint_info(f"🔄 Resuming Layer 2 from sub-step: {resume_from}")
+                
+                # Load the appropriate checkpoint based on requested step
+                resume_idx = LAYER2_SUBSTEPS.index(resume_from)
+                if resume_idx > 0:
+                    prev_step = LAYER2_SUBSTEPS[resume_idx - 1]
+                    checkpoint_data = self._checkpoint_manager.load_checkpoint(prev_step, symbol)
+                    
+                    if checkpoint_data:
+                        # Restore state from checkpoint
+                        checkpoint_config_hash = checkpoint_data.get('config_hash')
+                        if checkpoint_config_hash and checkpoint_config_hash != self._config_hash:
+                            tprint_error(
+                                "❌ Checkpoint config hash mismatch. Refusing to resume to prevent stale artifacts."
+                            )
+                            raise RuntimeError("Checkpoint config hash mismatch.")
+                        checkpoint_fingerprint = checkpoint_data.get('dataset_fingerprint')
+                        if 'df' in checkpoint_data:
+                            df = checkpoint_data['df']
+                            tprint_info(f"   📂 Restored DataFrame: {df.shape}")
+                            if checkpoint_fingerprint:
+                                current_fingerprint = self._compute_dataset_fingerprint(df)
+                                if current_fingerprint != checkpoint_fingerprint:
+                                    tprint_error(
+                                        "❌ Checkpoint dataset fingerprint mismatch. Refusing to resume."
+                                    )
+                                    raise RuntimeError("Checkpoint dataset fingerprint mismatch.")
+                                self._dataset_fingerprint = checkpoint_fingerprint
+                        if 'regime_labels' in checkpoint_data:
+                            self.regime_labels = checkpoint_data['regime_labels']
+                        if 'causal_graph' in checkpoint_data:
+                            self._causal_graph = checkpoint_data['causal_graph']
+                        if 'specialist_predictions' in checkpoint_data:
+                            preds = checkpoint_data['specialist_predictions']
+                            # JSON deserialization might convert Series to dicts, convert them back
+                            if isinstance(preds, dict):
+                                self._causal_specialist_predictions = {}
+                                for k, v in preds.items():
+                                    if isinstance(v, dict):
+                                        idx = pd.to_datetime(list(v.keys()))
+                                        self._causal_specialist_predictions[k] = pd.Series(data=list(v.values()), index=idx)
+                                    else:
+                                        self._causal_specialist_predictions[k] = v
+                            else:
+                                self._causal_specialist_predictions = preds
+                        if 'causal_events_df' in checkpoint_data:
+                            # Store for use in later steps
+                            self._restored_causal_events_df = checkpoint_data['causal_events_df']
+                        if 'engineered_df' in checkpoint_data:
+                            self._restored_engineered_df = checkpoint_data['engineered_df']
         
         # Save data_loading checkpoint (if not resuming past this step)
         if self._checkpoints_enabled and (not resume_from or LAYER2_SUBSTEPS.index(resume_from) <= 0):
@@ -5113,6 +5168,7 @@ class LabelBasedLayer2(BaseStep):
         try:
             tprint_info("🚀 Causal Layer 2 Pipeline: Starting modern De Prado framework...")
             symbol = self._current_config.get('symbol', 'UNKNOWN')
+            causal_metadata = {}
             
             # 0. Initialize causal components & feature precomputation
             # Skip if resuming past this step
@@ -5181,46 +5237,126 @@ class LabelBasedLayer2(BaseStep):
                     }, symbol, self._current_config)
 
             # 2. Causal Specialists: Create and train specialists
-            tprint_info("🧠 Step 2: Initializing causal specialists...")
+            # Skip if resuming past this step
+            if resume_from and LAYER2_SUBSTEPS.index(resume_from) > LAYER2_SUBSTEPS.index('specialist_training'):
+                tprint_info(f"   ⏭️ Skipping specialist training (resuming from {resume_from})")
+                if hasattr(self, '_causal_specialist_predictions') and self._causal_specialist_predictions:
+                    specialist_predictions = self._causal_specialist_predictions
+                    tprint_info(f"   📂 Restored {len(specialist_predictions)} specialist predictions from checkpoint")
+                else:
+                    # Falling back to manual load/re-run logic
+                    # ROBUST FALLBACK LOGIC
+                    found_checkpoint = False
+                    # 1. Try specialist_training
+                    checkpoint_data = self._checkpoint_manager.load_checkpoint('specialist_training', symbol)
+                    if checkpoint_data and 'specialist_predictions' in checkpoint_data:
+                         preds = checkpoint_data['specialist_predictions']
+                         found_checkpoint = True
+                         tprint_info(f"   📂 Restored {len(preds) if isinstance(preds, dict) else 'unknown'} specialists from 'specialist_training'")
+                    
+                    # 2. Fallback: Try event_generation
+                    if not found_checkpoint:
+                        tprint_warning("   ⚠️ 'specialist_training' checkpoint missing. Checking 'event_generation'...")
+                        checkpoint_data = self._checkpoint_manager.load_checkpoint('event_generation', symbol)
+                        if checkpoint_data and 'specialist_predictions' in checkpoint_data:
+                            preds = checkpoint_data['specialist_predictions']
+                            found_checkpoint = True
+                            tprint_info(f"   📂 Restored {len(preds) if isinstance(preds, dict) else 'unknown'} specialists from 'event_generation'")
+                    
+                    # 3. Fallback: Re-run
+                    if not found_checkpoint:
+                        tprint_warning(f"   ⚠️ Cannot resume Step 2 from {resume_from} (checkpoints missing). Re-running Step 2...")
+                        # FORCE RESET of resume logic to ensure consistency
+                        resume_from = None
+                        tprint_warning("   ⚠️ Resume chain broken: Invalidating subsequent checkpoints and forcing full re-run from Step 2.")
+
+                        # We must DROP into the 'else' block effectively.
+                        # Since we are in the 'if' block, we can't easily jump to 'else'.
+                        # We have to execute the initialization logic HERE.
+                        # Use AEDL if enabled (Domain Specialists)
+                        if self.enable_aedl:
+                            tprint_info("   🧠 Using Spectral AEDL for specialist initialization...")
+                            specialist_predictions = {}
+                            try:
+                                aedl_results = self._run_aedl_pipeline(df, "close", causal_graph=causal_graph)
+                                if not isinstance(aedl_results, dict):
+                                    raise RuntimeError("AEDL pipeline returned an invalid payload")
+                                if 'error' in aedl_results:
+                                    raise RuntimeError(aedl_results['error'])
+                                specialist_predictions = aedl_results.get('specialist_signals') or {}
+                                if not specialist_predictions:
+                                    raise RuntimeError("AEDL pipeline produced zero specialist signals")
+                                self._aedl_results_cache = aedl_results
+                                tprint_success(f"   ✅ AEDL specialists extracted: {len(specialist_predictions)}")
+                            except Exception as e:
+                                tprint_error(f"   ❌ AEDL initialization failed: {e}")
+                                tprint_info("   🔄 Falling back to traditional causal specialists...")
+                                specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                        else:
+                            specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                            
+                        self._causal_specialist_predictions = specialist_predictions
+                        # Save it now so we have it
+                        if self._checkpoints_enabled:
+                            self._checkpoint_manager.save_checkpoint('specialist_training', {
+                                'df': df,
+                                'causal_graph': causal_graph,
+                                'specialist_predictions': {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in specialist_predictions.items()}
+                            }, symbol, self._current_config)
+                    else:
+                        # Found checkpoint, process it
+                         if isinstance(preds, dict):
+                            specialist_predictions = {}
+                            for k, v in preds.items():
+                                if isinstance(v, dict):
+                                    idx = pd.to_datetime(list(v.keys()))
+                                    specialist_predictions[k] = pd.Series(data=list(v.values()), index=idx)
+                                else:
+                                    specialist_predictions[k] = v
+                         else:
+                            specialist_predictions = preds
+                    
+            else:
+                tprint_info("🧠 Step 2: Initializing causal specialists...")
             
-            # Use AEDL if enabled (Domain Specialists)
-            if self.enable_aedl:
-                tprint_info("   🧠 Using Spectral AEDL for specialist initialization...")
-                specialist_predictions = {}
-                try:
-                    aedl_results = self._run_aedl_pipeline(df, "close", causal_graph=causal_graph)
-                    if not isinstance(aedl_results, dict):
-                        raise RuntimeError("AEDL pipeline returned an invalid payload")
-                    if 'error' in aedl_results:
-                        raise RuntimeError(aedl_results['error'])
-                    specialist_predictions = aedl_results.get('specialist_signals') or {}
-                    if not specialist_predictions:
-                        raise RuntimeError("AEDL pipeline produced zero specialist signals")
-                    # Store AEDL results for later only when signals exist
-                    self._aedl_results_cache = aedl_results
-                    tprint_success(f"   ✅ AEDL specialists extracted: {len(specialist_predictions)}")
-                except Exception as e:
-                    tprint_error(f"   ❌ AEDL initialization failed: {e}")
-                    tprint_info("   🔄 Falling back to traditional causal specialists...")
+                # Use AEDL if enabled (Domain Specialists)
+                if self.enable_aedl:
+                    tprint_info("   🧠 Using Spectral AEDL for specialist initialization...")
+                    specialist_predictions = {}
+                    try:
+                        aedl_results = self._run_aedl_pipeline(df, "close", causal_graph=causal_graph)
+                        if not isinstance(aedl_results, dict):
+                            raise RuntimeError("AEDL pipeline returned an invalid payload")
+                        if 'error' in aedl_results:
+                            raise RuntimeError(aedl_results['error'])
+                        specialist_predictions = aedl_results.get('specialist_signals') or {}
+                        if not specialist_predictions:
+                            raise RuntimeError("AEDL pipeline produced zero specialist signals")
+                        # Store AEDL results for later only when signals exist
+                        self._aedl_results_cache = aedl_results
+                        tprint_success(f"   ✅ AEDL specialists extracted: {len(specialist_predictions)}")
+                    except Exception as e:
+                        tprint_error(f"   ❌ AEDL initialization failed: {e}")
+                        tprint_info("   🔄 Falling back to traditional causal specialists...")
+                        specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                else:
+                    # Use Graph Edge Specialists
                     specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
-            else:
-                # Use Graph Edge Specialists
-                specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                    
+                # Store for OOF analytics phase
+                self._causal_specialist_predictions = specialist_predictions
+                if not specialist_predictions:
+                    tprint_warning("   ⚠️ No specialist predictions available")
+                else:
+                    tprint_success(f"   ✅ Specialists trained: {len(specialist_predictions)} predictions")
                 
-            # Store for OOF analytics phase
-            self._causal_specialist_predictions = specialist_predictions
-            if not specialist_predictions:
-                tprint_warning("   ⚠️ No specialist predictions available")
-            else:
-                tprint_success(f"   ✅ Specialists trained: {len(specialist_predictions)} predictions")
-            
-            # Save specialist_training checkpoint
-            if self._checkpoints_enabled:
-                self._checkpoint_manager.save_checkpoint('specialist_training', {
-                    'df': df,
-                    'causal_graph': causal_graph,
-                    'specialist_predictions': {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in specialist_predictions.items()}
-                }, symbol, self._current_config)
+                # Save specialist_training checkpoint
+                if self._checkpoints_enabled:
+                    self._checkpoint_manager.save_checkpoint('specialist_training', {
+                        'df': df,
+                        'causal_graph': causal_graph,
+                        'specialist_predictions': {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in specialist_predictions.items()}
+                    }, symbol, self._current_config)
 
             # 3. Causal Surprise Events: Generate events from specialist prediction errors
             tprint_info("🎯 Step 3: Generating causal surprise events...")
@@ -5241,117 +5377,152 @@ class LabelBasedLayer2(BaseStep):
                 }, symbol, self._current_config)
 
             # 4. Causal Feature Engineering: Denoise and adjust features using causal relationships
-            tprint_info("🔧 Step 4: Applying causal feature engineering...")
-            
-            # 4a. Augment Dataframe with Spectral/Specialist Features for Denoising
-            tprint_info("   ➕ Augmenting data for denoising (OHLCV + Specialists)...")
-            enriched_df = df.copy()
-            
-            # Add specialist predictions (high-level signals)
-            spec_cols = []
-            if specialist_predictions:
-                 for name, series in specialist_predictions.items():
-                     col_name = f"spec_{name}"
-                     enriched_df[col_name] = series
-                     spec_cols.append(col_name)
-            
-            # Add spectral components (finer-grained) if available from AEDL
-            spectral_cols = []
-            if hasattr(self, '_aedl_results_cache') and self._aedl_results_cache:
-                components = self._aedl_results_cache.get('spectral_components', {})
-                # Filter for high variance to avoid noise
-                for name, comp in components.items():
-                    if isinstance(comp, (pd.Series, np.ndarray)):
-                        var = np.var(comp)
-                        if var > 1e-4: # Low variance filter
-                            col_name = f"spectral_{name}"
-                            # Ensure length match
-                            if len(comp) == len(enriched_df):
-                                enriched_df[col_name] = comp
-                                spectral_cols.append(col_name)
-            
-            tprint_info(f"   📊 Enriched Matrix: {len(df.columns)} base + {len(spec_cols)} spec + {len(spectral_cols)} spectral")
-
-            # 4b. Augment Causal Graph
-            # Assume OHLCV (Market State) are parents of Specialists/Spectral (Derived State)
-            # This allows specialists to be denoised conditional on Market State
-            augmented_graph = causal_graph.copy()
-            market_nodes = [c for c in df.columns if c in augmented_graph]
-            
-            # --- USER REQUEST: FORCE OHLCV DENOISING (Time-Flow Logic) ---
-            # Enforce: Open, High, Low -> Close (Time flow)
-            # Enforce: Close, Open -> Volume (Information flow)
-            
-            # 1. Enforce Close parents
-            ohl_parents = [c for c in ['open', 'high', 'low'] if c in df.columns]
-            if 'close' in df.columns and ohl_parents:
-                # Remove any existing edges starting FROM close to these parents (avoid cycle)
-                # And remove any existing parents of close that might conflict or be redundant
-                # Actually, simply setting the parents overrides previous discovery for 'close' node
-                augmented_graph['close'] = ohl_parents
-                
-                # Check for reverse edges in other parts of the graph
-                for node, parents in list(augmented_graph.items()):
-                    if node == 'close': continue
-                    # If close was a parent of open/high/low, remove it to break cycle
-                    if 'close' in parents and node in ohl_parents:
-                        augmented_graph[node] = [p for p in parents if p != 'close']
-
-            # 2. Enforce Volume parents
-            vol_parents = [c for c in ['close', 'open'] if c in df.columns]
-            if 'volume' in df.columns and vol_parents:
-                augmented_graph['volume'] = vol_parents
-                # Remove reverse
-                for node, parents in list(augmented_graph.items()):
-                    if node == 'volume': continue
-                    if 'volume' in parents and node in vol_parents:
-                         augmented_graph[node] = [p for p in parents if p != 'volume']
-
-            # -------------------------------------------------------------
-
-            for target_col in spec_cols + spectral_cols:
-                # Use discovered causal graph parents if available, otherwise use market nodes
-                if target_col in causal_graph and causal_graph[target_col]:
-                    parents = causal_graph[target_col]
-                elif market_nodes:
-                    # Fallback to market nodes (from causal discovery)
-                    parents = market_nodes[:3]  # Limit to top 3
+            # Skip if resuming past this step
+            if resume_from and LAYER2_SUBSTEPS.index(resume_from) > LAYER2_SUBSTEPS.index('feature_engineering'):
+                tprint_info(f"   ⏭️ Skipping causal feature engineering (resuming from {resume_from})")
+                if hasattr(self, '_restored_engineered_df') and self._restored_engineered_df is not None:
+                     engineered_df = self._restored_engineered_df
+                     tprint_info(f"   📂 Restored engineered features: {len(engineered_df.columns)} columns")
+                     # Also assume metadata/graphs are restored or not needed for subsequent steps if we have engineered_df
+                     # But Step 5 needs causal_events_df which is loaded in Step 0/3?
+                     # Step 3 logic: if resuming > event_generation, it skips Step 3?
+                     # Wait, I need to check Step 3 skip logic too.
                 else:
-                    # Last resort: basic OHLCV
-                    parents = [p for p in ['close', 'volume'] if p in df.columns]
+                     checkpoint_data = self._checkpoint_manager.load_checkpoint('feature_engineering', symbol)
+                     if checkpoint_data and 'engineered_df' in checkpoint_data:
+                         engineered_df = checkpoint_data['engineered_df']
+                         tprint_info(f"   📂 Restored engineered features: {len(engineered_df.columns)} columns")
+                     else:
+                         raise RuntimeError(f"Cannot resume from {resume_from}: missing feature engineering checkpoint")
                 
-                if parents:
-                    augmented_graph[target_col] = parents
-
-            tprint_info(f"   🔗 Augmented Graph: {len(causal_graph)} -> {len(augmented_graph)} nodes")
-            tprint_info(f"      • Market nodes (from discovery): {market_nodes[:5]}..." if len(market_nodes) > 5 else f"      • Market nodes: {market_nodes}")
-            if 'close' in augmented_graph:
-                tprint_info(f"      • Close parents: {augmented_graph['close']}")
-            if 'volume' in augmented_graph:
-                tprint_info(f"      • Volume parents: {augmented_graph['volume']}")
-            # Log sample specialist parents
-            sample_specs = [c for c in spec_cols if c in augmented_graph][:3]
-            for spec in sample_specs:
-                tprint_info(f"      • {spec} parents: {augmented_graph[spec]}")
-
-            # 4c. Run Engineering on Enriched Data
-            engineered_df, causal_metadata = self._apply_causal_feature_engineering(enriched_df, augmented_graph)
+                # Ensure augmented_graph is available for downstream if needed
+                if not 'augmented_graph' in locals():
+                     augmented_graph = self._causal_graph # Fallback or load from checkpoint if critically needed
+            else:
+                tprint_info("🔧 Step 4: Applying causal feature engineering...")
             
-            if engineered_df is None:
-                error_msg = "   ❌ Causal feature engineering failed; aborting Layer 2 causal pipeline"
-                tprint_error(error_msg)
-                raise RuntimeError(error_msg.strip())
-            tprint_success(f"   ✅ Causal engineering complete: {len(engineered_df.columns)} features")
-            
-            # Save feature_engineering checkpoint
-            if self._checkpoints_enabled:
-                self._checkpoint_manager.save_checkpoint('feature_engineering', {
-                    'df': df,
-                    'engineered_df': engineered_df,
-                    'causal_graph': causal_graph,
-                    'augmented_graph': augmented_graph,
-                    'causal_metadata': causal_metadata
-                }, symbol, self._current_config)
+                # 4a. Augment Dataframe with Spectral/Specialist Features for Denoising
+                tprint_info("   ➕ Augmenting data for denoising (OHLCV + Specialists)...")
+                enriched_df = df.copy()
+
+                # Ensure minimal targets exist for causal learning (TARGET_RET_1, TARGET_Sharpe)
+                # These are critical for the 'Learning model for...' step in causal engineering
+                if 'TARGET_RET_1' not in enriched_df.columns:
+                     if 'close' in enriched_df.columns:
+                         enriched_df['TARGET_RET_1'] = enriched_df['close'].pct_change().shift(-1)
+                
+                if 'TARGET_Sharpe' not in enriched_df.columns:
+                     if 'TARGET_RET_1' in enriched_df.columns:
+                         # Rolling Sharpe (12 periods ~ 3h)
+                         ret = enriched_df['TARGET_RET_1']
+                         vol = ret.rolling(12).std()
+                         enriched_df['TARGET_Sharpe'] = (ret.rolling(12).mean() / (vol + 1e-9)).fillna(0)
+                
+                # Add specialist predictions (high-level signals)
+                spec_cols = []
+                if specialist_predictions:
+                     for name, series in specialist_predictions.items():
+                         col_name = f"spec_{name}"
+                         enriched_df[col_name] = series
+                         spec_cols.append(col_name)
+                
+                # Add spectral components (finer-grained) if available from AEDL
+                spectral_cols = []
+                if hasattr(self, '_aedl_results_cache') and self._aedl_results_cache:
+                    components = self._aedl_results_cache.get('spectral_components', {})
+                    # Filter for high variance to avoid noise
+                    for name, comp in components.items():
+                        if isinstance(comp, (pd.Series, np.ndarray)):
+                            var = np.var(comp)
+                            if var > 1e-4: # Low variance filter
+                                col_name = f"spectral_{name}"
+                                # Ensure length match
+                                if len(comp) == len(enriched_df):
+                                    enriched_df[col_name] = comp
+                                    spectral_cols.append(col_name)
+                
+                tprint_info(f"   📊 Enriched Matrix: {len(df.columns)} base + {len(spec_cols)} spec + {len(spectral_cols)} spectral")
+
+                # 4b. Augment Causal Graph
+                # Assume OHLCV (Market State) are parents of Specialists/Spectral (Derived State)
+                # This allows specialists to be denoised conditional on Market State
+                augmented_graph = causal_graph.copy()
+                market_nodes = [c for c in df.columns if c in augmented_graph]
+                
+                # --- USER REQUEST: FORCE OHLCV DENOISING (Time-Flow Logic) ---
+                # Enforce: Open, High, Low -> Close (Time flow)
+                # Enforce: Close, Open -> Volume (Information flow)
+                
+                # 1. Enforce Close parents
+                ohl_parents = [c for c in ['open', 'high', 'low'] if c in df.columns]
+                if 'close' in df.columns and ohl_parents:
+                    # Remove any existing edges starting FROM close to these parents (avoid cycle)
+                    # And remove any existing parents of close that might conflict or be redundant
+                    # Actually, simply setting the parents overrides previous discovery for 'close' node
+                    augmented_graph['close'] = ohl_parents
+                    
+                    # Check for reverse edges in other parts of the graph
+                    for node, parents in list(augmented_graph.items()):
+                        if node == 'close': continue
+                        # If close was a parent of open/high/low, remove it to break cycle
+                        if 'close' in parents and node in ohl_parents:
+                            augmented_graph[node] = [p for p in parents if p != 'close']
+
+                # 2. Enforce Volume parents
+                vol_parents = [c for c in ['close', 'open'] if c in df.columns]
+                if 'volume' in df.columns and vol_parents:
+                    augmented_graph['volume'] = vol_parents
+                    # Remove reverse
+                    for node, parents in list(augmented_graph.items()):
+                        if node == 'volume': continue
+                        if 'volume' in parents and node in vol_parents:
+                             augmented_graph[node] = [p for p in parents if p != 'volume']
+
+                # -------------------------------------------------------------
+
+                for target_col in spec_cols + spectral_cols:
+                    # Use discovered causal graph parents if available, otherwise use market nodes
+                    if target_col in causal_graph and causal_graph[target_col]:
+                        parents = causal_graph[target_col]
+                    elif market_nodes:
+                        # Fallback to market nodes (from causal discovery)
+                        parents = market_nodes[:3]  # Limit to top 3
+                    else:
+                        # Last resort: basic OHLCV
+                        parents = [p for p in ['close', 'volume'] if p in df.columns]
+                    
+                    if parents:
+                        augmented_graph[target_col] = parents
+
+                tprint_info(f"   🔗 Augmented Graph: {len(causal_graph)} -> {len(augmented_graph)} nodes")
+                tprint_info(f"      • Market nodes (from discovery): {market_nodes[:5]}..." if len(market_nodes) > 5 else f"      • Market nodes: {market_nodes}")
+                if 'close' in augmented_graph:
+                    tprint_info(f"      • Close parents: {augmented_graph['close']}")
+                if 'volume' in augmented_graph:
+                    tprint_info(f"      • Volume parents: {augmented_graph['volume']}")
+                # Log sample specialist parents
+                sample_specs = [c for c in spec_cols if c in augmented_graph][:3]
+                for spec in sample_specs:
+                    tprint_info(f"      • {spec} parents: {augmented_graph[spec]}")
+
+                # 4c. Run Engineering on Enriched Data
+                engineered_df, causal_metadata = self._apply_causal_feature_engineering(enriched_df, augmented_graph)
+                
+                if engineered_df is None:
+                    error_msg = "   ❌ Causal feature engineering failed; aborting Layer 2 causal pipeline"
+                    tprint_error(error_msg)
+                    raise RuntimeError(error_msg.strip())
+                tprint_success(f"   ✅ Causal engineering complete: {len(engineered_df.columns)} features")
+                
+                # Save feature_engineering checkpoint
+                if self._checkpoints_enabled:
+                    self._checkpoint_manager.save_checkpoint('feature_engineering', {
+                        'df': df,
+                        'engineered_df': engineered_df,
+                        'causal_graph': causal_graph,
+                        'augmented_graph': augmented_graph,
+                        'causal_metadata': causal_metadata
+                    }, symbol, self._current_config)
 
             # 5. Causal Targets: Compute treatment effects and causal residuals
             # Skip if resuming past this step
@@ -6065,8 +6236,9 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   - Prediction keys: {list(specialist_predictions.keys())[:5]}...")
             
             # Step A: Optimize production geometries first to have candidates for IRM
+            # Pass events_df (with weights) to optimization
             production_geometries, production_selected_features = self.optimize_production_geometries(
-                df, None, global_probe_features=list(custom_features.columns),
+                df, events_df, global_probe_features=list(custom_features.columns),
                 causal_graph=causal_graph, specialist_predictions=specialist_predictions
             )
 
@@ -6102,14 +6274,21 @@ class LabelBasedLayer2(BaseStep):
                             if hasattr(geom, 'labels') and geom.labels is not None:
                                 y_geom = (geom.labels > 0).astype(int)
                                 
-                                # Align features and labels
+                                    # Align features and labels
                                 common_idx = X_geom.index.intersection(y_geom.index)
                                 if len(common_idx) > 20:
                                     X_train = X_geom.loc[common_idx]
                                     y_train = y_geom.loc[common_idx]
                                     
+                                    # Extract sample weights if available (Quantile * Z)
+                                    w_train = None
+                                    if 'weight' in events_df.columns:
+                                        # events_df passed to function has the weights
+                                        w_train = events_df.reindex(common_idx)['weight'].fillna(1.0)
+                                        tprint_info(f"      ⚖️ Used sample weights: Mean={w_train.mean():.4f}")
+                                    
                                     # Train with IRM
-                                    irm_model.fit(X_train, y_train)
+                                    irm_model.fit(X_train, y_train, sample_weight=w_train)
                                     irm_models.append(irm_model)
                                     
                                     tprint_info(f"   🧠 IRM Model trained for {geom.uuid[:30]}")
@@ -7636,7 +7815,7 @@ class LabelBasedLayer2(BaseStep):
         w_sub = w.loc[sample_idx] if w is not None else None
         return X_sub, y_sub, w_sub
 
-    def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 15) -> List[GeometryTrial]:
+    def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 15, user_weights: Optional[pd.Series] = None) -> List[GeometryTrial]:
         """
         Selects the best geometry per family using a lightweight Ridge probe,
         then runs a single model race for the top candidate only.
@@ -8013,6 +8192,19 @@ class LabelBasedLayer2(BaseStep):
 
                         # Renormalize weights
                         sample_weights = sample_weights / sample_weights.sum() * len(sample_weights)
+                        
+                        # === APPLY USER WEIGHTS (Quantile * Z) ===
+                        if user_weights is not None:
+                            # user_weights is a Series indexed by event time
+                            # Align to current training set events
+                            uw_tr = user_weights.reindex(train_events).fillna(1.0).values
+                            
+                            # Multiply bootstrap weights by user weights
+                            sample_weights = sample_weights * uw_tr
+                            
+                            # Renormalize again to keep scale consistent
+                            sample_weights = sample_weights / (sample_weights.sum() + 1e-9) * len(sample_weights)
+                            tprint_info(f"   ⚖️ Applied User Weights (Quantile*Z) combined with Bootstrap")
 
                         tprint_info(
                             f"   🔄 Sequential Bootstrap: weights range "
@@ -8543,11 +8735,17 @@ class LabelBasedLayer2(BaseStep):
             
             from joblib import Parallel, delayed
             
+            # Extract user weights if available
+            user_weights = None
+            if events_df is not None and 'weight' in events_df.columns:
+                user_weights = events_df['weight']
+                tprint_info(f"   ⚖️ Extracted User Weights for Optimization: {len(user_weights)} weights")
+            
             def process_family(fam, cands):
                 if not cands: return None
                 try:
                     # _select_best_geometry_via_race includes the Ridge Probing phase
-                    winners = self._select_best_geometry_via_race(cands, df, top_k=10)
+                    winners = self._select_best_geometry_via_race(cands, df, top_k=10, user_weights=user_weights)
                     return fam, winners
                 except Exception as e:
                     tprint_error(f"      ❌ Family selection failed for {fam}: {e}")

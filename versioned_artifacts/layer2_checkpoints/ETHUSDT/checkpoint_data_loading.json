@@ -1,7 +1,7 @@
 {
   "step_name": "data_loading",
   "step_index": 0,
-  "timestamp": "20260114_210325",
+  "timestamp": "20260115_201305",
   "symbol": "ETHUSDT",
   "config_hash": "40cb201e3be3",
   "data_keys": [
@@ -10,5 +10,56 @@
     "config_hash",
     "dataset_fingerprint"
   ],
-  "json_data": {}
+  "json_data": {
+    "config": {
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "long",
+      "execution_mode": "full",
+      "regime_timeframe": "15m",
+      "force_hpo": true,
+      "target_n_features_selector": 200,
+      "enable_lgbm_feature_gating": false,
+      "layer2_probe_sampling_rate": 0.5,
+      "layer2_probe_feature_limit": 30,
+      "layer2_probe_linear_only_auc": 0.65,
+      "layer2_min_pos_rate": 0.1,
+      "enable_labeling_hpo_params": true,
+      "lookback_days": 1095,
+      "use_wavelets": true,
+      "enable_causal_framework": true,
+      "causal_discovery_enabled": true,
+      "irm_enabled": true,
+      "causal_surprise_enabled": true,
+      "interventionist_sampling_enabled": true,
+      "causal_specialists_enabled": true,
+      "enable_aedl": true,
+      "run_layer1_optimization": true,
+      "enable_pipeline_logging": true,
+      "layer0_params": {
+        "kalman_Q": 3.1622776601683795e-05,
+        "kalman_R": 0.00031622776601683794,
+        "volume_weight": 0.0,
+        "volume_adaptive": true
+      },
+      "layer1_params": {
+        "mag_compression": 0.9105422142810182,
+        "learn_slope": 1.0,
+        "learn_center": 0.5,
+        "uniq_intensity": 1.413047583485075,
+        "quality_intensity": 3.097684075676489,
+        "quality_floor": 0.48811736430094405,
+        "exp_mag": 1.383356654773142,
+        "exp_learn": 1.3827482618648965,
+        "exp_uniq": 1.2883445183349613,
+        "exp_cross": 1.623860868322218,
+        "downside_multiplier": 1.2206039129574169,
+        "mag_clip_pct": 0.9614213318681673,
+        "time_decay_halflife": 0.36063062053696104
+      }
+    },
+    "config_hash": "ced64cafde28006fb37b6106c1d4d1d6",
+    "dataset_fingerprint": "132484_2021-10-30 22:22:00_2026-01-10 11:53:00_92b105b72406cf228fb2d319190c358a"
+  }
 }

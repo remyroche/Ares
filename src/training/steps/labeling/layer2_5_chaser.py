@@ -12,6 +12,9 @@ Key Features:
 3. Robust Teacher-Student: BayesianRidge OOF teacher -> Residual/Margin-correcting Students.
 4. Volatility-Normalized Labels: Integrates with AFML labeling standards.
 5. Multi-Model Ensemble: Diversified student pool with correlation-based pruning.
+6. Weak Huber Constraints: Applies weak monotonic/interaction constraints from Huber analysis.
+7. Strong Regularization: User-specified regularization parameters for robust training.
+8. Meta-Learner Ready: Outputs teacher baseline and chaser correction signals for stacking.
 """
 
 from __future__ import annotations
@@ -25,10 +28,17 @@ import logging
 import gc
 
 from sklearn.preprocessing import RobustScaler
-from sklearn.linear_model import BayesianRidge, LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.base import clone
+
+# Import Huber constraint utilities
+try:
+    from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs, get_huber_tier_config
+    HUBER_AVAILABLE = True
+except ImportError:
+    HUBER_AVAILABLE = False
 
 import xgboost as xgb
 
@@ -76,6 +86,14 @@ def uncertainty_to_chaser_weight(std: np.ndarray, clip=(0.5, 2.0)) -> np.ndarray
     w = np.sqrt(std / (med + 1e-12))
     w = np.clip(w, clip[0], clip[1])
     return normalize_weights(w)
+
+def sanity_check_uncertainty(y: np.ndarray, p_teacher_oof: np.ndarray, std_oof: np.ndarray) -> float:
+    """Check: higher teacher uncertainty should correlate with larger errors."""
+    y = np.asarray(y, dtype=np.int32)
+    p = np.clip(np.asarray(p_teacher_oof, dtype=np.float64), 1e-6, 1 - 1e-6)
+    ll = -(y * np.log(p) + (1 - y) * np.log(1 - p))  # per-sample logloss
+    corr = np.corrcoef(ll, std_oof)[0, 1]
+    return float(corr if np.isfinite(corr) else 0.0)
 
 def combine_weights(base_weight: np.ndarray | None, extra: np.ndarray) -> np.ndarray:
     """Combine base sample weights with extra weights."""
@@ -212,6 +230,10 @@ def train_chaser_student(
     model_type: str = "xgb", # "xgb", "lgb", "cat", "et"
     model_params: dict | None = None,
     num_boost_round: int = 800,
+    # New parameters for weak constraints
+    monotone_constraints_weak: dict | None = None,
+    interaction_constraints_weak: list[list[str]] | None = None,
+    huber_teacher_mu: np.ndarray | None = None,  # For teacher disagreement features
 ):
     """
     Train a student model (Chaser) on residuals or with margin correction.
@@ -246,13 +268,15 @@ def train_chaser_student(
             dtrain.set_base_margin(init_score)
 
         default_params = {
-            "eta": 0.05,
+            "eta": 0.03,  # User-specified learning rate
             "max_depth": 4,
-            "min_child_weight": 20,
-            "subsample": 0.7,
+            "min_child_weight": 10,  # User-specified
+            "subsample": 0.6,  # User-specified
             "colsample_bytree": 0.7,
-            "reg_lambda": 5.0,
-            "gamma": 0.05,
+            "colsample_bynode": 0.4,  # User-specified
+            "reg_lambda": 50.0,  # User-specified strong regularization
+            "reg_alpha": 0.0,
+            "gamma": 1.1,  # User-specified
             "n_jobs": -1
         }
         if mode == "regression":
@@ -265,6 +289,16 @@ def train_chaser_student(
         params = default_params.copy()
         if model_params:
             params.update(model_params)
+
+        # Add weak constraints if available
+        if monotone_constraints_weak is not None and mode == "classification":
+            # Convert dict to tuple for XGBoost using feature indices
+            feature_names = [f"f{i}" for i in range(X.shape[1])]
+            mono_tuple = tuple(monotone_constraints_weak.get(f"f{i}", 0) for i in range(X.shape[1]))
+            params["monotone_constraints"] = mono_tuple
+            
+        if interaction_constraints_weak is not None and mode == "classification":
+            params["interaction_constraints"] = interaction_constraints_weak
 
         bst = xgb.train(params, dtrain, num_boost_round=num_boost_round)
         return {"model": bst, "mode": mode, "type": "xgb", "params": params}
@@ -284,7 +318,9 @@ def train_chaser_student(
             "min_child_samples": 20,
             "subsample": 0.7,
             "colsample_bytree": 0.7,
-            "reg_lambda": 5.0,
+            "reg_lambda": 10.0,  # User-specified
+            "path_smooth": 20,  # User-specified
+            "extra_trees": True,  # User-specified
             "n_jobs": -1,
             "verbose": -1
         }
@@ -298,6 +334,13 @@ def train_chaser_student(
         params = default_params.copy()
         if model_params:
             params.update(model_params)
+
+        # Add weak constraints if available
+        if monotone_constraints_weak is not None and mode == "classification":
+            params["monotone_constraints"] = monotone_constraints_weak
+            
+        if interaction_constraints_weak is not None and mode == "classification":
+            params["interaction_constraints"] = interaction_constraints_weak
 
         bst = lgb.train(params, train_data, num_boost_round=num_boost_round)
         return {"model": bst, "mode": mode, "type": "lgb", "params": params}
@@ -315,7 +358,9 @@ def train_chaser_student(
             "iterations": num_boost_round,
             "learning_rate": 0.05,
             "depth": 6,
-            "l2_leaf_reg": 5.0,
+            "l2_leaf_reg": 20.0,  # User-specified
+            "subsample": 0.6,  # User-specified
+            "random_strength": 5.0,  # User-specified
             "verbose": False,
             "allow_writing_files": False
         }
@@ -327,6 +372,10 @@ def train_chaser_student(
         params = default_params.copy()
         if model_params:
             params.update(model_params)
+
+        # Add weak constraints if available
+        if monotone_constraints_weak is not None and mode == "classification":
+            params["monotone_constraints"] = monotone_constraints_weak
 
         model = cb.CatBoost(params)
         model.fit(train_pool)
@@ -441,7 +490,10 @@ class Layer25Chaser:
         feature_engineering: bool = True,
         correlation_threshold: float = 0.7,
         verbose: bool = True,
-        models_to_train: List[str] = None
+        models_to_train: List[str] = None,
+        # New parameters for weak constraints
+        use_huber_constraints: bool = True,
+        constraint_tier: str = "weak",
     ):
         self.mode = mode
         self.regime_split = regime_split
@@ -449,6 +501,10 @@ class Layer25Chaser:
         self.correlation_threshold = correlation_threshold
         self.verbose = verbose
         self.models_to_train = models_to_train or ["xgb", "lgb", "cat", "et"]
+        
+        # New constraint parameters
+        self.use_huber_constraints = use_huber_constraints
+        self.constraint_tier = constraint_tier
 
         self.regime_models: Dict[int, Dict[str, Any]] = {}
         self.global_models: Dict[str, Any] = {}
@@ -480,10 +536,13 @@ class Layer25Chaser:
                 X_eng[f"{col}_fd"] = X[col] # Fallback
             
             # 2. Residualized (Detrended)
-            # Simple High-Pass Filter: X - EMA(X, span=20)
-            # Captures short-term deviations
-            ema = X[col].ewm(span=20, adjust=False).mean()
-            X_eng[f"{col}_res"] = X[col] - ema
+            # Linear Model Residualisation: X - LinearTrend(X)
+            # Captures deviations from long-term linear trend
+            lr = LinearRegression()
+            time_idx = np.arange(len(X[col]))
+            lr.fit(time_idx.reshape(-1, 1), X[col].values)
+            fitted = lr.predict(time_idx.reshape(-1, 1))
+            X_eng[f"{col}_res"] = X[col] - fitted
 
         # Fill NaNs created by differencing/fracdiff
         X_eng = X_eng.fillna(0.0)
@@ -520,12 +579,43 @@ class Layer25Chaser:
         y_np = y.values
         w_np = sample_weight.values if sample_weight is not None else None
 
+        # Get weak constraints from Huber if available
+        monotone_constraints_weak = None
+        interaction_constraints_weak = None
+        
+        if self.use_huber_constraints and HUBER_AVAILABLE:
+            try:
+                # Use weak tier constraints for chasers
+                huber_config = get_huber_tier_config("weak")
+                huber_results = prepare_huber_teacher_outputs(
+                    X_train=pd.DataFrame(X_np, columns=self.feature_names),
+                    y_train=y_np,
+                    sample_weight=w_np,
+                    config=huber_config,
+                    tier="weak"
+                )
+                monotone_constraints_weak = huber_results.get('monotonic_constraints', {})
+                interaction_constraints_weak = huber_results.get('interaction_constraints', [])
+                
+                if self.verbose:
+                    tprint_info(f"   🔗 Applied {len(monotone_constraints_weak)} monotone constraints from Huber")
+                    tprint_info(f"   🔄 Applied {len(interaction_constraints_weak)} interaction constraint groups")
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ Failed to get Huber constraints: {e}")
+
         # Helper to train a set of models for a specific weight vector
         def train_ensemble(weights, prefix=""):
             # 1. Teacher
             teacher = fit_bayes_teacher_oof(
                 X_np, y_np, sample_weight=weights, n_splits=5, is_classifier=(self.mode == "classification")
             )
+            
+            # Sanity check uncertainty signal
+            if self.mode == "classification" and teacher.p_oof is not None:
+                uncertainty_corr = sanity_check_uncertainty(y_np, teacher.p_oof, teacher.std_oof)
+                if self.verbose:
+                    tprint_info(f"   📊 Uncertainty-error correlation: {uncertainty_corr:.3f}")
 
             # 2. Students
             students = {}
@@ -540,7 +630,13 @@ class Layer25Chaser:
 
                 try:
                     student = train_chaser_student(
-                        X_np, y_np, teacher, base_weight=weights, mode=self.mode, model_type=m_type
+                        X_np, y_np, teacher, 
+                        base_weight=weights, 
+                        mode=self.mode, 
+                        model_type=m_type,
+                        monotone_constraints_weak=monotone_constraints_weak,
+                        interaction_constraints_weak=interaction_constraints_weak,
+                        huber_teacher_mu=teacher.mu_oof
                     )
 
                     # Generate OOF preds for correlation check (on training data)

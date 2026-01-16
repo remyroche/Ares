@@ -6585,11 +6585,42 @@ class LabelBasedLayer2(BaseStep):
 
         return events_df
 
-    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None):
+    def _generate_causal_target(self, price_series: pd.Series) -> pd.Series:
+        """
+        Generate continuous causal target (Innovation) via HAR(3) + Studentization.
+        Ref: De Prado, Advances in Financial Machine Learning.
+        """
+        # 1. Log Returns
+        ret = np.log(price_series).diff().fillna(0)
+
+        # 2. HAR Lags (1, 5, 22)
+        df_har = pd.DataFrame({'ret': ret})
+        df_har['lag1'] = ret.shift(1)
+        df_har['lag5'] = ret.rolling(5).mean().shift(1)
+        df_har['lag22'] = ret.rolling(22).mean().shift(1)
+        df_har = df_har.dropna()
+
+        if len(df_har) < 100:
+            return ret # Fallback
+
+        from sklearn.linear_model import Ridge
+        model = Ridge(alpha=1.0)
+        model.fit(df_har[['lag1', 'lag5', 'lag22']], df_har['ret'])
+        pred = model.predict(df_har[['lag1', 'lag5', 'lag22']])
+        residuals = df_har['ret'] - pred
+
+        # 4. Studentize (GARCH-proxy: Rolling Std)
+        std = residuals.rolling(60).std()
+        y_causal = residuals / (std + 1e-9)
+
+        return y_causal.reindex(price_series.index).fillna(0)
+
+    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None, y_causal_train=None, y_causal_val=None):
         """
         Run a model race to find the best base model for this geometry.
 
         UPDATED FRAMEWORK (Huber):
+        - Continuous Causal Target (IC)
         - Huber feature pruning
         - Huber monotonic constraints & warm start
         - Integration of sequential bootstrap weights
@@ -6839,7 +6870,16 @@ class LabelBasedLayer2(BaseStep):
                 # Metrics
                 auc_score = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
                 pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
-                ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
+
+                # IC against causal target (if available) or binary target
+                y_ic_target = y_causal_val if y_causal_val is not None else y_val
+                # Align if needed (y_causal_val is Series, preds is array)
+                if isinstance(y_ic_target, pd.Series):
+                    y_ic_vals = y_ic_target.values
+                else:
+                    y_ic_vals = y_ic_target
+
+                ic, _ = spearmanr(y_ic_vals, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
                 # Combined score (sort by ROC-AUC)
                 race_results[name] = {
@@ -7815,7 +7855,7 @@ class LabelBasedLayer2(BaseStep):
         w_sub = w.loc[sample_idx] if w is not None else None
         return X_sub, y_sub, w_sub
 
-    def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 15, user_weights: Optional[pd.Series] = None) -> List[GeometryTrial]:
+    def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 15, user_weights: Optional[pd.Series] = None, y_causal: Optional[pd.Series] = None) -> List[GeometryTrial]:
         """
         Selects the best geometry per family using a lightweight Ridge probe,
         then runs a single model race for the top candidate only.
@@ -7958,84 +7998,43 @@ class LabelBasedLayer2(BaseStep):
                 # Use X.shape[1] as part of key to ensure we are using same feature space
                 cached_features = self._get_family_feature_cache(cand.family, X_cand, y_cand)
                 
-                # === USER REQUEST: Target Residualization (HAR + Studentization) ===
-                # Compute causal target (Innovation) for assessment
-                y_causal = y_cand # Default fallback
+                # Align y_causal if provided (Optimized: calculated once in optimize_production_geometries)
+                # y_causal here refers to the function argument 'y_causal' (passed from caller)
+                y_causal_target = y_cand # Default fallback to binary/original target
                 
-                try:
-                    # If we have continuous price data, we can compute proper innovations
-                    if 'close' in df.columns:
-                        # 1. HAR Model for 'Expected' Returns
-                        price_series = df['close']
-                        # Calculate returns first
-                        ret_series = np.log(price_series).diff()
-                        
-                        df_har = pd.DataFrame(index=ret_series.index)
-                        df_har['y'] = ret_series
-                        df_har['d'] = ret_series.shift(1)
-                        df_har['w'] = ret_series.rolling(5).mean().shift(1)
-                        df_har['m'] = ret_series.rolling(22).mean().shift(1)
-                        
-                        clean = df_har.dropna()
-                        # Simple linear regression for HAR
-                        if len(clean) > 100:
-                            from sklearn.linear_model import LinearRegression
-                            model_har = LinearRegression().fit(clean[['d', 'w', 'm']], clean['y'])
+                # Check argument 'y_causal' (from function signature)
+                if y_causal is not None:
+                    try:
+                        # Align to candidate events
+                        common_idx = X_cand.index.intersection(y_causal.index)
+                        if len(common_idx) > 0:
+                            # Use 1-bar lookahead innovation as the "Causal Target" for assessment
+                            # y_causal (global) is usually aligned to T.
+                            # If we want T+1, we should have shifted it globally or here.
+                            # Assuming y_causal from _generate_causal_target is t-aligned innovation.
+                            # We want to predict future innovation.
+                            # Let's shift it here for safety if not already shifted.
+                            # _generate_causal_target returns residuals aligned to 'ret'.
+                            # Ret at T is (P_t / P_t-1).
+                            # Prediction at T uses info up to T.
+                            # Target should be Ret at T+1.
+                            # So shift(-1).
+                            y_causal_shifted = y_causal.shift(-1)
+                            y_causal_aligned = y_causal_shifted.reindex(X_cand.index).fillna(0)
                             
-                            # 2. Extract Innovation (Actual - Expected)
-                            innovation = clean['y'] - model_har.predict(clean[['d', 'w', 'm']])
-                            
-                            # 3. Studentize (Divide by rolling volatility of innovations)
-                            y_causal_series = innovation / (innovation.rolling(20).std() + 1e-9)
-                            
-                            # Align to event times
-                            # We want the innovation *at* the event time (or future?)
-                            # Typically for prediction we want y = Future Innovation
-                            # But here y_cand is already "Outcome label".
-                            # If y_cand is "Future Return", we want "Future Innovation".
-                            # If y_cand is "Binary Label", we probably can't easily swap it.
-                            # BUT, the user said "make the target causal... ensure this is done once... except triple barrier"
-                            # Triple barrier generates labels (-1, 0, 1). 
-                            # If we pass a continuous target to assess_candidate, it calculates IC/R2 against that.
-                            # Let's try to infer if we should look forward.
-                            # cand.events are timestamps. 
-                            # If we just take y_causal_series.loc[cand.events], we get the innovation AT the event.
-                            # For prediction, we usually want the innovation over the *horizon*.
-                            # However, `y_cand` is what the candidate claims to predict.
-                            # If cand is a Triple Barrier candidate, y_cand is the barrier outcome.
-                            # If we replace y_cand with y_causal, we change the definition of success.
-                            # Given the strict instruction "To make the target causal", I will use the forward-looking innovation
-                            # matched to the event horizon if possible, or just the next period innovation if horizon is undefined.
-                            # For safety, since horizon varies, I will stick to using y_cand (labels) for classification metrics 
-                            # but if possible, I should use this residualized target for continuous checks if I knew the horizon.
-                            # WITHOUT horizon info easily available here (it's in cand params?), 
-                            # I will use the residualized series aligned to the event time (assuming immediate impact) 
-                            # OR better, stick to y_cand for now but applying the user's logic if y_cand ITSELF was continuous.
-                            # Since y_cand is binary here: 
-                            # "y_cand = (cand.labels > 0).astype(int)"
-                            # I cannot fully replace it with continuous innovation without breaking potential classification steps inside assessor.
-                            # However, Assessor supports regression y.
-                            # Let's use the residualized target for `assess_candidate` *only*.
-                            # We assume a fixed horizon of 1 bar for "Next Step Innovation" causality 
-                            # or we can try to infer horizon.
-                            # Let's use a 1-bar lookahead innovation as the "Causal Target".
-                            y_causal_full = y_causal_series.shift(-1) # t+1 innovation
-                            
-                            # Align to events
-                            y_causal_aligned = y_causal_full.reindex(X_cand.index).fillna(0)
-                             
-                            # Check correlation with binary labels to ensure directionality isn't flipped
-                            # validation: corr(y_causal, y_cand) should be positive
-                            if y_causal_aligned.corr(y_cand) > 0:
-                                y_causal = y_causal_aligned
-                except Exception as e:
-                    tprint_warning(f"Failed to generate causal target: {e}. Using binary labels.")
+                            # Check correlation with binary labels to ensure directionality
+                            if y_causal_aligned.std() > 1e-9:
+                                corr = y_causal_aligned.corr(y_cand)
+                                if not np.isnan(corr) and corr > -0.5: # Loose check, allow some noise but not inverse
+                                    y_causal_target = y_causal_aligned
+                    except Exception as e:
+                        tprint_warning(f"Failed to align causal target: {e}. Using binary labels.")
 
                 # Run De Prado Causal Quality Assessment
                 # 2.4 Run Core Assessment (with cached residuals)
                 precomputed_residuals = getattr(self, '_current_regime_residuals', None)
                 assessment = self.assessor.assess_candidate(
-                    cand, df, events_df, X_cand, y_causal, 
+                    cand, df, events_df, X_cand, y_causal_target,
                     backbone_features=backbone_df,
                     precomputed_features=cached_features,
                     precomputed_residuals=precomputed_residuals
@@ -8571,6 +8570,13 @@ class LabelBasedLayer2(BaseStep):
         else:
             tprint_info("   🌍 Global Mode: No regime tags found")
     
+        # 0. Generate Continuous Causal Target (Innovation)
+        # Done once globally to ensure consistency
+        y_causal = None
+        if 'close' in df.columns:
+            y_causal = self._generate_causal_target(df['close'])
+            tprint_info("   🎯 Generated global causal target (HAR-Residualized Innovation)")
+
         # 1. Generate Global Candidates (Definitions & Events)
         # We generate candidates globally to ensure continuity of indicators,
         # then evaluate them conditionally per regime.
@@ -8721,6 +8727,7 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   🧾 Regime filter rejections ({regime}): {dict(regime_rejections)}")
 
             # 3. Select Best via Race/Probe (Per Regime) - PARALLELIZED
+            tprint_info("[Tier 1] Racing top candidates...")
             tprint_info(f"   🚀 Selecting family experts via Parallel Race/Probe fits...")
             
             # --- FUNNEL METRICS (Regime-Specific) ---
@@ -8745,7 +8752,7 @@ class LabelBasedLayer2(BaseStep):
                 if not cands: return None
                 try:
                     # _select_best_geometry_via_race includes the Ridge Probing phase
-                    winners = self._select_best_geometry_via_race(cands, df, top_k=10, user_weights=user_weights)
+                    winners = self._select_best_geometry_via_race(cands, df, top_k=10, user_weights=user_weights, y_causal=y_causal)
                     return fam, winners
                 except Exception as e:
                     tprint_error(f"      ❌ Family selection failed for {fam}: {e}")
@@ -8825,6 +8832,7 @@ class LabelBasedLayer2(BaseStep):
             
             # Race the elite representatives (~5-10 total)
             elite_representatives = list(family_winners.values())
+            tprint_info("[Tier 2] Assessing remaining candidates...")
             tprint_info(f"   🏁 Racing {len(elite_representatives)} family leaders (Selection from Top {len(production_geometries)} Finalists)...")
             
             for gt in elite_representatives:
@@ -8836,6 +8844,14 @@ class LabelBasedLayer2(BaseStep):
                             race_payload["X_tr"], race_payload["y_tr"]
                         )
                     try:
+                        # Prepare causal targets for race if available
+                        y_causal_tr_race = None
+                        y_causal_val_race = None
+                        if y_causal is not None:
+                            # Align to training/validation sets using index from payload
+                            y_causal_tr_race = y_causal.reindex(race_payload["X_tr"].index).fillna(0)
+                            y_causal_val_race = y_causal.reindex(race_payload["X_val"].index).fillna(0)
+
                         # Full Architectural Race (Huber + Boosters + ExtraTrees)
                         # We use the payload from the Ridge Probe phase for consistency
                         best_model, best_name, race_results = self._run_model_race(
@@ -8844,7 +8860,9 @@ class LabelBasedLayer2(BaseStep):
                             race_payload["X_val"],
                             race_payload["y_val"],
                             race_payload["sample_weights"],
-                            environment_masks
+                            environment_masks,
+                            y_causal_train=y_causal_tr_race,
+                            y_causal_val=y_causal_val_race
                         )
                         gt.model_params = {"race_winner": best_name}
                         gt.race_score = race_results.get(best_name, {}).get("auc", 0.0)
@@ -9135,8 +9153,10 @@ class LabelBasedLayer2(BaseStep):
                 )
                 
                 # 4. Train batch
+                # Pass global y_causal (if available) for potential IC calculation in race
                 batch_models, batch_diagnostics = self._train_geometry_batch(
-                    family_geos, df, X_full, labels_dict_full, weights_dict_full, family, fold_idx=-1
+                    family_geos, df, X_full, labels_dict_full, weights_dict_full, family, fold_idx=-1,
+                    y_causal=y_causal
                 )
                 if batch_models:
                     global_sparse_models[family] = (batch_models, batch_diagnostics)
@@ -9275,8 +9295,10 @@ class LabelBasedLayer2(BaseStep):
                     # For sparse, we could technically train on FULL data here, 
                     # but let's stick to current fold's train set unless it's too small.
                     # Or if sparse, we train on the LARGEST possible train set (e.g. all data except current test window).
+                    # Pass y_causal (global) - _train_geometry_batch will slice it to df_train indices
                     batch_models, batch_diagnostics = self._train_geometry_batch(
-                        group_geometries, df_train, X_train, labels_dict, weights_dict, family, i
+                        group_geometries, df_train, X_train, labels_dict, weights_dict, family, i,
+                        y_causal=y_causal
                     )
                     if is_sparse and batch_models:
                         global_sparse_models[family] = (batch_models, batch_diagnostics)
@@ -10703,7 +10725,7 @@ class LabelBasedLayer2(BaseStep):
         return selected
 
     def _train_geometry_batch(self, geometry_batch: List, df_train: pd.DataFrame, X_train: pd.DataFrame,
-                            labels_dict: Dict, weights_dict: Dict, family: str, fold_idx: int) -> Dict[str, Any]:
+                            labels_dict: Dict, weights_dict: Dict, family: str, fold_idx: int, y_causal: Optional[pd.Series] = None) -> Dict[str, Any]:
         """Train a batch of geometries in parallel (max 2 concurrent)."""
         if fold_idx == 0:
             self._log_stage_metrics(f"TrainBatch_{family}", input_shape=X_train.shape)
@@ -10843,8 +10865,18 @@ class LabelBasedLayer2(BaseStep):
                     if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
                         environment_masks = self._create_default_environment_masks(X_race_train, y_race_train)
 
+                    # Align causal targets if available
+                    y_causal_tr_race = None
+                    y_causal_val_race = None
+                    if y_causal is not None:
+                        # Slice to race indices (X_race_train/X_race_val maintain time index)
+                        y_causal_tr_race = y_causal.reindex(X_race_train.index).fillna(0)
+                        y_causal_val_race = y_causal.reindex(X_race_val.index).fillna(0)
+
                     best_model, best_name, race_results = self._run_model_race(
-                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks
+                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks,
+                        y_causal_train=y_causal_tr_race,
+                        y_causal_val=y_causal_val_race
                     )
 
                     tprint_success(f"🏆 Model race winner: {best_name}")

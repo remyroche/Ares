@@ -8818,7 +8818,8 @@ class LabelBasedLayer2(BaseStep):
             specialist_predictions=specialist_predictions,
             causal_graph=causal_graph,
             target_signals_per_day=target_signals_per_day,
-            causal_surprise_threshold=causal_surprise_threshold
+            causal_surprise_threshold=causal_surprise_threshold,
+            disable_subsampling=True
         )
         tprint_info(f"🔍 Orthogonal Label Generation: Returned {len(ortho_geoms)} global candidates")
 

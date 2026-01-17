@@ -20,11 +20,21 @@ import numpy as np
 import time
 from typing import List, Dict, Any, Optional, Tuple
 from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.cluster import FeatureAgglomeration
+from sklearn.cluster import FeatureAgglomeration, KMeans
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-from scipy.stats import norm, entropy, spearmanr
+from scipy.stats import norm, entropy, spearmanr, iqr, rankdata
 import warnings
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success, tprint_error
+from src.utils.purged_kfold import PurgedKFoldTime
+
+# Optional LightGBM support
+try:
+    import lightgbm as lgb
+    LGBM_AVAILABLE = True
+except ImportError:
+    LGBM_AVAILABLE = False
 
 EPS = 1e-12
 
@@ -45,26 +55,22 @@ class DePradoFeatureEngine:
         min_cluster_size: int = 2,
         random_state: int = 42,
         gain_weight: float = 0.4,
-        depth_weight: float = 0.2,
+        depth_weight: float = 0.1,  # Reduced default
         ic_weight: float = 0.2,
-        entropy_weight: float = 0.2,
+        entropy_weight: float = 0.1,
+        stability_weight: float = 0.2,
         min_samples_leaf: int = 30,
-        max_features: str = 'log2'
+        max_features: str = 'log2',
+        # New parameters for Enhanced MDI
+        use_lgbm: bool = False,
+        lgbm_params: Optional[Dict[str, Any]] = None,
+        use_group_mdi: bool = False,
+        # Hardening params
+        max_cluster_size: int = 30,
+        topk_freq_threshold: float = 0.4  # Increased robustness
     ):
         """
         Initialize De Prado Feature Engine.
-        
-        Args:
-            n_estimators: Number of trees in ExtraTrees
-            max_clusters: Maximum number of clusters to consider
-            min_cluster_size: Minimum samples per cluster
-            random_state: Random seed for reproducibility
-            gain_weight: Weight for gain in composite score (default: 0.4)
-            depth_weight: Weight for depth proximity in composite score (default: 0.2)
-            ic_weight: Weight for Information Coefficient in composite score (default: 0.2)
-            entropy_weight: Weight for Shannon Entropy in composite score (default: 0.2)
-            min_samples_leaf: Minimum samples per leaf in ExtraTrees
-            max_features: Max features considered for each split
         """
         self.n_estimators = n_estimators
         self.max_clusters = max_clusters
@@ -74,9 +80,36 @@ class DePradoFeatureEngine:
         self.depth_weight = depth_weight
         self.ic_weight = ic_weight
         self.entropy_weight = entropy_weight
+        self.stability_weight = stability_weight
         self.min_samples_leaf = min_samples_leaf
         self.max_features = max_features
         
+        # Enhanced settings
+        self.use_lgbm = use_lgbm
+        self.lgbm_params = lgbm_params or {}
+        self.use_group_mdi = use_group_mdi
+
+        # Hardening
+        self.max_cluster_size = max_cluster_size
+        self.topk_freq_threshold = topk_freq_threshold
+
+        # Defaults for LightGBM if used
+        if self.use_lgbm:
+            defaults = {
+                'max_depth': 4,
+                'reg_alpha': 5,      # More balanced L1
+                'reg_lambda': 10,    # L2 for stability
+                'min_split_gain': 1e-3,
+                'colsample_bytree': 0.7,
+                'n_estimators': 1000,
+                'learning_rate': 0.05,
+                'importance_type': 'gain',
+                'verbose': -1
+            }
+            for k, v in defaults.items():
+                if k not in self.lgbm_params:
+                    self.lgbm_params[k] = v
+
         # Results storage
         self.feature_stats_ = None
         self.selected_features_ = None
@@ -84,19 +117,21 @@ class DePradoFeatureEngine:
         self.optimal_n_clusters_ = None
         self.silhouette_scores_ = None
         
+        # Extended diagnostics
+        self.lgbm_metrics_ = {
+            'mean_gain': None,
+            'stability': None,
+            'oof_ic': 0.0,
+            'feature_oof_ic': None,
+            'topk_freq': None,
+            'median_log_gain': None,
+            'iqr_log_gain': None
+        }
+
     def _get_onc_clusters(self, X: pd.DataFrame) -> pd.Series:
         """
         Finds optimal feature clusters using Multi-criteria ONC.
-        
-        Primary: CV Ratio (BCSS/WCSS) - measures cluster separation vs cohesion
-        Secondary: Davies-Bouldin Index - lower is better
-        Tertiary: Silhouette Score - higher is better
-        
-        Args:
-            X: Feature matrix
-            
-        Returns:
-            Series of cluster labels indexed by feature names
+        Includes recursive re-clustering to prevent mega-clusters and merges tiny clusters.
         """
         tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
         onc_start = time.time()
@@ -104,640 +139,722 @@ class DePradoFeatureEngine:
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
 
-        # Compute correlation matrix
-        corr_start = time.time()
-        corr = X.corr().fillna(0)
-        
-        # Clamp to [-1, 1] to prevent floating point precision issues
-        corr = np.clip(corr, -1, 1)
-        tprint_info(f"⏱️  Correlation matrix computed in {time.time() - corr_start:.2f}s")
+        # Precompute global correlation for later merging
+        global_corr = X.corr().abs().fillna(0)
 
-        # Representation where each feature becomes a "sample" vector for metrics
-        feature_sample_matrix = X.T
-        
-        # Debug: Check correlation matrix properties
-        tprint_info(f"🔍 Correlation matrix shape: {corr.shape}")
-        tprint_info(f"   Correlation stats: min={corr.min().min():.3f}, max={corr.max().max():.3f}")
-        
-        # Check for highly correlated features
-        high_corr_pairs = []
-        for i in range(len(corr.columns)):
-            for j in range(i+1, len(corr.columns)):
-                if abs(corr.iloc[i, j]) > 0.95:
-                    high_corr_pairs.append((corr.columns[i], corr.columns[j], corr.iloc[i, j]))
-        
-        if high_corr_pairs:
-            tprint_warning(f"   Found {len(high_corr_pairs)} highly correlated pairs (>0.95)")
-            for pair in high_corr_pairs[:3]:  # Show first 3
-                tprint_warning(f"      {pair[0]} - {pair[1]}: {pair[2]:.3f}")
-        
-        # Handle perfect correlation
-        if corr.isin([1.0]).all().all():
-            tprint_warning("All features are perfectly correlated. Using single cluster.")
-            return pd.Series(0, index=X.columns)
-        
-        # Convert to correlation distance
-        dist = 1 - np.abs(corr)  # Use absolute correlation for distance
-        
-        # Ensure diagonal is exactly zero (fix for the error)
-        np.fill_diagonal(dist.values, 0)
-        
-        # Clip to non-negative due to floating point precision
-        dist = np.maximum(dist, 0)
-        
-        # Find optimal number of clusters using multi-criteria scoring
-        best_k, best_composite_score = 2, -1
-        scores_history = {}
-        
-        # Test cluster sizes from 2 to max_clusters or n_features//2
-        max_k = min(self.max_clusters, max(2, len(X.columns) // 2))
-        
-        tprint_info(f"   🔄 Testing cluster counts K=2 to {max_k} (Multi-criteria)...")
-        tprint_info(f"   📊 Metrics: CV Ratio (primary), DBI (secondary), Silhouette (tertiary)")
+        # Base ONC Logic
+        def run_base_onc(X_subset):
+            # Compute correlation matrix
+            corr = X_subset.corr().fillna(0)
+            corr = np.clip(corr, -1, 1)
+            dist = 1 - np.abs(corr)
+            np.fill_diagonal(dist.values, 0)
+            dist = np.maximum(dist, 0)
 
-        for k in range(2, max_k + 1):
-            k_start = time.time()
-            try:
-                clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
-                # Fit directly on (n_samples, n_features); FeatureAgglomeration clusters columns
-                clusterer.fit(X)
-                cluster_labels = clusterer.labels_  # This should have length = n_features (50)
-                
-                # Debug: Check if clustering actually produced k clusters
-                unique_labels = np.unique(cluster_labels)
-                if len(unique_labels) != k:
-                    tprint_warning(f"      - K={k}: Expected {k} clusters, got {len(unique_labels)}")
-                
-                # Debug: Check label length
-                if len(cluster_labels) != len(X.columns):
-                    tprint_warning(f"      - K={k}: Label length mismatch: {len(cluster_labels)} vs {len(X.columns)}")
+            best_k, best_composite_score = 2, -1
+            scores_history = {}
+            # Allow K up to N/2
+            max_k = max(2, min(self.max_clusters, len(X_subset.columns) // 2))
+
+            feature_sample_matrix = X_subset.T
+
+            for k in range(2, max_k + 1):
+                try:
+                    clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
+                    clusterer.fit(X_subset)
+                    labels = clusterer.labels_
+
+                    if len(np.unique(labels)) > 1:
+                        cv_ratio = self._calculate_cv_ratio(feature_sample_matrix, labels)
+                        dbi = davies_bouldin_score(feature_sample_matrix, labels)
+                        silhouette = silhouette_score(dist, labels, metric='precomputed')
+
+                        cv_score = min(cv_ratio / 5.0, 1.0)
+                        dbi_score = 1.0 / (1.0 + dbi)
+                        silhouette_score_norm = (silhouette + 1.0) / 2.0
+
+                        # Simplified composite
+                        composite_score = 0.5 * cv_score + 0.3 * dbi_score + 0.2 * silhouette_score_norm
+
+                        if composite_score > best_composite_score:
+                            best_composite_score, best_k = composite_score, k
+                except Exception:
                     continue
-                
-                # Compute multiple clustering quality metrics
-                if len(unique_labels) > 1:
-                    # 1. CV Ratio (BCSS/WCSS) - Primary metric
-                    # Use feature_sample_matrix (features as samples)
-                    cv_ratio = self._calculate_cv_ratio(feature_sample_matrix, cluster_labels)
-                    
-                    # 2. Davies-Bouldin Index - Secondary metric (lower is better)
-                    dbi = davies_bouldin_score(feature_sample_matrix, cluster_labels)
-                    
-                    # 3. Silhouette Score - Tertiary metric (higher is better)
-                    # Use transposed data with correlation distance
-                    silhouette = silhouette_score(dist, cluster_labels, metric='precomputed')
-                    
-                    # 4. Calinski-Harabasz Index - Additional metric (higher is better)
-                    ch = calinski_harabasz_score(feature_sample_matrix, cluster_labels)
-                    
-                    # Normalize each metric for composite scoring
-                    # CV Ratio: higher is better (already normalized 0-1)
-                    cv_score = cv_ratio
-                    
-                    # DBI: lower is better, normalize to 0-1 (invert)
-                    dbi_score = 1.0 / (1.0 + dbi)
-                    
-                    # Silhouette: higher is better (already -1 to 1, shift to 0-1)
-                    silhouette_score_norm = (silhouette + 1.0) / 2.0
-                    
-                    # CH: higher is better, normalize across all k values
-                    ch_score = ch  # Will be normalized later
-                    
-                    # Store all scores
-                    scores_history[k] = {
-                        'cv_ratio': cv_ratio,
-                        'dbi': dbi,
-                        'silhouette': silhouette,
-                        'ch': ch,
-                        'cv_score': cv_score,
-                        'dbi_score': dbi_score,
-                        'silhouette_score_norm': silhouette_score_norm,
-                        'ch_score': ch_score
-                    }
-                    
-                    # Composite score with CV Ratio as primary (50%), DBI as secondary (30%), Silhouette as tertiary (20%)
-                    composite_score = (
-                        0.50 * cv_score +      # CV Ratio - Primary
-                        0.30 * dbi_score +    # DBI - Secondary  
-                        0.20 * silhouette_score_norm  # Silhouette - Tertiary
-                    )
-                    
-                    scores_history[k]['composite'] = composite_score
-                    
-                    tprint_info(f"      - K={k}: CV={cv_ratio:.3f}, DBI={dbi:.3f}, Sil={silhouette:.3f}, Comp={composite_score:.3f}")
-                    tprint_info(f"        ⏱️ Evaluation time: {time.time() - k_start:.2f}s")
-                    
-                    if composite_score > best_composite_score:
-                        best_composite_score, best_k = composite_score, k
-                        
-                else:
-                    tprint_warning(f"      - K={k}: Only 1 cluster found")
-                        
-            except Exception as e:
-                tprint_warning(f"      - K={k}: Failed - {e}")
-                continue
 
-        tprint_info(f"⏱️  ONC search loop completed in {time.time() - onc_start:.2f}s")
+            # Final Fit
+            if best_k == 1:
+                return np.zeros(len(X_subset.columns))
 
-        # Normalize CH scores across all k values
-        if scores_history:
-            ch_values = [scores_history[k]['ch'] for k in scores_history.keys()]
-            if ch_values and max(ch_values) > 0:
-                ch_min, ch_max = min(ch_values), max(ch_values)
-                ch_range = ch_max - ch_min
-                if ch_range > 0:
-                    for k in scores_history:
-                        scores_history[k]['ch_score'] = (scores_history[k]['ch'] - ch_min) / ch_range
-                        # Recompute composite score
-                        scores_history[k]['composite'] = (
-                            0.50 * scores_history[k]['cv_score'] +
-                            0.30 * scores_history[k]['dbi_score'] +
-                            0.20 * scores_history[k]['silhouette_score_norm']
-                        )
-        
-        # Quality check on best solution
-        if best_k == 2 and best_composite_score < 0.3 and scores_history:
-            # Force more clusters if quality is too low
-            min_clusters = min(3, max(2, len(X.columns) // 2))
-            tprint_warning(f"   ⚠️ ONC Quality Check: Best K={best_k} has composite score {best_composite_score:.3f}")
-            tprint_warning(f"   Forcing {min_clusters} clusters for diversity.")
-            best_k = min_clusters
-        
-        # Final clustering with optimal k
-        if best_k == 1:
-            final_labels = np.zeros(len(X.columns))
-        else:
             final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
-            final_clusterer.fit(X.T)  # Transpose to cluster features
-            final_labels = final_clusterer.labels_
-            
-            # Debug: Check final clustering
-            if len(final_labels) != len(X.columns):
-                tprint_warning(f"   ⚠️ Final clustering label length mismatch: {len(final_labels)} vs {len(X.columns)}")
-                # Fallback: assign each feature to a cluster based on modulo
-                final_labels = np.arange(len(X.columns)) % best_k
-                tprint_warning(f"   🔄 Using fallback clustering assignment")
-        
-        self.optimal_n_clusters_ = best_k
-        self.silhouette_scores_ = scores_history
-        
-        # Enhanced logging of results
-        best_metrics = scores_history.get(best_k, {})
-        tprint_success(f"✅ ONC: {best_k} optimal clusters found")
-        tprint_info(f"   📊 Best metrics: CV={best_metrics.get('cv_ratio', 0):.3f}, DBI={best_metrics.get('dbi', 0):.3f}, Sil={best_metrics.get('silhouette', 0):.3f}")
-        tprint_info(f"   🎯 Composite score: {best_composite_score:.3f}")
-        
-        # Log final cluster distribution
-        try:
-            final_dist = pd.Series(final_labels).value_counts().sort_index()
-            tprint_info(f"   📊 Final cluster sizes: {final_dist.to_dict()}")
-        except:
-            pass
+            final_clusterer.fit(X_subset)
+            return final_clusterer.labels_
 
-        return pd.Series(final_labels, index=X.columns)
-    
+        # Initial Clustering
+        initial_labels = run_base_onc(X)
+        final_series = pd.Series(initial_labels, index=X.columns)
+
+        # Recursive Splitting (Max Depth 3)
+        final_map = {}
+        next_cluster_id = 0
+
+        # Queue for processing clusters: (cluster_id, member_indices, depth)
+        queue = []
+        for cid in sorted(np.unique(initial_labels)):
+            queue.append((cid, final_series[final_series == cid].index, 0))
+
+        while queue:
+            cid, members, depth = queue.pop(0)
+
+            if len(members) <= self.max_cluster_size or depth >= 3:
+                # Leaf cluster or max depth reached
+
+                # Check Guardrail A: Still oversized at cap?
+                if len(members) > self.max_cluster_size:
+                    # Force split using KMeans on PCA
+                    try:
+                        pca = PCA(n_components=2)
+                        X_sub = X[members]
+                        X_pca = pca.fit_transform(X_sub.T) # Features as samples
+                        # Split into enough chunks to satisfy max size
+                        n_chunks = max(2, int(np.ceil(len(members) / self.max_cluster_size)))
+                        kmeans = KMeans(n_clusters=n_chunks, random_state=self.random_state)
+                        sub_labels = kmeans.fit_predict(X_pca)
+
+                        for sub_cid in np.unique(sub_labels):
+                            sub_members = members[sub_labels == sub_cid]
+                            for m in sub_members: final_map[m] = next_cluster_id
+                            next_cluster_id += 1
+                    except:
+                        # Fallback: keep as is
+                        for m in members: final_map[m] = next_cluster_id
+                        next_cluster_id += 1
+                else:
+                    # Accept cluster
+                    for m in members: final_map[m] = next_cluster_id
+                    next_cluster_id += 1
+            else:
+                # Recurse
+                try:
+                    sub_labels = run_base_onc(X[members])
+                    if len(np.unique(sub_labels)) > 1:
+                        for sub_cid in np.unique(sub_labels):
+                            sub_members = members[sub_labels == sub_cid]
+                            queue.append((sub_cid, sub_members, depth + 1))
+                    else:
+                        # Cannot split further by ONC -> Fallback to KMeans force split
+                        queue.append((cid, members, 100)) # Force guardrail A path
+                except:
+                    queue.append((cid, members, 100))
+
+        # Guardrail B: Merge tiny clusters (size < min_cluster_size)
+        temp_series = pd.Series(final_map)
+        cluster_sizes = temp_series.value_counts()
+        tiny_clusters = cluster_sizes[cluster_sizes < self.min_cluster_size].index.tolist()
+
+        # Sort tiny clusters by size ascending (merge smallest first)
+        tiny_clusters.sort(key=lambda c: cluster_sizes[c])
+
+        merged_map = final_map.copy()
+        valid_clusters = [c for c in cluster_sizes.index if c not in tiny_clusters]
+
+        for tiny_cid in tiny_clusters:
+            tiny_members = [f for f, c in merged_map.items() if c == tiny_cid]
+            if not tiny_members: continue
+
+            # Find best target cluster
+            best_target = -1
+            max_avg_corr = -1.0
+
+            # If no valid clusters exist yet (all tiny), merge into largest tiny cluster
+            targets = valid_clusters if valid_clusters else [c for c in cluster_sizes.index if c != tiny_cid]
+
+            for target_cid in targets:
+                target_members = [f for f, c in merged_map.items() if c == target_cid]
+                if not target_members: continue
+
+                # Calculate avg correlation between tiny group and target group
+                # Sub-matrix of correlations
+                sub_corr = global_corr.loc[tiny_members, target_members]
+                avg_corr = sub_corr.mean().mean()
+
+                if avg_corr > max_avg_corr:
+                    max_avg_corr = avg_corr
+                    best_target = target_cid
+
+            if best_target != -1:
+                # Merge
+                for m in tiny_members:
+                    merged_map[m] = best_target
+                # If target was also tiny, it might now be valid, but we rely on iterative passes or simple logic
+                # For simplicity in this robust implementation, we merge into 'best available'.
+
+        final_series = pd.Series(merged_map)
+
+        # Re-index to be 0..N
+        final_series = pd.factorize(final_series)[0]
+        final_series = pd.Series(final_series, index=X.columns)
+
+        self.optimal_n_clusters_ = final_series.nunique()
+        tprint_info(f"⏱️  ONC completed: {self.optimal_n_clusters_} clusters found (recursive + merged)")
+
+        return final_series
+
+    def _get_onc_clusters_for_fold(self, X_train: pd.DataFrame) -> pd.Series:
+        """
+        Finds optimal feature clusters using Multi-criteria ONC inside CV loop.
+        Includes simple recursion for mega-clusters.
+        """
+        if not isinstance(X_train, pd.DataFrame):
+            X_train = pd.DataFrame(X_train)
+
+        def run_fast_onc(X_sub):
+            corr = X_sub.corr().fillna(0)
+            corr = np.clip(corr, -1, 1)
+            dist = 1 - np.abs(corr)
+            np.fill_diagonal(dist.values, 0)
+
+            best_k, best_score = 2, -1
+            max_k = max(2, min(self.max_clusters, len(X_sub.columns) // 2))
+
+            search_range = range(2, max_k + 1)
+            if len(search_range) > 5: search_range = list(range(2, 6)) + list(range(6, max_k + 1, 2))
+
+            feature_sample_matrix = X_sub.T
+
+            for k in search_range:
+                try:
+                    clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
+                    clusterer.fit(X_sub)
+                    if len(np.unique(clusterer.labels_)) > 1:
+                        # Simple DBI proxy
+                        dbi = davies_bouldin_score(feature_sample_matrix, clusterer.labels_)
+                        score = 1.0 / (1.0 + dbi)
+                        if score > best_score:
+                            best_score, best_k = score, k
+                except: continue
+
+            final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
+            final_clusterer.fit(X_sub)
+            return final_clusterer.labels_
+
+        # Initial
+        labels = run_fast_onc(X_train)
+        series = pd.Series(labels, index=X_train.columns)
+
+        # Simple recursion (1 level deep only for speed in fold)
+        final_map = {}
+        next_id = 0
+        for cid in sorted(np.unique(labels)):
+            members = series[series == cid].index
+            if len(members) > self.max_cluster_size:
+                sub_labels = run_fast_onc(X_train[members])
+                for sub_cid in np.unique(sub_labels):
+                    sub_members = members[sub_labels == sub_cid]
+                    for m in sub_members: final_map[m] = next_id
+                    next_id += 1
+            else:
+                for m in members: final_map[m] = next_id
+                next_id += 1
+
+        return pd.Series(final_map)
+
     def _calculate_cv_ratio(self, X: pd.DataFrame, labels: np.ndarray) -> float:
-        """
-        Calculate CV Ratio (BCSS/WCSS) - measures cluster separation vs cohesion.
-        Higher values indicate better clustering.
-        
-        Args:
-            X: Feature matrix (transposed - features as samples)
-            labels: Cluster labels for features
-            
-        Returns:
-            CV Ratio value
-        """
+        """Calculate CV Ratio."""
         try:
-            # X should be features as samples, labels correspond to features
-            # Subsample columns (samples) for speed if too many
-            if X.shape[1] > 5000:
-                np.random.seed(42)
-                sample_cols = np.random.choice(X.shape[1], 5000, replace=False)
-                X = X.iloc[:, sample_cols]
-            
-            # Calculate between-cluster sum of squares (BCSS)
+            # Subsample for speed
+            if X.shape[1] > 1000:
+                X = X.iloc[:, :1000]
+
             overall_centroid = X.mean(axis=0)
             bcss = 0.0
-            
-            # Calculate within-cluster sum of squares (WCSS)
             wcss = 0.0
             
-            for cluster_id in np.unique(labels):
-                cluster_mask = labels == cluster_id
-                cluster_data = X.loc[cluster_mask] if isinstance(X, pd.DataFrame) else X[cluster_mask, :]
-                
-                if len(cluster_data) > 0:
-                    # Within-cluster sum of squares
-                    cluster_centroid = cluster_data.mean(axis=0)
-                    if isinstance(cluster_data, pd.DataFrame):
-                        wcss += ((cluster_data - cluster_centroid) ** 2).sum().sum()
-                    else:
-                        wcss += ((cluster_data - cluster_centroid) ** 2).sum()
-                    
-                    # Between-cluster sum of squares
-                    n_cluster = len(cluster_data)
-                    if isinstance(cluster_centroid, pd.Series):
-                        bcss += n_cluster * ((cluster_centroid - overall_centroid) ** 2).sum()
-                    else:
-                        bcss += n_cluster * np.sum((cluster_centroid - overall_centroid) ** 2)
+            # Vectorized calculation possible but keeping simple for robustness
+            df_X = pd.DataFrame(X)
+            df_X['label'] = labels
+
+            # WCSS
+            wcss = df_X.groupby('label').apply(lambda x: ((x - x.mean())**2).sum().sum()).sum()
+
+            # BCSS
+            cluster_means = df_X.groupby('label').mean()
+            counts = df_X['label'].value_counts()
+
+            # Align
+            cluster_means = cluster_means.loc[counts.index]
+
+            # Distance from global mean
+            diff_sq = (cluster_means - overall_centroid)**2
+            bcss = (diff_sq.sum(axis=1) * counts).sum()
             
-            # CV Ratio (higher is better)
             if wcss > 0:
-                cv_ratio = bcss / wcss
-                # Normalize to roughly 0-1 range for typical financial data
-                cv_ratio = min(cv_ratio / 10.0, 1.0)  # Cap at 1.0
-            else:
-                cv_ratio = 0.0
-                
-            return cv_ratio
+                return bcss / wcss
+            return 0.0
             
-        except Exception as e:
-            tprint_warning(f"   ⚠️ CV Ratio calculation failed: {e}")
+        except Exception:
             return 0.0
     
     def _get_tree_hierarchy(self, model: ExtraTreesClassifier, feature_names: List[str]) -> pd.Series:
-        """
-        Calculates Mean First Split Depth for each feature.
-        
-        Args:
-            model: Trained ExtraTrees model
-            feature_names: List of feature names
-            
-        Returns:
-            Series of mean depths indexed by feature names
-        """
+        """Calculates Mean First Split Depth."""
         depths = {name: [] for name in feature_names}
         max_depth_overall = 0
         
         for tree in model.estimators_:
             t = tree.tree_
-            tree_depth = t.max_depth
-            max_depth_overall = max(max_depth_overall, tree_depth)
-            
+            max_depth_overall = max(max_depth_overall, t.max_depth)
             first_occurrence = {}
             
             def walk_node(node: int, current_depth: int):
-                """Walk tree to find first occurrence of each feature."""
-                if t.feature[node] != -2:  # Not a leaf node
+                if t.feature[node] != -2:
                     feature_idx = t.feature[node]
                     if feature_idx not in first_occurrence:
                         first_occurrence[feature_idx] = current_depth
-                    
-                    # Recurse to children
                     walk_node(t.children_left[node], current_depth + 1)
                     walk_node(t.children_right[node], current_depth + 1)
             
             walk_node(0, 0)
             
-            # Record depths
             for idx, depth in first_occurrence.items():
                 if idx < len(feature_names):
                     depths[feature_names[idx]].append(depth)
         
-        # Convert to mean depths, penalizing features that never appear
         mean_depths = {}
         for name, depth_list in depths.items():
             if depth_list:
-                mean_depths[name] = np.mean(depth_list)
+                mean_depths[name] = np.median(depth_list)
             else:
-                # Features that never appear get max depth penalty
                 mean_depths[name] = max_depth_overall
         
         return pd.Series(mean_depths)
     
     def _compute_advanced_mdi(self, model: ExtraTreesClassifier, feature_names: List[str]) -> Dict[str, float]:
-        """
-        Compute Advanced MDI metrics including Gain and Cover.
-        
-        Args:
-            model: Trained ExtraTrees model
-            feature_names: List of feature names
-            
-        Returns:
-            Dictionary with MDI metrics
-        """
-        # Standard feature importances (Gain)
+        """Compute Advanced MDI metrics."""
         gain_importances = model.feature_importances_
-        
-        # Compute Cover (how many samples each feature affects)
         cover_counts = np.zeros(len(feature_names))
         total_samples = 0
         
         for tree in model.estimators_:
             t = tree.tree_
             n_samples = t.n_node_samples
-            
             for i in range(t.node_count):
-                if t.feature[i] != -2:  # Not a leaf
+                if t.feature[i] != -2:
                     feature_idx = t.feature[i]
                     if feature_idx < len(feature_names):
-                        # Weight by number of samples passing through this node
                         cover_counts[feature_idx] += n_samples[i]
-            
-            total_samples += n_samples[0]  # Root node samples
+            total_samples += n_samples[0]
         
-        # Normalize cover
         cover_importances = cover_counts / (total_samples + EPS)
         
         return {
             'gain': dict(zip(feature_names, gain_importances)),
             'cover': dict(zip(feature_names, cover_importances))
         }
-    
-    # Class-level cache to prevent re-running selection on identical data
+
+    def _fit_transform_pca_groups(self, X_train: pd.DataFrame, X_val: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, pd.DataFrame], pd.Series]:
+        """
+        Fit PCA groups on Training data, transform both Train and Val.
+        Returns:
+            X_train_pca, X_val_pca, loadings_map, cluster_map
+        """
+        # 1. Cluster on Train only
+        cluster_map = self._get_onc_clusters_for_fold(X_train)
+
+        X_train_groups = pd.DataFrame(index=X_train.index)
+        X_val_groups = pd.DataFrame(index=X_val.index)
+        loadings_map = {}
+
+        for cluster_id in sorted(cluster_map.unique()):
+            features = cluster_map[cluster_map == cluster_id].index
+            group_key_base = f"Cluster_{cluster_id}"
+
+            if len(features) > 1:
+                # Retain up to 3 PCs or 70% variance
+                pca = PCA(n_components=min(3, len(features)))
+                scaler = StandardScaler()
+
+                # Fit on Train
+                X_train_cluster_scaled = scaler.fit_transform(X_train[features])
+                # Note: No sign flip here yet, but loadings attribution handles magnitude.
+                # To be fully deterministic, we could enforce sign based on max loading.
+                X_train_pcs = pca.fit_transform(X_train_cluster_scaled)
+
+                # Transform Val
+                X_val_cluster_scaled = scaler.transform(X_val[features])
+                X_val_pcs = pca.transform(X_val_cluster_scaled)
+
+                # Check explained variance
+                expl_var = np.cumsum(pca.explained_variance_ratio_)
+                n_pcs = np.searchsorted(expl_var, 0.70) + 1
+                n_pcs = min(n_pcs, X_train_pcs.shape[1])
+
+                # Store PCs
+                for i in range(n_pcs):
+                    col_name = f"{group_key_base}_PC{i+1}"
+                    X_train_groups[col_name] = X_train_pcs[:, i]
+                    X_val_groups[col_name] = X_val_pcs[:, i]
+
+                # Store loadings (abs value) for attribution
+                loadings = pd.DataFrame(
+                    np.abs(pca.components_[:n_pcs].T),
+                    index=features,
+                    columns=[f"PC{i+1}" for i in range(n_pcs)]
+                )
+                loadings_map[group_key_base] = loadings
+
+            elif len(features) == 1:
+                col_name = f"{group_key_base}_PC1"
+                X_train_groups[col_name] = X_train[features[0]]
+                X_val_groups[col_name] = X_val[features[0]]
+
+                # Dummy loading
+                loadings_map[group_key_base] = pd.DataFrame(
+                    [1.0], index=features, columns=["PC1"]
+                )
+
+        return X_train_groups, X_val_groups, loadings_map, cluster_map
+
+    def _compute_lgbm_importance_cv(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """
+        Compute MDI OOF, Stability, and OOF IC with strict leak prevention.
+        """
+        if not LGBM_AVAILABLE:
+            raise ImportError("LightGBM not available")
+
+        tprint_info("🚀 Starting MDI OOF & Stability Analysis...")
+
+        cv = PurgedKFoldTime(n_splits=5)
+
+        fold_stats = []
+        oof_preds_accum = pd.Series(np.nan, index=X.index)
+
+        # OOF Feature ICs: List of Dicts {feature: ic}
+        fold_feature_ics = []
+
+        for fold, (train_idx, val_idx) in enumerate(cv.split(X)):
+            X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
+            X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
+
+            # --- Dynamic Feature Generation (Group MDI) ---
+            if self.use_group_mdi:
+                X_train_fold, X_val_fold, loadings, cluster_map = self._fit_transform_pca_groups(X_train, X_val)
+            else:
+                X_train_fold, X_val_fold = X_train, X_val
+                loadings = None
+
+            # --- Train ---
+            model = lgb.LGBMClassifier(**self.lgbm_params)
+            model.fit(
+                X_train_fold, y_train,
+                feature_name='auto',
+                categorical_feature='auto',
+                eval_metric='auc'
+            )
+
+            # --- Importance ---
+            imp_raw = model.feature_importances_
+            imp_log = np.log1p(imp_raw)
+
+            # Normalize within fold
+            if imp_log.sum() > 0:
+                imp_norm = imp_log / imp_log.sum()
+            else:
+                imp_norm = imp_log
+
+            # Create Series
+            fold_imp_series = pd.Series(imp_norm, index=X_train_fold.columns)
+
+            # Attribute back if Group MDI
+            if self.use_group_mdi and loadings:
+                fold_feat_imp = pd.Series(0.0, index=X.columns)
+                for group_key, load_df in loadings.items():
+                    for pc_col in load_df.columns:
+                        col_name = f"{group_key}_{pc_col}"
+                        if col_name in fold_imp_series:
+                            val = fold_imp_series[col_name]
+                            weights = load_df[pc_col] # Abs loadings
+                            fold_feat_imp[weights.index] += val * weights
+                fold_imp = fold_feat_imp
+            else:
+                fold_imp = fold_imp_series
+
+            # --- Calculate Feature-Level OOF IC (Spearman) ---
+            # Must compute on validation set only
+            current_fold_ics = {}
+            for col in X.columns:
+                try:
+                    # Get feature validation data
+                    if col not in X_val.columns: continue
+
+                    ic_val, _ = spearmanr(X_val[col], y_val)
+                    if np.isnan(ic_val): ic_val = 0.0
+                    current_fold_ics[col] = ic_val
+                except Exception:
+                    current_fold_ics[col] = 0.0
+            fold_feature_ics.append(current_fold_ics)
+
+            # --- Store Fold Stats ---
+            fold_stats.append(fold_imp)
+
+            # --- OOF Preds ---
+            if hasattr(model, "predict_proba"):
+                preds = model.predict_proba(X_val_fold)[:, 1]
+            else:
+                preds = model.predict(X_val_fold)
+            oof_preds_accum.iloc[val_idx] = preds
+
+        # --- Aggregation ---
+        imp_df = pd.DataFrame(fold_stats).fillna(0.0) # Folds x Features
+
+        # 1. Median Log Gain
+        median_log_gain = imp_df.median()
+
+        # 2. IQR Log Gain
+        iqr_log_gain = imp_df.apply(iqr)
+
+        # 3. Top-K Frequency
+        k = max(1, int(len(imp_df.columns) * 0.2))
+        topk_mask = imp_df.apply(lambda x: x >= x.nlargest(k).min(), axis=1)
+        topk_freq = topk_mask.mean()
+
+        # 4. Stability
+        stability = median_log_gain / (iqr_log_gain + 1e-9)
+
+        # 5. OOF IC (Model Prediction)
+        valid_mask = oof_preds_accum.notna() & y.notna()
+        if valid_mask.sum() > 10:
+            oof_ic, _ = spearmanr(y[valid_mask], oof_preds_accum[valid_mask])
+        else:
+            oof_ic = 0.0
+
+        # 6. Feature-Level OOF IC (Aggregated)
+        ic_df = pd.DataFrame(fold_feature_ics).fillna(0.0)
+        median_feature_ic = ic_df.median()
+
+        tprint_info(f"   📊 MDI OOF Stats:")
+        tprint_info(f"      Median Gain: [{median_log_gain.min():.4f}, {median_log_gain.max():.4f}]")
+        tprint_info(f"      Top-K Freq:  [{topk_freq.min():.2f}, {topk_freq.max():.2f}]")
+        tprint_info(f"      OOF IC (Model): {oof_ic:.4f}")
+
+        return {
+            'mean_gain': median_log_gain,
+            'stability': stability,
+            'oof_ic': oof_ic,
+            'feature_oof_ic': median_feature_ic,
+            'topk_freq': topk_freq,
+            'median_log_gain': median_log_gain,
+            'iqr_log_gain': iqr_log_gain
+        }
+
+    def _rank_normalize(self, s: pd.Series, invert: bool = False) -> pd.Series:
+        """Rank (Percentile) Normalization."""
+        if s.empty: return s
+        ranks = rankdata(s, method='average')
+        norm = (ranks - 1) / (len(s) - 1 + 1e-9)
+        if invert:
+            return pd.Series(1.0 - norm, index=s.index)
+        return pd.Series(norm, index=s.index)
+
+    # Class-level cache
     _CACHE = {}
 
     def _compute_input_hash(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool) -> str:
-        """Compute a hash of the inputs for caching."""
         try:
             from pandas.util import hash_pandas_object
             import hashlib
-            
-            # Hash data content (values only to be fast, or index+values for safety)
-            # Use columns + shape + sample of values for speed if X is huge? 
-            # Ideally hash_pandas_object is safe.
             h_X = hashlib.md5(hash_pandas_object(X, index=True).values.tobytes()).hexdigest()
             h_y = hashlib.md5(hash_pandas_object(y, index=True).values.tobytes()).hexdigest()
-            
-            # Hash config
             config_str = f"{self.n_estimators}_{self.max_features}_{self.gain_weight}_{self.depth_weight}_{self.ic_weight}_{self.entropy_weight}_{use_entropy_as_king}"
-            
+            config_str += f"_{self.stability_weight}_{self.use_lgbm}_{self.use_group_mdi}_{self.max_cluster_size}_{self.topk_freq_threshold}"
             return f"{h_X}_{h_y}_{config_str}"
         except Exception:
             return None
 
     def run_selection(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool = False) -> List[str]:
-        """
-        Run complete De Prado feature selection pipeline.
-        With caching support.
-        
-        Args:
-            X: Feature matrix
-            y: Target labels
-            use_entropy_as_king: If True, entropy is the sole criterion for intra-cluster selection
-            
-        Returns:
-            List of selected feature names
-        """
-        # --- CACHE CHECK ---
+        # Cache Check
         cache_key = self._compute_input_hash(X, y, use_entropy_as_king)
         if cache_key and cache_key in self._CACHE:
-            tprint_success(f"⚡ [DePrado] Cache Hit! Returning pre-computed selection for {len(X.columns)} features")
+            tprint_success(f"⚡ [DePrado] Cache Hit! Returning pre-computed selection")
             return self._CACHE[cache_key]
         
         start_time = time.time()
         tprint_info("🚀 Starting De Prado Feature Selection Engine...")
-        tprint_info(f"📊 Input: {len(X.columns)} features, {len(X)} samples")
         
-        # Data quality checks
-        if X.empty or len(X) == 0:
-            tprint_error("❌ Empty feature matrix provided to De Prado engine")
-            raise ValueError("Empty feature matrix")
+        if X.empty: raise ValueError("Empty feature matrix")
+        X = X.fillna(0)
         
-        # ... (rest of method) ...
-
-        
-        missing_values = X.isnull().sum().sum()
-        if missing_values > 0:
-            tprint_warning(f"⚠️ Found {missing_values} missing values, will fill with 0")
-            X = X.fillna(0)
-        
-        # Check target variable
-        unique_classes = len(np.unique(y))
-        tprint_info(f"🎯 Target variable: {unique_classes} unique classes")
-        
-        if unique_classes < 2:
-            tprint_error("❌ Target variable has less than 2 classes")
-            raise ValueError("Target variable must have at least 2 classes")
-        
-        # 1. Cluster Features (Redundancy Control)
-        tprint_info("🔍 Step 1: Finding optimal feature clusters (ONC)...")
-        clustering_start = time.time()
-        
-        cluster_map = self._get_onc_clusters(X)
+        # 1. Global Clustering (for reporting/ExtraTrees)
+        tprint_info("🔍 Step 1: Global Clustering (for reporting)...")
+        cluster_map = self._get_onc_clusters(X) # Use updated method with recursion
         self.cluster_labels_ = cluster_map
         
-        clustering_time = time.time() - clustering_start
-        tprint_info(f"⏱️  Clustering completed in {clustering_time:.2f}s")
-        tprint_info(f"📊 Found {self.optimal_n_clusters_} clusters")
+        # Enhanced MDI
+        lgbm_res = {}
         
-        # Report cluster sizes
-        cluster_sizes = cluster_map.value_counts().sort_index()
-        for cluster_id, size in cluster_sizes.items():
-            tprint_info(f"   Cluster {cluster_id}: {size} features")
+        if self.use_lgbm:
+            tprint_info("🔥 Step 1b: Running Enhanced MDI (LGBM CV)...")
+            try:
+                lgbm_res = self._compute_lgbm_importance_cv(X, y)
+                self.lgbm_metrics_ = lgbm_res
+            except Exception as e:
+                tprint_error(f"❌ Enhanced MDI failed: {e}")
+
+        # 2. Train ExtraTrees for hierarchy/fallback
+        tprint_info("🌳 Step 2: Training ExtraTrees...")
+        model = ExtraTreesClassifier(
+            n_estimators=self.n_estimators,
+            max_features=self.max_features,
+            min_samples_leaf=self.min_samples_leaf,
+            random_state=self.random_state,
+            n_jobs=-1,
+            bootstrap=False
+        )
+        if len(np.unique(y)) == 2: model.set_params(class_weight="balanced")
         
-        # 2. Train ExtraTrees (The Analyst)
-        tprint_info("🌳 Step 2: Training ExtraTrees for MDI analysis...")
-        training_start = time.time()
+        X_fit, y_fit = X, y
+        if len(X) > 7000:
+            np.random.seed(self.random_state)
+            idx = np.random.choice(len(X), 7000, replace=False)
+            X_fit, y_fit = X.iloc[idx], y.iloc[idx]
+        model.fit(X_fit, y_fit)
         
-        try:
-            model = ExtraTreesClassifier(
-                n_estimators=self.n_estimators,
-                max_features=self.max_features,
-                min_samples_leaf=self.min_samples_leaf,
-                random_state=self.random_state,
-                n_jobs=-1,
-                bootstrap=False  # Use all samples for stability
-            )
-            
-            # Handle class imbalance
-            if len(np.unique(y)) == 2:
-                class_weight = "balanced"
-                tprint_info("⚖️  Using balanced class weights")
-            else:
-                class_weight = None
-            
-            model.set_params(class_weight=class_weight)
-            
-            # Subsample for speed if too many samples
-            if len(X) > 7000:
-                np.random.seed(self.random_state)
-                indices = np.random.choice(len(X), 7000, replace=False)
-                X_fit = X.iloc[indices]
-                y_fit = y.iloc[indices]
-                tprint_info(f"⚡ Subsampling to {len(X_fit)} samples for ExtraTrees training")
-            else:
-                X_fit = X
-                y_fit = y
-            
-            tprint_info(f"🔄 Training {self.n_estimators} trees on {len(X_fit)} samples...")
-            model.fit(X_fit, y_fit)
-            
-            training_time = time.time() - training_start
-            tprint_success(f"✅ ExtraTrees training completed in {training_time:.2f}s")
-            
-        except Exception as e:
-            tprint_error(f"❌ ExtraTrees training failed: {e}")
-            raise
-        
-        # 3. Collect Advanced Metrics
-        tprint_info("📈 Step 3: Computing advanced metrics (MDI, IC, Entropy)...")
-        metrics_start = time.time()
-        
+        # 3. Metrics
+        tprint_info("📈 Step 3: Computing metrics...")
         feature_names = X.columns.tolist()
         
-        # 3a. MDI metrics
-        mdi_metrics = self._compute_advanced_mdi(model, feature_names)
-        gain = pd.Series(mdi_metrics["gain"])
-        cover = pd.Series(mdi_metrics["cover"])
+        # Gain
+        if self.use_lgbm and 'mean_gain' in lgbm_res:
+            gain = lgbm_res['mean_gain']
+        else:
+            mdi_metrics = self._compute_advanced_mdi(model, feature_names)
+            gain = pd.Series(mdi_metrics["gain"])
         
-        # 3b. Hierarchy (Root Proximity)
         depth = self._get_tree_hierarchy(model, feature_names)
         
-        # 3c. Information Coefficient (Spearman)
-        tprint_info("📊 Computing Information Coefficient (Spearman IC)...")
-        ic_scores = {}
-        for col in X.columns:
-            try:
-                ic_val, _ = spearmanr(X[col], y)
-                ic_scores[col] = abs(ic_val) if not np.isnan(ic_val) else 0.0
-            except Exception:
-                ic_scores[col] = 0.0
-        ic_series = pd.Series(ic_scores)
-        
-        # 3d. Shannon Entropy
-        tprint_info("📊 Computing Shannon Entropy (10-quantile discretization)...")
+        # IC - Use OOF if available
+        if self.use_lgbm and 'feature_oof_ic' in lgbm_res and lgbm_res['feature_oof_ic'] is not None:
+            ic_series = lgbm_res['feature_oof_ic'] # Signed IC
+            tprint_info("   ✅ Using OOF IC (Leak-Safe)")
+        else:
+            ic_scores = {}
+            for col in X.columns:
+                try:
+                    ic_val, _ = spearmanr(X[col], y)
+                    ic_scores[col] = ic_val if not np.isnan(ic_val) else 0.0
+                except Exception:
+                    ic_scores[col] = 0.0
+            ic_series = pd.Series(ic_scores)
+
+        # Entropy (Filter/Penalty)
         entropy_scores = {}
         for col in X.columns:
             try:
-                # Discretize into 10 quantiles
-                discretized = pd.qcut(X[col], q=10, duplicates='drop')
-                if discretized.nunique() < 2:
-                    entropy_scores[col] = 0.0
-                else:
-                    value_counts = discretized.value_counts(normalize=True)
-                    entropy_scores[col] = entropy(value_counts)
+                disc = pd.qcut(X[col], q=10, duplicates='drop')
+                if disc.nunique() < 2: entropy_scores[col] = 0.0
+                else: entropy_scores[col] = entropy(disc.value_counts(normalize=True))
             except Exception:
                 entropy_scores[col] = 0.0
         ent_series = pd.Series(entropy_scores)
         
-        metrics_time = time.time() - metrics_start
-        tprint_info(f"⏱️  Metrics computation completed in {metrics_time:.2f}s")
+        # 4. Score (Rank Normalization)
+        tprint_info("⚖️  Step 4: Scoring (Rank Normalized)...")
         
-        # 4. Normalize and Score
-        tprint_info("⚖️  Step 4: Computing composite scores...")
-        scoring_start = time.time()
-        
-        def normalize_series(s, invert=False):
-            s_range = s.max() - s.min()
-            if s_range > EPS:
-                if invert:
-                    return (s.max() - s) / s_range
-                return (s - s.min()) / s_range
-            return pd.Series(1.0, index=s.index)
+        score_gain = self._rank_normalize(gain)
+        score_depth = self._rank_normalize(depth, invert=True)
+        score_ic = self._rank_normalize(ic_series.abs()) # Score absolute IC
+        score_ent = self._rank_normalize(ent_series)
 
-        score_gain = normalize_series(gain)
-        score_depth = normalize_series(depth, invert=True)
-        score_ic = normalize_series(ic_series)
-        score_ent = normalize_series(ent_series)
+        score_stability = pd.Series(0.0, index=X.columns)
+        if self.use_lgbm and 'stability' in lgbm_res:
+            # Combine Stability and Top-K Freq
+            raw_stab = lgbm_res['stability']
+            topk = lgbm_res.get('topk_freq', pd.Series(0, index=X.columns))
+            # Stability score is mixture
+            score_stability = 0.7 * self._rank_normalize(raw_stab) + 0.3 * self._rank_normalize(topk)
         
-        # Composite Score: weighted combination
         composite = (
             self.gain_weight * score_gain + 
+            self.stability_weight * score_stability +
+            self.ic_weight * score_ic +
             self.depth_weight * score_depth + 
-            self.ic_weight * score_ic + 
             self.entropy_weight * score_ent
         )
         
-        scoring_time = time.time() - scoring_start
-        tprint_info(f"⏱️  Scoring completed: Gain={self.gain_weight:.1f}, Depth={self.depth_weight:.1f}, IC={self.ic_weight:.1f}, Ent={self.entropy_weight:.1f}")
-        
-        # 5. Store Results
+        # 5. Store
         self.feature_stats_ = pd.DataFrame({
             "Cluster": cluster_map,
             "Gain": gain,
             "IC": ic_series,
-            "Entropy": ent_series,
             "MeanDepth": depth,
-            "GainScore": score_gain,
-            "DepthScore": score_depth,
-            "ICScore": score_ic,
-            "EntropyScore": score_ent,
+            "Stability": lgbm_res.get('stability', 0.0),
+            "TopKFreq": lgbm_res.get('topk_freq', 0.0),
             "CompositeScore": composite
         })
         
-        # 6. Intra-Cluster Selection: Pick the "King" of each cluster
-        tprint_info(f"👑 Step 6: Picking kings (use_entropy_as_king={use_entropy_as_king})...")
-        selection_start = time.time()
-        
+        # 6. Selection (Representative Selection)
+        tprint_info(f"👑 Step 6: Selection...")
         selected_features = []
-        cluster_summary = {}
         
+        # Top-K Freq Gate
+        gate_mask = pd.Series(True, index=X.columns)
+        if self.use_lgbm:
+            topk = lgbm_res.get('topk_freq', pd.Series(0, index=X.columns))
+            gate_mask = topk >= self.topk_freq_threshold
+            tprint_info(f"   🚪 Gating: Dropped {(~gate_mask).sum()} features with TopKFreq < {self.topk_freq_threshold}")
+
+        # Diversity Selection: Allow multiple reps
         for cluster_id in sorted(cluster_map.unique()):
-            cluster_features = self.feature_stats_[self.feature_stats_["Cluster"] == cluster_id]
+            cluster_features = self.feature_stats_[
+                (self.feature_stats_["Cluster"] == cluster_id) & gate_mask
+            ]
             if len(cluster_features) == 0: continue
             
-            # Select best feature from cluster
-            if use_entropy_as_king:
-                # Sole criterion is entropy
-                best_feature = cluster_features.loc[cluster_features["EntropyScore"].idxmax()]
-            else:
-                # Use composite score
-                best_feature = cluster_features.loc[cluster_features["CompositeScore"].idxmax()]
+            # Rank members
+            ranked = cluster_features.sort_values("CompositeScore", ascending=False)
             
-            selected_features.append(best_feature.name)
-            
-            cluster_summary[cluster_id] = {
-                "n_features": len(cluster_features),
-                "best_feature": best_feature.name,
-                "best_score": best_feature["CompositeScore"] if not use_entropy_as_king else best_feature["EntropyScore"]
-            }
-            
-            tprint_info(f"   Cluster {cluster_id}: {len(cluster_features)} → {best_feature.name}")
+            # Add Primary
+            primary_feat = ranked.index[0]
+            selected_features.append(primary_feat)
+
+            # Add Secondary if cluster is high-performing and large
+            # Guardrail C: Incremental value rule
+            if len(ranked) > 5 and len(ranked) > 1:
+                secondary_feat = ranked.index[1]
+                # If secondary is within 5% score of primary
+                if ranked.iloc[1]["CompositeScore"] > 0.95 * ranked.iloc[0]["CompositeScore"]:
+                    # Check orthogonality
+                    try:
+                        corr_val = X[primary_feat].corr(X[secondary_feat])
+                        if abs(corr_val) < 0.8: # Only add if sufficiently different
+                            selected_features.append(secondary_feat)
+                    except: pass
         
         self.selected_features_ = selected_features
+        self._print_detailed_deprado_report(X)
         
-        # Enhanced detailed reporting
-        if True:
-            self._print_detailed_deprado_report(X)
-        
-        selection_time = time.time() - selection_start
-        total_time = time.time() - start_time
-        
-        tprint_success(f"✅ De Prado Selection completed in {total_time:.2f}s")
-        tprint_success(f"📊 Selected {len(selected_features)}/{len(X.columns)} features")
-        
-        # --- UPDATE CACHE ---
-        if cache_key:
-            self._CACHE[cache_key] = selected_features
-            tprint_info(f"⚡ [DePrado] Caching results for future use")
-        
+        if cache_key: self._CACHE[cache_key] = selected_features
         return selected_features
-    
+
+    # ... (Keep getters and reporting methods) ...
     def get_feature_stats(self) -> pd.DataFrame:
-        """
-        Get comprehensive feature statistics.
-        
-        Returns:
-            DataFrame with feature statistics for all features
-        """
-        if self.feature_stats_ is None:
-            raise ValueError("Feature selection not run. Call run_selection() first.")
+        if self.feature_stats_ is None: raise ValueError("Run selection first")
         return self.feature_stats_.copy()
-    
-    def get_selected_features(self) -> List[str]:
-        """
-        Get list of selected feature names.
         
-        Returns:
-            List of selected feature names
-        """
-        if self.selected_features_ is None:
-            raise ValueError("Feature selection not run. Call run_selection() first.")
+    def get_selected_features(self) -> List[str]:
+        if self.selected_features_ is None: raise ValueError("Run selection first")
         return self.selected_features_.copy()
-    
+
     def get_cluster_info(self) -> Dict[str, Any]:
         """
         Get clustering information.
-        
+
         Returns:
             Dictionary with clustering statistics
         """
         if self.cluster_labels_ is None:
             raise ValueError("Feature selection not run. Call run_selection() first.")
-        
+
         cluster_counts = self.cluster_labels_.value_counts().sort_index()
-        
+
         return {
             'optimal_n_clusters': self.optimal_n_clusters_,
             'silhouette_scores': self.silhouette_scores_,
@@ -746,117 +863,38 @@ class DePradoFeatureEngine:
             'max_cluster_size': cluster_counts.max(),
             'min_cluster_size': cluster_counts.min()
         }
-    
+
     def get_report(self) -> pd.DataFrame:
-        """
-        Get detailed report for selected features.
-        
-        Returns:
-            DataFrame with detailed stats for selected features only
-        """
-        if self.feature_stats_ is None:
-            raise ValueError("Feature selection not run. Call run_selection() first.")
-        
-        selected_stats = self.feature_stats_.loc[self.selected_features_].copy()
-        return selected_stats.sort_values('CompositeScore', ascending=False)
+        if self.feature_stats_ is None: raise ValueError("Run selection first")
+        return self.feature_stats_.loc[self.selected_features_].sort_values('CompositeScore', ascending=False)
 
     def _print_detailed_deprado_report(self, X: pd.DataFrame) -> None:
         """
-        Print detailed De Prado feature selection report with cluster-by-cluster analysis.
-        
-        Args:
-            X: Original feature matrix
+        Print detailed De Prado feature selection report.
         """
         if self.feature_stats_ is None or self.selected_features_ is None:
             tprint_warning("⚠️ No feature statistics available for detailed reporting")
             return
         
-        max_display = 50  # Limit output for large feature sets
-        
         tprint_info("👑 De Prado Feature Selection Report:")
-        tprint_info(f"📊 {self.optimal_n_clusters_} clusters found, {len(self.selected_features_)} king features selected")
+        tprint_info(f"📊 {self.optimal_n_clusters_} clusters found, {len(self.selected_features_)} features selected")
         
-        # Cluster-by-cluster analysis
         for cluster_id in sorted(self.feature_stats_["Cluster"].unique()):
             cluster_features = self.feature_stats_[self.feature_stats_["Cluster"] == cluster_id]
-            cluster_size = len(cluster_features)
+            if len(cluster_features) == 0: continue
             
-            if cluster_size == 0:
-                continue
+            # Find selected members
+            selected_in_cluster = [f for f in cluster_features.index if f in self.selected_features_]
             
-            # Find king feature
-            king_feature = cluster_features.loc[cluster_features["CompositeScore"].idxmax()]
-            is_king_selected = king_feature.name in self.selected_features_
-            
-            tprint_info(f"🔍 Cluster {cluster_id} ({cluster_size} features):")
-            
-            if is_king_selected:
-                stats_parts = [f"👑 KING: {king_feature.name} (score: {king_feature['CompositeScore']:.3f}) ✅ SELECTED"]
-                if 'Gain' in king_feature.index:
-                    stats_parts.append(f"Gain: {king_feature['Gain']:.4f}")
-                if 'Cover' in king_feature.index:
-                    stats_parts.append(f"Cover: {king_feature['Cover']:.4f}")
-                if 'MeanDepth' in king_feature.index:
-                    stats_parts.append(f"Depth: {king_feature['MeanDepth']:.2f}")
-                tprint_info(f"      📊 {', '.join(stats_parts)}")
-            else:
-                tprint_info(f"   ❌ No king selected from cluster {cluster_id}")
-            
-            # Show other features in cluster (discarded)
-            other_features = cluster_features[cluster_features.index != king_feature.name]
-            if len(other_features) > 0:
-                tprint_info(f"   ❌ Discarded features ({len(other_features)}):")
-                
-                # Sort by composite score to show best alternatives
-                sorted_others = other_features.sort_values("CompositeScore", ascending=False)
-                for i, (feature_name, feature_data) in enumerate(sorted_others.head(max_display).iterrows()):
-                    score_diff = king_feature["CompositeScore"] - feature_data["CompositeScore"]
-                    reason = f"lost to king by {score_diff:.3f} points"
-                    tprint_info(f"      ❌ {feature_name}: {feature_data['CompositeScore']:.3f} ({reason})")
-                
-                if len(other_features) > max_display:
-                    tprint_info(f"      ... and {len(other_features) - max_display} more discarded features")
-        
-        # Overall statistics
-        tprint_info(f"📊 Selection Summary:")
-        tprint_info(f"   📈 Input features: {len(X.columns)}")
-        tprint_info(f"   🎯 Clusters formed: {self.optimal_n_clusters_}")
-        tprint_info(f"   👑 Kings selected: {len(self.selected_features_)}")
-        tprint_info(f"   ❌ Features discarded: {len(X.columns) - len(self.selected_features_)}")
-        tprint_info(f"   📉 Reduction ratio: {(1 - len(self.selected_features_)/len(X.columns)):.1%}")
-        
-        # Quality metrics
-        if len(self.selected_features_) > 0:
-            selected_stats = self.feature_stats_[self.feature_stats_.index.isin(self.selected_features_)]
-            discarded_stats = self.feature_stats_[~self.feature_stats_.index.isin(self.selected_features_)]
-            
-            tprint_info(f"📊 Quality Comparison:")
-            tprint_info(f"   📈 Selected features avg composite score: {selected_stats['CompositeScore'].mean():.3f}")
-            tprint_info(f"   📉 Discarded features avg composite score: {discarded_stats['CompositeScore'].mean():.3f}")
-            
-            if discarded_stats['CompositeScore'].mean() > 0:
-                improvement = ((selected_stats['CompositeScore'].mean() - discarded_stats['CompositeScore'].mean()) / discarded_stats['CompositeScore'].mean() * 100)
-                tprint_info(f"   🎯 Quality improvement: {improvement:.1f}% higher score in selected features")
-        
-        # Top king features
-        if len(self.selected_features_) > 0:
-            selected_stats = self.feature_stats_[self.feature_stats_.index.isin(self.selected_features_)]
-            top_kings = selected_stats.sort_values("CompositeScore", ascending=False).head(3)
-            
-            tprint_info(f"🏆 Top 3 King Features:")
-            for i, (feature_name, feature_data) in enumerate(top_kings.iterrows()):
-                tprint_info(f"   {i+1}. {feature_name}: {feature_data['CompositeScore']:.3f} (Cluster {feature_data['Cluster']})")
-        
-        # Cluster size distribution
-        cluster_sizes = self.feature_stats_["Cluster"].value_counts().sort_index()
-        tprint_info(f"📊 Cluster Size Distribution:")
-        for cluster_id, size in cluster_sizes.items():
-            king_in_cluster = self.feature_stats_[
-                (self.feature_stats_["Cluster"] == cluster_id) & 
-                (self.feature_stats_.index.isin(self.selected_features_))
-            ]
-            king_name = king_in_cluster.index[0] if len(king_in_cluster) > 0 else "None"
-            tprint_info(f"   Cluster {cluster_id}: {size} features → King: {king_name}")
+            if selected_in_cluster:
+                rep_name = selected_in_cluster[0]
+                rep_data = cluster_features.loc[rep_name]
+
+                stats_parts = [f"✅ {len(selected_in_cluster)} Reps (Top: {rep_name}, Score: {rep_data['CompositeScore']:.3f})"]
+                if 'Gain' in rep_data: stats_parts.append(f"Gain: {rep_data['Gain']:.4f}")
+                if 'TopKFreq' in rep_data: stats_parts.append(f"TopK: {rep_data['TopKFreq']:.2f}")
+
+                tprint_info(f"   Cluster {cluster_id}: {', '.join(stats_parts)}")
 
 
 def de_prado_feature_selection(
@@ -866,33 +904,31 @@ def de_prado_feature_selection(
     max_clusters: int = 12,
     gain_weight: float = 0.5,
     depth_weight: float = 0.5,
-    random_state: int = 42
+    random_state: int = 42,
+    # New params exposed in convenience function
+    use_lgbm: bool = False,
+    stability_weight: float = 0.0,
+    use_group_mdi: bool = False,
+    max_cluster_size: int = 30,
+    topk_freq_threshold: float = 0.4  # Updated default for robustness
 ) -> Tuple[pd.DataFrame, DePradoFeatureEngine]:
     """
     Convenience function for De Prado feature selection.
-    
-    Args:
-        X: Feature matrix
-        y: Target labels
-        n_estimators: Number of trees in ExtraTrees
-        max_clusters: Maximum number of clusters
-        gain_weight: Weight for gain in composite score
-        depth_weight: Weight for depth proximity in composite score
-        random_state: Random seed
-        
-    Returns:
-        Tuple of (selected_features_df, fitted_engine)
     """
     engine = DePradoFeatureEngine(
         n_estimators=n_estimators,
         max_clusters=max_clusters,
         gain_weight=gain_weight,
         depth_weight=depth_weight,
-        random_state=random_state
+        random_state=random_state,
+        use_lgbm=use_lgbm,
+        stability_weight=stability_weight,
+        use_group_mdi=use_group_mdi,
+        max_cluster_size=max_cluster_size,
+        topk_freq_threshold=topk_freq_threshold
     )
     
     selected_features = engine.run_selection(X, y)
     X_selected = X[selected_features].copy()
     
     return X_selected, engine
-

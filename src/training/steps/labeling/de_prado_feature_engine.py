@@ -476,38 +476,59 @@ class DePradoFeatureEngine:
             group_key_base = f"Cluster_{cluster_id}"
 
             if len(features) > 1:
-                # Retain up to 3 PCs or 70% variance
-                pca = PCA(n_components=min(3, len(features)))
-                scaler = StandardScaler()
+                stds = X_train[features].std(axis=0)
+                non_const_features = stds[stds > 0].index
+                const_features = stds[stds <= 0].index
 
-                # Fit on Train
-                X_train_cluster_scaled = scaler.fit_transform(X_train[features])
-                # Note: No sign flip here yet, but loadings attribution handles magnitude.
-                # To be fully deterministic, we could enforce sign based on max loading.
-                X_train_pcs = pca.fit_transform(X_train_cluster_scaled)
+                for f in const_features:
+                    group_key = f"{group_key_base}_Const_{f}"
+                    col_name = f"{group_key}_PC1"
+                    X_train_groups[col_name] = X_train[f]
+                    X_val_groups[col_name] = X_val[f]
+                    loadings_map[group_key] = pd.DataFrame(
+                        [1.0], index=[f], columns=["PC1"]
+                    )
 
-                # Transform Val
-                X_val_cluster_scaled = scaler.transform(X_val[features])
-                X_val_pcs = pca.transform(X_val_cluster_scaled)
+                if len(non_const_features) > 1:
+                    # Retain up to 3 PCs or 70% variance
+                    pca = PCA(n_components=min(3, len(non_const_features)))
+                    scaler = StandardScaler()
 
-                # Check explained variance
-                expl_var = np.cumsum(pca.explained_variance_ratio_)
-                n_pcs = np.searchsorted(expl_var, 0.70) + 1
-                n_pcs = min(n_pcs, X_train_pcs.shape[1])
+                    # Fit on Train
+                    X_train_cluster_scaled = scaler.fit_transform(X_train[non_const_features])
+                    # Note: No sign flip here yet, but loadings attribution handles magnitude.
+                    # To be fully deterministic, we could enforce sign based on max loading.
+                    X_train_pcs = pca.fit_transform(X_train_cluster_scaled)
 
-                # Store PCs
-                for i in range(n_pcs):
-                    col_name = f"{group_key_base}_PC{i+1}"
-                    X_train_groups[col_name] = X_train_pcs[:, i]
-                    X_val_groups[col_name] = X_val_pcs[:, i]
+                    # Transform Val
+                    X_val_cluster_scaled = scaler.transform(X_val[non_const_features])
+                    X_val_pcs = pca.transform(X_val_cluster_scaled)
 
-                # Store loadings (abs value) for attribution
-                loadings = pd.DataFrame(
-                    np.abs(pca.components_[:n_pcs].T),
-                    index=features,
-                    columns=[f"PC{i+1}" for i in range(n_pcs)]
-                )
-                loadings_map[group_key_base] = loadings
+                    # Check explained variance
+                    expl_var = np.cumsum(pca.explained_variance_ratio_)
+                    n_pcs = np.searchsorted(expl_var, 0.70) + 1
+                    n_pcs = min(n_pcs, X_train_pcs.shape[1])
+
+                    # Store PCs
+                    for i in range(n_pcs):
+                        col_name = f"{group_key_base}_PC{i+1}"
+                        X_train_groups[col_name] = X_train_pcs[:, i]
+                        X_val_groups[col_name] = X_val_pcs[:, i]
+
+                    # Store loadings (abs value) for attribution
+                    loadings = pd.DataFrame(
+                        np.abs(pca.components_[:n_pcs].T),
+                        index=non_const_features,
+                        columns=[f"PC{i+1}" for i in range(n_pcs)]
+                    )
+                    loadings_map[group_key_base] = loadings
+                elif len(non_const_features) == 1:
+                    col_name = f"{group_key_base}_PC1"
+                    X_train_groups[col_name] = X_train[non_const_features[0]]
+                    X_val_groups[col_name] = X_val[non_const_features[0]]
+                    loadings_map[group_key_base] = pd.DataFrame(
+                        [1.0], index=non_const_features, columns=["PC1"]
+                    )
 
             elif len(features) == 1:
                 col_name = f"{group_key_base}_PC1"

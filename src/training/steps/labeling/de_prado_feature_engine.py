@@ -58,7 +58,7 @@ class DePradoFeatureEngine:
         depth_weight: float = 0.1,  # Reduced default
         ic_weight: float = 0.2,
         entropy_weight: float = 0.1,
-        stability_weight: float = 0.2,
+        stability_weight: float = 0.3,
         min_samples_leaf: int = 30,
         max_features: str = 'log2',
         # New parameters for Enhanced MDI
@@ -324,12 +324,9 @@ class DePradoFeatureEngine:
             best_k, best_score = 2, -1
             max_k = max(2, min(self.max_clusters, len(X_sub.columns) // 2))
 
-            search_range = range(2, max_k + 1)
-            if len(search_range) > 5: search_range = list(range(2, 6)) + list(range(6, max_k + 1, 2))
-
             feature_sample_matrix = X_sub.T
 
-            for k in search_range:
+            for k in range(2, max_k + 1):
                 try:
                     clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
                     clusterer.fit(X_sub)
@@ -843,6 +840,10 @@ class DePradoFeatureEngine:
             gate_mask = topk >= self.topk_freq_threshold
             tprint_info(f"   🚪 Gating: Dropped {(~gate_mask).sum()} features with TopKFreq < {self.topk_freq_threshold}")
 
+            if gate_mask.sum() == 0:
+                tprint_warning("   ⚠️ Gating removed all features; disabling gate for this run")
+                gate_mask = pd.Series(True, index=X.columns)
+
         # Diversity Selection: Allow multiple reps
         for cluster_id in sorted(cluster_map.unique()):
             cluster_features = self.feature_stats_[
@@ -947,9 +948,9 @@ def de_prado_feature_selection(
     depth_weight: float = 0.5,
     random_state: int = 42,
     # New params exposed in convenience function
-    use_lgbm: bool = False,
-    stability_weight: float = 0.0,
-    use_group_mdi: bool = False,
+    use_lgbm: bool = True,
+    stability_weight: float = 0.3,
+    use_group_mdi: bool = True,
     max_cluster_size: int = 30,
     topk_freq_threshold: float = 0.4,  # Updated default for robustness
     is_regression: Optional[bool] = None

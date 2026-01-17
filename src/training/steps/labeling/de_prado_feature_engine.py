@@ -62,9 +62,9 @@ class DePradoFeatureEngine:
         min_samples_leaf: int = 30,
         max_features: str = 'log2',
         # New parameters for Enhanced MDI
-        use_lgbm: bool = False,
+        use_lgbm: bool = True,
         lgbm_params: Optional[Dict[str, Any]] = None,
-        use_group_mdi: bool = False,
+        use_group_mdi: bool = True,
         # Hardening params
         max_cluster_size: int = 30,
         topk_freq_threshold: float = 0.4,  # Increased robustness
@@ -89,6 +89,10 @@ class DePradoFeatureEngine:
         self.use_lgbm = use_lgbm
         self.lgbm_params = lgbm_params or {}
         self.use_group_mdi = use_group_mdi
+
+        if self.use_lgbm and not LGBM_AVAILABLE:
+            tprint_warning('⚠️ LightGBM not available; disabling DePrado use_lgbm')
+            self.use_lgbm = False
 
         # Hardening
         self.max_cluster_size = max_cluster_size

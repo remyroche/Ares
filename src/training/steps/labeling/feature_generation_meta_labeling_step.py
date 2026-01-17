@@ -156,6 +156,8 @@ from .mtf_feature_generation import (
     get_efficiency_ratio,
     kalman_smooth_trend
 )
+from .causal_discovery import CausalDiscovery
+from .causal_feature_engineering import CausalFeatureEngineering
 
 logger = logging.getLogger(__name__)
 
@@ -3956,6 +3958,80 @@ def build_meta_features_for_model(
             horizon_bars=horizon,
         )
         static_cache[cache_key] = meta_features.copy()
+
+    # 3b. Causal Feature Engineering (De Prado 2026 / Causal Factor Investing)
+    # Discovers causal graph on meta-features and generates residuals/interventions
+    if meta_feature_cfg.get('enable_causal_features', False):
+        try:
+            tprint("🔬 Generating Causal Features (Discovery + Engineering)...", "INFO")
+
+            # Prepare data for discovery (numeric only, drop NaN)
+            # Use a subset of stable features to avoid noise
+            causal_candidates = meta_features.select_dtypes(include=[np.number])
+            # Drop features with too many NaNs
+            causal_candidates = causal_candidates.dropna(axis=1, thresh=int(len(causal_candidates)*0.9))
+            causal_candidates = causal_candidates.fillna(method='ffill').fillna(0.0)
+
+            # Limit number of features for discovery if too large (PC is expensive)
+            # Prioritize features with high variance or importance proxies
+            if causal_candidates.shape[1] > 50:
+                # Simple variance check to keep top 50
+                variances = causal_candidates.var()
+                top_cols = variances.nlargest(50).index
+                causal_candidates = causal_candidates[top_cols]
+
+            # 1. Discover Causal Structure (using Stability Selection if configured)
+            use_stability = meta_feature_cfg.get('use_causal_stability', True)
+            n_bootstraps = int(meta_feature_cfg.get('causal_bootstraps', 10))
+
+            discovery = CausalDiscovery(
+                significance_level=float(meta_feature_cfg.get('causal_significance', 0.05)),
+                use_lingam=bool(meta_feature_cfg.get('use_lingam', True)),
+                verbose=False # Keep it quiet
+            )
+
+            if use_stability:
+                discovery_results = discovery.discover_stable_graph(
+                    causal_candidates,
+                    n_bootstraps=n_bootstraps,
+                    stability_threshold=0.6
+                )
+            else:
+                discovery_results = discovery.discover_causal_structure(causal_candidates)
+
+            causal_graph = discovery_results.get('causal_graph')
+
+            if causal_graph:
+                # 2. Engineer Causal Features
+                engineer = CausalFeatureEngineering(
+                    causal_graph=causal_graph,
+                    denoising_method='ridge',
+                    verbose=False
+                )
+
+                # We only want to ADD new features (residuals, interactions), not replace existing ones
+                engineered_df, _ = engineer.apply_causal_engineering(
+                    causal_candidates,
+                    apply_denoising=False, # We usually keep original features
+                    apply_adjustment=False, # Don't replace originals
+                    apply_imputation=False,
+                    apply_transformation=True # This generates residuals and interactions
+                )
+
+                # Identify new columns
+                new_cols = [c for c in engineered_df.columns if c not in causal_candidates.columns]
+                tprint(f"   Generated {len(new_cols)} causal features (residuals/interactions)", "INFO")
+
+                # Join back to meta_features
+                # Ensure index alignment
+                new_features = engineered_df[new_cols].reindex(meta_features.index)
+                meta_features = pd.concat([meta_features, new_features], axis=1)
+
+            else:
+                tprint("   ⚠️ No causal graph discovered, skipping causal features", "WARNING")
+
+        except Exception as e:
+            tprint(f"   ❌ Causal feature engineering failed: {e}", "ERROR")
 
     # --- ENFORCE MANDATORY FEATURES FOR MONOTONIC CONSTRAINTS ---
     # Ensure specific features exist for monotonic constraints

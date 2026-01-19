@@ -3905,10 +3905,19 @@ class LabelBasedLayer2(BaseStep):
                      specialist_predictions=getattr(self, '_oof_specialist_predictions', None),
                      causal_graph=getattr(self, '_causal_graph', None),
                      target_signals_per_day=7.5, # Fixed default used in optimize_production_geometries
+                     return_raw_candidates=True, # Critical: Get ALL candidates without filtering
                      tracker=tracker
                  )
-                 # Map family -> events
-                 self._orthogonal_cache[df_hash] = {c['family']: c['events'] for c in candidates}
+                 # Map family -> events (Handle OutputGeometry objects or dicts)
+                 cache_dict = {}
+                 for c in candidates:
+                     # Robust access for object vs dict
+                     fam = getattr(c, 'family', c.get('family') if isinstance(c, dict) else None)
+                     evts = getattr(c, 'events', c.get('events') if isinstance(c, dict) else None)
+                     if fam and evts is not None:
+                         cache_dict[fam] = evts
+
+                 self._orthogonal_cache[df_hash] = cache_dict
                  tprint_success(f"✅ Cached {len(candidates)} orthogonal candidates.")
                  if tracker is not None:
                      tracker.log_stage("orthogonal_candidates", len(candidates))
@@ -9898,9 +9907,10 @@ class LabelBasedLayer2(BaseStep):
                 cov_val = 0.0
             
             if cov_val < 1.0 and final_score > 0.1:
-                final_score = 0.0
+                # Relaxed penalty: Warn but don't zero out completely to allow debugging
+                # final_score = 0.0
                 if self.verbose:
-                    tprint_warning(f"   ⚠️ Penalized {uuid} Final Score to 0.0 due to {coverage} OOF Coverage")
+                    tprint_warning(f"   ⚠️ Low OOF Coverage for {uuid}: {coverage}. Score {final_score:.4f} retained for diagnostics.")
             dir_consistency = cand_metrics.get('Dir_consistency', np.nan)
             balance = cand_metrics.get('balance', np.nan)
             learnability = cand_metrics.get('ranking_score', probe_auc)

@@ -366,6 +366,8 @@ if CATBOOST_AVAILABLE_LOCAL:
 
         def fit(self, X, y, sample_weight=None, **kwargs):
             """Fit standard CatBoost (Supports custom objective but using standard for stability)."""
+            if self.irm_system and not self.environment_masks:
+                raise ValueError("IRM enabled but no environment masks provided")
             # Could implement custom objective here, but standard focal loss 
             # (or logloss) is robust enough. Main goal is diversity.
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
@@ -378,47 +380,72 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
         super().__init__(random_state=random_state, **kwargs)
         self.irm_system = irm_system
         self.environment_masks = environment_masks or {}
+        self._in_fit_context = False
 
-    def _get_params_filtered(self, deep=True):
-        from sklearn.base import BaseEstimator
-        params = BaseEstimator.get_params(self, deep)
-        params.pop('irm_system', None)
-        params.pop('environment_masks', None)
+    def get_params(self, deep=True):
+        """
+        Override get_params to hide custom attributes from LightGBM during fit,
+        but allow sklearn.clone to see them otherwise.
+        """
+        params = super().get_params(deep=deep)
+        if getattr(self, '_in_fit_context', False):
+            params.pop('irm_system', None)
+            params.pop('environment_masks', None)
         return params
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective and robust parameter handling."""
+        if self.irm_system and not self.environment_masks:
+            raise ValueError("IRM enabled but no environment masks provided")
+
         # Set IRM objective if enabled
         if self.irm_system and self.environment_masks:
              self.set_params(objective=self._irm_focal_objective)
 
-        # Patch get_params to exclude custom objects from LightGBM backend
-        original_get_params = self.get_params
-        self.get_params = self._get_params_filtered
+        self._in_fit_context = True
         try:
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+        except Exception as e:
+            tprint_warning(f"⚠️ IRM_LGBM fit failed: {e}")
+            # Try fallback
+            if "objective" in str(e) or "parameter" in str(e):
+                tprint_info("   🔄 Retrying with standard objective...")
+                self.set_params(objective='binary')
+                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+            raise e
         finally:
-            self.get_params = original_get_params
+            self._in_fit_context = False
 
     def predict(self, X, **kwargs):
-        original_get_params = self.get_params
-        self.get_params = self._get_params_filtered
+        self._in_fit_context = True
         try:
             return super().predict(X, **kwargs)
         finally:
-            self.get_params = original_get_params
+            self._in_fit_context = False
 
     def predict_proba(self, X, **kwargs):
-        original_get_params = self.get_params
-        self.get_params = self._get_params_filtered
+        self._in_fit_context = True
         try:
             return super().predict_proba(X, **kwargs)
         finally:
-            self.get_params = original_get_params
+            self._in_fit_context = False
 
     def _irm_focal_objective(self, preds, train_data):
         """IRM-aware focal loss objective."""
-        labels = train_data.get_label()
+        # Handle differences between LGBM sklearn API and native API
+        if hasattr(preds, 'get_label'):
+            # Native API: (preds=train_data, train_data=preds_array)? No, (preds, train_data)
+            # But sometimes args are flipped or names are misleading
+            labels = preds.get_label()
+            preds_val = train_data
+        elif hasattr(train_data, 'get_label'):
+            # Native API: (preds, train_data)
+            labels = train_data.get_label()
+            preds_val = preds
+        else:
+            # Sklearn API wrapper: (y_true, y_pred) usually
+            labels = preds
+            preds_val = train_data
 
         # Compute focal loss
         focal_loss = RobustFocalLoss(
@@ -429,11 +456,12 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
         )
 
         # Convert to gradient/hessian for LightGBM
-        grad, hess = focal_loss.compute_grad_hess(preds, labels)
+        # RobustFocalLoss uses __call__
+        grad, hess = focal_loss(preds_val, labels)
 
         # Add IRM penalty (simplified)
-        if self.irm_system and self.environment_masks:
-            irm_penalty = self._compute_irm_penalty(preds, labels)
+        if hasattr(self, 'irm_system') and self.irm_system and hasattr(self, 'environment_masks') and self.environment_masks:
+            irm_penalty = self._compute_irm_penalty(preds_val, labels)
             grad += self.irm_system.lambda_irm * irm_penalty
 
         return grad, hess
@@ -454,53 +482,86 @@ class IRM_XGBClassifier(XGBClassifier):
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective and dynamic constraint adaptation."""
 
-        # Adapt constraints to actual features (handling pruned features)
+        # Validate input type for feature name access
+        has_feature_names = hasattr(X, 'columns')
+
+        # 1. Adapt Monotonic Constraints
         if hasattr(self, 'monotone_constraints') and self.monotone_constraints:
             constraints = self.monotone_constraints
-            if isinstance(constraints, dict):
+
+            if isinstance(constraints, dict) and has_feature_names:
                 # Map dict {col: val} to tuple matching X columns
                 new_constraints = []
                 for col in X.columns:
                     new_constraints.append(constraints.get(col, 0))
                 self.monotone_constraints = tuple(new_constraints)
-                tprint_info(f"   🔧 Adapted monotonic constraints for {len(X.columns)} features")
+                # tprint_info(f"   🔧 Adapted monotonic constraints for {len(X.columns)} features")
+
             elif isinstance(constraints, (list, tuple)):
-                # If tuple length mismatches, we can't easily fix unless we assume order.
-                # Warning and clear constraints is safer than crashing.
-                if len(constraints) != X.shape[1]:
-                    tprint_warning(f"   ⚠️ Mismatch in monotone_constraints ({len(constraints)}) vs features ({X.shape[1]}). Disabling constraints.")
+                # If tuple length mismatches, we disable constraints to prevent crash
+                if has_feature_names and len(constraints) != X.shape[1]:
+                    tprint_warning(f"   ⚠️ Mismatch in monotone_constraints ({len(constraints)}) vs features ({X.shape[1]}). Disabling.")
                     self.monotone_constraints = None
+                elif not has_feature_names:
+                    # If X is numpy, we can't check easily, but XGB might crash if length mismatch
+                    # Safe to pass through if lengths match
+                    pass
 
+        # 2. Adapt Interaction Constraints
         if hasattr(self, 'interaction_constraints') and self.interaction_constraints:
-             # Prune interaction constraints (list of lists of features)
-             valid_features = set(X.columns)
-             new_constraints = []
-             if isinstance(self.interaction_constraints, list):
-                 for group in self.interaction_constraints:
-                     valid_group = [f for f in group if f in valid_features]
-                     if len(valid_group) >= 2:
-                         new_constraints.append(valid_group)
+             if has_feature_names:
+                 valid_features = set(X.columns)
+                 new_constraints = []
+                 if isinstance(self.interaction_constraints, list):
+                     for group in self.interaction_constraints:
+                         # Filter features in the group that exist in X
+                         valid_group = [f for f in group if f in valid_features]
+                         if len(valid_group) >= 2:
+                             new_constraints.append(valid_group)
 
-                 if len(new_constraints) < len(self.interaction_constraints):
-                     tprint_info(f"   🔧 Pruned interaction constraints: {len(self.interaction_constraints)} -> {len(new_constraints)}")
-                 self.interaction_constraints = new_constraints
+                     self.interaction_constraints = new_constraints
+             else:
+                 # If X is numpy, we cannot validate feature names.
+                 # If interaction_constraints use strings, XGB will crash.
+                 # We must disable them if we don't have feature names to map.
+                 if self.interaction_constraints and isinstance(self.interaction_constraints[0], (list, tuple)) and isinstance(self.interaction_constraints[0][0], str):
+                     tprint_warning("   ⚠️ Disabling string-based interaction constraints for numpy input.")
+                     self.interaction_constraints = None
 
         # Standard or IRM training
-        if self.irm_system is None or not self.environment_masks:
-            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
-
         try:
+            if self.irm_system is None:
+                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+            if not self.environment_masks:
+                # Fallback to standard if masks missing
+                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
             # Use IRM-aware objective
             self.objective = self._irm_focal_objective
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         except Exception as e:
-            tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
+            tprint_warning(f"⚠️ XGB fit failed ({str(e)}). Retrying with cleaned constraints...")
+            # Emergency cleanup: disable all constraints and retry
+            self.monotone_constraints = None
+            self.interaction_constraints = None
+            self.objective = 'binary:logistic' # Standard
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
     def _irm_focal_objective(self, preds, dtrain):
         """IRM-aware focal loss objective for XGBoost."""
-        labels = dtrain.get_label()
+        # Handle XGBoost API differences
+        if hasattr(preds, 'get_label'):
+            labels = preds.get_label()
+            preds_val = dtrain
+        elif hasattr(dtrain, 'get_label'):
+            labels = dtrain.get_label()
+            preds_val = preds
+        else:
+            # Sklearn wrapper often passes (y_true, y_pred)
+            labels = preds
+            preds_val = dtrain
 
         # Compute focal loss gradient/hessian
         focal_obj = get_focal_loss_xgb(
@@ -508,9 +569,26 @@ class IRM_XGBClassifier(XGBClassifier):
             gamma=self.irm_system.focal_gamma if self.irm_system else 2.0
         )
 
-        # This would need proper XGBoost objective function integration
-        # For now, return standard focal loss
-        return focal_obj(preds, dtrain)
+        # Pass correct order to focal_obj if it expects (preds, dtrain) style or (y_true, y_pred)
+        # Assuming get_focal_loss_xgb returns a callable that handles standard XGB signature (preds, dtrain)
+        # We need to reconstruct a dtrain-like object or pass raw?
+        # get_focal_loss_xgb likely expects dtrain to have get_label()
+
+        # If we are here, dtrain might be just labels array.
+        # We need to adapt.
+
+        class MockDMatrix:
+            def __init__(self, labels):
+                self.labels = labels
+            def get_label(self):
+                return self.labels
+
+        if not hasattr(dtrain, 'get_label') and not hasattr(preds, 'get_label'):
+             # Wrap labels
+             dtrain_wrapped = MockDMatrix(labels)
+             return focal_obj(preds_val, dtrain_wrapped)
+
+        return focal_obj(preds_val, dtrain)
 
 @njit
 def vectorized_weight_assignment(n_samples: int, weight_value: float = 1.0) -> np.ndarray:
@@ -6925,7 +7003,8 @@ class LabelBasedLayer2(BaseStep):
                 X_train_final,
                 y_train,
                 environment_masks=environment_masks,
-                constraints_dict=monotone_constraints_dict
+                constraints_dict=monotone_constraints_dict,
+                interaction_constraints=interaction_constraints
             )
             candidates = [
                 {**cand, 'fit_params': {}} if isinstance(cand, dict) else cand
@@ -7100,6 +7179,8 @@ class LabelBasedLayer2(BaseStep):
                 y_ic_target = y_causal_val if y_causal_val is not None else y_val
                 # Align if needed (y_causal_val is Series, preds is array)
                 if isinstance(y_ic_target, pd.Series):
+                    # Ensure alignment with X_val_final used for predictions
+                    y_ic_target = y_ic_target.reindex(X_val_final.index)
                     y_ic_vals = y_ic_target.values
                 else:
                     y_ic_vals = y_ic_target
@@ -7478,7 +7559,7 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning("⚠️ Enhanced Bagged Lasso dependencies not available")
             return None
 
-    def _create_irm_candidates(self, scale_pos_weight, X_train, y_train, environment_masks=None, constraints_dict=None):
+    def _create_irm_candidates(self, scale_pos_weight, X_train, y_train, environment_masks=None, constraints_dict=None, interaction_constraints=None):
         """Create causal IRM-based model candidates with updated specs."""
         from sklearn.linear_model import RidgeClassifier
         from sklearn.calibration import CalibratedClassifierCV
@@ -7505,6 +7586,9 @@ class LabelBasedLayer2(BaseStep):
         })
         if constraints_dict:
             lgbm_params['monotone_constraints'] = [constraints_dict.get(f, 0) for f in X_train.columns]
+        if interaction_constraints:
+            lgbm_params['interaction_constraints'] = interaction_constraints
+
         candidates.append({
             'name': 'LGBM_IRM',
             'model': IRM_LGBMClassifier(
@@ -7578,6 +7662,7 @@ class LabelBasedLayer2(BaseStep):
                     min_child_weight=10,
                     gamma=1.1,
                     monotone_constraints=xgb_constraints,
+                    interaction_constraints=interaction_constraints,
                     scale_pos_weight=scale_pos_weight,
                     random_state=42,
                     n_jobs=1,

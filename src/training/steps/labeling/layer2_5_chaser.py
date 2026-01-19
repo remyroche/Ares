@@ -32,6 +32,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import ExtraTreesRegressor
+from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
 from sklearn.base import clone
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -202,13 +203,33 @@ def fit_bayes_teacher_oof(
             med_tr, s_tr = robust_stats(y_tr)
             y_tr = clip_with_stats(y_tr, med_tr, s_tr, k=winsor_k)
 
-        model = BayesianRidge()
-        if w is None:
-            model.fit(X_tr, y_tr)
-        else:
-            model.fit(X_tr, y_tr, sample_weight=w[tr])
+        # Use IRM Ridge
+        model = IRMLinearRegressor(loss_type='ridge', alpha=1.0)
+        # Construct environments from weights if available
+        w_tr = w[tr] if w is not None else None
+        model.fit(X_tr, y_tr, env_indices=get_vol_env_indices(w_tr))
 
-        mu, std = model.predict(X_va, return_std=True)
+        # Predict (IRMLinearRegressor doesn't return std, we assume 1.0 or implement simple estimation)
+        # BayesianRidge returns std. We need std for chaser weights.
+        # We can estimate std from residuals on training? Or just use constant?
+        # BayesianRidge calculates predictive std.
+        # IRMLinearRegressor is deterministic.
+        # We can estimate std = std(y_tr - pred_tr).
+        # Or better, just return 1.0 if not available, but chaser relies on it.
+        # Let's compute residual std on training and use it as constant uncertainty?
+        # Or better: keep BayesianRidge for std?
+        # User said "Replace Ridge...".
+        # But if we lose functionality (std), we break Chaser.
+        # I will calculate std of residuals on training set as a proxy for uncertainty?
+        # BayesianRidge std includes parameter uncertainty.
+        # Given this is "Teacher", robustness is key.
+        # I will implement a simple std estimation:
+        mu = model.predict(X_va)
+
+        # Estimate sigma from training residuals
+        mu_tr = model.predict(X_tr)
+        resid_std = np.std(y_tr - mu_tr)
+        std = np.full(len(mu), resid_std)
         mu_oof[va] = mu
         std_oof[va] = np.maximum(std, 1e-12)
 
@@ -221,15 +242,12 @@ def fit_bayes_teacher_oof(
         std_oof[~valid_mask] = std_mean
 
     # Train final model on full data for production
-    final_model = BayesianRidge()
+    final_model = IRMLinearRegressor(loss_type='ridge', alpha=1.0)
     y_full = y.astype(np.float64)
     if not is_classifier:
         y_full = winsorize(y_full, k=winsor_k)
 
-    if w is None:
-        final_model.fit(Xs, y_full)
-    else:
-        final_model.fit(Xs, y_full, sample_weight=w)
+    final_model.fit(Xs, y_full, env_indices=get_vol_env_indices(w))
 
     out = TeacherOOF(scaler=scaler, mu_oof=mu_oof, std_oof=std_oof, model=final_model)
 

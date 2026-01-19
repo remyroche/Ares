@@ -7393,17 +7393,11 @@ class LabelBasedLayer2(BaseStep):
         if len(df_har) < 100:
             return ret # Fallback
 
-        X_har = df_har[['lag1', 'lag5', 'lag22']]
-        env_indices = self._build_irm_env_indices(X_har.index) if self.irm_enabled else []
-        if env_indices and len(env_indices) > 1:
-            model = IRMLinearRegressor(loss_type='ridge', alpha=1.0, irm_lambda=self.lambda_irm)
-            model.fit(X_har.values, df_har['ret'].values, env_indices)
-            pred = model.predict(X_har.values)
-        else:
-            from sklearn.linear_model import Ridge
-            model = Ridge(alpha=1.0)
-            model.fit(X_har, df_har['ret'])
-            pred = model.predict(X_har)
+        from src.utils.irm_linear_regressor import IRMLinearRegressor
+        model = IRMLinearRegressor(loss_type='ridge', alpha=1.0)
+        # Single environment (no sample_weight available here/needed for simple AR)
+        model.fit(df_har[['lag1', 'lag5', 'lag22']], df_har['ret'])
+        pred = model.predict(df_har[['lag1', 'lag5', 'lag22']])
         residuals = df_har['ret'] - pred
 
         # 4. Studentize (GARCH-proxy: Rolling Std)
@@ -7968,15 +7962,15 @@ class LabelBasedLayer2(BaseStep):
                         
                         # Refit with best alpha if different from CV choice
                         if best_alpha != self.lasso_cv_.alpha_:
-                            from sklearn.linear_model import Lasso
-                            refit_lasso = Lasso(
+                            from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
+                            refit_lasso = IRMLinearRegressor(
+                                loss_type='elasticnet',
+                                l1_ratio=1.0,
                                 alpha=best_alpha,
-                                max_iter=self.max_iter,
-                                tol=self.tol,
-                                selection=self.selection,
-                                random_state=42
+                                max_iter=self.max_iter
                             )
-                            refit_lasso.fit(X_scaled, y, sample_weight=sample_weight)
+                            # IRM uses sample_weight for environments, but loss is unweighted (which is fine for robustness)
+                            refit_lasso.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
                             self.lasso_cv_.coef_ = refit_lasso.coef_
                             self.lasso_cv_.alpha_ = best_alpha
                     

@@ -38,7 +38,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_absolute_error
 
 from src.utils.tprint import tprint_info
-from src.training.steps.labeling.irm_regime_pipeline import IRMLinearRegressor
+from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
 
 
 # -----------------------------
@@ -51,6 +51,7 @@ class HuberTeacherConfig:
     epsilons: Tuple[float, ...] = (1.1, 1.35, 1.75)
     alphas: Tuple[float, ...] = (1e-4, 1e-3, 1e-2)
     max_iter: int = 5000
+    irm_lambda: float = 1.0  # IRM Penalty Strength
 
     # Time splits (walk-forward with rolling window)
     n_time_splits: int = 5
@@ -196,14 +197,29 @@ def _fit_huber(
     sample_weight: Optional[np.ndarray],
     epsilon: float,
     alpha: float,
-    max_iter: int
-) -> HuberRegressor:
-    model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
-    if sample_weight is None:
-        model.fit(X_scaled, y)
-    else:
-        model.fit(X_scaled, y, sample_weight=sample_weight)
-    return model
+    max_iter: int,
+    irm_lambda: float = 1.0
+) -> Union[HuberRegressor, IRMLinearRegressor]:
+    # Use IRMLinearRegressor
+    try:
+        model = IRMLinearRegressor(
+            loss_type='huber',
+            alpha=alpha,
+            huber_epsilon=epsilon,
+            max_iter=max_iter,
+            irm_lambda=irm_lambda
+        )
+        model.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
+        return model
+    except Exception as e:
+        # Fallback to standard Huber if IRM fails
+        tprint_info(f"IRM failed: {e}, falling back to standard Huber")
+        model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
+        if sample_weight is None:
+            model.fit(X_scaled, y)
+        else:
+            model.fit(X_scaled, y, sample_weight=sample_weight)
+        return model
 
 
 def _median_choice(vals: Tuple[float, ...]) -> float:
@@ -259,9 +275,7 @@ def _fit_split_grid(
     epsilons: Tuple[float, ...],
     alphas: Tuple[float, ...],
     max_iter: int,
-    use_irm: bool,
-    irm_env_indices: Optional[List[np.ndarray]],
-    irm_lambda: float
+    irm_lambda: float = 1.0
 ) -> Dict[str, np.ndarray]:
     X = X_scaled_full[start:end]
     y = y_full[start:end]
@@ -273,10 +287,7 @@ def _fit_split_grid(
     params = []
     for eps in epsilons:
         for a in alphas:
-            if use_irm and split_env_indices and len(split_env_indices) > 1:
-                m = _fit_huber_irm(X, y, split_env_indices, eps, a, max_iter, irm_lambda)
-            else:
-                m = _fit_huber(X, y, w, eps, a, max_iter)
+            m = _fit_huber(X, y, w, eps, a, max_iter, irm_lambda)
             coefs.append(m.coef_.astype(np.float64, copy=False))
             intercepts.append(float(m.intercept_))
             params.append((float(eps), float(a)))
@@ -373,15 +384,14 @@ def _pair_synergy_gain_mae(
     X_b = np.column_stack([x_i, x_j, x_i * x_j]).astype(np.float64, copy=False)
 
     # Fixed robust params for screening (keep cheap & stable)
-    m_a = HuberRegressor(epsilon=base_epsilon, alpha=1e-3, max_iter=2000)
-    m_b = HuberRegressor(epsilon=base_epsilon, alpha=1e-3, max_iter=2000)
+    # We use _fit_huber to leverage IRM if possible, but for screening speed/stability maybe standard is better?
+    # But for consistency, let's use _fit_huber with default IRM settings.
+    # Actually, for interaction screening on 2-3 features, IRM might be overkill or unstable if environments are small?
+    # The original code used HuberRegressor directly.
+    # Let's switch to _fit_huber to maintain consistency.
 
-    if w is None:
-        m_a.fit(X_a, y)
-        m_b.fit(X_b, y)
-    else:
-        m_a.fit(X_a, y, sample_weight=w)
-        m_b.fit(X_b, y, sample_weight=w)
+    m_a = _fit_huber(X_a, y, w, epsilon=base_epsilon, alpha=1e-3, max_iter=2000, irm_lambda=1.0)
+    m_b = _fit_huber(X_b, y, w, epsilon=base_epsilon, alpha=1e-3, max_iter=2000, irm_lambda=1.0)
 
     pred_a = m_a.predict(X_a)
     pred_b = m_b.predict(X_b)
@@ -552,8 +562,7 @@ def prepare_huber_teacher_outputs(
         delayed(_fit_split_grid)(
             X_tr_scaled, y_tr, w,
             start, end,
-            cfg.epsilons, cfg.alphas, cfg.max_iter,
-            use_irm, irm_env_indices, irm_lambda
+            cfg.epsilons, cfg.alphas, cfg.max_iter, cfg.irm_lambda
         )
         for (start, end) in splits
     )
@@ -580,7 +589,7 @@ def prepare_huber_teacher_outputs(
     # -----------------------------
     eps0 = _median_choice(cfg.epsilons)
     a0 = _median_choice(cfg.alphas)
-    teacher = _fit_huber(X_tr_scaled, y_tr, w, eps0, a0, cfg.max_iter)
+    teacher = _fit_huber(X_tr_scaled, y_tr, w, eps0, a0, cfg.max_iter, cfg.irm_lambda)
     warm_train = teacher.predict(X_tr_scaled)
 
     # -----------------------------

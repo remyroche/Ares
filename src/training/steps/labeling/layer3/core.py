@@ -15,7 +15,7 @@ from pathlib import Path
 import logging
 from scipy.special import expit
 from sklearn.cluster import AgglomerativeClustering
-from sklearn.metrics import log_loss, mean_squared_error, roc_auc_score
+from sklearn.metrics import log_loss, mean_squared_error, roc_auc_score, brier_score_loss
 
 from .model_training import train_dual_head_models
 from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
@@ -393,14 +393,57 @@ def select_best_model_per_task(
                 best_model_key = key
                 best_pred = pred
         else:
-            # Classification: AUC (higher is better)
-            # Ensure binary target
+            # Classification: Brier Score (lower is better) - de Prado standard
+            # We prioritize calibration and probabilistic accuracy
             try:
-                score = roc_auc_score((y_true > 0).astype(int), y_pred)
-            except ValueError:
-                score = 0.5 # Single class?
+                # Ensure binary target
+                y_bin = (y_true > 0).astype(int)
+                score = brier_score_loss(y_bin, y_pred)
 
-            if score > best_score:
+                # Check bounds (Brier is [0, 1])
+                if np.isnan(score): score = 1.0
+
+            except ValueError:
+                score = 1.0 # Error case
+
+            # Lower Brier is better. Initialize best_score with float('inf') for cls too?
+            # Originally initialized with -inf for AUC.
+            # We need to adapt the initialization logic or invert the check.
+            pass
+
+    # Fix initialization for classification if switching to Brier
+    if task_type == 'classification' and best_score == float('-inf'):
+         best_score = float('inf')
+
+    for key in candidates:
+        if key not in models_dict:
+            continue
+
+        res = models_dict[key]
+        pred = res['cate']
+
+        valid_mask = ~np.isnan(y_target) & ~np.isnan(pred)
+        if np.sum(valid_mask) == 0:
+            continue
+
+        y_true = y_target[valid_mask]
+        y_pred = pred[valid_mask]
+
+        if task_type == 'regression':
+            score = mean_squared_error(y_true, y_pred)
+            if score < best_score:
+                best_score = score
+                best_model_key = key
+                best_pred = pred
+        else:
+            # Classification: Brier Score (lower is better)
+            try:
+                y_bin = (y_true > 0).astype(int)
+                score = brier_score_loss(y_bin, y_pred)
+            except ValueError:
+                score = 1.0
+
+            if score < best_score:
                 best_score = score
                 best_model_key = key
                 best_pred = pred

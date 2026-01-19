@@ -23,9 +23,11 @@ Layer 3 uses a multi-model approach with post-hoc calibration to ensure probabil
   - Calibration: Isotonic Regression on validation set OOF predictions.
 - **ExtraTrees**:
   - Training: `log_loss`.
-  - Calibration: Isotonic Regression on OOB predictions.
+  - Calibration: Isotonic Regression on OOB predictions (approximate).
 - **Linear Models (IRM)**:
   - Training: `LogLoss` (Logistic Regression) with Invariant Risk Penalty and sample weights.
+
+**Clarification on IRM**: While the Linear Models (`IRMLinearClassifier`) explicitly optimize an Invariant Risk Minimization penalty loop, the Tree Models (LGBM, XGB, ET) in Layer 3 utilize **Robust Loss Functions** (Focal, Huber) and **Constraints** (Monotonic, Interaction) to achieve robustness, rather than an explicit IRM gradient penalty loop during training.
 
 ### Regression Tasks (Alpha/Returns)
 - **LightGBM**: `huber` (Robust Regression).

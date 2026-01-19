@@ -1,0 +1,144 @@
+<<<<<<< SEARCH
+    best_pred_12_reg, best_key_12_reg = select_best_model_per_task(combined_models, y_alpha_12, 'regression', '12')
+    best_pred_12_cls, best_key_12_cls = select_best_model_per_task(combined_models, y_prob_12, 'classification', '12')
+    best_pred_48_reg, best_key_48_reg = select_best_model_per_task(combined_models, y_alpha_48, 'regression', '48')
+    best_pred_48_cls, best_key_48_cls = select_best_model_per_task(combined_models, y_prob_48, 'classification', '48')
+
+    # Phase 11: Save best models OOF predictions
+    tprint_info("💾 Phase 11: Save Models OOF")
+
+    # Helper to propagate predictions
+    def propagate_simple(values, idx):
+        return pd.Series(values, index=idx).reindex(df.index).fillna(0)
+
+    # Save ALL models OOF predictions
+    for key, res in combined_models.items():
+        # key like 'et_12_reg'
+        pred = res['cate']
+        df[f"{key}_oof"] = propagate_simple(pred, X_clustered.index)
+
+    # Map best models to meta columns
+    df['meta_alpha'] = propagate_simple(best_pred_12_reg, X_clustered.index)
+    df['meta_prob'] = propagate_simple(best_pred_12_cls, X_clustered.index)
+
+    # Save 48 bar outputs too if needed
+    df['meta_alpha_48'] = propagate_simple(best_pred_48_reg, X_clustered.index)
+    df['meta_prob_48'] = propagate_simple(best_pred_48_cls, X_clustered.index)
+
+    # Legacy compatibility
+    df['orf_cate'] = df['meta_alpha']
+    df['orf_se'] = df['meta_prob'] * 0.1 # Placeholder
+
+    # Store Best Model Keys in results
+    best_models_info = {
+        '12_reg': best_key_12_reg,
+        '12_cls': best_key_12_cls,
+        '48_reg': best_key_48_reg,
+        '48_cls': best_key_48_cls
+    }
+=======
+    # Phase 9: Select best models
+    tprint_info("🏆 Phase 9: Select Best Models (Tree vs Linear Race)")
+
+    # helper for mse/brier selection
+    def select_metric_winner(candidates, target, task):
+        best_s = float('inf')
+        best_k, best_p = None, None
+        for k in candidates:
+            if k not in combined_models: continue
+            res = combined_models[k]
+            pred = res['cate']
+            valid = ~np.isnan(target) & ~np.isnan(pred)
+            if not valid.any(): continue
+
+            if task == 'regression':
+                s = mean_squared_error(target[valid], pred[valid])
+            else:
+                s = brier_score_loss((target[valid]>0).astype(int), pred[valid])
+
+            if s < best_s:
+                best_s = s
+                best_k = k
+                best_p = pred
+        return best_p, best_k
+
+    # 1. 12 Regression
+    best_tree_12_reg_p, best_tree_12_reg_k = select_metric_winner(['et_12_reg', 'lgbm_12_reg', 'xgb_12_reg'], y_alpha_12, 'regression')
+    best_lin_12_reg_p, best_lin_12_reg_k = select_metric_winner(['irm_linear_12_reg'], y_alpha_12, 'regression')
+
+    # 2. 12 Classification
+    best_tree_12_cls_p, best_tree_12_cls_k = select_metric_winner(['et_12_cls', 'lgbm_12_cls', 'xgb_12_cls'], y_prob_12, 'classification')
+    best_lin_12_cls_p, best_lin_12_cls_k = select_metric_winner(['irm_linear_12_cls'], y_prob_12, 'classification')
+
+    # 3. 48 Regression
+    best_tree_48_reg_p, best_tree_48_reg_k = select_metric_winner(['et_48_reg', 'lgbm_48_reg', 'xgb_48_reg'], y_alpha_48, 'regression')
+    best_lin_48_reg_p, best_lin_48_reg_k = select_metric_winner(['irm_linear_48_reg'], y_alpha_48, 'regression')
+
+    # 4. 48 Classification
+    best_tree_48_cls_p, best_tree_48_cls_k = select_metric_winner(['et_48_cls', 'lgbm_48_cls', 'xgb_48_cls'], y_prob_48, 'classification')
+    best_lin_48_cls_p, best_lin_48_cls_k = select_metric_winner(['irm_linear_48_cls'], y_prob_48, 'classification')
+
+    # Phase 11: Save best models OOF predictions
+    tprint_info("💾 Phase 11: Save Models OOF & Spreads")
+
+    # Helper to propagate predictions
+    def propagate_simple(values, idx):
+        if values is None: return pd.Series(0, index=df.index)
+        return pd.Series(values, index=idx).reindex(df.index).fillna(0)
+
+    # Save ALL models OOF predictions
+    for key, res in combined_models.items():
+        # key like 'et_12_reg'
+        pred = res['cate']
+        df[f"{key}_oof"] = propagate_simple(pred, X_clustered.index)
+
+    # Save outputs (Tree vs Linear split)
+    df['meta_alpha_tree'] = propagate_simple(best_tree_12_reg_p, X_clustered.index)
+    df['meta_prob_tree'] = propagate_simple(best_tree_12_cls_p, X_clustered.index)
+    df['meta_alpha_48_tree'] = propagate_simple(best_tree_48_reg_p, X_clustered.index)
+    df['meta_prob_48_tree'] = propagate_simple(best_tree_48_cls_p, X_clustered.index)
+
+    df['meta_alpha_linear'] = propagate_simple(best_lin_12_reg_p, X_clustered.index)
+    df['meta_prob_linear'] = propagate_simple(best_lin_12_cls_p, X_clustered.index)
+    df['meta_alpha_48_linear'] = propagate_simple(best_lin_48_reg_p, X_clustered.index)
+    df['meta_prob_48_linear'] = propagate_simple(best_lin_48_cls_p, X_clustered.index)
+
+    # Spreads (Tree - Linear)
+    df['alpha_spread_12'] = df['meta_alpha_tree'] - df['meta_alpha_linear']
+    df['prob_spread_12'] = df['meta_prob_tree'] - df['meta_prob_linear']
+    df['alpha_spread_48'] = df['meta_alpha_48_tree'] - df['meta_alpha_48_linear']
+    df['prob_spread_48'] = df['meta_prob_48_tree'] - df['meta_prob_48_linear']
+
+    # Horizon 48 Ridge/Lasso Spread (ERM)
+    if 'ridge_48_reg' in combined_models and 'lasso_48_reg' in combined_models:
+        r_pred = combined_models['ridge_48_reg']['cate']
+        l_pred = combined_models['lasso_48_reg']['cate']
+
+        r_series = propagate_simple(r_pred, X_clustered.index)
+        l_series = propagate_simple(l_pred, X_clustered.index)
+
+        # Standardize the spread (z-score)
+        spread = r_series - l_series
+        spread_mean = spread.rolling(1000, min_periods=50).mean()
+        spread_std = spread.rolling(1000, min_periods=50).std()
+        df['ridge_lasso_spread'] = (spread - spread_mean) / (spread_std + 1e-9)
+        df['ridge_lasso_spread'] = df['ridge_lasso_spread'].fillna(0)
+
+    # Legacy mappings (default to Tree for main output if not specified)
+    df['meta_alpha'] = df['meta_alpha_tree']
+    df['meta_prob'] = df['meta_prob_tree']
+    df['meta_alpha_48'] = df['meta_alpha_48_tree']
+    df['meta_prob_48'] = df['meta_prob_48_tree']
+
+    # Store Best Model Keys in results
+    best_models_info = {
+        '12_reg_tree': best_tree_12_reg_k,
+        '12_reg_lin': best_lin_12_reg_k,
+        '12_cls_tree': best_tree_12_cls_k,
+        '12_cls_lin': best_lin_12_cls_k,
+        '48_reg_tree': best_tree_48_reg_k,
+        '48_reg_lin': best_lin_48_reg_k,
+        '48_cls_tree': best_tree_48_cls_k,
+        '48_cls_lin': best_lin_48_cls_k
+    }
+>>>>>>> REPLACE

@@ -240,6 +240,8 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
         super().__init__(**kwargs)
         self.irm_system = irm_system
         self.environment_masks = environment_masks or {}
+        self.current_iteration = 0
+        self.total_iterations = 100
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective."""
@@ -248,6 +250,16 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         try:
+            # Derive total iterations for annealing
+            self.total_iterations = kwargs.get('n_estimators', self.n_estimators)
+            if self.total_iterations is None:
+                self.total_iterations = 100
+
+            # Reset annealing schedule
+            self.current_iteration = 0
+            if hasattr(self.irm_system, 'reset_annealing'):
+                self.irm_system.reset_annealing()
+
             # Create IRM training function
             train_step = self.irm_system.create_enhanced_irm_trainer(
                 model=self,
@@ -274,8 +286,18 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
             tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
+    def _step_irm_schedule(self):
+        """Advance IRM annealing schedule."""
+        self.current_iteration += 1
+        if self.irm_system and hasattr(self.irm_system, 'set_anneal_progress'):
+            progress = min(1.0, self.current_iteration / max(1, self.total_iterations))
+            self.irm_system.set_anneal_progress(progress)
+
     def _irm_focal_objective(self, preds, train_data):
         """IRM-aware focal loss objective."""
+        # Step annealing schedule
+        self._step_irm_schedule()
+
         labels = train_data.get_label()
 
         # Compute focal loss
@@ -292,7 +314,9 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
         # Add IRM penalty (simplified)
         if self.irm_system and self.environment_masks:
             irm_penalty = self._compute_irm_penalty(preds, labels)
-            grad += self.irm_system.lambda_irm * irm_penalty
+            # Use annealing factor
+            anneal_factor = getattr(self.irm_system, 'anneal_progress_', 1.0)
+            grad += self.irm_system.lambda_irm * anneal_factor * irm_penalty
 
         return grad, hess
 
@@ -308,6 +332,8 @@ class IRM_XGBClassifier(XGBClassifier):
         super().__init__(**kwargs)
         self.irm_system = irm_system
         self.environment_masks = environment_masks or {}
+        self.current_iteration = 0
+        self.total_iterations = 100
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective."""
@@ -316,6 +342,16 @@ class IRM_XGBClassifier(XGBClassifier):
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         try:
+            # Derive total iterations for annealing
+            self.total_iterations = kwargs.get('n_estimators', self.n_estimators)
+            if self.total_iterations is None:
+                self.total_iterations = 100
+
+            # Reset annealing schedule
+            self.current_iteration = 0
+            if hasattr(self.irm_system, 'reset_annealing'):
+                self.irm_system.reset_annealing()
+
             # Use IRM-aware objective
             self.objective = self._irm_focal_objective
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
@@ -324,8 +360,18 @@ class IRM_XGBClassifier(XGBClassifier):
             tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
+    def _step_irm_schedule(self):
+        """Advance IRM annealing schedule."""
+        self.current_iteration += 1
+        if self.irm_system and hasattr(self.irm_system, 'set_anneal_progress'):
+            progress = min(1.0, self.current_iteration / max(1, self.total_iterations))
+            self.irm_system.set_anneal_progress(progress)
+
     def _irm_focal_objective(self, preds, dtrain):
         """IRM-aware focal loss objective for XGBoost."""
+        # Step annealing schedule
+        self._step_irm_schedule()
+
         labels = dtrain.get_label()
 
         # Compute focal loss gradient/hessian
@@ -334,9 +380,21 @@ class IRM_XGBClassifier(XGBClassifier):
             gamma=self.irm_system.focal_gamma if self.irm_system else 2.0
         )
 
-        # This would need proper XGBoost objective function integration
-        # For now, return standard focal loss
-        return focal_obj(preds, dtrain)
+        grad, hess = focal_obj(preds, dtrain)
+
+        # Add IRM penalty (simplified)
+        if self.irm_system and self.environment_masks:
+            irm_penalty = self._compute_irm_penalty(preds, labels)
+            # Use annealing factor
+            anneal_factor = getattr(self.irm_system, 'anneal_progress_', 1.0)
+            grad += self.irm_system.lambda_irm * anneal_factor * irm_penalty
+
+        return grad, hess
+
+    def _compute_irm_penalty(self, preds, labels):
+        """Compute simplified IRM penalty."""
+        # Simplified IRM penalty - would need full implementation
+        return np.zeros_like(preds)
 
 @njit
 def vectorized_weight_assignment(n_samples: int, weight_value: float = 1.0) -> np.ndarray:

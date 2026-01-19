@@ -47,7 +47,8 @@ class EnhancedIRM:
         focal_gamma: float = 2.0,
         n_environments: int = 4,
         min_env_samples: int = 100,
-        verbose: bool = True
+        verbose: bool = True,
+        anneal_steps: int = 1000
     ):
         """
         Initialize Enhanced IRM.
@@ -60,6 +61,7 @@ class EnhancedIRM:
             n_environments: Number of environments to create
             min_env_samples: Minimum samples per environment
             verbose: Whether to print progress information
+            anneal_steps: Number of steps to anneal penalties
         """
         self.lambda_irm = lambda_irm
         self.lambda_variance = lambda_variance
@@ -68,11 +70,32 @@ class EnhancedIRM:
         self.n_environments = n_environments
         self.min_env_samples = min_env_samples
         self.verbose = verbose
+        self.anneal_steps = anneal_steps
+
+        # Annealing state
+        self.current_step_ = 0
+        self.anneal_progress_ = 0.0
         
         # Storage for environments and metrics
         self.environment_masks_ = {}
         self.invariance_metrics_ = {}
         self.training_history_ = []
+
+    def reset_annealing(self):
+        """Reset annealing schedule."""
+        self.current_step_ = 0
+        self.anneal_progress_ = 0.0
+        if self.verbose:
+            tprint_info("🔄 IRM annealing schedule reset")
+
+    def set_anneal_progress(self, progress: float):
+        """
+        Set annealing progress manually.
+
+        Args:
+            progress: Progress value between 0.0 and 1.0
+        """
+        self.anneal_progress_ = np.clip(progress, 0.0, 1.0)
     
     def focal_loss(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
         """
@@ -312,20 +335,26 @@ class EnhancedIRM:
             # Focal loss (primary loss)
             focal_loss_value = self.focal_loss(predictions, targets)
             
+            # Apply annealing factor
+            anneal_factor = self.anneal_progress_
+
             # IRM penalty
             irm_penalty = self.compute_irm_penalty(predictions, targets, environment_masks)
             
             # Variance penalty
             variance_penalty = self.compute_variance_penalty(predictions, environment_masks)
             
-            # Total loss
-            total_loss = focal_loss_value + self.lambda_irm * irm_penalty + self.lambda_variance * variance_penalty
+            # Total loss with annealed penalties
+            total_loss = focal_loss_value + \
+                         (self.lambda_irm * anneal_factor * irm_penalty) + \
+                         (self.lambda_variance * anneal_factor * variance_penalty)
             
             loss_breakdown = {
                 'focal_loss': focal_loss_value,
                 'irm_penalty': irm_penalty,
                 'variance_penalty': variance_penalty,
-                'total_loss': total_loss
+                'total_loss': total_loss,
+                'anneal_progress': anneal_factor
             }
             
             return total_loss, loss_breakdown
@@ -474,8 +503,18 @@ class EnhancedIRM:
         Returns:
             Training function
         """
+        # Reset annealing at start of training
+        self.reset_annealing()
+
         def enhanced_irm_train_step(X_batch, y_batch, sample_weights=None):
             """Enhanced IRM training step."""
+            # Update annealing progress
+            self.current_step_ += 1
+            if self.anneal_steps > 0:
+                self.anneal_progress_ = min(1.0, self.current_step_ / self.anneal_steps)
+            else:
+                self.anneal_progress_ = 1.0
+
             # Convert to tensors
             X_tensor = torch.FloatTensor(X_batch)
             y_tensor = torch.FloatTensor(y_batch)
@@ -516,6 +555,7 @@ class EnhancedIRM:
             'focal_gamma': self.focal_gamma,
             'n_environments': self.n_environments,
             'min_env_samples': self.min_env_samples,
+            'anneal_steps': self.anneal_steps,
             'environments_created': len(self.environment_masks_),
             'has_invariance_metrics': self.invariance_metrics_ is not None
         }

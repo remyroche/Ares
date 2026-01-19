@@ -36,8 +36,10 @@ from sklearn.base import clone
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
+from sklearn.preprocessing import RobustScaler
 
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.training.steps.labeling.layer4_dual_chaser import StructuralRegimeGMM, train_dual_chaser_audit, generate_sizer_features_v2
 from src.utils.layer4_optimized import (
     compute_financial_weights_numba,
     extract_prob_features_numba,
@@ -172,6 +174,11 @@ class SimpleMultiModelRiskEngine:
         self.huber_scaler = None
         self.huber_feature_columns = None
         self.is_fitted = False
+
+        # Dual Chaser components
+        self.stable_chaser = None
+        self.aggressive_chaser = None
+        self.dual_chaser_scaler = None
     
     def _compute_financial_weights(self, abs_returns: pd.Series, volatility: pd.Series) -> pd.Series:
         # Use Numba-optimized implementation
@@ -274,6 +281,42 @@ class SimpleMultiModelRiskEngine:
         
         # Combine all features
         X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # --- Dual Chaser Audit & Feature Generation ---
+        # 1. Fit GMM to identify regimes (if data available)
+        try:
+            gmm = StructuralRegimeGMM(n_regimes=4)
+            # Use df if it has close/volume, else try market_features if they were raw
+            # Usually df passed to train has raw columns
+            env_indices, _ = gmm.fit_predict(df)
+
+            if env_indices and len(env_indices) >= 2:
+                tprint_info("🏃 Training Dual Chaser Audit (IRM vs Ridge)...")
+                # 2. Prepare Scaled Features for Chasers
+                self.dual_chaser_scaler = RobustScaler()
+                X_chaser_scaled = self.dual_chaser_scaler.fit_transform(X_full)
+
+                # 3. Train Chasers
+                # Note: y_true is binary in this flow, acting as regressor target (LPM)
+                self.stable_chaser, self.aggressive_chaser = train_dual_chaser_audit(
+                    X_chaser_scaled, y_true.values, env_indices
+                )
+
+                # 4. Generate Sizer Features
+                chaser_feats = generate_sizer_features_v2(
+                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled
+                )
+                chaser_feats.index = X_full.index
+
+                # 5. Add to X_full
+                X_full = pd.concat([X_full, chaser_feats], axis=1)
+                tprint_success(f"✅ Added {chaser_feats.shape[1]} Dual Chaser features")
+            else:
+                tprint_warning("⚠️ Dual Chaser: GMM failed or insufficient regimes. Skipping.")
+                self.stable_chaser = None
+        except Exception as e:
+            tprint_error(f"❌ Dual Chaser failed: {e}")
+            self.stable_chaser = None
 
         # Downcast to float32
         X_full = downcast_float(X_full)
@@ -451,6 +494,19 @@ class SimpleMultiModelRiskEngine:
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
         X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # --- Dual Chaser Feature Generation ---
+        if self.stable_chaser is not None and self.dual_chaser_scaler is not None:
+            try:
+                X_chaser_scaled = self.dual_chaser_scaler.transform(X_full)
+                chaser_feats = generate_sizer_features_v2(
+                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled
+                )
+                chaser_feats.index = X_full.index
+                X_full = pd.concat([X_full, chaser_feats], axis=1)
+            except Exception as e:
+                tprint_warning(f"⚠️ Dual Chaser prediction failed: {e}")
+                pass
 
         # Downcast to float32
         X_full = downcast_float(X_full)

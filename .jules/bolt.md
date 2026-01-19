@@ -17,3 +17,9 @@
 **Learning:** When replacing `log_returns.rolling(w).sum()` with `log_price.diff(w)` for performance (80x+ speedup), `diff(w)` yields 1 fewer valid sample at the beginning of the series compared to `rolling(w, min_periods=w)` if `log_returns` was 0-filled at the start. `diff` is strictly structural, while `rolling` includes the 0-filled start in its valid count.
 
 **Action:** Accept the minor data loss for substantial speedups, but verify downstream tests don't rely on the exact count of valid initial samples.
+
+## 2026-01-19 - Rolling Skew/Kurtosis Optimization
+
+**Learning:** Pandas `rolling().skew()` and `.kurt()` are reasonably optimized (likely Cython) and beat naive Numba window-recalculation ($O(N \cdot W)$). However, an online algorithm (Welford's / Sum of Powers) implemented in Numba ($O(N)$) beats Pandas by 4x (Skew) to 12x (Kurtosis).
+
+**Action:** For higher-moment rolling statistics, use Numba-optimized online algorithms, but be careful with numerical stability (ensure data is centered or small like returns) and NaN handling (online algorithms propagate NaNs aggressively). Passing 0-filled data is essential for robustness here.

@@ -3,7 +3,7 @@ import pandas as pd
 import logging
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
 from src.utils.orthogonal_numba import _numba_apply_fracdiff
-from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std
+from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt
 
 def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:
     """
@@ -156,9 +156,14 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     for w in [10, 20, 50]:
         result[f'rolling_momentum_{w}'] = log_price.diff(w)
 
-    # Skew/Kurtosis (Keep rolling for now, expensive to implement robustly in Numba without effort)
-    result['rolling_skew_50'] = log_returns.rolling(50, min_periods=50).skew()
-    result['rolling_kurtosis_50'] = log_returns.rolling(50, min_periods=50).kurt()
+    # Skew/Kurtosis (Optimized with Numba)
+    # Use clean log_returns (0-filled) to prevent NaN propagation in online algorithm
+    clean_log_ret = result['log_returns'].fillna(0).values.astype(np.float64)
+    skew_vals = _numba_rolling_skew(clean_log_ret, 50)
+    kurt_vals = _numba_rolling_kurt(clean_log_ret, 50)
+
+    result['rolling_skew_50'] = pd.Series(skew_vals, index=df.index)
+    result['rolling_kurtosis_50'] = pd.Series(kurt_vals, index=df.index)
 
     # Drawdown
     rolling_max = price.rolling(100, min_periods=1).max()

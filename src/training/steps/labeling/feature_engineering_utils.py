@@ -151,8 +151,10 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     result['rolling_volatility_50'] = pd.Series(vol_50_vals, index=df.index).ffill()
 
     # Rolling Momentum (using sum of log returns)
+    # Optimized: sum(log_returns) over window w is equivalent to log_price.diff(w).
+    # This vectorizes the operation (O(1) overhead vs O(W) rolling).
     for w in [10, 20, 50]:
-        result[f'rolling_momentum_{w}'] = log_returns.rolling(w, min_periods=w).sum()
+        result[f'rolling_momentum_{w}'] = log_price.diff(w)
 
     # Skew/Kurtosis (Keep rolling for now, expensive to implement robustly in Numba without effort)
     result['rolling_skew_50'] = log_returns.rolling(50, min_periods=50).skew()

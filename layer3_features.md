@@ -5,10 +5,35 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 ## 1. Base Features
 *Derived from Input `oof_df`*
 - **Base Model Predictions**: Columns specified in `base_model_cols` (e.g., `lgbm_cls`, `xgb_reg`, etc.).
+  - *Note: These may include outputs from Layer 2.5 "Chaser" models if provided in the input OOF dataframe.*
 - **Market Data**: `close`, `high`, `low`, `open`, `volume` (if available in input or integrated from market data).
 - **Regime Label**: `regime_label` (if present).
 
-## 2. Entropy Features
+## 2. Model Objectives & Calibration
+*Source: `src/training/steps/labeling/layer3/model_training.py` & `src/training/steps/labeling/irm_regime_pipeline.py`*
+
+Layer 3 uses a multi-model approach with post-hoc calibration to ensure probabilistic accuracy ("de Prado compliance").
+
+### Classification Tasks (Probabilities)
+- **LightGBM**:
+  - Training: `RobustFocalLoss` (Gamma Pos=1.0, Gamma Neg=2.5, Mix=1.0).
+  - Calibration: Isotonic Regression on validation set OOF predictions.
+- **XGBoost**:
+  - Training: `XGBFocalLoss` (Gamma Pos=1.0, Gamma Neg=2.5) or `logloss`.
+  - Calibration: Isotonic Regression on validation set OOF predictions.
+- **ExtraTrees**:
+  - Training: `log_loss`.
+  - Calibration: Isotonic Regression on OOB predictions.
+- **Linear Models (IRM)**:
+  - Training: `LogLoss` (Logistic Regression) with Invariant Risk Penalty and sample weights.
+
+### Regression Tasks (Alpha/Returns)
+- **LightGBM**: `huber` (Robust Regression).
+- **XGBoost**: `reg:pseudohubererror` (Pseudo-Huber Error).
+- **ExtraTrees**: `squared_error` (MSE).
+- **Linear Models (IRM)**: `ridge` or `elasticnet` (MSE with Regularization + IRM Penalty).
+
+## 3. Entropy Features
 *Source: `src/utils/entropy_bars.py` & `src/utils/entropy_optimized.py` (via `integrate_entropy_bars_into_layer3`)*
 
 ### OHLCV (Resampled to Entropy Bars)
@@ -35,7 +60,7 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 - `staleness_adjusted_drift`
 - `drift_proxy`
 
-## 3. Layer 3 Specific Features
+## 4. Layer 3 Specific Features
 *Source: `src/feature_generation/categories/layer3_specific_features.py` (via `generate_layer3_features`)*
 
 ### Regime Alignment
@@ -45,6 +70,7 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 - `regime_id_*` (One-Hot Encoded regime labels)
 
 ### Ensemble Disagreement Features
+*Calculated on `base_model_cols` (which may include Layer 2.5 outputs if present in input)*
 - `ens_prediction_dispersion`
 - `ens_confidence_gap`
 - `ens_uncertainty`
@@ -120,7 +146,7 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 ### Position Features
 - `price_position_in_range`
 
-## 4. Core Regime-Aware Features
+## 5. Core Regime-Aware Features
 *Source: `src/training/steps/labeling/layer3/core.py` (via `generate_regime_aware_features`)*
 - `regime_vol_z` (Robust Z-Score of Volatility)
 - `regime_prob_high_vol` (Sigmoid probability of High Volatility)
@@ -128,7 +154,7 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 - `meta_disagreement` (Standard deviation of base model probabilities, if available)
 - `meta_conservatism` (Min Prob / Mean Prob, if available)
 
-## 5. Optimized / Unified Features (Optional/Modular)
+## 6. Optimized / Unified Features (Optional/Modular)
 *Source: `src/training/steps/labeling/layer3/feature_engineering.py` (via `enhance_layer3_features_optimized`)*
 *Note: These are available in the modular Layer 3 architecture but may not be active in all pipeline configurations.*
 

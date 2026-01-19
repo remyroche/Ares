@@ -15,6 +15,7 @@ Key Features:
 6. Weak Huber Constraints: Applies weak monotonic/interaction constraints from Huber analysis.
 7. Strong Regularization: User-specified regularization parameters for robust training.
 8. Meta-Learner Ready: Outputs teacher baseline and chaser correction signals for stacking.
+9. De Prado Feature Selection: Reduces feature set and collinearity using MDI.
 """
 
 from __future__ import annotations
@@ -67,6 +68,7 @@ except ImportError:
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.fracdiff import FracDiffTransformer
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
+from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine
 
 # -----------------------------
 # Utilities
@@ -615,7 +617,7 @@ class Layer25Chaser:
         models_to_train: List[str] = None,
         # New parameters for weak constraints
         use_huber_constraints: bool = True,
-        constraint_tier: str = "weak",
+        constraint_tier: str = "stronger",
     ):
         self.mode = mode
         self.regime_split = regime_split
@@ -748,6 +750,39 @@ class Layer25Chaser:
         else:
             X_proc = X.copy()
 
+        # --- MDI Feature Selection (De Prado) ---
+        if self.verbose:
+            tprint_info("   🔍 Running De Prado MDI Feature Selection...")
+
+        try:
+            # Initialize selection engine
+            # We use moderate params to reduce feature set size and collinearity
+            selector = DePradoFeatureEngine(
+                n_estimators=500,
+                max_clusters=12,
+                random_state=42,
+                topk_freq_threshold=0.4, # Hardening
+                use_lgbm=LGBM_AVAILABLE,
+                is_regression=(self.mode == "regression")
+            )
+
+            # Run selection
+            # Note: DePrado engine takes X and y. It doesn't explicitly use weights,
+            # but usually it's fine for structure discovery.
+            selected_features = selector.run_selection(X_proc, y)
+
+            # Apply selection
+            n_orig = X_proc.shape[1]
+            X_proc = X_proc[selected_features]
+            n_new = X_proc.shape[1]
+
+            if self.verbose:
+                tprint_success(f"   ✅ Selected {n_new} features from {n_orig} (Reduction: {100*(1 - n_new/n_orig):.1f}%)")
+
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ De Prado Feature Selection failed: {e}. Using all features.")
+
         self.feature_names = list(X_proc.columns)
         X_np = X_proc.values.astype(np.float32)
         y_np = y.values
@@ -760,13 +795,13 @@ class Layer25Chaser:
         if self.use_huber_constraints and HUBER_AVAILABLE:
             try:
                 # Use weak tier constraints for chasers
-                huber_config = get_huber_tier_config("weak")
+                huber_config = get_huber_tier_config(self.constraint_tier)
                 huber_results = prepare_huber_teacher_outputs(
                     X_train=pd.DataFrame(X_np, columns=self.feature_names),
                     y_train=y_np,
                     sample_weight=w_np,
                     config=huber_config,
-                    tier="weak"
+                    tier=self.constraint_tier
                 )
                 monotone_constraints_weak = huber_results.get('monotonic_constraints', {})
                 interaction_constraints_weak = huber_results.get('interaction_constraints', [])
@@ -937,6 +972,20 @@ class Layer25Chaser:
             X_proc = self._engineer_features(X)
         else:
             X_proc = X.copy()
+
+        # Ensure we use the selected features from training
+        if hasattr(self, 'feature_names') and self.feature_names:
+            # Check if features are missing
+            missing = [f for f in self.feature_names if f not in X_proc.columns]
+            if missing:
+                # If we engineer features correctly, this shouldn't happen unless input X is different schema
+                # Just fill 0 for safety or raise warning
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ Missing {len(missing)} features in predict. Filling 0.")
+                for m in missing:
+                    X_proc[m] = 0.0
+
+            X_proc = X_proc[self.feature_names]
 
         X_np = X_proc.values.astype(np.float32)
         n_samples = len(X)

@@ -18,8 +18,8 @@ Usage:
 import pandas as pd
 import numpy as np
 import time
-from typing import List, Dict, Any, Optional, Tuple
-from sklearn.ensemble import ExtraTreesClassifier
+from typing import List, Dict, Any, Optional, Tuple, Union
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.cluster import FeatureAgglomeration, KMeans
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -67,7 +67,8 @@ class DePradoFeatureEngine:
         use_group_mdi: bool = False,
         # Hardening params
         max_cluster_size: int = 30,
-        topk_freq_threshold: float = 0.4  # Increased robustness
+        topk_freq_threshold: float = 0.4,  # Increased robustness
+        is_regression: Optional[bool] = None
     ):
         """
         Initialize De Prado Feature Engine.
@@ -92,6 +93,9 @@ class DePradoFeatureEngine:
         # Hardening
         self.max_cluster_size = max_cluster_size
         self.topk_freq_threshold = topk_freq_threshold
+
+        # Regression support
+        self.is_regression = is_regression
 
         # Defaults for LightGBM if used
         if self.use_lgbm:
@@ -394,7 +398,7 @@ class DePradoFeatureEngine:
         except Exception:
             return 0.0
     
-    def _get_tree_hierarchy(self, model: ExtraTreesClassifier, feature_names: List[str]) -> pd.Series:
+    def _get_tree_hierarchy(self, model: Union[ExtraTreesClassifier, ExtraTreesRegressor], feature_names: List[str]) -> pd.Series:
         """Calculates Mean First Split Depth."""
         depths = {name: [] for name in feature_names}
         max_depth_overall = 0
@@ -427,7 +431,7 @@ class DePradoFeatureEngine:
         
         return pd.Series(mean_depths)
     
-    def _compute_advanced_mdi(self, model: ExtraTreesClassifier, feature_names: List[str]) -> Dict[str, float]:
+    def _compute_advanced_mdi(self, model: Union[ExtraTreesClassifier, ExtraTreesRegressor], feature_names: List[str]) -> Dict[str, float]:
         """Compute Advanced MDI metrics."""
         gain_importances = model.feature_importances_
         cover_counts = np.zeros(len(feature_names))
@@ -516,6 +520,7 @@ class DePradoFeatureEngine:
     def _compute_lgbm_importance_cv(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
         """
         Compute MDI OOF, Stability, and OOF IC with strict leak prevention.
+        Handles both Classification and Regression.
         """
         if not LGBM_AVAILABLE:
             raise ImportError("LightGBM not available")
@@ -530,6 +535,14 @@ class DePradoFeatureEngine:
         # OOF Feature ICs: List of Dicts {feature: ic}
         fold_feature_ics = []
 
+        # Determine metric and objective
+        if self.is_regression:
+            metric = 'rmse'
+            objective = 'regression'
+        else:
+            metric = 'auc'
+            objective = 'binary'
+
         for fold, (train_idx, val_idx) in enumerate(cv.split(X)):
             X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
             X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
@@ -542,12 +555,16 @@ class DePradoFeatureEngine:
                 loadings = None
 
             # --- Train ---
-            model = lgb.LGBMClassifier(**self.lgbm_params)
+            if self.is_regression:
+                model = lgb.LGBMRegressor(**self.lgbm_params)
+            else:
+                model = lgb.LGBMClassifier(**self.lgbm_params)
+
             model.fit(
                 X_train_fold, y_train,
                 feature_name='auto',
                 categorical_feature='auto',
-                eval_metric='auc'
+                eval_metric=metric
             )
 
             # --- Importance ---
@@ -596,7 +613,9 @@ class DePradoFeatureEngine:
             fold_stats.append(fold_imp)
 
             # --- OOF Preds ---
-            if hasattr(model, "predict_proba"):
+            if self.is_regression:
+                preds = model.predict(X_val_fold)
+            elif hasattr(model, "predict_proba"):
                 preds = model.predict_proba(X_val_fold)[:, 1]
             else:
                 preds = model.predict(X_val_fold)
@@ -664,12 +683,22 @@ class DePradoFeatureEngine:
             h_X = hashlib.md5(hash_pandas_object(X, index=True).values.tobytes()).hexdigest()
             h_y = hashlib.md5(hash_pandas_object(y, index=True).values.tobytes()).hexdigest()
             config_str = f"{self.n_estimators}_{self.max_features}_{self.gain_weight}_{self.depth_weight}_{self.ic_weight}_{self.entropy_weight}_{use_entropy_as_king}"
-            config_str += f"_{self.stability_weight}_{self.use_lgbm}_{self.use_group_mdi}_{self.max_cluster_size}_{self.topk_freq_threshold}"
+            config_str += f"_{self.stability_weight}_{self.use_lgbm}_{self.use_group_mdi}_{self.max_cluster_size}_{self.topk_freq_threshold}_{self.is_regression}"
             return f"{h_X}_{h_y}_{config_str}"
         except Exception:
             return None
 
     def run_selection(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool = False) -> List[str]:
+        # Detect mode if not set
+        if self.is_regression is None:
+            # Check target type
+            if pd.api.types.is_float_dtype(y) and y.nunique() > 10:
+                self.is_regression = True
+                tprint_info("   ℹ️ Detected Regression target")
+            else:
+                self.is_regression = False
+                tprint_info("   ℹ️ Detected Classification target")
+
         # Cache Check
         cache_key = self._compute_input_hash(X, y, use_entropy_as_king)
         if cache_key and cache_key in self._CACHE:
@@ -700,15 +729,25 @@ class DePradoFeatureEngine:
 
         # 2. Train ExtraTrees for hierarchy/fallback
         tprint_info("🌳 Step 2: Training ExtraTrees...")
-        model = ExtraTreesClassifier(
-            n_estimators=self.n_estimators,
-            max_features=self.max_features,
-            min_samples_leaf=self.min_samples_leaf,
-            random_state=self.random_state,
-            n_jobs=-1,
-            bootstrap=False
-        )
-        if len(np.unique(y)) == 2: model.set_params(class_weight="balanced")
+        if self.is_regression:
+            model = ExtraTreesRegressor(
+                n_estimators=self.n_estimators,
+                max_features=self.max_features,
+                min_samples_leaf=self.min_samples_leaf,
+                random_state=self.random_state,
+                n_jobs=-1,
+                bootstrap=False
+            )
+        else:
+            model = ExtraTreesClassifier(
+                n_estimators=self.n_estimators,
+                max_features=self.max_features,
+                min_samples_leaf=self.min_samples_leaf,
+                random_state=self.random_state,
+                n_jobs=-1,
+                bootstrap=False
+            )
+            if len(np.unique(y)) == 2: model.set_params(class_weight="balanced")
         
         X_fit, y_fit = X, y
         if len(X) > 7000:
@@ -910,7 +949,8 @@ def de_prado_feature_selection(
     stability_weight: float = 0.0,
     use_group_mdi: bool = False,
     max_cluster_size: int = 30,
-    topk_freq_threshold: float = 0.4  # Updated default for robustness
+    topk_freq_threshold: float = 0.4,  # Updated default for robustness
+    is_regression: Optional[bool] = None
 ) -> Tuple[pd.DataFrame, DePradoFeatureEngine]:
     """
     Convenience function for De Prado feature selection.
@@ -925,7 +965,8 @@ def de_prado_feature_selection(
         stability_weight=stability_weight,
         use_group_mdi=use_group_mdi,
         max_cluster_size=max_cluster_size,
-        topk_freq_threshold=topk_freq_threshold
+        topk_freq_threshold=topk_freq_threshold,
+        is_regression=is_regression
     )
     
     selected_features = engine.run_selection(X, y)

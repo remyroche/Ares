@@ -44,6 +44,7 @@ from src.training.steps.labeling.layer4_dual_chaser import (
     train_dual_chaser_audit,
     generate_dual_chaser_features
 )
+from src.training.steps.labeling.layer2_5_prediction_averaging import average_layer25_predictions
 from src.utils.layer4_optimized import (
     compute_financial_weights_numba,
     extract_prob_features_numba,
@@ -285,6 +286,15 @@ class SimpleMultiModelRiskEngine:
         
         # Combine all features
         X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # --- Layer 2.5 Chaser Integration ---
+        # Average available chaser predictions (if any) and add to features
+        try:
+            chaser_avg_feats = average_layer25_predictions(df)
+            X_full = pd.concat([X_full, chaser_avg_feats], axis=1)
+            tprint_info(f"✅ Added {chaser_avg_feats.shape[1]} Layer 2.5 Chaser average features")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to add Layer 2.5 Chaser features: {e}")
 
         # --- Dual Chaser Audit & Feature Generation ---
         # 1. Fit GMM to identify regimes (if data available)
@@ -529,6 +539,13 @@ class SimpleMultiModelRiskEngine:
         entropy_feats = self._extract_entropy_features(df) if ENTROPY_BARS_AVAILABLE else pd.DataFrame(index=df.index)
         
         X_full = pd.concat([prob_feats, entropy_feats, market_features], axis=1).fillna(0)
+
+        # --- Layer 2.5 Chaser Integration ---
+        try:
+            chaser_avg_feats = average_layer25_predictions(df)
+            X_full = pd.concat([X_full, chaser_avg_feats], axis=1)
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to add Layer 2.5 Chaser features: {e}")
 
         # --- Dual Chaser Feature Generation ---
         if self.stable_chaser is not None and self.dual_chaser_scaler is not None:

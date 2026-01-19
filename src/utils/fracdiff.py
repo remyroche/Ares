@@ -445,6 +445,31 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
         self.step_size = step_size
         self.d_grid = np.arange(d_lower, d_upper + d_step, d_step)
         
+    def _check_window_stationarity(self, candidate_series_d: pd.Series, start_idx: int, end_idx: int) -> bool:
+        """
+        Check if a window of a series is stationary.
+
+        Args:
+            candidate_series_d: The pre-calculated fracdiff series for a specific d
+            start_idx: Start index of the window
+            end_idx: End index of the window
+
+        Returns:
+            True if stationary, False otherwise
+        """
+        # Get the window from pre-calculated series
+        sub_series = candidate_series_d.iloc[start_idx:end_idx].dropna()
+
+        if len(sub_series) < 20:
+            return False # Not enough data to determine stationarity
+
+        # Run ADF (fast)
+        try:
+            p_val = adfuller(sub_series, maxlag=self.max_lags, autolag='AIC')[1]
+            return p_val < self.adf_threshold
+        except:
+            return False
+
     def transform_adaptive(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
         """
         Apply adaptive fractional differencing.
@@ -468,7 +493,7 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
             # We use drop_na=False to keep indices aligned
             candidate_series[d] = self.fracdiff(series, d=d, drop_na=False)
             
-        # 2. Rolling ADF selection
+        # 2. Rolling ADF selection with Binary Search
         d_trajectory = []
         timestamps = []
         
@@ -481,26 +506,29 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
             start_idx = i - self.window_size
             end_idx = i
             
-            # Find minimum d that is stationary in this window
-            best_d = self.d_grid[-1] # Default to max
+            # Binary search for minimum d that is stationary in this window
+            # We are looking for the smallest index 'idx' in d_grid such that
+            # check_stationarity(d_grid[idx]) is True.
+
+            low = 0
+            high = len(self.d_grid) - 1
+            best_d_idx = high # Default to max if nothing found (conservative)
+            found_stationary = False
             
-            for d in self.d_grid:
-                # Get the window from pre-calculated series
-                sub_series = candidate_series[d].iloc[start_idx:end_idx].dropna()
+            while low <= high:
+                mid = (low + high) // 2
+                d = self.d_grid[mid]
                 
-                if len(sub_series) < 20: 
-                    continue
-                    
-                # Run ADF (fast)
-                try:
-                    p_val = adfuller(sub_series, maxlag=self.max_lags, autolag='AIC')[1]
-                    if p_val < self.adf_threshold:
-                        best_d = d
-                        break # Found minimal d
-                except:
-                    continue
+                if self._check_window_stationarity(candidate_series[d], start_idx, end_idx):
+                    # This d is stationary, try to find a smaller one
+                    best_d_idx = mid
+                    found_stationary = True
+                    high = mid - 1
+                else:
+                    # Not stationary, need higher d
+                    low = mid + 1
             
-            d_trajectory.append(best_d)
+            d_trajectory.append(self.d_grid[best_d_idx])
             timestamps.append(series.index[i])
             
         # 3. Interpolate d values
@@ -508,16 +536,16 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
         d_series = pd.Series(d_trajectory, index=timestamps).reindex(series.index)
         d_series = d_series.interpolate(method='linear').ffill().bfill()
         
-        # 4. Construct adaptive series
-        # Find nearest d index in grid
+        # 4. Construct adaptive series (Vectorized)
+        # Find nearest d index in grid for every point in time
         d_indices = np.abs(d_series.values[:, None] - self.d_grid[None, :]).argmin(axis=1)
-        nearest_ds = self.d_grid[d_indices]
         
-        # Extract values
-        adaptive_values = np.zeros(n)
-        for i in range(n):
-            d_val = nearest_ds[i]
-            # Lookup in candidate (approximate)
-            adaptive_values[i] = candidate_series[d_val].iloc[i]
+        # Stack candidates into a matrix: (n_samples, n_d_grid)
+        # We ensure the order matches self.d_grid
+        candidate_matrix = np.column_stack([candidate_series[d].values for d in self.d_grid])
+
+        # Use advanced indexing to select the correct value for each time step
+        # adaptive_values[i] = candidate_matrix[i, d_indices[i]]
+        adaptive_values = candidate_matrix[np.arange(n), d_indices]
             
         return pd.Series(adaptive_values, index=series.index), d_series

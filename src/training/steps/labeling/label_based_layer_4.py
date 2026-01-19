@@ -313,7 +313,13 @@ class SimpleMultiModelRiskEngine:
 
                 # 2. Prepare Scaled Features for Chasers
                 self.dual_chaser_scaler = RobustScaler()
-                X_chaser_scaled = self.dual_chaser_scaler.fit_transform(X_for_chaser)
+                X_chaser_scaled_np = self.dual_chaser_scaler.fit_transform(X_for_chaser)
+                # Ensure DataFrame for feature selection inside training
+                X_chaser_scaled = pd.DataFrame(
+                    X_chaser_scaled_np,
+                    index=X_for_chaser.index,
+                    columns=X_for_chaser.columns
+                )
 
                 # Construct simple CV splits for OOF generation
                 n_samples = len(X_full)
@@ -393,7 +399,7 @@ class SimpleMultiModelRiskEngine:
                         chaser_feats = temp_feats
 
                     # 5. Add to X_full
-                    X_full = pd.concat([X_full, chaser_feats], axis=1)
+                    X_full = pd.concat([X_full, chaser_feats], axis=1).fillna(0)
                     tprint_success(f"✅ Added {chaser_feats.shape[1]} Dual Chaser features (OOF)")
                 else:
                     tprint_warning("⚠️ Dual Chaser OOF generation failed.")
@@ -409,6 +415,7 @@ class SimpleMultiModelRiskEngine:
 
         # Downcast to float32
         X_full = downcast_float(X_full)
+        X_full = X_full.fillna(0)
 
         # Extract volatility for weighting
         if 'volatility' in market_features.columns:
@@ -599,17 +606,33 @@ class SimpleMultiModelRiskEngine:
                 X_for_chaser = X_full[chaser_cols]
 
                 if isinstance(X_for_chaser, pd.DataFrame):
+                    X_chaser_scaled_np = self.dual_chaser_scaler.transform(X_for_chaser)
                     X_chaser_scaled = pd.DataFrame(
-                        self.dual_chaser_scaler.transform(X_for_chaser),
+                        X_chaser_scaled_np,
                         columns=X_for_chaser.columns,
                         index=X_for_chaser.index
                     )
                 else:
                     X_chaser_scaled = self.dual_chaser_scaler.transform(X_for_chaser)
 
-                # Predict on test set using full models
-                p_stable = pd.Series(self.stable_chaser.predict(X_chaser_scaled.values), index=X_full.index)
-                p_agg = pd.Series(self.aggressive_chaser.predict(X_chaser_scaled.values), index=X_full.index)
+                # Predict on test set using full models with appropriate features
+                X_stable_in = X_chaser_scaled
+                X_agg_in = X_chaser_scaled
+
+                if hasattr(self.stable_chaser, 'selected_features_'):
+                    # Ensure alignment (if X_stable_in is DataFrame)
+                    if isinstance(X_stable_in, pd.DataFrame):
+                        X_stable_in = X_stable_in[self.stable_chaser.selected_features_]
+                    # If numpy, we hope indices match, but feature selection logic assumed DF.
+                    # Since we reconstructed DF above, it should work.
+
+                if hasattr(self.aggressive_chaser, 'selected_features_'):
+                    if isinstance(X_agg_in, pd.DataFrame):
+                        X_agg_in = X_agg_in[self.aggressive_chaser.selected_features_]
+
+                # Convert to values for predict
+                p_stable = pd.Series(self.stable_chaser.predict(X_stable_in.values), index=X_full.index)
+                p_agg = pd.Series(self.aggressive_chaser.predict(X_agg_in.values), index=X_full.index)
 
                 # Generate features (meta-health skipped or using placeholder as trade returns unknown for test)
                 chaser_feats = generate_dual_chaser_features(
@@ -620,7 +643,7 @@ class SimpleMultiModelRiskEngine:
                     gate_params=self.gate_params
                 )
 
-                X_full = pd.concat([X_full, chaser_feats], axis=1)
+                X_full = pd.concat([X_full, chaser_feats], axis=1).fillna(0)
             except Exception as e:
                 tprint_warning(f"⚠️ Dual Chaser prediction failed: {e}")
                 import traceback
@@ -629,6 +652,7 @@ class SimpleMultiModelRiskEngine:
 
         # Downcast to float32
         X_full = downcast_float(X_full)
+        X_full = X_full.fillna(0)
 
         if self.huber_feature_columns is not None:
             X_full = X_full.reindex(columns=self.huber_feature_columns, fill_value=0.0)

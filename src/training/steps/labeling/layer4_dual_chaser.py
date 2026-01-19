@@ -150,23 +150,83 @@ def train_dual_chaser_audit(X, y, env_indices, irm_lambda=15.0, alpha=0.1, rando
 
     return stable_chaser, aggressive_chaser
 
-def generate_sizer_features_v2(stable_chaser, agg_chaser, X):
-    # X should be scaled numpy array or DataFrame
+def generate_sizer_features_v2(stable_chaser, agg_chaser, X, df):
+    """
+    X: Scaled feature matrix used for predictions
+    df: Original OHLCV dataframe (to calculate liquidity and gravity)
+    """
+    # Handle X if it's DataFrame
     if isinstance(X, pd.DataFrame):
         X_val = X.values
         index = X.index
     else:
         X_val = X
-        index = None
+        index = df.index if df is not None else None
 
+    # Handle df columns - case insensitive map or assuming correct
+    # The snippet assumes 'volume', 'close', 'high', 'low' are present
+
+    # 1. Model Predictions
     p_stable = stable_chaser.predict(X_val)
     p_agg = agg_chaser.predict(X_val)
+    raw_direction = np.sign(p_stable + p_agg)
 
+    # 2. Consensus & Directional Gate
+    base_consensus = (p_stable * p_agg)
+    consensus_strength = np.where(raw_direction < 0, 0, base_consensus)
     spread = np.abs(p_stable - p_agg)
-    ratio = np.where(np.abs(p_agg) > 1e-9, p_stable / p_agg, 0.0)
+    # agreement = (np.sign(p_stable) == np.sign(p_agg)).astype(int) # Calculated but unused in original snippet?
 
-    df_out = pd.DataFrame({'chaser_spread': spread, 'chaser_ratio': ratio})
-    if index is not None:
-        df_out.index = index
+    # 3. Liquidity Valid (Volume-Price Divergence Proxy)
+    # Check if price move is backed by rising relative volume
+    # 1 if volume is expanding on a positive prediction, 0 if 'thin' move
+    if 'volume' in df.columns:
+        rel_vol = df['volume'] / (df['volume'].rolling(20).mean() + 1e-9)
+        liquidity_valid = ((rel_vol > 1.0) & (raw_direction > 0)).astype(int)
+    else:
+        liquidity_valid = np.zeros(len(df))
 
-    return df_out
+    # 4. Is Trending Modality (ADX Proxy / Hurst)
+    # Compares range to path length; if close to 1, move is highly directional
+    if 'close' in df.columns and 'high' in df.columns and 'low' in df.columns:
+        path_len = np.abs(df['close'].diff()).rolling(20).sum()
+        total_range = df['high'].rolling(20).max() - df['low'].rolling(20).min()
+        efficiency_ratio = total_range / (path_len + 1e-9)
+        is_trending_modality = (efficiency_ratio > 0.4).astype(int)
+    else:
+        is_trending_modality = np.zeros(len(df))
+
+    # 5. Anchor Alignment (150-bar Gravity)
+    # Does the prediction match the medium-term price location (Z-score)?
+    if 'close' in df.columns:
+        rolling_mean_150 = df['close'].rolling(150).mean()
+        rolling_std_150 = df['close'].rolling(150).std()
+        z_dist_150 = (df['close'] - rolling_mean_150) / (rolling_std_150 + 1e-9)
+        anchor_alignment = (np.sign(p_stable) == np.sign(z_dist_150)).astype(int)
+
+        # 6. Gravity Confirmation
+        # Is the 150-bar anchor itself moving in our predicted direction?
+        anchor_slope = rolling_mean_150.diff(10)
+        gravity_confirmation = (np.sign(p_stable) == np.sign(anchor_slope)).astype(int)
+    else:
+        anchor_alignment = np.zeros(len(df))
+        gravity_confirmation = np.zeros(len(df))
+
+    # 7. Confidence Score (Composite)
+    # Sum of binary validations.
+    confidence_score = (consensus_strength + liquidity_valid + anchor_alignment + gravity_confirmation + is_trending_modality)
+    confidence_score_v2 = (np.sqrt(np.abs(consensus_strength)) * (0.5 + 0.5 * liquidity_valid) * (0.5 + 0.5 * anchor_alignment) * (0.5 + 0.5 * gravity_confirmation))
+
+    data = {
+        'consensus_strength': consensus_strength,
+        'spread': spread,
+        'raw_direction': raw_direction,
+        'liquidity_valid': liquidity_valid,
+        'is_trending_modality': is_trending_modality,
+        'anchor_alignment': anchor_alignment,
+        'gravity_confirmation': gravity_confirmation,
+        'confidence_score': confidence_score,
+        'confidence_score_v2': confidence_score_v2
+    }
+
+    return pd.DataFrame(data, index=index if index is not None else df.index)

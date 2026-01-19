@@ -292,9 +292,14 @@ class SimpleMultiModelRiskEngine:
 
             if env_indices and len(env_indices) >= 2:
                 tprint_info("🏃 Training Dual Chaser Audit (IRM vs Ridge)...")
+
+                # Filter out performance features for Chasers to avoid leakage
+                chaser_cols = [c for c in X_full.columns if not c.startswith('perf_')]
+                X_for_chaser = X_full[chaser_cols]
+
                 # 2. Prepare Scaled Features for Chasers
                 self.dual_chaser_scaler = RobustScaler()
-                X_chaser_scaled = self.dual_chaser_scaler.fit_transform(X_full)
+                X_chaser_scaled = self.dual_chaser_scaler.fit_transform(X_for_chaser)
 
                 # 3. Train Chasers
                 # Note: y_true is binary in this flow, acting as regressor target (LPM)
@@ -304,7 +309,7 @@ class SimpleMultiModelRiskEngine:
 
                 # 4. Generate Sizer Features
                 chaser_feats = generate_sizer_features_v2(
-                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled
+                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled, df
                 )
                 chaser_feats.index = X_full.index
 
@@ -498,9 +503,13 @@ class SimpleMultiModelRiskEngine:
         # --- Dual Chaser Feature Generation ---
         if self.stable_chaser is not None and self.dual_chaser_scaler is not None:
             try:
-                X_chaser_scaled = self.dual_chaser_scaler.transform(X_full)
+                # Filter out performance features
+                chaser_cols = [c for c in X_full.columns if not c.startswith('perf_')]
+                X_for_chaser = X_full[chaser_cols]
+
+                X_chaser_scaled = self.dual_chaser_scaler.transform(X_for_chaser)
                 chaser_feats = generate_sizer_features_v2(
-                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled
+                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled, df
                 )
                 chaser_feats.index = X_full.index
                 X_full = pd.concat([X_full, chaser_feats], axis=1)

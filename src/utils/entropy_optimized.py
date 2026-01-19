@@ -95,20 +95,24 @@ def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
     return entropy / np.log(2)  # Convert to base-2
 
 
-@njit(fastmath=True, parallel=True)
+@njit(fastmath=True)
 def lempel_ziv_complexity_numba(values: np.ndarray, normalize: bool = True) -> np.ndarray:
     """
-    Calculate Lempel-Ziv complexity for each position in the series.
+    Calculate Lempel-Ziv (LZ76) complexity for each position in the series.
+
+    Implements O(N^2) single-pass Kaspar-Schuster algorithm (1987) which is
+    significantly faster and more memory efficient than the previous O(N^3)
+    implementation.
     
     Args:
-        values: Input time series
-        normalize: Whether to normalize by series length
+        values: Input time series (converted to binary internally)
+        normalize: Whether to normalize by sequence length
         
     Returns:
-        Array of LZ complexity values
+        Array of LZ complexity values (one for each prefix)
     """
     n = len(values)
-    complexity_values = np.zeros(n)
+    complexity_values = np.zeros(n, dtype=np.float64)
     
     if n == 0:
         return complexity_values
@@ -117,20 +121,68 @@ def lempel_ziv_complexity_numba(values: np.ndarray, normalize: bool = True) -> n
     median_val = np.median(values)
     binary_seq = (values > median_val).astype(np.int32)
     
-    for i in prange(1, n):
-        # Calculate LZ complexity for subsequence up to i
-        subseq = binary_seq[:i+1]
+    # Kaspar-Schuster Algorithm (1987)
+    # c: complexity counter (number of phrases)
+    # i: current index (start of new component)
+    # l: current component length
+
+    c = 1
+    i = 0
+    l = 1
+
+    # First element has complexity 1
+    complexity_values[0] = 1.0
+
+    while i + l <= n:
+        # Check if binary_seq[i : i+l] (target) appears in binary_seq[0 : i+l-1] (history)
+        # The history includes previous phrases and the current partial phrase minus one char.
+        # We search backwards for efficiency as matches are often recent.
         
-        # Count unique patterns (simplified LZ)
-        unique_patterns = 0
-        for j in range(len(subseq)):
-            for k in range(j+1, len(subseq)+1):
-                pattern = tuple(subseq[j:k].tolist())
-                unique_patterns += 1
+        found = False
+        target = binary_seq[i : i+l]
         
-        complexity = unique_patterns
-        complexity_values[i] = complexity / (i+1) if normalize else complexity
+        # Search backwards from i-1 down to 0
+        for p in range(i - 1, -1, -1):
+            match = True
+            for k in range(l):
+                if binary_seq[p + k] != target[k]:
+                    match = False
+                    break
+            if match:
+                found = True
+                break
+
+        if found:
+            # Found a match, can extend the current phrase.
+            # Complexity remains 'c' for the extended prefix.
+            if i + l - 1 < n:
+                complexity_values[i + l - 1] = c
+            l += 1
+        else:
+            # No match, this phrase is new.
+            # Complexity is 'c' at the end of this new phrase.
+            if i + l - 1 < n:
+                complexity_values[i + l - 1] = c
+
+            c += 1
+            i += l
+            l = 1
+
+    # Fill remaining gaps (if any) and normalize
+    # The loop sets complexity at specific points (end of phrases).
+    # We should fill the complexity for intermediate points.
+    # Logic: if we are building phrase 'c', the complexity is 'c'.
     
+    current_c = 1.0
+    for k in range(n):
+        if complexity_values[k] > 0:
+            current_c = complexity_values[k]
+        else:
+            complexity_values[k] = current_c
+
+        if normalize:
+            complexity_values[k] = complexity_values[k] / (k + 1)
+
     return complexity_values
 
 

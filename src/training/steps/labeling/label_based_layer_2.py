@@ -374,43 +374,47 @@ if CATBOOST_AVAILABLE_LOCAL:
 class IRM_LGBMClassifier(lgb.LGBMClassifier):
     """LightGBM Classifier with Invariant Risk Minimization."""
 
-    def __init__(self, irm_system=None, environment_masks=None, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, irm_system=None, environment_masks=None, random_state=None, **kwargs):
+        super().__init__(random_state=random_state, **kwargs)
         self.irm_system = irm_system
         self.environment_masks = environment_masks or {}
 
+    def _get_params_filtered(self, deep=True):
+        from sklearn.base import BaseEstimator
+        params = BaseEstimator.get_params(self, deep)
+        params.pop('irm_system', None)
+        params.pop('environment_masks', None)
+        return params
+
     def fit(self, X, y, sample_weight=None, **kwargs):
-        """Fit with IRM objective."""
-        if self.irm_system is None or not self.environment_masks:
-            # Fallback to standard training
-            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+        """Fit with IRM objective and robust parameter handling."""
+        # Set IRM objective if enabled
+        if self.irm_system and self.environment_masks:
+             self.set_params(objective=self._irm_focal_objective)
 
+        # Patch get_params to exclude custom objects from LightGBM backend
+        original_get_params = self.get_params
+        self.get_params = self._get_params_filtered
         try:
-            # Create IRM training function
-            train_step = self.irm_system.create_enhanced_irm_trainer(
-                model=self,
-                optimizer=None,  # LightGBM handles optimization internally
-                environment_masks=self.environment_masks
-            )
-
-            # Convert to tensors for IRM
-            X_tensor = torch.FloatTensor(X.values if hasattr(X, 'values') else X)
-            y_tensor = torch.FloatTensor(y)
-
-            if sample_weight is not None:
-                w_tensor = torch.FloatTensor(sample_weight)
-            else:
-                w_tensor = None
-
-            # Run IRM training (simplified - would need proper integration)
-            # For now, use standard training with IRM-aware objective
-            self.objective = self._irm_focal_objective
-
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+        finally:
+            self.get_params = original_get_params
 
-        except Exception as e:
-            tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
-            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+    def predict(self, X, **kwargs):
+        original_get_params = self.get_params
+        self.get_params = self._get_params_filtered
+        try:
+            return super().predict(X, **kwargs)
+        finally:
+            self.get_params = original_get_params
+
+    def predict_proba(self, X, **kwargs):
+        original_get_params = self.get_params
+        self.get_params = self._get_params_filtered
+        try:
+            return super().predict_proba(X, **kwargs)
+        finally:
+            self.get_params = original_get_params
 
     def _irm_focal_objective(self, preds, train_data):
         """IRM-aware focal loss objective."""
@@ -448,9 +452,41 @@ class IRM_XGBClassifier(XGBClassifier):
         self.environment_masks = environment_masks or {}
 
     def fit(self, X, y, sample_weight=None, **kwargs):
-        """Fit with IRM objective."""
+        """Fit with IRM objective and dynamic constraint adaptation."""
+
+        # Adapt constraints to actual features (handling pruned features)
+        if hasattr(self, 'monotone_constraints') and self.monotone_constraints:
+            constraints = self.monotone_constraints
+            if isinstance(constraints, dict):
+                # Map dict {col: val} to tuple matching X columns
+                new_constraints = []
+                for col in X.columns:
+                    new_constraints.append(constraints.get(col, 0))
+                self.monotone_constraints = tuple(new_constraints)
+                tprint_info(f"   🔧 Adapted monotonic constraints for {len(X.columns)} features")
+            elif isinstance(constraints, (list, tuple)):
+                # If tuple length mismatches, we can't easily fix unless we assume order.
+                # Warning and clear constraints is safer than crashing.
+                if len(constraints) != X.shape[1]:
+                    tprint_warning(f"   ⚠️ Mismatch in monotone_constraints ({len(constraints)}) vs features ({X.shape[1]}). Disabling constraints.")
+                    self.monotone_constraints = None
+
+        if hasattr(self, 'interaction_constraints') and self.interaction_constraints:
+             # Prune interaction constraints (list of lists of features)
+             valid_features = set(X.columns)
+             new_constraints = []
+             if isinstance(self.interaction_constraints, list):
+                 for group in self.interaction_constraints:
+                     valid_group = [f for f in group if f in valid_features]
+                     if len(valid_group) >= 2:
+                         new_constraints.append(valid_group)
+
+                 if len(new_constraints) < len(self.interaction_constraints):
+                     tprint_info(f"   🔧 Pruned interaction constraints: {len(self.interaction_constraints)} -> {len(new_constraints)}")
+                 self.interaction_constraints = new_constraints
+
+        # Standard or IRM training
         if self.irm_system is None or not self.environment_masks:
-            # Fallback to standard training
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         try:
@@ -7524,9 +7560,9 @@ class LabelBasedLayer2(BaseStep):
         # Params: num_parallel_tree 7, colsample_bynode 0.4, subsample 0.6,
         # reg_lambda 50, min_child_weight 10, gamma 1.1, learning_rate 0.03
         if XGBClassifier is not None:
-            # Prepare constraints for XGBoost (tuple/list of constraints in feature order)
-            # XGB expects constraints as tuple `(1, 0, -1, ...)` corresponding to feature columns
-            xgb_constraints = tuple(constraints_dict.get(col, 0) for col in X_train.columns)
+            # Prepare constraints for XGBoost
+            # Pass DICT to IRM wrapper so it can adapt to pruned features in fit()
+            xgb_constraints = constraints_dict
 
             candidates.append({
                 'name': 'XGB_IRM',

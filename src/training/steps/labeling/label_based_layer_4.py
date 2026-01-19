@@ -42,7 +42,8 @@ from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.training.steps.labeling.layer4_dual_chaser import (
     StructuralRegimeGMM,
     train_dual_chaser_audit,
-    generate_dual_chaser_features
+    generate_dual_chaser_features,
+    tune_gate_params_grid
 )
 from src.training.steps.labeling.layer2_5_prediction_averaging import average_layer25_predictions
 from src.utils.layer4_optimized import (
@@ -184,6 +185,7 @@ class SimpleMultiModelRiskEngine:
         self.stable_chaser = None
         self.aggressive_chaser = None
         self.dual_chaser_scaler = None
+        self.gate_params = None
     
     def _compute_financial_weights(self, abs_returns: pd.Series, volatility: pd.Series) -> pd.Series:
         # Use Numba-optimized implementation
@@ -341,12 +343,54 @@ class SimpleMultiModelRiskEngine:
                     # Prepare trade_returns proxy for meta-health features
                     trade_ret_proxy = (2 * y_true - 1) * abs_returns
 
-                    chaser_feats = generate_dual_chaser_features(
+                    # Initial feature generation with default params
+                    temp_feats = generate_dual_chaser_features(
                         df=df,
                         p_stable=oof_stable,
                         p_agg=oof_agg,
                         trade_returns=trade_ret_proxy
                     )
+
+                    # 4b. Tune Gate Parameters
+                    tprint_info("🔧 Tuning Orchestrator Gate Parameters...")
+
+                    # Split feats into core and structural for tuning
+                    # Columns are known from build_* functions in layer4_dual_chaser
+                    core_cols = ["cos_sim", "raw_direction", "consensus_strength_alt"]
+                    struct_cols = ["ker_fast", "ker_slow", "liquidity_score", "anchor_extreme"]
+
+                    # Ensure structural columns are present (some might be missing if dependencies failed)
+                    # We rebuild structural features temporarily to ensure alignment for tuning if needed,
+                    # but temp_feats already contains everything combined.
+
+                    # Check if columns exist
+                    cols_present = [c for c in core_cols + struct_cols if c in temp_feats.columns]
+                    if len(cols_present) == len(core_cols) + len(struct_cols):
+
+                        best_gate_params, report = tune_gate_params_grid(
+                            core=temp_feats[core_cols],
+                            structural=temp_feats[struct_cols],
+                            long_only=True
+                        )
+
+                        if best_gate_params:
+                            self.gate_params = best_gate_params
+                            tprint_success(f"✅ Tuned Gate Params: {best_gate_params}")
+
+                            # Regenerate with optimized params
+                            chaser_feats = generate_dual_chaser_features(
+                                df=df,
+                                p_stable=oof_stable,
+                                p_agg=oof_agg,
+                                trade_returns=trade_ret_proxy,
+                                gate_params=self.gate_params
+                            )
+                        else:
+                            tprint_warning("⚠️ Gate tuning failed constraints. Using defaults.")
+                            chaser_feats = temp_feats
+                    else:
+                        tprint_warning(f"⚠️ Missing columns for gate tuning: {set(core_cols+struct_cols) - set(temp_feats.columns)}. Using defaults.")
+                        chaser_feats = temp_feats
 
                     # 5. Add to X_full
                     X_full = pd.concat([X_full, chaser_feats], axis=1)
@@ -572,7 +616,8 @@ class SimpleMultiModelRiskEngine:
                     df=df,
                     p_stable=p_stable,
                     p_agg=p_agg,
-                    trade_returns=None
+                    trade_returns=None,
+                    gate_params=self.gate_params
                 )
 
                 X_full = pd.concat([X_full, chaser_feats], axis=1)
@@ -878,9 +923,47 @@ class ModelPerformanceFeatures:
         if pred_col not in df.columns or target_col not in df.columns:
             return pd.DataFrame(index=df.index)
 
-        # Removed current_drawdown, recent_sharpe, hit_rate features as requested.
-        # Returning empty DataFrame with correct index to minimize impact on downstream concatenation
-        return pd.DataFrame(index=df.index)
+        preds = df[pred_col]
+        targets = df[target_col]
+
+        # 1. Skill Feature Components
+        pred_dir = np.sign(preds - 0.5)
+        strat_ret = pred_dir * targets
+        hits = ((pred_dir * np.sign(targets)) > 0).astype(float)
+        rolling_ic = preds.rolling(window=self.skill_window).corr(targets).fillna(0)
+
+        # Apply Embargo
+        strat_ret_shifted = strat_ret.shift(self.skill_embargo)
+        hits_shifted = hits.shift(self.skill_embargo)
+        rolling_ic_shifted = rolling_ic.shift(self.skill_embargo)
+
+        # Smooth
+        ewma_ret = strat_ret_shifted.ewm(span=self.skill_window, adjust=False).mean()
+        ewma_hit = hits_shifted.ewm(span=self.skill_window, adjust=False).mean()
+        ewma_ic = rolling_ic_shifted.ewm(span=self.skill_window, adjust=False).mean()
+
+        # Skill Feature
+        skill_raw = ewma_ret * ewma_hit * ewma_ic
+        skill_score = np.tanh(skill_raw * 100.0)
+
+        # 2. Risk-off Pressure Components
+        cum_ret = strat_ret.cumsum().fillna(0)
+        high_water_mark = cum_ret.expanding().max()
+        drawdown = high_water_mark - cum_ret
+        residual = np.abs(targets)
+
+        drawdown_shifted = drawdown.shift(self.risk_embargo)
+        residual_shifted = residual.shift(self.risk_embargo)
+
+        dd_state = np.tanh(drawdown_shifted / self.dd_scaling)
+        ewma_resid = residual_shifted.ewm(span=self.risk_window, adjust=False).mean()
+        risk_off_pressure = dd_state * ewma_resid
+
+        features = pd.DataFrame(index=df.index)
+        features['perf_skill_score'] = skill_score.fillna(0)
+        features['perf_risk_off_pressure'] = risk_off_pressure.fillna(0)
+
+        return features
 
 
 def train_layer4_simple_multimodel(

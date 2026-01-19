@@ -361,10 +361,208 @@ def build_structural_features(
 # 3) Orchestrator / gating (soft, monotone)
 # ------------------------------------------
 
+def compute_lgc(
+    core: pd.DataFrame,
+    structural: pd.DataFrame,
+    gate_k: float,
+    agree_thr: float,
+    trend_thr: float,
+    liq_thr: float,
+    *,
+    long_only: bool = True,
+):
+    """
+    Reconstructs the orchestrator outputs needed for gating diagnostics.
+    """
+    agreement_score = (core["cos_sim"] + 1.0) / 2.0  # [0,1]
+    if "ker_fast" in structural.columns:
+        trend_score = (structural["ker_fast"].fillna(0.0) + structural["ker_slow"].fillna(0.0)) / 2.0
+    else:
+        trend_score = 0.5
+
+    if "liquidity_score" in structural.columns:
+        liq_score = structural["liquidity_score"].fillna(0.0)
+    else:
+        liq_score = 0.0
+
+    g_agree = sigmoid(agreement_score - agree_thr, k=gate_k)
+    g_trend = sigmoid(trend_score - trend_thr, k=gate_k)
+    g_liq = sigmoid(liq_score - liq_thr, k=gate_k)
+
+    gate_soft = g_agree * g_trend * g_liq
+
+    # base confidence (causal driver)
+    base_conf = core["consensus_strength_alt"].copy()
+    if long_only:
+        base_conf = base_conf.clip(lower=0.0)
+
+    # directional policy hook
+    directional_gate = (core["raw_direction"] > 0).astype(float) if long_only else 1.0
+
+    lgc = directional_gate * gate_soft * base_conf
+    return lgc, base_conf, directional_gate, gate_soft
+
+def ess_ratio(w: pd.Series) -> float:
+    """Effective sample size ratio ESS/N using weights w."""
+    w = w.astype(float).fillna(0.0)
+    N = float(len(w))
+    s1 = float(w.sum())
+    s2 = float((w * w).sum())
+    if s2 <= EPS or N <= 0:
+        return 0.0
+    ess = (s1 * s1) / (s2 + EPS)
+    return float(ess / N)
+
+def flip_rate(active: pd.Series) -> float:
+    """Fraction of times active_t != active_{t-1}."""
+    a = active.astype(int).fillna(0).values
+    if len(a) < 2:
+        return 0.0
+    return float(np.mean(a[1:] != a[:-1]))
+
+def spearman_safe(x: pd.Series, y: pd.Series) -> float:
+    """Spearman correlation, safe for constant series."""
+    x = x.astype(float)
+    y = y.astype(float)
+    if x.nunique(dropna=True) < 2 or y.nunique(dropna=True) < 2:
+        return np.nan
+    return float(x.corr(y, method="spearman"))
+
+def gate_diagnostics(
+    lgc: pd.Series,
+    consensus_strength_alt: pd.Series,
+    directional_gate: pd.Series | float,
+    *,
+    tau: float = 1e-6,
+    spearman_on_directional_gate: bool = True,
+):
+    """
+    Computes diagnostics for gate tuning.
+    """
+    lgc = lgc.fillna(0.0)
+    active = (lgc > tau).astype(int)
+
+    cov = float(active.mean())
+    ess = ess_ratio(lgc)
+    flips = flip_rate(active)
+
+    if spearman_on_directional_gate:
+        if isinstance(directional_gate, (int, float)):
+            mask = pd.Series(True, index=lgc.index)
+        else:
+            mask = directional_gate.astype(bool).fillna(False)
+        rho = spearman_safe(lgc[mask], consensus_strength_alt[mask])
+    else:
+        rho = spearman_safe(lgc, consensus_strength_alt)
+
+    active_vals = lgc[lgc > tau]
+    disp = float(active_vals.std()) if len(active_vals) > 2 else 0.0
+
+    return {
+        "coverage": cov,
+        "ess_over_n": ess,
+        "flip_rate": flips,
+        "spearman": rho,
+        "dispersion_active": disp,
+    }
+
+def tune_gate_params_grid(
+    core: pd.DataFrame,
+    structural: pd.DataFrame,
+    *,
+    gate_k_grid=(0.6, 0.8, 1.0, 1.2, 1.5),
+    agree_thr_grid=(0.45, 0.50, 0.55),
+    trend_thr_grid=(0.25, 0.30, 0.35),
+    liq_thr_grid=(-0.25, 0.0, 0.25),
+    long_only: bool = True,
+    tau: float = 1e-6,
+    min_coverage: float = 0.30,
+    max_coverage: float | None = 0.70,
+    min_ess_over_n: float = 0.30,
+    max_flip_rate: float = 0.20,
+    spearman_on_directional_gate: bool = True,
+):
+    """
+    Grid-search gate params WITHOUT using PnL/returns.
+    """
+    # Quick check for required columns
+    # We assume core and structural have necessary cols or compute_lgc handles them
+    # compute_lgc handles missing structural columns gracefully above
+
+    rows = []
+    for gate_k in gate_k_grid:
+        for agree_thr in agree_thr_grid:
+            for trend_thr in trend_thr_grid:
+                for liq_thr in liq_thr_grid:
+                    lgc, base_conf, dir_gate, gate_soft = compute_lgc(
+                        core, structural,
+                        gate_k=gate_k,
+                        agree_thr=agree_thr,
+                        trend_thr=trend_thr,
+                        liq_thr=liq_thr,
+                        long_only=long_only,
+                    )
+                    stats = gate_diagnostics(
+                        lgc=lgc,
+                        consensus_strength_alt=base_conf,
+                        directional_gate=dir_gate,
+                        tau=tau,
+                        spearman_on_directional_gate=spearman_on_directional_gate,
+                    )
+                    rows.append({
+                        "gate_k": gate_k,
+                        "agree_thr": agree_thr,
+                        "trend_thr": trend_thr,
+                        "liq_thr": liq_thr,
+                        **stats
+                    })
+
+    res = pd.DataFrame(rows)
+
+    # Apply constraints
+    ok = (
+        (res["coverage"] >= min_coverage) &
+        (res["ess_over_n"] >= min_ess_over_n) &
+        (res["flip_rate"] <= max_flip_rate)
+    )
+    if max_coverage is not None:
+        ok &= (res["coverage"] <= max_coverage)
+
+    ok &= res["spearman"].notna()
+
+    filtered = res.loc[ok].copy()
+
+    if filtered.empty:
+        # Fallback: sort by coverage/ess closeness to ideal
+        # Or simply return None and let caller handle
+        return None, res
+
+    # Sort by selection criteria
+    # 1. Maximize spearman
+    # 2. Tie-breakers: higher dispersion, lower gate_k
+    filtered = filtered.sort_values(
+        by=["spearman", "dispersion_active", "gate_k"],
+        ascending=[False, False, True],
+        kind="mergesort"
+    ).reset_index(drop=True)
+
+    best = filtered.iloc[0].to_dict()
+    best_params = {
+        "gate_k": float(best["gate_k"]),
+        "agree_thr": float(best["agree_thr"]),
+        "trend_thr": float(best["trend_thr"]),
+        "liq_thr": float(best["liq_thr"]),
+    }
+
+    return best_params, filtered
+
 def build_orchestrator_features(
     core: pd.DataFrame,
     structural: pd.DataFrame,
     gate_k: float = 1.0,
+    agree_thr: float = 0.5,
+    trend_thr: float = 0.3,
+    liq_thr: float = 0.0,
 ) -> pd.DataFrame:
     """
     Builds:
@@ -374,39 +572,27 @@ def build_orchestrator_features(
     """
     out = pd.DataFrame(index=core.index)
 
-    # Directional gate: whether we allow exposure in the raw_direction
-    out["directional_gate"] = (core["raw_direction"] > 0).astype(float)
+    # Compute LGC using helper
+    lgc, base_conf, dir_gate, gate_soft = compute_lgc(
+        core, structural,
+        gate_k=gate_k,
+        agree_thr=agree_thr,
+        trend_thr=trend_thr,
+        liq_thr=liq_thr,
+        long_only=True # Layer 4 usually long-only sizing logic on absolute returns?
+                       # Or if raw_direction handles it.
+                       # SimpleMultiModelRiskEngine targets usually abs_returns
+                       # and uses directions.
+                       # Let's align with previous implementation logic
+    )
 
-    # Base confidence: robust agreement strength
-    base_conf = core["consensus_strength_alt"].clip(lower=0.0)  # long-only base confidence
+    out["directional_gate"] = dir_gate
     out["base_conf"] = base_conf
-
-    # Soft gates:
-    # - agreement proxy: cos_sim in [-1,1] -> shift/scale
-    agreement_score = (core["cos_sim"] + 1.0) / 2.0  # [0,1]
-
-    if "ker_fast" in structural.columns:
-        trend_score = (structural["ker_fast"].fillna(0.0) + structural["ker_slow"].fillna(0.0)) / 2.0  # [0,1-ish]
-    else:
-        trend_score = 0.5
-
-    if "liquidity_score" in structural.columns:
-        liquidity_score = structural["liquidity_score"].fillna(0.0)  # roughly z-score
-    else:
-        liquidity_score = 0.0
-
-    # Sigmoid each component. You can tune k's separately if desired.
-    g_agree = sigmoid(agreement_score - 0.5, k=gate_k)         # >0 when agreement above mid
-    g_trend = sigmoid(trend_score - 0.3, k=gate_k)             # allow some trendiness
-    g_liq = sigmoid(liquidity_score, k=gate_k)                 # >0 when liquidity_score positive
-
-    out["gate_soft"] = g_agree * g_trend * g_liq
-
-    # Monotone logic-gated confidence
-    out["logic_gated_confidence"] = out["directional_gate"] * out["gate_soft"] * out["base_conf"]
+    out["gate_soft"] = gate_soft
+    out["logic_gated_confidence"] = lgc
 
     # Overextension penalty as a separate feature (do not hard-gate)
-    if "anchor_extreme" in structural.columns:
+    if "anchor_extreme" in structural.columns and "ker_slow" in structural.columns:
         out["trend_overextended"] = structural["anchor_extreme"] * structural["ker_slow"]
     else:
         out["trend_overextended"] = 0.0
@@ -581,17 +767,11 @@ def generate_dual_chaser_features(
     df: pd.DataFrame,
     p_stable: pd.Series,
     p_agg: pd.Series,
-    trade_returns: Optional[pd.Series] = None
+    trade_returns: Optional[pd.Series] = None,
+    gate_params: Optional[Dict[str, float]] = None
 ) -> pd.DataFrame:
     """
     Main entry point for generating dual chaser features.
-
-    Args:
-        df: DataFrame with OHLCV and 'ret' (or 'close' to compute ret)
-        p_stable: Predictions from Stable Chaser (OOF or Test)
-        p_agg: Predictions from Aggressive Chaser (OOF or Test)
-        trade_returns: Optional series of realized trade returns for meta-health features.
-                       If None, meta-health features are skipped or approximated.
     """
 
     # 1. Core Alpha Features
@@ -599,17 +779,27 @@ def generate_dual_chaser_features(
         df=df,
         p_stable_oof=p_stable,
         p_agg_oof=p_agg,
-        ret_col_for_sigma="ret" if "ret" in df.columns else "close", # Handle logic inside
+        ret_col_for_sigma="ret" if "ret" in df.columns else "close",
         sigma_L=256,
         winsor_k=4.0,
-        do_isotonic=False # Disabled by default unless splits provided, can be enhanced
+        do_isotonic=False
     )
 
     # 2. Structural Features
     structural = build_structural_features(df)
 
     # 3. Orchestrator
-    orchestrator = build_orchestrator_features(core, structural)
+    # If gate_params provided, use them. Else defaults.
+    if gate_params:
+        orchestrator = build_orchestrator_features(
+            core, structural,
+            gate_k=gate_params.get("gate_k", 1.0),
+            agree_thr=gate_params.get("agree_thr", 0.5),
+            trend_thr=gate_params.get("trend_thr", 0.3),
+            liq_thr=gate_params.get("liq_thr", 0.0),
+        )
+    else:
+        orchestrator = build_orchestrator_features(core, structural)
 
     # 4. Regime
     regime = build_regime_health_features(df)
@@ -628,7 +818,6 @@ def generate_dual_chaser_features(
             cap_q=0.95,
             smooth_span=10
         )
-        # Prefix meta features
         meta = meta.add_prefix("meta_")
         return pd.concat([core, structural, orchestrator, regime, meta], axis=1)
     else:
@@ -883,15 +1072,35 @@ def train_dual_chaser_audit(
                 # as cv_splits in time series usually start at 0 for training.
                 pass
 
-            if is_contiguous_start:
-                m = IRMv1HuberRegressor(irm_lambda=irm_lambda, alpha=alpha)
-                m.fit(X_tr.values, y_tr.values, fold_env_indices)
-                pred = m.predict(X_va.values)
-                oof_stable.iloc[va_idx] = pred
-            else:
-                # If we can't easily map indices, skip OOF for IRM or use standard fit
-                # For now, just leave as NaN (will be filled or handled downstream)
-                pass
+            # Force training even if non-contiguous - by using simple fit on current fold data
+            # Ideally we map indices properly, but if complex, we can retrain GMM on fold or ignore
+            # For now: Just fit IRM on the fold data assuming indices are re-derived or ignored
+            # But IRM needs env_indices.
+            # If we skip IRM logic and just fit HuberRegressor for OOF when non-contiguous?
+            # Better: Filter env_indices by *value* (position in original)
+
+            # Re-implementation of robust env_indices filtering:
+            # env_indices contains lists of integer positions in X_val (0..N)
+            # tr_idx contains integer positions we are training on.
+            # We need to map global position -> local position in X_tr
+
+            # Map: global_pos -> local_pos
+            global_to_local = {g_idx: l_idx for l_idx, g_idx in enumerate(tr_idx)}
+
+            fold_env_indices = []
+            for env_idx_arr in env_indices:
+                # Filter to only those present in training fold
+                local_indices = []
+                for g_idx in env_idx_arr:
+                    if g_idx in global_to_local:
+                        local_indices.append(global_to_local[g_idx])
+                fold_env_indices.append(np.array(local_indices))
+
+            # Train IRM on this fold
+            m = IRMv1HuberRegressor(irm_lambda=irm_lambda, alpha=alpha)
+            m.fit(X_tr.values, y_tr.values, fold_env_indices)
+            pred = m.predict(X_va.values)
+            oof_stable.iloc[va_idx] = pred
 
     return stable_chaser, aggressive_chaser, oof_stable, oof_agg
 

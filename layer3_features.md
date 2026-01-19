@@ -44,6 +44,22 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 - `regime_prob_Chaos`
 - `regime_id_*` (One-Hot Encoded regime labels)
 
+### Ensemble Disagreement Features
+- `ens_prediction_dispersion`
+- `ens_confidence_gap`
+- `ens_uncertainty`
+- `ens_prediction_range`
+- `ens_avg_divergence`
+- `ens_max_confidence`
+- `ens_disagreement_rate`
+- `ens_snr_internal`
+- `ens_snr_consensus`
+- `ens_ensemble_prob`
+
+### Volatility Surface Features
+- `volatility_ratio` (Vol 20 / Vol 100) - *Coiled Spring Indicator*
+- `volatility_diff_norm` ((Vol 20 - Vol 100) / Vol 100)
+
 ### Gate Regime Features (Price/Returns Based)
 - `slope_short`
 - `adx_proxy`
@@ -81,6 +97,11 @@ This document lists the exhaustive set of features used in Layer 3 (`src/trainin
 - `momentum_agreement_abs`
 - `momentum_weighted_agreement`
 - `trend_consistency_12`
+
+### Anchor and Drift Features (via `_compute_anchor_and_drift_features`)
+- `anchor_regime_*`
+- `drift_*`
+*(Specific columns depend on dynamic router output)*
 
 ### Price-Denoised Features (if `kalman_price` available)
 - `market_stretch`

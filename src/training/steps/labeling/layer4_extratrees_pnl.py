@@ -38,6 +38,8 @@ from src.training.steps.labeling.conditional_mutual_information import Condition
 from src.training.steps.labeling.contextual_residual_features import ContextualResidualFeatureGenerator, generate_contextual_residual_features
 from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
 from src.training.steps.labeling.constraint_utils import compute_ridge_monotonic_constraints
+# Import Huber teacher for enhanced three-stage selection
+from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 
 # Import optimized Numba functions
 from src.utils.layer4_optimized import rolling_sadf_score_numba, rolling_cusum_scores_numba
@@ -569,9 +571,12 @@ def train_layer4_extratrees(
         
     enable_advanced_selection = config.get("enable_advanced_feature_selection", True) if config else True
     
+    # Initialize Huber outputs for three-stage selection
+    huber_outputs = {}
+    
     if enable_advanced_selection and len(available_features) > 15:
         advanced_start = time.time()
-        tprint_info("🔍 Running Advanced Feature Selection (CMI + De Prado) for Layer 4...")
+        tprint_info("🔍 Running Advanced Feature Selection (CMI + De Prado + Huber) for Layer 4...")
         tprint_info(f"📊 Layer 4: Starting with {len(available_features)} features")
         
         try:
@@ -618,7 +623,7 @@ def train_layer4_extratrees(
             if len(cmi_features) > 5:  # Only run if enough features remain
                 tprint_info(f"   Step 2: De Prado Engine on {len(cmi_features)} features...")
                 
-                X_final, de_prado_engine = de_prado_feature_selection(
+                X_deprado, de_prado_engine = de_prado_feature_selection(
                     X_cmi, y_raw,  # Use binary target directly
                     n_estimators=300,  # Reduced for speed in Layer 4
                     max_clusters=min(8, len(cmi_features)//3),  # Fewer clusters for Layer 4
@@ -626,38 +631,87 @@ def train_layer4_extratrees(
                     depth_weight=0.4
                 )
                 
-                final_features = X_final.columns.tolist()
-                tprint_success(f"   De Prado selected {len(final_features)}/{len(cmi_features)} features")
+                deprado_features = X_deprado.columns.tolist()
+                tprint_success(f"   De Prado selected {len(deprado_features)}/{len(cmi_features)} features")
                 
-                # Update available features
-                available_features = final_features
-                
-                # Store selection info for reporting
-                cmi_summary = cmi_selector.get_summary()
-                
-                advanced_time = time.time() - advanced_start
-                tprint_info(f"   📊 Layer 4 Selection Summary:")
-                tprint_info(f"      ⏱️  Total time: {advanced_time:.2f}s")
-                tprint_info(f"      📉 CMI Threshold: {cmi_summary['threshold']:.6f} bits")
-                tprint_info(f"      🌳 De Prado Clusters: {de_prado_engine.optimal_n_clusters_}")
-                tprint_info(f"      📊 Final Feature Count: {len(final_features)}")
-                tprint_info(f"      📈 Reduction: {(len(available_features)-len(final_features))/len(available_features):.1%}")
-                
-                # Save selection reports
-                try:
-                    outcomes_dir = Path("outcomes")
-                    outcomes_dir.mkdir(exist_ok=True)
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                # Step 3: Huber Teacher (robust coefficient pruning + constraints)
+                if len(deprado_features) > 3:  # Only run if enough features remain
+                    tprint_info(f"   Step 3: Huber Teacher on {len(deprado_features)} features...")
                     
-                    cmi_selector.get_feature_scores().to_csv(outcomes_dir / f"layer4_cmi_scores_{ts}.csv")
-                    de_prado_engine.get_feature_stats().to_csv(outcomes_dir / f"layer4_deprado_stats_{ts}.csv")
-                    de_prado_engine.get_report().to_csv(outcomes_dir / f"layer4_deprado_report_{ts}.csv")
-                except Exception as e:
-                    tprint_warning(f"   Failed to save Layer 4 selection reports: {e}")
+                    try:
+                        # Prepare Huber teacher outputs
+                        huber_output = prepare_huber_teacher_outputs(
+                            X_deprado, y_raw,
+                            pruning_percentile=15,  # Keep top 85% by coefficient magnitude
+                            n_time_splits=5  # Stability check
+                        )
+                        
+                        # Extract final features and constraints from Huber
+                        final_features = huber_output['selected_features']
+                        huber_monotonic_constraints = huber_output['monotonic_constraints']
+                        huber_interaction_constraints = huber_output['interaction_constraints']
+                        huber_warm_start = huber_output['warm_start']['train']
+                        
+                        tprint_success(f"   Huber teacher selected {len(final_features)}/{len(deprado_features)} features")
+                        tprint_info(f"   🎓 Huber constraints: {sum(1 for v in huber_monotonic_constraints.values() if v != 0)} monotonic")
+                        
+                        # Update available features with Huber selection
+                        available_features = final_features
+                        
+                        # Store Huber outputs for later use in model training
+                        huber_outputs = {
+                            'monotonic_constraints': huber_monotonic_constraints,
+                            'interaction_constraints': huber_interaction_constraints,
+                            'warm_start': huber_warm_start,
+                            'huber_models': huber_output['huber_models']
+                        }
+                        
+                        # Store selection info for reporting
+                        cmi_summary = cmi_selector.get_summary()
+                        
+                        advanced_time = time.time() - advanced_start
+                        tprint_info(f"   📊 Layer 4 Three-Stage Selection Summary:")
+                        tprint_info(f"      ⏱️  Total time: {advanced_time:.2f}s")
+                        tprint_info(f"      📉 CMI Threshold: {cmi_summary['threshold']:.6f} bits")
+                        tprint_info(f"      🌳 De Prado Clusters: {de_prado_engine.optimal_n_clusters_}")
+                        tprint_info(f"      🎓 Huber Features: {len(final_features)}")
+                        tprint_info(f"      📊 Final Feature Count: {len(final_features)}")
+                        tprint_info(f"      📈 Total Reduction: {(len(X_raw.columns)-len(final_features))/len(X_raw.columns):.1%}")
+                        
+                        # Save selection reports including Huber
+                        try:
+                            outcomes_dir = Path("outcomes")
+                            outcomes_dir.mkdir(exist_ok=True)
+                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            
+                            cmi_selector.get_feature_scores().to_csv(outcomes_dir / f"layer4_cmi_scores_{ts}.csv")
+                            de_prado_engine.get_feature_stats().to_csv(outcomes_dir / f"layer4_deprado_stats_{ts}.csv")
+                            de_prado_engine.get_report().to_csv(outcomes_dir / f"layer4_deprado_report_{ts}.csv")
+                            
+                            # Save Huber teacher outputs
+                            pd.Series(huber_monotonic_constraints).to_csv(outcomes_dir / f"layer4_huber_constraints_{ts}.csv")
+                            if huber_interaction_constraints:
+                                pd.DataFrame(huber_interaction_constraints).to_csv(outcomes_dir / f"layer4_huber_interactions_{ts}.csv")
+                            
+                            tprint_info(f"   📁 Saved Layer 4 three-stage selection reports")
+                        except Exception as e:
+                            tprint_warning(f"   Failed to save Layer 4 selection reports: {e}")
+                            
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ Huber teacher failed for Layer 4: {e}")
+                        tprint_info(f"   Continuing with De Prado features...")
+                        available_features = deprado_features
+                        huber_outputs = {}
+                        
+                else:
+                    tprint_warning(f"   Too few features after De Prado ({len(deprado_features)}), skipping Huber")
+                    available_features = deprado_features
+                    huber_outputs = {}
                     
             else:
-                tprint_warning(f"   Too few features after CMI ({len(cmi_features)}), skipping De Prado")
+                tprint_warning(f"   Too few features after CMI ({len(cmi_features)}), skipping De Prado and Huber")
                 available_features = cmi_features
+                huber_outputs = {}
                 
         except Exception as e:
             tprint_warning(f"   ⚠️ Advanced feature selection failed for Layer 4: {e}")
@@ -683,19 +737,43 @@ def train_layer4_extratrees(
         sample_weights = sample_weights / (sample_weights.mean() + 1e-8)  # Normalize
         tprint_info(f"📊 Using sample weights (mean: {sample_weights.mean():.3f})")
 
-    tprint_info("🔒 Analyzing Monotonic Constraints (Ridge)...")
-    constraints_dict = compute_ridge_monotonic_constraints(
-        X, y, alpha=1.0, threshold=2.0, verbose=False
-    )
-    # Convert to array for sklearn
-    # -1: decreasing, 0: no constraint, 1: increasing
-    monotonic_cst = np.array([constraints_dict.get(col, 0) for col in X.columns])
+    # 4. Enhanced Constraints and Warm Start using Huber Teacher
+    monotonic_cst = None
+    huber_warm_start = None
     
-    n_constrained = np.sum(monotonic_cst != 0)
-    if n_constrained > 0:
-        tprint_info(f"   🔒 Enforcing constraints on {n_constrained} features in ExtraTrees")
+    if huber_outputs and 'monotonic_constraints' in huber_outputs:
+        # Use Huber-derived constraints (preferred)
+        huber_monotonic_constraints = huber_outputs['monotonic_constraints']
+        monotonic_cst = np.array([huber_monotonic_constraints.get(col, 0) for col in X.columns])
+        
+        # Use Huber warm start if available
+        if 'warm_start' in huber_outputs and huber_outputs['warm_start'] is not None:
+            huber_warm_start = huber_outputs['warm_start']
+            # Add Huber baseline as feature (warm start capability)
+            if len(huber_warm_start) == len(X):
+                X = X.copy()
+                X['huber_baseline'] = huber_warm_start
+                tprint_info("🎓 Added Huber warm start baseline as feature")
+        
+        n_constrained = np.sum(monotonic_cst != 0)
+        tprint_info(f"   🔒 Using Huber constraints on {n_constrained} features")
+        
     else:
-        tprint_info("   No significant constraints found to enforce.")
+        # Fallback to Ridge constraints
+        tprint_info("🔒 Analyzing Monotonic Constraints (Ridge fallback)...")
+        constraints_dict = compute_ridge_monotonic_constraints(
+            X, y, alpha=1.0, threshold=2.0, verbose=False
+        )
+        # Convert to array for sklearn
+        # -1: decreasing, 0: no constraint, 1: increasing
+        monotonic_cst = np.array([constraints_dict.get(col, 0) for col in X.columns])
+        
+        n_constrained = np.sum(monotonic_cst != 0)
+        if n_constrained > 0:
+            tprint_info(f"   🔒 Using Ridge constraints on {n_constrained} features")
+        else:
+            tprint_info("   No significant constraints found to enforce.")
+            monotonic_cst = None  # Set to None if no constraints
     
     # 5. Hyperparameter optimization focused on PnL and Sortino
     def objective(trial):
@@ -706,17 +784,22 @@ def train_layer4_extratrees(
         min_samples_leaf = trial.suggest_int('min_samples_leaf', 5, 25)
         max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', 0.3, 0.5, 0.7, None])
         
-        # Create model
-        model = ExtraTreesClassifier(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            min_samples_split=min_samples_split,
-            min_samples_leaf=min_samples_leaf,
-            max_features=max_features,
-            random_state=42,
-            n_jobs=-1,
-            monotonic_cst=monotonic_cst # Apply constraints (sklearn 1.4+)
-        )
+        # Create model with optional constraints
+        model_kwargs = {
+            'n_estimators': n_estimators,
+            'max_depth': max_depth,
+            'min_samples_split': min_samples_split,
+            'min_samples_leaf': min_samples_leaf,
+            'max_features': max_features,
+            'random_state': 42,
+            'n_jobs': -1
+        }
+        
+        # Add monotonic constraints only if available
+        if monotonic_cst is not None:
+            model_kwargs['monotonic_cst'] = monotonic_cst
+        
+        model = ExtraTreesClassifier(**model_kwargs)
         
         # Cross-validation with time series split
         tscv = TimeSeriesSplit(n_splits=3)
@@ -780,12 +863,18 @@ def train_layer4_extratrees(
     # 6. Train final model
     tprint_info("🏋️ Training final ExtraTrees model...")
     
-    final_model = ExtraTreesClassifier(
-        random_state=42,
-        n_jobs=-1,
-        monotonic_cst=monotonic_cst, # Apply constraints
+    # Create final model with optional constraints
+    final_model_kwargs = {
+        'random_state': 42,
+        'n_jobs': -1,
         **best_params
-    )
+    }
+    
+    # Add monotonic constraints only if available
+    if monotonic_cst is not None:
+        final_model_kwargs['monotonic_cst'] = monotonic_cst
+    
+    final_model = ExtraTreesClassifier(**final_model_kwargs)
     
     # Train on full dataset
     if sample_weights is not None:

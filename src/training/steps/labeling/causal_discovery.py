@@ -206,7 +206,102 @@ class CausalDiscovery:
             if self.verbose:
                 tprint_warning(f"⚠️ Conditional independence test failed: {e}")
             return True, 1.0
-    
+            return True, 1.0
+
+    def _fast_ci_test(
+        self,
+        corr_matrix: np.ndarray,
+        x_idx: int,
+        y_idx: int,
+        z_indices: Optional[List[int]],
+        n_samples: int
+    ) -> Tuple[bool, float]:
+        """
+        Fast Conditional Independence Test using pre-computed Global Correlation Matrix.
+        
+        Optimized to O(k^3) instead of O(N*k^2) where N is sample size.
+        Uses the relation between partial correlation and the precision matrix (inverse covariance).
+        
+        Args:
+            corr_matrix: Pre-computed global correlation matrix (n_vars x n_vars)
+            x_idx: Index of variable X
+            y_idx: Index of variable Y
+            z_indices: List of indices for conditioning set Z
+            n_samples: Number of samples (for degrees of freedom calculation)
+            
+        Returns:
+            Tuple of (is_independent, p_value)
+        """
+        try:
+            # 1. Select Sub-Matrix Indices: [x, y, z...]
+            if z_indices is None: 
+                z_indices = []
+            
+            subset_indices = [x_idx, y_idx] + list(z_indices)
+            
+            # 2. Extract Sub-Matrix
+            # Use numpy advanced indexing
+            sub_corr = corr_matrix[np.ix_(subset_indices, subset_indices)]
+            
+            # 3. Compute Precision Matrix (Inverse)
+            # If no Z, it's just the correlation
+            if len(z_indices) == 0:
+                # Direct correlation from matrix
+                r = sub_corr[0, 1]
+                partial_corr = r
+                
+                # df = n - 2
+                df = n_samples - 2
+            else:
+                # Invert sub-matrix
+                try:
+                    # Check condition number to avoid numerical instability
+                    # if np.linalg.cond(sub_corr) > 1e12:
+                    #     return True, 1.0 # Collinear, assume independent/undefined
+                    
+                    P = np.linalg.inv(sub_corr)
+                    
+                    # 4. Calculate Partial Correlation
+                    # rho_xy_z = -P_xy / sqrt(P_xx * P_yy)
+                    # X is index 0, Y is index 1 in the sub-matrix
+                    P_xy = P[0, 1]
+                    P_xx = P[0, 0]
+                    P_yy = P[1, 1]
+                    
+                    if P_xx <= 0 or P_yy <= 0:
+                        return True, 1.0 # Invalid precision matrix
+                        
+                    partial_corr = -P_xy / np.sqrt(P_xx * P_yy)
+                    
+                except np.linalg.LinAlgError:
+                    return True, 1.0 # Singular matrix, treat as independent (conservative)
+
+                # Degrees of freedom: n - |Z| - 2
+                df = n_samples - len(z_indices) - 2
+
+            if df <= 0:
+                return True, 1.0
+
+            # 5. Compute P-Value
+            # Clip correlation to [-1, 1] for safety
+            partial_corr = max(min(partial_corr, 1.0 - 1e-9), -1.0 + 1e-9)
+            
+            if abs(partial_corr) >= 1.0:
+                is_independent = False
+                p_value = 0.0
+            else:
+                # t-statistic
+                t_stat = partial_corr * np.sqrt(df / (1 - partial_corr**2))
+                # two-tailed p-value
+                p_value = 2 * stats.t.sf(abs(t_stat), df)
+                is_independent = p_value > self.significance_level
+
+            return is_independent, p_value
+
+        except Exception as e:
+            # Fallback to conservative independence if calculation fails
+            return True, 1.0
+
     def pc_algorithm(
         self,
         data: pd.DataFrame,
@@ -248,6 +343,12 @@ class CausalDiscovery:
             if self.verbose:
                 tprint_info("   🔍 Phase 1: Skeleton discovery...")
             
+            # OPTIMIZATION: Pre-calculate Global Correlation Matrix
+            if self.verbose:
+                tprint_info("   🚀 Optimization: Pre-calculating global correlation matrix...")
+            corr_matrix = data.corr().values
+            n_samples = len(data)
+
             target_idx = None
             if self.target_variable and self.target_variable in variable_names:
                 target_idx = variable_names.index(self.target_variable)
@@ -267,11 +368,8 @@ class CausalDiscovery:
                             # For efficiency: Skip tests for non-target-related pairs
                             continue
 
-                    x = data.iloc[:, i].values
-                    y = data.iloc[:, j].values
-                    
-                    # Test unconditional independence
-                    is_independent, p_value = self.conditional_independence_test(x, y)
+                    # OPTIMIZED Fast CI Test
+                    is_independent, p_value = self._fast_ci_test(corr_matrix, i, j, [], n_samples)
 
                     if is_independent:
                         adjacency_matrix[i, j] = 0
@@ -280,6 +378,7 @@ class CausalDiscovery:
 
                         if self.verbose and edges_removed <= 5:  # Show first few
                             tprint_info(f"      ❌ Removed edge {variable_names[i]}-{variable_names[j]} (p={p_value:.4f})")
+
             
             tprint_info(f"   ✅ Phase 1: Removed {edges_removed} edges, {initial_edges - edges_removed} remaining")
             
@@ -310,11 +409,15 @@ class CausalDiscovery:
                         if len(common_neighbors) >= cond_size:
                             # Test conditioning on subsets
                             for cond_set in combinations(common_neighbors, cond_size):
-                                x = data.iloc[:, i].values
-                                y = data.iloc[:, j].values
-                                z = data.iloc[:, list(cond_set)].values.T
                                 
-                                is_independent, p_value = self.conditional_independence_test(x, y, z)
+                                # OPTIMIZED Fast CI Test
+                                is_independent, p_value = self._fast_ci_test(
+                                    corr_matrix, 
+                                    i, 
+                                    j, 
+                                    list(cond_set), 
+                                    n_samples
+                                )
                                 
                                 if is_independent:
                                     adjacency_matrix[i, j] = 0
@@ -358,10 +461,14 @@ class CausalDiscovery:
                         common_neighbors = [k for k in neighbors if adjacency_matrix[j, k] == 1 and k != i]
                         if len(common_neighbors) >= cond_size:
                             for cond_set in combinations(common_neighbors, cond_size):
-                                x = data.iloc[:, i].values
-                                y = data.iloc[:, j].values
-                                z = data.iloc[:, list(cond_set)].values.T
-                                is_independent, p_value = self.conditional_independence_test(x, y, z)
+                                # OPTIMIZED Fast CI Test
+                                is_independent, p_value = self._fast_ci_test(
+                                    corr_matrix, 
+                                    i, 
+                                    j, 
+                                    list(cond_set), 
+                                    n_samples
+                                )
                                 if is_independent:
                                     adjacency_matrix[i, j] = 0
                                     adjacency_matrix[j, i] = 0

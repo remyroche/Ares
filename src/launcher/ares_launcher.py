@@ -580,7 +580,7 @@ Examples:
     # unified training) use the same timeframe as base features.
     parser.add_argument('--regime-timeframe', type=str, default='15m', help='Timeframe used for regime detection/ensemble (default: 15m)')
     parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
-    parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
+    parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='full', help='Execution mode')
     parser.add_argument(
         '--min-interaction-mi-lift',
         type=float,

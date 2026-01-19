@@ -264,92 +264,222 @@ class CausalFeatureSieve:
         
         return selected_features
 
-    def _generate_mda_importance(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None) -> pd.DataFrame:
+    def _get_tree_hierarchy_analysis(self, models: List, feature_names: List[str]) -> pd.Series:
         """
-        Generate MDA importance DataFrame using LGBM instead of Random Forest.
-        Configured with high regularization for noisy intraday crypto data.
+        Calculate mean first split depth (root proximity) from De Prado.
+        Features used earlier in trees (shallower depth) are more structurally important.
+        Optimized for LightGBM tree structure.
         """
-        tprint_info(f"   📊 Generating MDA importance (LGBM) for {len(X.columns)} features")
-
+        depths = {name: [] for name in feature_names}
+        max_depth_overall = 0
+        
+        for model in models:
+            try:
+                # Extract tree structure from LightGBM
+                tree_dump = model._Booster._dump_model()['tree_info']
+                
+                for tree_info in tree_dump:
+                    tree = tree_info['tree_structure']
+                    max_depth_overall = max(max_depth_overall, self._get_tree_depth(tree))
+                    first_occurrence = {}
+                    
+                    def walk_node(node: dict, current_depth: int):
+                        """Walk tree recursively to find first feature usage."""
+                        if 'split_feature' in node:
+                            feature_idx = node['split_feature']
+                            if feature_idx not in first_occurrence:
+                                first_occurrence[feature_idx] = current_depth
+                            # Continue walking
+                            if 'left_child' in node:
+                                walk_node(node['left_child'], current_depth + 1)
+                            if 'right_child' in node:
+                                walk_node(node['right_child'], current_depth + 1)
+                    
+                    walk_node(tree, 0)
+                    
+                    # Record depths for this tree
+                    for idx, depth in first_occurrence.items():
+                        if idx < len(feature_names):
+                            depths[feature_names[idx]].append(depth)
+                        
+            except Exception as e:
+                # Fallback: assign max depth for all features if tree parsing fails
+                for name in feature_names:
+                    depths[name].append(max_depth_overall)
+        
+        # Calculate mean depths
+        mean_depths = {}
+        for name, depth_list in depths.items():
+            if depth_list:
+                mean_depths[name] = np.median(depth_list)
+            else:
+                mean_depths[name] = max_depth_overall
+        
+        return pd.Series(mean_depths)
+    
+    def _get_tree_depth(self, tree: dict) -> int:
+        """Calculate maximum depth of a tree."""
+        def get_depth(node: dict) -> int:
+            if 'split_feature' not in node:
+                return 0
+            left_depth = get_depth(node.get('left_child', {}))
+            right_depth = get_depth(node.get('right_child', {}))
+            return 1 + max(left_depth, right_depth)
+        
+        return get_depth(tree)
+    
+    def _generate_enhanced_lgbm_importance(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Enhanced LGBM importance with OOF predictions, IC, stability metrics, and tree hierarchy.
+        Optimized for memory and computational efficiency.
+        """
+        tprint_info(f"   📊 Generating Enhanced LGBM importance ({len(X.columns)} features)")
+        
         # Determine task type
         is_classifier = len(y.unique()) <= 2
-
-        # LightGBM Params (High Regularization)
+        
+        # Enhanced LightGBM params (from De Prado) - optimized for speed
         params = {
-            'n_estimators': 100,
+            'n_estimators': 500,      # Reduced from 1000 for speed
             'learning_rate': 0.05,
-            'num_leaves': 31,
-            'min_child_samples': 20, # Enforce min samples per leaf (20 mins)
-            'reg_alpha': 1.0,        # L1 Regularization
-            'reg_lambda': 1.0,       # L2 Regularization
+            'max_depth': 4,           # Controlled depth for hierarchy
+            'num_leaves': 15,         # Reduced for memory efficiency
+            'reg_alpha': 5.0,         # Stronger L1 (from De Prado)
+            'reg_lambda': 10.0,       # Stronger L2 (from De Prado)
+            'min_child_samples': 20,
+            'min_split_gain': 1e-3,
+            'colsample_bytree': 0.7,
             'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'random_state': self.seed,
+            'importance_type': 'gain',
+            'verbose': -1,
             'n_jobs': -1,
-            'verbose': -1
+            'random_state': self.seed
         }
         
         try:
-            from sklearn.model_selection import KFold
-            from sklearn.metrics import log_loss, mean_squared_error
+            # Use TimeSeriesSplit for temporal safety
+            from sklearn.model_selection import TimeSeriesSplit
+            tscv = TimeSeriesSplit(n_splits=5, gap=1)  # Add gap to prevent leakage
             
-            # Use K-Fold for MDA (Perturbation importance)
-            # Actually, standard feature_importance_ type='gain' from LGBM is often better/faster
-            # than permutation MDA for trees, but MDA is requested.
-            # We will implement a fast MDA using a single holdout or CV if possible.
-            # Here we use the native feature importance (Gain) as a robust proxy which is faster,
-            # OR we implement true MDA (permutation).
-            # Given the prompt "1/ MDA: use LGBM", let's use the model's built-in importance (Gain)
-            # averaged over CV folds, as permutation MDA on 100s of features is very slow.
-            # Wait, prompt implies "use LGBM... instead of Random Forest" in the MDA context.
-            # Standard MDA permutes features on OOS data.
+            # Pre-allocate arrays for memory efficiency
+            n_features = len(X.columns)
+            fold_importances = np.zeros((5, n_features))
+            fold_ics = np.zeros((5, n_features))
+            oof_preds = np.full(len(X), np.nan)
             
-            # Let's implement CV-based Importance (Gain) aggregation.
+            # Store models for tree hierarchy analysis
+            trained_models = []
             
-            n_folds = 5
-            kf = KFold(n_splits=n_folds, shuffle=False) # Time-series safe? No, KFold shuffle=False is blocking.
-            # Actually TimeSeriesSplit is safer.
-            tscv = TimeSeriesSplit(n_splits=n_folds)
-
-            feature_importances = pd.DataFrame(0.0, index=X.columns, columns=['importance'])
-
-            fold_count = 0
-            for train_idx, val_idx in tscv.split(X):
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-                w_train = sample_weight.iloc[train_idx] if sample_weight is not None else None
+            # Convert to numpy for speed
+            X_values = X.values
+            y_values = y.values
+            feature_names = X.columns.tolist()
+            
+            if sample_weight is not None:
+                w_values = sample_weight.values
+            else:
+                w_values = None
+            
+            for fold, (train_idx, val_idx) in enumerate(tscv.split(X_values)):
+                # Slice arrays (faster than DataFrame.iloc)
+                X_train, X_val = X_values[train_idx], X_values[val_idx]
+                y_train, y_val = y_values[train_idx], y_values[val_idx]
                 
+                if w_values is not None:
+                    w_train = w_values[train_idx]
+                else:
+                    w_train = None
+                
+                # Train model
                 if is_classifier:
                     model = lgb.LGBMClassifier(**params)
-                    model.fit(X_train, y_train, sample_weight=w_train)
                 else:
                     model = lgb.LGBMRegressor(**params)
-                    model.fit(X_train, y_train, sample_weight=w_train)
                 
-                # Accumulate Gain Importance
-                feature_importances['importance'] += model.feature_importances_
-                fold_count += 1
-
-            if fold_count > 0:
-                feature_importances /= fold_count
-
-            tprint_info(f"   ✅ LGBM Importance generated: {len(feature_importances)} features")
-            return feature_importances
-
+                model.fit(X_train, y_train, sample_weight=w_train)
+                trained_models.append(model)  # Store for hierarchy analysis
+                
+                # Store importance
+                fold_importances[fold] = model.feature_importances_
+                
+                # OOF predictions (vectorized)
+                if hasattr(model, 'predict_proba'):
+                    preds = model.predict_proba(X_val)[:, 1]
+                else:
+                    preds = model.predict(X_val)
+                oof_preds[val_idx] = preds
+                
+                # Vectorized feature-level IC calculation
+                if len(X_val) > 1:  # Need at least 2 points for correlation
+                    for i, col in enumerate(feature_names):
+                        try:
+                            ic_val, _ = spearmanr(X_val[:, i], y_val)
+                            fold_ics[fold, i] = ic_val if not np.isnan(ic_val) else 0.0
+                        except:
+                            fold_ics[fold, i] = 0.0
+                else:
+                    fold_ics[fold, :] = 0.0
+            
+            # Aggregate metrics (vectorized)
+            mean_importance = pd.Series(fold_importances.mean(axis=0), index=feature_names)
+            median_feature_ic = pd.Series(np.median(fold_ics, axis=0), index=feature_names)
+            
+            # OOF IC (model-level)
+            valid_mask = ~np.isnan(oof_preds) & ~np.isnan(y_values)
+            oof_ic = 0.0
+            if valid_mask.sum() > 10:
+                oof_ic, _ = spearmanr(y_values[valid_mask], oof_preds[valid_mask])
+            
+            # Calculate stability (coefficient of variation)
+            importance_std = fold_importances.std(axis=0)
+            importance_mean = fold_importances.mean(axis=0)
+            stability = importance_mean / (importance_std + 1e-9)
+            stability_series = pd.Series(stability, index=feature_names)
+            
+            # Top-K frequency (how often features appear in top 20%)
+            top_k_threshold = np.percentile(fold_importances, 80, axis=1, keepdims=True)
+            top_k_mask = fold_importances >= top_k_threshold
+            topk_freq = pd.Series(top_k_mask.mean(axis=0), index=feature_names)
+            
+            # Tree hierarchy analysis (root proximity)
+            depth_scores = self._get_tree_hierarchy_analysis(trained_models, feature_names)
+            
+            tprint_info(f"   ✅ Enhanced LGBM importance: OOF IC={oof_ic:.4f}, Tree depth analysis computed")
+            
+            return {
+                'mean_importance': mean_importance,
+                'median_feature_ic': median_feature_ic,
+                'oof_ic': oof_ic,
+                'stability': stability_series,
+                'topk_freq': topk_freq,
+                'depth_scores': depth_scores,  # NEW: Root proximity analysis
+                'oof_predictions': pd.Series(oof_preds, index=X.index),
+                'trained_models': trained_models  # Store models for debugging
+            }
+            
         except Exception as e:
-            tprint_error(f"   ❌ LGBM Importance generation failed: {e}")
-            # Fallback to correlation
+            tprint_error(f"   ❌ Enhanced LGBM importance failed: {e}")
+            # Fallback to simple correlation
             importance_scores = {}
             for col in X.columns:
                 try:
                     corr = X[col].corr(y)
-                    importance_scores[col] = [abs(corr) if not np.isnan(corr) else 0.0]
+                    importance_scores[col] = abs(corr) if not np.isnan(corr) else 0.0
                 except:
-                    importance_scores[col] = [0.0]
+                    importance_scores[col] = 0.0
             
-            fallback_df = pd.DataFrame(importance_scores).T
-            fallback_df.columns = ['importance']
-            return fallback_df
+            fallback_importance = pd.Series(importance_scores)
+            n_features = len(X.columns)
+            return {
+                'mean_importance': fallback_importance,
+                'median_feature_ic': fallback_importance * 0.5,  # Estimate
+                'oof_ic': 0.0,
+                'stability': pd.Series(1.0, index=X.columns),
+                'topk_freq': pd.Series(0.5, index=X.columns),
+                'depth_scores': pd.Series(np.full(n_features, 2.0), index=X.columns),  # Default depth
+                'oof_predictions': pd.Series(0.5, index=X.index),
+                'trained_models': []
+            }
 
     def sieve_3_4_dominance_stability(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None) -> List[str]:
         """
@@ -502,6 +632,218 @@ class CausalFeatureSieve:
         # Summary
         reduction_rate = 1 - len(X_final.columns) / len(initial_features)
         tprint_success(f"✅ CausalFeatureSieve: {self.geometry} complete!")
+        tprint_success(f"📉 Feature reduction: {len(initial_features)} → {len(X_final.columns)} ({reduction_rate:.1%})")
+        tprint_success(f"🎯 Final features: {X_final.columns.tolist()}")
+        
+        return X_final
+
+    def _compute_shannon_entropy(self, X: pd.DataFrame) -> pd.Series:
+        """
+        Compute Shannon entropy for each feature (from De Prado).
+        Optimized with vectorized operations.
+        """
+        entropy_scores = {}
+        
+        # Vectorized entropy calculation
+        for col in X.columns:
+            try:
+                # Use pandas qcut for efficient discretization
+                disc = pd.qcut(X[col], q=10, duplicates='drop')
+                if disc.nunique() < 2:
+                    entropy_scores[col] = 0.0
+                else:
+                    # Vectorized probability calculation
+                    probs = disc.value_counts(normalize=True).values
+                    entropy_scores[col] = entropy(probs)
+            except Exception:
+                entropy_scores[col] = 0.0
+        
+        return pd.Series(entropy_scores)
+    
+    def _rank_normalize(self, s: pd.Series, invert: bool = False) -> pd.Series:
+        """
+        Rank normalization (from De Prado). Optimized implementation.
+        """
+        if s.empty:
+            return s
+        
+        # Vectorized rank calculation
+        ranks = rankdata(s, method='average')
+        norm = (ranks - 1) / (len(s) - 1 + 1e-9)
+        
+        if invert:
+            return pd.Series(1.0 - norm, index=s.index)
+        return pd.Series(norm, index=s.index)
+    
+    def _compute_enhanced_composite_score(self, importance: pd.Series, ic: pd.Series, 
+                                        entropy: pd.Series, stability: pd.Series,
+                                        topk_freq: pd.Series, depth: pd.Series) -> pd.Series:
+        """
+        Enhanced composite scoring with De Prado metrics including root proximity.
+        Geometry-specific weighting for optimal performance.
+        """
+        # Normalize all scores (vectorized)
+        score_importance = self._rank_normalize(importance)
+        score_ic = self._rank_normalize(ic.abs())  # Absolute IC
+        score_entropy = self._rank_normalize(entropy)
+        score_stability = self._rank_normalize(stability)
+        score_topk = self._rank_normalize(topk_freq)
+        score_depth = self._rank_normalize(depth, invert=True)  # Shallower is better
+        
+        # Geometry-specific weights (enhanced from De Prado with depth)
+        if self.config.horizon_bars == 12:
+            # Short-term: favor predictive power and early tree usage
+            composite = (
+                0.30 * score_importance + 
+                0.20 * score_ic +
+                0.15 * score_depth +      # NEW: Root proximity
+                0.15 * score_topk +
+                0.10 * score_entropy +
+                0.10 * score_stability
+            )
+        else:
+            # Long-term: favor stability and structural importance
+            composite = (
+                0.25 * score_importance + 
+                0.15 * score_ic +
+                0.20 * score_depth +      # NEW: Root proximity
+                0.15 * score_topk +
+                0.10 * score_entropy +
+                0.15 * score_stability
+            )
+        
+        return composite
+    
+    def sieve_3_4_enhanced_dominance_stability(self, X: pd.DataFrame, y: pd.Series, 
+                                             sample_weight: Optional[pd.Series] = None) -> List[str]:
+        """
+        Enhanced Sieve 3/4 with De Prado predictive metrics and structural analysis.
+        Now includes root proximity (tree depth) analysis.
+        """
+        tprint_info(f"🔍 Enhanced Sieve 3/4: LGBM + IC + Depth + Entropy + Stability ({len(X.columns)} features)")
+        
+        # Enhanced importance generation
+        importance_results = self._generate_enhanced_lgbm_importance(X, y, sample_weight)
+        mean_importance = importance_results['mean_importance']
+        median_feature_ic = importance_results['median_feature_ic']
+        oof_ic = importance_results['oof_ic']
+        stability_scores = importance_results['stability']
+        topk_freq = importance_results['topk_freq']
+        depth_scores = importance_results['depth_scores']  # NEW: Root proximity
+        
+        # Shannon entropy (vectorized)
+        entropy_scores = self._compute_shannon_entropy(X)
+        
+        # Enhanced composite scoring with depth
+        composite_scores = self._compute_enhanced_composite_score(
+            mean_importance, median_feature_ic, entropy_scores, stability_scores, topk_freq, depth_scores
+        )
+        
+        # Create comprehensive feature stats (memory efficient)
+        self.feature_stats_ = pd.DataFrame({
+            'Importance': mean_importance,
+            'IC': median_feature_ic,
+            'Depth': depth_scores,  # NEW: Root proximity
+            'Entropy': entropy_scores,
+            'Stability': stability_scores,
+            'TopKFreq': topk_freq,
+            'CompositeScore': composite_scores
+        })
+        
+        # Enhanced selection with multiple criteria
+        # 1. Stability filter
+        stable_mask = stability_scores <= self.config.instability_threshold
+        stable_features = self.feature_stats_[stable_mask]
+        
+        # 2. Top-K frequency gate (from De Prado)
+        topk_mask = topk_freq >= 0.3  # Features must be in top 20% at least 30% of the time
+        gated_features = stable_features[topk_mask]
+        
+        # 3. Composite ranking within gated features
+        if len(gated_features) > 0:
+            ranked_features = gated_features.sort_values('CompositeScore', ascending=False)
+            
+            # Geometry-specific selection
+            if self.config.horizon_bars == 12:
+                # Short-term: more aggressive selection
+                n_select = max(1, min(len(ranked_features), int(len(X.columns) * 0.3)))
+            else:
+                # Long-term: more conservative selection
+                n_select = max(1, min(len(ranked_features), int(len(X.columns) * 0.4)))
+            
+            selected_features = ranked_features.head(n_select).index.tolist()
+        else:
+            # Fallback: top features by composite score
+            ranked_all = self.feature_stats_.sort_values('CompositeScore', ascending=False)
+            selected_features = ranked_all.head(max(1, len(X.columns) // 10)).index.tolist()
+        
+        # Enhanced logging with depth information
+        tprint_info(f"   📊 Enhanced Metrics Summary:")
+        tprint_info(f"      OOF IC (Model): {oof_ic:.4f}")
+        tprint_info(f"      Importance Range: [{mean_importance.min():.4f}, {mean_importance.max():.4f}]")
+        tprint_info(f"      IC Range: [{median_feature_ic.min():.4f}, {median_feature_ic.max():.4f}]")
+        tprint_info(f"      Depth Range: [{depth_scores.min():.2f}, {depth_scores.max():.2f}]")  # NEW
+        tprint_info(f"      Stability Threshold: {self.config.instability_threshold}")
+        tprint_info(f"      Top-K Gate: {topk_mask.sum()} features passed")
+        tprint_info(f"   📉 Enhanced reduction: {len(X.columns)} → {len(selected_features)} features")
+        
+        return selected_features
+
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None, 
+                      use_enhanced: bool = True) -> pd.DataFrame:
+        """
+        Apply the complete 4-sieve pipeline to features.
+        
+        Args:
+            X: Feature matrix
+            y: Target variable
+            sample_weight: Optional sample weights
+            use_enhanced: Use enhanced De Prado metrics (default: True)
+            
+        Returns:
+            Selected feature matrix
+        """
+        tprint_info(f"🚀 CausalFeatureSieve: {self.geometry} pipeline start (Enhanced: {use_enhanced})")
+        tprint_info(f"📊 Input: {len(X.columns)} features, {len(X)} samples")
+        
+        # Detect regime features for special handling
+        regime_features = self._detect_regime_features(X)
+        if regime_features:
+            tprint_info(f"🎭 Detected {len(regime_features)} regime features: {regime_features[:5]}...")
+        
+        initial_features = X.columns.tolist()
+        T = len(X)
+        
+        # Sieve 1: ONC Clustering
+        X_sieve1 = self.sieve_1_onc(X, T)
+        if X_sieve1.empty:
+            tprint_error("❌ Sieve 1 produced empty feature set")
+            return X.iloc[:, :0]  # Return empty DataFrame
+        
+        # Sieve 2: ElasticNet + LASSO Selection
+        selected_sieve2 = self.sieve_2_elastic_1se(X_sieve1, y)
+        if not selected_sieve2:
+            tprint_error("❌ Sieve 2 produced empty feature set")
+            return X.iloc[:, :0]
+        
+        X_sieve2 = X_sieve1[selected_sieve2]
+        
+        # Sieve 3/4: Enhanced or Original LGBM + Stability
+        if use_enhanced:
+            selected_sieve4 = self.sieve_3_4_enhanced_dominance_stability(X_sieve2, y, sample_weight)
+        else:
+            selected_sieve4 = self.sieve_3_4_dominance_stability(X_sieve2, y, sample_weight)
+            
+        if not selected_sieve4:
+            tprint_error("❌ Sieve 3/4 produced empty feature set")
+            return X.iloc[:, :0]
+        
+        X_final = X_sieve2[selected_sieve4]
+        
+        # Summary
+        reduction_rate = 1 - len(X_final.columns) / len(initial_features)
+        method_name = "Enhanced" if use_enhanced else "Original"
+        tprint_success(f"✅ CausalFeatureSieve ({method_name}): {self.geometry} complete!")
         tprint_success(f"📉 Feature reduction: {len(initial_features)} → {len(X_final.columns)} ({reduction_rate:.1%})")
         tprint_success(f"🎯 Final features: {X_final.columns.tolist()}")
         

@@ -1501,11 +1501,17 @@ def check_label_quality(
     failure_reason = "PASS"
     overall_pass = True
 
-    # 1. Sample Size Gate (relaxed from 0.5 to 0.1 events/day)
-    if rate < 0.1:
+    # 1. Sample Size Gate (family-aware minimums)
+    min_daily_rate = 0.1
+    if family == 'MOMENTUM_DECAY_SPECIALIST':
+        # Momentum decay specialists are sparse; allow lower rate to boost coverage
+        min_daily_rate = 0.05
+
+    if rate < min_daily_rate:
         gates_log.append(f"Sample: {n}/{rate:.2f}/d [FAIL]")
         overall_pass = False
-        if failure_reason == "PASS": failure_reason = "Sample Size (< 0.1/day)"
+        if failure_reason == "PASS":
+            failure_reason = f"Sample Size (< {min_daily_rate:.2f}/day)"
     else:
         gates_log.append(f"Sample: {n}/{rate:.2f}/d [OK]")
 
@@ -1802,6 +1808,29 @@ def calculate_multifactor_score(
         path_asymmetry = (mfe / vol) - (mae.abs() / vol)
         path_score = path_asymmetry.mean()
 
+        # --- Causal robustness extensions ---
+        # Interventional contrast: difference between strong positive and negative event returns
+        interventional_contrast = np.nan
+        returns_series = cand.get('returns')
+        if returns_series is not None and not returns_series.empty:
+            labels_series = cand.get('labels')
+            if labels_series is not None and not labels_series.empty:
+                aligned_idx = returns_series.index.intersection(labels_series.index)
+                if len(aligned_idx) >= 10:
+                    pos_mask = labels_series.loc[aligned_idx] > 0
+                    neg_mask = labels_series.loc[aligned_idx] < 0
+                    if pos_mask.sum() >= 5 and neg_mask.sum() >= 5:
+                        pos_mean = returns_series.loc[aligned_idx][pos_mask].mean()
+                        neg_mean = returns_series.loc[aligned_idx][neg_mask].mean()
+                        interventional_contrast = float(pos_mean - neg_mean)
+                    else:
+                        interventional_contrast = float(returns_series.loc[aligned_idx].mean())
+        # Overlap support: reuse density (average uniqueness) to quantify overlap coverage
+        overlap_support = float(np.clip(density, 0.0, 1.0))
+        # Path stability variance: variability of asymmetry metric
+        path_stability_series = path_asymmetry.replace([np.inf, -np.inf], np.nan).dropna()
+        path_stability_var = float(path_stability_series.var()) if not path_stability_series.empty else np.nan
+
         cand_raw_metrics = {
             'ic': ic_max,
             'f_stat': f_max,
@@ -1812,9 +1841,9 @@ def calculate_multifactor_score(
             'path_score': path_score,
             'lift': max(ic_max, f_max / (f_max + 10.0)), # Proxy for learnability
             # Causal/robustness extensions
-            'interventional_contrast': metrics.get('interventional_contrast', np.nan),
-            'overlap_support': metrics.get('overlap_support', np.nan),
-            'path_stability_var': metrics.get('path_stability_var', np.nan),
+            'interventional_contrast': interventional_contrast,
+            'overlap_support': overlap_support,
+            'path_stability_var': path_stability_var,
         }
         cand['metrics_raw'] = cand_raw_metrics
         raw_metric_log.append({
@@ -3814,11 +3843,11 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
         # Fit on subsample, transform full dataset (with thread limiting)
         if use_threadpool:
             with threadpool_limits(limits=1, user_api='blas'):
-                svd.fit(df_fit.values)
-                components = svd.transform(df_z_denoised.values)
+                svd.fit(np.nan_to_num(df_fit.values, nan=0.0))
+                components = svd.transform(np.nan_to_num(df_z_denoised.values, nan=0.0))
         else:
-            svd.fit(df_fit.values)
-            components = svd.transform(df_z_denoised.values)
+            svd.fit(np.nan_to_num(df_fit.values, nan=0.0))
+            components = svd.transform(np.nan_to_num(df_z_denoised.values, nan=0.0))
         
         tprint_info(f"   ✅ TruncatedSVD complete: explained_variance_ratio={svd.explained_variance_ratio_.sum():.3f}")
 
@@ -4656,7 +4685,9 @@ def orthogonal_label_generation(
     causal_surprise_threshold: float = 1.8,
     # Pipeline logging parameters
     enable_pipeline_logging: bool = True,
-    tracker: Optional[Any] = None
+    tracker: Optional[Any] = None,
+    checkpoint_manager: Optional[Any] = None,
+    symbol: Optional[str] = None
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -5250,6 +5281,22 @@ def orthogonal_label_generation(
     # If requested, return ALL robust candidates for Layer 2 Selection
     if return_raw_candidates:
         tprint_info(f"Returning {len(scored_candidates)} raw candidates for advanced selection.")
+        
+        # CHECKPOINTING
+        if checkpoint_manager is not None and symbol is not None:
+             try:
+                 checkpoint_manager.save_checkpoint(
+                     "raw_candidates_selected",
+                     {
+                         "candidates": scored_candidates, 
+                         "count": len(scored_candidates)
+                     },
+                     symbol
+                 )
+                 tprint_success(f"💾 Checkpoint saved: raw_candidates_selected ({len(scored_candidates)} candidates)")
+             except Exception as e:
+                 tprint_warning(f"⚠️ Failed to save raw candidates checkpoint: {e}")
+
         raw_geoms = []
         for cand in scored_candidates:
             # We need to construct OutputGeometry but WITHOUT Probe Metrics (expensive?)
@@ -5904,6 +5951,15 @@ class CausalSurpriseEvents(BaseEventGenerator):
             for spec_name, predictions in specialist_predictions.items():
                 if 'close' in df.columns:
                     targets = df['close']
+                    
+                    # Handle dictionary checkpoints
+                    if isinstance(predictions, dict):
+                        try:
+                             predictions = pd.Series(predictions)
+                             predictions.index = pd.to_datetime(predictions.index)
+                        except Exception:
+                             continue
+
                     common_idx = predictions.index.intersection(targets.index)
                     if len(common_idx) > 10:
                         pred_aligned = predictions.loc[common_idx]

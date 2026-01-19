@@ -112,7 +112,8 @@ class DePradoFeatureEngine:
                 'n_estimators': 1000,
                 'learning_rate': 0.05,
                 'importance_type': 'gain',
-                'verbose': -1
+                'verbose': -1,
+                'objective': 'binary'  # Enforce binary classification
             }
             for k, v in defaults.items():
                 if k not in self.lgbm_params:
@@ -135,11 +136,18 @@ class DePradoFeatureEngine:
             'median_log_gain': None,
             'iqr_log_gain': None
         }
+        
+        # === OPTIMIZATION: Intermediate result caching ===
+        self._corr_cache: Dict[str, pd.DataFrame] = {}  # Correlation matrices
+        self._onc_cache: Dict[str, pd.Series] = {}  # ONC cluster assignments
+        self._pca_cache: Dict[str, Tuple] = {}  # (scaler, pca) per cluster
 
     def _get_onc_clusters(self, X: pd.DataFrame) -> pd.Series:
         """
         Finds optimal feature clusters using Multi-criteria ONC.
         Includes recursive re-clustering to prevent mega-clusters and merges tiny clusters.
+        
+        OPTIMIZED: Reuses correlation matrix, caches best clusterer during search.
         """
         tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
         onc_start = time.time()
@@ -147,24 +155,35 @@ class DePradoFeatureEngine:
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
 
-        # Precompute global correlation for later merging
-        global_corr = X.corr().abs().fillna(0)
+        # === OPT 1 & 5: Precompute and cache global correlation ===
+        corr_key = str(tuple(sorted(X.columns)))[:100]  # Hash by column names
+        if corr_key in self._corr_cache:
+            global_corr = self._corr_cache[corr_key]
+        else:
+            global_corr = X.corr().abs().fillna(0)
+            self._corr_cache[corr_key] = global_corr
+            # Limit cache size
+            if len(self._corr_cache) > 10:
+                self._corr_cache.pop(next(iter(self._corr_cache)))
 
-        # Base ONC Logic
-        def run_base_onc(X_subset):
-            # Compute correlation matrix
-            corr = X_subset.corr().fillna(0)
-            corr = np.clip(corr, -1, 1)
+        # Base ONC Logic - now accepts precomputed correlation
+        def run_base_onc(X_subset, precomputed_corr=None):
+            # === OPT 1: Reuse correlation if available ===
+            if precomputed_corr is not None and set(X_subset.columns).issubset(set(precomputed_corr.columns)):
+                corr = precomputed_corr.loc[X_subset.columns, X_subset.columns].fillna(0)
+            else:
+                corr = X_subset.corr().fillna(0)
+            
+            corr = np.clip(corr.values, -1, 1)
             dist = 1 - np.abs(corr)
-            np.fill_diagonal(dist.values, 0)
+            np.fill_diagonal(dist, 0)
             dist = np.maximum(dist, 0)
 
             best_k, best_composite_score = 2, -1
-            scores_history = {}
-            # Allow K up to N/2
+            best_clusterer = None  # === OPT 2: Cache during loop ===
             max_k = max(2, min(self.max_clusters, len(X_subset.columns) // 2))
 
-            feature_sample_matrix = X_subset.T
+            feature_sample_matrix = X_subset.T.values
 
             for k in range(2, max_k + 1):
                 try:
@@ -173,7 +192,7 @@ class DePradoFeatureEngine:
                     labels = clusterer.labels_
 
                     if len(np.unique(labels)) > 1:
-                        cv_ratio = self._calculate_cv_ratio(feature_sample_matrix, labels)
+                        cv_ratio = self._calculate_cv_ratio(pd.DataFrame(feature_sample_matrix), labels)
                         dbi = davies_bouldin_score(feature_sample_matrix, labels)
                         silhouette = silhouette_score(dist, labels, metric='precomputed')
 
@@ -181,24 +200,27 @@ class DePradoFeatureEngine:
                         dbi_score = 1.0 / (1.0 + dbi)
                         silhouette_score_norm = (silhouette + 1.0) / 2.0
 
-                        # Simplified composite
                         composite_score = 0.5 * cv_score + 0.3 * dbi_score + 0.2 * silhouette_score_norm
 
                         if composite_score > best_composite_score:
                             best_composite_score, best_k = composite_score, k
+                            best_clusterer = clusterer  # === OPT 2: Save best ===
                 except Exception:
                     continue
 
-            # Final Fit
-            if best_k == 1:
+            # === OPT 2: Use cached clusterer instead of refitting ===
+            if best_clusterer is not None:
+                return best_clusterer.labels_
+            elif best_k == 1:
                 return np.zeros(len(X_subset.columns))
+            else:
+                # Fallback: fit with best_k
+                final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
+                final_clusterer.fit(X_subset)
+                return final_clusterer.labels_
 
-            final_clusterer = FeatureAgglomeration(n_clusters=best_k, linkage='average')
-            final_clusterer.fit(X_subset)
-            return final_clusterer.labels_
-
-        # Initial Clustering
-        initial_labels = run_base_onc(X)
+        # Initial Clustering - pass precomputed correlation
+        initial_labels = run_base_onc(X, global_corr)
         final_series = pd.Series(initial_labels, index=X.columns)
 
         # Recursive Splitting (Max Depth 3)
@@ -480,25 +502,38 @@ class DePradoFeatureEngine:
                 non_const_features = stds[stds > 0].index
                 const_features = stds[stds <= 0].index
 
+                # Handle constant features by creating individual PC1 columns
                 for f in const_features:
-                    group_key = f"{group_key_base}_Const_{f}"
-                    col_name = f"{group_key}_PC1"
-                    X_train_groups[col_name] = X_train[f]
-                    X_val_groups[col_name] = X_val[f]
-                    loadings_map[group_key] = pd.DataFrame(
-                        [1.0], index=[f], columns=["PC1"]
-                    )
+                    col_name = f"{group_key_base}_PC1"
+                    # Use unique column name to avoid conflicts
+                    unique_col_name = f"{group_key_base}_Const_{f}_PC1"
+                    X_train_groups[unique_col_name] = X_train[f]
+                    X_val_groups[unique_col_name] = X_val[f]
+                    # Store loadings with the expected key format for attribution
+                    if group_key_base not in loadings_map:
+                        loadings_map[group_key_base] = pd.DataFrame()
+                    # Add loading for this constant feature
+                    loadings_map[group_key_base].loc[f, "PC1"] = 1.0
 
                 if len(non_const_features) > 1:
-                    # Retain up to 3 PCs or 70% variance
-                    pca = PCA(n_components=min(3, len(non_const_features)))
-                    scaler = StandardScaler()
-
-                    # Fit on Train
-                    X_train_cluster_scaled = scaler.fit_transform(X_train[non_const_features])
-                    # Note: No sign flip here yet, but loadings attribution handles magnitude.
-                    # To be fully deterministic, we could enforce sign based on max loading.
-                    X_train_pcs = pca.fit_transform(X_train_cluster_scaled)
+                    # === OPT 4: Cache scaler/PCA per cluster key ===
+                    cluster_cache_key = f"{group_key_base}_{len(non_const_features)}_{hash(tuple(sorted(non_const_features)))}"
+                    
+                    if cluster_cache_key in self._pca_cache:
+                        scaler, pca = self._pca_cache[cluster_cache_key]
+                        X_train_cluster_scaled = scaler.transform(X_train[non_const_features])
+                        X_train_pcs = pca.transform(X_train_cluster_scaled)
+                    else:
+                        # Retain up to 3 PCs or 70% variance
+                        pca = PCA(n_components=min(3, len(non_const_features)))
+                        scaler = StandardScaler()
+                        # Fit on Train
+                        X_train_cluster_scaled = scaler.fit_transform(X_train[non_const_features])
+                        X_train_pcs = pca.fit_transform(X_train_cluster_scaled)
+                        # Cache (limit size)
+                        self._pca_cache[cluster_cache_key] = (scaler, pca)
+                        if len(self._pca_cache) > 50:
+                            self._pca_cache.pop(next(iter(self._pca_cache)))
 
                     # Transform Val
                     X_val_cluster_scaled = scaler.transform(X_val[non_const_features])
@@ -521,14 +556,27 @@ class DePradoFeatureEngine:
                         index=non_const_features,
                         columns=[f"PC{i+1}" for i in range(n_pcs)]
                     )
-                    loadings_map[group_key_base] = loadings
+                    # Merge with constant feature loadings if any
+                    if group_key_base in loadings_map:
+                        # Combine PCA loadings with constant feature loadings
+                        for pc_col in loadings.columns:
+                            if pc_col in loadings_map[group_key_base].columns:
+                                loadings_map[group_key_base][pc_col] = loadings[pc_col]
+                            else:
+                                loadings_map[group_key_base][pc_col] = loadings[pc_col]
+                    else:
+                        loadings_map[group_key_base] = loadings
                 elif len(non_const_features) == 1:
                     col_name = f"{group_key_base}_PC1"
                     X_train_groups[col_name] = X_train[non_const_features[0]]
                     X_val_groups[col_name] = X_val[non_const_features[0]]
-                    loadings_map[group_key_base] = pd.DataFrame(
-                        [1.0], index=non_const_features, columns=["PC1"]
-                    )
+                    # Combine with constant feature loadings if any
+                    if group_key_base not in loadings_map:
+                        loadings_map[group_key_base] = pd.DataFrame(
+                            [1.0], index=non_const_features, columns=["PC1"]
+                        )
+                    else:
+                        loadings_map[group_key_base].loc[non_const_features[0], "PC1"] = 1.0
 
             elif len(features) == 1:
                 col_name = f"{group_key_base}_PC1"
@@ -558,6 +606,20 @@ class DePradoFeatureEngine:
 
         # OOF Feature ICs: List of Dicts {feature: ic}
         fold_feature_ics = []
+        
+        # Check if we have enough classes for classification
+        unique_y = np.unique(y)
+        if len(unique_y) < 2:
+            tprint_warning(f"⚠️ MDI OOF Skipped: Target has only {len(unique_y)} class(es) ({unique_y}). Returning zero importance.")
+            return {
+                'mean_gain': pd.Series(0.0, index=X.columns),
+                'stability': pd.Series(0.0, index=X.columns),
+                'oof_ic': 0.0,
+                'feature_oof_ic': pd.Series(0.0, index=X.columns),
+                'topk_freq': pd.Series(0.0, index=X.columns),
+                'median_log_gain': pd.Series(0.0, index=X.columns),
+                'iqr_log_gain': pd.Series(0.0, index=X.columns)
+            }
 
         # Determine metric and objective
         if self.is_regression:
@@ -619,18 +681,18 @@ class DePradoFeatureEngine:
                 fold_imp = fold_imp_series
 
             # --- Calculate Feature-Level OOF IC (Spearman) ---
-            # Must compute on validation set only
-            current_fold_ics = {}
-            for col in X.columns:
-                try:
-                    # Get feature validation data
-                    if col not in X_val.columns: continue
-
-                    ic_val, _ = spearmanr(X_val[col], y_val)
-                    if np.isnan(ic_val): ic_val = 0.0
-                    current_fold_ics[col] = ic_val
-                except Exception:
-                    current_fold_ics[col] = 0.0
+            # === OPT 3: Vectorized using corrwith instead of per-feature loop ===
+            try:
+                # Rank-transform for Spearman correlation
+                X_val_ranked = X_val.rank(method='average')
+                y_val_ranked = y_val.rank(method='average')
+                # Compute correlation of all features with target at once
+                ic_series = X_val_ranked.corrwith(y_val_ranked, method='pearson')
+                ic_series = ic_series.fillna(0.0)
+                current_fold_ics = ic_series.to_dict()
+            except Exception:
+                # Fallback to empty
+                current_fold_ics = {col: 0.0 for col in X.columns}
             fold_feature_ics.append(current_fold_ics)
 
             # --- Store Fold Stats ---

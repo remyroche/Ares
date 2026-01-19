@@ -290,7 +290,9 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None, 
             composite_price = apply_hampel_filter(composite_price, hampel_window, hampel_threshold)
         
         # Apply Savitzky-Golay Filter if enabled (feature preservation)
+        # WARNING: Centered Savitzky-Golay is non-causal. Ensure this is only enabled for research/post-hoc analysis.
         if savgol_filter_enabled and len(composite_price) > savgol_window:
+            logger.warning("⚠️ Using non-causal Savitzky-Golay filter. This introduced lookahead bias!")
             composite_price = apply_savgol_filter(composite_price, savgol_window, savgol_order)
         
         # Ensure no NaN values

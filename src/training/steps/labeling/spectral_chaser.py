@@ -130,6 +130,39 @@ class SpectralChaser:
             if causal_anchor_predictions is not None and len(causal_anchor_predictions) != len(df):
                 raise ValueError("df and causal_anchor_predictions length mismatch")
             
+            # === DIAGNOSTIC: Residual Computation Verification ===
+            if self.verbose:
+                tprint_info("   🔍 DIAGNOSTIC: Residual Computation Verification")
+                tprint_info(f"      - Input samples: {len(df)}")
+                tprint_info(f"      - Residual samples: {len(y_residuals)}")
+                
+                if causal_anchor_predictions is not None:
+                    tprint_info(f"      - Causal anchor samples: {len(causal_anchor_predictions)}")
+                    tprint_info(f"      - Causal anchor mean: {causal_anchor_predictions.mean():.8f}")
+                    tprint_info(f"      - Causal anchor std: {causal_anchor_predictions.std():.8f}")
+                    tprint_info(f"      - Causal anchor range: {causal_anchor_predictions.max() - causal_anchor_predictions.min():.8f}")
+                    
+                    # Check if residuals were computed correctly
+                    # Residuals should be: y_actual - y_causal_anchor
+                    # If causal anchor is good, residuals should have lower variance than original returns
+                    anchor_std = causal_anchor_predictions.std()
+                    residual_std = y_residuals.std()
+                    tprint_info(f"      - Anchor std vs Residual std: {anchor_std:.8f} vs {residual_std:.8f}")
+                    
+                    if residual_std < anchor_std * 0.1:
+                        tprint_warning("      ⚠️ Residuals have much lower variance than causal anchor - possible overfitting")
+                    elif residual_std > anchor_std * 2.0:
+                        tprint_warning("      ⚠️ Residuals have higher variance than causal anchor - possible underfitting")
+                else:
+                    tprint_info("      - No causal anchor predictions provided")
+                    tprint_info("      - Training on raw residuals (should be returns or similar)")
+                
+                # Check residual distribution
+                residual_zeros = (y_residuals == 0).sum()
+                residual_outliers = (np.abs(y_residuals) > 3 * y_residuals.std()).sum()
+                tprint_info(f"      - Zero residuals: {residual_zeros} ({residual_zeros/len(y_residuals):.2%})")
+                tprint_info(f"      - Outlier residuals (>|3σ|): {residual_outliers} ({residual_outliers/len(y_residuals):.2%})")
+            
             # Step 1: Process market data through AEDL pipeline
             if self.verbose:
                 tprint_info("   🎯 Step 1: AEDL pipeline processing...")
@@ -178,6 +211,68 @@ class SpectralChaser:
             # Robustness check: Check for constant target
             if self.verbose and y_residuals.std() < 1e-9:
                  tprint_warning("      ⚠️ Target residuals are effectively constant! Models may fail to split.")
+
+            # === DIAGNOSTIC: Target Residual Analysis ===
+            if self.verbose:
+                tprint_info("   🔍 DIAGNOSTIC: Target Residual Analysis")
+                tprint_info(f"      - Target residual mean: {y_residuals.mean():.8f}")
+                tprint_info(f"      - Target residual std: {y_residuals.std():.8f}")
+                tprint_info(f"      - Target residual min: {y_residuals.min():.8f}")
+                tprint_info(f"      - Target residual max: {y_residuals.max():.8f}")
+                tprint_info(f"      - Target residual range: {y_residuals.max() - y_residuals.min():.8f}")
+                tprint_info(f"      - Target residual q25: {y_residuals.quantile(0.25):.8f}")
+                tprint_info(f"      - Target residual q75: {y_residuals.quantile(0.75):.8f}")
+                tprint_info(f"      - Target zeros: {(y_residuals == 0).sum()} ({(y_residuals == 0).mean():.2%})")
+                
+                # Check if target is effectively constant
+                cv_target = y_residuals.std() / (abs(y_residuals.mean()) + 1e-12)
+                tprint_info(f"      - Coefficient of variation: {cv_target:.6f}")
+                if cv_target < 0.01:
+                    tprint_warning("      ⚠️ Target has very low variation relative to mean!")
+
+            # === DIAGNOSTIC: Feature-Target Correlation Analysis ===
+            if self.verbose:
+                tprint_info("   🔍 DIAGNOSTIC: Feature-Target Correlation Analysis")
+                correlations = X_alpha.corrwith(y_residuals)
+                abs_correlations = correlations.abs()
+                
+                tprint_info(f"      - Max absolute correlation: {abs_correlations.max():.6f}")
+                tprint_info(f"      - Mean absolute correlation: {abs_correlations.mean():.6f}")
+                tprint_info(f"      - Median absolute correlation: {abs_correlations.median():.6f}")
+                tprint_info(f"      - Features with |corr| > 0.01: {(abs_correlations > 0.01).sum()}")
+                tprint_info(f"      - Features with |corr| > 0.05: {(abs_correlations > 0.05).sum()}")
+                tprint_info(f"      - Features with |corr| > 0.10: {(abs_correlations > 0.10).sum()}")
+                
+                # Show top correlated features
+                top_corr = abs_correlations.nlargest(5)
+                if len(top_corr) > 0:
+                    tprint_info("      - Top 5 correlated features:")
+                    for feat, corr in top_corr.items():
+                        sign = "+" if correlations[feat] >= 0 else "-"
+                        tprint_info(f"         {feat}: {sign}{corr:.6f}")
+                else:
+                    tprint_warning("      ⚠️ No features show meaningful correlation with target!")
+
+            # === DIAGNOSTIC: Compression Pipeline Analysis ===
+            if self.verbose:
+                compression_metrics = aedl_results.get('compression_metrics', {})
+                if compression_metrics:
+                    tprint_info("   🔍 DIAGNOSTIC: Compression Pipeline Analysis")
+                    tprint_info(f"      - Original spectral components: {compression_metrics.get('original_components', 'N/A')}")
+                    tprint_info(f"      - After PCA compression: {compression_metrics.get('after_pca', 'N/A')}")
+                    tprint_info(f"      - After parent filtering: {compression_metrics.get('after_parent_filtering', 'N/A')}")
+                    tprint_info(f"      - Final alpha features: {compression_metrics.get('final_alpha_features', 'N/A')}")
+                    tprint_info(f"      - Total compression ratio: {compression_metrics.get('total_compression_ratio', 'N/A')}")
+                    
+                    # Check if compression was too aggressive
+                    orig_comp = compression_metrics.get('original_components', 55)
+                    final_alpha = compression_metrics.get('final_alpha_features', 22)
+                    if orig_comp and final_alpha:
+                        compression_loss = (orig_comp - final_alpha) / orig_comp
+                        if compression_loss > 0.8:
+                            tprint_warning(f"      ⚠️ High compression loss: {compression_loss:.1%} of features removed")
+                        elif compression_loss > 0.6:
+                            tprint_warning(f"      ⚠️ Moderate compression loss: {compression_loss:.1%} of features removed")
 
             # Store feature names
             self.feature_names = X_alpha.columns.tolist()
@@ -274,6 +369,36 @@ class SpectralChaser:
                     train_pred = model.predict(X)
                     train_mse = mean_squared_error(y, train_pred)
                     train_mae = mean_absolute_error(y, train_pred)
+                    
+                    # === DIAGNOSTIC: Prediction Analysis ===
+                    if self.verbose:
+                        tprint_info(f"         🔍 DIAGNOSTIC: {model_type} Prediction Analysis")
+                        tprint_info(f"            - Prediction mean: {train_pred.mean():.8f}")
+                        tprint_info(f"            - Prediction std: {train_pred.std():.8f}")
+                        tprint_info(f"            - Prediction min: {train_pred.min():.8f}")
+                        tprint_info(f"            - Prediction max: {train_pred.max():.8f}")
+                        tprint_info(f"            - Prediction range: {train_pred.max() - train_pred.min():.8f}")
+                        tprint_info(f"            - Target mean: {y.mean():.8f}")
+                        tprint_info(f"            - Target std: {y.std():.8f}")
+                        
+                        # Check if predictions are constant
+                        pred_cv = train_pred.std() / (abs(train_pred.mean()) + 1e-12)
+                        tprint_info(f"            - Prediction CV: {pred_cv:.8f}")
+                        if pred_cv < 1e-6:
+                            tprint_warning(f"            ⚠️ {model_type} predictions are effectively constant!")
+                        
+                        # Check prediction-target relationship
+                        pred_target_corr = np.corrcoef(train_pred, y)[0, 1]
+                        tprint_info(f"            - Pred-Target correlation: {pred_target_corr:.6f}")
+                        
+                        # Check feature importance if available
+                        if hasattr(model, 'feature_importances_'):
+                            fi_nonzero = np.sum(model.feature_importances_ > 1e-10)
+                            fi_max = np.max(model.feature_importances_)
+                            tprint_info(f"            - Non-zero feature importances: {fi_nonzero}/{len(model.feature_importances_)}")
+                            tprint_info(f"            - Max feature importance: {fi_max:.8f}")
+                            if fi_nonzero == 0:
+                                tprint_warning(f"            ⚠️ {model_type} has ALL zero feature importances!")
                     
                     # Store model and metrics
                     self.models[model_type] = model
@@ -534,7 +659,35 @@ class SpectralChaser:
                 
                 if not importance_scores or all(v == 0 for v in importance_scores.values()):
                     if self.verbose:
-                         tprint_warning("      ⚠️ Feature importance is all zero (ensemble). Possible causes: constant features/target.")
+                        tprint_warning("      ⚠️ Feature importance is all zero (ensemble). Possible causes: constant features/target.")
+                        
+                        # === DIAGNOSTIC: Zero Importance Analysis ===
+                        tprint_info("      🔍 DIAGNOSTIC: Zero Feature Importance Analysis")
+                        tprint_info(f"         - Total models checked: {n_models}")
+                        tprint_info(f"         - Models with feature_importances_: {sum(1 for m in self.models.values() if hasattr(m, 'feature_importances_'))}")
+                        
+                        # Check each model individually
+                        for model_name, model in self.models.items():
+                            if hasattr(model, 'feature_importances_'):
+                                fi = model.feature_importances_
+                                fi_nonzero = np.sum(fi > 1e-10)
+                                fi_max = np.max(fi)
+                                fi_mean = np.mean(fi)
+                                tprint_info(f"         - {model_name}: {fi_nonzero}/{len(fi)} non-zero, max={fi_max:.8f}, mean={fi_mean:.8f}")
+                            else:
+                                tprint_info(f"         - {model_name}: No feature_importances_ attribute")
+                        
+                        # Check if this is a linear model (which doesn't have feature_importances_)
+                        linear_models = [name for name, model in self.models.items() 
+                                     if type(model).__name__ in ['LinearRegression']]
+                        if linear_models:
+                            tprint_info(f"         - Linear models found: {linear_models} (no feature_importances_)")
+                        
+                        # Suggest possible causes
+                        if len(self.models) == 0:
+                            tprint_warning("         ⚠️ No models were successfully trained!")
+                        elif all(type(model).__name__ == 'LinearRegression' for model in self.models.values()):
+                            tprint_warning("         ⚠️ Only linear models trained - use tree-based models for feature importance!")
 
                 return importance_scores
             

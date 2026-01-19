@@ -389,10 +389,10 @@ class SRParameterOptimizationStep(BaseStep):
         # Initialize unified evaluator
         if EVALUATION_AVAILABLE:
             self.evaluation_config = EvaluationConfig(
-                enable_time_series_metrics=True,
-                enable_financial_metrics=True,
-                enable_risk_metrics=True,
-                enable_drawdown_analysis=True
+                calculate_regression_metrics=True,
+                calculate_trading_metrics=True,
+                enable_sharpe_ratio=True,
+                enable_max_drawdown=True
             )
             self.evaluator = UnifiedEvaluator(self.evaluation_config)
             self.logger.info("✅ Unified evaluator initialized")

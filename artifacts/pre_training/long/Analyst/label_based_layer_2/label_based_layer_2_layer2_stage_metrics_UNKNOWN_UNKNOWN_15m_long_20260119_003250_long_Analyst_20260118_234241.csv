@@ -1,0 +1,8 @@
+,stage_name,timestamp,input_data_shape,output_data_shape,processing_time,memory_usage_mb,geometry_metrics,model_metrics,feature_metrics,quality_metrics,performance_scores,stability_scores,integrity_scores
+0,OOF_Start,2026-01-18T23:56:48.854622,"[132484, 99]",,0.0,193.234375,{},{},{},{},{},{},{}
+1,TrainBatch_LIQUIDITY_SPECIALIST,2026-01-18T23:58:49.706854,"[2909, 402]",,0.0,1611.921875,{},{},{},{},{},{},{}
+2,TrainBatch_VOLATILITY_SPECIALIST,2026-01-19T00:02:25.485075,"[3710, 402]",,0.0,890.5,{},{},{},{},{},{},{}
+3,TrainBatch_VOLUME_SPECIALIST,2026-01-19T00:03:26.351850,"[4094, 402]",,0.0,932.609375,{},{},{},{},{},{},{}
+4,TrainBatch_INFORMATION_SPECIALIST,2026-01-19T00:05:25.877030,"[5285, 402]",,0.0,916.71875,{},{},{},{},{},{},{}
+5,TrainBatch_INVENTORY_SPECIALIST,2026-01-19T00:07:53.416643,"[898, 402]",,0.0,94.03125,{},{},{},{},{},{},{}
+6,TrainBatch_MOMENTUM_DECAY_SPECIALIST,2026-01-19T00:17:44.427650,"[115, 402]",,0.0,788.3125,{},{},{},{},{},{},{}

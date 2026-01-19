@@ -32,6 +32,9 @@ from sklearn.calibration import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.model_selection import KFold, cross_val_predict
 from sklearn.base import clone
+from sklearn.linear_model import Ridge
+from scipy.optimize import minimize
+import itertools
 
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
@@ -109,10 +112,13 @@ class SimpleMultiModelRiskEngine:
         
         # Default weights if not provided
         self.consensus_weights = consensus_weights or {
-            'extratrees': 0.25,
-            'lgbm': 0.25,
-            'xgboost': 0.25,
-            'catboost': 0.25
+            'extratrees': 0.20,  # Reduced from 0.25
+            'lgbm': 0.20,        # Reduced from 0.25
+            'xgboost': 0.20,     # Reduced from 0.25
+            'catboost': 0.20,    # Reduced from 0.25
+            'ridge_alpha1': 0.0667,  # New: 1/15
+            'ridge_alpha5': 0.0667,  # New: 1/15
+            'ridge_alpha10': 0.0666  # New: 1/15 (rounded)
         }
         
         # Models configuration
@@ -166,11 +172,19 @@ class SimpleMultiModelRiskEngine:
         }
         self.catboost_model = None
         
+        # Ridge models with different alphas
+        self.ridge_alpha1 = Ridge(alpha=1.0, random_state=42)
+        self.ridge_alpha5 = Ridge(alpha=5.0, random_state=42)
+        self.ridge_alpha10 = Ridge(alpha=10.0, random_state=42)
+        
         self.calibrators = {
             'extratrees': IsotonicRegression(out_of_bounds='clip'),
             'lgbm': IsotonicRegression(out_of_bounds='clip'),
             'xgboost': IsotonicRegression(out_of_bounds='clip'),
-            'catboost': IsotonicRegression(out_of_bounds='clip')
+            'catboost': IsotonicRegression(out_of_bounds='clip'),
+            'ridge_alpha1': IsotonicRegression(out_of_bounds='clip'),
+            'ridge_alpha5': IsotonicRegression(out_of_bounds='clip'),
+            'ridge_alpha10': IsotonicRegression(out_of_bounds='clip')
         }
         
         self.consensus_calibrator = IsotonicRegression(out_of_bounds='clip')
@@ -180,12 +194,11 @@ class SimpleMultiModelRiskEngine:
         self.huber_scaler = None
         self.huber_feature_columns = None
         self.is_fitted = False
-
-        # Dual Chaser components
-        self.stable_chaser = None
-        self.aggressive_chaser = None
-        self.dual_chaser_scaler = None
-        self.gate_params = None
+        
+        # Dynamic consensus attributes
+        self.selected_models = None
+        self.optimized_weights = None
+        self.model_selection_results = None
     
     def _compute_financial_weights(self, abs_returns: pd.Series, volatility: pd.Series) -> pd.Series:
         # Use Numba-optimized implementation
@@ -274,6 +287,124 @@ class SimpleMultiModelRiskEngine:
                 feats[col] = df[col]
         
         return feats.fillna(0)
+
+    def _analyze_model_correlations(self, base_predictions: Dict[str, np.ndarray], 
+                                   y_true: pd.Series, abs_returns: pd.Series) -> Dict[str, Any]:
+        """
+        Analyze correlations between model predictions and select top 4 based on:
+        1. Low pairwise correlation (diversity)
+        2. High PnL performance
+        """
+        model_names = list(base_predictions.keys())
+        n_models = len(model_names)
+        
+        # Calculate correlation matrix
+        corr_matrix = np.zeros((n_models, n_models))
+        for i, j in itertools.combinations(range(n_models), 2):
+            corr, _ = spearmanr(base_predictions[model_names[i]], base_predictions[model_names[j]])
+            corr_matrix[i, j] = abs(corr)
+            corr_matrix[j, i] = abs(corr)
+        
+        # Calculate PnL metrics for each model
+        pnl_metrics = {}
+        for name in model_names:
+            preds = base_predictions[name]
+            # Simple PnL: direction * return
+            direction = np.sign(preds - 0.5)
+            pnl = direction * y_true.values
+            # Sharpe-like metric
+            sharpe = np.mean(pnl) / (np.std(pnl) + 1e-9)
+            pnl_metrics[name] = sharpe
+        
+        # Model selection algorithm
+        selected_models = []
+        remaining_models = model_names.copy()
+        
+        # Select first model (highest PnL)
+        first_model = max(remaining_models, key=lambda x: pnl_metrics[x])
+        selected_models.append(first_model)
+        remaining_models.remove(first_model)
+        
+        # Select remaining 3 models
+        while len(selected_models) < 4 and remaining_models:
+            best_score = -np.inf
+            best_model = None
+            
+            for candidate in remaining_models:
+                # Calculate average correlation with selected models
+                candidate_idx = model_names.index(candidate)
+                selected_indices = [model_names.index(m) for m in selected_models]
+                avg_corr = np.mean([corr_matrix[candidate_idx, sel_idx] for sel_idx in selected_indices])
+                
+                # Diversity-adjusted score (lower correlation = higher score)
+                diversity_bonus = 1.0 - avg_corr
+                combined_score = pnl_metrics[candidate] * diversity_bonus
+                
+                if combined_score > best_score:
+                    best_score = combined_score
+                    best_model = candidate
+            
+            if best_model:
+                selected_models.append(best_model)
+                remaining_models.remove(best_model)
+            else:
+                break
+        
+        # Optimize weights for selected models
+        optimized_weights = self._optimize_consensus_weights(
+            selected_models, base_predictions, y_true, abs_returns
+        )
+        
+        return {
+            'selected_models': selected_models,
+            'optimized_weights': optimized_weights,
+            'correlation_matrix': corr_matrix,
+            'pnl_metrics': pnl_metrics,
+            'all_models': model_names
+        }
+
+    def _optimize_consensus_weights(self, selected_models: List[str], 
+                                   base_predictions: Dict[str, np.ndarray],
+                                   y_true: pd.Series, abs_returns: pd.Series) -> Dict[str, float]:
+        """
+        Optimize consensus weights to maximize PnL Sharpe ratio.
+        """
+        def objective(weights):
+            # Normalize weights to sum to 1
+            weights = weights / np.sum(weights)
+            
+            # Calculate weighted consensus
+            consensus = np.zeros(len(y_true))
+            for i, model in enumerate(selected_models):
+                consensus += weights[i] * base_predictions[model]
+            
+            # Calculate PnL
+            direction = np.sign(consensus - 0.5)
+            pnl = direction * y_true.values
+            
+            # Negative Sharpe (for minimization)
+            sharpe = np.mean(pnl) / (np.std(pnl) + 1e-9)
+            return -sharpe
+        
+        # Initial guess (equal weights)
+        n_models = len(selected_models)
+        initial_weights = np.ones(n_models) / n_models
+        
+        # Constraints: weights >= 0, sum(weights) = 1
+        constraints = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+        bounds = [(0, 1) for _ in range(n_models)]
+        
+        # Optimize
+        result = minimize(objective, initial_weights, 
+                         method='SLSQP', bounds=bounds, constraints=constraints)
+        
+        if result.success:
+            optimized_weights = result.x / np.sum(result.x)
+        else:
+            # Fallback to equal weights
+            optimized_weights = initial_weights
+        
+        return dict(zip(selected_models, optimized_weights))
 
     def train(self, df: pd.DataFrame, market_features: pd.DataFrame,
               y_true: pd.Series, abs_returns: pd.Series) -> Dict[str, Any]:
@@ -556,13 +687,40 @@ class SimpleMultiModelRiskEngine:
         base_predictions['catboost'] = catboost_preds
         self.calibrators['catboost'].fit(catboost_preds, y_true)
         
-        # --- Consensus ---
-        consensus_raw = (
-            self.consensus_weights['extratrees'] * base_predictions['extratrees'] +
-            self.consensus_weights['lgbm'] * base_predictions['lgbm'] +
-            self.consensus_weights['xgboost'] * base_predictions['xgboost'] +
-            self.consensus_weights['catboost'] * base_predictions['catboost']
-        )
+        # --- 5. Ridge Models ---
+        tprint_info("📊 Training Ridge models (alphas: 1, 5, 10)...")
+        self.ridge_alpha1.fit(X_pruned, y_true, sample_weight=weights)
+        ridge1_preds = self.ridge_alpha1.predict(X_pruned)
+        base_predictions['ridge_alpha1'] = ridge1_preds
+        self.calibrators['ridge_alpha1'].fit(ridge1_preds, y_true)
+
+        self.ridge_alpha5.fit(X_pruned, y_true, sample_weight=weights)
+        ridge5_preds = self.ridge_alpha5.predict(X_pruned)
+        base_predictions['ridge_alpha5'] = ridge5_preds
+        self.calibrators['ridge_alpha5'].fit(ridge5_preds, y_true)
+
+        self.ridge_alpha10.fit(X_pruned, y_true, sample_weight=weights)
+        ridge10_preds = self.ridge_alpha10.predict(X_pruned)
+        base_predictions['ridge_alpha10'] = ridge10_preds
+        self.calibrators['ridge_alpha10'].fit(ridge10_preds, y_true)
+        
+        # --- Dynamic Model Selection & Consensus ---
+        tprint_info("🔍 Analyzing model correlations and selecting top 4...")
+        selection_results = self._analyze_model_correlations(base_predictions, y_true, abs_returns)
+
+        self.selected_models = selection_results['selected_models']
+        self.optimized_weights = selection_results['optimized_weights']
+
+        # Build consensus with optimized weights
+        consensus_raw = np.zeros(len(y_true))
+        for model in self.selected_models:
+            consensus_raw += self.optimized_weights[model] * base_predictions[model]
+
+        # Store analysis results for logging
+        self.model_selection_results = selection_results
+
+        tprint_info(f"✅ Selected models: {self.selected_models}")
+        tprint_info(f"📊 Optimized weights: {self.optimized_weights}")
         
         # Calibrate Consensus
         self.consensus_calibrator.fit(consensus_raw, y_true)
@@ -576,7 +734,11 @@ class SimpleMultiModelRiskEngine:
             'consensus_weighted_logloss': log_loss(y_true, consensus_calibrated, sample_weight=weights),
             'n_features_total': len(X_full.columns),
             'n_features_pruned': len(self.selected_features),
-            'mean_conviction': consensus_calibrated.mean()
+            'mean_conviction': consensus_calibrated.mean(),
+            'selected_models': self.selected_models,
+            'optimized_weights': self.optimized_weights,
+            'correlation_matrix': selection_results['correlation_matrix'].tolist(),
+            'pnl_metrics': selection_results['pnl_metrics']
         }
         
         tprint_success(f"✅ Layer 4 Engine trained: WL={metrics['consensus_weighted_logloss']:.4f}, Features={metrics['n_features_pruned']}")
@@ -682,13 +844,33 @@ class SimpleMultiModelRiskEngine:
         catboost_preds = cb_raw + warm_start
         cb_cal = self.calibrators['catboost'].transform(catboost_preds)
 
-        # Consensus
-        consensus = (
-            self.consensus_weights['extratrees'] * et_cal +
-            self.consensus_weights['lgbm'] * lgbm_cal +
-            self.consensus_weights['xgboost'] * xgb_cal +
-            self.consensus_weights['catboost'] * cb_cal
-        )
+        # 5. Ridge models
+        ridge1_preds = self.ridge_alpha1.predict(X_pruned)
+        ridge1_cal = self.calibrators['ridge_alpha1'].transform(ridge1_preds)
+
+        ridge5_preds = self.ridge_alpha5.predict(X_pruned)
+        ridge5_cal = self.calibrators['ridge_alpha5'].transform(ridge5_preds)
+
+        ridge10_preds = self.ridge_alpha10.predict(X_pruned)
+        ridge10_cal = self.calibrators['ridge_alpha10'].transform(ridge10_preds)
+
+        # Dynamic consensus with selected models
+        consensus = np.zeros(len(X_pruned))
+        for model in self.selected_models:
+            if model == 'extratrees':
+                consensus += self.optimized_weights[model] * et_cal
+            elif model == 'lgbm':
+                consensus += self.optimized_weights[model] * lgbm_cal
+            elif model == 'xgboost':
+                consensus += self.optimized_weights[model] * xgb_cal
+            elif model == 'catboost':
+                consensus += self.optimized_weights[model] * cb_cal
+            elif model == 'ridge_alpha1':
+                consensus += self.optimized_weights[model] * ridge1_cal
+            elif model == 'ridge_alpha5':
+                consensus += self.optimized_weights[model] * ridge5_cal
+            elif model == 'ridge_alpha10':
+                consensus += self.optimized_weights[model] * ridge10_cal
         
         return self.consensus_calibrator.transform(consensus)
 

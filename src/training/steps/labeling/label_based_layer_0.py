@@ -62,11 +62,31 @@ def compute_filter_diagnostics(
         sampling_rate: Sampling rate (Hz) for frequency analysis
     
     Returns:
-        Dictionary of diagnostic metrics
+        Dictionary of diagnostic metrics (all with valid float values, no NaN)
     """
-    diagnostics = {f"{filter_name}_snr_improvement": 0.0, f"{filter_name}_noise_reduction": 0.0}
+    # Initialize ALL expected metrics with safe defaults
+    diagnostics = {
+        f"{filter_name}_snr_improvement": 0.0,
+        f"{filter_name}_noise_reduction": 0.0,
+        f"{filter_name}_smoothness_ratio": 1.0,  # 1.0 = no change
+        f"{filter_name}_tracking_rmse": 0.0,
+        f"{filter_name}_high_freq_reduction": 0.0,
+        f"{filter_name}_low_freq_preservation": 1.0,  # 1.0 = perfect preservation
+    }
     
     try:
+        # Ensure arrays are valid
+        raw = np.asarray(raw, dtype=float)
+        filtered = np.asarray(filtered, dtype=float)
+        
+        # Check for valid data
+        valid_mask = np.isfinite(raw) & np.isfinite(filtered)
+        if valid_mask.sum() < 10:
+            return diagnostics
+        
+        raw = raw[valid_mask]
+        filtered = filtered[valid_mask]
+        
         # Basic signal quality metrics
         raw_var = np.var(raw)
         filtered_var = np.var(filtered)
@@ -75,23 +95,24 @@ def compute_filter_diagnostics(
         # SNR improvement (signal variance / noise variance)
         if noise_var > 1e-12:
             snr_improvement = filtered_var / noise_var
-            diagnostics[f"{filter_name}_snr_improvement"] = float(snr_improvement)
+            diagnostics[f"{filter_name}_snr_improvement"] = float(np.clip(snr_improvement, 0, 1e6))
         
         # Noise reduction percentage
         if raw_var > 1e-12:
             noise_reduction = 1.0 - (noise_var / raw_var)
-            diagnostics[f"{filter_name}_noise_reduction"] = float(noise_reduction)
+            diagnostics[f"{filter_name}_noise_reduction"] = float(np.clip(noise_reduction, -1, 1))
         
         # Smoothness metric (lower is smoother)
-        raw_roughness = np.mean(np.diff(raw, n=2) ** 2)
-        filtered_roughness = np.mean(np.diff(filtered, n=2) ** 2)
-        if raw_roughness > 1e-12:
-            smoothness_ratio = filtered_roughness / raw_roughness
-            diagnostics[f"{filter_name}_smoothness_ratio"] = float(smoothness_ratio)
+        if len(raw) > 2:
+            raw_roughness = np.mean(np.diff(raw, n=2) ** 2)
+            filtered_roughness = np.mean(np.diff(filtered, n=2) ** 2)
+            if raw_roughness > 1e-12:
+                smoothness_ratio = filtered_roughness / raw_roughness
+                diagnostics[f"{filter_name}_smoothness_ratio"] = float(np.clip(smoothness_ratio, 0, 100))
         
         # Tracking error (RMSE)
         tracking_error = np.sqrt(np.mean((raw - filtered) ** 2))
-        diagnostics[f"{filter_name}_tracking_rmse"] = float(tracking_error)
+        diagnostics[f"{filter_name}_tracking_rmse"] = float(np.clip(tracking_error, 0, 1e6))
         
         # Frequency domain analysis (if scipy available)
         try:
@@ -102,31 +123,31 @@ def compute_filter_diagnostics(
             freqs_filt, psd_filt = scipy_signal.periodogram(filtered, fs=sampling_rate)
             
             # Compute noise reduction in different frequency bands
-            if len(freqs_raw) > 1 and len(freqs_filt) > 1:
+            if len(freqs_raw) > 4 and len(freqs_filt) > 4:
                 # High frequency noise (upper 25% of spectrum)
-                high_freq_idx = int(0.75 * len(freqs_raw))
+                high_freq_idx = max(1, int(0.75 * len(freqs_raw)))
                 high_freq_power_raw = np.mean(psd_raw[high_freq_idx:])
                 high_freq_power_filt = np.mean(psd_filt[high_freq_idx:])
                 
-                if high_freq_power_raw > 1e-12:
+                if high_freq_power_raw > 1e-12 and np.isfinite(high_freq_power_filt):
                     high_freq_reduction = 1.0 - (high_freq_power_filt / high_freq_power_raw)
-                    diagnostics[f"{filter_name}_high_freq_reduction"] = float(high_freq_reduction)
+                    diagnostics[f"{filter_name}_high_freq_reduction"] = float(np.clip(high_freq_reduction, -1, 1))
                 
                 # Low frequency preservation (lower 25% of spectrum)
-                low_freq_idx = int(0.25 * len(freqs_raw))
+                low_freq_idx = max(1, int(0.25 * len(freqs_raw)))
                 low_freq_power_raw = np.mean(psd_raw[:low_freq_idx])
                 low_freq_power_filt = np.mean(psd_filt[:low_freq_idx])
                 
-                if low_freq_power_raw > 1e-12:
+                if low_freq_power_raw > 1e-12 and np.isfinite(low_freq_power_filt):
                     low_freq_preservation = low_freq_power_filt / low_freq_power_raw
-                    diagnostics[f"{filter_name}_low_freq_preservation"] = float(low_freq_preservation)
+                    diagnostics[f"{filter_name}_low_freq_preservation"] = float(np.clip(low_freq_preservation, 0, 10))
                     
         except ImportError:
-            # scipy not available, skip frequency analysis
+            # scipy not available, skip frequency analysis (defaults already set)
             pass
             
     except Exception:
-        # Return zeros if any computation fails
+        # Return defaults if any computation fails
         pass
     
     return diagnostics

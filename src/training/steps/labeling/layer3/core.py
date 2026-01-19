@@ -21,6 +21,10 @@ from .model_training import train_dual_head_models
 from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
 from .enhanced_reporting import EnhancedLayer3Reporter
 from .feature_engineering import downcast_float
+from src.training.steps.labeling.irm_regime_pipeline import (
+    build_env_indices_for_index,
+    get_or_fit_regime_labels
+)
 
 def generate_regime_aware_features(
     X: pd.DataFrame,
@@ -559,11 +563,25 @@ def layer3_analyst_lgbm(
     # Use 12-bar target for feature selection relevance
     X_clustered = apply_mild_mp_clustering(X_full, threshold=0.98, target=y_alpha_12_series)
 
+    irm_env_indices = []
+    if cfg.get("irm_meta_enabled", True):
+        gmm_dir = Path(cfg.get("irm_regime_dir", "artifacts/irm_regimes"))
+        gmm_dir.mkdir(parents=True, exist_ok=True)
+        regime_labels = get_or_fit_regime_labels(
+            df,
+            gmm_dir / "layer3_meta_gmm.pkl",
+            n_regimes=cfg.get("irm_meta_regimes", 2),
+            refit=cfg.get("irm_refit_regimes", False)
+        )
+        irm_env_indices = build_env_indices_for_index(regime_labels, X_clustered.index)
+
     # Phase 4-8: Multi-Horizon Model Training
     # (Huber Teacher -> Rotation -> Train -> Optuna -> Predictions) handled in model_training.py
     tprint_info("🤖 Phase 4-8: Multi-Horizon Model Training")
     
     # Run training for all horizons/tasks
+    cfg["irm_env_indices"] = irm_env_indices
+    cfg["irm_lambda"] = cfg.get("irm_meta_lambda", 2.0)
     model_results = train_dual_head_models(
         X_clustered, y_alpha_12, y_prob_12, w_alpha, w_alpha, [], cfg, cfg.get('fast_mode', False)
     )
@@ -615,7 +633,8 @@ def layer3_analyst_lgbm(
         'all_models': combined_models,
         'best_models': best_models_info,
         'meta_features': meta_features,
-        'entropy_bars': entropy_bars_df if not entropy_bars_df.empty else None
+        'entropy_bars': entropy_bars_df if not entropy_bars_df.empty else None,
+        'irm_env_indices': irm_env_indices
     }
 
     # Enhanced Reporting

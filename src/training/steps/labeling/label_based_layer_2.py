@@ -58,6 +58,12 @@ import psutil
 from pathlib import Path
 import hashlib
 from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor
+from src.training.steps.labeling.irm_regime_pipeline import (
+    IRMLinearClassifier,
+    IRMLinearRegressor,
+    build_env_indices_for_index,
+    get_or_fit_regime_labels
+)
 from .de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -1510,6 +1516,12 @@ class LabelBasedLayer2(BaseStep):
         self.focal_gamma = kwargs.get('focal_gamma', 2.0)
         self.focal_gamma_pos = kwargs.get('focal_gamma_pos', 1.0)
         self.focal_gamma_neg = kwargs.get('focal_gamma_neg', 2.5)
+        self.irm_teacher_regimes = kwargs.get('irm_teacher_regimes', 4)
+        self.irm_refit_regimes = kwargs.get('irm_refit_regimes', False)
+        self.irm_regime_dir = Path(kwargs.get('irm_regime_dir', "artifacts/irm_regimes"))
+        self.irm_regime_dir.mkdir(parents=True, exist_ok=True)
+        self._irm_regime_labels = None
+        self._irm_env_indices = []
         
         # Causal Discovery Parameters
         self.significance_level = kwargs.get('significance_level', 0.05)
@@ -6578,7 +6590,7 @@ class LabelBasedLayer2(BaseStep):
                                 environment_masks={
                                     # Pass the primary regime index (0, 1, 2) which is best for
                                     # splitting data into distinct environments in the loss function
-                                    'regime_id': irm_environments['vol_regime_idx'].values if 'vol_regime_idx' in irm_environments else irm_environments['vol_regime_low'].values
+                                    'regime_id': irm_environments['regime_id'].values if 'regime_id' in irm_environments else irm_environments['vol_regime_low'].values
                                 }
                             )
                             
@@ -6636,6 +6648,35 @@ class LabelBasedLayer2(BaseStep):
         self._geometry_optimization_metrics = optimization_metrics
             
         return production_geometries, production_selected_features
+
+    def _get_or_fit_irm_regime_labels(self, df: pd.DataFrame) -> Optional[pd.Series]:
+        if not self.irm_enabled:
+            return None
+
+        df_hash = hash((len(df), df.index[0], df.index[-1]))
+        cached = getattr(self, "_irm_regime_cache", {})
+        cached_entry = cached.get(df_hash)
+        if cached_entry is not None:
+            self._irm_regime_labels = cached_entry
+            return cached_entry
+
+        gmm_path = self.irm_regime_dir / "layer2_teacher_gmm.pkl"
+        labels = get_or_fit_regime_labels(
+            df,
+            gmm_path,
+            n_regimes=self.irm_teacher_regimes,
+            refit=self.irm_refit_regimes
+        )
+        self._irm_regime_labels = labels
+        self._irm_env_indices = build_env_indices_for_index(labels, df.index)
+        cached[df_hash] = labels
+        self._irm_regime_cache = cached
+        return labels
+
+    def _build_irm_env_indices(self, index: pd.Index) -> List[np.ndarray]:
+        if self._irm_regime_labels is None:
+            return []
+        return build_env_indices_for_index(self._irm_regime_labels, index)
     
     def _create_irm_environments(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -6644,25 +6685,14 @@ class LabelBasedLayer2(BaseStep):
         try:
             # Create environment features based on volatility and trend
             custom_features = pd.DataFrame(index=df.index)
-            
-            # --- FEATURE 1: VOLATILITY REGIMES (Prioritize GMM/Hunter) ---
-            if 'vol_regime' in df.columns:
-                # Use GMM-defined regimes from AdaptiveHunterRouter
-                # Map standard names: Quiet, Trending, Chaos
-                # Note: These are regime FLAGS (1/0) for IRM to identify environments
-                custom_features['vol_regime_quiet'] = (df['vol_regime'] == 'Quiet').astype(int)
-                custom_features['vol_regime_trending'] = (df['vol_regime'] == 'Trending').astype(int)
-                custom_features['vol_regime_chaos'] = (df['vol_regime'] == 'Chaos').astype(int)
-                
-                # Also create a single integer encoding for some IRM implementations
-                # 0=Quiet, 1=Trending, 2=Chaos
-                regime_map = {'Quiet': 0, 'Trending': 1, 'Chaos': 2}
-                custom_features['vol_regime_idx'] = df['vol_regime'].map(regime_map).fillna(-1).astype(int)
-                
-                tprint_info("   🧠 IRM Environments: Using GMM-derived regimes (Quiet/Trending/Chaos)")
-                
+
+            labels = self._get_or_fit_irm_regime_labels(df)
+            if labels is not None and labels.dropna().size > 0:
+                for regime in sorted(labels.dropna().unique()):
+                    custom_features[f"gmm_regime_{int(regime)}"] = (labels == regime).astype(int)
+                custom_features["regime_id"] = labels.fillna(-1).astype(int)
+                tprint_info("   🧠 IRM Environments: Using GMM-derived regime labels")
             elif 'volatility_1d' in df.columns:
-                # Fallback: Quantile-based buckets
                 vol = df['volatility_1d']
                 custom_features['vol_regime_low'] = (vol < vol.quantile(0.33)).astype(int)
                 custom_features['vol_regime_med'] = ((vol >= vol.quantile(0.33)) & (vol < vol.quantile(0.67))).astype(int)
@@ -6915,10 +6945,17 @@ class LabelBasedLayer2(BaseStep):
         if len(df_har) < 100:
             return ret # Fallback
 
-        from sklearn.linear_model import Ridge
-        model = Ridge(alpha=1.0)
-        model.fit(df_har[['lag1', 'lag5', 'lag22']], df_har['ret'])
-        pred = model.predict(df_har[['lag1', 'lag5', 'lag22']])
+        X_har = df_har[['lag1', 'lag5', 'lag22']]
+        env_indices = self._build_irm_env_indices(X_har.index) if self.irm_enabled else []
+        if env_indices and len(env_indices) > 1:
+            model = IRMLinearRegressor(loss_type='ridge', alpha=1.0, irm_lambda=self.lambda_irm)
+            model.fit(X_har.values, df_har['ret'].values, env_indices)
+            pred = model.predict(X_har.values)
+        else:
+            from sklearn.linear_model import Ridge
+            model = Ridge(alpha=1.0)
+            model.fit(X_har, df_har['ret'])
+            pred = model.predict(X_har)
         residuals = df_har['ret'] - pred
 
         # 4. Studentize (GARCH-proxy: Rolling Std)
@@ -6944,6 +6981,7 @@ class LabelBasedLayer2(BaseStep):
         from scipy.stats import spearmanr
         
         start_time = time.time()
+        irm_env_indices = self._build_irm_env_indices(X_train.index) if self.irm_enabled else []
         
         # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
         tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
@@ -6961,7 +6999,10 @@ class LabelBasedLayer2(BaseStep):
             huber_outputs = prepare_huber_teacher_outputs(
                 X_train, y_train, X_val=X_val,
                 sample_weight=w_train,
-                pruning_percentile=25, corr_threshold=0.65
+                pruning_percentile=25, corr_threshold=0.65,
+                use_irm=bool(irm_env_indices),
+                irm_env_indices=irm_env_indices,
+                irm_lambda=self.lambda_irm
             )
 
             selected_features = huber_outputs['selected_features']
@@ -6970,9 +7011,19 @@ class LabelBasedLayer2(BaseStep):
             # Surgical refinement: If Titan RFE left noise, Huber coefficients will be near-zero
             # We use a HuberRegressor to get clean coefficients
             try:
-                huber = HuberRegressor(alpha=1.0, epsilon=1.35)
-                huber.fit(X_train[selected_features], y_train, sample_weight=w_train)
-                coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
+                if irm_env_indices and len(irm_env_indices) > 1:
+                    huber = IRMLinearRegressor(
+                        loss_type='huber',
+                        alpha=1.0,
+                        irm_lambda=self.lambda_irm,
+                        huber_epsilon=1.35
+                    )
+                    huber.fit(X_train[selected_features].values, y_train, irm_env_indices)
+                    coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
+                else:
+                    huber = HuberRegressor(alpha=1.0, epsilon=1.35)
+                    huber.fit(X_train[selected_features], y_train, sample_weight=w_train)
+                    coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
                 # Keep top 40 or features with >10% of max coef
                 threshold = coef_series.max() * 0.1
                 huber_selected = coef_series[coef_series > threshold].index.tolist()
@@ -7016,7 +7067,7 @@ class LabelBasedLayer2(BaseStep):
                 interaction_constraints=interaction_constraints
             )
             candidates = [
-                {**cand, 'fit_params': {}} if isinstance(cand, dict) else cand
+                {**cand, 'fit_params': cand.get('fit_params', {})} if isinstance(cand, dict) else cand
                 for cand in candidates
             ]
         else:
@@ -7575,6 +7626,16 @@ class LabelBasedLayer2(BaseStep):
 
         candidates = []
         constraints_dict = constraints_dict or {}
+        env_indices = self._build_irm_env_indices(X_train.index) if self.irm_enabled else []
+        if not env_indices and environment_masks:
+            mask_indices = []
+            for mask in environment_masks.values():
+                mask_arr = np.asarray(mask).astype(bool)
+                if mask_arr.size == len(X_train):
+                    idx = np.where(mask_arr)[0]
+                    if len(idx) > 0:
+                        mask_indices.append(idx)
+            env_indices = mask_indices
 
         # 0. LGBM with IRM (Wrapper)
         lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
@@ -7693,6 +7754,27 @@ class LabelBasedLayer2(BaseStep):
         except Exception as e:
             tprint_warning(f"⚠️ Failed to init RidgeClassifier: {e}")
 
+        if env_indices and len(env_indices) > 1:
+            candidates.append({
+                'name': 'IRM_Ridge',
+                'model': IRMLinearClassifier(
+                    loss_type='ridge',
+                    alpha=1.0,
+                    irm_lambda=self.lambda_irm
+                ),
+                'fit_params': {'env_indices': env_indices}
+            })
+            candidates.append({
+                'name': 'IRM_ElasticNet',
+                'model': IRMLinearClassifier(
+                    loss_type='elasticnet',
+                    alpha=0.01,
+                    l1_ratio=0.5,
+                    irm_lambda=self.lambda_irm
+                ),
+                'fit_params': {'env_indices': env_indices}
+            })
+
         # 4. ExtraTrees with IRM (Wrapper) - Kept from original, updated for context
         # Note: No monotonic constraints
         candidates.append({
@@ -7716,8 +7798,14 @@ class LabelBasedLayer2(BaseStep):
     def _create_default_environment_masks(self, X_train, y_train):
         """Create default environment masks for IRM training."""
         try:
-            # Create simple environment masks based on data characteristics
-            # This is a simplified version - in practice, would use more sophisticated regime detection
+            env_masks = {}
+            if self._irm_regime_labels is not None:
+                aligned = self._irm_regime_labels.reindex(X_train.index)
+                for regime in sorted(aligned.dropna().unique()):
+                    env_masks[f"gmm_regime_{int(regime)}"] = (aligned == regime).values
+                env_masks["regime_id"] = aligned.fillna(-1).astype(int).values
+                if env_masks:
+                    return env_masks
 
             # Environment 1: High volatility periods
             if 'volatility_1d' in X_train.columns:
@@ -7725,7 +7813,6 @@ class LabelBasedLayer2(BaseStep):
                 env_high_vol = (X_train['volatility_1d'] > vol_median).values
                 env_low_vol = (X_train['volatility_1d'] <= vol_median).values
             else:
-                # Fallback: split by index
                 mid_point = len(X_train) // 2
                 env_high_vol = np.arange(len(X_train)) >= mid_point
                 env_low_vol = np.arange(len(X_train)) < mid_point
@@ -8929,6 +9016,9 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(f"   🏷️  Regime-Conditional Mode: Optimization per regime {regimes}")
         else:
             tprint_info("   🌍 Global Mode: No regime tags found")
+
+        if self.irm_enabled:
+            self._get_or_fit_irm_regime_labels(df)
     
         # 0. Generate Continuous Causal Target (Innovation)
         # Done once globally to ensure consistency
@@ -8987,11 +9077,24 @@ class LabelBasedLayer2(BaseStep):
                     B_reg = backbone_features_global[mask].fillna(0)
                     
                     if len(X_reg) > 100:
-                        from sklearn.linear_model import Ridge
                         tprint_info(f"      🔧 Precomputing backbone residuals for regime {regime}...")
-                        ridge = Ridge(alpha=10.0, solver='lsqr')
-                        ridge.fit(B_reg.values, X_reg.values)
-                        X_res_vals = X_reg.values - ridge.predict(B_reg.values)
+                        env_indices = self._build_irm_env_indices(X_reg.index) if self.irm_enabled else []
+                        if env_indices and len(env_indices) > 1:
+                            preds = np.zeros_like(X_reg.values)
+                            for col_idx, col in enumerate(X_reg.columns):
+                                irm = IRMLinearRegressor(
+                                    loss_type='ridge',
+                                    alpha=10.0,
+                                    irm_lambda=self.lambda_irm
+                                )
+                                irm.fit(B_reg.values, X_reg[col].values, env_indices)
+                                preds[:, col_idx] = irm.predict(B_reg.values)
+                            X_res_vals = X_reg.values - preds
+                        else:
+                            from sklearn.linear_model import Ridge
+                            ridge = Ridge(alpha=10.0, solver='lsqr')
+                            ridge.fit(B_reg.values, X_reg.values)
+                            X_res_vals = X_reg.values - ridge.predict(B_reg.values)
                         regime_residual_cache = pd.DataFrame(X_res_vals, index=X_reg.index, columns=X_reg.columns)
                 except Exception as e:
                     tprint_warning(f"      ⚠️ Regime-level residual caching failed: {e}")
@@ -11264,7 +11367,15 @@ class LabelBasedLayer2(BaseStep):
                         # Reuse Huber calculation on HPO set or recompute?
                         # Recompute for best constraints on this subset
                         try:
-                            huber_hpo = prepare_huber_teacher_outputs(X_hpo_train, y_hpo_train, X_val=X_hpo_val)
+                            irm_env_indices_hpo = self._build_irm_env_indices(X_hpo_train.index) if self.irm_enabled else []
+                            huber_hpo = prepare_huber_teacher_outputs(
+                                X_hpo_train,
+                                y_hpo_train,
+                                X_val=X_hpo_val,
+                                use_irm=bool(irm_env_indices_hpo),
+                                irm_env_indices=irm_env_indices_hpo,
+                                irm_lambda=self.lambda_irm
+                            )
                         except Exception:
                             huber_hpo = None
 

@@ -38,6 +38,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_absolute_error
 
 from src.utils.tprint import tprint_info
+from src.training.steps.labeling.irm_regime_pipeline import IRMLinearRegressor
 
 
 # -----------------------------
@@ -209,6 +210,42 @@ def _median_choice(vals: Tuple[float, ...]) -> float:
     return float(np.median(np.asarray(vals, dtype=float)))
 
 
+def _slice_env_indices(
+    env_indices: Optional[List[np.ndarray]],
+    start: int,
+    end: int
+) -> Optional[List[np.ndarray]]:
+    if not env_indices:
+        return None
+    sliced = []
+    for idx in env_indices:
+        in_window = idx[(idx >= start) & (idx < end)]
+        if in_window.size > 0:
+            sliced.append((in_window - start).astype(int))
+    return sliced if sliced else None
+
+
+def _fit_huber_irm(
+    X_scaled: np.ndarray,
+    y: np.ndarray,
+    env_indices: List[np.ndarray],
+    epsilon: float,
+    alpha: float,
+    max_iter: int,
+    irm_lambda: float
+) -> IRMLinearRegressor:
+    model = IRMLinearRegressor(
+        loss_type='huber',
+        alpha=alpha,
+        irm_lambda=irm_lambda,
+        huber_epsilon=epsilon,
+        max_iter=max_iter
+    )
+    model.fit(X_scaled, y, env_indices)
+    model.intercept_ = 0.0
+    return model
+
+
 # -----------------------------
 # Split fitting: (split × grid)
 # -----------------------------
@@ -221,18 +258,25 @@ def _fit_split_grid(
     end: int,
     epsilons: Tuple[float, ...],
     alphas: Tuple[float, ...],
-    max_iter: int
+    max_iter: int,
+    use_irm: bool,
+    irm_env_indices: Optional[List[np.ndarray]],
+    irm_lambda: float
 ) -> Dict[str, np.ndarray]:
     X = X_scaled_full[start:end]
     y = y_full[start:end]
     w = None if w_full is None else w_full[start:end]
+    split_env_indices = _slice_env_indices(irm_env_indices, start, end) if use_irm else None
 
     coefs = []
     intercepts = []
     params = []
     for eps in epsilons:
         for a in alphas:
-            m = _fit_huber(X, y, w, eps, a, max_iter)
+            if use_irm and split_env_indices and len(split_env_indices) > 1:
+                m = _fit_huber_irm(X, y, split_env_indices, eps, a, max_iter, irm_lambda)
+            else:
+                m = _fit_huber(X, y, w, eps, a, max_iter)
             coefs.append(m.coef_.astype(np.float64, copy=False))
             intercepts.append(float(m.intercept_))
             params.append((float(eps), float(a)))
@@ -407,6 +451,9 @@ def prepare_huber_teacher_outputs(
     sign_agree_threshold: Optional[float] = None,
     nonzero_rate_threshold: Optional[float] = None,
     n_time_splits: Optional[int] = None,
+    use_irm: bool = False,
+    irm_env_indices: Optional[List[np.ndarray]] = None,
+    irm_lambda: float = 1.0,
     # New configuration object
     config: Optional[HuberTeacherConfig] = None,
     tier: str = "stronger"
@@ -505,7 +552,8 @@ def prepare_huber_teacher_outputs(
         delayed(_fit_split_grid)(
             X_tr_scaled, y_tr, w,
             start, end,
-            cfg.epsilons, cfg.alphas, cfg.max_iter
+            cfg.epsilons, cfg.alphas, cfg.max_iter,
+            use_irm, irm_env_indices, irm_lambda
         )
         for (start, end) in splits
     )

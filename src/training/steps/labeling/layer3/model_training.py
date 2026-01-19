@@ -20,6 +20,7 @@ from scipy.special import expit
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.training.steps.labeling.layer3.feature_engineering import downcast_float
 from src.training.steps.labeling.focal_loss_utils import RobustFocalLoss
+from src.training.steps.labeling.irm_regime_pipeline import IRMLinearClassifier, IRMLinearRegressor
 
 # Import tprint functions
 try:
@@ -449,6 +450,8 @@ def train_dual_head_models(
     y_prob_48 = cfg.get('y_prob_48', y_prob)
 
     models_store = {}
+    irm_env_indices = cfg.get('irm_env_indices', [])
+    irm_lambda = cfg.get('irm_lambda', 1.0)
     
     tasks = [
         ('12', 'alpha', y_alpha, w_alpha, 'regression'),
@@ -468,7 +471,10 @@ def train_dual_head_models(
             X_context,
             pd.Series(y_target, index=X_context.index),
             pruning_percentile=15,
-            n_time_splits=5 # Stability check
+            n_time_splits=5, # Stability check
+            use_irm=bool(irm_env_indices),
+            irm_env_indices=irm_env_indices,
+            irm_lambda=irm_lambda
         )
 
         # 2. Train ExtraTrees
@@ -488,6 +494,62 @@ def train_dual_head_models(
             X_context, y_target, f"XGB_{suffix}", task_type, huber_out, w_target, cfg, fast_mode
         )
         models_store[f"xgb_{suffix}"] = xgb_res
+
+        if irm_env_indices and len(irm_env_indices) > 1:
+            if task_type == 'regression':
+                ridge_irm = IRMLinearRegressor(
+                    loss_type='ridge',
+                    alpha=cfg.get('irm_linear_alpha', 1.0),
+                    irm_lambda=irm_lambda
+                )
+                ridge_irm.fit(X_context.values, y_target, irm_env_indices)
+                models_store[f"irm_ridge_{suffix}"] = {
+                    'model': ridge_irm,
+                    'cate': ridge_irm.predict(X_context.values),
+                    'se': np.zeros(len(y_target)),
+                    'scaler': None
+                }
+
+                elastic_irm = IRMLinearRegressor(
+                    loss_type='elasticnet',
+                    alpha=cfg.get('irm_elastic_alpha', 0.01),
+                    l1_ratio=cfg.get('irm_elastic_l1_ratio', 0.5),
+                    irm_lambda=irm_lambda
+                )
+                elastic_irm.fit(X_context.values, y_target, irm_env_indices)
+                models_store[f"irm_elasticnet_{suffix}"] = {
+                    'model': elastic_irm,
+                    'cate': elastic_irm.predict(X_context.values),
+                    'se': np.zeros(len(y_target)),
+                    'scaler': None
+                }
+            else:
+                ridge_irm = IRMLinearClassifier(
+                    loss_type='ridge',
+                    alpha=cfg.get('irm_linear_alpha', 1.0),
+                    irm_lambda=irm_lambda
+                )
+                ridge_irm.fit(X_context.values, y_target, irm_env_indices)
+                models_store[f"irm_ridge_{suffix}"] = {
+                    'model': ridge_irm,
+                    'cate': ridge_irm.predict_proba(X_context.values)[:, 1],
+                    'se': np.zeros(len(y_target)),
+                    'scaler': None
+                }
+
+                elastic_irm = IRMLinearClassifier(
+                    loss_type='elasticnet',
+                    alpha=cfg.get('irm_elastic_alpha', 0.01),
+                    l1_ratio=cfg.get('irm_elastic_l1_ratio', 0.5),
+                    irm_lambda=irm_lambda
+                )
+                elastic_irm.fit(X_context.values, y_target, irm_env_indices)
+                models_store[f"irm_elasticnet_{suffix}"] = {
+                    'model': elastic_irm,
+                    'cate': elastic_irm.predict_proba(X_context.values)[:, 1],
+                    'se': np.zeros(len(y_target)),
+                    'scaler': None
+                }
 
     all_results = {
         'models': models_store

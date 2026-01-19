@@ -1397,7 +1397,7 @@ class LabelBasedLayer2(BaseStep):
 
         # Model comparison configuration
         self.enable_model_race = kwargs.get('enable_model_race', True)
-        self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost', 'LGBM_Focal_Linear', 'XGB_Linear'])
+        self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost'])
 
         # AEDL Framework Parameters
         self.enable_aedl = kwargs.get("enable_aedl", True)
@@ -7741,40 +7741,6 @@ class LabelBasedLayer2(BaseStep):
                 )
             })
 
-        # 3. Ridge Classifier (Standard)
-        # User said "add a RidgeClassifier model". Assuming standalone is fine.
-        try:
-            ridge_base = RidgeClassifier(alpha=1.0, class_weight='balanced', random_state=42)
-            ridge_calibrated = CalibratedClassifierCV(ridge_base, method='sigmoid', cv=3)
-
-            candidates.append({
-                'name': 'RidgeClassifier',
-                'model': ridge_calibrated
-            })
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to init RidgeClassifier: {e}")
-
-        if env_indices and len(env_indices) > 1:
-            candidates.append({
-                'name': 'IRM_Ridge',
-                'model': IRMLinearClassifier(
-                    loss_type='ridge',
-                    alpha=1.0,
-                    irm_lambda=self.lambda_irm
-                ),
-                'fit_params': {'env_indices': env_indices}
-            })
-            candidates.append({
-                'name': 'IRM_ElasticNet',
-                'model': IRMLinearClassifier(
-                    loss_type='elasticnet',
-                    alpha=0.01,
-                    l1_ratio=0.5,
-                    irm_lambda=self.lambda_irm
-                ),
-                'fit_params': {'env_indices': env_indices}
-            })
-
         # 4. ExtraTrees with IRM (Wrapper) - Kept from original, updated for context
         # Note: No monotonic constraints
         candidates.append({
@@ -11467,39 +11433,6 @@ class LabelBasedLayer2(BaseStep):
                                 objective='binary', random_state=42, verbose=-1
                             )
                         clf.fit(X_train_final, y_train, sample_weight=w_train)
-
-                    elif 'LGBM_Focal_Linear' in best_name:
-                        # Linear tree with focal loss - use HPO if available
-                        if focal_params:
-                            focal_lgbm = RobustFocalLoss(
-                                gamma_pos=focal_params['gamma_pos'],
-                                gamma_neg=focal_params['gamma_neg'],
-                                alpha=focal_params['alpha'],
-                                mix=focal_params['mix'],
-                                label_smoothing=focal_params['label_smoothing'],
-                                verbose=False
-                            )
-                            params = LAYER2_PROBE_CONSTANTS.copy()
-                            params.pop('early_stopping_rounds', None)
-                            params['objective'] = focal_lgbm
-                            params['metric'] = 'auc'
-                            params['linear_tree'] = True
-                            params['max_depth'] = focal_params['max_depth']
-                            params['num_leaves'] = focal_params['num_leaves']
-                        else:
-                            focal_lgbm = RobustFocalLoss(verbose=False)
-                            params = LAYER2_PROBE_CONSTANTS.copy()
-                            params.pop('early_stopping_rounds', None)
-                            params['objective'] = focal_lgbm
-                            params['metric'] = 'auc'
-                            params['linear_tree'] = True
-
-                        clf = lgb.LGBMClassifier(**params)
-                        clf.fit(
-                            X_train_final, y_train, sample_weight=w_train,
-                            eval_set=[(X_train_final, y_train)], eval_metric='auc',
-                            callbacks=[lgb.early_stopping(30, verbose=False)]
-                        )
 
                     elif 'XGB' in best_name and XGBClassifier is not None:
                         # Use HPO-optimized parameters if available

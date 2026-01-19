@@ -19,7 +19,8 @@ from scipy.special import expit
 
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.training.steps.labeling.layer3.feature_engineering import downcast_float
-from src.training.steps.labeling.focal_loss_utils import RobustFocalLoss
+from src.training.steps.labeling.focal_loss_utils import RobustFocalLoss, XGBFocalLoss
+from src.training.steps.labeling.probability_calibration import ProbabilityCalibrator
 from src.training.steps.labeling.irm_regime_pipeline import IRMLinearClassifier, IRMLinearRegressor
 
 # Import tprint functions
@@ -198,6 +199,24 @@ def train_lgbm_model(
 
     if task_type == 'classification':
         final_preds = expit(final_margin)
+
+        # Post-hoc Calibration (De Prado Compliant)
+        try:
+            # We need OOF predictions to fit calibration, but simple split here:
+            # Fit calibration on validation set predictions (unbiased)
+            val_margin = model.predict(X_val, raw_score=True)
+            val_preds = expit(val_margin + init_val)
+
+            calibrator = ProbabilityCalibrator(method='isotonic', min_samples=50, plot_calibration=False, save_plots=False)
+            cal_res = calibrator.fit(y_val, val_preds, sample_weights=w_val)
+
+            # Apply to final predictions
+            final_preds_cal = calibrator.predict(final_preds)
+            tprint_info(f"   ⚖️  LGBM Calibrated: Brier improvement {cal_res['metrics'].get('brier_improvement', 0):.4f}")
+            final_preds = final_preds_cal
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Calibration failed: {e}")
+
     else:
         final_preds = final_margin
 
@@ -279,17 +298,6 @@ def train_xgboost_model(
         'early_stopping_rounds': 30
     }
 
-    if task_type == 'classification':
-        params['objective'] = 'binary:logistic'
-        params['eval_metric'] = 'logloss' # Calibration focus
-    else:
-        # Robust regression (Pseudo-Huber)
-        params['objective'] = 'reg:pseudohubererror'
-        params['eval_metric'] = 'rmse'
-
-    if config and 'xgb_params' in config:
-        params.update(config['xgb_params'])
-
     # Internal split for early stopping
     split_idx = int(len(X_rotated) * 0.9)
     X_tr, X_val = X_rotated.iloc[:split_idx], X_rotated.iloc[split_idx:]
@@ -299,7 +307,29 @@ def train_xgboost_model(
     bm_tr = base_margin[:split_idx]
     bm_val = base_margin[split_idx:]
 
-    model = xgb.XGBRegressor(**params) if task_type == 'regression' else xgb.XGBClassifier(**params)
+    model = None
+
+    if task_type == 'classification':
+        # Use Focal Loss for classification
+        params.pop('eval_metric', None) # Use default or set explicitly
+        params['disable_default_eval_metric'] = 1
+
+        # Instantiate model with custom objective
+        # Note: XGBClassifier with custom objective needs obj argument in init or fit
+        # We pass it in init to keep sklearn interface consistency if possible, but
+        # for custom obj in XGB, it's safer to use 'objective' param as function
+
+        focal_loss = XGBFocalLoss(gamma_pos=1.0, gamma_neg=2.5) # Similar to LGBM RobustFocal
+
+        model = xgb.XGBClassifier(objective=focal_loss, eval_metric='logloss', **params)
+    else:
+        # Robust regression (Pseudo-Huber)
+        params['objective'] = 'reg:pseudohubererror'
+        params['eval_metric'] = 'rmse'
+        model = xgb.XGBRegressor(**params)
+
+    if config and 'xgb_params' in config:
+        params.update(config['xgb_params'])
 
     # Safe Fit with retry on constraints failure
     try:
@@ -315,7 +345,12 @@ def train_xgboost_model(
     except (ValueError, xgb.core.XGBoostError):
         tprint_warning("   ⚠️ XGBoost constraints failed, retrying without interaction constraints.")
         params['interaction_constraints'] = None
-        model = xgb.XGBRegressor(**params) if task_type == 'regression' else xgb.XGBClassifier(**params)
+        if task_type == 'classification':
+             focal_loss = XGBFocalLoss(gamma_pos=1.0, gamma_neg=2.5)
+             model = xgb.XGBClassifier(objective=focal_loss, eval_metric='logloss', **params)
+        else:
+             model = xgb.XGBRegressor(**params)
+
         model.fit(
             X_tr, y_tr,
             sample_weight=w_tr,
@@ -331,10 +366,33 @@ def train_xgboost_model(
         preds = model.predict(X_rotated, base_margin=base_margin)
     else:
         try:
-             preds = model.predict_proba(X_rotated, base_margin=base_margin)[:, 1]
+             # Predict proba with custom objective might return margins or transformed
+             # XGBClassifier predict_proba usually applies sigmoid if objective is binary
+             # But with custom obj, we must check.
+             # Usually we rely on model.predict(output_margin=True) then sigmoid
+             # But sklearn wrapper might handle it?
+             # Let's use margin + sigmoid manually for safety with custom objective
+             margin_preds = model.predict(X_rotated, output_margin=True, base_margin=base_margin)
+             preds = expit(margin_preds)
         except TypeError:
             dmat = xgb.DMatrix(X_rotated, base_margin=base_margin)
-            preds = model.get_booster().predict(dmat)
+            margin_preds = model.get_booster().predict(dmat, output_margin=True)
+            preds = expit(margin_preds)
+
+        # Post-hoc Calibration
+        try:
+            # Fit calibration on validation set
+            val_margin = model.predict(X_val, output_margin=True, base_margin=bm_val)
+            val_preds = expit(val_margin)
+
+            calibrator = ProbabilityCalibrator(method='isotonic', min_samples=50, plot_calibration=False, save_plots=False)
+            cal_res = calibrator.fit(y_val, val_preds, sample_weights=w_val)
+
+            preds_cal = calibrator.predict(preds)
+            tprint_info(f"   ⚖️  XGB Calibrated: Brier improvement {cal_res['metrics'].get('brier_improvement', 0):.4f}")
+            preds = preds_cal
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Calibration failed: {e}")
 
     return {
         'model': model,
@@ -403,6 +461,45 @@ def train_extratrees_constrained(
             y_int = (y_train > 0).astype(int)
             et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
             preds = et_model.predict_proba(X_scaled)[:, 1]
+
+    # Post-hoc Calibration for ExtraTrees (Vote-based probs are often uncalibrated)
+    if task_type == 'classification':
+        try:
+            # ExtraTrees doesn't have an internal val set in this flow, but we can do a quick KFold calibration
+            # Or simpler: Split training data here since ET is fast
+            from sklearn.model_selection import train_test_split
+            X_cal_tr, X_cal_val, y_cal_tr, y_cal_val, w_cal_tr, w_cal_val = train_test_split(
+                X_scaled, y_int, sample_weight, test_size=0.2, random_state=42
+            )
+
+            # Re-fit a small ET for calibration reference (or use OOB if available, but manual split is safer)
+            # Actually, using the fitted model on train data is biased.
+            # Best is to use CalibratedClassifierCV, but that changes the 'model' object structure.
+            # Let's stick to ProbabilityCalibrator using the full X_scaled predictions (Biased!) -> NO.
+            # Correct approach: Pre-calibration using CV is best, but here we just fit calibrator on the
+            # OOB estimates if bootstrap=True!
+
+            if et_model.bootstrap and hasattr(et_model, 'oob_decision_function_'):
+                # Use OOB predictions for calibration! Perfect for Random Forests.
+                oob_preds = et_model.oob_decision_function_
+                # oob_decision_function_ shape is (n_samples, n_classes)
+                if oob_preds.ndim > 1:
+                    oob_pos_preds = oob_preds[:, 1]
+                else:
+                    oob_pos_preds = oob_preds
+
+                # Check for NaNs (unsampled points)
+                mask = ~np.isnan(oob_pos_preds)
+                if mask.sum() > 50:
+                    calibrator = ProbabilityCalibrator(method='isotonic', min_samples=50, plot_calibration=False, save_plots=False)
+                    cal_res = calibrator.fit(y_int[mask], oob_pos_preds[mask], sample_weights=sample_weight[mask] if sample_weight is not None else None)
+
+                    preds_cal = calibrator.predict(preds)
+                    tprint_info(f"   ⚖️  ET Calibrated (OOB): Brier improvement {cal_res['metrics'].get('brier_improvement', 0):.4f}")
+                    preds = preds_cal
+
+        except Exception as e:
+            tprint_warning(f"   ⚠️ ET Calibration failed: {e}")
 
     # Calculate approximate SE
     if hasattr(et_model, 'estimators_'):
@@ -502,7 +599,7 @@ def train_dual_head_models(
                     alpha=cfg.get('irm_linear_alpha', 1.0),
                     irm_lambda=irm_lambda
                 )
-                ridge_irm.fit(X_context.values, y_target, irm_env_indices)
+                ridge_irm.fit(X_context.values, y_target, irm_env_indices, sample_weight=w_target)
                 models_store[f"irm_ridge_{suffix}"] = {
                     'model': ridge_irm,
                     'cate': ridge_irm.predict(X_context.values),
@@ -516,7 +613,7 @@ def train_dual_head_models(
                     l1_ratio=cfg.get('irm_elastic_l1_ratio', 0.5),
                     irm_lambda=irm_lambda
                 )
-                elastic_irm.fit(X_context.values, y_target, irm_env_indices)
+                elastic_irm.fit(X_context.values, y_target, irm_env_indices, sample_weight=w_target)
                 models_store[f"irm_elasticnet_{suffix}"] = {
                     'model': elastic_irm,
                     'cate': elastic_irm.predict(X_context.values),
@@ -524,12 +621,13 @@ def train_dual_head_models(
                     'scaler': None
                 }
             else:
+                # Use LogLoss for proper probabilistic output in classification
                 ridge_irm = IRMLinearClassifier(
-                    loss_type='ridge',
+                    loss_type='logloss',
                     alpha=cfg.get('irm_linear_alpha', 1.0),
                     irm_lambda=irm_lambda
                 )
-                ridge_irm.fit(X_context.values, y_target, irm_env_indices)
+                ridge_irm.fit(X_context.values, y_target, irm_env_indices, sample_weight=w_target)
                 models_store[f"irm_ridge_{suffix}"] = {
                     'model': ridge_irm,
                     'cate': ridge_irm.predict_proba(X_context.values)[:, 1],
@@ -538,12 +636,12 @@ def train_dual_head_models(
                 }
 
                 elastic_irm = IRMLinearClassifier(
-                    loss_type='elasticnet',
+                    loss_type='logloss',
                     alpha=cfg.get('irm_elastic_alpha', 0.01),
                     l1_ratio=cfg.get('irm_elastic_l1_ratio', 0.5),
                     irm_lambda=irm_lambda
                 )
-                elastic_irm.fit(X_context.values, y_target, irm_env_indices)
+                elastic_irm.fit(X_context.values, y_target, irm_env_indices, sample_weight=w_target)
                 models_store[f"irm_elasticnet_{suffix}"] = {
                     'model': elastic_irm,
                     'cate': elastic_irm.predict_proba(X_context.values)[:, 1],

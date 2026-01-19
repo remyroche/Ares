@@ -39,7 +39,11 @@ from catboost import CatBoostRegressor
 from sklearn.preprocessing import RobustScaler
 
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from src.training.steps.labeling.layer4_dual_chaser import StructuralRegimeGMM, train_dual_chaser_audit, generate_sizer_features_v2
+from src.training.steps.labeling.layer4_dual_chaser import (
+    StructuralRegimeGMM,
+    train_dual_chaser_audit,
+    generate_dual_chaser_features
+)
 from src.utils.layer4_optimized import (
     compute_financial_weights_numba,
     extract_prob_features_numba,
@@ -286,41 +290,67 @@ class SimpleMultiModelRiskEngine:
         # 1. Fit GMM to identify regimes (if data available)
         try:
             gmm = StructuralRegimeGMM(n_regimes=4)
-            # Use df if it has close/volume, else try market_features if they were raw
-            # Usually df passed to train has raw columns
             env_indices, _ = gmm.fit_predict(df)
 
             if env_indices and len(env_indices) >= 2:
-                tprint_info("🏃 Training Dual Chaser Audit (IRM vs Ridge)...")
+                tprint_info("🏃 Training Dual Chaser Audit (IRM vs Ridge) with OOF...")
 
                 # Filter out performance features for Chasers to avoid leakage
-                chaser_cols = [c for c in X_full.columns if not c.startswith('perf_')]
+                chaser_cols = [c for c in X_full.columns if not c.startswith('perf_') and not c.startswith('meta_')]
                 X_for_chaser = X_full[chaser_cols]
 
                 # 2. Prepare Scaled Features for Chasers
                 self.dual_chaser_scaler = RobustScaler()
                 X_chaser_scaled = self.dual_chaser_scaler.fit_transform(X_for_chaser)
 
-                # 3. Train Chasers
-                # Note: y_true is binary in this flow, acting as regressor target (LPM)
-                self.stable_chaser, self.aggressive_chaser = train_dual_chaser_audit(
-                    X_chaser_scaled, y_true.values, env_indices
+                # Construct simple CV splits for OOF generation
+                n_samples = len(X_full)
+                n_splits = 5
+                fold_size = n_samples // n_splits
+                cv_splits = []
+                for k in range(n_splits):
+                    val_start = k * fold_size
+                    val_end = (k + 1) * fold_size if k < n_splits - 1 else n_samples
+                    val_idx = np.arange(val_start, val_end)
+                    train_idx = np.concatenate([np.arange(0, val_start), np.arange(val_end, n_samples)])
+                    cv_splits.append((train_idx, val_idx))
+
+                # 3. Train Chasers & Get OOF
+                self.stable_chaser, self.aggressive_chaser, oof_stable, oof_agg = train_dual_chaser_audit(
+                    X_chaser_scaled,
+                    y_true.values,
+                    env_indices,
+                    cv_splits=cv_splits
                 )
 
-                # 4. Generate Sizer Features
-                chaser_feats = generate_sizer_features_v2(
-                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled, df
-                )
-                chaser_feats.index = X_full.index
+                # 4. Generate Dual Chaser Features using OOF predictions
+                if oof_stable is not None and oof_agg is not None:
+                    oof_stable.index = X_full.index
+                    oof_agg.index = X_full.index
 
-                # 5. Add to X_full
-                X_full = pd.concat([X_full, chaser_feats], axis=1)
-                tprint_success(f"✅ Added {chaser_feats.shape[1]} Dual Chaser features")
+                    # Prepare trade_returns proxy for meta-health features
+                    trade_ret_proxy = (2 * y_true - 1) * abs_returns
+
+                    chaser_feats = generate_dual_chaser_features(
+                        df=df,
+                        p_stable=oof_stable,
+                        p_agg=oof_agg,
+                        trade_returns=trade_ret_proxy
+                    )
+
+                    # 5. Add to X_full
+                    X_full = pd.concat([X_full, chaser_feats], axis=1)
+                    tprint_success(f"✅ Added {chaser_feats.shape[1]} Dual Chaser features (OOF)")
+                else:
+                    tprint_warning("⚠️ Dual Chaser OOF generation failed.")
+                    self.stable_chaser = None
             else:
                 tprint_warning("⚠️ Dual Chaser: GMM failed or insufficient regimes. Skipping.")
                 self.stable_chaser = None
         except Exception as e:
             tprint_error(f"❌ Dual Chaser failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.stable_chaser = None
 
         # Downcast to float32
@@ -504,17 +534,35 @@ class SimpleMultiModelRiskEngine:
         if self.stable_chaser is not None and self.dual_chaser_scaler is not None:
             try:
                 # Filter out performance features
-                chaser_cols = [c for c in X_full.columns if not c.startswith('perf_')]
+                chaser_cols = [c for c in X_full.columns if not c.startswith('perf_') and not c.startswith('meta_')]
                 X_for_chaser = X_full[chaser_cols]
 
-                X_chaser_scaled = self.dual_chaser_scaler.transform(X_for_chaser)
-                chaser_feats = generate_sizer_features_v2(
-                    self.stable_chaser, self.aggressive_chaser, X_chaser_scaled, df
+                if isinstance(X_for_chaser, pd.DataFrame):
+                    X_chaser_scaled = pd.DataFrame(
+                        self.dual_chaser_scaler.transform(X_for_chaser),
+                        columns=X_for_chaser.columns,
+                        index=X_for_chaser.index
+                    )
+                else:
+                    X_chaser_scaled = self.dual_chaser_scaler.transform(X_for_chaser)
+
+                # Predict on test set using full models
+                p_stable = pd.Series(self.stable_chaser.predict(X_chaser_scaled.values), index=X_full.index)
+                p_agg = pd.Series(self.aggressive_chaser.predict(X_chaser_scaled.values), index=X_full.index)
+
+                # Generate features (meta-health skipped or using placeholder as trade returns unknown for test)
+                chaser_feats = generate_dual_chaser_features(
+                    df=df,
+                    p_stable=p_stable,
+                    p_agg=p_agg,
+                    trade_returns=None
                 )
-                chaser_feats.index = X_full.index
+
                 X_full = pd.concat([X_full, chaser_feats], axis=1)
             except Exception as e:
                 tprint_warning(f"⚠️ Dual Chaser prediction failed: {e}")
+                import traceback
+                traceback.print_exc()
                 pass
 
         # Downcast to float32
@@ -813,79 +861,9 @@ class ModelPerformanceFeatures:
         if pred_col not in df.columns or target_col not in df.columns:
             return pd.DataFrame(index=df.index)
 
-        preds = df[pred_col]
-        targets = df[target_col]
-
-        # 1. Skill Feature Components
-        # Directional prediction: Long if p > 0.5, Short if p < 0.5
-        pred_dir = np.sign(preds - 0.5)
-
-        # Realized Strategy Return
-        strat_ret = pred_dir * targets
-
-        # Hit Rate (Directional Accuracy)
-        # +1 if signs match, 0 if not
-        hits = ((pred_dir * np.sign(targets)) > 0).astype(float)
-
-        # Rolling IC (Correlation between preds and targets)
-        # Pearson as proxy for Rank IC for efficiency
-        rolling_ic = preds.rolling(window=self.skill_window).corr(targets).fillna(0)
-
-        # Apply Embargo (Shift) BEFORE smoothing to prevent leakage
-        strat_ret_shifted = strat_ret.shift(self.skill_embargo)
-        hits_shifted = hits.shift(self.skill_embargo)
-        rolling_ic_shifted = rolling_ic.shift(self.skill_embargo)
-
-        # Smooth
-        ewma_ret = strat_ret_shifted.ewm(span=self.skill_window, adjust=False).mean()
-        ewma_hit = hits_shifted.ewm(span=self.skill_window, adjust=False).mean()
-        ewma_ic = rolling_ic_shifted.ewm(span=self.skill_window, adjust=False).mean()
-
-        # Combined Skill Feature
-        skill_raw = ewma_ret * ewma_hit * ewma_ic
-        # Apply scaling to make the feature range more useful before tanh?
-        # But tanh is explicitly requested for bounding.
-        # Assuming product is small, tanh will be near linear in 0.
-        skill_score = np.tanh(skill_raw * 100.0)
-
-        # 2. Risk-off Pressure Components
-        # Rolling Drawdown of the strategy
-        cum_ret = strat_ret.cumsum().fillna(0)
-        high_water_mark = cum_ret.expanding().max()
-        drawdown = high_water_mark - cum_ret # Positive value
-
-        # Residual Magnitude (Model Surprise)
-        # Using simple absolute target value weighted by prediction error proxy?
-        # Or |Target - (Pred-0.5)*Scale|?
-        # Using |Target| as volatility proxy when model is wrong?
-        # Let's use |Target - DirectionalPred|.
-        # If Pred > 0.5 (Long), Target > 0 -> Error small. Target < 0 -> Error large.
-        # Residual = |Target - DirectionalPred * (Target)| is 0 if correct sign... no.
-        # Let's use a simpler proxy: |Target| if Miss, 0 if Hit?
-        # Or just |Target - ScaledPred|.
-        # Given "Recent residual magnitude", we'll use |Target - (Pred-0.5)| assuming target is approx same scale?
-        # No, target is return, Pred is prob.
-        # We'll use |Target| (Realized Volatility) as the magnitude base.
-        residual = np.abs(targets)
-
-        # Shift
-        drawdown_shifted = drawdown.shift(self.risk_embargo)
-        residual_shifted = residual.shift(self.risk_embargo)
-
-        # Bounded Drawdown State
-        dd_state = np.tanh(drawdown_shifted / self.dd_scaling)
-
-        # Smooth Residual
-        ewma_resid = residual_shifted.ewm(span=self.risk_window, adjust=False).mean()
-
-        # Combined Risk-off Feature
-        risk_off_pressure = dd_state * ewma_resid
-
-        features = pd.DataFrame(index=df.index)
-        features['perf_skill_score'] = skill_score.fillna(0)
-        features['perf_risk_off_pressure'] = risk_off_pressure.fillna(0)
-
-        return features
+        # Removed current_drawdown, recent_sharpe, hit_rate features as requested.
+        # Returning empty DataFrame with correct index to minimize impact on downstream concatenation
+        return pd.DataFrame(index=df.index)
 
 
 def train_layer4_simple_multimodel(

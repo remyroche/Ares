@@ -40,6 +40,7 @@ def generate_regime_aware_features(
     2. Meta-Model Disagreement (if prob_cols provided).
     3. Conservatism Scores.
     """
+    tprint_info("Start: generate_regime_aware_features")
     X_reg = pd.DataFrame(index=X.index)
 
     # 1. Volatility Regime (Soft Gated)
@@ -71,6 +72,7 @@ def generate_regime_aware_features(
             min_prob = probs.min(axis=1)
             X_reg['meta_conservatism'] = (min_prob / (mean_prob + 1e-6)).fillna(0)
 
+    tprint_success("End: generate_regime_aware_features")
     return X_reg
 
 # Import Layer 3 Feature Cache
@@ -127,6 +129,7 @@ def integrate_entropy_bars_into_layer3(
     Integrate entropy bars and specialized features into Layer 3.
     Includes caching to avoid re-generating expensive entropy calculations.
     """
+    tprint_info("Start: integrate_entropy_bars_into_layer3")
     if not ENTROPY_BARS_AVAILABLE:
         raise RuntimeError("Entropy bars not available; Layer 3 requires entropy bars.")
     
@@ -181,6 +184,7 @@ def integrate_entropy_bars_into_layer3(
                     enhanced_df[f'entropy_{col}'] = entropy_bars[col]
 
             tprint_success(f"✅ Loaded entropy bars from cache: {len(entropy_bars)} bars")
+            tprint_success("End: integrate_entropy_bars_into_layer3")
             return enhanced_df, entropy_bars
         except Exception as e:
             tprint_warning(f"⚠️ Failed to load entropy cache: {e}. Regenerating...")
@@ -250,6 +254,7 @@ def integrate_entropy_bars_into_layer3(
 
         tprint_success(f"✅ Integrated entropy bars: {len(entropy_bars)} bars, {len(entropy_features.columns)} features")
         
+        tprint_success("End: integrate_entropy_bars_into_layer3")
         return enhanced_df, entropy_bars
         
     except Exception as e:
@@ -267,9 +272,11 @@ def apply_mild_mp_clustering(
     Removes purely collinear clusters (correlation > threshold).
     Selection Strategy: Predictive Power (Correlation with Target) if target provided, else Variance.
     """
+    tprint_info("Start: apply_mild_mp_clustering")
     tprint_info(f"🔍 Phase 3: Mild MP-Clustering (Threshold={threshold})...")
 
     if X.shape[1] < 2:
+        tprint_success("End: apply_mild_mp_clustering")
         return X
 
     # Ensure float32 for speed
@@ -345,10 +352,12 @@ def apply_mild_mp_clustering(
             dropped_cols.extend([X.columns[idx] for idx in cluster_indices if idx != best_feature_idx])
 
         tprint_success(f"   ✅ Reduced {X.shape[1]} -> {len(selected_cols)} features. Dropped {len(dropped_cols)} redundant features.")
+        tprint_success("End: apply_mild_mp_clustering")
         return X[selected_cols]
 
     except Exception as e:
         tprint_warning(f"   ⚠️ Mild MP-Clustering failed: {e}. Keeping all features.")
+        tprint_success("End: apply_mild_mp_clustering")
         return X
 
 def select_best_model_per_task(
@@ -362,6 +371,7 @@ def select_best_model_per_task(
     Compares ET, LGBM, XGB outputs against y_target.
     Uses Information Coefficient (IC) for regression tasks to optimize for financial alpha.
     """
+    tprint_info(f"Start: select_best_model_per_task (Task={task_type}, Horizon={horizon})")
     best_score = float('-inf')  # Use higher-is-better for both tasks (IC for reg, AUC for cls)
     best_model_key = None
     best_pred = None
@@ -467,9 +477,11 @@ def select_best_model_per_task(
     if best_model_key:
         metric_name = "IC" if task_type == 'regression' else "AUC"
         tprint_info(f"   🏆 Best model for {horizon} {task_type}: {best_model_key} ({metric_name}: {best_score:.4f})")
+        tprint_success("End: select_best_model_per_task")
         return best_pred, best_model_key
     else:
         tprint_warning(f"   ⚠️ No valid models found for {horizon} {task_type}")
+        tprint_success("End: select_best_model_per_task")
         return np.zeros(len(y_target)), "none"
 
 
@@ -486,6 +498,7 @@ def layer3_analyst_lgbm(
     market_data: Optional[pd.DataFrame] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    tprint_info("Start: layer3_analyst_lgbm")
     cfg = config if isinstance(config, dict) else {}
     cfg['base_model_cols'] = base_model_cols
     
@@ -782,4 +795,5 @@ def layer3_analyst_lgbm(
 
     tprint_success(f"🎉 Layer 3 Pipeline Complete! Best Models: {best_models_info}")
     
+    tprint_success("End: layer3_analyst_lgbm")
     return df, models_dict

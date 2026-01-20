@@ -91,9 +91,10 @@ except ImportError:
     NUMBA_AVAILABLE = False
 
 try:
-    from xgboost import XGBClassifier
+    from xgboost import XGBClassifier, XGBRegressor
 except ImportError:
     XGBClassifier = None
+    XGBRegressor = None
 from collections import defaultdict, OrderedDict
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
@@ -559,8 +560,8 @@ def calculate_feature_attribution_stability(model, X, y):
             if len(model.calibrated_classifiers_) > 0:
                 model = model.calibrated_classifiers_[0].base_estimator
 
-        # For HuberExtraTreesStack, use internal fashion model
-        if isinstance(model, HuberExtraTreesStack):
+        # For HuberResidualStack, use internal fashion model
+        if isinstance(model, HuberResidualStack):
              if model.fashion_model is not None:
                  model = model.fashion_model
              else:
@@ -605,16 +606,16 @@ def calculate_brier_skill_score(y_true, y_prob):
         return 0.0
     return 1.0 - (bs_model / bs_naive)
 
-class HuberExtraTreesStack(BaseEstimator, ClassifierMixin):
+class HuberResidualStack(BaseEstimator, ClassifierMixin):
     """
     Two-phase model:
     1. Huber-IRM (Law) on raw target.
-    2. ExtraTrees (Fashion) on OOF residuals.
+    2. Fashion Estimator (ExtraTrees/XGB) on OOF residuals.
     3. Isotonic Calibration on L+T.
     """
-    def __init__(self, huber_params=None, et_params=None, n_splits=5, random_state=42):
+    def __init__(self, huber_params=None, fashion_estimator=None, n_splits=5, random_state=42):
         self.huber_params = huber_params if huber_params else {}
-        self.et_params = et_params if et_params else {}
+        self.fashion_estimator = fashion_estimator
         self.n_splits = n_splits
         self.random_state = random_state
         self.law_model = None
@@ -624,20 +625,26 @@ class HuberExtraTreesStack(BaseEstimator, ClassifierMixin):
         self.feature_importances_ = None
 
     def fit(self, X, y, sample_weight=None, environment_masks=None, **kwargs):
-        X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        # Capture feature names if X is a DataFrame (needed for XGBoost constraints)
+        feature_names = getattr(X, 'columns', None)
+
+        X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
         # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
         y = np.asarray(y)
         if sample_weight is not None:
             sample_weight = np.asarray(sample_weight)
+
+        if self.fashion_estimator is None:
+            raise ValueError("fashion_estimator must be provided")
 
         # Phase 1: OOF Residuals (Using KFold without shuffle for contiguous blocks)
         kf = KFold(n_splits=self.n_splits, shuffle=False)
         oof_preds = np.zeros(len(y))
 
         # Fit Law model on folds
-        for train_idx, val_idx in kf.split(X):
-            X_tr, y_tr = X[train_idx], y[train_idx]
-            X_val = X[val_idx]
+        for train_idx, val_idx in kf.split(X_arr):
+            X_tr, y_tr = X_arr[train_idx], y[train_idx]
+            X_val = X_arr[val_idx]
             w_tr = sample_weight[train_idx] if sample_weight is not None else None
 
             # Use basic env indices for ERM on fold
@@ -662,22 +669,70 @@ class HuberExtraTreesStack(BaseEstimator, ClassifierMixin):
                       env_indices = environment_masks
              except:
                  pass
-        self.law_model.fit(X, y, env_indices=env_indices, sample_weight=sample_weight)
+        self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+
+        # Prepare X for fashion model (restore DataFrame if needed for constraints)
+        if feature_names is not None:
+            X_fashion = pd.DataFrame(X_arr, columns=feature_names)
+        else:
+            X_fashion = X_arr
 
         # 2. Final Fashion on residuals
-        self.fashion_model = ExtraTreesRegressor(**self.et_params)
-        self.fashion_model.fit(X, residuals, sample_weight=sample_weight)
+        self.fashion_model = clone(self.fashion_estimator)
+
+        # Sanitize constraints for XGBoost to match current features
+        if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
+            params = self.fashion_model.get_params()
+            updates = {}
+
+            # 1. Interaction Constraints (List of lists of feature names)
+            ic = params.get('interaction_constraints')
+            if ic:
+                valid_features = set(feature_names)
+                new_ic = []
+                for group in ic:
+                    valid_group = [f for f in group if f in valid_features]
+                    if len(valid_group) >= 2:
+                        new_ic.append(valid_group)
+                updates['interaction_constraints'] = new_ic if new_ic else None
+
+            # 2. Monotone Constraints (Dict or Tuple)
+            mc = params.get('monotone_constraints')
+            if mc:
+                if isinstance(mc, dict):
+                    valid_mc = {k: v for k, v in mc.items() if k in feature_names}
+                    updates['monotone_constraints'] = valid_mc if valid_mc else None
+                elif isinstance(mc, tuple) or isinstance(mc, list):
+                    # If tuple, length must match. If mismatch, disable.
+                    if len(mc) != len(feature_names):
+                        updates['monotone_constraints'] = None
+
+            if updates:
+                self.fashion_model.set_params(**updates)
+
+        self.fashion_model.fit(X_fashion, residuals, sample_weight=sample_weight)
 
         # 3. Isotonic Calibration using nested OOF
         fashion_oof = np.zeros(len(y))
-        for train_idx, val_idx in kf.split(X):
-            X_tr, r_tr = X[train_idx], residuals[train_idx]
-            X_val = X[val_idx]
+        for train_idx, val_idx in kf.split(X_arr):
+            # Reconstruct X fold as DataFrame if needed
+            X_tr_arr = X_arr[train_idx]
+            X_val_arr = X_arr[val_idx]
+
+            if feature_names is not None:
+                X_tr_fashion = pd.DataFrame(X_tr_arr, columns=feature_names)
+                X_val_fashion = pd.DataFrame(X_val_arr, columns=feature_names)
+            else:
+                X_tr_fashion = X_tr_arr
+                X_val_fashion = X_val_arr
+
+            r_tr = residuals[train_idx]
             w_tr = sample_weight[train_idx] if sample_weight is not None else None
 
-            et = ExtraTreesRegressor(**self.et_params)
-            et.fit(X_tr, r_tr, sample_weight=w_tr)
-            fashion_oof[val_idx] = et.predict(X_val)
+            # Clone from the sanitized model to preserve constraint fixes
+            et = clone(self.fashion_model)
+            et.fit(X_tr_fashion, r_tr, sample_weight=w_tr)
+            fashion_oof[val_idx] = et.predict(X_val_fashion)
 
         total_oof = oof_preds + fashion_oof
         self.calibrator = IsotonicRegression(out_of_bounds='clip')
@@ -8129,22 +8184,22 @@ class LabelBasedLayer2(BaseStep):
                 'max_iter': 2000
             }
             # ExtraTrees Baseline (The "Fashion")
-            et_params = {
-                'n_estimators': 1000,
-                'max_depth': 6,
-                'min_samples_leaf': 10,
-                'max_features': 'sqrt',
-                'ccp_alpha': 0.001,
-                'min_samples_split': 20,
-                'min_impurity_decrease': 0.005,
-                'random_state': 42,
-                'n_jobs': 2
-            }
+            et_estimator = ExtraTreesRegressor(
+                n_estimators=1000,
+                max_depth=6,
+                min_samples_leaf=10,
+                max_features='sqrt',
+                ccp_alpha=0.001,
+                min_samples_split=20,
+                min_impurity_decrease=0.005,
+                random_state=42,
+                n_jobs=2
+            )
 
             # Create Stack (No constraints inherited!)
-            model = HuberExtraTreesStack(
+            model = HuberResidualStack(
                 huber_params=huber_params,
-                et_params=et_params,
+                fashion_estimator=et_estimator,
                 n_splits=5 # Using 5-fold OOF
             )
 
@@ -8153,6 +8208,40 @@ class LabelBasedLayer2(BaseStep):
                 'model': model,
                 'fit_params': {'environment_masks': environment_masks}
             })
+
+            # --- 5. XGBoost Stack (Huber-IRM + XGB) ---
+            if XGBRegressor is not None:
+                xgb_params = {
+                    'num_parallel_tree': 200,
+                    'n_estimators': 5,
+                    'max_depth': 6,
+                    'subsample': 0.8,
+                    'colsample_bynode': 0.8,
+                    # 'linear_tree': True, # XGBoost does not support linear_tree (LGBM feature). Removing to prevent errors.
+                    'n_jobs': 2,
+                    'random_state': 42,
+                    'objective': 'reg:squarederror' # Predicting residuals
+                }
+
+                # Apply constraints if available
+                if monotone_constraints is not None:
+                    xgb_params['monotone_constraints'] = tuple(monotone_constraints)
+                if interaction_constraints is not None:
+                    xgb_params['interaction_constraints'] = interaction_constraints
+
+                xgb_estimator = XGBRegressor(**xgb_params)
+
+                model_xgb = HuberResidualStack(
+                    huber_params=huber_params,
+                    fashion_estimator=xgb_estimator,
+                    n_splits=5
+                )
+
+                candidates.append({
+                    'name': 'XGB_Stack',
+                    'model': model_xgb,
+                    'fit_params': {'environment_masks': environment_masks}
+                })
 
         # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
@@ -8180,8 +8269,9 @@ class LabelBasedLayer2(BaseStep):
             model = cand['model']
             fit_params = cand['fit_params']
             
-            # Wrap in CalibratedClassifierCV if not ExtraTrees (Stack already handles calibration)
-            if name != 'ExtraTrees':
+            # Wrap in CalibratedClassifierCV if not Stack (Stack already handles calibration)
+            is_stack = name in ['ExtraTrees', 'XGB_Stack']
+            if not is_stack:
                  tprint_info(f"   🔧 Wrapping {name} in Isotonic CalibratedClassifierCV...")
                  # Remove warm start params for calibration wrapper safety
                  safe_fit_params = fit_params.copy()

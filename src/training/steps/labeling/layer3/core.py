@@ -18,8 +18,11 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import log_loss, mean_squared_error, roc_auc_score, brier_score_loss
 
 from .model_training import train_dual_head_models
-from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target
+from .utils import calculate_alpha_target, validate_feature_matrix, calculate_sample_weights_efficient, calculate_studentized_har_target, calculate_blended_forward_returns
 from .enhanced_reporting import EnhancedLayer3Reporter
+from .model_race_reporting import Layer3ModelRaceReporter
+from .layer25_integration import integrate_layer25_into_layer3
+from ..checkpoint_aware_runner import CheckpointAwareRunner, checkpoint_aware_step
 from .feature_engineering import downcast_float
 from src.training.steps.labeling.irm_regime_pipeline import (
     build_env_indices_for_index,
@@ -357,15 +360,19 @@ def select_best_model_per_task(
     """
     Phase 9: Select best models (one per geometry + target type).
     Compares ET, LGBM, XGB outputs against y_target.
+    Uses Information Coefficient (IC) for regression tasks to optimize for financial alpha.
     """
-    best_score = float('inf') if task_type == 'regression' else float('-inf')
+    best_score = float('-inf')  # Use higher-is-better for both tasks (IC for reg, AUC for cls)
     best_model_key = None
     best_pred = None
 
     # Candidate keys
     candidates = [f"et_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
                   f"lgbm_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
-                  f"xgb_{horizon}_{'reg' if task_type == 'regression' else 'cls'}"]
+                  f"xgb_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"catboost_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"huber_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"ridge_{horizon}_{'reg' if task_type == 'regression' else 'cls'}"]
 
     for key in candidates:
         if key not in models_dict:
@@ -375,9 +382,8 @@ def select_best_model_per_task(
         pred = res['cate']
 
         # Calculate metric
-        # Regression: MSE (lower is better) or IC (higher is better).
-        # User usually likes IC for Alpha, but MSE is safer for 'selection' if scales match.
-        # Let's use MSE for Reg, AUC for Cls.
+        # Regression: Information Coefficient (IC) - higher is better for financial alpha
+        # Classification: AUC - higher is better
 
         valid_mask = ~np.isnan(y_target) & ~np.isnan(pred)
         if np.sum(valid_mask) == 0:
@@ -387,8 +393,18 @@ def select_best_model_per_task(
         y_pred = pred[valid_mask]
 
         if task_type == 'regression':
-            score = mean_squared_error(y_true, y_pred)
-            if score < best_score:
+            # Calculate Information Coefficient (Pearson correlation)
+            try:
+                # Use rank correlation for robustness to outliers
+                ic = np.corrcoef(y_true, y_pred)[0, 1]
+                score = ic
+                # Handle NaN correlation
+                if np.isnan(score) or np.isinf(score):
+                    score = 0.0
+            except:
+                score = 0.0
+            
+            if score > best_score:
                 best_score = score
                 best_model_key = key
                 best_pred = pred
@@ -449,7 +465,8 @@ def select_best_model_per_task(
                 best_pred = pred
 
     if best_model_key:
-        tprint_info(f"   🏆 Best model for {horizon} {task_type}: {best_model_key} (Score: {best_score:.4f})")
+        metric_name = "IC" if task_type == 'regression' else "AUC"
+        tprint_info(f"   🏆 Best model for {horizon} {task_type}: {best_model_key} ({metric_name}: {best_score:.4f})")
         return best_pred, best_model_key
     else:
         tprint_warning(f"   ⚠️ No valid models found for {horizon} {task_type}")
@@ -555,9 +572,17 @@ def layer3_analyst_lgbm(
     vol_series = ret_series.rolling(24).std().fillna(0.001)
 
     # 12-bar targets
-    y_alpha_12_series = calculate_studentized_har_target(ret_series, vol_series)
+    # Use blended forward returns (4-6h blend) to increase SNR per user request
+    if 'close' in df.columns:
+        # Horizons: 16 (4h) and 24 (6h)
+        blended_ret_series = calculate_blended_forward_returns(df['close'], [16, 24])
+    else:
+        blended_ret_series = ret_series
+
+    y_alpha_12_series = calculate_studentized_har_target(blended_ret_series, vol_series)
     y_alpha_12 = y_alpha_12_series.values.astype(np.float32)
-    y_prob_12 = (ret_series.values > 0).astype(np.int32)
+    # Probability target is also based on blended return (smoothed direction)
+    y_prob_12 = (blended_ret_series.values > 0).astype(np.int32)
     
     # 48-bar targets
     if 'close' in df.columns:
@@ -601,6 +626,54 @@ def layer3_analyst_lgbm(
 
     # Merge Regime Feats into X_full before clustering/training
     X_full = pd.concat([X_full, regime_feats], axis=1)
+
+    # Phase 3.75: Layer 2.5 Chaser Integration (if available)
+    layer25_enabled = cfg.get('layer25_chaser_enabled', True)
+    layer25_results = cfg.get('layer25_chaser_results', None)
+    
+    if layer25_enabled and layer25_results is not None:
+        tprint_info("🔗 Phase 3.75: Integrating Layer 2.5 Chaser Models...")
+        try:
+            # Integration parameters
+            symbol = cfg.get('symbol', 'ETHUSDT')
+            exchange = cfg.get('exchange', 'binance')
+            timeframe = cfg.get('timeframe', '15m')
+            top_n_models = cfg.get('layer25_top_models', 3)
+            
+            # Convert X_full back to DataFrame for integration
+            df_for_integration = df.copy()
+            for col in X_full.columns:
+                if col not in df_for_integration.columns:
+                    df_for_integration[col] = X_full[col]
+            
+            # Integrate Layer 2.5 models
+            df_enhanced, integration_metadata = integrate_layer25_into_layer3(
+                df=df_for_integration,
+                chaser_results=layer25_results,
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                top_n_models=top_n_models,
+                outcomes_dir=outcomes_dir
+            )
+            
+            # Update X_full with new chaser features
+            chaser_features = [col for col in df_enhanced.columns if col.startswith('chaser_')]
+            for feature in chaser_features:
+                if feature not in X_full.columns:
+                    X_full[feature] = df_enhanced[feature]
+                    df[feature] = df_enhanced[feature]
+            
+            # Store integration metadata
+            cfg['layer25_integration'] = integration_metadata
+            
+            tprint_success(f"✅ Integrated {len(chaser_features)} Layer 2.5 chaser features")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Layer 2.5 integration failed: {e}")
+            cfg['layer25_integration'] = {'status': 'failed', 'error': str(e)}
+    else:
+        tprint_info("⏭️ Skipping Layer 2.5 Chaser integration (disabled or no results)")
 
     # Apply Clustering (Optimized)
     # Use 12-bar target for feature selection relevance
@@ -693,6 +766,19 @@ def layer3_analyst_lgbm(
         )
     except Exception as e:
         tprint_warning(f"⚠️ Enhanced Layer 3 reporting failed: {e}")
+
+    # Model Race Reporting
+    try:
+        race_reporter = Layer3ModelRaceReporter(outcomes_dir=outcomes_dir)
+        race_reporter.generate_model_race_report(
+            models_dict=combined_models,
+            y_alpha_12=y_alpha_12,
+            y_prob_12=y_prob_12,
+            y_alpha_48=y_alpha_48,
+            y_prob_48=y_prob_48
+        )
+    except Exception as e:
+        tprint_warning(f"⚠️ Layer 3 model race reporting failed: {e}")
 
     tprint_success(f"🎉 Layer 3 Pipeline Complete! Best Models: {best_models_info}")
     

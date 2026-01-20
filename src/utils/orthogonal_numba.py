@@ -350,10 +350,27 @@ def _numba_create_tree_targets(close_arr, vol_arr, event_indices, horizon):
 
         if path_vol <= 0: path_vol = 1e-9
 
-        # Sharpe target
-        sharpe = ret / (path_vol * np.sqrt(horizon) + 1e-9)
+        # Sharpe target (Multi-Horizon Blended)
+        # Blend returns over [h/4, h/2, h] to improve SNR
+        h1 = max(1, horizon // 4)
+        h2 = max(1, horizon // 2)
+        h3 = horizon
 
-        # Efficiency
+        idx1 = min(n_bars - 1, evt_idx + h1)
+        idx2 = min(n_bars - 1, evt_idx + h2)
+        idx3 = min(n_bars - 1, evt_idx + h3)
+
+        # Calculate returns for each horizon
+        r1 = (close_arr[idx1] / base_price) - 1.0
+        r2 = (close_arr[idx2] / base_price) - 1.0
+        r3 = (close_arr[idx3] / base_price) - 1.0
+
+        # Weighted blend (50% full horizon, 30% half, 20% quarter)
+        blended_ret = 0.5 * r3 + 0.3 * r2 + 0.2 * r1
+
+        sharpe = blended_ret / (path_vol * np.sqrt(horizon) + 1e-9)
+
+        # Efficiency (based on full horizon)
         net_move = abs(end_price - base_price)
         if path_abs_diff_sum > 0:
             efficiency = net_move / path_abs_diff_sum

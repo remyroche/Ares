@@ -190,8 +190,17 @@ class UnifiedLogger:
         if self.config.file_output:
             try:
                 from logging.handlers import RotatingFileHandler
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                log_file = self.config.log_dir / f'unified_{timestamp}.log'
+                
+                # Check for existing log file in environment to ensure consolidation
+                existing_log_file = os.environ.get('ARES_LOG_FILE')
+                
+                if existing_log_file:
+                    log_file = Path(existing_log_file)
+                else:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    log_file = self.config.log_dir / f'unified_{timestamp}.log'
+                    # Set environment variable so other instances use this file
+                    os.environ['ARES_LOG_FILE'] = str(log_file.absolute())
 
                 file_handler = RotatingFileHandler(
                     log_file,
@@ -212,8 +221,14 @@ class UnifiedLogger:
 
             except ImportError:
                 # Fallback to basic FileHandler
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                log_file = self.config.log_dir / f'unified_{timestamp}.log'
+                existing_log_file = os.environ.get('ARES_LOG_FILE')
+                
+                if existing_log_file:
+                    log_file = Path(existing_log_file)
+                else:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    log_file = self.config.log_dir / f'unified_{timestamp}.log'
+                    os.environ['ARES_LOG_FILE'] = str(log_file.absolute())
 
                 file_handler = logging.FileHandler(log_file)
                 file_handler.setLevel(logging.DEBUG)

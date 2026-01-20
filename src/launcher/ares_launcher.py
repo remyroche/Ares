@@ -580,7 +580,7 @@ Examples:
     # unified training) use the same timeframe as base features.
     parser.add_argument('--regime-timeframe', type=str, default='15m', help='Timeframe used for regime detection/ensemble (default: 15m)')
     parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
-    parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
+    parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='full', help='Execution mode')
     parser.add_argument(
         '--min-interaction-mi-lift',
         type=float,
@@ -637,7 +637,8 @@ Examples:
     layer2_substep_choices = [
         'data_loading', 'regime_generation', 'causal_initialization',
         'causal_discovery', 'specialist_training', 'event_generation',
-        'feature_engineering', 'causal_targets', 'geometry_optimization', 'final_processing'
+        'feature_engineering', 'causal_targets', 'causal_model_training',
+        'geometry_optimization', 'model_race_complete', 'final_processing'
     ]
     
     parser.add_argument(

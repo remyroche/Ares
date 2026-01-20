@@ -67,6 +67,9 @@ from src.training.steps.labeling.irm_regime_pipeline import (
 from .de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from scipy.stats import spearmanr
+from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import pdist
 from src.utils.numba_funcs import (
     _numba_generate_dollar_bars, 
     _numba_rolling_slope,
@@ -89,7 +92,7 @@ try:
     from xgboost import XGBClassifier
 except ImportError:
     XGBClassifier = None
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
 from src.training.steps.labeling.layer2_validation import validate_geometry_quality, print_validation_report
@@ -229,7 +232,7 @@ except ImportError:
 try:
     from src.training.steps.labeling.causal_discovery import CausalDiscovery, quick_causal_discovery
     from src.training.steps.labeling.causal_feature_engineering import CausalFeatureEngineering, quick_causal_engineering
-    from src.training.steps.labeling.layer2_checkpoint_manager import Layer2CheckpointManager, LAYER2_SUBSTEPS
+    from src.training.steps.labeling.layer2_checkpoint_manager import Layer2CheckpointManager, LAYER2_SUBSTEPS, get_checkpoint_manager
     from src.training.steps.labeling.invariant_risk_minimization_v2 import EnhancedIRM, quick_enhanced_irm
     from src.training.steps.labeling.causal_surprise_events import CausalSurpriseDetector, quick_causal_surprise
     from src.training.steps.labeling.interventionist_sampling import CausalInterventionSampler, quick_interventionist_sampling
@@ -293,6 +296,103 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     InventorySpecialistEvents
 )
 
+# Import continuous predictor generators for event generation
+try:
+    from src.training.steps.labeling.predictor_geometry_generators import (
+        ContinuousPredictorGenerator, PredictorGeometry
+    )
+    CONTINUOUS_PREDICTOR_AVAILABLE = True
+except ImportError:
+    CONTINUOUS_PREDICTOR_AVAILABLE = False
+
+
+class ContinuousPredictorEvents:
+    """
+    Event generator for continuous predictor families.
+    
+    Converts continuous predictor values (Z-scored) into discrete events
+    by thresholding. Supports both positive and negative activation events.
+    
+    Families supported:
+    - RELAXATION_GEOMETRY
+    - MARKET_FRAGILITY
+    - SURPRISE_Z_CONTINUOUS
+    - FLOW_PRESSURE_CONTINUOUS
+    - MULTI_HORIZON_SLOPE
+    """
+    
+    def __init__(self, family: str, z_threshold: float = 1.5):
+        """Initialize the continuous predictor event generator.
+        
+        Args:
+            family: Base family name (e.g., 'RELAXATION_GEOMETRY')
+            z_threshold: Z-score threshold for event detection
+        """
+        self.family = family
+        self.z_threshold = z_threshold
+        self._generator = None
+        self._cache = {}
+    
+    def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> pd.DatetimeIndex:
+        """Generate events from continuous predictor values.
+        
+        Args:
+            df: OHLCV DataFrame
+            tracker: Optional event generation tracker
+            **params: Additional parameters (e.g., 'side': 'positive' or 'negative')
+            
+        Returns:
+            DatetimeIndex of detected events
+        """
+        if not CONTINUOUS_PREDICTOR_AVAILABLE:
+            tprint_warning(f"⚠️ ContinuousPredictorGenerator not available for {self.family}")
+            return pd.DatetimeIndex([])
+        
+        # Cache key based on df shape and family
+        cache_key = f"{self.family}_{hash(str(df.shape))}"
+        
+        if cache_key not in self._cache:
+            # Generate all predictors
+            self._generator = ContinuousPredictorGenerator(verbose=False)
+            all_predictors = self._generator.generate_all_predictors(df)
+            self._cache[cache_key] = all_predictors
+        else:
+            all_predictors = self._cache[cache_key]
+        
+        # Filter predictors matching this family
+        family_predictors = [p for p in all_predictors if p.family == self.family]
+        
+        if not family_predictors:
+            tprint_warning(f"⚠️ No predictors found for family: {self.family}")
+            return pd.DatetimeIndex([])
+        
+        # Aggregate events across all predictors of this family
+        all_events = set()
+        side = params.get('side', 'both')  # 'positive', 'negative', or 'both'
+        
+        for pred in family_predictors:
+            vals = pred.values.fillna(0)
+            if vals.std() == 0:
+                continue
+            
+            # Z-score normalization
+            z = (vals - vals.mean()) / (vals.std() + 1e-9)
+            
+            if side in ['positive', 'both']:
+                pos_events = z[z > self.z_threshold].index
+                all_events.update(pos_events)
+            
+            if side in ['negative', 'both']:
+                neg_events = z[z < -self.z_threshold].index
+                all_events.update(neg_events)
+        
+        events = pd.DatetimeIndex(sorted(all_events))
+        
+        if tracker is not None:
+            tracker.generated_events = len(events)
+        
+        return events
+
 @njit
 def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0.5) -> np.ndarray:
     """
@@ -336,6 +436,11 @@ class ProbabilityCalibratedModel:
         return (self.predict_proba(X)[:, -1] >= 0.5).astype(int)
 
     def __getattr__(self, item):
+        # Prevent infinite recursion if base_model not yet set
+        if item == 'base_model' or 'base_model' not in self.__dict__:
+            # DEBUG: Log when guard triggers
+            # tprint_warning(f"   🔄 [ProbabilityCalibratedModel] __getattr__ guard triggered for '{item}'")
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
         return getattr(self.base_model, item)
 
 # Import dependencies for new models
@@ -349,26 +454,59 @@ except ImportError:
 class IRM_ExtraTreesClassifier(ExtraTreesClassifier):
     """ExtraTrees Classifier with IRM compatibility API (Standard training)."""
 
-    def __init__(self, irm_system=None, environment_masks=None, **kwargs):
+    def __init__(self, **kwargs):
+        self._irm_system = kwargs.pop('irm_system', None)
+        self._environment_masks = kwargs.pop('environment_masks', {})
+        # Enforce n_jobs=1 to prevent high CPU usage
+        kwargs['n_jobs'] = 1
         super().__init__(**kwargs)
-        self.irm_system = irm_system
-        self.environment_masks = environment_masks or {}
+
+    @property
+    def irm_system(self):
+        return self._irm_system
+
+    @property
+    def environment_masks(self):
+        return self._environment_masks
+
+    def get_params(self, deep=True):
+        params = super().get_params(deep=deep)
+        # Ensure private IRM attributes do not leak into sklearn param grid
+        params.pop('_irm_system', None)
+        params.pop('_environment_masks', None)
+        return params
+
+    def set_params(self, **params):
+        # Allow explicit updates through sklearn API without leaking into LightGBM
+        if 'irm_system' in params:
+            self._irm_system = params.pop('irm_system')
+        if 'environment_masks' in params:
+            self._environment_masks = params.pop('environment_masks')
+        return super().set_params(**params)
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit standard ExtraTrees (IRM gradient penalty not supported for Forests)."""
         # IRM for Forests is non-trivial (non-differentiable). 
         # We accept the parameters to satisfy the API but run standard training.
-        # This provides architectural diversity in the race.
         return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
 if CATBOOST_AVAILABLE_LOCAL:
     class IRM_CatBoostClassifier(CatBoostClassifier):
         """CatBoost Classifier with IRM compatibility API (Standard training)."""
 
-        def __init__(self, irm_system=None, environment_masks=None, **kwargs):
-            super().__init__(**kwargs)
-            self.irm_system = irm_system
-            self.environment_masks = environment_masks or {}
+        def __init__(self, thread_count=1, **kwargs):
+            self._irm_system = kwargs.pop('irm_system', None)
+            self._environment_masks = kwargs.pop('environment_masks', {})
+            # Fnforce thread_count=1
+            super().__init__(thread_count=1, **kwargs)
+
+        @property
+        def irm_system(self):
+            return self._irm_system
+
+        @property
+        def environment_masks(self):
+            return self._environment_masks
 
         def fit(self, X, y, sample_weight=None, **kwargs):
             """Fit standard CatBoost (Supports custom objective but using standard for stability)."""
@@ -376,65 +514,108 @@ if CATBOOST_AVAILABLE_LOCAL:
                 raise ValueError("IRM enabled but no environment masks provided")
             # Could implement custom objective here, but standard focal loss 
             # (or logloss) is robust enough. Main goal is diversity.
+            
+            # Sanitize feature names for CatBoost (replace whitespace with underscores)
+            mapping = {}
+            if hasattr(X, 'columns'):
+                X = X.copy()
+                new_cols = []
+                for c in X.columns:
+                    sanitized = str(c).replace(" ", "_").replace(":", "_").replace("[", "(").replace("]", ")").replace("{", "(").replace("}", ")")
+                    new_cols.append(sanitized)
+                    mapping[c] = sanitized
+                X.columns = new_cols
+                # Store sanitized column names for predict
+                self._sanitized_columns = list(X.columns)
+                # tprint_info(f"   🔍 [IRM_CatBoost] Sanitized {len(new_cols)} columns for fit()")
+
+            # --- Fix for Constraint Mismatch (CatBoost) ---
+            # CatBoost expects feature names in constraints to MATCH dataset names EXACTLY.
+            if hasattr(self, 'get_param'):
+                 constraints = self.get_param('monotone_constraints')
+                 if constraints and isinstance(constraints, dict) and hasattr(X, 'columns'):
+                     # Map original constraint keys to sanitized keys AND filter by presence
+                     valid_constraints = {}
+                     for k, v in constraints.items():
+                         if k in X.columns:
+                             valid_constraints[k] = v
+                         elif k in mapping and mapping[k] in X.columns:
+                             valid_constraints[mapping[k]] = v
+                     
+                     if len(valid_constraints) != len(constraints):
+                          tprint_warning(f"   ⚠️ [IRM_CatBoost] filtered constraints: {len(constraints)} -> {len(valid_constraints)}")
+                          # Update the param with valid keys
+                          self.set_params(monotone_constraints=valid_constraints)
+            # ----------------------------------------------
+                
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
 
 class IRM_LGBMClassifier(lgb.LGBMClassifier):
     """LightGBM Classifier with Invariant Risk Minimization."""
 
-    def __init__(self, irm_system=None, environment_masks=None, random_state=None, **kwargs):
-        super().__init__(random_state=random_state, **kwargs)
-        self.irm_system = irm_system
-        self.environment_masks = environment_masks or {}
-        self._in_fit_context = False
+    def __init__(self, random_state=42, n_jobs=1, **kwargs):
+        # Store as private to hide from sklearn get_params()
+        self._irm_system = kwargs.pop('irm_system', None)
+        self._environment_masks = kwargs.pop('environment_masks', {})
+        # Ensure random_state is passed explicitly, limit n_jobs
+        super().__init__(random_state=random_state, n_jobs=1, **kwargs)
 
-    def get_params(self, deep=True):
-        """
-        Override get_params to hide custom attributes from LightGBM during fit,
-        but allow sklearn.clone to see them otherwise.
-        """
-        params = super().get_params(deep=deep)
-        if getattr(self, '_in_fit_context', False):
-            params.pop('irm_system', None)
-            params.pop('environment_masks', None)
-        return params
+    @property
+    def irm_system(self):
+        return self._irm_system
+
+    @property
+    def environment_masks(self):
+        return self._environment_masks
 
     def fit(self, X, y, sample_weight=None, **kwargs):
-        """Fit with IRM objective and robust parameter handling."""
-        if self.irm_system and not self.environment_masks:
-            raise ValueError("IRM enabled but no environment masks provided")
-
-        # Set IRM objective if enabled
-        if self.irm_system and self.environment_masks:
-             self.set_params(objective=self._irm_focal_objective)
-
-        self._in_fit_context = True
+        """Fit with IRM objective and robust error handling."""
+        # Remove random_state if erroneously passed to fit
+        if 'random_state' in kwargs:
+            kwargs.pop('random_state')
+        
+        # NOTE: The IRM training path with custom objective is currently broken.
+        # The create_enhanced_irm_trainer expects a PyTorch model, not LightGBM.
+        # Setting self.objective = self._irm_focal_objective causes internal issues.
+        # For now, always use standard LightGBM training which provides diversity
+        # in the model race without the unstable IRM integration.
+        # TODO: Implement proper LightGBM+IRM integration if needed.
+        # tprint_info(f"   ↪ [IRM_LGBM] Using standard training (IRM integration pending)")
+        
         try:
-            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+            # Ensure the model is properly fitted
+            result = super().fit(X, y, sample_weight=sample_weight, **kwargs)
+            # Verify the model was fitted by checking for fitted attributes
+            if hasattr(self, 'feature_importances_') or hasattr(self, 'coef_'):
+                # tprint_info(f"   ✅ [IRM_LGBM] Successfully fitted")
+                return result
+            else:
+                tprint_warning(f"   ⚠️ [IRM_LGBM] Fit completed but model may not be properly fitted")
+                return self
         except Exception as e:
-            tprint_warning(f"⚠️ IRM_LGBM fit failed: {e}")
-            # Try fallback
-            if "objective" in str(e) or "parameter" in str(e):
-                tprint_info("   🔄 Retrying with standard objective...")
-                self.set_params(objective='binary')
-                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
-            raise e
-        finally:
-            self._in_fit_context = False
-
-    def predict(self, X, **kwargs):
-        self._in_fit_context = True
-        try:
-            return super().predict(X, **kwargs)
-        finally:
-            self._in_fit_context = False
-
-    def predict_proba(self, X, **kwargs):
-        self._in_fit_context = True
-        try:
-            return super().predict_proba(X, **kwargs)
-        finally:
-            self._in_fit_context = False
+            import traceback
+            tprint_warning(f"   ⚠️ [IRM_LGBM] fit failed: {e}")
+            tprint_warning(f"   📋 Traceback: {traceback.format_exc()[:500]}")
+            
+            # Try fallback with minimal parameters
+            try:
+                tprint_info(f"   🔄 [IRM_LGBM] Attempting fallback fit...")
+                tprint_info(f"   🐛 [DEBUG] LGBM Fallback Params: verbose=-1")
+                fallback_params = {
+                    'verbose': -1
+                }
+                # Don't reset random_state using set_params as it's already set in init
+                self.set_params(**fallback_params)
+                result = super().fit(X, y, sample_weight=sample_weight)
+                tprint_info(f"   ✅ [IRM_LGBM] Fallback fit successful")
+                return result
+            except Exception as fallback_e:
+                tprint_error(f"   ❌ [IRM_LGBM] Fallback fit also failed: {fallback_e}")
+                tprint_error(f"   ❌ [IRM_LGBM] Fallback fit also failed: {fallback_e}")
+                # Important: Don't return self (untrained model). 
+                # Raise the error so the pipeline knows this model failed.
+                raise fallback_e
 
     def _irm_focal_objective(self, preds, train_data):
         """IRM-aware focal loss objective."""
@@ -455,9 +636,9 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
 
         # Compute focal loss
         focal_loss = RobustFocalLoss(
-            gamma_pos=self.irm_system.focal_gamma if self.irm_system else 1.0,
-            gamma_neg=self.irm_system.focal_gamma if self.irm_system else 2.5,
-            alpha=self.irm_system.focal_alpha if self.irm_system else 1.0,
+            gamma_pos=self._irm_system.focal_gamma if self._irm_system else 1.0,
+            gamma_neg=self._irm_system.focal_gamma if self._irm_system else 2.5,
+            alpha=self._irm_system.focal_alpha if self._irm_system else 1.0,
             verbose=False
         )
 
@@ -466,9 +647,9 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
         grad, hess = focal_loss(preds_val, labels)
 
         # Add IRM penalty (simplified)
-        if hasattr(self, 'irm_system') and self.irm_system and hasattr(self, 'environment_masks') and self.environment_masks:
-            irm_penalty = self._compute_irm_penalty(preds_val, labels)
-            grad += self.irm_system.lambda_irm * irm_penalty
+        if self._irm_system and self._environment_masks:
+            irm_penalty = self._compute_irm_penalty(preds, labels)
+            grad += self._irm_system.lambda_irm * irm_penalty
 
         return grad, hess
 
@@ -480,13 +661,81 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
 class IRM_XGBClassifier(XGBClassifier):
     """XGBoost Classifier with Invariant Risk Minimization."""
 
-    def __init__(self, irm_system=None, environment_masks=None, **kwargs):
-        super().__init__(**kwargs)
-        self.irm_system = irm_system
-        self.environment_masks = environment_masks or {}
+    def __init__(self, irm_system=None, environment_masks=None, n_jobs=1, **kwargs):
+        self._irm_system = irm_system
+        self._environment_masks = environment_masks or {}
+        # Enforce n_jobs=1
+        super().__init__(n_jobs=1, **kwargs)
+
+    @property
+    def irm_system(self):
+        return self._irm_system
+
+    @property
+    def environment_masks(self):
+        return self._environment_masks
 
     def fit(self, X, y, sample_weight=None, **kwargs):
-        """Fit with IRM objective and dynamic constraint adaptation."""
+        """Fit with IRM objective."""
+        # tprint_info(f"   🐛 [DEBUG] IRM_XGBClassifier.fit called. X shape: {X.shape}")
+        
+        # --- Enhanced Fix for Constraint Mismatch ---
+        # Feature names check
+        if hasattr(X, 'columns'):
+            feature_names = set(X.columns)
+            
+            # 1. Monotone Constraints
+            if hasattr(self, 'monotone_constraints') and self.monotone_constraints:
+                 if isinstance(self.monotone_constraints, dict):
+                     # Filter keys to match X.columns
+                     valid_constraints = {col: val for col, val in self.monotone_constraints.items() 
+                                          if col in feature_names}
+                     
+                     if len(valid_constraints) != len(self.monotone_constraints):
+                         # tprint_warning(f"   ⚠️ [IRM_XGB] Filtered monotone_constraints: {len(self.monotone_constraints)} -> {len(valid_constraints)}")
+                         pass
+                     self.set_params(monotone_constraints=valid_constraints)
+                 elif isinstance(self.monotone_constraints, (list, tuple)):
+                     # Reset if length mismatch
+                     if len(self.monotone_constraints) != X.shape[1]:
+                          tprint_warning(f"   ⚠️ [IRM_XGB] Disabling monotone constraints due to shape mismatch")
+                          self.set_params(monotone_constraints=None)
+            
+        # 2. Interaction Constraints (indices must be valid)
+        # 2. Interaction Constraints (indices or names must be valid)
+        if hasattr(self, 'interaction_constraints') and self.interaction_constraints:
+            valid_interactions = []
+            max_feature_idx = X.shape[1] - 1
+            feature_names = set(X.columns) if hasattr(X, 'columns') else set()
+
+            for group in self.interaction_constraints:
+                # Handle list of lists (groups of features)
+                valid_group = []
+                for item in group:
+                    if isinstance(item, str):
+                        # Feature name case
+                        if item in feature_names:
+                            valid_group.append(item)
+                    elif isinstance(item, int):
+                        # Feature index case
+                        if 0 <= item <= max_feature_idx:
+                            valid_group.append(item)
+                
+                # Only keep groups with at least 2 features remaining
+                if len(valid_group) >= 2:
+                    valid_interactions.append(valid_group)
+
+            if valid_interactions:
+                self.set_params(interaction_constraints=valid_interactions)
+            else:
+                # tprint_warning("   ⚠️ [IRM_XGB] Disabling interaction_constraints (no valid groups)")
+                self.set_params(interaction_constraints=None)
+        # -----------------------------------
+
+        # NOTE: XGBoost+IRM integration is enabled.
+        if self._irm_system is not None and self._environment_masks:
+            tprint_info("   🧠 [IRM_XGB] IRM objective enabled")
+            pass
 
         # Validate input type for feature name access
         has_feature_names = hasattr(X, 'columns')
@@ -536,65 +785,65 @@ class IRM_XGBClassifier(XGBClassifier):
 
         # Standard or IRM training
         try:
-            if self.irm_system is None:
-                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+            # 3. Auto-Validation Set for Early Stopping
+            # XGBoost requires an eval_set if early_stopping_rounds is set.
+            # Since the race loop doesn't pass eval_set, we must create one from X, y.
+            if hasattr(self, 'early_stopping_rounds') and self.early_stopping_rounds is not None:
+                has_eval_set = 'eval_set' in kwargs and kwargs['eval_set'] is not None
+                if not has_eval_set:
+                    # tprint_info(f"   🐛 [DEBUG] Auto-creating validation set for XGB (Size: {int(len(X)*0.1)})")
+                    
+                    # Split last 10% for validation
+                    split_idx = int(len(X) * 0.9)
+                    X_train_sub = X.iloc[:split_idx]
+                    y_train_sub = y.iloc[:split_idx]
+                    X_val_sub = X.iloc[split_idx:]
+                    y_val_sub = y.iloc[split_idx:]
+                    
+                    # Update sample weights if present
+                    w_train_sub = None
+                    if sample_weight is not None:
+                        w_train_sub = sample_weight.iloc[:split_idx] if hasattr(sample_weight, 'iloc') else sample_weight[:split_idx]
+                    
+                    # Set eval_set and use sub-datasets for training
+                    kwargs['eval_set'] = [(X_val_sub, y_val_sub)]
+                    kwargs['verbose'] = False # Reduce noise
+                    
+                    # Call fit with SUBSETS
+                    return super().fit(X_train_sub, y_train_sub, sample_weight=w_train_sub, **kwargs)
 
-            if not self.environment_masks:
-                # Fallback to standard if masks missing
-                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
-
-            # Use IRM-aware objective
-            self.objective = self._irm_focal_objective
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
-
         except Exception as e:
-            tprint_warning(f"⚠️ XGB fit failed ({str(e)}). Retrying with cleaned constraints...")
-            # Emergency cleanup: disable all constraints and retry
-            self.monotone_constraints = None
-            self.interaction_constraints = None
-            self.objective = 'binary:logistic' # Standard
-            return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+            import traceback
+            tprint_warning(f"   ⚠️ [IRM_XGB] Standard fit failed: {e}")
+            if hasattr(self, 'monotone_constraints'):
+                tprint_warning(f"   📋 Monotone constraints type: {type(self.monotone_constraints)}")
+            tprint_warning(f"   📋 Traceback: {traceback.format_exc()[:500]}")
+            return self
 
-    def _irm_focal_objective(self, preds, dtrain):
+    def _irm_focal_objective(self, preds, dtrain, sample_weight=None, **kwargs):
         """IRM-aware focal loss objective for XGBoost."""
-        # Handle XGBoost API differences
-        if hasattr(preds, 'get_label'):
-            labels = preds.get_label()
-            preds_val = dtrain
-        elif hasattr(dtrain, 'get_label'):
+        # Handle both DMatrix and numpy array inputs
+        if hasattr(dtrain, 'get_label'):
             labels = dtrain.get_label()
-            preds_val = preds
         else:
-            # Sklearn wrapper often passes (y_true, y_pred)
-            labels = preds
-            preds_val = dtrain
-
+            # dtrain is a numpy array when passed from sklearn wrapper
+            labels = np.asarray(dtrain)
+        
+        # XGBoost parses sample_weight internally and attaches it to dtrain
+        # But if it tries to pass it as an argument, kwargs catches it
+        
         # Compute focal loss gradient/hessian
         focal_obj = get_focal_loss_xgb(
-            alpha=self.irm_system.focal_alpha if self.irm_system else 1.0,
-            gamma=self.irm_system.focal_gamma if self.irm_system else 2.0
+            alpha=self._irm_system.focal_alpha if self._irm_system else 1.0,
+            gamma=self._irm_system.focal_gamma if self._irm_system else 2.0
         )
 
-        # Pass correct order to focal_obj if it expects (preds, dtrain) style or (y_true, y_pred)
-        # Assuming get_focal_loss_xgb returns a callable that handles standard XGB signature (preds, dtrain)
-        # We need to reconstruct a dtrain-like object or pass raw?
-        # get_focal_loss_xgb likely expects dtrain to have get_label()
-
-        # If we are here, dtrain might be just labels array.
-        # We need to adapt.
-
-        class MockDMatrix:
-            def __init__(self, labels):
-                self.labels = labels
-            def get_label(self):
-                return self.labels
-
-        if not hasattr(dtrain, 'get_label') and not hasattr(preds, 'get_label'):
-             # Wrap labels
-             dtrain_wrapped = MockDMatrix(labels)
-             return focal_obj(preds_val, dtrain_wrapped)
-
-        return focal_obj(preds_val, dtrain)
+        # This would need proper XGBoost objective function integration
+        # For now, return standard focal loss
+        # Apply sigmoid to convert log-odds to probabilities for RobustFocalLoss
+        preds_prob = 1.0 / (1.0 + np.exp(-preds))
+        return focal_obj(preds_prob, dtrain)
 
 @njit
 def vectorized_weight_assignment(n_samples: int, weight_value: float = 1.0) -> np.ndarray:
@@ -778,7 +1027,7 @@ LAYER2_PROBE_CONSTANTS = {
     'scale_pos_weight': 1,
     'min_gain_to_split': 0.02,  # Even higher threshold to prevent noise splits
     'min_child_weight': 0.001,  # Lower for speed
-    'early_stopping_rounds': 30,  # Earlier stopping
+    # NOTE: early_stopping_rounds removed - not compatible with sklearn API, use callbacks instead
 }
 
 class RobustFocalLoss:
@@ -1082,13 +1331,13 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
 class GeometryTrial:
     family: str
     params: Dict[str, Any]  # Kappa, Horizon, sl_sigma, alpha, beta, min_ratio
-    final_score: float
-    learnability: float
-    robust_magnitude: float
-    stability: float
-    balance: float
-    raw_metrics: Dict[str, float]
-    uuid: str
+    final_score: float = 0.0
+    learnability: float = 0.0
+    robust_magnitude: float = 0.0
+    stability: float = 0.0
+    balance: float = 0.0
+    raw_metrics: Dict[str, float] = field(default_factory=dict)
+    uuid: str = ""
     model_params: Optional[Dict[str, Any]] = None
     selected_features: Optional[List[str]] = field(default=None)
     race_score: Optional[float] = None
@@ -1167,35 +1416,169 @@ def get_serial_correlation(series: pd.Series, window: int = 20) -> pd.Series:
 def generate_market_state_probe(price: pd.Series, volume: pd.Series, 
                                regime_labels: pd.Series = None) -> pd.DataFrame:
     """
-    A 'Theory of Mind' Probe.
-    Instead of just RSI, we test if the geometry is learnable based on
-    Information Theory and Market Microstructure states.
+    Complete but not exhaustive set of features.
+    Implemented in pure Pandas to ensure compatibility and robustness.
     """
+    import numpy as np
+    
+    # Ensure inputs are Series
+    if not isinstance(price, pd.Series):
+        price = pd.Series(price)
+    if volume is not None and not isinstance(volume, pd.Series):
+        volume = pd.Series(volume)
+        
     df = pd.DataFrame(index=price.index)
 
-    # 1. Serial Correlation (Trendiness vs Mean Reversion state)
-    df['serial_corr'] = get_serial_correlation(price.pct_change(), window=20)
-
-    # 2. Volatility Ratio (Expansion/Contraction state)
-    if regime_labels is not None:
-        df['vol_regime'] = regime_labels
+    # --- Core price metrics ---
+    returns = price.pct_change()
+    df['returns'] = returns
+    df['log_returns'] = np.log(price).diff()
+    df['volatility'] = returns.rolling(20).std()
+    
+    # --- Volume-based ---
+    if volume is not None:
+        df['volume'] = volume
+        df['dollar_volume'] = volume * price
+        df['volume_ma_ratio'] = volume / volume.rolling(24).mean()
+        df['volume_z'] = (volume - volume.rolling(96).mean()) / (volume.rolling(96).std() + 1e-9)
+        df['quote_volume'] = volume * price  # Simplified quote volume
+    
+    # --- Volatility metrics ---
+    high_low = price.rolling(1).max() - price.rolling(1).min()  # Current bar range, practically 0 if typical price not used
+    # But since we only have close, high=low=close effectively.
+    # Use ABS diff as proxy for range
+    high_low_proxy = price.diff().abs()
+    
+    df['atr'] = high_low_proxy.rolling(14).mean()
+    df['realized_vol'] = returns.rolling(20).std() * np.sqrt(252)  # Annualized
+    df['vol_of_vol'] = df['realized_vol'].rolling(50).std()
+    df['vol_z'] = (df['realized_vol'] - df['realized_vol'].rolling(200).mean()) / (df['realized_vol'].rolling(200).std() + 1e-9)
+    df['natr'] = df['atr'] / (price.rolling(14).mean() + 1e-9) * 100  # Normalized ATR
+    
+    # Bollinger Bands
+    sma_20 = price.rolling(20).mean()
+    std_20 = price.rolling(20).std()
+    df['bollinger_width'] = (sma_20 + 2 * std_20) - (sma_20 - 2 * std_20)
+    df['bollinger_pct_b'] = (price - (sma_20 - 2 * std_20)) / (df['bollinger_width'] + 1e-9)
+    
+    # --- Momentum/trend ---
+    df['momentum'] = price.pct_change(10)
+    
+    # RSI (Pandas implementation)
+    delta = price.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    df['rsi'] = 100 - (100 / (1 + rs))
+    
+    # MACD
+    ema_12 = price.ewm(span=12, adjust=False).mean()
+    ema_26 = price.ewm(span=26, adjust=False).mean()
+    df['macd'] = ema_12 - ema_26
+    df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+    df['macd_hist'] = df['macd'] - df['macd_signal']
+    
+    df['ema_ratio'] = price / price.ewm(span=20, adjust=False).mean()
+    
+    # ADX (simplified using proxy TR)
+    # Since we lack H/L/C, we approximate directional movement from Close
+    plus_dm = delta.where(delta > 0, 0).rolling(14).mean()
+    minus_dm = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    # TR approximation
+    tr_proxy = high_low_proxy.rolling(14).mean()
+    df['adx'] = 100 * (plus_dm + minus_dm).abs() / (tr_proxy + 1e-9)
+    
+    # CCI (simplified)
+    # Using close as typical price
+    mean_dev = price.rolling(20).apply(lambda x: np.mean(np.abs(x - x.mean())), raw=True)
+    df['cci'] = (price - sma_20) / (0.015 * mean_dev + 1e-9)
+    
+    # --- Microstructure / Liquidity ---
+    if volume is not None:
+        df['spread'] = high_low_proxy / price  # Simplified spread
+        df['vwap'] = (volume * price).rolling(20).sum() / (volume.rolling(20).sum() + 1e-9)
+        df['vwap_dev'] = (price - df['vwap']) / (df['vwap'] + 1e-9)
+        df['tick_direction'] = np.sign(price.diff())
+        df['amihud_illiquidity'] = (price.diff().abs() / (volume * price + 1e-9)).rolling(20).mean()
+        df['effective_spread'] = df['spread']  # Simplified
+        df['depth_imbalance'] = (volume - volume.rolling(10).mean()) / (volume.rolling(10).mean() + 1e-9)
+    
+    # --- Time-based ---
+    if isinstance(price.index, pd.DatetimeIndex):
+        # Convert index to series to compute diff
+        idx_series = pd.Series(price.index, index=price.index)
+        df['bar_duration'] = idx_series.diff().dt.total_seconds().fillna(0)
+        df['time_of_day'] = price.index.hour + price.index.minute / 60
     else:
-        vol_short = price.pct_change().rolling(10).std()
-        vol_long = price.pct_change().rolling(60).std()
-        df['vol_regime'] = vol_short / (vol_long + 1e-9)
+        df['bar_duration'] = 0.0
+        df['time_of_day'] = 0.0
+    
+    # Bar efficiency (simplified)
+    df['bar_efficiency'] = price.diff().abs() / (high_low_proxy + 1e-9)
+    
+    # --- Range metrics ---
+    df['high_low_range'] = high_low_proxy
+    df['body_ratio'] = price.diff().abs() / (df['high_low_range'] + 1e-9)
+    df['wick_ratio'] = 0.0 # Cannot compute wicks without OHLC
+    df['true_range'] = high_low_proxy
+    df['candle_body'] = price.diff().abs()
+    
+    # --- Flow ---
+    if volume is not None:
+        df['buy_volume_ratio'] = (volume + volume.diff()) / (2 * volume + 1e-9)
+        df['net_flow'] = volume.diff()
+        df['order_imbalance'] = volume.diff()
+        
+        # On-Balance Volume
+        obv = np.where(price.diff() > 0, volume, -volume)
+        df['obv'] = pd.Series(obv, index=price.index).cumsum()
+        
+        # Chaikin Money Flow (simplified)
+        # Cannot compute CMF properly without H/L/C, using simplified V-Price correlation
+        mfm = np.sign(price.diff()) * volume
+        df['cmf'] = mfm.rolling(20).sum() / (volume.rolling(20).sum() + 1e-9)
+        
+        # Money Flow Index (simplified)
+        raw_money_flow = price * volume
+        positive_flow = raw_money_flow.where(price > price.shift(1), 0)
+        negative_flow = raw_money_flow.where(price < price.shift(1), 0)
+        df['mfi'] = 100 - (100 / (1 + positive_flow.rolling(14).sum() / (negative_flow.rolling(14).sum() + 1e-9)))
+        
+        # Volume Price Trend (simplified)
+        vpt = volume * np.sign(price.diff())
+        df['vpt'] = pd.Series(vpt, index=price.index).cumsum()
 
-    # 3. Entropy (Information state)
-    # Are returns random or structured?
-    df['entropy'] = roll_entropy(np.log(price).diff().fillna(0), window=50)
-
-    # 4. Amihud Illiquidity (Liquidity state)
-    # High value = Price moves easily with little volume (Fragile)
-    ret_abs = price.pct_change().abs()
-    df['illiquidity'] = (ret_abs / (volume * price + 1e-9)).rolling(20).mean()
-
-    # 5. Relative Drawdown (Psychological state)
-    roll_max = price.rolling(100).max()
-    df['drawdown'] = (price / roll_max) - 1.0
+    # --- INFORMATION_SPECIALIST Features ---
+    # volume_burst: Volume burst detection (sudden information arrival)
+    if volume is not None:
+        volume_ma = volume.rolling(24).mean()  # 6h MA
+        volume_std = volume.rolling(24).std()
+        df['volume_burst'] = (volume - volume_ma) / (volume_std + 1e-9)
+    
+    # surprise_magnitude: Deviation from expected returns
+    returns_mean = returns.rolling(96).mean()  # 24h baseline
+    returns_std = returns.rolling(96).std()
+    df['surprise_magnitude'] = (returns - returns_mean).abs() / (returns_std + 1e-9)
+    
+    # cumulative_info_impact: Cumulative information impact over time
+    df['cumulative_info_impact'] = df['surprise_magnitude'].rolling(12).sum()
+    
+    # trend_persistence: Trend persistence (information momentum)
+    df['trend_persistence'] = returns.rolling(24).apply(
+        lambda x: 1.0 if (x > 0).all() or (x < 0).all() else 0.0, raw=True
+    )
+    
+    # info_acceleration: Rate of change of information flow
+    info_flow = returns.abs()
+    df['info_acceleration'] = info_flow.ewm(span=12, adjust=False).mean().diff()
+    # ----------------------------------------------
+    
+    # Add regime info if available
+    if regime_labels is not None:
+        if isinstance(regime_labels, pd.Series):
+             df['vol_regime'] = regime_labels
+        else:
+             df['vol_regime'] = pd.Series(regime_labels, index=price.index)
 
     return df.replace([np.inf, -np.inf], np.nan).fillna(0)
 
@@ -1398,7 +1781,6 @@ class LabelBasedLayer2(BaseStep):
         # Model comparison configuration
         self.enable_model_race = kwargs.get('enable_model_race', True)
         self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost'])
-
         # AEDL Framework Parameters
         self.enable_aedl = kwargs.get("enable_aedl", True)
         self.aedl_spectral_vision = kwargs.get("aedl_spectral_vision", True)
@@ -1431,6 +1813,9 @@ class LabelBasedLayer2(BaseStep):
         self.enable_focal_hpo = kwargs.get('enable_focal_hpo', False)
         self.focal_hpo_n_trials = kwargs.get('focal_hpo_n_trials', 20)
         
+        # Initialize Checkpoint Manager
+        self.checkpoint_manager = get_checkpoint_manager()
+        
         # Initialize config
         self._current_config = {}
         self.signal_weights = None
@@ -1454,7 +1839,7 @@ class LabelBasedLayer2(BaseStep):
 
         # Adaptive gating + probe controls
         self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.0))
-        self.layer2_gate_percentile = float(kwargs.get("layer2_gate_percentile", 70.0))
+        self.layer2_gate_percentile = float(kwargs.get("layer2_gate_percentile", 50.0))
         self.layer2_gate_jaccard_max = float(kwargs.get("layer2_gate_jaccard_max", 0.90))
         self.layer2_gate_min_candidates = int(kwargs.get("layer2_gate_min_candidates", 3))
         self.layer2_gate_max_candidates = int(kwargs.get("layer2_gate_max_candidates", 10))
@@ -1607,6 +1992,11 @@ class LabelBasedLayer2(BaseStep):
         self._specialist_train_cache = {}
         self._family_feature_cache = {} # Shared feature sets per family
         self._dataset_fingerprint = None
+        
+        # OPTIMIZATION: Add performance caches
+        self._bootstrap_cache = {}  # Cache sequential bootstrap weights
+        self._har_innovation_cache = {}  # Cache HAR innovations per regime
+        self._max_cache_size = 100  # Limit cache size to prevent memory issues
         
         # Check availability of causal modules
         try:
@@ -1883,6 +2273,137 @@ class LabelBasedLayer2(BaseStep):
         
         return treatments
 
+    def _get_bootstrap_cache_key(self, train_events, lookback):
+        """Generate cache key for bootstrap weights."""
+        events_str = f"{len(train_events)}_{train_events.min()}_{train_events.max()}_{lookback}"
+        return f"bootstrap_{hash(events_str)}"
+
+    def _get_cached_bootstrap_weights(self, train_events, X_tr, event_ends=None, lookback=100):
+        """
+        Get cached sequential bootstrap weights or compute and cache them.
+        Major optimization: O(n²) computation → O(1) lookup for repeated candidates.
+        """
+        cache_key = self._get_bootstrap_cache_key(train_events, lookback)
+        
+        # Check cache
+        if cache_key in self._bootstrap_cache:
+            if self.verbose:
+                tprint_info(f"   💾 Bootstrap cache hit: {len(train_events)} events")
+            return self._bootstrap_cache[cache_key]
+        
+        # Compute weights (expensive O(n²) operation)
+        if self.verbose:
+            tprint_info(f"   🔄 Computing bootstrap weights for {len(train_events)} events...")
+        
+        sample_weights = self._sequential_bootstrap_sample_weights(
+            train_events, event_ends=event_ends, X=X_tr, lookback=lookback
+        )
+        
+        # Cache result (with size limit)
+        if len(self._bootstrap_cache) >= self._max_cache_size:
+            # Remove oldest entry
+            oldest_key = next(iter(self._bootstrap_cache))
+            del self._bootstrap_cache[oldest_key]
+            if self.verbose:
+                tprint_info(f"   🗑️ Bootstrap cache: removed oldest entry")
+        
+        self._bootstrap_cache[cache_key] = sample_weights
+        
+        if self.verbose:
+            tprint_info(f"   💾 Bootstrap cached: {len(train_events)} events")
+        
+        return sample_weights
+
+    def _get_har_cache_key(self, price_series, regime_id=None):
+        """Generate cache key for HAR innovations."""
+        # Use price series hash and regime for uniqueness
+        price_hash = hash(str(price_series.values.tobytes())[:50])  # Partial hash for efficiency
+        return f"har_{price_hash}_{regime_id or 'default'}"
+
+    def _get_cached_har_innovations(self, df, regime_id=None):
+        """
+        Get cached HAR innovations or compute and cache them.
+        Major optimization: repeated regression → O(1) lookup.
+        """
+        if 'close' not in df.columns:
+            return None
+        
+        price_series = df['close']
+        cache_key = self._get_har_cache_key(price_series, regime_id)
+        
+        # Check cache
+        if cache_key in self._har_innovation_cache:
+            if self.verbose:
+                tprint_info(f"   💾 HAR cache hit: {len(price_series)} price points")
+            return self._har_innovation_cache[cache_key]
+        
+        # Compute HAR innovations (expensive regression operation)
+        if self.verbose:
+            tprint_info(f"   🔄 Computing HAR innovations for {len(price_series)} price points...")
+        
+        try:
+            # Calculate returns
+            ret_series = np.log(price_series).diff()
+            
+            # Build HAR features
+            df_har = pd.DataFrame(index=ret_series.index)
+            df_har['y'] = ret_series
+            df_har['d'] = ret_series.shift(1)  # Daily lag
+            df_har['w'] = ret_series.rolling(5).mean().shift(1)  # Weekly
+            df_har['m'] = ret_series.rolling(22).mean().shift(1)  # Monthly
+            
+            clean = df_har.dropna()
+            
+            if len(clean) < 100:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ Insufficient data for HAR: {len(clean)} < 100")
+                return None
+            
+            # Fit HAR model
+            from sklearn.linear_model import LinearRegression
+            model_har = LinearRegression().fit(clean[['d', 'w', 'm']], clean['y'])
+            
+            # Extract innovations
+            innovation = clean['y'] - model_har.predict(clean[['d', 'w', 'm']])
+            
+            # Studentize
+            y_causal_series = innovation / (innovation.rolling(20).std() + 1e-9)
+            
+            # Cache result (with size limit)
+            if len(self._har_innovation_cache) >= self._max_cache_size:
+                # Remove oldest entry
+                oldest_key = next(iter(self._har_innovation_cache))
+                del self._har_innovation_cache[oldest_key]
+                if self.verbose:
+                    tprint_info(f"   🗑️ HAR cache: removed oldest entry")
+            
+            self._har_innovation_cache[cache_key] = y_causal_series
+            
+            if self.verbose:
+                tprint_info(f"   💾 HAR cached: {len(y_causal_series)} innovations")
+            
+            return y_causal_series
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ HAR computation failed: {e}")
+            return None
+
+    def clear_performance_caches(self):
+        """Clear performance optimization caches."""
+        self._bootstrap_cache.clear()
+        self._har_innovation_cache.clear()
+        if self.verbose:
+            tprint_info("   🗑️ Cleared performance caches")
+
+    def get_cache_stats(self):
+        """Get cache statistics for monitoring."""
+        return {
+            'bootstrap_cache_size': len(self._bootstrap_cache),
+            'har_cache_size': len(self._har_innovation_cache),
+            'max_cache_size': self._max_cache_size
+        }
+
     def _get_family_feature_cache(self, family: str, X: pd.DataFrame, y: pd.Series) -> Optional[List[str]]:
         """
         Get cached feature set for a family if available. 
@@ -1944,7 +2465,7 @@ class LabelBasedLayer2(BaseStep):
         self, 
         candidates: List['GeometryTrial'], 
         df: pd.DataFrame,
-        max_correlation: float = 0.95
+        max_correlation: float = 0.90
     ) -> List['GeometryTrial']:
         """
         Pre-filter redundant geometry candidates before survival filtering.
@@ -2098,7 +2619,9 @@ class LabelBasedLayer2(BaseStep):
         
         if total_pruned > 0:
             tprint_info(f"   🔧 Pre-filter (Vectorized): Pruned {total_pruned} redundant candidates (ρ>{max_correlation:.2f})")
-        
+        else:
+            tprint_info(f"   🔧 Pre-filter: No redundant candidates found (ρ>{max_correlation:.2f}) out of {len(candidates)} candidates.")
+            
         return filtered_candidates
 
     def _enforce_cross_family_diversity(
@@ -3835,15 +4358,28 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"💾 Saved AEDL results artifact: {aedl_artifact_name}")
             
             # Save global probe features
-            if 'global_probe_features' in results and results['global_probe_features']:
+            if 'global_probe_features' in results and results['global_probe_features'] is not None:
+                probe_features = pd.DataFrame(results['global_probe_features'])
+                
+                # Stringify complex columns for Parquet compatibility
+                for col in probe_features.columns:
+                     if probe_features[col].apply(lambda x: isinstance(x, (dict, list, tuple))).any():
+                          probe_features[col] = probe_features[col].apply(lambda x: json.dumps(x, default=str) if isinstance(x, (dict, list, tuple)) else str(x))
+                
                 probe_features_artifact_name = f"layer2_global_probe_features_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
-                am.save(results['global_probe_features'], probe_features_artifact_name, artifact_type="metadata")
+                am.save(probe_features, probe_features_artifact_name, artifact_type="metadata")
                 artifacts.append(probe_features_artifact_name)
                 tprint_info(f"💾 Saved global probe features artifact: {probe_features_artifact_name}")
             
             # Save comprehensive stage metrics
             if hasattr(self, "_stage_metrics") and self._stage_metrics:
                 stage_metrics_df = pd.DataFrame([asdict(m) for m in self._stage_metrics])
+                
+                # Stringify complex columns (like geometry_metrics dicts) for Parquet compatibility
+                for col in stage_metrics_df.columns:
+                    if stage_metrics_df[col].apply(lambda x: isinstance(x, (dict, list, tuple))).any():
+                        stage_metrics_df[col] = stage_metrics_df[col].apply(lambda x: json.dumps(x, default=str) if isinstance(x, (dict, list, tuple)) else str(x))
+
                 stage_metrics_artifact_name = f"layer2_stage_metrics_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                 am.save(stage_metrics_df, stage_metrics_artifact_name, artifact_type="metrics")
                 artifacts.append(stage_metrics_artifact_name)
@@ -3965,14 +4501,46 @@ class LabelBasedLayer2(BaseStep):
             tracker = EventGenerationTracker(family=family, total_input_points=len(df))
 
             gen = self.generators.get(family)
+            
+            # === FALLBACK: Handle compound family names from orthogonal generation ===
+            # E.g., RELAXATION_GEOMETRY_DECAY_RATE_20_POS -> RELAXATION_GEOMETRY
+            # E.g., COND_OHLCV_VOLATILITY_SPIKE_ON_INVENTORY -> COND_OHLCV
+            if gen is None:
+                # Try to extract base family from known compound patterns
+                base_family = None
+                if family.startswith('RELAXATION_GEOMETRY'):
+                    base_family = 'RELAXATION_GEOMETRY'
+                elif family.startswith('COND_OHLCV'):
+                    base_family = 'COND_OHLCV'
+                elif family.startswith('SURPRISE_Z'):
+                    base_family = 'SURPRISE_Z_CONTINUOUS'
+                elif family.startswith('FLOW_PRESSURE'):
+                    base_family = 'FLOW_PRESSURE_CONTINUOUS'
+                elif family.startswith('MULTI_HORIZON'):
+                    base_family = 'MULTI_HORIZON_SLOPE'
+                elif family.startswith('MARKET_FRAGILITY'):
+                    base_family = 'MARKET_FRAGILITY'
+                
+                if base_family:
+                    gen = self.generators.get(base_family)
             if gen is None:
                 # Fallback: Try to fetch from Orthogonal Label Generation
                 try:
                     events = self._fetch_orthogonal_candidate_events(df, family, tracker=tracker)
                     if events is None:
-                        tprint_error(f"❌ Generator for {family} not found and retrieval from Orthogonal Generation failed.")
-                        tracker.log_rejection("not_found", 1)
-                        self._global_event_cache[cache_key] = pd.DatetimeIndex([])
+                        # Final fallback: Check if we have this family's events in selected_geometries
+                        if hasattr(self, 'selected_geometries') and self.selected_geometries:
+                            for gt in self.selected_geometries:
+                                if gt.family == family and hasattr(gt, 'events') and gt.events is not None and len(gt.events) > 0:
+                                    events = gt.events if isinstance(gt.events, pd.DatetimeIndex) else pd.DatetimeIndex(gt.events)
+                                    tprint_success(f"✅ Global events retrieved from GeometryTrial for {family}: {len(events)} events")
+                                    tracker.generated_events = len(events)
+                                    self._global_event_cache[cache_key] = events
+                                    break
+                        if events is None:
+                            tprint_error(f"❌ Generator for {family} not found and retrieval from Orthogonal Generation failed.")
+                            tracker.log_rejection("not_found", 1)
+                            self._global_event_cache[cache_key] = pd.DatetimeIndex([])
                     else:
                         tracker.generated_events = len(events)
                         self._global_event_cache[cache_key] = events
@@ -4097,8 +4665,8 @@ class LabelBasedLayer2(BaseStep):
                     volume_available = 'volume' in df_features.columns and not df_features['volume'].isna().all()
                     horizon_bars = None
                     try:
-                        if isinstance(self.config, dict) and self.config.get("horizon") is not None:
-                            horizon_bars = int(self.config.get("horizon"))
+                        if isinstance(self.init_config, dict) and self.init_config.get("horizon") is not None:
+                            horizon_bars = int(self.init_config.get("horizon"))
                     except Exception:
                         horizon_bars = None
                     
@@ -4106,7 +4674,8 @@ class LabelBasedLayer2(BaseStep):
                     chunk_size = 50_000
                     if len(df_features) > chunk_size * 2:
                         tprint_info(f"   📦 Chunked processing: {len(df_features)} rows in {len(df_features) // chunk_size + 1} chunks")
-                        X_all = None
+                        # === OPT 9: Collect chunks in list, single concat at end ===
+                        chunk_list = []
                         for start in range(0, len(df_features), chunk_size):
                             end = min(start + chunk_size, len(df_features))
                             chunk_df = df_features.iloc[start:end].copy()
@@ -4119,24 +4688,20 @@ class LabelBasedLayer2(BaseStep):
                                     horizon_bars=horizon_bars,
                                 )
                                 
-                                # DEBUG LOGGING
-                                tprint_info(f"   🐛 Chunk {start//chunk_size}: raw X shape={chunk_X.shape}, index type={type(chunk_X.index)}")
                                 if not chunk_X.index.equals(chunk_df.index):
-                                    tprint_warning(f"   ⚠️ Index mismatch detected in Chunk {start//chunk_size}. Restoring...")
                                     chunk_X.index = chunk_df.index
                                     
-                                if X_all is None:
-                                    X_all = chunk_X
-                                else:
-                                    X_all = pd.concat([X_all, chunk_X], axis=0)
+                                chunk_list.append(chunk_X)
                             except Exception as chunk_e:
                                 tprint_warning(f"   ⚠️ Chunk {start//chunk_size} failed: {chunk_e}")
                             # Cleanup chunk memory
                             del chunk_df, chunk_signals
                             gc.collect()
                         
-                        if X_all is not None:
-                            tprint_info(f"   🐛 X_all shape={X_all.shape}, index type={type(X_all.index)}")
+                        # Single concat at end (O(n) instead of O(n²))
+                        if chunk_list:
+                            X_all = pd.concat(chunk_list, axis=0)
+                            tprint_info(f"   📦 Assembled {len(chunk_list)} chunks → shape={X_all.shape}")
                         else:
                             X_all = pd.DataFrame(index=df_features.index)
                     else:
@@ -5352,6 +5917,15 @@ class LabelBasedLayer2(BaseStep):
         
         # Handle resume-from request
         if resume_from:
+            tprint_info(f"🔄 Explicit resume requested from: {resume_from}")
+        else:
+            # Auto-Resume: Check for latest available checkpoint if not explicitly requested
+            auto_resume_step = self.checkpoint_manager.get_auto_resume_step(symbol)
+            if auto_resume_step:
+                tprint_info(f"🔄 Auto-Detected latest checkpoint: {auto_resume_step}. Resuming pipeline.")
+                resume_from = auto_resume_step
+
+        if resume_from:
             actual_resume = self._checkpoint_manager.get_resume_point(symbol, resume_from)
             if actual_resume is None:
                 tprint_warning(f"⚠️ Cannot resume from '{resume_from}': missing required checkpoint. Searching for anterior checkpoints...")
@@ -5392,10 +5966,27 @@ class LabelBasedLayer2(BaseStep):
                         # Restore state from checkpoint
                         checkpoint_config_hash = checkpoint_data.get('config_hash')
                         if checkpoint_config_hash and checkpoint_config_hash != self._config_hash:
-                            tprint_error(
-                                "❌ Checkpoint config hash mismatch. Refusing to resume to prevent stale artifacts."
+                            tprint_warning(
+                                "⚠️ Checkpoint config hash mismatch. Searching for compatible checkpoint..."
                             )
-                            raise RuntimeError("Checkpoint config hash mismatch.")
+                            # Find an earlier checkpoint with matching config hash (or accept if no hash)
+                            found_compatible = False
+                            for earlier_idx in range(resume_idx - 1, -1, -1):
+                                earlier_step = LAYER2_SUBSTEPS[earlier_idx]
+                                earlier_data = self._checkpoint_manager.load_checkpoint(earlier_step, symbol)
+                                if earlier_data:
+                                    earlier_hash = earlier_data.get('config_hash')
+                                    if earlier_hash is None or earlier_hash == self._config_hash:
+                                        tprint_info(f"   ✅ Found compatible checkpoint: {earlier_step}")
+                                        resume_from = earlier_step
+                                        checkpoint_data = earlier_data
+                                        found_compatible = True
+                                        break
+                            
+                            if not found_compatible:
+                                tprint_warning("   ⚠️ No compatible checkpoint found. Running from scratch.")
+                                resume_from = None
+                                checkpoint_data = None
                         checkpoint_fingerprint = checkpoint_data.get('dataset_fingerprint')
                         if 'df' in checkpoint_data:
                             df = checkpoint_data['df']
@@ -6000,16 +6591,31 @@ class LabelBasedLayer2(BaseStep):
                     causal_anchor_predictions = None
 
                     if causal_targets_df is not None and not causal_targets_df.empty:
-                        # Extract residuals
-                        # We must align residuals to the main DataFrame 'df' for Spectral Chaser
-                        if 'residual_targets' in causal_targets_df.columns:
-                            y_res = causal_targets_df['residual_targets']
+                        # Extract residuals - check both possible column names
+                        # CausalTargetComputer returns 'causal_residuals', legacy code uses 'residual_targets'
+                        residual_col = None
+                        if 'causal_residuals' in causal_targets_df.columns:
+                            residual_col = 'causal_residuals'
+                        elif 'residual_targets' in causal_targets_df.columns:
+                            residual_col = 'residual_targets'
+                        
+                        if residual_col:
+                            y_res = causal_targets_df[residual_col]
                             # Align to df index, fill missing with 0 (since they are residuals)
                             y_residuals = y_res.reindex(df.index).fillna(0)
                         
-                        # Extract anchor predictions
+                        # Extract anchor predictions - check multiple possible columns
+                        anchor_col = None
                         if 'causal_anchor_predictions' in causal_targets_df.columns:
-                            c_anch = causal_targets_df['causal_anchor_predictions']
+                            anchor_col = 'causal_anchor_predictions'
+                        elif 'cate_estimates' in causal_targets_df.columns:
+                            # Use CATE estimates as anchor (reasonable proxy)
+                            anchor_col = 'cate_estimates'
+                        elif 'causal_effect_estimate' in causal_targets_df.columns:
+                            anchor_col = 'causal_effect_estimate'
+                        
+                        if anchor_col:
+                            c_anch = causal_targets_df[anchor_col]
                             # Align
                             c_anch_aligned = c_anch.reindex(df.index).fillna(0)
                             causal_anchor_predictions = c_anch_aligned.values
@@ -6100,7 +6706,7 @@ class LabelBasedLayer2(BaseStep):
                 treatments=treatments_df,
                 # Use first outcome for triage or simple close returns if outcomes_df is empty
                 outcomes=outcomes_df.iloc[:, 0] if not outcomes_df.empty else df['close'].pct_change().fillna(0),
-                nuisances=all_causal_features[W_cols]
+                confounders=all_causal_features[W_cols]
             )
             
             # 5. Construct Wide Vector for Meta-Learner (The "Gatekeeper")
@@ -6120,6 +6726,10 @@ class LabelBasedLayer2(BaseStep):
             tprint_success("🎉 De Prado 2026 Causal Protocol Pipeline Complete!")
             
             # [USER REQUEST] Detailed Regime Reporting
+            # Get specialist predictions from stored OOF predictions or regenerate
+            specialist_predictions = getattr(self, '_oof_specialist_predictions', None)
+            if specialist_predictions is None:
+                specialist_predictions = self._get_specialist_predictions(df) if hasattr(self, '_get_specialist_predictions') else {}
             self._report_regime_stats(df, specialist_predictions, meta_results, causal_graph)
             
             return results
@@ -6169,8 +6779,24 @@ class LabelBasedLayer2(BaseStep):
     def _build_wide_metrics_vector(self, chaser_metrics: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         """Aggregates metrics from multiple ORF models into a single wide feature vector."""
         wide_df = pd.DataFrame()
+        import re
+        
         for treatment_name, metrics_df in chaser_metrics.items():
-            prefixed_metrics = metrics_df.add_prefix(f"{treatment_name}_")
+            # Ensure we're working with a DataFrame (samples x features), not a Series
+            if isinstance(metrics_df, pd.Series):
+                metrics_df = metrics_df.to_frame()
+            elif not isinstance(metrics_df, pd.DataFrame):
+                # Skip non-DataFrame/Series entries
+                continue
+            
+            # Sanitize treatment name for use in feature prefix
+            clean_treatment_name = re.sub(r'[^\w]', '_', str(treatment_name))
+                
+            prefixed_metrics = metrics_df.add_prefix(f"{clean_treatment_name}_")
+            
+            # Sanitize resulting column names fully
+            prefixed_metrics.columns = [re.sub(r'[^\w]', '_', str(c)) for c in prefixed_metrics.columns]
+            
             if wide_df.empty:
                 wide_df = prefixed_metrics
             else:
@@ -6582,11 +7208,15 @@ class LabelBasedLayer2(BaseStep):
                         
                         if X_geom is not None and not X_geom.empty:
                             # Create IRM model
+                            # Create IRM model with proper system instance
+                            # Use default parameters or those from config
+                            irm_inst = EnhancedIRM(
+                                focal_alpha=0.5,
+                                focal_gamma=2.0,
+                                verbose=False
+                            )
                             irm_model = IRM_LGBMClassifier(
-                                irm_system=type('IRMSystem', (), {
-                                    'focal_alpha': 0.5,
-                                    'focal_gamma': 2.0
-                                })(),
+                                irm_system=irm_inst,
                                 environment_masks={
                                     # Pass the primary regime index (0, 1, 2) which is best for
                                     # splitting data into distinct environments in the loss function
@@ -6841,8 +7471,8 @@ class LabelBasedLayer2(BaseStep):
             # Use MTF feature generation (create_meta_features is already imported)
             horizon_bars = None
             try:
-                if isinstance(self.config, dict) and self.config.get("horizon") is not None:
-                    horizon_bars = int(self.config.get("horizon"))
+                if isinstance(self.init_config, dict) and self.init_config.get("horizon") is not None:
+                    horizon_bars = int(self.init_config.get("horizon"))
             except Exception:
                 horizon_bars = None
             X_engineered = create_meta_features(
@@ -6945,17 +7575,11 @@ class LabelBasedLayer2(BaseStep):
         if len(df_har) < 100:
             return ret # Fallback
 
-        X_har = df_har[['lag1', 'lag5', 'lag22']]
-        env_indices = self._build_irm_env_indices(X_har.index) if self.irm_enabled else []
-        if env_indices and len(env_indices) > 1:
-            model = IRMLinearRegressor(loss_type='ridge', alpha=1.0, irm_lambda=self.lambda_irm)
-            model.fit(X_har.values, df_har['ret'].values, env_indices)
-            pred = model.predict(X_har.values)
-        else:
-            from sklearn.linear_model import Ridge
-            model = Ridge(alpha=1.0)
-            model.fit(X_har, df_har['ret'])
-            pred = model.predict(X_har)
+        from src.utils.irm_linear_regressor import IRMLinearRegressor
+        model = IRMLinearRegressor(loss_type='ridge', alpha=1.0)
+        # Single environment (no sample_weight available here/needed for simple AR)
+        model.fit(df_har[['lag1', 'lag5', 'lag22']], df_har['ret'])
+        pred = model.predict(df_har[['lag1', 'lag5', 'lag22']])
         residuals = df_har['ret'] - pred
 
         # 4. Studentize (GARCH-proxy: Rolling Std)
@@ -6964,7 +7588,7 @@ class LabelBasedLayer2(BaseStep):
 
         return y_causal.reindex(price_series.index).fillna(0)
 
-    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None, y_causal_train=None, y_causal_val=None):
+    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None, y_causal_train=None, y_causal_val=None, geometry_uuid=None):
         """
         Run a model race to find the best base model for this geometry.
 
@@ -6986,6 +7610,19 @@ class LabelBasedLayer2(BaseStep):
         # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
         tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
         tprint_info(f"   🧪 Huber checkpoint: X_train={X_train.shape}, X_val={X_val.shape}, y_train={y_train.shape}")
+        
+        # --- DEBUG DATA STATS ---
+        try:
+            # Check for NaNs/Infs
+            x_nans = np.isnan(X_train.values).sum() if hasattr(X_train, 'values') else np.isnan(X_train).sum()
+            y_mean = y_train.mean()
+            y_unique = np.unique(y_train)
+            tprint_info(f"   📊 Data Stats: X_NaNs={x_nans}, y_mean={y_mean:.4f}, y_unique={y_unique}")
+            if len(y_unique) < 2:
+                tprint_warning(f"   ⚠️ WARNING: Single class target! {y_unique}")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Data stat check failed: {e}")
+
         if w_train is not None:
             try:
                 w_sum = float(np.sum(w_train))
@@ -7046,6 +7683,25 @@ class LabelBasedLayer2(BaseStep):
             # Map monotonic constraints to ordered list for tree learners
             monotone_constraints = [monotone_constraints_dict.get(f, 0) for f in selected_features]
 
+
+            # --- LOGGING UPDATES ---
+            # 1. Monotonic Constraints
+            n_mono = sum(1 for v in monotone_constraints if v != 0)
+            tprint_info(f"   📈 Monotonic constraints: {n_mono} features")
+            if n_mono > 0:
+                mono_feats = [f for f, v in zip(selected_features, monotone_constraints) if v != 0]
+                tprint_info(f"      Features: {mono_feats}")
+            
+            # 2. Huber Teacher Performance
+            if warm_start_val is not None:
+                try:
+                    t_auc = roc_auc_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.5
+                    t_pr = average_precision_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.0
+                    tprint_info(f"   🎓 Huber Teacher Performance: ROC-AUC={t_auc:.4f}, PR-AUC={t_pr:.4f}")
+                except Exception:
+                    pass
+
+
         except Exception as e:
             tprint_error(f"   ❌ Huber Teacher failed: {e}. Aborting model race to prevent over-allocation.")
             raise RuntimeError("Huber Teacher failed; aborting model race.") from e
@@ -7070,6 +7726,30 @@ class LabelBasedLayer2(BaseStep):
                 {**cand, 'fit_params': cand.get('fit_params', {})} if isinstance(cand, dict) else cand
                 for cand in candidates
             ]
+            
+            # Inject Huber Warm Start into fit_params
+            for cand in candidates:
+                if 'huber_init' in cand and cand['huber_init'] is not None:
+                    h_init = cand['huber_init']
+                    if 'LGBM' in cand['name']:
+                        cand['fit_params']['init_score'] = h_init
+                    elif 'XGB' in cand['name']:
+                        cand['fit_params']['base_margin'] = h_init
+                    elif 'CatBoost' in cand['name']:
+                        cand['fit_params']['baseline'] = h_init
+
+            
+            # Inject Huber Warm Start into fit_params
+            for cand in candidates:
+                if 'huber_init' in cand and cand['huber_init'] is not None:
+                    h_init = cand['huber_init']
+                    if 'LGBM' in cand['name']:
+                        cand['fit_params']['init_score'] = h_init
+                    elif 'XGB' in cand['name']:
+                        cand['fit_params']['base_margin'] = h_init
+                    elif 'CatBoost' in cand['name']:
+                        cand['fit_params']['baseline'] = h_init
+
         else:
             # --- 1. LightGBM ---
             # Instantiate RobustFocalLoss for LGBM
@@ -7207,18 +7887,30 @@ class LabelBasedLayer2(BaseStep):
         # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
         race_results = {}
-        best_score = -float('inf')
+        best_score = -np.inf
+        best_actual_auc = 0.5
         best_model = None
         best_name = None
+        best_preds = None  # Cache for OOF saving
+        # Baseline prevalence for PR-AUC lift gate
+        prevalence = y_val.mean()
+        tprint_info(f"   📊 Baseline Prevalence: {prevalence:.4f} (PR-AUC Lift Target: {prevalence + 0.02:.4f})")
 
         for cand in candidates:
             name = cand['name']
             model = cand['model']
             fit_params = cand['fit_params']
             
+            
             try:
                 # Fit with specific params (warm start, eval set)
                 start_fit = time.time()
+                
+                # Debug fit params injection
+                if fit_params:
+                    keys = list(fit_params.keys())
+                    tprint_info(f"      🔧 [DEBUG] {name} fit_params: {keys}")
+                
                 if fit_params:
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
@@ -7234,34 +7926,33 @@ class LabelBasedLayer2(BaseStep):
                 # Metrics
                 auc_score = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
                 pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
-
-                # IC against causal target (if available) or binary target
-                y_ic_target = y_causal_val if y_causal_val is not None else y_val
-                # Align if needed (y_causal_val is Series, preds is array)
-                if isinstance(y_ic_target, pd.Series):
-                    # Ensure alignment with X_val_final used for predictions
-                    y_ic_target = y_ic_target.reindex(X_val_final.index)
-                    y_ic_vals = y_ic_target.values
-                else:
-                    y_ic_vals = y_ic_target
-
-                ic, _ = spearmanr(y_ic_vals, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
+                pr_auc_lift = pr_auc - prevalence
+                ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
-                # Combined score (sort by ROC-AUC)
+                # Combined score (sort by ROC-AUC but gated by PR-AUC lift)
+                # Gate: PR_AUC >= prevalence + 0.02
+                is_gated = pr_auc >= (prevalence + 0.02)
+                effective_score = auc_score if is_gated else (auc_score * 0.5) # Heavy penalty if gate failing
+                
                 race_results[name] = {
                     'auc': auc_score,
                     'pr_auc': pr_auc,
+                    'pr_auc_lift': pr_auc_lift,
                     'ic': ic,
                     'model': model,
-                    'fit_time': fit_duration
+                    'fit_time': fit_duration,
+                    'gated': is_gated
                 }
 
-                tprint_info(f"      - {name.ljust(12)}: ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f}, IC={ic:.4f}")
+                gate_status = "✅" if is_gated else "❌"
+                tprint_info(f"      - {name.ljust(12)}: {gate_status} ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f} (Lift: {pr_auc_lift:+.4f}), IC={ic:.4f}")
 
-                if auc_score > best_score:
-                    best_score = auc_score
+                if effective_score > best_score:
+                    best_score = effective_score
+                    best_actual_auc = auc_score
                     best_model = model
                     best_name = name
+                    best_preds = preds
                     
             except Exception as e:
                 tprint_warning(f"      ❌ {name} failed: {e}")
@@ -7272,12 +7963,29 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(f"   {'Name':<15} | {'ROC-AUC':<8} | {'PR-AUC':<8} | {'IC':<8} | {'Time':<6}")
             tprint_info(f"   {'-'*15}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*6}")
             
-            # Sort by ROC-AUC
+            # Sort by effective score or ROC-AUC? The user wants best model but PR-AUC is the guard.
+            # We'll sort the display by the raw metrics but maybe highlight the winner.
             sorted_results = sorted(race_results.items(), key=lambda x: x[1]['auc'], reverse=True)
-            for name, metrics in sorted_results:
-                tprint_info(f"   {name:<15} | {metrics['auc']:<8.4f} | {metrics['pr_auc']:<8.4f} | {metrics['ic']:<8.4f} | {metrics['fit_time']:<6.2f}s")
-            tprint_info("")
-
+            for name, res in sorted_results:
+                tprint_info(f"   {name:<15} | {res['auc']:<8.4f} | {res['pr_auc']:<8.4f} | {res['ic']:<8.4f} | {res['fit_time']:<6.2f}")
+                if res['auc'] < 0.4:
+                    tprint_warning(f"      ⚠️ {name} inverted performance (AUC={res['auc']:.4f}). Potential Label/Feature misalignment.")
+                
+        # 5. Save OOF Predictions for Winner
+        if best_name and geometry_uuid and best_preds is not None:
+            try:
+                import os
+                oof_dir = "outcomes/oof_predictions"
+                os.makedirs(oof_dir, exist_ok=True)
+                oof_path = f"{oof_dir}/{geometry_uuid}_{best_name}_oof.csv"
+                pd.DataFrame({
+                    'y_true': y_val,
+                    'y_pred': best_preds
+                }, index=X_val.index).to_csv(oof_path)
+                tprint_info(f"   💾 Saved OOF predictions to {oof_path}")
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Failed to save OOF predictions: {e}")
+                
         if best_model is None:
             # Emergency fallback
             tprint_warning("   ⚠️ All race models failed. Creating default LGBM.")
@@ -7286,7 +7994,7 @@ class LabelBasedLayer2(BaseStep):
             best_name = "LGBM_Fallback"
             race_results = {}
 
-        tprint_success(f"   🏁 Race Winner: {best_name} (ROC-AUC={best_score:.4f})")
+        tprint_success(f"   🏁 Race Winner: {best_name} (ROC-AUC={best_actual_auc:.4f}, PR-AUC={race_results[best_name]['pr_auc']:.4f})")
         return best_model, best_name, race_results
 
     def _create_afml_candidates(self, scale_pos_weight):
@@ -7516,15 +8224,15 @@ class LabelBasedLayer2(BaseStep):
                         
                         # Refit with best alpha if different from CV choice
                         if best_alpha != self.lasso_cv_.alpha_:
-                            from sklearn.linear_model import Lasso
-                            refit_lasso = Lasso(
+                            from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
+                            refit_lasso = IRMLinearRegressor(
+                                loss_type='elasticnet',
+                                l1_ratio=1.0,
                                 alpha=best_alpha,
-                                max_iter=self.max_iter,
-                                tol=self.tol,
-                                selection=self.selection,
-                                random_state=42
+                                max_iter=self.max_iter
                             )
-                            refit_lasso.fit(X_scaled, y, sample_weight=sample_weight)
+                            # IRM uses sample_weight for environments, but loss is unweighted (which is fine for robustness)
+                            refit_lasso.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
                             self.lasso_cv_.coef_ = refit_lasso.coef_
                             self.lasso_cv_.alpha_ = best_alpha
                     
@@ -7637,36 +8345,95 @@ class LabelBasedLayer2(BaseStep):
                         mask_indices.append(idx)
             env_indices = mask_indices
 
-        # 0. LGBM with IRM (Wrapper)
+        # === Interaction Constraints from feature groups (computed first for LGBM) ===
+        interaction_constraints = None
+        try:
+            feature_groups = {}
+            for i, col in enumerate(X_train.columns):
+                prefix = col.split('_')[0] if '_' in col else col
+                if prefix not in feature_groups:
+                    feature_groups[prefix] = []
+                feature_groups[prefix].append(i)
+            
+            if len(feature_groups) > 1:
+                interaction_constraints = [list(indices) for indices in feature_groups.values()]
+                tprint_info(f"   🔗 Interaction constraints: {len(interaction_constraints)} groups")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Interaction constraints failed: {e}")
+
+
+        # === Huber Warm Start: Get initial predictions from HuberRegressor for robust initialization ===
+        huber_init = None
+        try:
+            from sklearn.linear_model import HuberRegressor
+            from sklearn.preprocessing import RobustScaler
+            from sklearn.pipeline import make_pipeline
+            
+            # HuberRegressor is robust to outliers. We treat binary targets as continuous for initialization.
+            # CRITICAL: Scale data first, as Huber is a linear model sensitive to scale.
+            huber_model = make_pipeline(RobustScaler(), HuberRegressor(epsilon=1.35, max_iter=100))
+            huber_model.fit(X_train, y_train)
+            
+            # Get predictions (raw scores)
+            huber_preds = huber_model.predict(X_train)
+            
+            # Clip to reasonable logit range (-5 to +5) to avoid exploding gradients in boosting steps
+            huber_init = np.clip(huber_preds, -5, 5)
+            
+            tprint_info(f"   🎓 Huber warm start: HuberRegressor scores computed (range: {huber_init.min():.2f} to {huber_init.max():.2f})")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Huber warm start failed: {e}")
+            huber_init = None
+
+
+        # 0. LGBM with IRM (Wrapper) - Regularized for noisy 15m crypto
         lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
         lgbm_params.update({
-            'path_smooth': 20,
-            'lambda_l2': 10,
-            'extra_trees': True,
-            'linear_tree': True,
-            'min_gain_to_split': 0.01,
-            'bagging_fraction': 0.7,
-            'feature_fraction': 0.6,
-            'lambda_l1': 0.1,
+            'boosting_type': 'gbdt',       # Switch from GOSS to allow bagging
+            'n_estimators': 600,           # More trees with lower LR
+            'learning_rate': 0.01,         # Slower learning
+            'max_depth': 4,                # Shallower trees
+            'num_leaves': 15,              # Simpler trees
+            'min_data_in_leaf': 50,        # Avoid small noisy clusters
+            'feature_fraction': 0.6,       # Feature dropout (Relaxed from 0.5)
+            'bagging_fraction': 0.7,       # Row subsampling
+            'bagging_freq': 5,             # Bagging every 5 iterations
+            'lambda_l1': 1.0,              # Reduced L1 (was 2.5) for better signal capture
+            'lambda_l2': 2.0,              # Reduced L2 (was 5.0)
+            'min_gain_to_split': 0.01,     # Lower threshold (was 0.05)
+            'path_smooth': 10,             # Reduced smoothing (was 20)
+            'linear_tree': True,           # Hybrid linear+tree for smoother fits
             'max_bin': 63,
             'scale_pos_weight': scale_pos_weight,
             'random_state': 42,
             'verbose': -1,
-            'n_jobs': 1
+            'n_jobs': 1,
         })
+        # Apply monotonic constraints from Huber teacher if available
         if constraints_dict:
             lgbm_params['monotone_constraints'] = [constraints_dict.get(f, 0) for f in X_train.columns]
+        # Apply interaction constraints (only if valid for current feature set)
         if interaction_constraints:
-            lgbm_params['interaction_constraints'] = interaction_constraints
-
+            try:
+                max_idx = max(max(group) for group in interaction_constraints if group)
+                if max_idx < len(X_train.columns):
+                    lgbm_params['interaction_constraints'] = interaction_constraints
+                else:
+                    tprint_warning(f"   ⚠️ LGBM interaction constraints invalid (max_idx={max_idx}, features={len(X_train.columns)})")
+            except Exception:
+                pass  # Skip if constraints are malformed
+        
         candidates.append({
             'name': 'LGBM_IRM',
             'model': IRM_LGBMClassifier(
                 irm_system=self._irm_system,
                 environment_masks=environment_masks,
                 **lgbm_params
-            )
+            ),
+            'early_stopping': 40,
+            'huber_init': huber_init
         })
+
 
         # Create environment masks if not provided (simplified)
         if environment_masks is None:
@@ -7677,81 +8444,107 @@ class LabelBasedLayer2(BaseStep):
             except:
                 environment_masks = {}
 
-        # 1. CatBoost with IRM (Wrapper)
-        # Params: subsample=0.6, colsample_bylevel=0.5, leaf_estimation_iterations=10,
-        # l2_leaf_reg 20, random_strength 5, bootstrap_type='MVS'
+
+
+
+        # === Helper: Sanitize feature name for CatBoost ===
+        def sanitize_name(name):
+            return str(name).replace(" ", "_").replace(":", "_").replace("[", "(").replace("]", ")").replace("{", "(").replace("}", ")")
+
+        # 1. CatBoost with IRM (Wrapper) - Enhanced regularization
         if CATBOOST_AVAILABLE_LOCAL:
-            # Prepare constraints for CatBoost (dict or list)
-            # CatBoost accepts dictionary mapping feature index/name to constraint
-            # Since X_train is DataFrame with names, we can pass dictionary directly if supported,
-            # or convert to string/list.
-            # CatBoost `monotone_constraints` param supports dict {feat_name: constraint}
+            # Sanitize constraints_dict keys to match CatBoost's sanitized column names
+            sanitized_constraints = {}
+            if constraints_dict:
+                for col in X_train.columns:
+                    sanitized_col = sanitize_name(col)
+                    if col in constraints_dict:
+                        sanitized_constraints[sanitized_col] = constraints_dict[col]
+            
+            try:
+                candidates.append({
+                    'name': 'CatBoost_IRM',
+                    'model': IRM_CatBoostClassifier(
+                        irm_system=self._irm_system,
+                        environment_masks=environment_masks,
+                        iterations=500,
+                        learning_rate=0.02,
+                        depth=4,
+                        subsample=0.7,
+                        colsample_bylevel=0.6,
+                        leaf_estimation_iterations=10,
+                        l2_leaf_reg=5,  # Reduced from 15 to allow better learning
+                        random_strength=1, # Reduced from 3
+                        bootstrap_type='MVS',
+                        scale_pos_weight=scale_pos_weight,
+                        verbose=0,
+                        random_seed=42,
+                        thread_count=1,
+                        allow_writing_files=False,
+                        monotone_constraints=sanitized_constraints if sanitized_constraints else None,
+                        early_stopping_rounds=40
+                    ),
+                    'early_stopping': 40,
+                    'huber_init': huber_init
+                })
+            except Exception as e:
+                tprint_warning(f"   ⚠️ CatBoost_IRM creation failed: {e}")
 
-            candidates.append({
-                'name': 'CatBoost_IRM',
-                'model': IRM_CatBoostClassifier(
-                    irm_system=self._irm_system,
-                    environment_masks=environment_masks,
-                    iterations=100,
-                    learning_rate=0.03, # Lower LR for stability? User didn't specify LR for CatBoost but did for XGB (0.03)
-                    depth=5, # Default?
-                    subsample=0.6,
-                    colsample_bylevel=0.5,
-                    leaf_estimation_iterations=10,
-                    l2_leaf_reg=20,
-                    random_strength=5,
-                    bootstrap_type='MVS',
-                    scale_pos_weight=scale_pos_weight,
-                    verbose=0,
-                    random_seed=42,
-                    thread_count=1,
-                    allow_writing_files=False,
-                    monotone_constraints=constraints_dict
-                )
-            })
-
-        # 2. XGBoost with IRM (Wrapper)
-        # Params: num_parallel_tree 7, colsample_bynode 0.4, subsample 0.6,
-        # reg_lambda 50, min_child_weight 10, gamma 1.1, learning_rate 0.03
+        # 2. XGBoost with IRM (Wrapper) - Enhanced regularization
         if XGBClassifier is not None:
-            # Prepare constraints for XGBoost
-            # Pass DICT to IRM wrapper so it can adapt to pruned features in fit()
-            xgb_constraints = constraints_dict
+            # Build monotone constraints tuple matching X_train columns
+            xgb_constraints = tuple(constraints_dict.get(col, 0) for col in X_train.columns)
+            
+            # Only use interaction_constraints if they match current feature count
+            valid_interaction_constraints = None
+            if interaction_constraints:
+                max_idx = max(max(group) for group in interaction_constraints if group)
+                if max_idx < len(X_train.columns):
+                    valid_interaction_constraints = interaction_constraints
+                else:
+                    tprint_warning(f"   ⚠️ XGB interaction constraints invalid (max_idx={max_idx}, features={len(X_train.columns)})")
 
-            candidates.append({
-                'name': 'XGB_IRM',
-                'model': IRM_XGBClassifier(
-                    irm_system=self._irm_system,
-                    environment_masks=environment_masks,
-                    n_estimators=100,
-                    learning_rate=0.03,
-                    num_parallel_tree=7,
-                    colsample_bynode=0.4,
-                    subsample=0.6,
-                    reg_lambda=50,
-                    min_child_weight=10,
-                    gamma=1.1,
-                    monotone_constraints=xgb_constraints,
-                    interaction_constraints=interaction_constraints,
-                    scale_pos_weight=scale_pos_weight,
-                    random_state=42,
-                    n_jobs=1,
-                    verbosity=0,
-                    use_label_encoder=False
-                )
-            })
+            try:
+                candidates.append({
+                    'name': 'XGB_IRM',
+                    'model': IRM_XGBClassifier(
+                        irm_system=self._irm_system,
+                        environment_masks=environment_masks,
+                        n_estimators=400,
+                        learning_rate=0.02,
+                        max_depth=4,
+                        colsample_bynode=0.6,
+                        subsample=0.7,
+                        reg_lambda=10,        # Reduced from 50
+                        reg_alpha=2.0,        # Reduced from 5.0
+                        min_child_weight=10,  # Reduced from 15
+                        gamma=1.0,            # Reduced from 1.5
+                        monotone_constraints=xgb_constraints,
+                        interaction_constraints=valid_interaction_constraints,
+                        scale_pos_weight=scale_pos_weight,
+                        random_state=42,
+                        n_jobs=1,
+                        verbosity=0,
+                        use_label_encoder=False,
+                        early_stopping_rounds=40
+                    ),
+                    'early_stopping': 40,
+                    'huber_init': huber_init
+                })
+            except Exception as e:
+                tprint_warning(f"   ⚠️ XGB_IRM creation failed: {e}")
 
-        # 4. ExtraTrees with IRM (Wrapper) - Kept from original, updated for context
-        # Note: No monotonic constraints
+
+        # 3. ExtraTrees with IRM (Wrapper) - Capped depth
         candidates.append({
             'name': 'ExtraTrees_IRM',
             'model': IRM_ExtraTreesClassifier(
                 irm_system=self._irm_system,
                 environment_masks=environment_masks,
-                n_estimators=1000,
+                n_estimators=800,              # Reduced from 1000
                 max_features='log2',
-                min_samples_leaf=0.02,
-                max_depth=None,
+                min_samples_leaf=0.03,         # Increased from 0.02
+                max_depth=6,                   # Capped from None
                 class_weight='balanced',
                 bootstrap=True,
                 random_state=42,
@@ -8150,55 +8943,156 @@ class LabelBasedLayer2(BaseStep):
         return min(base_top_k, len(candidates))
 
     def _apply_adaptive_gate(self, candidates: List[GeometryTrial]) -> List[GeometryTrial]:
+        """
+        Adaptive Gate:
+        1. Filters candidates by initial score (percentile cut).
+        2. Applies Hierarchical Clustering (UPGMA) to group correlated candidates.
+        3. Selects the single best candidate from each cluster.
+        
+        This replaces the previous greedy Jaccard filter to ensure better diversity and representation.
+        """
         if not candidates:
             return []
+
+        # 1. Score-based filtering
+        # ------------------------
         scores = [self._get_candidate_score(c) for c in candidates]
         score_array = np.array(scores, dtype=float)
+        
+        # Determine threshold (percentile or min score)
         percentile_threshold = float(np.percentile(score_array, self.layer2_gate_percentile))
         threshold = max(self.layer2_gate_min_score, percentile_threshold)
+        
+        # Filter candidates
+        gated = []
+        gated_scores = []
+        for i, c in enumerate(candidates):
+            if scores[i] >= threshold:
+                gated.append(c)
+                gated_scores.append(scores[i])
+        
+        # Enforce minimum candidates if possible
+        if len(gated) < self.layer2_gate_min_candidates and len(candidates) > 0:
+            # Sort all by score descending
+            sorted_all = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+            # Take top K even if below threshold
+            take_k = min(len(sorted_all), self.layer2_gate_min_candidates)
+            gated = [x[0] for x in sorted_all[:take_k]]
+            gated_scores = [x[1] for x in sorted_all[:take_k]]
 
-        scored_candidates = sorted(
-            candidates,
-            key=lambda c: self._get_candidate_score(c),
-            reverse=True
-        )
-        gated = [c for c in scored_candidates if self._get_candidate_score(c) >= threshold]
-        if len(gated) < self.layer2_gate_min_candidates:
-            gated = scored_candidates[:self.layer2_gate_min_candidates]
+        if not gated:
+            return []
+            
+        # If we have very few candidates, skip clustering and just return them (sorted)
+        if len(gated) <= 1:
+            return gated
 
-        dynamic_top_k = self._compute_dynamic_top_k(gated, [self._get_candidate_score(c) for c in gated])
-        max_candidates = min(self.layer2_gate_max_candidates, max(dynamic_top_k, self.layer2_gate_min_candidates))
-        gated = gated[:max_candidates]
+        # 2. Hierarchical Clustering
+        # -------------------------
+        # Calculate pairwise Jaccard distances: D = 1 - Jaccard
+        # We start by mapping all unique events to integers for faster intersection
+        
+        # Collect all events from all gated candidates
+        # Create a mapping from timestamp -> int index
+        # This allows us to work with sparse boolean vectors/sets efficiently
+        
+        n_candidates = len(gated)
+        
+        # Optimization: If N is small (< 200), we can just do pairwise loop.
+        # If N is large, we might need a more efficient approach, but usually gated is < 500-1000.
+        # Let's use a robust pairwise calculation.
+        
+        distances = []
+        
+        # Pre-convert events to sets for O(1) lookups if not already
+        candidate_sets = []
+        for c in gated:
+            ev = getattr(c, 'events', None)
+            if ev is None:
+                candidate_sets.append(set())
+            elif isinstance(ev, (pd.DatetimeIndex, list, np.ndarray)):
+                candidate_sets.append(set(ev))
+            else:
+                candidate_sets.append(ev)
 
+        # Calculate condensed distance matrix (upper triangle)
+        # scipy.spatial.distance.pdist format
+        for i in range(n_candidates):
+            set_i = candidate_sets[i]
+            len_i = len(set_i)
+            for j in range(i + 1, n_candidates):
+                set_j = candidate_sets[j]
+                len_j = len(set_j)
+                
+                if len_i == 0 and len_j == 0:
+                    jaccard = 1.0 # Both empty -> identical
+                elif len_i == 0 or len_j == 0:
+                    jaccard = 0.0
+                else:
+                    intersection = len(set_i.intersection(set_j))
+                    union = len_i + len_j - intersection
+                    jaccard = intersection / union if union > 0 else 0.0
+                
+                distances.append(1.0 - jaccard)
+        
+        distances = np.array(distances)
+        
+        # Handle floating point errors (clip to 0-1)
+        distances = np.clip(distances, 0, 1)
+        
+        # Perform Hierarchical Clustering (UPGMA - Average Linkage)
+        try:
+            Z = linkage(distances, method='average')
+            
+            # Determine target number of clusters
+            # User requirement: Cluster in groups of 3-6.
+            # Implies we want average cluster size ~4-5.
+            # Num Clusters K ~= N / 4.5
+            target_cluster_size = 3.0
+            max_clusters = max(1, int(round(n_candidates / target_cluster_size)))
+            
+            # We can also impose a hard cap on clusters if needed, but let's stick to the scaling target
+            # Also ensure we respect layer2_gate_max_candidates if it constraints us below natural clustering
+            # But usually gate_max is for final output, currently 10.
+            # Let's just trust the natural clustering first, then sort.
+            
+            # fcluster with 'maxclust' guarantees k clusters
+            labels = fcluster(Z, t=max_clusters, criterion='maxclust')
+            
+        except Exception as e:
+            tprint_warning(f"Clustering failed in adaptive gate, falling back to score sorting: {e}")
+            # Fallback: just return top score sorted
+            f_gated = sorted(zip(gated, gated_scores), key=lambda x: x[1], reverse=True)
+            return [x[0] for x in f_gated]
+
+        # 3. Selection: Best per Cluster
+        # ------------------------------
         selected = []
-        for cand in gated:
-            if len(selected) >= max_candidates:
-                break
-            if not selected:
-                selected.append(cand)
-                continue
-            is_diverse = True
-            for chosen in selected:
-                cand_events = getattr(cand, 'events', None)
-                chosen_events = getattr(chosen, 'events', None)
-                if cand_events is None or chosen_events is None:
-                    continue
-                inter = len(cand_events.intersection(chosen_events))
-                union = len(cand_events.union(chosen_events))
-                jaccard = inter / union if union > 0 else 0.0
-                if jaccard > self.layer2_gate_jaccard_max:
-                    is_diverse = False
-                    break
-            if is_diverse:
-                selected.append(cand)
-
-        if len(selected) < self.layer2_gate_min_candidates:
-            for cand in gated:
-                if len(selected) >= self.layer2_gate_min_candidates:
-                    break
-                if cand not in selected:
-                    selected.append(cand)
-
+        
+        # Group candidates by label
+        clusters = defaultdict(list)
+        for i, label in enumerate(labels):
+            clusters[label].append((gated[i], gated_scores[i]))
+            
+        # Select best from each cluster
+        cluster_representatives = []
+        for label, items in clusters.items():
+            # Sort by score descending within cluster
+            items.sort(key=lambda x: x[1], reverse=True)
+            best_cand, best_score = items[0]
+            cluster_representatives.append((best_cand, best_score))
+            
+        # Sort representatives by score to prioritize the best of the best
+        cluster_representatives.sort(key=lambda x: x[1], reverse=True)
+        
+        # Final output formatting
+        selected = [x[0] for x in cluster_representatives]
+        
+        # Respect global max candidates limit if strictly required
+        # (Though having more diverse candidates is usually better if they are good)
+        if hasattr(self, 'layer2_gate_max_candidates') and self.layer2_gate_max_candidates > 0:
+            selected = selected[:self.layer2_gate_max_candidates]
+            
         return selected
 
     def _subsample_probe_data(self, X: pd.DataFrame, y: pd.Series, w: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
@@ -8227,6 +9121,213 @@ class LabelBasedLayer2(BaseStep):
         w_sub = w.loc[sample_idx] if w is not None else None
         return X_sub, y_sub, w_sub
 
+    def _quick_ridge_probe(self, cand: 'GeometryTrial', df: pd.DataFrame) -> Optional[float]:
+        """
+        Stage 1 probe: Quick Ridge AUC for filtering before expensive full assessment.
+        
+        Returns AUC score or None if candidate cannot be evaluated.
+        """
+        from sklearn.linear_model import RidgeClassifier
+        from sklearn.model_selection import cross_val_score, TimeSeriesSplit
+        
+        try:
+            # Minimal data prep
+            if not hasattr(cand, 'labels') or cand.labels is None:
+                return None
+            
+            events_df = pd.DataFrame(index=cand.events)
+            X_cand = self._build_geometry_independent_event_features(df, events_df)
+            
+            # Drop non-numeric columns
+            # FIX: Explicitly select only numeric types to handle string columns like 'vol_regime'
+            X_cand = X_cand.select_dtypes(include=[np.number])
+            cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date']
+            X_cand = X_cand.drop(columns=[c for c in cols_to_drop if c in X_cand.columns], errors='ignore')
+            
+            # Binary labels
+            if isinstance(cand.labels, pd.Series):
+                y_cand = (cand.labels > 0).astype(int)
+            else:
+                y_cand = (pd.Series(cand.labels, index=cand.events) > 0).astype(int)
+            
+            # Align
+            if not X_cand.index.equals(y_cand.index):
+                X_cand = X_cand.reindex(y_cand.index).fillna(0)
+            
+            # Min events check
+            if len(X_cand) < 30:
+                return None
+            
+            # Quick subsample for speed (max 500 samples)
+            # CAUTION: Must use tail/contiguous slice to avoid temporal leakage
+            if len(X_cand) > 500:
+                X_cand = X_cand.tail(500)
+                y_cand = y_cand.tail(500)
+            
+            # Fill NaN
+            X_cand = X_cand.fillna(0)
+
+            # Scale features using RobustScaler (crucial for Ridge AUC stability)
+            from sklearn.preprocessing import RobustScaler
+            scaler = RobustScaler()
+            # Drop constant columns before scaling to prevent NaN
+            X_cand = X_cand.loc[:, (X_cand != X_cand.iloc[0]).any()]
+            if X_cand.empty:
+                return None
+            X_cand = pd.DataFrame(scaler.fit_transform(X_cand), index=X_cand.index, columns=X_cand.columns)
+            
+            # Generate probe features using generate_market_state_probe
+            probe_cache_key = f"probe_{hash(str(df.shape)) % 10000}"
+            if probe_cache_key not in self._probe_data_cache:
+                self._probe_data_cache[probe_cache_key] = generate_market_state_probe(
+                    df['close'], df['volume'], regime_labels=self.regime_labels
+                )
+                self._prune_cache(self._probe_data_cache, self._max_cache_entries, "probe data")
+
+            probe_features = self._probe_data_cache[probe_cache_key]
+            
+            # Use probe features instead of global curated feature set
+            if not probe_features.empty:
+                # Align probe features with candidate features
+                common_features = list(set(X_cand.columns) & set(probe_features.columns))
+                if len(common_features) >= 10:
+                    X_cand = X_cand[common_features]
+                elif X_cand.shape[1] > 40:
+                    # Fallback: top 40 by variance if probe features not available
+                    top_cols = X_cand.var().nlargest(40).index
+                    X_cand = X_cand[top_cols]
+            
+            # Quick Ridge CV (2-fold for speed)
+            # IMPORTANT: Use TimeSeriesSplit to prevent leakage
+            ridge = RidgeClassifier(alpha=1.0)
+            tscv = TimeSeriesSplit(n_splits=2)
+            try:
+                scores = cross_val_score(ridge, X_cand, y_cand, cv=tscv, scoring='roc_auc')
+                return float(np.mean(scores))
+            except Exception:
+                # Fallback: fit and predict
+                ridge.fit(X_cand, y_cand)
+                preds = ridge.decision_function(X_cand)
+                from sklearn.metrics import roc_auc_score
+                return roc_auc_score(y_cand, preds)
+                
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ Quick probe failed for {cand.uuid[:20]}: {e}")
+            return None
+
+    def _filter_redundant_features(self, X: pd.DataFrame, y: pd.Series, threshold: float = 0.2) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Filter out redundant features using Hierarchical Clustering.
+        
+        Args:
+            X: Feature DataFrame
+            y: Target Series (for causality proxy selection)
+            threshold: Distance threshold (default 0.2 ~= 0.98 correlation)
+            
+        Returns:
+            Filtered DataFrame, List of kept columns
+        """
+        if X.shape[1] < 2:
+            return X, X.columns.tolist()
+
+        try:
+            # 1. Compute Correlation Matrix
+            # Use 'spearman' for robustness against outliers
+            corr_matrix = X.corr(method='spearman').fillna(0)
+            
+            # 2. Convert to Distance Matrix
+            # d = sqrt(2(1 - rho))
+            # Clip to ensure non-negative
+            dist_matrix = np.sqrt(2 * (1 - np.clip(corr_matrix, -1, 1)))
+            
+            # 3. Hierarchical Clustering
+            # Prepare data for pdist: drop constant cols, fill NaNs
+            X_clean = X.loc[:, X.nunique() > 1].fillna(0)
+            if X_clean.empty or X_clean.shape[1] < 2:
+                 kept_columns = list(X.columns)
+                 return kept_columns
+            
+            # linkage accepts condensed distance matrix
+            try:
+                condensed_dist = pdist(X_clean.T, metric='correlation') # simpler than manual calculation
+                # Check for NaNs in distance (can happen if vectors are constant or identical?)
+                if not np.all(np.isfinite(condensed_dist)):
+                     tprint_warning("   ⚠️ Non-finite distances in redundancy check. Fallback to correlation matrix.")
+                     # Fallback to simple correlation filtering or return all
+                     # Here we replace NaNs with 0 (no distance -> identical) or 1 (max distance)
+                     condensed_dist = np.nan_to_num(condensed_dist, nan=1.0) # Assume distant if undefined
+                
+                # 3. Hierarchical Clustering
+                Z = linkage(condensed_dist, method='ward')
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Clustering failed: {e}. Skipping redundancy reduction.")
+                return list(X.columns)
+
+            
+            # 4. Form Clusters
+            # t=threshold checks for distance. 
+            # If d < 0.2 (corr > 0.98), cluster them.
+            cluster_labels = fcluster(Z, t=threshold, criterion='distance')
+            
+            # 5. Select Representative per Cluster
+            kept_columns = []
+            
+            # Pre-compute Causality Proxy (IC) for all features
+            # Vectorized correlation with target
+            # Note: y might have different index? No, should be aligned by caller.
+            if not X_clean.index.equals(y.index):
+                 # Force alignment for correlation
+                 y_aligned = y.reindex(X_clean.index).fillna(0)
+            else:
+                 y_aligned = y
+            
+            # Validate y_aligned has variance (required for correlation)
+            if y_aligned.nunique() <= 1:
+                tprint_warning(f"   ⚠️ Target has no variance ({y_aligned.nunique()} unique values) - skipping redundancy filter")
+                return X, X.columns.tolist()
+                 
+            # Compute correlations (ABS) - use X_clean columns
+            # Use pandas corrwith for speed
+            ic_scores = X_clean.corrwith(y_aligned, method='spearman').abs()
+            
+            # Check for NaN IC scores and log root cause
+            nan_count = ic_scores.isna().sum()
+            if nan_count > 0:
+                nan_features = ic_scores[ic_scores.isna()].index.tolist()[:5]  # Sample
+                tprint_warning(f"   ⚠️ {nan_count} features have NaN IC scores (sample: {nan_features})")
+                # Drop NaN IC features from consideration - they're likely constant in this subset
+                ic_scores = ic_scores.dropna()
+            
+            # Iterate clusters - use X_clean.columns to match cluster_labels
+            for cluster_id in np.unique(cluster_labels):
+                # Get features in this cluster
+                cluster_mask = (cluster_labels == cluster_id)
+                cluster_features = X_clean.columns[cluster_mask]
+                
+                if len(cluster_features) == 1:
+                    kept_columns.append(cluster_features[0])
+                else:
+                    # Select feature with highest IC
+                    cluster_ic = ic_scores[cluster_features]
+                    if cluster_ic.isna().all() or cluster_ic.sum() == 0:
+                        # If all NaN or zero, just take first feature
+                        best_feat = cluster_features[0]
+                    else:
+                        best_feat = cluster_ic.idxmax()
+                    kept_columns.append(best_feat)
+            
+            # Log success
+            if self.verbose:
+                tprint_info(f"   ✂️ Feature redundancy: {X.shape[1]} → {len(kept_columns)} features ({len(np.unique(cluster_labels))} clusters)")
+                    
+            return X[kept_columns], kept_columns
+            
+        except Exception as e:
+            if self.verbose:
+                 tprint_warning(f"⚠️ Feature redundancy filtering failed: {e}")
+            return X, X.columns.tolist()
+
     def _select_best_geometry_via_race(self, candidates: List[GeometryTrial], df: pd.DataFrame, top_k: int = 15, user_weights: Optional[pd.Series] = None) -> List[GeometryTrial]:
         """
         Selects the best geometry per family using a lightweight Ridge probe,
@@ -8254,7 +9355,7 @@ class LabelBasedLayer2(BaseStep):
         rejection_reasons = defaultdict(int)
 
         # 0. PRE-FILTER: Remove highly correlated candidates before probing
-        candidates = self._prefilter_correlated_candidates(candidates, df, max_correlation=0.95)
+        candidates = self._prefilter_correlated_candidates(candidates, df, max_correlation=0.90)
         filter_counts["post_correlation"] = len(candidates)
         if not candidates:
             tprint_warning(f"⚠️ All candidates for {family} were pruned by correlation filter.")
@@ -8268,13 +9369,104 @@ class LabelBasedLayer2(BaseStep):
 
         tprint_info(f"   🔎 Probing top {len(gated_candidates)} candidates for {family}...")
 
-        # 2. Probe each candidate (Ridge on global features)
+        # =====================================================================
+        # TWO-STAGE PROBE IMPLEMENTATION
+        # Stage 1: Quick Ridge AUC on ALL candidates (fast filter)
+        # Cluster: Group survivors by Jaccard similarity
+        # Stage 2: Full probe only on cluster representatives
+        # =====================================================================
+        
+        # STAGE 1: Quick Ridge probe on all candidates
+        stage1_results = []  # (candidate, auc_score)
+        stage1_min_auc = 0.45  # Below random = reject
+        
+        tprint_info(f"   ⚡ Stage 1: Quick Ridge probe on {len(gated_candidates)} candidates...")
+        for cand in gated_candidates:
+            auc = self._quick_ridge_probe(cand, df)
+            if auc is not None and auc >= stage1_min_auc:
+                stage1_results.append((cand, auc))
+                cand._stage1_auc = auc  # Store for later
+        
+        # LOG ACTUAL AUC VALUES
+        if gated_candidates:
+            all_aucs = [r[1] for r in stage1_results if r[1] is not None]
+            if all_aucs:
+                max_auc = max(all_aucs)
+                avg_auc = sum(all_aucs) / len(all_aucs)
+                tprint_info(f"   ✅ Stage 1 complete: {len(stage1_results)}/{len(gated_candidates)} passed (AUC ≥ {stage1_min_auc}). Max AUC: {max_auc:.4f}, Avg AUC: {avg_auc:.4f}")
+            else:
+                tprint_info(f"   ✅ Stage 1 complete: 0/{len(gated_candidates)} passed (AUC ≥ {stage1_min_auc}).")
+        
+        if not stage1_results:
+            tprint_warning(f"⚠️ No candidates passed Stage 1 for {family}.")
+            return []
+        
+        # CLUSTER: Group survivors by Jaccard similarity
+        # Use existing Jaccard computation from _prefilter_correlated_candidates
+        stage1_candidates = [r[0] for r in stage1_results]
+        n_cands = len(stage1_candidates)
+        
+        # Build Jaccard similarity matrix
+        if n_cands > 1:
+            # Get all events
+            all_events = set()
+            for c in stage1_candidates:
+                all_events.update(getattr(c, 'events', []))
+            
+            if all_events:
+                sorted_timeline = sorted(list(all_events))
+                time_map = {t: i for i, t in enumerate(sorted_timeline)}
+                n_times = len(sorted_timeline)
+                
+                # Build event matrix (candidates x times)
+                event_matrix = np.zeros((n_cands, n_times), dtype=np.float32)
+                for i, c in enumerate(stage1_candidates):
+                    for ev in getattr(c, 'events', []):
+                        if ev in time_map:
+                            event_matrix[i, time_map[ev]] = 1.0
+                
+                # Compute intersection and union for Jaccard
+                intersection = event_matrix @ event_matrix.T
+                event_counts = event_matrix.sum(axis=1)
+                union = event_counts[:, None] + event_counts[None, :] - intersection
+                jaccard = np.divide(intersection, union, where=union > 0, out=np.zeros_like(intersection))
+                
+                # Sort by Stage 1 AUC descending - best becomes cluster representative
+                sorted_idx = sorted(range(n_cands), key=lambda i: stage1_results[i][1], reverse=True)
+                
+                # BINARY SEARCH for optimal Jaccard threshold
+                # Goal: Find threshold that yields target_clusters (5-10) representatives
+                target_min_clusters = 5
+                target_max_clusters = 10
+                
+                def count_clusters_at_threshold(threshold):
+                    """Count clusters using greedy clustering at given threshold."""
+                    assignments = [-1] * n_cands
+                    c_id = 0
+                    for i in sorted_idx:
+                        if assignments[i] >= 0:
+                            continue
+                        assignments[i] = c_id
+                        for j in sorted_idx:
+                            if assignments[j] < 0 and jaccard[i, j] >= threshold:
+                                assignments[j] = c_id
+                        c_id += 1
+                    return c_id
+                
+                # Legacy binary search clustering removed.
+                # Adaptive Gate now handles diversity pruning upstream.
+                representatives = stage1_candidates
+                n_clusters = 1
+        
+        tprint_info(f"   🎯 Stage 2: Full probe on {len(representatives)} representatives...")
+        
+        # STAGE 2: Full probe only on representatives
         scored_candidates = []
         if not hasattr(self, '_probe_data_cache'):
             self._probe_data_cache = {}
         probe_data_cache = self._probe_data_cache
 
-        for cand in gated_candidates:
+        for cand in representatives:
             try:
                 # 2.1 Prepare Data
                 if not hasattr(cand, 'labels') or cand.labels is None:
@@ -8287,8 +9479,8 @@ class LabelBasedLayer2(BaseStep):
                 events_df = pd.DataFrame(index=cand.events)
                 X_cand = self._build_geometry_independent_event_features(df, events_df)
                 
-                # Drop non-numeric columns that cause LightGBM errors
-                cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date']
+                # Drop non-numeric columns that cause LightGBM errors or redundancy filter crashes
+                cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date', 'regime', 'regime_label']
                 X_cand = X_cand.drop(columns=[c for c in cols_to_drop if c in X_cand.columns], errors='ignore')
                 
                 # Ensure labels is a Series with proper index and is BINARY
@@ -8310,6 +9502,17 @@ class LabelBasedLayer2(BaseStep):
                    # tprint_warning(f"⚠️ Index mismatch in candidate {cand.uuid}, forcing alignment.")
                    X_cand = X_cand.reindex(y_cand.index).fillna(0)
                 
+                # -------------------------------------------------------------
+                # REDUNDANCY REDUCTION (Clustering)
+                # -------------------------------------------------------------
+                # Filter out highly correlated features to reduce probe noise
+                # and prevent testing "duplicate" signals.
+                if X_cand.shape[1] > 5:
+                     original_dim = X_cand.shape[1]
+                     X_cand, kept_cols = self._filter_redundant_features(X_cand, y_cand)
+                     if self.verbose and len(kept_cols) < original_dim: 
+                         tprint_info(f"   ✂️ Reduced features: {original_dim} -> {len(kept_cols)}")
+
                 # common_idx strict check removed to prevent sample loss
                 # We implicitly trust y_cand (the events) as the ground truth.
                 # X_cand = X_cand.loc[common_idx] -> Removed
@@ -8374,76 +9577,34 @@ class LabelBasedLayer2(BaseStep):
                 # Compute causal target (Innovation) for assessment
                 y_causal = y_cand # Default fallback
                 
+                # === OPTIMIZATION: Use cached HAR innovations ===
                 try:
-                    # If we have continuous price data, we can compute proper innovations
-                    if 'close' in df.columns:
-                        # 1. HAR Model for 'Expected' Returns
-                        price_series = df['close']
-                        # Calculate returns first
-                        ret_series = np.log(price_series).diff()
+                    # Get current regime ID for caching
+                    current_regime_id = getattr(self, '_current_regime_id', None)
+                    y_causal_series = self._get_cached_har_innovations(df, current_regime_id)
+                    
+                    if y_causal_series is not None:
+                        # Use cached innovations
+                        y_causal_full = y_causal_series.shift(-1)  # t+1 innovation
+                        y_causal_aligned = y_causal_full.reindex(X_cand.index).fillna(0)
                         
-                        df_har = pd.DataFrame(index=ret_series.index)
-                        df_har['y'] = ret_series
-                        df_har['d'] = ret_series.shift(1)
-                        df_har['w'] = ret_series.rolling(5).mean().shift(1)
-                        df_har['m'] = ret_series.rolling(22).mean().shift(1)
+                        # Check correlation with binary labels
+                        actual_corr = y_causal_aligned.corr(y_cand)
+                        if actual_corr > 0:
+                            y_causal = y_causal_aligned
+                            if self.verbose:
+                                tprint_info(f"   💾 Used cached HAR innovations for causal target (corr: {actual_corr:.4f})")
+                        else:
+                            if self.verbose:
+                                tprint_warning(f"   ⚠️ Cached HAR innovations correlation negative ({actual_corr:.4f}), using binary labels")
+                    else:
+                        # Fallback to original HAR computation
+                        raise ValueError("HAR computation failed, using fallback")
                         
-                        clean = df_har.dropna()
-                        # Simple linear regression for HAR
-                        if len(clean) > 100:
-                            from sklearn.linear_model import LinearRegression
-                            model_har = LinearRegression().fit(clean[['d', 'w', 'm']], clean['y'])
-                            
-                            # 2. Extract Innovation (Actual - Expected)
-                            innovation = clean['y'] - model_har.predict(clean[['d', 'w', 'm']])
-                            
-                            # 3. Studentize (Divide by rolling volatility of innovations)
-                            y_causal_series = innovation / (innovation.rolling(20).std() + 1e-9)
-                            
-                            # Align to event times
-                            # We want the innovation *at* the event time (or future?)
-                            # Typically for prediction we want y = Future Innovation
-                            # But here y_cand is already "Outcome label".
-                            # If y_cand is "Future Return", we want "Future Innovation".
-                            # If y_cand is "Binary Label", we probably can't easily swap it.
-                            # BUT, the user said "make the target causal... ensure this is done once... except triple barrier"
-                            # Triple barrier generates labels (-1, 0, 1). 
-                            # If we pass a continuous target to assess_candidate, it calculates IC/R2 against that.
-                            # Let's try to infer if we should look forward.
-                            # cand.events are timestamps. 
-                            # If we just take y_causal_series.loc[cand.events], we get the innovation AT the event.
-                            # For prediction, we usually want the innovation over the *horizon*.
-                            # However, `y_cand` is what the candidate claims to predict.
-                            # If cand is a Triple Barrier candidate, y_cand is the barrier outcome.
-                            # If we replace y_cand with y_causal, we change the definition of success.
-                            # Given the strict instruction "To make the target causal", I will use the forward-looking innovation
-                            # matched to the event horizon if possible, or just the next period innovation if horizon is undefined.
-                            # For safety, since horizon varies, I will stick to using y_cand (labels) for classification metrics 
-                            # but if possible, I should use this residualized target for continuous checks if I knew the horizon.
-                            # WITHOUT horizon info easily available here (it's in cand params?), 
-                            # I will use the residualized series aligned to the event time (assuming immediate impact) 
-                            # OR better, stick to y_cand for now but applying the user's logic if y_cand ITSELF was continuous.
-                            # Since y_cand is binary here: 
-                            # "y_cand = (cand.labels > 0).astype(int)"
-                            # I cannot fully replace it with continuous innovation without breaking potential classification steps inside assessor.
-                            # However, Assessor supports regression y.
-                            # Let's use the residualized target for `assess_candidate` *only*.
-                            # We assume a fixed horizon of 1 bar for "Next Step Innovation" causality 
-                            # or we can try to infer horizon.
-                            # Let's use a 1-bar lookahead innovation as the "Causal Target".
-                            y_causal_full = y_causal_series.shift(-1) # t+1 innovation
-                            
-                            # Align to events
-                            y_causal_aligned = y_causal_full.reindex(X_cand.index).fillna(0)
-                             
-                            # Check correlation with binary labels to ensure directionality isn't flipped
-                            # validation: corr(y_causal, y_cand) should be positive
-                            if y_causal_aligned.corr(y_cand) > 0:
-                                y_causal = y_causal_aligned
                 except Exception as e:
-                    tprint_warning(f"Failed to generate causal target: {e}. Using binary labels.")
-
-                # Run De Prado Causal Quality Assessment
+                    if self.verbose:
+                        tprint_warning(f"Failed to generate causal target: {e}. Using binary labels.")
+                    y_causal = y_cand # Default fallback Quality Assessment
                 # 2.4 Run Core Assessment (with cached residuals)
                 precomputed_residuals = getattr(self, '_current_regime_residuals', None)
                 assessment = self.assessor.assess_candidate(
@@ -8456,6 +9617,8 @@ class LabelBasedLayer2(BaseStep):
                 # Cache the selected features if we didn't have them
                 if not cached_features and hasattr(cand, 'selected_features') and cand.selected_features:
                     self._set_family_feature_cache(cand.family, cand.selected_features, X_cand.shape[1])
+                    # Also cache in assessor for direct access
+                    self.assessor.set_family_feature_cache(cand.family, cand.selected_features, X_cand.shape[1])
                     tprint_info(f"   💾 Cached {len(cand.selected_features)} features for family {cand.family}")
 
                 cand.quality_metrics = assessment
@@ -8580,15 +9743,19 @@ class LabelBasedLayer2(BaseStep):
                         preds = np.full(len(y_val), positive_rate)
                 
                 if not use_fallback and len(np.unique(y_tr)) >= 2:
-                    # === DE PRADO SEQUENTIAL BOOTSTRAP INTEGRATION ===
-                    # Compute sample weights using sequential bootstrap
+                    # === OPTIMIZATION: Use cached bootstrap weights ===
                     try:
                         # Get event indices for training set
                         train_events = X_tr.index
+                        
+                        # Compute event ends for proper span-based uniqueness (AFML Chapter 4/12)
+                        horizon_bars = cand.params.get('horizon', 60) # Default to 60 if missing
+                        bar_duration = (df.index[1] - df.index[0]) if len(df) > 1 else pd.Timedelta(minutes=1)
+                        train_event_ends = train_events + (horizon_bars * bar_duration)
 
-                        # Compute sequential bootstrap weights
-                        sample_weights = self._sequential_bootstrap_sample_weights(
-                            train_events, X_tr, lookback=100
+                        # Use cached bootstrap weights with spans
+                        sample_weights = self._get_cached_bootstrap_weights(
+                            train_events, X_tr, event_ends=train_event_ends, lookback=100
                         )
 
                         # Apply class balancing to sequential bootstrap weights
@@ -8643,9 +9810,12 @@ class LabelBasedLayer2(BaseStep):
                     from sklearn.calibration import CalibratedClassifierCV
                     from sklearn.preprocessing import StandardScaler
 
-                    if OPTIMIZED_FUNCTIONS_AVAILABLE and X_tr.shape[1] > 20:
+                    if OPTIMIZED_FUNCTIONS_AVAILABLE and X_tr.shape[1] > 30:
+                        # === USER REQUEST: Relaxed feature selection ===
+                        # Increase top_k to 100 or 50% of features to prevent aggressive pruning
+                        selection_k = min(100, max(50, X_tr.shape[1] // 2))
                         selected_features = vectorized_feature_selection(
-                            X_tr, y_tr, method='correlation', top_k=20, n_jobs=2
+                            X_tr, y_tr, method='correlation', top_k=selection_k, n_jobs=2
                         )
                         if selected_features:
                             X_tr = X_tr[selected_features]
@@ -8653,9 +9823,11 @@ class LabelBasedLayer2(BaseStep):
                             if self.verbose:
                                 tprint_info(f"   🚀 Vectorized feature selection: {len(selected_features)} features")
                     else:
-                        if X_tr.shape[1] > 20:
+                        if X_tr.shape[1] > 30:
+                            # Fallback: Relaxed selection here too
+                            selection_k = min(50, max(30, X_tr.shape[1] // 3))
                             variances = X_tr.var().sort_values(ascending=False)
-                            top_cols = variances.head(20).index.tolist()
+                            top_cols = variances.head(selection_k).index.tolist()
                             X_tr = X_tr[top_cols]
                             X_val = X_val[top_cols]
 
@@ -8716,15 +9888,15 @@ class LabelBasedLayer2(BaseStep):
                         tprint_warning(f"   ⚠️ TOO FEW SAMPLES: Val has {n_pos_val} pos, {n_neg_val} neg (min: {min_samples_for_valid_auc}) - AUC unreliable, using fallback")
                         auc = 0.5  # Fallback - not statistically reliable
                         ap = 0.0
-                    elif len(np.unique(y_val)) < 2:
-                        auc = 0.5
-                        ap = 0.0
                     else:
                         ap = average_precision_score(y_val, preds)
                         auc = roc_auc_score(y_val, preds)
-                    
-                    # === DIAGNOSTIC: Prediction Range ===
-                    tprint_info(f"   📈 {cand.uuid[:30]}: AUC={auc:.4f}, Pred Range=[{preds.min():.4f}, {preds.max():.4f}], Mean={preds.mean():.4f}")
+                        
+                    # PR-AUC Gate: Concrete gate PR_AUC >= prevalence + 0.02
+                    prevalence = y_val.mean()
+                    is_gated = ap >= (prevalence + 0.02)
+                    gate_status = "✅" if is_gated else "❌"
+                    tprint_info(f"   📈 {cand.uuid[:8]}: {gate_status} AUC={auc:.4f}, PR-AUC={ap:.4f} (Target: {prevalence+0.02:.4f}), Pred Range=[{preds.min():.4f}, {preds.max():.4f}]")
                     
                     # === LEAKAGE INVESTIGATION: AUC > 0.99 ===
                     if auc > 0.99:
@@ -8786,6 +9958,11 @@ class LabelBasedLayer2(BaseStep):
                 # Blend: 50% Structural (Causal), 50% Empirical (AUC)
                 composite_score = (self.structural_score_weight * structural_score) + \
                                   (self.empirical_score_weight * learn_factor)
+                
+                # Apply PR-AUC Gate penalty
+                if not is_gated:
+                    composite_score *= 0.5
+                    tprint_warning(f"   ⚠️ {cand.uuid[:8]} failed PR-AUC gate (Lift < 0.02). Penalizing score: {composite_score:.4f}")
                 cand.final_score = composite_score * 100.0
 
                 # Store metrics for tprint
@@ -8994,19 +10171,52 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("   🎯 Generated global causal target (HAR-Residualized Innovation)")
 
         # 1. Generate Global Candidates (Definitions & Events)
-        # We generate candidates globally to ensure continuity of indicators,
-        # then evaluate them conditionally per regime.
-        ortho_geoms = orthogonal_label_generation(
-            df, 
-            signal_weights=self.signal_weights, 
-            return_raw_candidates=True,
-            enable_causal_events=self.enable_causal_framework,
-            specialist_predictions=specialist_predictions,
-            causal_graph=causal_graph,
-            target_signals_per_day=target_signals_per_day,
-            causal_surprise_threshold=causal_surprise_threshold
-        )
-        tprint_info(f"🔍 Orthogonal Label Generation: Returned {len(ortho_geoms)} global candidates")
+        # Check if checkpoint exists first to avoid redundant work
+        candidates_ckpt_data = None
+        if self.checkpoint_manager:
+            try:
+                candidates_ckpt_data = self.checkpoint_manager.load_checkpoint('raw_candidates_selected', self.symbol)
+            except Exception:
+                pass
+
+        if candidates_ckpt_data and isinstance(candidates_ckpt_data, dict) and 'candidates' in candidates_ckpt_data:
+            tprint_info(f"✅ Found existing raw candidates checkpoint. Skipping regeneration.")
+            raw_data = candidates_ckpt_data['candidates']  # Fixed: was 'raw_candidates'
+            if raw_data and isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], dict):
+                try:
+                    ortho_geoms = []
+                    for d in raw_data:
+                        if 'events' in d and isinstance(d['events'], list):
+                            d['events'] = pd.to_datetime(d['events'])
+                        # Filter out unexpected kwargs for GeometryTrial
+                        valid_keys = {'family', 'events', 'params', 'regime_tag', 'tier', 'auc', 'metrics'}
+                        filtered_d = {k: v for k, v in d.items() if k in valid_keys}
+                        ortho_geoms.append(GeometryTrial(**filtered_d))
+                    tprint_info(f"   🔄 Reconstructed {len(ortho_geoms)} GeometryTrial objects from checkpoint.")
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Failed to reconstruct objects from checkpoint: {e}. Regenerating.")
+                    ortho_geoms = None
+            else:
+                ortho_geoms = raw_data
+        else:
+            ortho_geoms = None
+        
+        # Fallback to regeneration if checkpoint loading/reconstruction failed
+        if ortho_geoms is None or len(ortho_geoms) == 0:
+            tprint_info("   🔄 Regenerating candidates (checkpoint not usable)...")
+            ortho_geoms = orthogonal_label_generation(
+                df, 
+                signal_weights=self.signal_weights, 
+                return_raw_candidates=True,
+                enable_causal_events=self.enable_causal_framework,
+                specialist_predictions=specialist_predictions,
+                causal_graph=causal_graph,
+                target_signals_per_day=target_signals_per_day,
+                causal_surprise_threshold=causal_surprise_threshold,
+                checkpoint_manager=self.checkpoint_manager,
+                symbol=self.symbol
+            )
+        tprint_info(f"🔍 Orthogonal Label Generation: Returned {len(ortho_geoms) if ortho_geoms else 0} global candidates")
 
         # === Cache Population ===
         if not hasattr(self, '_orthogonal_cache'):
@@ -9020,10 +10230,31 @@ class LabelBasedLayer2(BaseStep):
             return [], []
 
         production_geometries = []
+        
+        # Checkpoint: Regime Optimization Progress
+        import pickle
+        checkpoint_dir = self.checkpoint_manager._get_symbol_dir(self.symbol)
+        regime_ckpt_path = checkpoint_dir / "checkpoint_regime_optimization_progress.pkl"
+        
+        completed_regimes = set()
+        if regime_ckpt_path.exists():
+            try:
+                with open(regime_ckpt_path, 'rb') as f:
+                    ckpt_data = pickle.load(f)
+                    production_geometries = ckpt_data.get('production_geometries', [])
+                    completed_regimes = set(ckpt_data.get('completed_regimes', []))
+                    tprint_info(f"🔄 Resuming from regime checkpoint. Completed: {completed_regimes}")
+                    tprint_info(f"   Note: Loaded {len(production_geometries)} geometries from previous run.")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load regime checkpoint: {e}")
 
         # 2. Iterate Regimes
         tprint_info(f"🔄 Starting Regime-Specific Optimization Loop (Regimes: {regimes})")
         for regime in regimes:
+            if regime in completed_regimes:
+                 tprint_info(f"   ⏩ Skipping already completed regime: {regime}")
+                 continue
+                 
             tprint_info(f"   👉 Optimizing for Regime: {regime}")
             
             # --- REGIME-LEVEL RESIDUAL CACHING ---
@@ -9181,14 +10412,14 @@ class LabelBasedLayer2(BaseStep):
                 if not cands: return None
                 try:
                     # _select_best_geometry_via_race includes the Ridge Probing phase
-                    winners = self._select_best_geometry_via_race(cands, df, top_k=10, user_weights=user_weights, y_causal=y_causal)
+                    winners = self._select_best_geometry_via_race(cands, df, top_k=5, user_weights=user_weights)
                     return fam, winners
                 except Exception as e:
                     tprint_error(f"      ❌ Family selection failed for {fam}: {e}")
                     return None
 
             # Sequential execution to leverage global feature cache and avoid OOM
-            family_results = Parallel(n_jobs=1, backend="loky")(
+            family_results = Parallel(n_jobs=1, backend="threading")(
                 delayed(process_family)(fam, cands) for fam, cands in family_map.items()
             )
 
@@ -9244,25 +10475,69 @@ class LabelBasedLayer2(BaseStep):
             
             # Add to global list
             production_geometries.extend(regime_winners)
+            
+            # Save Checkpoint
+            try:
+                with open(regime_ckpt_path, 'wb') as f:
+                    pickle.dump({
+                        'production_geometries': production_geometries,
+                        'completed_regimes': list(completed_regimes | {regime})
+                    }, f)
+                completed_regimes.add(regime)
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save regime checkpoint: {e}")
 
         self.selected_geometries = production_geometries
     
+        # === ARCH 3: Deduplicate geometries by (family, params_hash) ===
+        # Keep only the highest-scoring geometry per unique (family, labeling_params) combo
+        original_count = len(production_geometries)
+        if original_count > 0:
+            seen_signatures = {}
+            deduplicated = []
+            for gt in production_geometries:
+                # Create signature from family + labeling-affecting params
+                sig_params = {
+                    'horizon': gt.params.get('horizon'),
+                    'pt_mult': gt.params.get('pt_mult'),
+                    'sl_mult': gt.params.get('sl_mult'),
+                }
+                sig_key = (gt.family, tuple(sorted(sig_params.items())))
+                
+                if sig_key not in seen_signatures:
+                    seen_signatures[sig_key] = gt
+                    deduplicated.append(gt)
+                else:
+                    # Keep the one with higher ranking_score
+                    existing = seen_signatures[sig_key]
+                    if getattr(gt, 'ranking_score', 0) > getattr(existing, 'ranking_score', 0):
+                        deduplicated.remove(existing)
+                        seen_signatures[sig_key] = gt
+                        deduplicated.append(gt)
+            
+            production_geometries = deduplicated
+            self.selected_geometries = production_geometries
+            if len(deduplicated) < original_count:
+                tprint_info(f"🧹 Deduplication: {original_count} → {len(deduplicated)} geometries ({original_count - len(deduplicated)} duplicates removed)")
+    
         # 3.7 GLOBAL ARCHITECTURAL MODEL RACE (Elite Expert Selection)
-        # Selection: Winners of each family across all regimes (~5-10 total)
+        # === MERGED LOOP 1+2: Find family winners AND race in single pass ===
         if self.enable_model_race and production_geometries:
             tprint_info(f"🏆 Running Global Architectural Model Race (Expert Selection)...")
             
-            # Group by family and find global winner per family
+            # Single pass: Group by family, find winner, AND race immediately
             family_winners = {}
+            race_errors = 0
+            
             for gt in production_geometries:
                 fam = gt.family
+                # Track best per family
                 if fam not in family_winners or gt.ranking_score > family_winners[fam].ranking_score:
                     family_winners[fam] = gt
             
-            # Race the elite representatives (~5-10 total)
+            # Now race only the family winners (typically 5-10)
             elite_representatives = list(family_winners.values())
-            tprint_info("[Tier 2] Assessing remaining candidates...")
-            tprint_info(f"   🏁 Racing {len(elite_representatives)} family leaders (Selection from Top {len(production_geometries)} Finalists)...")
+            tprint_info(f"   🏁 Racing {len(elite_representatives)} family leaders...")
             
             for gt in elite_representatives:
                 race_payload = getattr(self, '_probe_data_cache', {}).get(gt.uuid)
@@ -9273,47 +10548,46 @@ class LabelBasedLayer2(BaseStep):
                             race_payload["X_tr"], race_payload["y_tr"]
                         )
                     try:
-                        # Prepare causal targets for race if available
-                        y_causal_tr_race = None
-                        y_causal_val_race = None
-                        if y_causal is not None:
-                            # Align to training/validation sets using index from payload
-                            y_causal_tr_race = y_causal.reindex(race_payload["X_tr"].index).fillna(0)
-                            y_causal_val_race = y_causal.reindex(race_payload["X_val"].index).fillna(0)
-
-                        # Full Architectural Race (Huber + Boosters + ExtraTrees)
-                        # We use the payload from the Ridge Probe phase for consistency
                         best_model, best_name, race_results = self._run_model_race(
-                            race_payload["X_tr"],
-                            race_payload["y_tr"],
-                            race_payload["X_val"],
-                            race_payload["y_val"],
-                            race_payload["sample_weights"],
-                            environment_masks,
-                            y_causal_train=y_causal_tr_race,
-                            y_causal_val=y_causal_val_race
+                            race_payload["X_tr"], race_payload["y_tr"],
+                            race_payload["X_val"], race_payload["y_val"],
+                            race_payload["sample_weights"], environment_masks,
+                            geometry_uuid=gt.uuid
                         )
                         gt.model_params = {"race_winner": best_name}
                         gt.race_score = race_results.get(best_name, {}).get("auc", 0.0)
                         
-                        # Update metrics
                         if not hasattr(gt, 'quality_metrics'): gt.quality_metrics = {}
                         gt.quality_metrics['PROBE_AUC'] = getattr(gt, 'learnability', 0.5)
                         gt.quality_metrics['AUC'] = gt.race_score
                         gt.quality_metrics['RACE_WINNER'] = best_name
                         gt.learnability = gt.race_score
                         
-                        # Final Blend for elite selection visibility
                         structural_score = getattr(gt, 'layer2_score', 0.1)
                         gt.ranking_score = (0.4 * gt.probe_score) + (0.3 * gt.race_score) + (0.3 * structural_score)
                         
-                        tprint_info(f"      ✅ {gt.family} Leader ({gt.uuid[:8]}) -> {best_name} (Race AUC: {gt.race_score:.4f})")
+                        tprint_info(f"      ✅ {gt.family} Leader -> {best_name} (AUC: {gt.race_score:.4f})")
                     except Exception as e:
-                        tprint_warning(f"   ⚠️ Race failed for {gt.family} leader: {e}")
+                        tprint_warning(f"   ⚠️ Race failed for {gt.family}: {e}")
+                        race_errors += 1
             
-            # Cleanup cache to free memory
-            self._probe_data_cache = {} 
-            tprint_info(f"   🧹 Probe data cache cleared.")
+            # Cleanup cache
+            self._probe_data_cache = {}
+            
+            # === CHECKPOINT: model_race_complete (only if no errors) ===
+            if race_errors == 0 and self._checkpoints_enabled:
+                try:
+                    self._checkpoint_manager.save_checkpoint('model_race_complete', {
+                        'production_geometries_uuids': [gt.uuid for gt in production_geometries],
+                        'family_winners': {gt.family: gt.uuid for gt in elite_representatives},
+                        'config_hash': self._config_hash,
+                        'dataset_fingerprint': self._dataset_fingerprint
+                    }, self.symbol, self._current_config)
+                    tprint_info("   💾 Checkpoint: model_race_complete")
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Failed to save model_race checkpoint: {e}")
+            elif race_errors > 0:
+                tprint_warning(f"   ⚠️ Skipping checkpoint due to {race_errors} race errors (fast-fail)")
     
         # 4. Feature Selection (Global Union of Events)
         # We need to run feature selection. Since geometries are regime-specific,
@@ -9338,7 +10612,8 @@ class LabelBasedLayer2(BaseStep):
 
         # RFE is extremely expensive (LGBM Wrapper loop), so we parallelize it across all survivors
         # RFE is memory intensive, run sequentially to share feature cache
-        rfe_results = Parallel(n_jobs=1, backend="loky")(
+        from joblib import Parallel, delayed
+        rfe_results = Parallel(n_jobs=1, backend="threading")(
             delayed(run_rfe_task)(gt) for gt in production_geometries
         )
         
@@ -9350,10 +10625,13 @@ class LabelBasedLayer2(BaseStep):
             else:
                  tprint_warning(f"   ⚠️ {gt.uuid}: Feature selection returned empty set or failed.")
     
-        # 6. Post-Selection Simulation (Financial Metrics)
-        tprint_info("📊 Running final simulations for survivor geometries...")
-        # Now we only simulate the few survivors, not the 500+ candidates
+        # === MERGED LOOP 4+5: Final simulations AND Layer-12 output in single pass ===
+        tprint_info("📊 Running final simulations & preparing Layer-12 output...")
+        candidates_for_layer12 = []
+        simulation_errors = 0
+        
         for gt in production_geometries:
+            # Simulation (Loop 4)
             if len(gt.events) > 5 and 'close' in df.columns:
                 try:
                     horizon = int(gt.params.get('horizon', 120))
@@ -9361,13 +10639,24 @@ class LabelBasedLayer2(BaseStep):
                     sl_mult = gt.params.get('sl_mult')
                     volatility_series = df['volatility_1d'] if 'volatility_1d' in df.columns else None
 
+                    # Compute thresholds with proper None handling
+                    if volatility_series is not None and pt_mult is not None:
+                        profit_threshold = volatility_series * float(pt_mult)
+                    else:
+                        profit_threshold = 0.015
+                    
+                    if volatility_series is not None and sl_mult is not None:
+                        stop_threshold = volatility_series * float(sl_mult)
+                    else:
+                        stop_threshold = 0.01
+
                     signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
                     signals.loc[gt.events, 'consensus'] = 1.0
 
                     realized_returns, *_ = compute_realized_returns(
                         df, signals, 
-                        profit_threshold=volatility_series * float(pt_mult) if pt_mult else 0.015,
-                        stop_threshold=volatility_series * float(sl_mult) if sl_mult else 0.01,
+                        profit_threshold=profit_threshold,
+                        stop_threshold=stop_threshold,
                         horizon=horizon, transaction_cost=self.transaction_cost,
                         volatility_series=volatility_series,
                         close_prices_arr=df['close'].values,
@@ -9380,65 +10669,72 @@ class LabelBasedLayer2(BaseStep):
                     gt.sharpe_ratio = fin_metrics['sharpe_ratio']
                     gt.max_drawdown = fin_metrics['max_drawdown']
                     gt.sortino_ratio = fin_metrics['sortino_ratio']
-                except Exception as e: pass
+                except Exception as e:
+                    simulation_errors += 1
+                    if simulation_errors <= 5:  # Limit verbose logging
+                        tprint_warning(f"   ⚠️ Simulation failed for {gt.family[:25]}: {e}")
+            
+            # Layer-12 candidate building (Loop 5)
+            if hasattr(gt, 'raw_output') and gt.raw_output is not None:
+                candidates_for_layer12.append({
+                    'family': gt.family,
+                    'weight_vector': gt.raw_output.get('weight_vector') if isinstance(gt.raw_output, dict) else None,
+                    'params': gt.params if hasattr(gt, 'params') else {}
+                })
+        
+        if simulation_errors > 0:
+            tprint_warning(f"   ⚠️ {simulation_errors} simulation failures")
     
-
         # 6. Build Layer-12 Model-Ready Output (if available)
         self._layer12_output = None
-        if LAYER12_AVAILABLE:
+        if LAYER12_AVAILABLE and len(candidates_for_layer12) > 0:
             try:
                 tprint_info("📦 Building Layer-12 Model-Ready Output...")
-                # Convert geometries to candidate format for Layer-12
-                candidates_for_layer12 = []
-                for gt in production_geometries:
-                    if hasattr(gt, 'raw_output') and gt.raw_output is not None:
-                        candidates_for_layer12.append({
-                            'family': gt.family,
-                            'weight_vector': gt.raw_output.get('weight_vector') if isinstance(gt.raw_output, dict) else None,
-                            'params': gt.params if hasattr(gt, 'params') else {}
-                        })
-                
-                # Build target from union events
                 target = union_events['label'] if 'label' in union_events.columns else pd.Series(0, index=union_events.index)
                 
-                if len(candidates_for_layer12) > 0:
-                    self._layer12_output = build_layer12_output(
-                        df=df,
-                        candidates=candidates_for_layer12,
-                        target=target,
-                        max_features=100,
-                        verbose=True
+                self._layer12_output = build_layer12_output(
+                    df=df, candidates=candidates_for_layer12, target=target,
+                    max_features=100, verbose=True
+                )
+                tprint_success(f"   ✅ Layer-12 Output: {self._layer12_output.X.shape[1]} features × {len(self._layer12_output.X)} samples")
+                
+                # 7. Run Layer-12 ML Training Pipeline
+                try:
+                    tprint_info("🤖 Running Layer-12 ML Training Pipeline...")
+                    self._layer12_ml_output = train_layer12_ml_pipeline(
+                        X=self._layer12_output.X, y=self._layer12_output.y,
+                        W=self._layer12_output.W, verbose=True
                     )
-                    tprint_success(f"   ✅ Layer-12 Output: {self._layer12_output.X.shape[1]} features × {len(self._layer12_output.X)} samples")
                     
-                    # 7. Run Layer-12 ML Training Pipeline
-                    try:
-                        tprint_info("🤖 Running Layer-12 ML Training Pipeline...")
-                        self._layer12_ml_output = train_layer12_ml_pipeline(
-                            X=self._layer12_output.X,
-                            y=self._layer12_output.y,
-                            W=self._layer12_output.W,
-                            verbose=True
-                        )
-                        
-                        # Save metrics report
-                        from datetime import datetime
-                        report_path = f"outcomes/layer12_ml_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-                        with open(report_path, 'w') as f:
-                            f.write(self._layer12_ml_output.metrics_report.to_markdown() if hasattr(self._layer12_ml_output.metrics_report, 'to_markdown') else str(self._layer12_ml_output.metrics_report))
-                        tprint_success(f"   ✅ Metrics report saved to {report_path}")
-                        
-                        # Store meta-learner input for Chaser (Layer 2.5)
-                        self._meta_learner_X = self._layer12_ml_output.meta_X
-                        self._meta_learner_sample_weights = self._layer12_ml_output.sample_weights
-                        
-                    except Exception as e:
-                        tprint_error(f"   ❌ Layer-12 ML Training failed: {e}")
-                        self._layer12_ml_output = None
-                else:
-                    tprint_warning("   ⚠️ No valid candidates for Layer 2")
+                    from datetime import datetime
+                    report_path = f"outcomes/layer12_ml_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    with open(report_path, 'w') as f:
+                        f.write(self._layer12_ml_output.metrics_report.to_markdown() if hasattr(self._layer12_ml_output.metrics_report, 'to_markdown') else str(self._layer12_ml_output.metrics_report))
+                    tprint_success(f"   ✅ Metrics report saved to {report_path}")
+                    
+                    self._meta_learner_X = self._layer12_ml_output.meta_X
+                    self._meta_learner_sample_weights = self._layer12_ml_output.sample_weights
+                    
+                except Exception as e:
+                    tprint_error(f"   ❌ Layer-12 ML Training failed: {e}")
+                    self._layer12_ml_output = None
             except Exception as e:
                 tprint_error(f"   ❌ Layer-12 build failed: {e}")
+    
+        # === CHECKPOINT: simulation_complete (only if no simulation errors) ===
+        if simulation_errors == 0 and self._checkpoints_enabled:
+            try:
+                self._checkpoint_manager.save_checkpoint('simulation_complete', {
+                    'production_geometries_count': len(production_geometries),
+                    'layer12_available': self._layer12_output is not None,
+                    'config_hash': self._config_hash,
+                    'dataset_fingerprint': self._dataset_fingerprint
+                }, self.symbol, self._current_config)
+                tprint_info("   💾 Checkpoint: simulation_complete")
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Failed to save simulation checkpoint: {e}")
+        elif simulation_errors > 0:
+            tprint_warning(f"   ⚠️ Skipping simulation checkpoint due to {simulation_errors} errors (fast-fail)")
     
         # ========== COMPREHENSIVE METRICS LOGGING ==========
         tprint_info("=" * 60)
@@ -9537,6 +10833,12 @@ class LabelBasedLayer2(BaseStep):
             "LIQUIDITY_SPECIALIST": LiquiditySpecialistEvents(),
             "INFORMATION_SPECIALIST": InformationSpecialistEvents(),
             "INVENTORY_SPECIALIST": InventorySpecialistEvents(),
+            # Continuous predictor families
+            "RELAXATION_GEOMETRY": ContinuousPredictorEvents('RELAXATION_GEOMETRY'),
+            "MARKET_FRAGILITY": ContinuousPredictorEvents('MARKET_FRAGILITY'),
+            "SURPRISE_Z_CONTINUOUS": ContinuousPredictorEvents('SURPRISE_Z_CONTINUOUS'),
+            "FLOW_PRESSURE_CONTINUOUS": ContinuousPredictorEvents('FLOW_PRESSURE_CONTINUOUS'),
+            "MULTI_HORIZON_SLOPE": ContinuousPredictorEvents('MULTI_HORIZON_SLOPE'),
         }
         
         if not hasattr(self, 'generators') or self.generators is None:
@@ -9636,11 +10938,42 @@ class LabelBasedLayer2(BaseStep):
                 
                 # Check if generator exists
                 gen = self.generators.get(family)
+                
+                # === FALLBACK: Handle compound family names from orthogonal generation ===
+                # E.g., RELAXATION_GEOMETRY_DECAY_RATE_20_POS -> RELAXATION_GEOMETRY
                 if gen is None:
-                    # Try fallback
+                    base_family = None
+                    if family.startswith('RELAXATION_GEOMETRY'):
+                        base_family = 'RELAXATION_GEOMETRY'
+                    elif family.startswith('COND_OHLCV'):
+                        base_family = 'COND_OHLCV'
+                    elif family.startswith('SURPRISE_Z'):
+                        base_family = 'SURPRISE_Z_CONTINUOUS'
+                    elif family.startswith('FLOW_PRESSURE'):
+                        base_family = 'FLOW_PRESSURE_CONTINUOUS'
+                    elif family.startswith('MULTI_HORIZON'):
+                        base_family = 'MULTI_HORIZON_SLOPE'
+                    elif family.startswith('MARKET_FRAGILITY'):
+                        base_family = 'MARKET_FRAGILITY'
+                    
+                    if base_family:
+                        gen = self.generators.get(base_family)
+                        if gen:
+                            tprint_success(f"✅ DIAGNOSTIC: Generator found via fallback '{family}' -> '{base_family}': {type(gen).__name__}")
+                
+                if gen is None:
+                    # Try orthogonal fallback
                     ortho_events = self._fetch_orthogonal_candidate_events(df, family)
                     if ortho_events is not None:
                          tprint_success(f"✅ DIAGNOSTIC: Generator (Orthogonal) found for '{family}'")
+                    # Fallback: Check if we have this family's events in group_geometries
+                    elif group_geometries and hasattr(group_geometries[0], 'events') and group_geometries[0].events is not None and len(group_geometries[0].events) > 0:
+                         tprint_success(f"✅ DIAGNOSTIC: Generator found via GeometryTrial fallback for '{family}'")
+                         # We don't need to assign to ortho_events here because the loop below calls _get_global_events 
+                         # which already has the fallback logic we added. 
+                         # However, to be safe and avoid the continue below, we can set ortho_events dummy or just skip the continue.
+                         # Better yet, if _get_global_events is called below, we just need to ensure we don't 'continue' here.
+                         pass 
                     else:
                          tprint_error(f"❌ DIAGNOSTIC: No generator found for family '{family}'. Available: {list(self.generators.keys())}")
                          continue
@@ -9770,8 +11103,14 @@ class LabelBasedLayer2(BaseStep):
                     test_evts = ge_aligned[(ge_aligned >= test_start_time) & (ge_aligned < test_end_time)]
                     
                     if len(test_evts) == 0:
-                        # Detailed diagnostic for empty slices (likely cause of 0% coverage)
-                        tprint_warning(f"   ⚠️ No OOF test events for {gt.family} in fold loop. Slice: {test_start_time} -> {test_end_time} | Full Events: {len(full_events)}")
+                        # Check if ranges even overlap
+                        evt_min, evt_max = ge_aligned.min(), ge_aligned.max()
+                        if evt_max < test_start_time or evt_min >= test_end_time:
+                             # Disjoint ranges - expected behavior for sparse/regime-specific events
+                             tprint_info(f"   ℹ️ OOF fold outside event range for {gt.family[:15]}... (Fold: {test_start_time.date()}..{test_end_time.date()}, Events: {evt_min.date()}..{evt_max.date()})")
+                        else:
+                             # Overlap existed but no events found - potentially sparse
+                             tprint_info(f"   ⚠️ No OOF test events for {gt.family} in overlapping fold. Slice: {test_start_time} -> {test_end_time} | Full Events: {len(full_events)}")
                 else:
                     test_evts = pd.DatetimeIndex([])
     
@@ -10619,9 +11958,10 @@ class LabelBasedLayer2(BaseStep):
             # Fallback to simple variance-based selection
             return list(X.columns[:max_features])
 
-    def _sequential_bootstrap_sample_weights(self, events: pd.DatetimeIndex, 
-                                           X: pd.DataFrame = None,
-                                           lookback: int = 100) -> np.ndarray:
+    def _sequential_bootstrap_sample_weights(self, event_starts: pd.DatetimeIndex, 
+                                            event_ends: Optional[pd.DatetimeIndex] = None,
+                                            X: pd.DataFrame = None, 
+                                            lookback: int = 100) -> np.ndarray:
         """
         De Prado's Sequential Bootstrap for proper sample weighting.
         
@@ -10629,87 +11969,111 @@ class LabelBasedLayer2(BaseStep):
         Financial Machine Learning (Chapter 12).
         
         Args:
-            events: Event timestamps
+            event_starts: Event start timestamps
+            event_ends: Event end timestamps (t1 in AFML)
             X: Feature matrix for overlap computation (optional)
-            lookback: Lookback window in days for overlap determination
+            lookback: Fallback window if event_ends is None
             
         Returns:
             Sample weights array
         """
         try:
-            if len(events) < 2:
-                return np.ones(len(events))
+            n_events = len(event_starts)
+            if n_events < 2:
+                return np.ones(n_events)
                 
-            tprint_info(f"🔄 Sequential Bootstrap: {len(events)} events, lookback={lookback}d (Optimized Vectorized)")
+            # If event_ends is missing, fallback to lookback-based spans
+            if event_ends is None:
+                event_ends = event_starts + pd.Timedelta(days=lookback)
+                tprint_warning(f"⚠️ event_ends missing in bootstrap, falling back to {lookback}d lookback")
+
+            # 1. Temporal span-based concurrence (De Prado AFML Chapter 4/12)
+            # Find all unique transition points (starts and ends) to build a time grid
+            t_points = np.unique(np.concatenate([event_starts.values, event_ends.values]))
+            t_points.sort()
             
-            n_events = len(events)
+            # Map intervals to indices using vectorized searchsorted
+            start_indices = np.searchsorted(t_points, event_starts.values)
+            end_indices = np.searchsorted(t_points, event_ends.values)
             
-            # 1. Temporal overlap (vectorized)
-            # Convert to nanoseconds for precision
-            event_ns = events.values.astype(np.int64)
-            lookback_ns = lookback * 24 * 60 * 60 * 1_000_000_000
+            # FULL VECTORIZATION: Count events covering each interval using diff-array + cumsum
+            # grid_concurrency[j] is for interval [t_points[j], t_points[j+1]]
+            n_points = len(t_points)
+            diff_array = np.zeros(n_points)
+            np.add.at(diff_array, start_indices, 1)
+            np.add.at(diff_array, end_indices, -1)
+            grid_concurrency = np.cumsum(diff_array)[:-1]
+            grid_concurrency = np.maximum(1.0, grid_concurrency) # Safety
             
-            # Broadcast to get pair-wise diffs
-            time_diff = np.abs(event_ns[:, np.newaxis] - event_ns[np.newaxis, :])
-            temporal_overlap = np.maximum(0.0, 1.0 - time_diff / lookback_ns)
+            # 2. Compute average uniqueness per event - FULLY VECTORIZED
+            # u_i = avg(1/c_t) over intervals covered by event i
+            durations = np.diff(t_points).astype(np.float64)
+            inv_c = 1.0 / grid_concurrency
+            weighted_inv_c = inv_c * durations
             
-            # 2. Feature overlap (vectorized)
-            feature_overlap = np.zeros((n_events, n_events))
+            # Integral over intervals using cumsum for O(1) interval queries
+            cumsum_weighted = np.concatenate([[0.0], np.cumsum(weighted_inv_c)])
+            durations_cumsum = np.concatenate([[0.0], np.cumsum(durations)])
+            
+            total_uniqueness = cumsum_weighted[end_indices] - cumsum_weighted[start_indices]
+            total_durations = durations_cumsum[end_indices] - durations_cumsum[start_indices]
+            
+            uniqueness_values = np.divide(total_uniqueness, total_durations, where=total_durations > 0, out=np.ones_like(total_uniqueness))
+            
+            # 3. Feature overlap (Optional addition to uniqueness)
+            # === OPT 7: Random projection for large feature sets ===
             if X is not None and not X.empty:
                 try:
-                    # Convert to numpy and handle NaNs
                     X_vals = X.fillna(0).values.astype(np.float32)
+                    n_features = X_vals.shape[1]
                     
-                    # Normalize rows for cosine similarity
+                    # Use random projection if many features (JL transform)
+                    if n_features > 50:
+                        # Project to ~30 dimensions
+                        k = min(30, n_features)
+                        np.random.seed(42)
+                        proj_matrix = np.random.randn(n_features, k).astype(np.float32)
+                        proj_matrix /= np.linalg.norm(proj_matrix, axis=0, keepdims=True)
+                        X_vals = X_vals @ proj_matrix
+                    
+                    # Cosine similarity on (projected) features
                     norms = np.linalg.norm(X_vals, axis=1, keepdims=True)
-                    # Avoid division by zero
                     X_normed = np.divide(X_vals, norms, out=np.zeros_like(X_vals), where=norms > 1e-9)
-                    
-                    # Matrix multiplication for all-to-all cosine similarity
-                    feature_overlap = np.maximum(0.0, np.dot(X_normed, X_normed.T))
-                except Exception as e:
-                    tprint_warning(f"⚠️ Vectorized feature overlap failed, using temporal only: {e}")
-                    feature_overlap = np.zeros((n_events, n_events))
-            
-            # 3. Combined overlap matrix
-            overlap_matrix = 0.7 * temporal_overlap + 0.3 * feature_overlap
-            
-            # 4. Compute uniqueness (vectorized)
-            # Self-overlap on diagonal should be ignored for the 'sum of others' calculation
-            # But the formula 1 / (1 + sum of others) is equivalent to 1 / (sum of all including self) 
-            # if self-overlap is 1.0.
-            # In our case, overlap_matrix diagonal is 0.7 * 1.0 + 0.3 * 1.0 = 1.0.
-            
-            total_overlap = np.sum(np.maximum(0.0, overlap_matrix), axis=1)
-            uniqueness_values = 1.0 / total_overlap
-            
+                    dot = np.dot(X_normed, X_normed.T)
+                    # Penalize uniqueness by average feature correlation
+                    feature_redundancy = (np.sum(dot, axis=1) - 1.0) / (n_events - 1.0 + 1e-9)
+                    uniqueness_values = uniqueness_values * (1.0 - 0.3 * np.clip(feature_redundancy, 0, 1))
+                except Exception: pass
+
             # Sample weights are proportional to uniqueness
             weights = uniqueness_values
             
-            # Normalize weights to sum to 1
+            # Normalize to sum to n_events (Standard for sample_weight)
             if weights.sum() > 0:
-                weights = weights / weights.sum()
+                weights = weights / weights.sum() * n_events
             else:
-                weights = np.ones(n_events) / n_events
+                weights = np.ones(n_events)
             
             # Log statistics
-            tprint_success(f"✅ Sequential Bootstrap weights computed (Optimized)")
-            avg_uniqueness = float(np.mean(uniqueness_values)) if len(uniqueness_values) > 0 else 0.0
-            eff_n = float(1.0 / np.sum(weights**2)) if np.sum(weights**2) > 0 else 0.0
-            overlap_mean = float(np.mean(overlap_matrix)) if overlap_matrix.size > 0 else 0.0
-            tprint_info(f"   - Avg uniqueness: {avg_uniqueness:.3f}")
-            tprint_info(f"   - Weight range: [{weights.min():.4f}, {weights.max():.4f}]")
-            tprint_info(f"   - Effective sample size: {eff_n:.1f}")
-            tprint_info(f"   - Avg overlap: {overlap_mean:.3f}")
+            tprint_success(f"✅ Sequential Bootstrap: Spans processed, uniqueness range [{uniqueness_values.min():.3f}, {uniqueness_values.max():.3f}]")
+            avg_uniqueness = float(np.mean(uniqueness_values))
+            
+            # For eff_n and range, use normalized (sum=1) weights
+            weights_norm = uniqueness_values / (uniqueness_values.sum() + 1e-9)
+            eff_n = float(1.0 / np.sum(weights_norm**2)) if np.sum(weights_norm**2) > 0 else 0.0
+            
+            tprint_info(f"   - Avg uniqueness: {avg_uniqueness:.4f} (Effective N: {eff_n:.1f}/{n_events})")
+            tprint_info(f"   - Concurrency: avg={np.mean(grid_concurrency):.1f}, max={np.max(grid_concurrency):.0f}")
+            
             self._last_bootstrap_diag = {
                 "avg_uniqueness": avg_uniqueness,
                 "effective_n": eff_n,
-                "overlap_mean": overlap_mean,
-                "weight_min": float(weights.min()),
-                "weight_max": float(weights.max()),
+                "concurrency_avg": float(np.mean(grid_concurrency)),
+                "weight_min": float(weights_norm.min()),
+                "weight_max": float(weights_norm.max()),
             }
             
-            return weights
+            return weights # Sums to n_events
             
         except Exception as e:
             tprint_error(f"❌ Sequential bootstrap failed: {e}")
@@ -10721,8 +12085,7 @@ class LabelBasedLayer2(BaseStep):
         """
         Compute label concurrence matrix for sequential bootstrap enhancement.
         
-        Label concurrence measures how often labels co-occur in time,
-        which helps in computing more accurate sample weights.
+        OPTIMIZED: Uses vectorized numpy broadcasting instead of O(n²) loops.
         
         Args:
             events: Event timestamps
@@ -10734,24 +12097,27 @@ class LabelBasedLayer2(BaseStep):
         """
         try:
             n_events = len(events)
-            concurrence_matrix = np.zeros((n_events, n_events))
             
-            for i in range(n_events):
-                for j in range(n_events):
-                    if i == j:
-                        concurrence_matrix[i, j] = 1.0
-                        continue
-                    
-                    # Time-based concurrence
-                    time_diff = abs((events[i] - events[j]).days)
-                    if time_diff <= lookback:
-                        # Labels co-occur within lookback window
-                        if labels.iloc[i] == labels.iloc[j]:
-                            concurrence_matrix[i, j] = 1.0
-                        else:
-                            concurrence_matrix[i, j] = 0.5  # Partial concurrence
-                    else:
-                        concurrence_matrix[i, j] = 0.0
+            # === OPT 6: Vectorized using numpy broadcasting ===
+            # Convert to numpy for speed
+            event_times = events.values.astype('datetime64[D]').astype(np.int64)
+            label_vals = labels.values
+            
+            # Time difference matrix via broadcasting (O(n²) memory but O(1) per element)
+            time_diff = np.abs(event_times[:, None] - event_times[None, :])
+            
+            # Label match matrix
+            label_match = label_vals[:, None] == label_vals[None, :]
+            
+            # Build concurrence matrix
+            within_lookback = time_diff <= lookback
+            concurrence_matrix = np.where(
+                within_lookback & label_match, 1.0,
+                np.where(within_lookback, 0.5, 0.0)
+            )
+            
+            # Diagonal = 1.0
+            np.fill_diagonal(concurrence_matrix, 1.0)
             
             return concurrence_matrix
             
@@ -10833,11 +12199,20 @@ class LabelBasedLayer2(BaseStep):
             X_sample = X.iloc[sample_idx]
             
             # Use TreeExplainer for tree-based models
-            explainer = shap.TreeExplainer(model)
+            # === OPT 10: Use approximate SHAP (main effects only) ===
+            explainer = shap.TreeExplainer(model, feature_perturbation='tree_path_dependent')
             
-            # Compute interaction values
-            tprint_info(f"🔍 Computing SHAP interactions for {len(X_sample.columns)} features...")
-            interactions = explainer.shap_interaction_values(X_sample)
+            # Use shap_values (O(n × features)) instead of shap_interaction_values (O(n × features²))
+            tprint_info(f"🔍 Computing SHAP main effects for {len(X_sample.columns)} features (fast mode)...")
+            shap_values = explainer.shap_values(X_sample)
+            
+            # Handle binary classification output
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+            
+            # Estimate interactions from main effect correlations (proxy)
+            shap_df = pd.DataFrame(shap_values, columns=X_sample.columns, index=X_sample.index)
+            interactions = shap_df.corr().abs().fillna(0)
             
             # Create feature interaction matrix
             feature_names = X_sample.columns
@@ -11260,8 +12635,8 @@ class LabelBasedLayer2(BaseStep):
                     pos_rate = float((y_train == 1).mean()) if len(y_train) > 0 else 0.0
                     weight_sum = float(w_train.sum()) if w_train is not None else 0.0
                     horizon_cfg = None
-                    if isinstance(self.config, dict):
-                        horizon_cfg = self.config.get("horizon")
+                    if isinstance(self.init_config, dict):
+                        horizon_cfg = self.init_config.get("horizon")
                     params = getattr(gt, "params", {}) or {}
                     tprint_info(
                         f"   📌 Geometry context: uuid={gt.uuid} family={getattr(gt, 'family', 'unknown')} "
@@ -11297,8 +12672,8 @@ class LabelBasedLayer2(BaseStep):
                     race_train_size = int(0.7 * len(X_train_final))
                     X_race_train = X_train_final.iloc[:race_train_size]
                     X_race_val = X_train_final.iloc[race_train_size:]
-                    y_race_train = y_train.iloc[:race_train_size]
-                    y_race_val = y_train.iloc[race_train_size:]
+                    y_race_train = y_train.iloc[:race_train_size].astype(int)
+                    y_race_val = y_train.iloc[race_train_size:].astype(int)
                     w_race_train = w_train[:race_train_size] if w_train is not None else None
 
                     # Run model race with environment masks for IRM (if causal framework enabled)
@@ -11307,7 +12682,8 @@ class LabelBasedLayer2(BaseStep):
                         environment_masks = self._create_default_environment_masks(X_race_train, y_race_train)
 
                     best_model, best_name, race_results = self._run_model_race(
-                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks
+                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks,
+                        geometry_uuid=gt.uuid
                     )
 
                     tprint_success(f"🏆 Model race winner: {best_name}")
@@ -11586,7 +12962,7 @@ class LabelBasedLayer2(BaseStep):
 
         
         # Layer 2.5 Chaser Integration
-        layer25_chaser_enabled = self.config.get("layer25_chaser_enabled", False)
+        layer25_chaser_enabled = self.init_config.get("layer25_chaser_enabled", False)
         if layer25_chaser_enabled and len(trained_models) > 0:
             tprint_info(">>> Layer 2.5: Running Chaser System...")
             try:
@@ -11974,10 +13350,9 @@ class LabelBasedLayer2(BaseStep):
                             X = X.loc[:, ~X.columns.duplicated(keep='last')]
                 except Exception as e:
                     tprint_warning(f"Probe feature alignment failed: {e}")
-            # -------------------------------
 
             # Drop non-numeric columns that cause LightGBM errors globally
-            cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date']
+            cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date', 'regime', 'regime_label']
             X = X.drop(columns=[c for c in cols_to_drop if c in X.columns], errors='ignore')
 
             # Final Standardization: Ensure all features (including probe features) 

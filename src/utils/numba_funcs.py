@@ -1136,7 +1136,6 @@ def _numba_ewm_std(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndar
             out[i] = np.sqrt(v)
 
     return out
-
 @jit(nopython=True)
 def _numba_rolling_skew(x, window):
     """
@@ -1277,3 +1276,4 @@ def _numba_rolling_kurt(x, window):
             out[i] = 0.0
 
     return out
+

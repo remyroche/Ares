@@ -41,6 +41,34 @@ from src.training.steps.labeling.generate_weights_per_label import (
     _coerce_numeric_array,
 )
 
+
+MAX_LAYER1_WEIGHT_SHARE_TARGET = 0.25
+MAX_LAYER1_WEIGHT_SHARE_HARD = 0.45
+
+
+def _enforce_weight_cap(w_norm: np.ndarray) -> Tuple[np.ndarray, float, float]:
+    """Clip normalized weights to hard cap and compute penalty."""
+    if w_norm.size == 0:
+        return w_norm, 0.0, 0.0
+
+    capped = np.minimum(w_norm, MAX_LAYER1_WEIGHT_SHARE_HARD)
+    capped_sum = float(capped.sum())
+    if capped_sum <= 0:
+        capped = np.full_like(w_norm, 1.0 / max(1, len(w_norm)))
+    else:
+        capped = capped / capped_sum
+
+    max_share = float(capped.max()) if capped.size else 0.0
+    if MAX_LAYER1_WEIGHT_SHARE_HARD > MAX_LAYER1_WEIGHT_SHARE_TARGET:
+        penalty = max(0.0, max_share - MAX_LAYER1_WEIGHT_SHARE_TARGET) / (
+            MAX_LAYER1_WEIGHT_SHARE_HARD - MAX_LAYER1_WEIGHT_SHARE_TARGET
+        )
+    else:
+        penalty = 0.0
+
+    penalty = float(np.clip(penalty, 0.0, 1.0))
+    return capped, max_share, penalty
+
 # Import Layer0 unified price generation
 try:
     from src.training.steps.labeling.unified_price_layer2 import load_layer0_params, generate_unified_layer2_price, apply_hampel_filter
@@ -227,6 +255,7 @@ def safe_layer1_objective(
         return -10.0
 
     w_norm = w / total
+    w_norm, _, weight_penalty = _enforce_weight_cap(w_norm)
 
     r = np.asarray(returns, dtype=float)
     if r.size != w_norm.size:
@@ -321,6 +350,7 @@ def safe_layer1_objective(
         - 2.0 * nwp
         - 1.0 * uop_penalty
         - 1.0 * vdp_penalty
+        - 1.5 * weight_penalty
         - 1.0 * concentration_penalty
     )
 

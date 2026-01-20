@@ -30,9 +30,11 @@ class EnhancedLayer3Reporter:
     """Enhanced reporting for Layer 3 meta-modeling pipeline."""
     
     def __init__(self, outcomes_dir: Optional[Path] = None):
+        tprint_info("Starting EnhancedLayer3Reporter.__init__...")
         self.outcomes_dir = outcomes_dir or Path('outcomes')
         self.outcomes_dir.mkdir(exist_ok=True, parents=True)
         self.ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        tprint_info("Completed EnhancedLayer3Reporter.__init__.")
     
     def generate_all_reports(self, df: pd.DataFrame, models: Dict[str, Any], 
                            geometry_metrics: List[Dict[str, Any]], 
@@ -49,6 +51,7 @@ class EnhancedLayer3Reporter:
             target_col: Target column name
             config: Configuration dictionary
         """
+        tprint_info("Starting generate_all_reports...")
         tprint_info("📊 Generating Enhanced Layer 3 Reports...")
         
         # Generate existing reports
@@ -72,10 +75,12 @@ class EnhancedLayer3Reporter:
         self._generate_orf_vs_et_report(df, models, target_col)
 
         tprint_success(f"✅ Enhanced Layer 3 reports saved to {self.outcomes_dir}")
+        tprint_info("Completed generate_all_reports.")
     
     def _generate_meta_report(self, df: pd.DataFrame, geometry_metrics: List[Dict[str, Any]], 
                             models: Dict[str, Any], target_col: str, config: Dict[str, Any]) -> None:
         """Generate enhanced meta-report."""
+        tprint_info("Starting _generate_meta_report...")
         try:
             lines = ["# Enhanced Layer 3 Meta-Labeling Report\n\n"]
             lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -149,11 +154,14 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate enhanced meta-report: {e}")
+        tprint_info("Completed _generate_meta_report.")
     
     def _generate_orf_vs_et_report(self, df: pd.DataFrame, models: Dict[str, Any], target_col: str) -> None:
         """Generate comparison report between ORF and ExtraTrees models."""
+        tprint_info("Starting _generate_orf_vs_et_report...")
         try:
             if target_col not in df.columns:
+                tprint_info("Completed _generate_orf_vs_et_report (target_col missing).")
                 return
 
             lines = ["# ORF vs ExtraTrees Comparison Report\n\n"]
@@ -197,10 +205,12 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate ORF vs ET report: {e}")
+        tprint_info("Completed _generate_orf_vs_et_report.")
 
     def _generate_dual_head_analysis_report(self, df: pd.DataFrame, models: Dict[str, Any], 
                                           target_col: str) -> None:
         """Generate dual-head analysis report."""
+        tprint_info("Starting _generate_dual_head_analysis_report...")
         try:
             lines = ["# Dual-Head Analysis Report\n\n"]
             lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -265,10 +275,12 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate dual-head analysis report: {e}")
+        tprint_info("Completed _generate_dual_head_analysis_report.")
     
     def _generate_feature_engineering_impact_report(self, df: pd.DataFrame, meta_features: List[str], 
                                                    target_col: str) -> None:
         """Generate feature engineering impact report."""
+        tprint_info("Starting _generate_feature_engineering_impact_report...")
         try:
             lines = ["# Feature Engineering Impact Report\n\n"]
             lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -325,10 +337,12 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate feature engineering impact report: {e}")
+        tprint_info("Completed _generate_feature_engineering_impact_report.")
     
     def _generate_cross_layer_analysis_report(self, df: pd.DataFrame, target_col: str, 
                                             config: Dict[str, Any]) -> None:
         """Generate cross-layer analysis report."""
+        tprint_info("Starting _generate_cross_layer_analysis_report...")
         try:
             lines = ["# Cross-Layer Analysis Report\n\n"]
             lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -373,9 +387,11 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate cross-layer analysis report: {e}")
+        tprint_info("Completed _generate_cross_layer_analysis_report.")
     
     def _generate_model_ensemble_report(self, models: Dict[str, Any], meta_features: List[str]) -> None:
         """Generate model ensemble analysis report."""
+        tprint_info("Starting _generate_model_ensemble_report...")
         try:
             lines = ["# Model Ensemble Analysis Report\n\n"]
             lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -434,9 +450,11 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate model ensemble report: {e}")
+        tprint_info("Completed _generate_model_ensemble_report.")
     
     def _generate_prediction_confidence_report(self, df: pd.DataFrame, target_col: str) -> None:
         """Generate prediction confidence analysis report."""
+        tprint_info("Starting _generate_prediction_confidence_report...")
         try:
             lines = ["# Prediction Confidence Analysis Report\n\n"]
             lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -491,9 +509,11 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate prediction confidence report: {e}")
+        tprint_info("Completed _generate_prediction_confidence_report.")
     
     def _generate_feature_importance_report(self, models: Dict[str, Any], meta_features: List[str]) -> None:
         """Generate feature importance report (from original)."""
+        tprint_info("Starting _generate_feature_importance_report...")
         try:
             importance_data = []
             
@@ -536,11 +556,14 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate feature importance report: {e}")
+        tprint_info("Completed _generate_feature_importance_report.")
     
     def _generate_calibration_diagnostics(self, df: pd.DataFrame, target_col: str) -> None:
         """Generate calibration diagnostics (from original)."""
+        tprint_info("Starting _generate_calibration_diagnostics...")
         try:
             if 'meta_prob' not in df.columns or target_col not in df.columns:
+                tprint_info("Completed _generate_calibration_diagnostics (meta_prob or target_col missing).")
                 return
             
             y_true = (df[target_col] > 0.5).astype(int).values
@@ -613,9 +636,11 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate calibration diagnostics: {e}")
+        tprint_info("Completed _generate_calibration_diagnostics.")
     
     def _generate_performance_summary(self, df: pd.DataFrame, models: Dict[str, Any], target_col: str) -> None:
         """Generate performance summary (from original)."""
+        tprint_info("Starting _generate_performance_summary...")
         try:
             summary_stats = {}
             
@@ -647,18 +672,24 @@ class EnhancedLayer3Reporter:
 
         except Exception as e:
             tprint_error(f"❌ Failed to generate performance summary: {e}")
+        tprint_info("Completed _generate_performance_summary.")
     
     def _categorize_feature(self, feature: str, categories: Dict[str, List[str]]) -> str:
         """Categorize a feature name."""
+        tprint_info("Starting _categorize_feature...")
         for category, features in categories.items():
             if feature in features:
+                tprint_info("Completed _categorize_feature.")
                 return category
+        tprint_info("Completed _categorize_feature.")
         return 'other'
     
     def _generate_regime_performance_report(self, df: pd.DataFrame, target_col: str) -> None:
         """Generate per-regime performance report."""
+        tprint_info("Starting _generate_regime_performance_report...")
         try:
             if 'regime_label' not in df.columns or target_col not in df.columns:
+                tprint_info("Completed _generate_regime_performance_report (missing regime_label or target_col).")
                 return
 
             lines = ["# Per-Regime Performance Report\n\n"]
@@ -703,14 +734,18 @@ class EnhancedLayer3Reporter:
 
             report_path = self.outcomes_dir / f"layer3_regime_report_{self.ts}.md"
             report_path.write_text("".join(lines))
+            tprint_success(f"✅ Regime performance report saved to {report_path}")
         except Exception as e:
             tprint_error(f"❌ Failed to generate regime report: {e}")
+        tprint_info("Completed _generate_regime_performance_report.")
 
     def _generate_structural_feature_report(self, df: pd.DataFrame, meta_features: List[str], target_col: str) -> None:
         """Generate structural feature impact report (Anchor and Drift)."""
+        tprint_info("Starting _generate_structural_feature_report...")
         try:
             anchor_features = [f for f in meta_features if 'anchor_' in f or 'stability' in f]
             if not anchor_features or target_col not in df.columns:
+                tprint_info("Completed _generate_structural_feature_report (missing anchor_features or target_col).")
                 return
 
             lines = ["# Structural Feature Analysis (Anchor and Drift)\n\n"]
@@ -736,11 +771,14 @@ class EnhancedLayer3Reporter:
 
             report_path = self.outcomes_dir / f"layer3_structural_report_{self.ts}.md"
             report_path.write_text("".join(lines))
+            tprint_success(f"✅ Structural feature report saved to {report_path}")
         except Exception as e:
             tprint_error(f"❌ Failed to generate structural report: {e}")
+        tprint_info("Completed _generate_structural_feature_report.")
 
     def _fast_expected_calibration_error(self, y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
         """Fast Expected Calibration Error calculation."""
+        tprint_info("Starting _fast_expected_calibration_error...")
         bin_boundaries = np.linspace(0, 1, n_bins + 1)
         bin_lowers = bin_boundaries[:-1]
         bin_uppers = bin_boundaries[1:]
@@ -755,12 +793,16 @@ class EnhancedLayer3Reporter:
                 avg_confidence_in_bin = y_prob[in_bin].mean()
                 ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
         
+        tprint_info("Completed _fast_expected_calibration_error.")
         return ece
     
     def _safe_to_markdown(self, df: pd.DataFrame) -> str:
         """Fallback for to_markdown() if tabulate is missing."""
+        tprint_info("Starting _safe_to_markdown...")
         try:
-            return df.to_markdown(index=False)
+            res = df.to_markdown(index=False)
+            tprint_info("Completed _safe_to_markdown.")
+            return res
         except Exception:
             cols = df.columns
             res = [" | " + " | ".join(map(str, cols)) + " | "]
@@ -768,4 +810,5 @@ class EnhancedLayer3Reporter:
             for _, row in df.iterrows():
                 formatted_row = [f"{x:.4f}" if isinstance(x, (float, np.float64, np.float32)) else str(x) for x in row]
                 res.append(" | " + " | ".join(formatted_row) + " | ")
+            tprint_info("Completed _safe_to_markdown.")
             return "\n".join(res)

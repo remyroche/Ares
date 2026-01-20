@@ -7683,20 +7683,6 @@ class LabelBasedLayer2(BaseStep):
             # Map monotonic constraints to ordered list for tree learners
             monotone_constraints = [monotone_constraints_dict.get(f, 0) for f in selected_features]
 
-            # --- LOGGING UPDATES ---
-            # 1. Monotonic Constraints
-            n_mono = sum(1 for v in monotone_constraints if v != 0)
-            tprint_info(f"   📈 Monotonic constraints: {n_mono} features")
-            
-            # 2. Huber Teacher Performance
-            if warm_start_val is not None:
-                try:
-                    t_auc = roc_auc_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.5
-                    t_pr = average_precision_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.0
-                    tprint_info(f"   🎓 Huber Teacher Performance: ROC-AUC={t_auc:.4f}, PR-AUC={t_pr:.4f}")
-                except Exception:
-                    pass
-
 
             # --- LOGGING UPDATES ---
             # 1. Monotonic Constraints

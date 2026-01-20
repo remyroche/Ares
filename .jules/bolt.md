@@ -23,3 +23,9 @@
 **Learning:** Pandas `rolling().skew()` and `.kurt()` are reasonably optimized (likely Cython) and beat naive Numba window-recalculation ($O(N \cdot W)$). However, an online algorithm (Welford's / Sum of Powers) implemented in Numba ($O(N)$) beats Pandas by 4x (Skew) to 12x (Kurtosis).
 
 **Action:** For higher-moment rolling statistics, use Numba-optimized online algorithms, but be careful with numerical stability (ensure data is centered or small like returns) and NaN handling (online algorithms propagate NaNs aggressively). Passing 0-filled data is essential for robustness here.
+
+## 2026-01-20 - Rolling Streak Persistence Optimization
+
+**Learning:** The previous implementation of `_numba_streak_persistence` had $O(N \cdot W)$ complexity because it recalculated streaks for the entire window at every step. This led to linear performance degradation as the window size increased (e.g., 0.27s for window=1000 vs 0.04s for window=100).
+
+**Action:** Implemented an $O(N)$ online algorithm using a circular buffer to incrementally track streaks by handling "leaving" and "entering" elements. This reduced execution time for window=1000 from ~0.27s to ~0.003s (a ~90x speedup), making performance independent of window size. Always look for incremental update opportunities in sliding window calculations.

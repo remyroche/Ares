@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
 
+from src.utils.tprint import tprint
 from ..checkpoint_aware_runner import CheckpointAwareRunner, checkpoint_aware_step
 from ..checkpoint_override_manager import CheckpointOverrideManager, create_checkpoint_override
 from .core import layer3_analyst_lgbm as core_layer3_analyst_lgbm
@@ -36,6 +37,7 @@ class CheckpointAwareLayer3:
             symbol: Trading symbol (e.g., 'ETHUSDT')
             checkpoint_dir: Optional custom checkpoint directory
         """
+        tprint("Starting CheckpointAwareLayer3.__init__...")
         self.symbol = symbol.upper()
         self.checkpoint_dir = checkpoint_dir
         
@@ -44,6 +46,7 @@ class CheckpointAwareLayer3:
         
         logger.info(f"🔧 Initialized checkpoint-aware Layer 3 for {self.symbol}")
         logger.info(f"📍 Resume step: {self.runner.execution_plan.resume_step}")
+        tprint("Finished CheckpointAwareLayer3.__init__")
     
     def run_with_override(
         self,
@@ -75,6 +78,7 @@ class CheckpointAwareLayer3:
         Returns:
             Tuple of (enhanced DataFrame, models dictionary)
         """
+        tprint("Starting CheckpointAwareLayer3.run_with_override...")
         logger.info(f"🔄 Running Layer 3 with checkpoint override from '{override_step}'")
         logger.info(f"   Force restart: {force_restart}")
         logger.info(f"   Keep earlier checkpoints: {keep_earlier_checkpoints}")
@@ -93,7 +97,7 @@ class CheckpointAwareLayer3:
         self.execution_plan = self.runner.execution_plan
         
         # Run with override runner
-        return self.run(
+        result = self.run(
             oof_df=oof_df,
             base_model_cols=base_model_cols,
             target_col=target_col,
@@ -107,6 +111,8 @@ class CheckpointAwareLayer3:
             config=config,
             outcomes_dir=outcomes_dir
         )
+        tprint("Finished CheckpointAwareLayer3.run_with_override")
+        return result
     
     def run(
         self,
@@ -143,6 +149,7 @@ class CheckpointAwareLayer3:
         Returns:
             Tuple of (enhanced DataFrame, models dictionary)
         """
+        tprint("Starting CheckpointAwareLayer3.run...")
         # Prepare configuration
         config = config or {}
         config['symbol'] = self.symbol
@@ -194,11 +201,13 @@ class CheckpointAwareLayer3:
         logger.info(f"📊 Steps executed: {result['metadata']['steps_executed']}")
         logger.info(f"💾 Checkpoints saved: {len(result['metadata']['checkpoints_saved'])}")
         
+        tprint("Finished CheckpointAwareLayer3.run")
         return df_final, models_dict
     
     def _get_step_functions(self) -> Dict[str, callable]:
         """Get step functions for checkpoint-aware execution."""
-        return {
+        tprint("Starting CheckpointAwareLayer3._get_step_functions...")
+        functions = {
             'data_loading': self._step_data_loading,
             'entropy_bars_integration': self._step_entropy_bars_integration,
             'meta_features_engineering': self._step_meta_features_engineering,
@@ -212,10 +221,13 @@ class CheckpointAwareLayer3:
             'enhanced_reporting': self._step_enhanced_reporting,
             'final_processing': self._step_final_processing
         }
+        tprint("Finished CheckpointAwareLayer3._get_step_functions")
+        return functions
     
     @checkpoint_aware_step('data_loading')
     def _step_data_loading(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 0: Load and prepare data."""
+        tprint("Starting CheckpointAwareLayer3._step_data_loading...")
         oof_df = kwargs['oof_df']
         base_model_cols = kwargs['base_model_cols']
         
@@ -223,6 +235,7 @@ class CheckpointAwareLayer3:
         from .utils import validate_feature_matrix
         X_validated = validate_feature_matrix(oof_df[base_model_cols])
         
+        tprint("Finished CheckpointAwareLayer3._step_data_loading")
         return {
             'oof_df': oof_df,
             'base_model_cols': base_model_cols,
@@ -232,8 +245,10 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('entropy_bars_integration')
     def _step_entropy_bars_integration(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 1: Integrate entropy bars and specialized features."""
+        tprint("Starting CheckpointAwareLayer3._step_entropy_bars_integration...")
         # This would integrate entropy bars if available
         # For now, pass through the validated data
+        tprint("Finished CheckpointAwareLayer3._step_entropy_bars_integration")
         return {
             'entropy_bars_df': pd.DataFrame(),  # Empty if no entropy bars
             'specialized_features': pd.DataFrame()
@@ -242,6 +257,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('meta_features_engineering')
     def _step_meta_features_engineering(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 2: Generate regime-aware and meta features."""
+        tprint("Starting CheckpointAwareLayer3._step_meta_features_engineering...")
         from .core import generate_regime_aware_features
         
         oof_df = kwargs['oof_df']
@@ -251,6 +267,7 @@ class CheckpointAwareLayer3:
         prob_cols = [c for c in oof_df.columns if 'prob_' in c and '_oof' not in c]
         regime_feats = generate_regime_aware_features(oof_df, 'volatility_20', prob_cols)
         
+        tprint("Finished CheckpointAwareLayer3._step_meta_features_engineering")
         return {
             'regime_features': regime_feats,
             'meta_features': list(regime_feats.columns)
@@ -259,6 +276,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('feature_clustering')
     def _step_feature_clustering(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 3: Apply mild MP-clustering for feature selection."""
+        tprint("Starting CheckpointAwareLayer3._step_feature_clustering...")
         from .core import apply_mild_mp_clustering
         from .utils import calculate_alpha_target
         
@@ -273,6 +291,7 @@ class CheckpointAwareLayer3:
         # In full implementation, this would use the actual clustering logic
         selected_features = kwargs['base_model_cols']  # Pass through for now
         
+        tprint("Finished CheckpointAwareLayer3._step_feature_clustering")
         return {
             'selected_features': selected_features,
             'y_alpha_12': y_alpha_12,
@@ -282,6 +301,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('layer25_integration')
     def _step_layer25_integration(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 4: Integrate Layer 2.5 chaser models (if available)."""
+        tprint("Starting CheckpointAwareLayer3._step_layer25_integration...")
         layer25_enabled = config.get('layer25_chaser_enabled', True)
         layer25_results = config.get('layer25_chaser_results', None)
         
@@ -301,6 +321,7 @@ class CheckpointAwareLayer3:
                     outcomes_dir=kwargs.get('outcomes_dir')
                 )
                 
+                tprint("Finished CheckpointAwareLayer3._step_layer25_integration")
                 return {
                     'df_enhanced': df_enhanced,
                     'integration_metadata': integration_metadata,
@@ -308,13 +329,16 @@ class CheckpointAwareLayer3:
                 }
             except Exception as e:
                 logger.warning(f"⚠️ Layer 2.5 integration failed: {e}")
+                tprint("Finished CheckpointAwareLayer3._step_layer25_integration with error")
                 return {'df_enhanced': kwargs['oof_df'], 'integration_metadata': {'status': 'failed'}}
         else:
+            tprint("Finished CheckpointAwareLayer3._step_layer25_integration")
             return {'df_enhanced': kwargs['oof_df'], 'integration_metadata': {'status': 'skipped'}}
     
     @checkpoint_aware_step('dual_head_training')
     def _step_dual_head_training(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 5: Train all model families."""
+        tprint("Starting CheckpointAwareLayer3._step_dual_head_training...")
         from .model_training import train_dual_head_models
         from .utils import calculate_sample_weights_efficient
         
@@ -333,6 +357,7 @@ class CheckpointAwareLayer3:
             X_dummy, y_alpha_12, y_prob_12, w_alpha, w_prob, [], config, fast_mode=True
         )
         
+        tprint("Finished CheckpointAwareLayer3._step_dual_head_training")
         return {
             'model_results': model_results,
             'combined_models': model_results['models']
@@ -341,6 +366,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('model_selection_12')
     def _step_model_selection_12(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 6: Select best models for 12-bar horizon."""
+        tprint("Starting CheckpointAwareLayer3._step_model_selection_12...")
         from .core import select_best_model_per_task
         
         combined_models = results['dual_head_training']['combined_models']
@@ -351,6 +377,7 @@ class CheckpointAwareLayer3:
             combined_models, y_alpha_12, 'regression', '12'
         )
         
+        tprint("Finished CheckpointAwareLayer3._step_model_selection_12")
         return {
             'best_models_12': {
                 'regression': {'prediction': best_pred_12_reg, 'model_key': best_key_12_reg}
@@ -360,6 +387,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('model_selection_48')
     def _step_model_selection_48(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 7: Select best models for 48-bar horizon."""
+        tprint("Starting CheckpointAwareLayer3._step_model_selection_48...")
         from .core import select_best_model_per_task
         
         combined_models = results['dual_head_training']['combined_models']
@@ -370,6 +398,7 @@ class CheckpointAwareLayer3:
             combined_models, y_alpha_48, 'regression', '48'
         )
         
+        tprint("Finished CheckpointAwareLayer3._step_model_selection_48")
         return {
             'best_models_48': {
                 'regression': {'prediction': best_pred_48_reg, 'model_key': best_key_48_reg}
@@ -379,6 +408,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('oof_predictions')
     def _step_oof_predictions(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 8: Generate OOF predictions for all models."""
+        tprint("Starting CheckpointAwareLayer3._step_oof_predictions...")
         combined_models = results['dual_head_training']['combined_models']
         oof_df = kwargs['oof_df']
         
@@ -391,6 +421,7 @@ class CheckpointAwareLayer3:
                 predictions = np.random.randn(len(oof_df))
                 df_with_predictions[f"{key}_oof"] = predictions
         
+        tprint("Finished CheckpointAwareLayer3._step_oof_predictions")
         return {
             'df_with_predictions': df_with_predictions,
             'oof_predictions': {key: model_data['cate'] for key, model_data in combined_models.items()}
@@ -399,6 +430,7 @@ class CheckpointAwareLayer3:
     @checkpoint_aware_step('race_reporting')
     def _step_race_reporting(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 9: Generate comprehensive model race reports."""
+        tprint("Starting CheckpointAwareLayer3._step_race_reporting...")
         from .model_race_reporting import Layer3ModelRaceReporter
         
         combined_models = results['dual_head_training']['combined_models']
@@ -417,11 +449,13 @@ class CheckpointAwareLayer3:
             y_prob_48=y_prob_48
         )
         
+        tprint("Finished CheckpointAwareLayer3._step_race_reporting")
         return {'race_report_generated': True}
     
     @checkpoint_aware_step('enhanced_reporting')
     def _step_enhanced_reporting(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 10: Generate enhanced Layer 3 reports."""
+        tprint("Starting CheckpointAwareLayer3._step_enhanced_reporting...")
         from .enhanced_reporting import EnhancedLayer3Reporter
         
         # Generate enhanced report
@@ -436,11 +470,13 @@ class CheckpointAwareLayer3:
             config=config
         )
         
+        tprint("Finished CheckpointAwareLayer3._step_enhanced_reporting")
         return {'enhanced_report_generated': True}
     
     @checkpoint_aware_step('final_processing')
     def _step_final_processing(self, results: Dict[str, Any], config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Step 11: Final validation and artifact saving."""
+        tprint("Starting CheckpointAwareLayer3._step_final_processing...")
         # Collect all results
         df_final = results.get('oof_predictions', {}).get('df_with_predictions', kwargs['oof_df'])
         
@@ -458,6 +494,7 @@ class CheckpointAwareLayer3:
         if 'layer25_integration' in results:
             models_dict['layer25_integration'] = results['layer25_integration']['integration_metadata']
         
+        tprint("Finished CheckpointAwareLayer3._step_final_processing")
         return {
             'df': df_final,
             'models_dict': models_dict
@@ -465,11 +502,17 @@ class CheckpointAwareLayer3:
     
     def get_checkpoint_status(self) -> Dict[str, Any]:
         """Get detailed checkpoint status."""
-        return self.runner.get_checkpoint_status()
+        tprint("Starting CheckpointAwareLayer3.get_checkpoint_status...")
+        result = self.runner.get_checkpoint_status()
+        tprint("Finished CheckpointAwareLayer3.get_checkpoint_status")
+        return result
     
     def reset_checkpoints(self) -> int:
         """Reset all checkpoints for this symbol."""
-        return self.runner.reset_all_checkpoints()
+        tprint("Starting CheckpointAwareLayer3.reset_checkpoints...")
+        result = self.runner.reset_all_checkpoints()
+        tprint("Finished CheckpointAwareLayer3.reset_checkpoints")
+        return result
 
 def layer3_analyst_lgbm_checkpoint_aware(
     oof_df: pd.DataFrame,
@@ -507,6 +550,7 @@ def layer3_analyst_lgbm_checkpoint_aware(
     Returns:
         Tuple of (enhanced DataFrame, models dictionary with checkpoint metadata)
     """
+    tprint("Starting layer3_analyst_lgbm_checkpoint_aware...")
     if symbol is None:
         raise ValueError("Symbol is required for checkpoint-aware execution")
     
@@ -516,7 +560,7 @@ def layer3_analyst_lgbm_checkpoint_aware(
     # Check if override is requested
     if override_step is not None:
         logger.info(f"🔄 Using checkpoint override from '{override_step}'")
-        return checkpoint_layer3.run_with_override(
+        result = checkpoint_layer3.run_with_override(
             override_step=override_step,
             oof_df=oof_df,
             base_model_cols=base_model_cols,
@@ -535,7 +579,7 @@ def layer3_analyst_lgbm_checkpoint_aware(
         )
     else:
         # Run with normal checkpoint management
-        return checkpoint_layer3.run(
+        result = checkpoint_layer3.run(
             oof_df=oof_df,
             base_model_cols=base_model_cols,
             target_col=target_col,
@@ -549,3 +593,5 @@ def layer3_analyst_lgbm_checkpoint_aware(
             config=config,
             outcomes_dir=outcomes_dir
         )
+    tprint("Finished layer3_analyst_lgbm_checkpoint_aware")
+    return result

@@ -43,6 +43,7 @@ class Layer25Logger:
     """
 
     def __init__(self, log_level=logging.INFO, log_file=None):
+        tprint_info(f"Starting __init__")
         self.logger = logging.getLogger('Layer25Integration')
         self.logger.setLevel(log_level)
 
@@ -77,19 +78,25 @@ class Layer25Logger:
 
         self.start_time = time.time()
 
+        tprint_info(f"Completed __init__")
     def log_pipeline_start(self, config_summary):
         """Log pipeline initialization."""
+        tprint_info(f"Starting log_pipeline_start")
         self.logger.info("🚀 Layer 2.5 Pipeline Started")
         self.logger.info(f"Configuration: {json.dumps(config_summary, indent=2)}")
         self._log_system_info()
 
+        tprint_info(f"Completed log_pipeline_start")
     def log_training_start(self, n_samples, n_features):
         """Log training initialization."""
+        tprint_info(f"Starting log_training_start")
         self.logger.info(f"🏋️ Training Started - Samples: {n_samples}, Features: {n_features}")
         self.training_start = time.time()
 
+        tprint_info(f"Completed log_training_start")
     def log_training_complete(self, training_metrics, feature_selection_results):
         """Log training completion with detailed metrics."""
+        tprint_info(f"Starting log_training_complete")
         training_time = time.time() - self.training_start
 
         self.logger.info("✅ Training Completed")
@@ -119,13 +126,17 @@ class Layer25Logger:
             'metrics': training_metrics
         })
 
+        tprint_info(f"Completed log_training_complete")
     def log_prediction_start(self, n_samples):
         """Log prediction start."""
+        tprint_info(f"Starting log_prediction_start")
         self.logger.info(f"🔮 Prediction Started - Samples: {n_samples}")
         self.prediction_start = time.time()
 
+        tprint_info(f"Completed log_prediction_start")
     def log_prediction_complete(self, prediction_results):
         """Log prediction completion with performance metrics."""
+        tprint_info(f"Starting log_prediction_complete")
         prediction_time = time.time() - self.prediction_start
         n_samples = len(prediction_results.get('chaser_prediction', []))
 
@@ -165,22 +176,28 @@ class Layer25Logger:
             'samples': n_samples
         })
 
+        tprint_info(f"Completed log_prediction_complete")
     def log_error(self, operation, error, context=None):
         """Log errors with context."""
+        tprint_info(f"Starting log_error")
         error_msg = f"❌ {operation} Failed: {str(error)}"
         if context:
             error_msg += f" | Context: {context}"
         self.logger.error(error_msg)
 
+        tprint_info(f"Completed log_error")
     def log_warning(self, message, context=None):
         """Log warnings with context."""
+        tprint_info(f"Starting log_warning")
         warning_msg = f"⚠️ {message}"
         if context:
             warning_msg += f" | Context: {context}"
         self.logger.warning(warning_msg)
 
+        tprint_info(f"Completed log_warning")
     def log_performance_summary(self):
         """Log overall performance summary."""
+        tprint_info(f"Starting log_performance_summary")
         total_runtime = time.time() - self.start_time
 
         self.logger.info("📋 Performance Summary")
@@ -201,8 +218,10 @@ class Layer25Logger:
             self.logger.info(f"Average Throughput: {avg_throughput:.2f} samples/second")
             self.logger.info(f"Total Predictions: {total_predictions}")
 
+        tprint_info(f"Completed log_performance_summary")
     def _log_system_info(self):
         """Log system information."""
+        tprint_info(f"Starting _log_system_info")
         try:
             import psutil
             import os
@@ -217,11 +236,14 @@ class Layer25Logger:
         except ImportError:
             self.logger.info("  System monitoring not available (psutil not installed)")
 
+        tprint_info(f"Completed _log_system_info")
     def get_performance_report(self) -> Dict[str, Any]:
         """Get comprehensive performance report."""
+        tprint_info(f"Starting get_performance_report")
         import psutil
         import os
 
+        tprint_info(f"Completed get_performance_report")
         return {
             'total_runtime': time.time() - self.start_time,
             'training_sessions': len(self.performance_metrics['training_times']),
@@ -239,13 +261,17 @@ class HyperparameterOptimizer:
     """
 
     def __init__(self):
+        tprint_info(f"Starting __init__")
         self.best_params = None
         self.optimization_history = []
 
+        tprint_info(f"Completed __init__")
     def create_param_space(self):
         """Define parameter space for Bayesian optimization."""
+        tprint_info(f"Starting create_param_space")
         from skopt.space import Real, Integer
 
+        tprint_info(f"Completed create_param_space")
         return [
             # XGBoost parameters
             Real(0.01, 0.3, name='xgb_learning_rate'),
@@ -272,6 +298,7 @@ class HyperparameterOptimizer:
 
     def objective_function(self, X_train, y_train, X_val, y_val, causal_anchor_val, params):
         """Objective function for optimization."""
+        tprint_info(f"Starting objective_function")
         try:
             # Unpack parameters
             xgb_lr, xgb_depth, xgb_sub, xgb_col, xgb_alpha, xgb_lambda, \
@@ -331,14 +358,17 @@ class HyperparameterOptimizer:
                 val_predictions, y_val, causal_anchor_val
             )
 
+            tprint_info(f"Completed objective_function")
             return -val_score  # Minimize negative score
 
         except Exception as e:
             print(f"Optimization iteration failed: {e}")
             return 1000.0  # High penalty for failures
 
+        tprint_info(f"Completed objective_function")
     def calculate_validation_score(self, predictions, y_val, causal_anchor_val):
         """Calculate comprehensive validation score."""
+        tprint_info(f"Starting calculate_validation_score")
         chaser_pred = predictions['chaser_prediction']
         total_pred = predictions['total_prediction']
 
@@ -360,10 +390,12 @@ class HyperparameterOptimizer:
         # Combined score (lower is better)
         score = total_mse + conflict_penalty - improvement
 
+        tprint_info(f"Completed calculate_validation_score")
         return score
 
     def optimize(self, X_train, y_train, X_val, y_val, causal_anchor_val, n_calls=50):
         """Run Bayesian optimization."""
+        tprint_info(f"Starting optimize")
         from skopt import gp_minimize
         from skopt.utils import use_named_args
 
@@ -371,6 +403,7 @@ class HyperparameterOptimizer:
 
         @use_named_args(param_space)
         def objective(**params):
+            tprint_info(f"Starting objective")
             param_values = [params[name] for name in
                           ['xgb_learning_rate', 'xgb_max_depth', 'xgb_subsample',
                            'xgb_colsample_bytree', 'xgb_reg_alpha', 'xgb_reg_lambda',
@@ -378,6 +411,7 @@ class HyperparameterOptimizer:
                            'xgb_weight', 'direction_threshold', 'magnitude_threshold',
                            'confidence_threshold', 'conflict_intensity_threshold']]
 
+            tprint_info(f"Completed objective")
             return self.objective_function(
                 X_train, y_train, X_val, y_val, causal_anchor_val, param_values
             )
@@ -421,6 +455,7 @@ class HyperparameterOptimizer:
             }
         }
 
+        tprint_info(f"Completed optimize")
         return self.best_params, result
 
 class Layer25Integration:
@@ -455,6 +490,7 @@ class Layer25Integration:
             log_file: Optional file path for logging output
             verbose: Whether to print progress information
         """
+        tprint_info(f"Starting __init__")
         self.verbose = verbose
         self.enable_residual_analysis = enable_residual_analysis
         self.enable_conflict_detection = enable_conflict_detection
@@ -487,8 +523,10 @@ class Layer25Integration:
         # Log pipeline start
         self._log_pipeline_start()
 
+        tprint_info(f"Completed __init__")
     def _log_pipeline_start(self):
         """Log pipeline start."""
+        tprint_info(f"Starting _log_pipeline_start")
         if self.logger:
             config_summary = {
                 'chaser_configured': self.chaser is not None,
@@ -500,6 +538,7 @@ class Layer25Integration:
             }
             self.logger.log_pipeline_start(config_summary)
 
+        tprint_info(f"Completed _log_pipeline_start")
     def setup_chaser(
         self,
         xgb_params: Optional[Dict] = None,
@@ -508,6 +547,7 @@ class Layer25Integration:
         **kwargs
     ):
         """Setup the Chaser model with custom parameters."""
+        tprint_info(f"Starting setup_chaser")
         chaser_config = {
             'xgb_params': xgb_params,
             'cat_params': cat_params,
@@ -520,7 +560,8 @@ class Layer25Integration:
         
         if self.verbose:
             tprint_success("✅ Chaser model initialized")
-    
+
+        tprint_info(f"Completed setup_chaser")
     def setup_feature_selector(
         self,
         causal_graph: Optional[Dict[str, List[str]]] = None,
@@ -528,6 +569,7 @@ class Layer25Integration:
         **kwargs
     ):
         """Setup the non-causal feature selector."""
+        tprint_info(f"Starting setup_feature_selector")
         selector_config = {
             'causal_graph': causal_graph,
             'technical_feature_patterns': technical_patterns,
@@ -540,9 +582,11 @@ class Layer25Integration:
         
         if self.verbose:
             tprint_success("✅ Feature selector initialized")
-    
+
+        tprint_info(f"Completed setup_feature_selector")
     def setup_conflict_detector(self, **kwargs):
         """Setup the conflict detector."""
+        tprint_info(f"Starting setup_conflict_detector")
         detector_config = {**kwargs}
         detector_config.update(self.conflict_detector_params)
         
@@ -550,7 +594,8 @@ class Layer25Integration:
         
         if self.verbose:
             tprint_success("✅ Conflict detector initialized")
-    
+
+        tprint_info(f"Completed setup_conflict_detector")
     def prepare_training_data(
         self,
         df: pd.DataFrame,
@@ -572,6 +617,7 @@ class Layer25Integration:
         Returns:
             Tuple of (X_non_causal, y_residuals)
         """
+        tprint_info(f"Starting prepare_training_data")
         try:
             if self.verbose:
                 tprint_info("🔧 Preparing Layer 2.5 training data...")
@@ -623,13 +669,15 @@ class Layer25Integration:
                 tprint_info(f"   - Target mean: {y_clean.mean():.6f}")
                 tprint_info(f"   - Target std: {y_clean.std():.6f}")
             
+            tprint_info(f"Completed prepare_training_data")
             return X_clean, y_clean
             
         except Exception as e:
             if self.verbose:
                 tprint_error(f"❌ Training data preparation failed: {e}")
             raise
-    
+
+        tprint_info(f"Completed prepare_training_data")
     def train_chaser(
         self,
         X_non_causal: pd.DataFrame,
@@ -649,6 +697,7 @@ class Layer25Integration:
         Returns:
             Training metrics
         """
+        tprint_info(f"Starting train_chaser")
         try:
             if self.logger:
                 self.logger.log_training_start(len(X_non_causal), len(X_non_causal.columns))
@@ -691,6 +740,7 @@ class Layer25Integration:
                         if isinstance(v, (int, float)):
                             tprint_info(f"   📊 {k}: {v:.4f}")
 
+            tprint_info(f"Completed train_chaser")
             return training_metrics
 
         except Exception as e:
@@ -699,7 +749,8 @@ class Layer25Integration:
             if self.verbose:
                 tprint_error(f"❌ Chaser training failed: {e}")
             raise
-    
+
+        tprint_info(f"Completed train_chaser")
     def predict_with_conflict_detection(
         self,
         X_non_causal: pd.DataFrame,
@@ -717,6 +768,7 @@ class Layer25Integration:
         Returns:
             Dictionary with predictions and conflict information
         """
+        tprint_info(f"Starting predict_with_conflict_detection")
         try:
             if self.logger:
                 self.logger.log_prediction_start(len(X_non_causal))
@@ -773,6 +825,7 @@ class Layer25Integration:
                 tprint_info(f"   - Mean chaser prediction: {np.mean(chaser_prediction):.6f}")
                 tprint_info(f"   - Mean chaser confidence: {np.mean(chaser_confidence):.3f}")
 
+            tprint_info(f"Completed predict_with_conflict_detection")
             return results
 
         except Exception as e:
@@ -781,7 +834,8 @@ class Layer25Integration:
             if self.verbose:
                 tprint_error(f"❌ Prediction with conflict detection failed: {e}")
             raise
-    
+
+        tprint_info(f"Completed predict_with_conflict_detection")
     def get_meta_learner_features(
         self,
         prediction_results: Dict[str, np.ndarray]
@@ -795,6 +849,7 @@ class Layer25Integration:
         Returns:
             DataFrame with advanced meta-learner features
         """
+        tprint_info(f"Starting get_meta_learner_features")
         try:
             n_samples = len(prediction_results['chaser_prediction'])
             meta_features = pd.DataFrame(index=pd.RangeIndex(n_samples))
@@ -895,6 +950,7 @@ class Layer25Integration:
                     meta_features['chaser_confidence'] - meta_features['chaser_confidence'].shift(1)
                 ).fillna(0)
 
+            tprint_info(f"Completed get_meta_learner_features")
             return meta_features
 
         except Exception as e:
@@ -902,9 +958,12 @@ class Layer25Integration:
                 tprint_error(f"❌ Advanced meta-learner feature preparation failed: {e}")
             raise
 
+        tprint_info(f"Completed get_meta_learner_features")
     def _calculate_conflict_degree(self, prediction_results):
         """Calculate conflict centrality/connectivity."""
+        tprint_info(f"Starting _calculate_conflict_degree")
         if 'high_conflict' not in prediction_results:
+            tprint_info(f"Completed _calculate_conflict_degree")
             return np.zeros(len(prediction_results['chaser_prediction']))
 
         high_conflicts = prediction_results['high_conflict']
@@ -914,11 +973,14 @@ class Layer25Integration:
             window=window_size, center=True, min_periods=1
         ).mean()
 
+        tprint_info(f"Completed _calculate_conflict_degree")
         return conflict_degree.values
 
     def _calculate_conflict_isolation(self, prediction_results):
         """Calculate how isolated a conflict is from other conflicts."""
+        tprint_info(f"Starting _calculate_conflict_isolation")
         if 'high_conflict' not in prediction_results:
+            tprint_info(f"Completed _calculate_conflict_isolation")
             return np.zeros(len(prediction_results['chaser_prediction']))
 
         high_conflicts = prediction_results['high_conflict']
@@ -937,13 +999,16 @@ class Layer25Integration:
         # Normalize by sequence length
         isolation_scores = isolation_scores / len(high_conflicts)
 
+        tprint_info(f"Completed _calculate_conflict_isolation")
         return isolation_scores
 
     def _calculate_prediction_stability(self, prediction_results):
         """Calculate prediction stability over time."""
+        tprint_info(f"Starting _calculate_prediction_stability")
         chaser_pred = prediction_results['chaser_prediction']
 
         if len(chaser_pred) < 10:
+            tprint_info(f"Completed _calculate_prediction_stability")
             return np.ones(len(chaser_pred)) * 0.5  # Neutral stability
 
         # Rolling standard deviation as instability measure
@@ -954,6 +1019,7 @@ class Layer25Integration:
         stability = 1.0 - (rolling_std / (rolling_std.max() + 1e-8))
         stability = stability.fillna(0.5)  # Neutral for early windows
 
+        tprint_info(f"Completed _calculate_prediction_stability")
         return stability.values
     
     def get_integration_summary(self) -> Dict[str, Any]:
@@ -963,6 +1029,7 @@ class Layer25Integration:
         Returns:
             Dictionary with integration summary
         """
+        tprint_info(f"Starting get_integration_summary")
         summary = {
             'components_initialized': {
                 'chaser': self.chaser is not None,
@@ -985,10 +1052,12 @@ class Layer25Integration:
         except Exception as e:
             tprint_error(f"❌ Failed to save Chaser report: {e}")
 
+        tprint_info(f"Completed get_integration_summary")
         return summary
 
     def _save_chaser_report(self, summary: Dict[str, Any]):
         """Save detailed Layer 2.5 Chaser report."""
+        tprint_info(f"Starting _save_chaser_report")
         from pathlib import Path
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(parents=True, exist_ok=True)
@@ -1035,9 +1104,11 @@ class Layer25Integration:
         except Exception as e:
             tprint_error(f"Failed to write report file: {e}")
 
+        tprint_info(f"Completed _save_chaser_report")
     def optimize_hyperparameters(self, X_train, y_train, X_val, y_val,
                                causal_anchor_val, n_calls=50):
         """Optimize hyperparameters for the entire pipeline."""
+        tprint_info(f"Starting optimize_hyperparameters")
         optimizer = HyperparameterOptimizer()
         best_params, optimization_result = optimizer.optimize(
             X_train, y_train, X_val, y_val, causal_anchor_val, n_calls
@@ -1051,15 +1122,20 @@ class Layer25Integration:
         )
         self.setup_conflict_detector(**best_params['conflict_params'])
 
+        tprint_info(f"Completed optimize_hyperparameters")
         return best_params, optimization_result
 
     def get_performance_report(self) -> Dict[str, Any]:
         """Get comprehensive performance report."""
+        tprint_info(f"Starting get_performance_report")
         if self.logger:
+            tprint_info(f"Completed get_performance_report")
             return self.logger.get_performance_report()
         else:
+            tprint_info(f"Completed get_performance_report")
             return {"logging": "disabled"}
 
+        tprint_info(f"Completed get_performance_report")
 # Convenience functions
 def quick_layer25_setup(
     causal_graph: Optional[Dict[str, List[str]]] = None,
@@ -1075,10 +1151,12 @@ def quick_layer25_setup(
     Returns:
         Configured Layer25Integration instance
     """
+    tprint_info(f"Starting quick_layer25_setup")
     integration = Layer25Integration(**kwargs)
     integration.setup_chaser()
     integration.setup_feature_selector(causal_graph=causal_graph)
     integration.setup_conflict_detector()
+    tprint_info(f"Completed quick_layer25_setup")
     return integration
 
 def end_to_end_layer25(
@@ -1104,6 +1182,7 @@ def end_to_end_layer25(
         Complete Layer 2.5 results
     """
     # Setup integration
+    tprint_info(f"Starting end_to_end_layer25")
     integration = quick_layer25_setup(causal_graph=causal_graph, **kwargs)
     
     # Prepare training data
@@ -1120,6 +1199,7 @@ def end_to_end_layer25(
     # Prepare meta-learner features
     meta_features = integration.get_meta_learner_features(prediction_results)
     
+    tprint_info(f"Completed end_to_end_layer25")
     return {
         'training_metrics': training_metrics,
         'prediction_results': prediction_results,

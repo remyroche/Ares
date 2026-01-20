@@ -75,13 +75,13 @@ class RobustHuberExtraTrees(BaseEstimator, RegressorMixin):
             monotonic_cst=self.monotonic_cst
         )
 
-    def _calculate_learnability_weights(self, X, residuals):
+    def _calculate_learnability_weights(self, X, residuals, sample_weight=None):
         """
         Scout Pass: Uses a smaller forest to determine sample weights
         based on prediction consensus (inverse of variance).
         """
         scout = ExtraTreesRegressor(n_estimators=100, max_depth=4, bootstrap=True, n_jobs=-1, random_state=self.random_state)
-        scout.fit(X, residuals)
+        scout.fit(X, residuals, sample_weight=sample_weight)
 
         # Get variance across the 100 trees
         # High variance = Low consensus = Low learnability
@@ -107,7 +107,7 @@ class RobustHuberExtraTrees(BaseEstimator, RegressorMixin):
         # 2. Calculate Learnability Weights (Optional Scout Pass)
         final_weights = sample_weight
         if self.use_learnability_weighting:
-            learn_weights = self._calculate_learnability_weights(X, residuals)
+            learn_weights = self._calculate_learnability_weights(X, residuals, sample_weight=sample_weight)
             if sample_weight is not None:
                 final_weights = sample_weight * learn_weights
             else:

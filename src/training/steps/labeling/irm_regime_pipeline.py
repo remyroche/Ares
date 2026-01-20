@@ -116,7 +116,7 @@ class IRMLinearModel(BaseEstimator):
 
         return (total_erm_loss / len(envs)) + reg + (self.irm_lambda * irm_penalty)
 
-    def fit(self, X: np.ndarray, y: np.ndarray, env_indices: list[np.ndarray], sample_weight: np.ndarray = None) -> "IRMLinearModel":
+    def fit(self, X: np.ndarray, y: np.ndarray, env_indices: list[np.ndarray], sample_weight: np.ndarray = None, monotone_constraints: dict = None) -> "IRMLinearModel":
         X, y = check_X_y(X, y)
 
         if sample_weight is None:
@@ -127,11 +127,26 @@ class IRMLinearModel(BaseEstimator):
         # Initialize with zeros
         w0 = np.zeros(X.shape[1])
 
+        # Prepare bounds for L-BFGS-B based on monotonic constraints
+        # Constraints: {col_idx: 1 (increasing), -1 (decreasing), 0 (none)}
+        bounds = None
+        if monotone_constraints:
+            bounds = []
+            for i in range(X.shape[1]):
+                constraint = monotone_constraints.get(i, 0)
+                if constraint == 1:
+                    bounds.append((0.0, None))  # Increasing: w >= 0
+                elif constraint == -1:
+                    bounds.append((None, 0.0))  # Decreasing: w <= 0
+                else:
+                    bounds.append((None, None)) # No constraint
+
         res = minimize(
             self._objective,
             w0,
             args=(envs,),
             method='L-BFGS-B',
+            bounds=bounds,
             options={'maxiter': self.max_iter}
         )
 
@@ -174,7 +189,7 @@ class IRMLinearClassifier(IRMLinearModel, ClassifierMixin):
             max_iter=max_iter
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray, env_indices: list[np.ndarray], sample_weight: np.ndarray = None) -> "IRMLinearClassifier":
+    def fit(self, X: np.ndarray, y: np.ndarray, env_indices: list[np.ndarray], sample_weight: np.ndarray = None, monotone_constraints: dict = None) -> "IRMLinearClassifier":
         # Force logloss if user didn't specify it, or handle ridge as classification?
         # Ideally, we should stick to logloss for calibration
         if self.loss_type != 'logloss':
@@ -182,7 +197,7 @@ class IRMLinearClassifier(IRMLinearModel, ClassifierMixin):
              # We allow it, but predict_proba will be heuristic if not logloss.
              pass
 
-        super().fit(X, y, env_indices, sample_weight)
+        super().fit(X, y, env_indices, sample_weight, monotone_constraints=monotone_constraints)
         self.classes_ = np.array([0, 1])
         return self
 

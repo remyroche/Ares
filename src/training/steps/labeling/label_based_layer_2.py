@@ -111,14 +111,38 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score
+from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.base import clone
+from sklearn.base import clone, BaseEstimator, ClassifierMixin
 from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
 from sklearn.tree import DecisionTreeClassifier
+from src.training.steps.labeling.irm_regime_pipeline import IRMLinearRegressor
+
+def _compute_ece(y_true, y_prob, n_bins=10):
+    """Compute Expected Calibration Error."""
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        bin_lower = bin_boundaries[i]
+        bin_upper = bin_boundaries[i+1]
+        in_bin = (y_prob > bin_lower) & (y_prob <= bin_upper)
+        prop_in_bin = np.mean(in_bin)
+        if prop_in_bin > 0:
+            accuracy_in_bin = np.mean(y_true[in_bin])
+            avg_confidence_in_bin = np.mean(y_prob[in_bin])
+            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+    return ece
+
+def _durbin_watson_residuals(y_true, y_pred):
+    """Compute Durbin-Watson statistic on residuals."""
+    residuals = y_true - y_pred
+    diff_res = np.diff(residuals)
+    numerator = np.sum(diff_res ** 2)
+    denominator = np.sum(residuals ** 2)
+    return numerator / denominator if denominator != 0 else 0.0
 from scipy.stats import spearmanr, rankdata, entropy as shannon_entropy
 from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
@@ -617,6 +641,104 @@ if CATBOOST_AVAILABLE_LOCAL:
             # ----------------------------------------------
                 
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+
+class HuberExtraTreesHybrid(BaseEstimator, ClassifierMixin):
+    """
+    Hybrid model: Huber Regressor (Law) + ExtraTrees Regressor on Residuals (Fashion).
+    """
+    def __init__(self, huber_params=None, et_params=None, irm_system=None, environment_masks=None):
+        self.huber_params = huber_params or {}
+        self.et_params = et_params or {}
+        self.irm_system = irm_system
+        self.environment_masks = environment_masks or {}
+        self.law_model = None
+        self.fashion_model = None
+        self.calibrator = None
+        self.classes_ = np.array([0, 1])
+
+    def fit(self, X, y, sample_weight=None, monotone_constraints=None):
+        # 1. Train Law (Huber IRM)
+        env_indices = []
+        if self.irm_system and self.environment_masks:
+             if hasattr(X, 'index'):
+                 idx = X.index
+                 for mask in self.environment_masks.values():
+                     mask_aligned = mask.reindex(idx).fillna(False).astype(bool)
+                     if mask_aligned.sum() > 0:
+                         env_indices.append(np.where(mask_aligned)[0])
+
+        if not env_indices:
+             env_indices = [np.arange(len(X))]
+
+        # Ensure numeric params
+        eps = float(self.huber_params.get('epsilon', 1.10))
+        alpha = float(self.huber_params.get('alpha', 1.0))
+        lam = float(self.huber_params.get('irm_lambda', 10.0))
+        max_iter = int(self.huber_params.get('max_iter', 2000))
+
+        self.law_model = IRMLinearRegressor(
+            loss_type='huber',
+            alpha=alpha,
+            irm_lambda=lam,
+            huber_epsilon=eps,
+            max_iter=max_iter
+        )
+
+        # Convert df/series to numpy
+        X_arr = X.values if hasattr(X, 'values') else X
+        y_arr = y.values if hasattr(y, 'values') else y
+        w_arr = sample_weight.values if hasattr(sample_weight, 'values') else sample_weight
+
+        # Filter constraints to index-based dict if feature names provided
+        constraints_idx = None
+        if monotone_constraints:
+            constraints_idx = {}
+            if hasattr(X, 'columns'):
+                cols = list(X.columns)
+                for k, v in monotone_constraints.items():
+                    if k in cols:
+                        constraints_idx[cols.index(k)] = v
+            else:
+                # Assume keys are indices if X has no columns? Or skip.
+                # Assuming user passes dict {col_idx: val} if numpy?
+                # Usually constraint_utils returns {col_name: val}.
+                pass
+
+        self.law_model.fit(X_arr, y_arr, env_indices=env_indices, sample_weight=w_arr, monotone_constraints=constraints_idx)
+
+        # 2. Compute Residuals
+        law_preds = self.law_model.predict(X_arr)
+        residuals = y_arr - law_preds
+
+        # 3. Train Fashion (ExtraTreesRegressor) on residuals
+        et_args = self.et_params.copy()
+        et_args['criterion'] = 'absolute_error' # MAE
+        et_args['n_jobs'] = 1
+
+        self.fashion_model = ExtraTreesRegressor(**et_args)
+        self.fashion_model.fit(X, residuals, sample_weight=sample_weight)
+
+        # 4. Calibration
+        fashion_preds = self.fashion_model.predict(X)
+        raw_scores = law_preds + fashion_preds
+
+        self.calibrator = IsotonicRegression(out_of_bounds='clip')
+        self.calibrator.fit(raw_scores, y_arr)
+
+        return self
+
+    def predict_proba(self, X):
+        X_arr = X.values if hasattr(X, 'values') else X
+        law_preds = self.law_model.predict(X_arr)
+        fashion_preds = self.fashion_model.predict(X)
+        raw_scores = law_preds + fashion_preds
+
+        calibrated = self.calibrator.transform(raw_scores)
+        return np.column_stack([1.0 - calibrated, calibrated])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 
 class IRM_LGBMClassifier(lgb.LGBMClassifier):
@@ -7932,24 +8054,30 @@ class LabelBasedLayer2(BaseStep):
                     }
                 })
                 
-            # --- 4. ExtraTrees ---
-            from sklearn.ensemble import ExtraTreesClassifier
-            et_params = {
-                'n_estimators': 300, 'max_depth': 6,
-                'min_samples_split': 10, 'min_samples_leaf': 5,
-                'random_state': 42, 'n_jobs': 2,
-                'class_weight': 'balanced'
+            # --- 4. Huber-ExtraTrees Hybrid (Law + Fashion) ---
+            # Phase 1: Huber (Law)
+            huber_params = {
+                'epsilon': 1.10, 'alpha': 1.0, 'irm_lambda': 10.0, 'max_iter': 2000
             }
-            # Attempt to set monotonic_cst if supported (sklearn 1.4+)
-            try:
-                model = ExtraTreesClassifier(**et_params, monotonic_cst=monotone_constraints)
-            except TypeError:
-                model = ExtraTreesClassifier(**et_params)
-                
+            # Phase 2: ExtraTrees (Fashion) on residuals
+            et_params = {
+                'n_estimators': 1000, 'max_depth': 6, 'min_samples_leaf': 10,
+                'max_features': 'sqrt', 'ccp_alpha': 0.001,
+                'min_samples_split': 20, 'min_impurity_decrease': 0.005,
+                'random_state': 42, 'n_jobs': 2
+            }
+
             candidates.append({
-                'name': 'ExtraTrees',
-                'model': model,
-                'fit_params': {}
+                'name': 'Huber_ET_Hybrid',
+                'model': HuberExtraTreesHybrid(
+                    huber_params=huber_params,
+                    et_params=et_params,
+                    irm_system=self.irm_system if self.irm_enabled else None,
+                    environment_masks=environment_masks
+                ),
+                'fit_params': {
+                    'monotone_constraints': monotone_constraints_dict
+                }
             })
 
         # 3. Sequential Race
@@ -8006,23 +8134,59 @@ class LabelBasedLayer2(BaseStep):
                 pr_auc_lift = pr_auc - prevalence
                 ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
-                # Combined score (sort by ROC-AUC but gated by PR-AUC lift)
-                # Gate: PR_AUC >= prevalence + 0.02
-                is_gated = pr_auc >= (prevalence + 0.02)
-                effective_score = auc_score if is_gated else (auc_score * 0.5) # Heavy penalty if gate failing
+                # --- Advanced Metrics (ECE, DW, BSS) ---
+                # Wrap in Isotonic for "Level Playing Field" Calibration
+                iso = IsotonicRegression(out_of_bounds='clip')
+                try:
+                    iso.fit(preds, y_val)
+                    preds_calib = iso.transform(preds)
+                except Exception:
+                    preds_calib = preds
+
+                ece = _compute_ece(y_val, preds_calib)
+                dw = _durbin_watson_residuals(y_val, preds_calib)
+
+                # Brier Skill Score (BSS)
+                bs = brier_score_loss(y_val, preds_calib)
+                bs_naive = brier_score_loss(y_val, np.full_like(y_val, y_train.mean()))
+                bss = 1.0 - (bs / bs_naive) if bs_naive > 0 else 0.0
+
+                # Feature Attribution Stability (Approximation: IR / Active Features)
+                n_active = X_val_final.shape[1]
+                try:
+                    if hasattr(model, 'feature_importances_'):
+                        n_active = np.sum(model.feature_importances_ > 0)
+                    elif hasattr(model, 'coef_'):
+                         n_active = np.sum(np.abs(model.coef_) > 0)
+                    elif name == 'Huber_ET_Hybrid':
+                         i1 = model.law_model.coef_ != 0
+                         i2 = model.fashion_model.feature_importances_ > 0
+                         n_active = np.sum(i1 | i2)
+                except Exception: pass
+                n_active = max(1, n_active)
+
+                # Feature Attribution Stability Metric (IR / Active Features)
+                # Using IC as proxy for IR since we lack returns here
+                fas = (ic / n_active) * 100 # Scaled
+
+                # Winner Selection: Score = PR-AUC * BSS
+                effective_score = pr_auc * bss
                 
                 race_results[name] = {
                     'auc': auc_score,
                     'pr_auc': pr_auc,
                     'pr_auc_lift': pr_auc_lift,
                     'ic': ic,
+                    'ece': ece,
+                    'dw': dw,
+                    'bss': bss,
+                    'fas': fas,
+                    'score': effective_score,
                     'model': model,
                     'fit_time': fit_duration,
-                    'gated': is_gated
                 }
 
-                gate_status = "✅" if is_gated else "❌"
-                tprint_info(f"      - {name.ljust(12)}: {gate_status} ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f} (Lift: {pr_auc_lift:+.4f}), IC={ic:.4f}")
+                tprint_info(f"      - {name.ljust(15)}: Score={effective_score:.4f} (PR-AUC={pr_auc:.4f}, BSS={bss:.4f}) ECE={ece:.4f} DW={dw:.4f}")
 
                 if effective_score > best_score:
                     best_score = effective_score

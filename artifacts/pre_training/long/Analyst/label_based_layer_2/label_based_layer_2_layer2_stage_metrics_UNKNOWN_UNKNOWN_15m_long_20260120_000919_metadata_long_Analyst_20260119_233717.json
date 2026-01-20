@@ -1,0 +1,17 @@
+{
+  "row_count": 25,
+  "column_count": 12,
+  "has_datetime_index": true,
+  "index_type": "DatetimeIndex",
+  "index_start": "2026-01-19 23:46:03.197913",
+  "index_end": "2026-01-20 00:09:16.812904",
+  "index_frequency": "None",
+  "index_tz": null,
+  "index_is_monotonic": true,
+  "artifact_name": "layer2_stage_metrics_UNKNOWN_UNKNOWN_15m_long_20260120_000919",
+  "artifact_type": "metrics",
+  "file_path": "artifacts/pre_training/long/Analyst/label_based_layer_2/label_based_layer_2_layer2_stage_metrics_UNKNOWN_UNKNOWN_15m_long_20260120_000919_long_Analyst_20260119_233717.parquet",
+  "file_size": 9452,
+  "timestamp": "2026-01-20T00:09:20.265218",
+  "compression": "auto"
+}

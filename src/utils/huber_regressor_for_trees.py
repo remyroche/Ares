@@ -275,7 +275,9 @@ def _fit_split_grid(
     epsilons: Tuple[float, ...],
     alphas: Tuple[float, ...],
     max_iter: int,
-    irm_lambda: float = 1.0
+    irm_lambda: float = 1.0,
+    irm_env_indices: Optional[List[np.ndarray]] = None,
+    use_irm: bool = False
 ) -> Dict[str, np.ndarray]:
     X = X_scaled_full[start:end]
     y = y_full[start:end]
@@ -562,7 +564,8 @@ def prepare_huber_teacher_outputs(
         delayed(_fit_split_grid)(
             X_tr_scaled, y_tr, w,
             start, end,
-            cfg.epsilons, cfg.alphas, cfg.max_iter, cfg.irm_lambda
+            cfg.epsilons, cfg.alphas, cfg.max_iter, cfg.irm_lambda,
+            irm_env_indices, use_irm
         )
         for (start, end) in splits
     )

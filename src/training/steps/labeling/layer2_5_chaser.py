@@ -948,7 +948,22 @@ class Layer25Chaser:
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Failed to train {m_type} student: {e}")
 
-            # 3. Prune redundant models
+            # 3. Calculate Average Ensemble performance (unpruned)
+            if self.verbose and temp_preds:
+                all_preds = np.array(list(temp_preds.values()))
+                avg_pred = np.mean(all_preds, axis=0)
+                if self.mode == "regression":
+                    avg_score = float(spearmanr(avg_pred, y_np)[0])
+                    score_name = "IC"
+                else:
+                    try:
+                        avg_score = roc_auc_score(y_np, avg_pred, sample_weight=weights)
+                    except:
+                        avg_score = 0.5
+                    score_name = "AUC"
+                tprint_info(f"   🏆 Average Ensemble {score_name}: {avg_score:.4f} (from {len(temp_preds)} students)")
+
+            # 4. Prune redundant models
             # 1. Rank by score (IC or AUC)
             sorted_models = sorted(model_scores.keys(), key=lambda x: model_scores[x], reverse=True)
 

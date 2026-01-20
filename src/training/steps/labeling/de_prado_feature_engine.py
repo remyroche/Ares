@@ -646,6 +646,16 @@ class DePradoFeatureEngine:
             else:
                 model = lgb.LGBMClassifier(**self.lgbm_params)
 
+            # === SAFEGUARD: Binarize multiclass targets for binary classification ===
+            unique_y_train = np.unique(y_train.dropna())
+            if len(unique_y_train) > 2 and not self.is_regression:
+                tprint_info(f"   ℹ️ Fold {fold+1}: Binarizing {len(unique_y_train)} classes to binary (y > 0)")
+                y_train = (y_train > 0).astype(int)
+                y_val = (y_val > 0).astype(int)
+            elif len(unique_y_train) < 2:
+                tprint_warning(f"   ⚠️ Fold {fold+1} skipped: Only {len(unique_y_train)} class(es)")
+                continue
+
             model.fit(
                 X_train_fold, y_train,
                 feature_name='auto',

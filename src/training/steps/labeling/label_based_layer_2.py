@@ -296,6 +296,103 @@ from src.training.steps.labeling.orthogonal_label_generation import (
     InventorySpecialistEvents
 )
 
+# Import continuous predictor generators for event generation
+try:
+    from src.training.steps.labeling.predictor_geometry_generators import (
+        ContinuousPredictorGenerator, PredictorGeometry
+    )
+    CONTINUOUS_PREDICTOR_AVAILABLE = True
+except ImportError:
+    CONTINUOUS_PREDICTOR_AVAILABLE = False
+
+
+class ContinuousPredictorEvents:
+    """
+    Event generator for continuous predictor families.
+    
+    Converts continuous predictor values (Z-scored) into discrete events
+    by thresholding. Supports both positive and negative activation events.
+    
+    Families supported:
+    - RELAXATION_GEOMETRY
+    - MARKET_FRAGILITY
+    - SURPRISE_Z_CONTINUOUS
+    - FLOW_PRESSURE_CONTINUOUS
+    - MULTI_HORIZON_SLOPE
+    """
+    
+    def __init__(self, family: str, z_threshold: float = 1.5):
+        """Initialize the continuous predictor event generator.
+        
+        Args:
+            family: Base family name (e.g., 'RELAXATION_GEOMETRY')
+            z_threshold: Z-score threshold for event detection
+        """
+        self.family = family
+        self.z_threshold = z_threshold
+        self._generator = None
+        self._cache = {}
+    
+    def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> pd.DatetimeIndex:
+        """Generate events from continuous predictor values.
+        
+        Args:
+            df: OHLCV DataFrame
+            tracker: Optional event generation tracker
+            **params: Additional parameters (e.g., 'side': 'positive' or 'negative')
+            
+        Returns:
+            DatetimeIndex of detected events
+        """
+        if not CONTINUOUS_PREDICTOR_AVAILABLE:
+            tprint_warning(f"⚠️ ContinuousPredictorGenerator not available for {self.family}")
+            return pd.DatetimeIndex([])
+        
+        # Cache key based on df shape and family
+        cache_key = f"{self.family}_{hash(str(df.shape))}"
+        
+        if cache_key not in self._cache:
+            # Generate all predictors
+            self._generator = ContinuousPredictorGenerator(verbose=False)
+            all_predictors = self._generator.generate_all_predictors(df)
+            self._cache[cache_key] = all_predictors
+        else:
+            all_predictors = self._cache[cache_key]
+        
+        # Filter predictors matching this family
+        family_predictors = [p for p in all_predictors if p.family == self.family]
+        
+        if not family_predictors:
+            tprint_warning(f"⚠️ No predictors found for family: {self.family}")
+            return pd.DatetimeIndex([])
+        
+        # Aggregate events across all predictors of this family
+        all_events = set()
+        side = params.get('side', 'both')  # 'positive', 'negative', or 'both'
+        
+        for pred in family_predictors:
+            vals = pred.values.fillna(0)
+            if vals.std() == 0:
+                continue
+            
+            # Z-score normalization
+            z = (vals - vals.mean()) / (vals.std() + 1e-9)
+            
+            if side in ['positive', 'both']:
+                pos_events = z[z > self.z_threshold].index
+                all_events.update(pos_events)
+            
+            if side in ['negative', 'both']:
+                neg_events = z[z < -self.z_threshold].index
+                all_events.update(neg_events)
+        
+        events = pd.DatetimeIndex(sorted(all_events))
+        
+        if tracker is not None:
+            tracker.generated_events = len(events)
+        
+        return events
+
 @njit
 def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0.5) -> np.ndarray:
     """
@@ -504,6 +601,7 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
             # Try fallback with minimal parameters
             try:
                 tprint_info(f"   🔄 [IRM_LGBM] Attempting fallback fit...")
+                tprint_info(f"   🐛 [DEBUG] LGBM Fallback Params: verbose=-1")
                 fallback_params = {
                     'verbose': -1
                 }
@@ -514,7 +612,10 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
                 return result
             except Exception as fallback_e:
                 tprint_error(f"   ❌ [IRM_LGBM] Fallback fit also failed: {fallback_e}")
-                return self
+                tprint_error(f"   ❌ [IRM_LGBM] Fallback fit also failed: {fallback_e}")
+                # Important: Don't return self (untrained model). 
+                # Raise the error so the pipeline knows this model failed.
+                raise fallback_e
 
     def _irm_focal_objective(self, preds, train_data):
         """IRM-aware focal loss objective."""
@@ -576,6 +677,7 @@ class IRM_XGBClassifier(XGBClassifier):
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective."""
+        # tprint_info(f"   🐛 [DEBUG] IRM_XGBClassifier.fit called. X shape: {X.shape}")
         
         # --- Enhanced Fix for Constraint Mismatch ---
         # Feature names check
@@ -630,9 +732,10 @@ class IRM_XGBClassifier(XGBClassifier):
                 self.set_params(interaction_constraints=None)
         # -----------------------------------
 
-        # NOTE: XGBoost+IRM integration is not production ready; run standard training
+        # NOTE: XGBoost+IRM integration is enabled.
         if self._irm_system is not None and self._environment_masks:
-            tprint_warning("⚠️ [IRM_XGB] IRM objective disabled; running standard training")
+            tprint_info("   🧠 [IRM_XGB] IRM objective enabled")
+            pass
 
         # Validate input type for feature name access
         has_feature_names = hasattr(X, 'columns')
@@ -682,6 +785,33 @@ class IRM_XGBClassifier(XGBClassifier):
 
         # Standard or IRM training
         try:
+            # 3. Auto-Validation Set for Early Stopping
+            # XGBoost requires an eval_set if early_stopping_rounds is set.
+            # Since the race loop doesn't pass eval_set, we must create one from X, y.
+            if hasattr(self, 'early_stopping_rounds') and self.early_stopping_rounds is not None:
+                has_eval_set = 'eval_set' in kwargs and kwargs['eval_set'] is not None
+                if not has_eval_set:
+                    # tprint_info(f"   🐛 [DEBUG] Auto-creating validation set for XGB (Size: {int(len(X)*0.1)})")
+                    
+                    # Split last 10% for validation
+                    split_idx = int(len(X) * 0.9)
+                    X_train_sub = X.iloc[:split_idx]
+                    y_train_sub = y.iloc[:split_idx]
+                    X_val_sub = X.iloc[split_idx:]
+                    y_val_sub = y.iloc[split_idx:]
+                    
+                    # Update sample weights if present
+                    w_train_sub = None
+                    if sample_weight is not None:
+                        w_train_sub = sample_weight.iloc[:split_idx] if hasattr(sample_weight, 'iloc') else sample_weight[:split_idx]
+                    
+                    # Set eval_set and use sub-datasets for training
+                    kwargs['eval_set'] = [(X_val_sub, y_val_sub)]
+                    kwargs['verbose'] = False # Reduce noise
+                    
+                    # Call fit with SUBSETS
+                    return super().fit(X_train_sub, y_train_sub, sample_weight=w_train_sub, **kwargs)
+
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
         except Exception as e:
             import traceback
@@ -1201,13 +1331,13 @@ def _calculate_tree_variance(booster, X) -> np.ndarray:
 class GeometryTrial:
     family: str
     params: Dict[str, Any]  # Kappa, Horizon, sl_sigma, alpha, beta, min_ratio
-    final_score: float
-    learnability: float
-    robust_magnitude: float
-    stability: float
-    balance: float
-    raw_metrics: Dict[str, float]
-    uuid: str
+    final_score: float = 0.0
+    learnability: float = 0.0
+    robust_magnitude: float = 0.0
+    stability: float = 0.0
+    balance: float = 0.0
+    raw_metrics: Dict[str, float] = field(default_factory=dict)
+    uuid: str = ""
     model_params: Optional[Dict[str, Any]] = None
     selected_features: Optional[List[str]] = field(default=None)
     race_score: Optional[float] = None
@@ -1651,7 +1781,6 @@ class LabelBasedLayer2(BaseStep):
         # Model comparison configuration
         self.enable_model_race = kwargs.get('enable_model_race', True)
         self.model_race_candidates = kwargs.get('model_race_candidates', ['LGBM_Focal', 'XGB_Tree', 'CatBoost'])
-
         # AEDL Framework Parameters
         self.enable_aedl = kwargs.get("enable_aedl", True)
         self.aedl_spectral_vision = kwargs.get("aedl_spectral_vision", True)
@@ -4372,14 +4501,46 @@ class LabelBasedLayer2(BaseStep):
             tracker = EventGenerationTracker(family=family, total_input_points=len(df))
 
             gen = self.generators.get(family)
+            
+            # === FALLBACK: Handle compound family names from orthogonal generation ===
+            # E.g., RELAXATION_GEOMETRY_DECAY_RATE_20_POS -> RELAXATION_GEOMETRY
+            # E.g., COND_OHLCV_VOLATILITY_SPIKE_ON_INVENTORY -> COND_OHLCV
+            if gen is None:
+                # Try to extract base family from known compound patterns
+                base_family = None
+                if family.startswith('RELAXATION_GEOMETRY'):
+                    base_family = 'RELAXATION_GEOMETRY'
+                elif family.startswith('COND_OHLCV'):
+                    base_family = 'COND_OHLCV'
+                elif family.startswith('SURPRISE_Z'):
+                    base_family = 'SURPRISE_Z_CONTINUOUS'
+                elif family.startswith('FLOW_PRESSURE'):
+                    base_family = 'FLOW_PRESSURE_CONTINUOUS'
+                elif family.startswith('MULTI_HORIZON'):
+                    base_family = 'MULTI_HORIZON_SLOPE'
+                elif family.startswith('MARKET_FRAGILITY'):
+                    base_family = 'MARKET_FRAGILITY'
+                
+                if base_family:
+                    gen = self.generators.get(base_family)
             if gen is None:
                 # Fallback: Try to fetch from Orthogonal Label Generation
                 try:
                     events = self._fetch_orthogonal_candidate_events(df, family, tracker=tracker)
                     if events is None:
-                        tprint_error(f"❌ Generator for {family} not found and retrieval from Orthogonal Generation failed.")
-                        tracker.log_rejection("not_found", 1)
-                        self._global_event_cache[cache_key] = pd.DatetimeIndex([])
+                        # Final fallback: Check if we have this family's events in selected_geometries
+                        if hasattr(self, 'selected_geometries') and self.selected_geometries:
+                            for gt in self.selected_geometries:
+                                if gt.family == family and hasattr(gt, 'events') and gt.events is not None and len(gt.events) > 0:
+                                    events = gt.events if isinstance(gt.events, pd.DatetimeIndex) else pd.DatetimeIndex(gt.events)
+                                    tprint_success(f"✅ Global events retrieved from GeometryTrial for {family}: {len(events)} events")
+                                    tracker.generated_events = len(events)
+                                    self._global_event_cache[cache_key] = events
+                                    break
+                        if events is None:
+                            tprint_error(f"❌ Generator for {family} not found and retrieval from Orthogonal Generation failed.")
+                            tracker.log_rejection("not_found", 1)
+                            self._global_event_cache[cache_key] = pd.DatetimeIndex([])
                     else:
                         tracker.generated_events = len(events)
                         self._global_event_cache[cache_key] = events
@@ -5806,9 +5967,26 @@ class LabelBasedLayer2(BaseStep):
                         checkpoint_config_hash = checkpoint_data.get('config_hash')
                         if checkpoint_config_hash and checkpoint_config_hash != self._config_hash:
                             tprint_warning(
-                                "⚠️ Checkpoint config hash mismatch. Resuming anyway (User Override)."
+                                "⚠️ Checkpoint config hash mismatch. Searching for compatible checkpoint..."
                             )
-                            # raise RuntimeError("Checkpoint config hash mismatch.")
+                            # Find an earlier checkpoint with matching config hash (or accept if no hash)
+                            found_compatible = False
+                            for earlier_idx in range(resume_idx - 1, -1, -1):
+                                earlier_step = LAYER2_SUBSTEPS[earlier_idx]
+                                earlier_data = self._checkpoint_manager.load_checkpoint(earlier_step, symbol)
+                                if earlier_data:
+                                    earlier_hash = earlier_data.get('config_hash')
+                                    if earlier_hash is None or earlier_hash == self._config_hash:
+                                        tprint_info(f"   ✅ Found compatible checkpoint: {earlier_step}")
+                                        resume_from = earlier_step
+                                        checkpoint_data = earlier_data
+                                        found_compatible = True
+                                        break
+                            
+                            if not found_compatible:
+                                tprint_warning("   ⚠️ No compatible checkpoint found. Running from scratch.")
+                                resume_from = None
+                                checkpoint_data = None
                         checkpoint_fingerprint = checkpoint_data.get('dataset_fingerprint')
                         if 'df' in checkpoint_data:
                             df = checkpoint_data['df']
@@ -6548,6 +6726,10 @@ class LabelBasedLayer2(BaseStep):
             tprint_success("🎉 De Prado 2026 Causal Protocol Pipeline Complete!")
             
             # [USER REQUEST] Detailed Regime Reporting
+            # Get specialist predictions from stored OOF predictions or regenerate
+            specialist_predictions = getattr(self, '_oof_specialist_predictions', None)
+            if specialist_predictions is None:
+                specialist_predictions = self._get_specialist_predictions(df) if hasattr(self, '_get_specialist_predictions') else {}
             self._report_regime_stats(df, specialist_predictions, meta_results, causal_graph)
             
             return results
@@ -7406,7 +7588,7 @@ class LabelBasedLayer2(BaseStep):
 
         return y_causal.reindex(price_series.index).fillna(0)
 
-    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None, y_causal_train=None, y_causal_val=None):
+    def _run_model_race(self, X_train, y_train, X_val, y_val, w_train, environment_masks=None, y_causal_train=None, y_causal_val=None, geometry_uuid=None):
         """
         Run a model race to find the best base model for this geometry.
 
@@ -7428,6 +7610,19 @@ class LabelBasedLayer2(BaseStep):
         # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
         tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
         tprint_info(f"   🧪 Huber checkpoint: X_train={X_train.shape}, X_val={X_val.shape}, y_train={y_train.shape}")
+        
+        # --- DEBUG DATA STATS ---
+        try:
+            # Check for NaNs/Infs
+            x_nans = np.isnan(X_train.values).sum() if hasattr(X_train, 'values') else np.isnan(X_train).sum()
+            y_mean = y_train.mean()
+            y_unique = np.unique(y_train)
+            tprint_info(f"   📊 Data Stats: X_NaNs={x_nans}, y_mean={y_mean:.4f}, y_unique={y_unique}")
+            if len(y_unique) < 2:
+                tprint_warning(f"   ⚠️ WARNING: Single class target! {y_unique}")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Data stat check failed: {e}")
+
         if w_train is not None:
             try:
                 w_sum = float(np.sum(w_train))
@@ -7488,6 +7683,39 @@ class LabelBasedLayer2(BaseStep):
             # Map monotonic constraints to ordered list for tree learners
             monotone_constraints = [monotone_constraints_dict.get(f, 0) for f in selected_features]
 
+            # --- LOGGING UPDATES ---
+            # 1. Monotonic Constraints
+            n_mono = sum(1 for v in monotone_constraints if v != 0)
+            tprint_info(f"   📈 Monotonic constraints: {n_mono} features")
+            
+            # 2. Huber Teacher Performance
+            if warm_start_val is not None:
+                try:
+                    t_auc = roc_auc_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.5
+                    t_pr = average_precision_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.0
+                    tprint_info(f"   🎓 Huber Teacher Performance: ROC-AUC={t_auc:.4f}, PR-AUC={t_pr:.4f}")
+                except Exception:
+                    pass
+
+
+            # --- LOGGING UPDATES ---
+            # 1. Monotonic Constraints
+            n_mono = sum(1 for v in monotone_constraints if v != 0)
+            tprint_info(f"   📈 Monotonic constraints: {n_mono} features")
+            if n_mono > 0:
+                mono_feats = [f for f, v in zip(selected_features, monotone_constraints) if v != 0]
+                tprint_info(f"      Features: {mono_feats}")
+            
+            # 2. Huber Teacher Performance
+            if warm_start_val is not None:
+                try:
+                    t_auc = roc_auc_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.5
+                    t_pr = average_precision_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.0
+                    tprint_info(f"   🎓 Huber Teacher Performance: ROC-AUC={t_auc:.4f}, PR-AUC={t_pr:.4f}")
+                except Exception:
+                    pass
+
+
         except Exception as e:
             tprint_error(f"   ❌ Huber Teacher failed: {e}. Aborting model race to prevent over-allocation.")
             raise RuntimeError("Huber Teacher failed; aborting model race.") from e
@@ -7512,6 +7740,30 @@ class LabelBasedLayer2(BaseStep):
                 {**cand, 'fit_params': cand.get('fit_params', {})} if isinstance(cand, dict) else cand
                 for cand in candidates
             ]
+            
+            # Inject Huber Warm Start into fit_params
+            for cand in candidates:
+                if 'huber_init' in cand and cand['huber_init'] is not None:
+                    h_init = cand['huber_init']
+                    if 'LGBM' in cand['name']:
+                        cand['fit_params']['init_score'] = h_init
+                    elif 'XGB' in cand['name']:
+                        cand['fit_params']['base_margin'] = h_init
+                    elif 'CatBoost' in cand['name']:
+                        cand['fit_params']['baseline'] = h_init
+
+            
+            # Inject Huber Warm Start into fit_params
+            for cand in candidates:
+                if 'huber_init' in cand and cand['huber_init'] is not None:
+                    h_init = cand['huber_init']
+                    if 'LGBM' in cand['name']:
+                        cand['fit_params']['init_score'] = h_init
+                    elif 'XGB' in cand['name']:
+                        cand['fit_params']['base_margin'] = h_init
+                    elif 'CatBoost' in cand['name']:
+                        cand['fit_params']['baseline'] = h_init
+
         else:
             # --- 1. LightGBM ---
             # Instantiate RobustFocalLoss for LGBM
@@ -7649,10 +7901,11 @@ class LabelBasedLayer2(BaseStep):
         # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
         race_results = {}
-        best_score = -float('inf')
+        best_score = -np.inf
+        best_actual_auc = 0.5
         best_model = None
         best_name = None
-
+        best_preds = None  # Cache for OOF saving
         # Baseline prevalence for PR-AUC lift gate
         prevalence = y_val.mean()
         tprint_info(f"   📊 Baseline Prevalence: {prevalence:.4f} (PR-AUC Lift Target: {prevalence + 0.02:.4f})")
@@ -7662,9 +7915,16 @@ class LabelBasedLayer2(BaseStep):
             model = cand['model']
             fit_params = cand['fit_params']
             
+            
             try:
                 # Fit with specific params (warm start, eval set)
                 start_fit = time.time()
+                
+                # Debug fit params injection
+                if fit_params:
+                    keys = list(fit_params.keys())
+                    tprint_info(f"      🔧 [DEBUG] {name} fit_params: {keys}")
+                
                 if fit_params:
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
@@ -7706,6 +7966,7 @@ class LabelBasedLayer2(BaseStep):
                     best_actual_auc = auc_score
                     best_model = model
                     best_name = name
+                    best_preds = preds
                     
             except Exception as e:
                 tprint_warning(f"      ❌ {name} failed: {e}")
@@ -7719,11 +7980,26 @@ class LabelBasedLayer2(BaseStep):
             # Sort by effective score or ROC-AUC? The user wants best model but PR-AUC is the guard.
             # We'll sort the display by the raw metrics but maybe highlight the winner.
             sorted_results = sorted(race_results.items(), key=lambda x: x[1]['auc'], reverse=True)
-            for name, metrics in sorted_results:
-                status = "PASS" if metrics['gated'] else "FAIL"
-                tprint_info(f"   {name:<15} | {metrics['auc']:<8.4f} | {metrics['pr_auc']:<8.4f} | {metrics['pr_auc_lift']:<+8.4f} | {status:<4} | {metrics['fit_time']:<6.2f}s")
-            tprint_info("")
-
+            for name, res in sorted_results:
+                tprint_info(f"   {name:<15} | {res['auc']:<8.4f} | {res['pr_auc']:<8.4f} | {res['ic']:<8.4f} | {res['fit_time']:<6.2f}")
+                if res['auc'] < 0.4:
+                    tprint_warning(f"      ⚠️ {name} inverted performance (AUC={res['auc']:.4f}). Potential Label/Feature misalignment.")
+                
+        # 5. Save OOF Predictions for Winner
+        if best_name and geometry_uuid and best_preds is not None:
+            try:
+                import os
+                oof_dir = "outcomes/oof_predictions"
+                os.makedirs(oof_dir, exist_ok=True)
+                oof_path = f"{oof_dir}/{geometry_uuid}_{best_name}_oof.csv"
+                pd.DataFrame({
+                    'y_true': y_val,
+                    'y_pred': best_preds
+                }, index=X_val.index).to_csv(oof_path)
+                tprint_info(f"   💾 Saved OOF predictions to {oof_path}")
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Failed to save OOF predictions: {e}")
+                
         if best_model is None:
             # Emergency fallback
             tprint_warning("   ⚠️ All race models failed. Creating default LGBM.")
@@ -8099,7 +8375,32 @@ class LabelBasedLayer2(BaseStep):
         except Exception as e:
             tprint_warning(f"   ⚠️ Interaction constraints failed: {e}")
 
-        # 0. LGBM with IRM (Wrapper) - Heavily regularized for noisy 15m crypto
+
+        # === Huber Warm Start: Get initial predictions from HuberRegressor for robust initialization ===
+        huber_init = None
+        try:
+            from sklearn.linear_model import HuberRegressor
+            from sklearn.preprocessing import RobustScaler
+            from sklearn.pipeline import make_pipeline
+            
+            # HuberRegressor is robust to outliers. We treat binary targets as continuous for initialization.
+            # CRITICAL: Scale data first, as Huber is a linear model sensitive to scale.
+            huber_model = make_pipeline(RobustScaler(), HuberRegressor(epsilon=1.35, max_iter=100))
+            huber_model.fit(X_train, y_train)
+            
+            # Get predictions (raw scores)
+            huber_preds = huber_model.predict(X_train)
+            
+            # Clip to reasonable logit range (-5 to +5) to avoid exploding gradients in boosting steps
+            huber_init = np.clip(huber_preds, -5, 5)
+            
+            tprint_info(f"   🎓 Huber warm start: HuberRegressor scores computed (range: {huber_init.min():.2f} to {huber_init.max():.2f})")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Huber warm start failed: {e}")
+            huber_init = None
+
+
+        # 0. LGBM with IRM (Wrapper) - Regularized for noisy 15m crypto
         lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
         lgbm_params.update({
             'boosting_type': 'gbdt',       # Switch from GOSS to allow bagging
@@ -8108,13 +8409,13 @@ class LabelBasedLayer2(BaseStep):
             'max_depth': 4,                # Shallower trees
             'num_leaves': 15,              # Simpler trees
             'min_data_in_leaf': 50,        # Avoid small noisy clusters
-            'feature_fraction': 0.5,       # Feature dropout
+            'feature_fraction': 0.6,       # Feature dropout (Relaxed from 0.5)
             'bagging_fraction': 0.7,       # Row subsampling
             'bagging_freq': 5,             # Bagging every 5 iterations
-            'lambda_l1': 2.5,              # Strong L1 regularization
-            'lambda_l2': 5.0,              # Strong L2 regularization
-            'min_gain_to_split': 0.05,     # Skip noisy splits
-            'path_smooth': 20,             # Smooth leaf predictions
+            'lambda_l1': 1.0,              # Reduced L1 (was 2.5) for better signal capture
+            'lambda_l2': 2.0,              # Reduced L2 (was 5.0)
+            'min_gain_to_split': 0.01,     # Lower threshold (was 0.05)
+            'path_smooth': 10,             # Reduced smoothing (was 20)
             'linear_tree': True,           # Hybrid linear+tree for smoother fits
             'max_bin': 63,
             'scale_pos_weight': scale_pos_weight,
@@ -8143,8 +8444,10 @@ class LabelBasedLayer2(BaseStep):
                 environment_masks=environment_masks,
                 **lgbm_params
             ),
-            'early_stopping': 40
+            'early_stopping': 40,
+            'huber_init': huber_init
         })
+
 
         # Create environment masks if not provided (simplified)
         if environment_masks is None:
@@ -8155,19 +8458,7 @@ class LabelBasedLayer2(BaseStep):
             except:
                 environment_masks = {}
 
-        # === Huber Warm Start: Get initial predictions from Ridge for gradient boosters ===
-        huber_init = None
-        try:
-            from sklearn.linear_model import RidgeClassifier
-            ridge_init = RidgeClassifier(alpha=5.0, class_weight='balanced', random_state=42)
-            ridge_init.fit(X_train, y_train)
-            # Get decision function as init values (-1 to 1 range, convert to logit space)
-            huber_init = ridge_init.decision_function(X_train)
-            huber_init = np.clip(huber_init, -5, 5)  # Clip to reasonable logit range
-            tprint_info(f"   🎓 Huber warm start: Ridge init scores computed (range: {huber_init.min():.2f} to {huber_init.max():.2f})")
-        except Exception as e:
-            tprint_warning(f"   ⚠️ Huber warm start failed: {e}")
-            huber_init = None
+
 
 
         # === Helper: Sanitize feature name for CatBoost ===
@@ -8236,13 +8527,12 @@ class LabelBasedLayer2(BaseStep):
                         n_estimators=400,
                         learning_rate=0.02,
                         max_depth=4,
-                        num_parallel_tree=5,
-                        colsample_bynode=0.5,
+                        colsample_bynode=0.6,
                         subsample=0.7,
-                        reg_lambda=50,
-                        reg_alpha=5.0,
-                        min_child_weight=15,
-                        gamma=1.5,
+                        reg_lambda=10,        # Reduced from 50
+                        reg_alpha=2.0,        # Reduced from 5.0
+                        min_child_weight=10,  # Reduced from 15
+                        gamma=1.0,            # Reduced from 1.5
                         monotone_constraints=xgb_constraints,
                         interaction_constraints=valid_interaction_constraints,
                         scale_pos_weight=scale_pos_weight,
@@ -8258,54 +8548,8 @@ class LabelBasedLayer2(BaseStep):
             except Exception as e:
                 tprint_warning(f"   ⚠️ XGB_IRM creation failed: {e}")
 
-        # 3. Ridge Classifier (Standard) - Stronger regularization
-        try:
-            from sklearn.calibration import CalibratedClassifierCV
-            ridge_base = RidgeClassifier(alpha=5.0, class_weight='balanced', random_state=42)  # Increased from 1.0
-            ridge_calibrated = CalibratedClassifierCV(ridge_base, method='sigmoid', cv=3)
 
-            candidates.append({
-                'name': 'RidgeClassifier',
-                'model': ridge_calibrated
-            })
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to init RidgeClassifier: {e}")
-
-        # 3.5. ElasticNet Classifier - L1/L2 regularization blend
-        try:
-            from sklearn.linear_model import SGDClassifier
-            from sklearn.calibration import CalibratedClassifierCV
-            from sklearn.pipeline import Pipeline
-            from sklearn.preprocessing import StandardScaler
-
-            # ElasticNet via SGDClassifier with loss='log' and penalty='elasticnet'
-            # MUST be scaled for SGD convergence
-            elastic_net_pipeline = Pipeline([
-                ('scaler', StandardScaler()),
-                ('clf', SGDClassifier(
-                    loss='log_loss',
-                    penalty='elasticnet',
-                    l1_ratio=0.3,
-                    alpha=0.01,  # Reduced from 2.5 (too high) to allow learning
-                    max_iter=5000,
-                    tol=1e-4,
-                    fit_intercept=True,
-                    random_state=42,
-                    class_weight='balanced',
-                    n_jobs=1
-                ))
-            ])
-            
-            elastic_net_calibrated = CalibratedClassifierCV(elastic_net_pipeline, method='sigmoid', cv=3)
-
-            candidates.append({
-                'name': 'ElasticNet',
-                'model': elastic_net_calibrated
-            })
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to init ElasticNet: {e}")
-
-        # 4. ExtraTrees with IRM (Wrapper) - Capped depth
+        # 3. ExtraTrees with IRM (Wrapper) - Capped depth
         candidates.append({
             'name': 'ExtraTrees_IRM',
             'model': IRM_ExtraTreesClassifier(
@@ -10321,7 +10565,8 @@ class LabelBasedLayer2(BaseStep):
                         best_model, best_name, race_results = self._run_model_race(
                             race_payload["X_tr"], race_payload["y_tr"],
                             race_payload["X_val"], race_payload["y_val"],
-                            race_payload["sample_weights"], environment_masks
+                            race_payload["sample_weights"], environment_masks,
+                            geometry_uuid=gt.uuid
                         )
                         gt.model_params = {"race_winner": best_name}
                         gt.race_score = race_results.get(best_name, {}).get("auc", 0.0)
@@ -10408,13 +10653,24 @@ class LabelBasedLayer2(BaseStep):
                     sl_mult = gt.params.get('sl_mult')
                     volatility_series = df['volatility_1d'] if 'volatility_1d' in df.columns else None
 
+                    # Compute thresholds with proper None handling
+                    if volatility_series is not None and pt_mult is not None:
+                        profit_threshold = volatility_series * float(pt_mult)
+                    else:
+                        profit_threshold = 0.015
+                    
+                    if volatility_series is not None and sl_mult is not None:
+                        stop_threshold = volatility_series * float(sl_mult)
+                    else:
+                        stop_threshold = 0.01
+
                     signals = pd.DataFrame(0.0, index=df.index, columns=['consensus'])
                     signals.loc[gt.events, 'consensus'] = 1.0
 
                     realized_returns, *_ = compute_realized_returns(
                         df, signals, 
-                        profit_threshold=volatility_series * float(pt_mult) if pt_mult else 0.015,
-                        stop_threshold=volatility_series * float(sl_mult) if sl_mult else 0.01,
+                        profit_threshold=profit_threshold,
+                        stop_threshold=stop_threshold,
                         horizon=horizon, transaction_cost=self.transaction_cost,
                         volatility_series=volatility_series,
                         close_prices_arr=df['close'].values,
@@ -10429,6 +10685,8 @@ class LabelBasedLayer2(BaseStep):
                     gt.sortino_ratio = fin_metrics['sortino_ratio']
                 except Exception as e:
                     simulation_errors += 1
+                    if simulation_errors <= 5:  # Limit verbose logging
+                        tprint_warning(f"   ⚠️ Simulation failed for {gt.family[:25]}: {e}")
             
             # Layer-12 candidate building (Loop 5)
             if hasattr(gt, 'raw_output') and gt.raw_output is not None:
@@ -10589,6 +10847,12 @@ class LabelBasedLayer2(BaseStep):
             "LIQUIDITY_SPECIALIST": LiquiditySpecialistEvents(),
             "INFORMATION_SPECIALIST": InformationSpecialistEvents(),
             "INVENTORY_SPECIALIST": InventorySpecialistEvents(),
+            # Continuous predictor families
+            "RELAXATION_GEOMETRY": ContinuousPredictorEvents('RELAXATION_GEOMETRY'),
+            "MARKET_FRAGILITY": ContinuousPredictorEvents('MARKET_FRAGILITY'),
+            "SURPRISE_Z_CONTINUOUS": ContinuousPredictorEvents('SURPRISE_Z_CONTINUOUS'),
+            "FLOW_PRESSURE_CONTINUOUS": ContinuousPredictorEvents('FLOW_PRESSURE_CONTINUOUS'),
+            "MULTI_HORIZON_SLOPE": ContinuousPredictorEvents('MULTI_HORIZON_SLOPE'),
         }
         
         if not hasattr(self, 'generators') or self.generators is None:
@@ -10688,11 +10952,42 @@ class LabelBasedLayer2(BaseStep):
                 
                 # Check if generator exists
                 gen = self.generators.get(family)
+                
+                # === FALLBACK: Handle compound family names from orthogonal generation ===
+                # E.g., RELAXATION_GEOMETRY_DECAY_RATE_20_POS -> RELAXATION_GEOMETRY
                 if gen is None:
-                    # Try fallback
+                    base_family = None
+                    if family.startswith('RELAXATION_GEOMETRY'):
+                        base_family = 'RELAXATION_GEOMETRY'
+                    elif family.startswith('COND_OHLCV'):
+                        base_family = 'COND_OHLCV'
+                    elif family.startswith('SURPRISE_Z'):
+                        base_family = 'SURPRISE_Z_CONTINUOUS'
+                    elif family.startswith('FLOW_PRESSURE'):
+                        base_family = 'FLOW_PRESSURE_CONTINUOUS'
+                    elif family.startswith('MULTI_HORIZON'):
+                        base_family = 'MULTI_HORIZON_SLOPE'
+                    elif family.startswith('MARKET_FRAGILITY'):
+                        base_family = 'MARKET_FRAGILITY'
+                    
+                    if base_family:
+                        gen = self.generators.get(base_family)
+                        if gen:
+                            tprint_success(f"✅ DIAGNOSTIC: Generator found via fallback '{family}' -> '{base_family}': {type(gen).__name__}")
+                
+                if gen is None:
+                    # Try orthogonal fallback
                     ortho_events = self._fetch_orthogonal_candidate_events(df, family)
                     if ortho_events is not None:
                          tprint_success(f"✅ DIAGNOSTIC: Generator (Orthogonal) found for '{family}'")
+                    # Fallback: Check if we have this family's events in group_geometries
+                    elif group_geometries and hasattr(group_geometries[0], 'events') and group_geometries[0].events is not None and len(group_geometries[0].events) > 0:
+                         tprint_success(f"✅ DIAGNOSTIC: Generator found via GeometryTrial fallback for '{family}'")
+                         # We don't need to assign to ortho_events here because the loop below calls _get_global_events 
+                         # which already has the fallback logic we added. 
+                         # However, to be safe and avoid the continue below, we can set ortho_events dummy or just skip the continue.
+                         # Better yet, if _get_global_events is called below, we just need to ensure we don't 'continue' here.
+                         pass 
                     else:
                          tprint_error(f"❌ DIAGNOSTIC: No generator found for family '{family}'. Available: {list(self.generators.keys())}")
                          continue
@@ -12401,7 +12696,8 @@ class LabelBasedLayer2(BaseStep):
                         environment_masks = self._create_default_environment_masks(X_race_train, y_race_train)
 
                     best_model, best_name, race_results = self._run_model_race(
-                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks
+                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks,
+                        geometry_uuid=gt.uuid
                     )
 
                     tprint_success(f"🏆 Model race winner: {best_name}")

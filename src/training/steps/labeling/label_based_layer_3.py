@@ -9,6 +9,15 @@ import pandas as pd
 import numpy as np
 import logging
 
+# Import tprint functions
+try:
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_success(msg): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+
 # Import modular Layer 3 implementation
 try:
     from src.training.steps.labeling.layer3.checkpoint_aware_layer3 import layer3_analyst_lgbm_checkpoint_aware as layer3_analyst_orf
@@ -58,8 +67,10 @@ def layer3_analyst_lgbm(
     Returns:
         Tuple of (enhanced DataFrame, models dictionary)
     """
+    tprint_info("🔄 Layer 3 Wrapper: Starting execution...")
+
     if layer3_analyst_orf is not None:
-        return layer3_analyst_orf(
+        result = layer3_analyst_orf(
             oof_df=oof_df,
             base_model_cols=base_model_cols,
             target_col=target_col,
@@ -77,8 +88,12 @@ def layer3_analyst_lgbm(
             force_restart=force_restart,
             keep_earlier_checkpoints=keep_earlier_checkpoints
         )
+        tprint_success("✅ Layer 3 Wrapper: Execution completed successfully")
+        return result
     else:
-        raise ImportError("❌ Layer 3 modular implementation not available!")
+        error_msg = "❌ Layer 3 modular implementation not available!"
+        tprint_error(error_msg)
+        raise ImportError(error_msg)
 
 # Export the main function
 __all__ = ['layer3_analyst_lgbm']

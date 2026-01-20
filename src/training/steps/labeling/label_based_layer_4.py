@@ -213,23 +213,69 @@ class SimpleMultiModelRiskEngine:
         )
         return pd.Series(weights_array, index=abs_returns.index)
 
-    def _calculate_learnability_weights(self, X, residuals):
+    def _calculate_learnability_weights(self, X, residuals, env_indices=None):
         """
         Scout Pass: Uses a smaller forest to determine sample weights
         based on prediction consensus (inverse of variance).
+        If env_indices is provided, performs estimation per regime.
         """
-        scout = ExtraTreesRegressor(n_estimators=100, max_depth=4, bootstrap=True, n_jobs=-1, random_state=42)
-        scout.fit(X, residuals)
+        # Ensure X is numpy
+        X_np = X.values if hasattr(X, "values") else X
+        res_np = residuals.values if hasattr(residuals, "values") else residuals
 
-        # Get variance across the 100 trees
-        # High variance = Low consensus = Low learnability
-        tree_preds = np.array([tree.predict(X) for tree in scout.estimators_])
-        variance = np.var(tree_preds, axis=0)
+        weights = np.zeros(len(res_np))
 
-        # Weight = 1 / (1 + Variance)
-        weights = 1.0 / (1.0 + variance)
-        # Normalize
-        return (weights - weights.min()) / (weights.max() - weights.min() + 1e-9)
+        # Helper to get fresh scout
+        def get_scout():
+             return ExtraTreesRegressor(n_estimators=100, max_depth=4, bootstrap=True, n_jobs=-1, random_state=42)
+
+        if env_indices is not None:
+            # Per-regime
+            unique_regimes = np.unique(env_indices)
+            tprint_info(f"⚖️ Learnability Scout: Training per-regime ({len(unique_regimes)} regimes)...")
+
+            for regime in unique_regimes:
+                if regime == -1: continue # Skip noise label if any
+                mask = (env_indices == regime)
+                if np.sum(mask) < 20:
+                    # Fallback for tiny regimes: use global mean weight later (zeros)
+                    continue
+
+                scout = get_scout()
+                X_sub = X_np[mask]
+                y_sub = res_np[mask]
+
+                scout.fit(X_sub, y_sub)
+
+                # Get variance on subset
+                tree_preds = np.array([tree.predict(X_sub) for tree in scout.estimators_])
+                variance = np.var(tree_preds, axis=0)
+
+                # Local weights
+                w_local = 1.0 / (1.0 + variance)
+                weights[mask] = w_local
+
+            # Handle unassigned (zeros) with mean of assigned
+            if np.any(weights == 0):
+                mean_w = np.mean(weights[weights > 0]) if np.any(weights > 0) else 1.0
+                weights[weights == 0] = mean_w
+
+        else:
+            # Global
+            scout = get_scout()
+            scout.fit(X_np, res_np)
+            tree_preds = np.array([tree.predict(X_np) for tree in scout.estimators_])
+            variance = np.var(tree_preds, axis=0)
+            weights = 1.0 / (1.0 + variance)
+
+        # Normalize (0 to 1)
+        w_min, w_max = weights.min(), weights.max()
+        if w_max > w_min:
+             weights = (weights - w_min) / (w_max - w_min + 1e-9)
+        else:
+             weights = np.ones_like(weights)
+
+        return weights
     
     def _extract_layer3_prob_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -454,11 +500,13 @@ class SimpleMultiModelRiskEngine:
 
         # --- Dual Chaser Audit & Feature Generation ---
         # 1. Fit GMM to identify regimes (if data available)
+        env_indices = None
         try:
             gmm = StructuralRegimeGMM(n_regimes=4)
-            env_indices, _ = gmm.fit_predict(df)
+            gmm_indices, _ = gmm.fit_predict(df)
 
-            if env_indices and len(env_indices) >= 2:
+            if gmm_indices is not None and len(gmm_indices) >= 2:
+                env_indices = gmm_indices # Capture for learnability scout
                 tprint_info("🏃 Training Dual Chaser Audit (IRM vs Ridge) with OOF...")
 
                 # Filter out performance features for Chasers to avoid leakage
@@ -491,7 +539,7 @@ class SimpleMultiModelRiskEngine:
                 self.stable_chaser, self.aggressive_chaser, oof_stable, oof_agg = train_dual_chaser_audit(
                     X_chaser_scaled,
                     y_true.values,
-                    env_indices,
+                    env_indices, # Use captured indices
                     cv_splits=cv_splits
                 )
 
@@ -604,7 +652,7 @@ class SimpleMultiModelRiskEngine:
 
         # Calculate Residuals & Learnability Weights
         residuals = y_true - warm_start_train
-        learnability_weights = self._calculate_learnability_weights(X_pruned, residuals)
+        learnability_weights = self._calculate_learnability_weights(X_pruned, residuals, env_indices=env_indices)
 
         # Combine weights
         # Ensure weights series aligns with learnability_weights (which is numpy array)

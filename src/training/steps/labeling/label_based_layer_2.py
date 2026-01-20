@@ -386,7 +386,7 @@ class ContinuousPredictorEvents:
 
         return pd.DatetimeIndex(sorted(list(set(t_events))))
 
-    def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> pd.DatetimeIndex:
+    def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> Union[pd.DatetimeIndex, pd.Series]:
         """Generate events from continuous predictor values.
         
         Args:
@@ -399,7 +399,7 @@ class ContinuousPredictorEvents:
                 - window: int (default 2000) - window for normalization
 
         Returns:
-            DatetimeIndex of detected events
+            pd.Series of weights indexed by event time, or DatetimeIndex
         """
         if not CONTINUOUS_PREDICTOR_AVAILABLE:
             tprint_warning(f"⚠️ ContinuousPredictorGenerator not available for {self.family}")
@@ -424,7 +424,7 @@ class ContinuousPredictorEvents:
             return pd.DatetimeIndex([])
         
         # Aggregate events across all predictors of this family
-        all_events = set()
+        event_weights = defaultdict(float)
         side = params.get('side', 'both')
         method = params.get('method', 'threshold')
         normalize = params.get('normalize', True)
@@ -440,26 +440,44 @@ class ContinuousPredictorEvents:
                 z_series = series
             
             # Event Logic
+            current_events = []
             if method == 'cusum':
                 # De Prado CUSUM (on Z-scored series)
-                events = self._symmetric_cusum_filter(z_series, self.z_threshold)
-                all_events.update(events)
-
+                current_events = self._symmetric_cusum_filter(z_series, self.z_threshold)
             else: # 'threshold'
                 if side in ['positive', 'both']:
                     pos_events = z_series[z_series > self.z_threshold].index
-                    all_events.update(pos_events)
+                    current_events.extend(pos_events)
 
                 if side in ['negative', 'both']:
                     neg_events = z_series[z_series < -self.z_threshold].index
-                    all_events.update(neg_events)
+                    current_events.extend(neg_events)
+
+            # Capture weights (intensity = abs(z-score))
+            if len(current_events) > 0:
+                current_events_idx = pd.DatetimeIndex(sorted(list(set(current_events))))
+                # Get absolute Z-scores at event times
+                intensities = z_series.loc[current_events_idx].abs()
+
+                # If multiple predictors trigger same event, take max intensity
+                for ts, val in intensities.items():
+                    event_weights[ts] = max(event_weights[ts], val)
         
-        events = pd.DatetimeIndex(sorted(all_events))
+        if not event_weights:
+            events = pd.DatetimeIndex([])
+            if tracker is not None:
+                tracker.generated_events = 0
+            return events
+
+        # Convert to Series
+        sorted_timestamps = sorted(event_weights.keys())
+        weights = [event_weights[t] for t in sorted_timestamps]
+        events_series = pd.Series(weights, index=pd.DatetimeIndex(sorted_timestamps), name='weight')
         
         if tracker is not None:
-            tracker.generated_events = len(events)
+            tracker.generated_events = len(events_series)
         
-        return events
+        return events_series
 
 @njit
 def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0.5) -> np.ndarray:
@@ -4555,7 +4573,7 @@ class LabelBasedLayer2(BaseStep):
             'sortino_ratio': float(sortino)
         }
 
-    def _get_global_events(self, df: pd.DataFrame, family: str, params: Dict = None) -> pd.DatetimeIndex:
+    def _get_global_events(self, df: pd.DataFrame, family: str, params: Dict = None) -> Union[pd.DatetimeIndex, pd.Series]:
         """Generate events once for the full dataset and cache them."""
         # Create cache key
         params_str = str(sorted(params.items())) if params else "default"
@@ -4923,13 +4941,22 @@ class LabelBasedLayer2(BaseStep):
     
     def _compute_labels_batch(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
                             geometries: List, family: str, fold_idx: int,
-                            sr_levels: List = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
+                            sr_levels: List = None, event_weights: pd.Series = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """Compute labels and weights for multiple geometries of the same family at once."""
         cache_key = self._get_label_batch_cache_key(family, geometries, events)
         if cache_key in self._label_batch_cache:
-            cached_labels, cached_weights = self._label_batch_cache[cache_key]
+            cached_labels, cached_base_weights = self._label_batch_cache[cache_key]
+
+            # Apply explicit event intensity weights if provided (dynamic, not cached with key)
+            if event_weights is not None:
+                 final_weights = {}
+                 for k, w in cached_base_weights.items():
+                     ew = event_weights.reindex(w.index).fillna(1.0)
+                     final_weights[k] = w * ew
+                 return cached_labels, final_weights
+
             tprint_info(f"✅ Using cached batch labels for {len(geometries)} {family} geometries (fold {fold_idx})")
-            return cached_labels, cached_weights
+            return cached_labels, cached_base_weights
 
         tprint_info(f"🔄 Computing batch labels/weights for {len(geometries)} {family} geometries (fold {fold_idx})...")
         
@@ -4943,7 +4970,8 @@ class LabelBasedLayer2(BaseStep):
 
         # Compute labels for all geometries in this family
         labels_dict = {}
-        weights_dict = {}
+        base_weights_dict = {} # Store unweighted base weights for caching
+        final_weights_dict = {}
 
         for gt in geometries:
             try:
@@ -4997,10 +5025,17 @@ class LabelBasedLayer2(BaseStep):
                     # For dominance labels, 'weights' is outcome quality.
                     # For signal weights, it is input quality.
                     # Product seems appropriate.
-                    final_w = weights * aligned_base_w
-                    weights_dict[gt.uuid] = final_w
+                    weights = weights * aligned_base_w
+
+                # Store base weights (before event_weights)
+                base_weights_dict[gt.uuid] = weights
+
+                # Apply explicit event intensity weights if provided (dynamic)
+                if event_weights is not None:
+                     ew = event_weights.reindex(weights.index).fillna(1.0)
+                     final_weights_dict[gt.uuid] = weights * ew
                 else:
-                    weights_dict[gt.uuid] = weights
+                     final_weights_dict[gt.uuid] = weights
 
             except Exception as e:
                 tprint_error(f"❌ Error computing labels for {gt.uuid}: {e}")
@@ -5008,11 +5043,12 @@ class LabelBasedLayer2(BaseStep):
                 traceback.print_exc()
                 tprint_warning(f"⚠️ Label computation failed for {gt.uuid}: {e}")
                 labels_dict[gt.uuid] = pd.Series([], dtype=float)
-                weights_dict[gt.uuid] = pd.Series([], dtype=float)
+                base_weights_dict[gt.uuid] = pd.Series([], dtype=float)
+                final_weights_dict[gt.uuid] = pd.Series([], dtype=float)
         
-        self._label_batch_cache[cache_key] = (labels_dict, weights_dict)
+        self._label_batch_cache[cache_key] = (labels_dict, base_weights_dict)
         self._prune_cache(self._label_batch_cache, self._max_cache_entries, "label batch")
-        return labels_dict, weights_dict
+        return labels_dict, final_weights_dict
 
     def _get_cached_labels(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
                           gt, family: str, fold_idx: int, sr_levels: List = None) -> Tuple[pd.Series, pd.Series]:
@@ -11075,6 +11111,14 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   🔄 Generating {family} events on df_train ({len(df_train)} bars)...")
                 # Use global events to ensure consistency and cache hits
                 global_events = self._get_global_events(df, family, gen_params)
+
+                # Handle weighted events
+                global_weights = None
+                if isinstance(global_events, pd.Series):
+                    global_weights = global_events
+                    if hasattr(global_events, 'index'):
+                        global_events = pd.DatetimeIndex(global_events.index)
+
                 if global_events is not None:
                     # FIX: Robust TZ handling to ensure overlap with fold index
                     ge_aligned = global_events
@@ -11090,13 +11134,24 @@ class LabelBasedLayer2(BaseStep):
                     except Exception:
                         pass # Fallback to original if alignment fails
 
+                    # Align weights if index was modified
+                    if global_weights is not None and not ge_aligned.equals(global_events):
+                        global_weights = global_weights.copy()
+                        global_weights.index = ge_aligned
+
                     fold_train_events = ge_aligned[ge_aligned.isin(df_train.index)]
                     
+                    # Slice weights if available
+                    fold_event_weights = None
+                    if global_weights is not None:
+                        fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
+
                     if len(fold_train_events) == 0 and len(global_events) > 0:
                          # Diagnostic log for debugging if fix fails
                          tprint_warning(f"   ⚠️ TZ Mismatch persists? Global={len(global_events)} -> Fold=0. Fold Range: {df_train.index[0]} to {df_train.index[-1]}")
                 else:
                      fold_train_events = pd.DatetimeIndex([])
+                     fold_event_weights = None
                 
                 is_sparse = family in sparse_families
                 has_global = is_sparse and family in global_sparse_models
@@ -11123,7 +11178,8 @@ class LabelBasedLayer2(BaseStep):
                 weights_dict = {}
                 if not has_global:
                     labels_dict, weights_dict = self._compute_labels_batch(
-                        df_train, fold_train_events, group_geometries, family, i, sr_levels=self.sr_levels
+                        df_train, fold_train_events, group_geometries, family, i, sr_levels=self.sr_levels,
+                        event_weights=fold_event_weights
                     )
                     
                     # Log label stats for first geometry as proxy

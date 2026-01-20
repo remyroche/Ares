@@ -7954,6 +7954,15 @@ class LabelBasedLayer2(BaseStep):
 
         # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
+
+        # Enhanced Diagnostics
+        tprint_info(f"   📊 Race Context: X_train={X_train_final.shape}, X_val={X_val_final.shape}")
+        try:
+            y_dist = np.bincount(y_train.astype(int)) if hasattr(y_train, 'astype') else "N/A"
+            tprint_info(f"   📊 Train Labels: {y_dist} (Pos Rate: {y_train.mean():.4f})")
+        except Exception:
+            pass
+
         race_results = {}
         best_score = -np.inf
         best_actual_auc = 0.5
@@ -8455,6 +8464,14 @@ class LabelBasedLayer2(BaseStep):
 
 
         # 0. LGBM with IRM (Wrapper) - Regularized for noisy 15m crypto
+
+        # Adaptive Regularization for Small Datasets
+        n_samples = len(X_train)
+        # Default min_data_in_leaf=50 is too high for N < 500
+        adaptive_min_data_in_leaf = min(50, max(5, int(n_samples * 0.05)))
+        if n_samples < 500:
+             tprint_info(f"   📉 Adaptive LGBM params: min_data_in_leaf={adaptive_min_data_in_leaf} (N={n_samples})")
+
         lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
         lgbm_params.update({
             'boosting_type': 'gbdt',       # Switch from GOSS to allow bagging
@@ -8462,7 +8479,7 @@ class LabelBasedLayer2(BaseStep):
             'learning_rate': 0.01,         # Slower learning
             'max_depth': 4,                # Shallower trees
             'num_leaves': 15,              # Simpler trees
-            'min_data_in_leaf': 50,        # Avoid small noisy clusters
+            'min_data_in_leaf': adaptive_min_data_in_leaf, # Adaptive
             'feature_fraction': 0.6,       # Feature dropout (Relaxed from 0.5)
             'bagging_fraction': 0.7,       # Row subsampling
             'bagging_freq': 5,             # Bagging every 5 iterations
@@ -8560,6 +8577,11 @@ class LabelBasedLayer2(BaseStep):
 
         # 2. XGBoost with IRM (Wrapper) - Enhanced regularization
         if XGBClassifier is not None:
+            # Adaptive Regularization
+            adaptive_min_child_weight = min(10, max(1, int(n_samples * 0.01)))
+            if n_samples < 1000:
+                 tprint_info(f"   📉 Adaptive XGB params: min_child_weight={adaptive_min_child_weight} (N={n_samples})")
+
             # Build monotone constraints tuple matching X_train columns
             xgb_constraints = tuple(constraints_dict.get(col, 0) for col in X_train.columns)
             
@@ -8585,7 +8607,7 @@ class LabelBasedLayer2(BaseStep):
                         subsample=0.7,
                         reg_lambda=10,        # Reduced from 50
                         reg_alpha=2.0,        # Reduced from 5.0
-                        min_child_weight=10,  # Reduced from 15
+                        min_child_weight=adaptive_min_child_weight, # Adaptive
                         gamma=1.0,            # Reduced from 1.5
                         monotone_constraints=xgb_constraints,
                         interaction_constraints=valid_interaction_constraints,

@@ -112,13 +112,15 @@ from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score
+from sklearn.model_selection import TimeSeriesSplit, KFold
+from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.base import clone
+from sklearn.base import clone, BaseEstimator, ClassifierMixin
+from sklearn.isotonic import IsotonicRegression
 from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.utils.validation import check_array, check_is_fitted
 from scipy.stats import spearmanr, rankdata, entropy as shannon_entropy
 from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
@@ -518,6 +520,190 @@ try:
     CATBOOST_AVAILABLE_LOCAL = True
 except ImportError:
     CATBOOST_AVAILABLE_LOCAL = False
+
+def calculate_ece(y_true, y_prob, n_bins=10):
+    """Expected Calibration Error."""
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_boundaries[:-1]
+    bin_uppers = bin_boundaries[1:]
+
+    ece = 0.0
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        in_bin = (y_prob > bin_lower) & (y_prob <= bin_upper)
+        prop_in_bin = in_bin.mean()
+        if prop_in_bin > 0:
+            accuracy_in_bin = y_true[in_bin].mean()
+            avg_confidence_in_bin = y_prob[in_bin].mean()
+            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+
+    return ece
+
+def calculate_durbin_watson(residuals):
+    """Durbin-Watson statistic."""
+    if len(residuals) < 2:
+        return 0.0
+    diff_sq = np.sum(np.diff(residuals) ** 2)
+    res_sq = np.sum(residuals ** 2)
+    if res_sq == 0:
+        return 0.0
+    return diff_sq / res_sq
+
+def calculate_feature_attribution_stability(model, X, y):
+    """
+    Feature Attribution Stability: Information Ratio of feature importance.
+    Metric: Mean(Importance) / Std(Importance) / N_Active_Features
+    """
+    try:
+        # For CalibratedClassifierCV, reach into base estimator
+        if hasattr(model, 'calibrated_classifiers_'):
+            if len(model.calibrated_classifiers_) > 0:
+                model = model.calibrated_classifiers_[0].base_estimator
+
+        # For HuberExtraTreesStack, use internal fashion model
+        if isinstance(model, HuberExtraTreesStack):
+             if model.fashion_model is not None:
+                 model = model.fashion_model
+             else:
+                 return 0.0
+
+        if hasattr(model, 'estimators_'):
+            # Collect importance from each tree
+            all_importances = np.array([tree.feature_importances_ for tree in model.estimators_])
+            mean_imp = np.mean(all_importances, axis=0)
+            std_imp = np.std(all_importances, axis=0)
+
+            active_mask = mean_imp > 0
+            n_active = np.sum(active_mask)
+            if n_active == 0:
+                return 0.0
+
+            stability_ratios = np.divide(
+                mean_imp[active_mask],
+                std_imp[active_mask],
+                out=np.zeros(n_active),
+                where=std_imp[active_mask]>0
+            )
+
+            stability_ir = np.mean(stability_ratios)
+            return stability_ir / n_active
+
+        return 0.0
+    except Exception:
+        return 0.0
+
+def calculate_brier_skill_score(y_true, y_prob):
+    """
+    BSS = 1 - BS_model / BS_naive
+    BS_naive = Brier Score of predicting mean(y_true) always.
+    """
+    bs_model = brier_score_loss(y_true, y_prob)
+    base_rate = np.mean(y_true)
+    y_naive = np.full_like(y_prob, base_rate)
+    bs_naive = brier_score_loss(y_true, y_naive)
+
+    if bs_naive < 1e-9:
+        return 0.0
+    return 1.0 - (bs_model / bs_naive)
+
+class HuberExtraTreesStack(BaseEstimator, ClassifierMixin):
+    """
+    Two-phase model:
+    1. Huber-IRM (Law) on raw target.
+    2. ExtraTrees (Fashion) on OOF residuals.
+    3. Isotonic Calibration on L+T.
+    """
+    def __init__(self, huber_params=None, et_params=None, n_splits=5, random_state=42):
+        self.huber_params = huber_params if huber_params else {}
+        self.et_params = et_params if et_params else {}
+        self.n_splits = n_splits
+        self.random_state = random_state
+        self.law_model = None
+        self.fashion_model = None
+        self.calibrator = None
+        self._is_fitted = False
+        self.feature_importances_ = None
+
+    def fit(self, X, y, sample_weight=None, environment_masks=None, **kwargs):
+        X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
+        y = np.asarray(y)
+        if sample_weight is not None:
+            sample_weight = np.asarray(sample_weight)
+
+        # Phase 1: OOF Residuals (Using KFold without shuffle for contiguous blocks)
+        kf = KFold(n_splits=self.n_splits, shuffle=False)
+        oof_preds = np.zeros(len(y))
+
+        # Fit Law model on folds
+        for train_idx, val_idx in kf.split(X):
+            X_tr, y_tr = X[train_idx], y[train_idx]
+            X_val = X[val_idx]
+            w_tr = sample_weight[train_idx] if sample_weight is not None else None
+
+            # Use basic env indices for ERM on fold
+            huber = IRMLinearRegressor(**self.huber_params)
+            huber.fit(X_tr, y_tr, env_indices=[np.arange(len(y_tr))], sample_weight=w_tr)
+            oof_preds[val_idx] = huber.predict(X_val)
+
+        residuals = y - oof_preds
+
+        # Phase 2: Train Final Models
+
+        # 1. Final Law on full data
+        self.law_model = IRMLinearRegressor(**self.huber_params)
+        env_indices = [np.arange(len(y))]
+        if environment_masks:
+             try:
+                 if isinstance(environment_masks[0], (bool, np.bool_)):
+                     pass
+                 elif len(environment_masks[0]) == len(y):
+                      env_indices = [np.where(m)[0] for m in environment_masks]
+                 else:
+                      env_indices = environment_masks
+             except:
+                 pass
+        self.law_model.fit(X, y, env_indices=env_indices, sample_weight=sample_weight)
+
+        # 2. Final Fashion on residuals
+        self.fashion_model = ExtraTreesRegressor(**self.et_params)
+        self.fashion_model.fit(X, residuals, sample_weight=sample_weight)
+
+        # 3. Isotonic Calibration using nested OOF
+        fashion_oof = np.zeros(len(y))
+        for train_idx, val_idx in kf.split(X):
+            X_tr, r_tr = X[train_idx], residuals[train_idx]
+            X_val = X[val_idx]
+            w_tr = sample_weight[train_idx] if sample_weight is not None else None
+
+            et = ExtraTreesRegressor(**self.et_params)
+            et.fit(X_tr, r_tr, sample_weight=w_tr)
+            fashion_oof[val_idx] = et.predict(X_val)
+
+        total_oof = oof_preds + fashion_oof
+        self.calibrator = IsotonicRegression(out_of_bounds='clip')
+        self.calibrator.fit(total_oof, y)
+
+        self._is_fitted = True
+        if hasattr(self.fashion_model, 'feature_importances_'):
+             self.feature_importances_ = self.fashion_model.feature_importances_
+
+        return self
+
+    def decision_function(self, X):
+        check_is_fitted(self, '_is_fitted')
+        X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        law_pred = self.law_model.predict(X)
+        fashion_pred = self.fashion_model.predict(X)
+        return law_pred + fashion_pred
+
+    def predict_proba(self, X):
+        raw = self.decision_function(X)
+        prob = self.calibrator.predict(raw)
+        return np.column_stack([1 - prob, prob])
+
+    def predict(self, X):
+        probs = self.predict_proba(X)[:, 1]
+        return (probs >= 0.5).astype(int)
 
 class IRM_ExtraTreesClassifier(ExtraTreesClassifier):
     """ExtraTrees Classifier with IRM compatibility API (Standard training)."""
@@ -7933,23 +8119,39 @@ class LabelBasedLayer2(BaseStep):
                 })
                 
             # --- 4. ExtraTrees ---
-            from sklearn.ensemble import ExtraTreesClassifier
-            et_params = {
-                'n_estimators': 300, 'max_depth': 6,
-                'min_samples_split': 10, 'min_samples_leaf': 5,
-                'random_state': 42, 'n_jobs': 2,
-                'class_weight': 'balanced'
+            # --- 4. ExtraTrees (Huber-IRM Stack) ---
+            # Huber Baseline (The "Law")
+            huber_params = {
+                'loss_type': 'huber',
+                'huber_epsilon': 1.10,
+                'alpha': 1.0,
+                'irm_lambda': 10.0,
+                'max_iter': 2000
             }
-            # Attempt to set monotonic_cst if supported (sklearn 1.4+)
-            try:
-                model = ExtraTreesClassifier(**et_params, monotonic_cst=monotone_constraints)
-            except TypeError:
-                model = ExtraTreesClassifier(**et_params)
-                
+            # ExtraTrees Baseline (The "Fashion")
+            et_params = {
+                'n_estimators': 1000,
+                'max_depth': 6,
+                'min_samples_leaf': 10,
+                'max_features': 'sqrt',
+                'ccp_alpha': 0.001,
+                'min_samples_split': 20,
+                'min_impurity_decrease': 0.005,
+                'random_state': 42,
+                'n_jobs': 2
+            }
+
+            # Create Stack (No constraints inherited!)
+            model = HuberExtraTreesStack(
+                huber_params=huber_params,
+                et_params=et_params,
+                n_splits=5 # Using 5-fold OOF
+            )
+
             candidates.append({
                 'name': 'ExtraTrees',
                 'model': model,
-                'fit_params': {}
+                'fit_params': {'environment_masks': environment_masks}
             })
 
         # 3. Sequential Race
@@ -7978,17 +8180,28 @@ class LabelBasedLayer2(BaseStep):
             model = cand['model']
             fit_params = cand['fit_params']
             
-            
+            # Wrap in CalibratedClassifierCV if not ExtraTrees (Stack already handles calibration)
+            if name != 'ExtraTrees':
+                 tprint_info(f"   🔧 Wrapping {name} in Isotonic CalibratedClassifierCV...")
+                 # Remove warm start params for calibration wrapper safety
+                 safe_fit_params = fit_params.copy()
+                 if 'init_score' in safe_fit_params: del safe_fit_params['init_score']
+                 if 'base_margin' in safe_fit_params: del safe_fit_params['base_margin']
+                 if 'baseline' in safe_fit_params: del safe_fit_params['baseline']
+                 # Remove eval_set as indices shift during CV
+                 if 'eval_set' in safe_fit_params: del safe_fit_params['eval_set']
+                 if 'early_stopping_rounds' in safe_fit_params: del safe_fit_params['early_stopping_rounds']
+                 if 'callbacks' in safe_fit_params: del safe_fit_params['callbacks']
+
+                 model = CalibratedClassifierCV(estimator=model, method='isotonic', cv=5)
+                 fit_params = safe_fit_params
+
             try:
-                # Fit with specific params (warm start, eval set)
+                # Fit
                 start_fit = time.time()
-                
-                # Debug fit params injection
                 if fit_params:
-                    keys = list(fit_params.keys())
-                    tprint_info(f"      🔧 [DEBUG] {name} fit_params: {keys}")
-                
-                if fit_params:
+                    # Check if model supports fit_params (CalibratedClassifierCV < 1.0 does not easily)
+                    # We assume compatible sklearn version
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
                     model.fit(X_train_final, y_train, sample_weight=w_train)
@@ -8006,23 +8219,37 @@ class LabelBasedLayer2(BaseStep):
                 pr_auc_lift = pr_auc - prevalence
                 ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
-                # Combined score (sort by ROC-AUC but gated by PR-AUC lift)
-                # Gate: PR_AUC >= prevalence + 0.02
-                is_gated = pr_auc >= (prevalence + 0.02)
-                effective_score = auc_score if is_gated else (auc_score * 0.5) # Heavy penalty if gate failing
+                # Brier Skill Score
+                bss = calculate_brier_skill_score(y_val, preds)
+
+                # ECE
+                ece = calculate_ece(y_val, preds)
+
+                # Durbin-Watson on residuals
+                residuals = y_val - preds
+                dw = calculate_durbin_watson(residuals)
+
+                # Feature Stability
+                stability = calculate_feature_attribution_stability(model, X_train_final, y_train)
+
+                # New Winner Score Formula: PR-AUC * BSS
+                effective_score = pr_auc * bss
                 
                 race_results[name] = {
                     'auc': auc_score,
                     'pr_auc': pr_auc,
                     'pr_auc_lift': pr_auc_lift,
                     'ic': ic,
+                    'bss': bss,
+                    'ece': ece,
+                    'dw': dw,
+                    'stability': stability,
                     'model': model,
                     'fit_time': fit_duration,
-                    'gated': is_gated
+                    'score': effective_score
                 }
 
-                gate_status = "✅" if is_gated else "❌"
-                tprint_info(f"      - {name.ljust(12)}: {gate_status} ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f} (Lift: {pr_auc_lift:+.4f}), IC={ic:.4f}")
+                tprint_info(f"      - {name.ljust(12)}: Score={effective_score:.4f} (PR-AUC={pr_auc:.4f}, BSS={bss:.4f}), ECE={ece:.4f}, DW={dw:.2f}")
 
                 if effective_score > best_score:
                     best_score = effective_score
@@ -8033,6 +8260,8 @@ class LabelBasedLayer2(BaseStep):
                     
             except Exception as e:
                 tprint_warning(f"      ❌ {name} failed: {e}")
+                import traceback
+                tprint_warning(traceback.format_exc())
 
         # 4. Display Leaderboard
         if race_results:

@@ -143,16 +143,21 @@ class SimpleMultiModelRiskEngine:
 
         # XGB params
         self.xgb_params = {
-            'n_estimators': 1000,
+            'n_estimators': 4,
+            'num_parallel_tree': 250,
+            'linear_tree': True,
+            'max_depth': 5,
+            'subsample': 0.8,
+            'colsample_bynode': 0.65,
+            'tree_method': 'hist',
+            'reg_lambda': 5,
+            'reg_alpha': 0.5,
+            'gamma': 0.2,
+            'colsample_bytree': 0.8,
+            'learning_rate': 0.2,
+            'min_child_weight': 25,
             'n_jobs': 2,
-            'random_state': 42,
-            'num_parallel_tree': 7,
-            'colsample_bynode': 0.4,
-            'subsample': 0.6,
-            'reg_lambda': 50, # "22 regularisation 50" -> l2 regularization
-            'min_child_weight': 10,
-            'gamma': 1.1,
-            'learning_rate': 0.03
+            'random_state': 42
         }
         self.xgb_model = None
 
@@ -207,6 +212,24 @@ class SimpleMultiModelRiskEngine:
             volatility.values.astype(np.float64)
         )
         return pd.Series(weights_array, index=abs_returns.index)
+
+    def _calculate_learnability_weights(self, X, residuals):
+        """
+        Scout Pass: Uses a smaller forest to determine sample weights
+        based on prediction consensus (inverse of variance).
+        """
+        scout = ExtraTreesRegressor(n_estimators=100, max_depth=4, bootstrap=True, n_jobs=-1, random_state=42)
+        scout.fit(X, residuals)
+
+        # Get variance across the 100 trees
+        # High variance = Low consensus = Low learnability
+        tree_preds = np.array([tree.predict(X) for tree in scout.estimators_])
+        variance = np.var(tree_preds, axis=0)
+
+        # Weight = 1 / (1 + Variance)
+        weights = 1.0 / (1.0 + variance)
+        # Normalize
+        return (weights - weights.min()) / (weights.max() - weights.min() + 1e-9)
     
     def _extract_layer3_prob_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -564,7 +587,11 @@ class SimpleMultiModelRiskEngine:
             X_train=X_full,
             y_train=y_true,
             pruning_percentile=15,
-            corr_threshold=0.7
+            corr_threshold=0.7,
+            epsilons=[1.10],
+            alphas=[3.0],
+            irm_lambda=10.0,
+            max_iter=2000
         )
 
         self.selected_features = huber_outputs['selected_features']
@@ -574,6 +601,14 @@ class SimpleMultiModelRiskEngine:
 
         X_pruned = X_full[self.selected_features]
         warm_start_train = huber_outputs['warm_start']['train']
+
+        # Calculate Residuals & Learnability Weights
+        residuals = y_true - warm_start_train
+        learnability_weights = self._calculate_learnability_weights(X_pruned, residuals)
+
+        # Combine weights
+        # Ensure weights series aligns with learnability_weights (which is numpy array)
+        combined_weights = weights.values * learnability_weights if hasattr(weights, 'values') else weights * learnability_weights
 
         # Extract monotonic constraints (handle dict return from updated Huber)
         if isinstance(huber_outputs['monotonic_constraints'], dict):
@@ -603,20 +638,13 @@ class SimpleMultiModelRiskEngine:
         
         base_predictions = {}
         
-        # --- 1. ExtraTrees (with monotonic constraints) ---
-        tprint_info(f"📊 Training ExtraTrees (with monotonic constraints)...")
-        # Check if monotonic_cst is supported (sklearn 1.4+)
-        try:
-            self.extratrees.set_params(monotonic_cst=monotonic_cst_tuple)
-        except ValueError:
-            tprint_warning("ExtraTrees monotonic_cst parameter not supported or invalid. Skipping constraints.")
-            self.extratrees.set_params(monotonic_cst=None)
-        except Exception:
-             # In case of older sklearn versions that don't accept monotonic_cst in set_params yet
-            pass
+        # --- 1. ExtraTrees (Hybrid Residual Learner) ---
+        tprint_info(f"📊 Training ExtraTrees (Student on Residuals + Learnability Weights)...")
+        # For ExtraTrees student, we train on residuals with learnability weights
+        self.extratrees.fit(X_pruned, residuals, sample_weight=combined_weights)
 
-        self.extratrees.fit(X_pruned, y_true, sample_weight=weights)
-        et_preds = self.extratrees.predict(X_pruned)
+        et_residual_preds = self.extratrees.predict(X_pruned)
+        et_preds = warm_start_train + et_residual_preds
         base_predictions['extratrees'] = et_preds
         self.calibrators['extratrees'].fit(et_preds, y_true)
         
@@ -629,7 +657,7 @@ class SimpleMultiModelRiskEngine:
         )
         self.lgbm_model.fit(
             X_pruned, y_true,
-            sample_weight=weights,
+            sample_weight=combined_weights,
             init_score=warm_start_train
         )
         lgbm_raw_preds = self.lgbm_model.predict(X_pruned)
@@ -653,7 +681,7 @@ class SimpleMultiModelRiskEngine:
 
             self.xgb_model.fit(
                 X_pruned, y_true,
-                sample_weight=weights,
+                sample_weight=combined_weights,
                 base_margin=warm_start_train
             )
         except (ValueError, KeyError) as e:
@@ -661,7 +689,7 @@ class SimpleMultiModelRiskEngine:
             self.xgb_model.set_params(interaction_constraints=None)
             self.xgb_model.fit(
                 X_pruned, y_true,
-                sample_weight=weights,
+                sample_weight=combined_weights,
                 base_margin=warm_start_train
             )
 
@@ -678,7 +706,7 @@ class SimpleMultiModelRiskEngine:
 
         self.catboost_model.fit(
             X_pruned, y_true,
-            sample_weight=weights,
+            sample_weight=combined_weights,
             baseline=warm_start_train
         )
 
@@ -689,17 +717,17 @@ class SimpleMultiModelRiskEngine:
         
         # --- 5. Ridge Models ---
         tprint_info("📊 Training Ridge models (alphas: 1, 5, 10)...")
-        self.ridge_alpha1.fit(X_pruned, y_true, sample_weight=weights)
+        self.ridge_alpha1.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge1_preds = self.ridge_alpha1.predict(X_pruned)
         base_predictions['ridge_alpha1'] = ridge1_preds
         self.calibrators['ridge_alpha1'].fit(ridge1_preds, y_true)
 
-        self.ridge_alpha5.fit(X_pruned, y_true, sample_weight=weights)
+        self.ridge_alpha5.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge5_preds = self.ridge_alpha5.predict(X_pruned)
         base_predictions['ridge_alpha5'] = ridge5_preds
         self.calibrators['ridge_alpha5'].fit(ridge5_preds, y_true)
 
-        self.ridge_alpha10.fit(X_pruned, y_true, sample_weight=weights)
+        self.ridge_alpha10.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge10_preds = self.ridge_alpha10.predict(X_pruned)
         base_predictions['ridge_alpha10'] = ridge10_preds
         self.calibrators['ridge_alpha10'].fit(ridge10_preds, y_true)
@@ -827,7 +855,8 @@ class SimpleMultiModelRiskEngine:
         X_pruned = X_full[self.selected_features]
 
         # 1. ExtraTrees
-        et_preds = self.extratrees.predict(X_pruned)
+        et_residual_preds = self.extratrees.predict(X_pruned)
+        et_preds = warm_start + et_residual_preds
         et_cal = self.calibrators['extratrees'].transform(et_preds)
         
         # 2. LGBM

@@ -226,6 +226,42 @@ def _median_choice(vals: Tuple[float, ...]) -> float:
     return float(np.median(np.asarray(vals, dtype=float)))
 
 
+def _slice_env_indices(
+    env_indices: Optional[List[np.ndarray]],
+    start: int,
+    end: int
+) -> Optional[List[np.ndarray]]:
+    if not env_indices:
+        return None
+    sliced = []
+    for idx in env_indices:
+        in_window = idx[(idx >= start) & (idx < end)]
+        if in_window.size > 0:
+            sliced.append((in_window - start).astype(int))
+    return sliced if sliced else None
+
+
+def _fit_huber_irm(
+    X_scaled: np.ndarray,
+    y: np.ndarray,
+    env_indices: List[np.ndarray],
+    epsilon: float,
+    alpha: float,
+    max_iter: int,
+    irm_lambda: float
+) -> IRMLinearRegressor:
+    model = IRMLinearRegressor(
+        loss_type='huber',
+        alpha=alpha,
+        irm_lambda=irm_lambda,
+        huber_epsilon=epsilon,
+        max_iter=max_iter
+    )
+    model.fit(X_scaled, y, env_indices)
+    model.intercept_ = 0.0
+    return model
+
+
 # -----------------------------
 # Split fitting: (split × grid)
 # -----------------------------
@@ -240,10 +276,13 @@ def _fit_split_grid(
     alphas: Tuple[float, ...],
     max_iter: int,
     irm_lambda: float = 1.0
+    irm_env_indices: Optional[List[np.ndarray]] = None,
+    use_irm: bool = False
 ) -> Dict[str, np.ndarray]:
     X = X_scaled_full[start:end]
     y = y_full[start:end]
     w = None if w_full is None else w_full[start:end]
+    split_env_indices = _slice_env_indices(irm_env_indices, start, end) if use_irm else None
 
     coefs = []
     intercepts = []
@@ -424,6 +463,9 @@ def prepare_huber_teacher_outputs(
     sign_agree_threshold: Optional[float] = None,
     nonzero_rate_threshold: Optional[float] = None,
     n_time_splits: Optional[int] = None,
+    use_irm: bool = False,
+    irm_env_indices: Optional[List[np.ndarray]] = None,
+    irm_lambda: float = 1.0,
     # New configuration object
     config: Optional[HuberTeacherConfig] = None,
     tier: str = "stronger"
@@ -523,6 +565,7 @@ def prepare_huber_teacher_outputs(
             X_tr_scaled, y_tr, w,
             start, end,
             cfg.epsilons, cfg.alphas, cfg.max_iter, cfg.irm_lambda
+            irm_env_indices, use_irm
         )
         for (start, end) in splits
     )

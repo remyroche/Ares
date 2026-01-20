@@ -15,6 +15,7 @@ Key Features:
 6. Weak Huber Constraints: Applies weak monotonic/interaction constraints from Huber analysis.
 7. Strong Regularization: User-specified regularization parameters for robust training.
 8. Meta-Learner Ready: Outputs teacher baseline and chaser correction signals for stacking.
+9. De Prado Feature Selection: Reduces feature set and collinearity using MDI.
 """
 
 from __future__ import annotations
@@ -68,6 +69,7 @@ except ImportError:
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.fracdiff import FracDiffTransformer
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
+from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine
 
 # -----------------------------
 # Utilities
@@ -374,7 +376,7 @@ def train_chaser_student(
             "colsample_bytree": 0.7,
             "colsample_bynode": 0.4,
             "reg_lambda": 25.0, # Decreased to 25
-            "reg_alpha": 0.0,
+            "reg_alpha": 0.2, # Added L1 regularization
             "gamma": 0.7, # Decreased to 0.7
             "num_parallel_tree": 15, # Random Forest behavior
             "n_jobs": -1
@@ -390,13 +392,13 @@ def train_chaser_student(
         if model_params:
             params.update(model_params)
 
-        # Add weak constraints if available
-        if monotone_constraints_weak is not None and mode == "classification":
+        # Add weak constraints if available (apply to both regression and classification)
+        if monotone_constraints_weak is not None:
             feature_names = [f"f{i}" for i in range(X.shape[1])]
             mono_tuple = tuple(monotone_constraints_weak.get(f"f{i}", 0) for i in range(X.shape[1]))
             params["monotone_constraints"] = mono_tuple
             
-        if interaction_constraints_weak is not None and mode == "classification":
+        if interaction_constraints_weak is not None:
             params["interaction_constraints"] = interaction_constraints_weak
 
         bst = xgb.train(
@@ -448,11 +450,11 @@ def train_chaser_student(
         if model_params:
             params.update(model_params)
 
-        # Add weak constraints if available
-        if monotone_constraints_weak is not None and mode == "classification":
+        # Add weak constraints if available (apply to both regression and classification)
+        if monotone_constraints_weak is not None:
             params["monotone_constraints"] = monotone_constraints_weak
             
-        if interaction_constraints_weak is not None and mode == "classification":
+        if interaction_constraints_weak is not None:
             params["interaction_constraints"] = interaction_constraints_weak
 
         # Callbacks for early stopping
@@ -502,8 +504,8 @@ def train_chaser_student(
         if model_params:
             params.update(model_params)
 
-        # Add weak constraints if available
-        if monotone_constraints_weak is not None and mode == "classification":
+        # Add weak constraints if available (apply to both regression and classification)
+        if monotone_constraints_weak is not None:
             params["monotone_constraints"] = monotone_constraints_weak
 
         model = cb.CatBoost(params)
@@ -633,7 +635,11 @@ class Layer25Chaser:
         models_to_train: List[str] = None,
         # New parameters for weak constraints
         use_huber_constraints: bool = True,
-        constraint_tier: str = "weak",
+        constraint_tier: str = "stronger",
+        # GMM enhancement parameters
+        enable_gmm_enhancement: bool = False,
+        gmm_n_components: int = 8,
+        gmm_cache_models: bool = True,
     ):
         self.mode = mode
         self.regime_split = regime_split
@@ -645,6 +651,14 @@ class Layer25Chaser:
         # New constraint parameters
         self.use_huber_constraints = use_huber_constraints
         self.constraint_tier = constraint_tier
+        
+        # GMM enhancement parameters
+        self.enable_gmm_enhancement = enable_gmm_enhancement
+        self.gmm_n_components = gmm_n_components
+        self.gmm_cache_models = gmm_cache_models
+        
+        # GMM processor (initialized later)
+        self._gmm_processor = None
 
         self.regime_models: Dict[int, Dict[str, Any]] = {}
         self.global_models: Dict[str, Any] = {}
@@ -743,7 +757,8 @@ class Layer25Chaser:
         X: pd.DataFrame,
         y: pd.Series,
         regime_probs: pd.DataFrame | None = None,
-        sample_weight: pd.Series | None = None
+        sample_weight: pd.Series | None = None,
+        returns: pd.Series | None = None
     ):
         """
         Fit the Chaser model(s).
@@ -753,6 +768,7 @@ class Layer25Chaser:
             y: Targets (Residuals for regression, Binary for classification)
             regime_probs: GMM probabilities (N, K). If None, global model only.
             sample_weight: Base sample weights.
+            returns: Returns series for GMM anchoring (optional).
         """
         if self.verbose:
             tprint_info("🚀 Training Layer 2.5 Chaser...")
@@ -766,6 +782,66 @@ class Layer25Chaser:
         else:
             X_proc = X.copy()
 
+        # --- MDI Feature Selection (De Prado) ---
+        if self.verbose:
+            tprint_info("   🔍 Running De Prado MDI Feature Selection...")
+
+        try:
+            # Initialize selection engine
+            selector = DePradoFeatureEngine(
+                n_estimators=500,
+                max_clusters=12,
+                random_state=42,
+                topk_freq_threshold=0.4, # Hardening
+                use_lgbm=LGBM_AVAILABLE,
+                is_regression=(self.mode == "regression")
+            )
+
+            # Run selection
+            selected_features = selector.run_selection(X_proc, y)
+
+            # Apply selection
+            n_orig = X_proc.shape[1]
+            X_proc = X_proc[selected_features]
+            n_new = X_proc.shape[1]
+
+            if self.verbose:
+                tprint_success(f"   ✅ Selected {n_new} features from {n_orig} (Reduction: {100*(1 - n_new/n_orig):.1f}%)")
+
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ De Prado Feature Selection failed: {e}. Using all features.")
+
+        # GMM Enhancement (if enabled)
+        if self.enable_gmm_enhancement:
+            if self.verbose: tprint_info("   🧠 Enhancing features with GMM...")
+            try:
+                from .gmm_layer25_integration import enhance_layer25_with_gmm
+                
+                # Enhance features with GMM
+                X_enhanced, self._gmm_processor = enhance_layer25_with_gmm(
+                    X_proc,
+                    returns=returns,
+                    n_components=self.gmm_n_components,
+                    cache_models=self.gmm_cache_models
+                )
+                
+                # Get regime probabilities from GMM if not provided
+                if regime_probs is None:
+                    regime_probs = self._gmm_processor.get_regime_probabilities(X_proc)
+                    if self.verbose and not regime_probs.empty:
+                        tprint_info(f"   📊 Generated GMM regime probabilities: {regime_probs.shape}")
+                
+                X_proc = X_enhanced
+                
+                if self.verbose:
+                    tprint_info(f"   ✅ GMM enhancement complete: {X_enhanced.shape[1]} total features")
+                    
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ GMM enhancement failed: {e}")
+                # Continue without GMM enhancement
+
         self.feature_names = list(X_proc.columns)
         X_np = X_proc.values.astype(np.float32)
         y_np = y.values
@@ -778,13 +854,13 @@ class Layer25Chaser:
         if self.use_huber_constraints and HUBER_AVAILABLE:
             try:
                 # Use weak tier constraints for chasers
-                huber_config = get_huber_tier_config("weak")
+                huber_config = get_huber_tier_config(self.constraint_tier)
                 huber_results = prepare_huber_teacher_outputs(
                     X_train=pd.DataFrame(X_np, columns=self.feature_names),
                     y_train=y_np,
                     sample_weight=w_np,
                     config=huber_config,
-                    tier="weak"
+                    tier=self.constraint_tier
                 )
                 monotone_constraints_weak = huber_results.get('monotonic_constraints', {})
                 interaction_constraints_weak = huber_results.get('interaction_constraints', [])
@@ -872,7 +948,22 @@ class Layer25Chaser:
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Failed to train {m_type} student: {e}")
 
-            # 3. Prune redundant models
+            # 3. Calculate Average Ensemble performance (unpruned)
+            if self.verbose and temp_preds:
+                all_preds = np.array(list(temp_preds.values()))
+                avg_pred = np.mean(all_preds, axis=0)
+                if self.mode == "regression":
+                    avg_score = float(spearmanr(avg_pred, y_np)[0])
+                    score_name = "IC"
+                else:
+                    try:
+                        avg_score = roc_auc_score(y_np, avg_pred, sample_weight=weights)
+                    except:
+                        avg_score = 0.5
+                    score_name = "AUC"
+                tprint_info(f"   🏆 Average Ensemble {score_name}: {avg_score:.4f} (from {len(temp_preds)} students)")
+
+            # 4. Prune redundant models
             # 1. Rank by score (IC or AUC)
             sorted_models = sorted(model_scores.keys(), key=lambda x: model_scores[x], reverse=True)
 
@@ -939,7 +1030,8 @@ class Layer25Chaser:
         X: pd.DataFrame,
         regime_probs: pd.DataFrame | None = None,
         return_individual: bool = False,
-        return_confidence: bool = False
+        return_confidence: bool = False,
+        returns: pd.Series | None = None
     ) -> Union[np.ndarray, Dict[str, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
         """
         Predict using the ensemble.
@@ -949,12 +1041,48 @@ class Layer25Chaser:
             regime_probs: Regime probabilities for weighting
             return_individual: If True, returns dict of {model_name: prediction}
             return_confidence: If True, returns (prediction, confidence) tuple
+            returns: Returns series for GMM anchoring (optional).
         """
         # Feature Engineering
         if self.feature_engineering:
             X_proc = self._engineer_features(X)
         else:
             X_proc = X.copy()
+
+        # GMM Enhancement (if enabled and processor available)
+        if self.enable_gmm_enhancement and self._gmm_processor is not None:
+            try:
+                # Process features through GMM
+                X_enhanced, _ = self._gmm_processor.process_layer25_features(
+                    X_proc, 
+                    returns=returns, 
+                    cache_key="prediction"
+                )
+                
+                # Get regime probabilities if not provided
+                if regime_probs is None:
+                    regime_probs = self._gmm_processor.get_regime_probabilities(X_proc)
+                
+                X_proc = X_enhanced
+                
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ GMM prediction enhancement failed: {e}")
+                # Continue without GMM enhancement
+
+        # Ensure we use the selected features from training
+        if hasattr(self, 'feature_names') and self.feature_names:
+            # Check if features are missing
+            missing = [f for f in self.feature_names if f not in X_proc.columns]
+            if missing:
+                # If we engineer features correctly, this shouldn't happen unless input X is different schema
+                # Just fill 0 for safety or raise warning
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ Missing {len(missing)} features in predict. Filling 0.")
+                for m in missing:
+                    X_proc[m] = 0.0
+
+            X_proc = X_proc[self.feature_names]
 
         X_np = X_proc.values.astype(np.float32)
         n_samples = len(X)

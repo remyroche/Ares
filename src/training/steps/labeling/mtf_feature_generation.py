@@ -1261,6 +1261,66 @@ def create_meta_features(
     liq_risk_long = in_long_liq_zone * high_stress
     features['liquidation_risk_long'] = _align_to_features(_norm(liq_risk_long, 'liquidation_risk_long'), n_features)
 
+    # ===== INFORMATION_SPECIALIST FEATURES (MTF) =====
+    print("📊 Computing INFORMATION_SPECIALIST features across multiple timeframes...")
+    
+    # Add INFORMATION_SPECIALIST features for each window in the MTF framework
+    for w in windows:
+        # volume_burst: Volume burst detection (sudden information arrival) - MTF version
+        if volume_available:
+            volume_ma = volume.rolling(w).mean()
+            volume_std = volume.rolling(w).std()
+            volume_burst = (volume - volume_ma) / (volume_std + 1e-9)
+            features[f'volume_burst_w{w}'] = _align_to_features(_norm(volume_burst, f'volume_burst_w{w}'), n_features)
+        
+        # surprise_magnitude: Deviation from expected returns - MTF version
+        returns_mean = log_ret.rolling(w).mean()
+        returns_std = log_ret.rolling(w).std()
+        surprise_magnitude = abs(log_ret - returns_mean) / (returns_std + 1e-9)
+        features[f'surprise_magnitude_w{w}'] = _align_to_features(_norm(surprise_magnitude, f'surprise_magnitude_w{w}'), n_features)
+        
+        # cumulative_info_impact: Cumulative information impact - MTF version
+        cumulative_impact_window = max(3, w // 4)  # Scale impact window with timeframe
+        cumulative_info_impact = surprise_magnitude.rolling(cumulative_impact_window).sum()
+        features[f'cumulative_info_impact_w{w}'] = _align_to_features(_norm(cumulative_info_impact, f'cumulative_info_impact_w{w}'), n_features)
+        
+        # trend_persistence: Trend persistence (information momentum) - MTF version
+        def _trend_persistence_func(returns_window):
+            """Helper function for trend persistence calculation"""
+            if len(returns_window) < 2:
+                return 0.0
+            all_positive = (returns_window > 0).all()
+            all_negative = (returns_window < 0).all()
+            return 1.0 if (all_positive or all_negative) else 0.0
+        
+        trend_persistence = log_ret.rolling(w).apply(_trend_persistence_func)
+        features[f'trend_persistence_w{w}'] = _align_to_features(_norm(trend_persistence, f'trend_persistence_w{w}'), n_features)
+        
+        # info_acceleration: Rate of change of information flow - MTF version
+        info_flow = abs(log_ret)
+        ema_span = max(3, w // 8)  # Scale EMA span with timeframe
+        info_acceleration = info_flow.ewm(span=ema_span).mean().diff()
+        features[f'info_acceleration_w{w}'] = _align_to_features(_norm(info_acceleration, f'info_acceleration_w{w}'), n_features)
+        
+        # Additional MTF-specific INFORMATION_SPECIALIST features
+        # Information intensity: Normalized surprise magnitude by timeframe
+        info_intensity = surprise_magnitude * np.sqrt(w)  # Scale by sqrt of window
+        features[f'info_intensity_w{w}'] = _align_to_features(_norm(info_intensity, f'info_intensity_w{w}'), n_features)
+        
+        # Information decay: How quickly information dissipates over timeframe
+        info_decay = surprise_magnitude.rolling(w).apply(lambda x: np.exp(-np.arange(len(x)) / len(x)).sum() if len(x) > 0 else 0)
+        features[f'info_decay_w{w}'] = _align_to_features(_norm(info_decay, f'info_decay_w{w}'), n_features)
+        
+        # Cross-timeframe information ratio: Compare current to longer timeframe
+        if w < max(windows):
+            longer_w = max([win for win in windows if win > w])
+            if longer_w in windows:
+                # This would require access to longer timeframe features, simplified for now
+                cross_tf_ratio = surprise_magnitude / (log_ret.rolling(longer_w).std() + 1e-9)
+                features[f'cross_tf_info_ratio_w{w}'] = _align_to_features(_norm(cross_tf_ratio, f'cross_tf_info_ratio_w{w}'), n_features)
+    
+    print(f"✅ Generated INFORMATION_SPECIALIST features for {len(windows)} timeframes: {windows}")
+    # ============================================
 
     # ===== SPECIALIST SCALAR FEATURES =====
     specialist_cols = [

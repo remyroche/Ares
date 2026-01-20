@@ -619,76 +619,100 @@ def generate_layer3_features(
     #     if col in df_out.columns and col != 'ensemble_prob':
     #         df_out[f"base_pred_{col}"] = pd.to_numeric(df_out[col], errors='coerce').fillna(0.5)
 
-    # DISABLED: Ensemble Disagreement Features (ens_*)
+    # ENABLED: Ensemble Disagreement Features (ens_*)
     # Enhanced disagreement features for meta model following de Prado principles
-    # disagree_feature_names = [
-    #     "prediction_dispersion",      # Variance of predictions across models
-    #     "confidence_gap",            # Margin between top predictions  
-    #     "uncertainty",               # Normalized entropy (uncertainty measure)
-    #     "prediction_range",         # Range of predictions (max - min)
-    #     "avg_divergence",           # Average pairwise model divergence
-    #     "max_confidence",           # Highest confidence among models
-    #     "disagreement_rate",        # Proportion of models disagreeing on direction
-    #     "snr_internal",             # Mean Probability / Mean Internal Variance
-    #     "snr_consensus",            # Ensemble Mean Probability / StdDev of Model Predictions
-    #     "ensemble_prob",           # Arithmetic mean of probabilities
-    # ]
-    # disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
-    # for col in disagree_cols:
-    #     if col not in df_out.columns:
-    #         df_out[col] = 0.0
+    disagree_feature_names = [
+        "prediction_dispersion",      # Variance of predictions across models
+        "confidence_gap",            # Margin between top predictions
+        "uncertainty",               # Normalized entropy (uncertainty measure)
+        "prediction_range",         # Range of predictions (max - min)
+        "avg_divergence",           # Average pairwise model divergence
+        "max_confidence",           # Highest confidence among models
+        "disagreement_rate",        # Proportion of models disagreeing on direction
+        "snr_internal",             # Mean Probability / Mean Internal Variance
+        "snr_consensus",            # Ensemble Mean Probability / StdDev of Model Predictions
+        "ensemble_prob",           # Arithmetic mean of probabilities
+    ]
+    disagree_cols = [f"ens_{k}" for k in disagree_feature_names]
+    for col in disagree_cols:
+        if col not in df_out.columns:
+            df_out[col] = 0.0
 
-    # DISABLED: Disagreement calculation
-    # try:
-    #     valid_base_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
-    #     if valid_base_cols:
-    #         df_out[valid_base_cols] = df_out[valid_base_cols].astype(float).fillna(0.5)
+    # Disagreement calculation
+    try:
+        valid_base_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
+        if valid_base_cols:
+            df_out[valid_base_cols] = df_out[valid_base_cols].astype(float).fillna(0.5)
 
-    #         prob_dict = {str(c): df_out[c].astype(float).values for c in valid_base_cols}
-    #         pred_dict = {str(c): (df_out[c].astype(float).values - 0.5) for c in valid_base_cols}
+            prob_dict = {str(c): df_out[c].astype(float).values for c in valid_base_cols}
+            pred_dict = {str(c): (df_out[c].astype(float).values - 0.5) for c in valid_base_cols}
 
-    #         var_dict = {}
-    #         for c in valid_base_cols:
-    #             var_col = f"{c}_var"
-    #             if var_col in df_out.columns:
-    #                 try:
-    #                     var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(float).values
-    #                 except Exception:
-    #                     pass
+            var_dict = {}
+            for c in valid_base_cols:
+                var_col = f"{c}_var"
+                if var_col in df_out.columns:
+                    try:
+                        var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(float).values
+                    except Exception:
+                        pass
 
-    #         # Enhanced disagreement calculation with proper error handling
-    #         disagree = calculate_ensemble_disagreement_features(
-    #             model_predictions=pred_dict,
-    #             model_probabilities=prob_dict,
-    #             model_confidences=None,
-    #             model_variances=var_dict if var_dict else None,
-    #             feature_names=disagree_feature_names,  # Explicitly request all features
-    #             logger=None,
-    #         )
+            # Enhanced disagreement calculation with proper error handling
+            disagree = calculate_ensemble_disagreement_features(
+                model_predictions=pred_dict,
+                model_probabilities=prob_dict,
+                model_confidences=None,
+                model_variances=var_dict if var_dict else None,
+                feature_names=disagree_feature_names,  # Explicitly request all features
+                logger=None,
+            )
 
-    #         # Apply disagreement features with proper validation
-    #         for k, col in zip(disagree_feature_names, disagree_cols):
-    #             v = disagree.get(k)
-    #             if isinstance(v, pd.Series) and len(v) == len(df_out):
-    #                 # Apply de Prado-inspired transformations
-    #                 if k == "disagreement_rate":
-    #                     # Transform disagreement rate to agreement strength (inverse)
-    #                     df_out[col] = 1.0 - pd.to_numeric(v.values, errors="coerce")
-    #                 elif k in ["snr_internal", "snr_consensus"]:
-    #                     # Apply log transform to SNR ratios for better scaling
-    #                     snr_vals = pd.to_numeric(v.values, errors="coerce")
-    #                     df_out[col] = np.log1p(np.clip(snr_vals, 0, 100))  # Clip extreme values
-    #                 elif k == "uncertainty":
-    #                     # Keep uncertainty as-is (already normalized)
-    #                     df_out[col] = pd.to_numeric(v.values, errors="coerce")
-    #                 else:
-    #                     df_out[col] = pd.to_numeric(v.values, errors="coerce")
-    #             else:
-    #                 df_out[col] = 0.0
-    # except Exception:
-    #     pass
+            # Apply disagreement features with proper validation
+            for k, col in zip(disagree_feature_names, disagree_cols):
+                v = disagree.get(k)
+                if isinstance(v, pd.Series) and len(v) == len(df_out):
+                    # Apply de Prado-inspired transformations
+                    if k == "disagreement_rate":
+                        # Transform disagreement rate to agreement strength (inverse)
+                        df_out[col] = 1.0 - pd.to_numeric(v.values, errors="coerce")
+                    elif k in ["snr_internal", "snr_consensus"]:
+                        # Apply log transform to SNR ratios for better scaling
+                        snr_vals = pd.to_numeric(v.values, errors="coerce")
+                        df_out[col] = np.log1p(np.clip(snr_vals, 0, 100))  # Clip extreme values
+                    elif k == "uncertainty":
+                        # Keep uncertainty as-is (already normalized)
+                        df_out[col] = pd.to_numeric(v.values, errors="coerce")
+                    else:
+                        df_out[col] = pd.to_numeric(v.values, errors="coerce")
+                else:
+                    df_out[col] = 0.0
+    except Exception:
+        pass
 
-    # df_out[disagree_cols] = df_out[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    df_out[disagree_cols] = df_out[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # Volatility Surface / Ratio Features
+    # Volatility Ratio (Vol Short / Vol Long) - Coiled Spring Indicator
+    try:
+        if 'close' in df_out.columns:
+            close_series = df_out['close']
+            # Using 20 and 100 as standard short/long windows
+            # Calculate log returns for better volatility estimation
+            log_ret = np.log(close_series / close_series.shift(1)).fillna(0)
+
+            vol_short = log_ret.rolling(20, min_periods=5).std()
+            vol_long = log_ret.rolling(100, min_periods=20).std()
+
+            # Volatility Ratio: Short / Long
+            # < 1.0 implies coiled spring (quiet before storm)
+            # > 1.0 implies active expansion
+            df_out['volatility_ratio'] = vol_short / (vol_long + 1e-9)
+            df_out['volatility_ratio'] = df_out['volatility_ratio'].fillna(1.0)
+
+            # Volatility Difference Normalized (Z-score like)
+            df_out['volatility_diff_norm'] = (vol_short - vol_long) / (vol_long + 1e-9)
+            df_out['volatility_diff_norm'] = df_out['volatility_diff_norm'].fillna(0.0)
+    except Exception as e:
+        tprint_warning(f"⚠️ Volatility Ratio feature calculation failed: {e}")
 
     # DISABLED: Logit Probability & Momentum
     # eps = 0.005

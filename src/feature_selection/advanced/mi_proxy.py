@@ -1,7 +1,13 @@
 """
 MI Proxy - Fast Mutual Information Computation using Numba/Numpy
 
-This module provides efficient mutual information calculation using:
+This module provides efficient mutual information calculation.
+NOTE: This module calculates standard Mutual Information (MI). However, in the context
+of this pipeline, it is often used as a component of Residual Mutual Information (RMI)
+where the target variable is first residualized (e.g., using an AR model) before
+MI calculation. When used with residualized targets, the output is effectively RMI.
+
+Features:
 - Numba JIT compilation for fast entropy computation
 - Numpy vectorization for batch operations
 - Adaptive quantization strategies

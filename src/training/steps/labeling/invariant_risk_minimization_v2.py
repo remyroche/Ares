@@ -15,11 +15,12 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Union
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 import warnings
+
+from src.training.steps.labeling.irm_losses import StableIRMLoss, build_env_id_tensor
 
 # Import tprint functions
 try:
@@ -47,7 +48,11 @@ class EnhancedIRM:
         focal_gamma: float = 2.0,
         n_environments: int = 4,
         min_env_samples: int = 100,
-        verbose: bool = True
+        verbose: bool = True,
+        anneal_steps: Optional[int] = None,
+        min_env_samples_end: Optional[int] = None,
+        env_subsample_rate: float = 1.0,
+        use_amp: bool = False,
     ):
         """
         Initialize Enhanced IRM.
@@ -60,6 +65,7 @@ class EnhancedIRM:
             n_environments: Number of environments to create
             min_env_samples: Minimum samples per environment
             verbose: Whether to print progress information
+            anneal_steps: Number of steps to anneal penalties
         """
         self.lambda_irm = lambda_irm
         self.lambda_variance = lambda_variance
@@ -68,32 +74,81 @@ class EnhancedIRM:
         self.n_environments = n_environments
         self.min_env_samples = min_env_samples
         self.verbose = verbose
+        self.anneal_steps = anneal_steps
+        self._anneal_step = 0
+        self._min_env_samples_end = min_env_samples_end
+        self._env_subsample_rate = env_subsample_rate
+        self._use_amp = use_amp
         
         # Storage for environments and metrics
         self.environment_masks_ = {}
         self.invariance_metrics_ = {}
         self.training_history_ = []
-    
-    def focal_loss(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
-        """
-        Compute focal loss for handling class imbalance.
-        
-        Args:
-            y_pred: Predicted probabilities
-            y_true: True labels
-            
-        Returns:
-            Focal loss tensor
-        """
-        # Clamp predictions to avoid log(0)
-        y_pred_clamped = torch.clamp(y_pred, 1e-8, 1 - 1e-8)
-        
-        # Calculate focal loss
-        focal_loss = -self.focal_alpha * (1 - y_pred_clamped) ** self.focal_gamma * \
-                     (y_true * torch.log(y_pred_clamped) + (1 - y_true) * torch.log(1 - y_pred_clamped))
-        
-        return torch.mean(focal_loss)
-    
+
+        self._loss_fn = StableIRMLoss(
+            base_loss='focal',
+            lambda_irm=self.lambda_irm,
+            lambda_variance=self.lambda_variance,
+            focal_alpha=self.focal_alpha,
+            focal_gamma=self.focal_gamma,
+            min_env_samples=self.min_env_samples,
+            min_env_samples_end=self._min_env_samples_end,
+            env_subsample_rate=self._env_subsample_rate,
+            use_amp=self._use_amp,
+        )
+        if self.anneal_steps:
+            self._loss_fn.set_anneal_progress(0.0)
+
+    def _refresh_loss_fn(self):
+        self._loss_fn = StableIRMLoss(
+            base_loss='focal',
+            lambda_irm=self.lambda_irm,
+            lambda_variance=self.lambda_variance,
+            focal_alpha=self.focal_alpha,
+            focal_gamma=self.focal_gamma,
+            min_env_samples=self.min_env_samples,
+            min_env_samples_end=self._min_env_samples_end,
+            env_subsample_rate=self._env_subsample_rate,
+            use_amp=self._use_amp,
+        )
+        self._apply_anneal_progress()
+
+    def _apply_anneal_progress(self):
+        if not self._loss_fn:
+            return
+        if not self.anneal_steps:
+            self._loss_fn.set_anneal_progress(1.0)
+            return
+        progress = min(1.0, max(0.0, self._anneal_step / self.anneal_steps))
+        self._loss_fn.set_anneal_progress(progress)
+
+    def advance_annealing(self, step: int = 1, total_steps: Optional[int] = None):
+        if total_steps is not None:
+            self.anneal_steps = total_steps
+        if not self.anneal_steps:
+            return
+        self._anneal_step += max(1, step)
+        self._apply_anneal_progress()
+
+    def reset_annealing(self, total_steps: Optional[int] = None):
+        """Reset annealing counters before a new training run."""
+        if total_steps is not None:
+            self.anneal_steps = total_steps
+        self._anneal_step = 0
+        if self.anneal_steps:
+            self._loss_fn.set_anneal_progress(0.0)
+        else:
+            self._loss_fn.set_anneal_progress(1.0)
+
+    def set_anneal_progress(self, progress: float):
+        """Manually set annealing progress (0-1) and sync counters."""
+        if not self._loss_fn:
+            return
+        bounded = float(max(0.0, min(1.0, progress)))
+        self._loss_fn.set_anneal_progress(bounded)
+        if self.anneal_steps:
+            self._anneal_step = int(round(bounded * self.anneal_steps))
+
     def create_environment_masks(
         self,
         custom_features: pd.DataFrame,
@@ -309,31 +364,31 @@ class EnhancedIRM:
             Tuple of (total_loss, loss_breakdown)
         """
         try:
-            # Focal loss (primary loss)
-            focal_loss_value = self.focal_loss(predictions, targets)
-            
-            # IRM penalty
-            irm_penalty = self.compute_irm_penalty(predictions, targets, environment_masks)
-            
-            # Variance penalty
-            variance_penalty = self.compute_variance_penalty(predictions, environment_masks)
-            
-            # Total loss
-            total_loss = focal_loss_value + self.lambda_irm * irm_penalty + self.lambda_variance * variance_penalty
-            
-            loss_breakdown = {
-                'focal_loss': focal_loss_value,
-                'irm_penalty': irm_penalty,
-                'variance_penalty': variance_penalty,
-                'total_loss': total_loss
-            }
-            
-            return total_loss, loss_breakdown
-            
+            if self._loss_fn is None:
+                self._refresh_loss_fn()
+
+            device = predictions.device
+            sample_weights_tensor = sample_weights
+            if sample_weights_tensor is not None and not torch.is_tensor(sample_weights_tensor):
+                sample_weights_tensor = torch.as_tensor(sample_weights_tensor, dtype=predictions.dtype, device=device)
+
+            if not environment_masks:
+                env_ids = torch.full((predictions.shape[0],), -1, dtype=torch.long, device=device)
+            else:
+                env_ids = build_env_id_tensor(environment_masks, len(predictions), device=device)
+
+            total_loss, breakdown = self._loss_fn(
+                logits=predictions,
+                targets=targets,
+                env_ids=env_ids,
+                sample_weights=sample_weights_tensor,
+            )
+            return total_loss, breakdown
+
         except Exception as e:
             if self.verbose:
                 tprint_error(f"❌ Enhanced IRM loss computation failed: {e}")
-            return torch.tensor(0.0), {'error': str(e)}
+            return torch.tensor(0.0, device=predictions.device), {'error': str(e)}
     
     def evaluate_invariance_enhanced(
         self,
@@ -461,7 +516,8 @@ class EnhancedIRM:
         self,
         model: Any,
         optimizer: torch.optim.Optimizer,
-        environment_masks: Dict[str, np.ndarray]
+        environment_masks: Dict[str, np.ndarray],
+        total_steps: Optional[int] = None,
     ) -> callable:
         """
         Create enhanced IRM training function.
@@ -474,8 +530,19 @@ class EnhancedIRM:
         Returns:
             Training function
         """
+        effective_steps = total_steps or self.anneal_steps
+        if effective_steps:
+            self.reset_annealing(effective_steps)
+
         def enhanced_irm_train_step(X_batch, y_batch, sample_weights=None):
             """Enhanced IRM training step."""
+            # Update annealing progress
+            self.current_step_ += 1
+            if self.anneal_steps > 0:
+                self.anneal_progress_ = min(1.0, self.current_step_ / self.anneal_steps)
+            else:
+                self.anneal_progress_ = 1.0
+
             # Convert to tensors
             X_tensor = torch.FloatTensor(X_batch)
             y_tensor = torch.FloatTensor(y_batch)
@@ -497,6 +564,9 @@ class EnhancedIRM:
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
+
+            if self.anneal_steps:
+                self.advance_annealing()
             
             return total_loss.item(), loss_breakdown
         
@@ -516,6 +586,7 @@ class EnhancedIRM:
             'focal_gamma': self.focal_gamma,
             'n_environments': self.n_environments,
             'min_env_samples': self.min_env_samples,
+            'anneal_steps': self.anneal_steps,
             'environments_created': len(self.environment_masks_),
             'has_invariance_metrics': self.invariance_metrics_ is not None
         }

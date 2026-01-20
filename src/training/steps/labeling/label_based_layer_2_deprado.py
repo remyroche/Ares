@@ -124,7 +124,8 @@ except ImportError:
 try:
     from src.training.steps.labeling.causal_discovery import CausalDiscovery, quick_causal_discovery
     from src.training.steps.labeling.causal_feature_engineering import CausalFeatureEngineering, quick_causal_engineering
-    from src.training.steps.labeling.invariant_risk_minimization_v2 import EnhancedIRM, quick_enhanced_irm
+    from src.training.steps.labeling.invariant_risk_minimization_v2 import EnhancedIRM
+    from src.training.steps.labeling.irm_losses import build_env_id_tensor
     from src.training.steps.labeling.causal_surprise_events import CausalSurpriseDetector, quick_causal_surprise
     from src.training.steps.labeling.interventionist_sampling import CausalInterventionSampler, quick_interventionist_sampling
     from src.training.steps.labeling.causal_targets import CausalTargetComputer, quick_causal_targets
@@ -240,6 +241,10 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
         super().__init__(**kwargs)
         self.irm_system = irm_system
         self.environment_masks = environment_masks or {}
+        self._irm_env_ids = None
+        self._irm_loss = getattr(irm_system, '_loss_fn', None) if irm_system else None
+        self._irm_iter_count = 0
+        self._irm_total_iterations = 0
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective."""
@@ -248,58 +253,83 @@ class IRM_LGBMClassifier(lgb.LGBMClassifier):
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         try:
-            # Create IRM training function
-            train_step = self.irm_system.create_enhanced_irm_trainer(
-                model=self,
-                optimizer=None,  # LightGBM handles optimization internally
-                environment_masks=self.environment_masks
-            )
+            n_samples = len(y)
+            env_masks = {}
+            for env_name, mask in self.environment_masks.items():
+                mask_arr = np.asarray(mask).astype(bool)
+                if mask_arr.shape[0] != n_samples:
+                    raise ValueError(f"Environment mask '{env_name}' length {mask_arr.shape[0]} != {n_samples}")
+                env_masks[env_name] = torch.as_tensor(mask_arr)
 
-            # Convert to tensors for IRM
-            X_tensor = torch.FloatTensor(X.values if hasattr(X, 'values') else X)
-            y_tensor = torch.FloatTensor(y)
+            if not env_masks:
+                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
-            if sample_weight is not None:
-                w_tensor = torch.FloatTensor(sample_weight)
-            else:
-                w_tensor = None
+            env_ids = build_env_id_tensor(env_masks, n_samples, device=torch.device('cpu'))
+            self._irm_env_ids = env_ids.long()
+            self._irm_loss = getattr(self.irm_system, '_loss_fn', None)
+            if self._irm_loss is None:
+                raise ValueError("IRM system does not expose StableIRMLoss instance")
 
-            # Run IRM training (simplified - would need proper integration)
-            # For now, use standard training with IRM-aware objective
+            n_estimators = self.get_params().get('n_estimators', getattr(self, 'n_estimators', 100))
+            self._configure_irm_schedule(n_estimators)
+
             self.objective = self._irm_focal_objective
-
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         except Exception as e:
             tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
+    def _configure_irm_schedule(self, total_iterations: int):
+        if total_iterations is None:
+            total_iterations = 0
+        self._irm_total_iterations = int(max(1, total_iterations))
+        self._irm_iter_count = 0
+        if self.irm_system and hasattr(self.irm_system, 'reset_annealing'):
+            self.irm_system.reset_annealing(self._irm_total_iterations)
+        elif self._irm_loss is not None and hasattr(self._irm_loss, 'set_anneal_progress'):
+            self._irm_loss.set_anneal_progress(0.0)
+
+    def _step_irm_schedule(self):
+        if self._irm_total_iterations <= 0:
+            return
+        denom = max(1, self._irm_total_iterations - 1)
+        progress = min(1.0, self._irm_iter_count / denom)
+        target = None
+        if self.irm_system and hasattr(self.irm_system, 'set_anneal_progress'):
+            target = self.irm_system
+        elif self._irm_loss is not None and hasattr(self._irm_loss, 'set_anneal_progress'):
+            target = self._irm_loss
+        if target is not None:
+            target.set_anneal_progress(progress)
+        self._irm_iter_count = min(self._irm_iter_count + 1, self._irm_total_iterations)
+
     def _irm_focal_objective(self, preds, train_data):
         """IRM-aware focal loss objective."""
-        labels = train_data.get_label()
+        if self._irm_loss is None or self._irm_env_ids is None:
+            return np.zeros_like(preds), np.ones_like(preds)
 
-        # Compute focal loss
-        focal_loss = RobustFocalLoss(
-            gamma_pos=self.irm_system.focal_gamma if self.irm_system else 1.0,
-            gamma_neg=self.irm_system.focal_gamma if self.irm_system else 2.5,
-            alpha=self.irm_system.focal_alpha if self.irm_system else 1.0,
-            verbose=False
-        )
+        labels = torch.as_tensor(train_data.get_label(), dtype=torch.float32)
+        logits = torch.as_tensor(preds, dtype=torch.float32, requires_grad=True)
+        sample_weights = train_data.get_weight()
+        if sample_weights is not None:
+            sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
 
-        # Convert to gradient/hessian for LightGBM
-        grad, hess = focal_loss.compute_grad_hess(preds, labels)
-
-        # Add IRM penalty (simplified)
-        if self.irm_system and self.environment_masks:
-            irm_penalty = self._compute_irm_penalty(preds, labels)
-            grad += self.irm_system.lambda_irm * irm_penalty
-
-        return grad, hess
-
-    def _compute_irm_penalty(self, preds, labels):
-        """Compute simplified IRM penalty."""
-        # Simplified IRM penalty - would need full implementation
-        return np.zeros_like(preds)
+        try:
+            self._step_irm_schedule()
+            total_loss, _ = self._irm_loss(
+                logits=logits,
+                targets=labels,
+                env_ids=self._irm_env_ids.to(logits.device),
+                sample_weights=sample_weights,
+            )
+            grad_tensor = torch.autograd.grad(total_loss, logits, retain_graph=False)[0]
+            grad = grad_tensor.detach().numpy()
+            hess = np.ones_like(grad)
+            return grad, hess
+        except Exception as exc:
+            tprint_warning(f"⚠️ [IRM_LGBM] IRM objective failed: {exc}")
+            return np.zeros_like(preds), np.ones_like(preds)
 
 class IRM_XGBClassifier(XGBClassifier):
     """XGBoost Classifier with Invariant Risk Minimization."""
@@ -308,6 +338,10 @@ class IRM_XGBClassifier(XGBClassifier):
         super().__init__(**kwargs)
         self.irm_system = irm_system
         self.environment_masks = environment_masks or {}
+        self._irm_env_ids = None
+        self._irm_loss = getattr(irm_system, '_loss_fn', None) if irm_system else None
+        self._irm_iter_count = 0
+        self._irm_total_iterations = 0
 
     def fit(self, X, y, sample_weight=None, **kwargs):
         """Fit with IRM objective."""
@@ -316,7 +350,28 @@ class IRM_XGBClassifier(XGBClassifier):
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
         try:
-            # Use IRM-aware objective
+            n_samples = len(y)
+            env_masks = {}
+            for env_name, mask in self.environment_masks.items():
+                mask_arr = np.asarray(mask).astype(bool)
+                if mask_arr.shape[0] != n_samples:
+                    raise ValueError(f"Environment mask '{env_name}' length {mask_arr.shape[0]} != {n_samples}")
+                env_masks[env_name] = torch.as_tensor(mask_arr)
+
+            if not env_masks:
+                return super().fit(X, y, sample_weight=sample_weight, **kwargs)
+
+            env_ids = build_env_id_tensor(env_masks, n_samples, device=torch.device('cpu'))
+            self._irm_env_ids = env_ids.long()
+            self._irm_loss = getattr(self.irm_system, '_loss_fn', None)
+            if self._irm_loss is None:
+                raise ValueError("IRM system does not expose StableIRMLoss instance")
+
+            max_depth = self.get_params().get('num_boost_round', None)
+            if max_depth is None:
+                max_depth = self.get_params().get('n_estimators', getattr(self, 'n_estimators', 100))
+            self._configure_irm_schedule(max_depth)
+
             self.objective = self._irm_focal_objective
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
@@ -324,19 +379,56 @@ class IRM_XGBClassifier(XGBClassifier):
             tprint_warning(f"⚠️ IRM training failed, falling back to standard: {e}")
             return super().fit(X, y, sample_weight=sample_weight, **kwargs)
 
+    def _configure_irm_schedule(self, total_iterations: int):
+        if total_iterations is None:
+            total_iterations = 0
+        self._irm_total_iterations = int(max(1, total_iterations))
+        self._irm_iter_count = 0
+        if self.irm_system and hasattr(self.irm_system, 'reset_annealing'):
+            self.irm_system.reset_annealing(self._irm_total_iterations)
+        elif self._irm_loss is not None and hasattr(self._irm_loss, 'set_anneal_progress'):
+            self._irm_loss.set_anneal_progress(0.0)
+
+    def _step_irm_schedule(self):
+        if self._irm_total_iterations <= 0:
+            return
+        denom = max(1, self._irm_total_iterations - 1)
+        progress = min(1.0, self._irm_iter_count / denom)
+        target = None
+        if self.irm_system and hasattr(self.irm_system, 'set_anneal_progress'):
+            target = self.irm_system
+        elif self._irm_loss is not None and hasattr(self._irm_loss, 'set_anneal_progress'):
+            target = self._irm_loss
+        if target is not None:
+            target.set_anneal_progress(progress)
+        self._irm_iter_count = min(self._irm_iter_count + 1, self._irm_total_iterations)
+
     def _irm_focal_objective(self, preds, dtrain):
         """IRM-aware focal loss objective for XGBoost."""
-        labels = dtrain.get_label()
+        if self._irm_loss is None or self._irm_env_ids is None:
+            return np.zeros_like(preds), np.ones_like(preds)
 
-        # Compute focal loss gradient/hessian
-        focal_obj = get_focal_loss_xgb(
-            alpha=self.irm_system.focal_alpha if self.irm_system else 1.0,
-            gamma=self.irm_system.focal_gamma if self.irm_system else 2.0
-        )
+        labels = torch.as_tensor(dtrain.get_label(), dtype=torch.float32)
+        logits = torch.as_tensor(preds, dtype=torch.float32, requires_grad=True)
+        sample_weights = dtrain.get_weight()
+        if sample_weights is not None:
+            sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
 
-        # This would need proper XGBoost objective function integration
-        # For now, return standard focal loss
-        return focal_obj(preds, dtrain)
+        try:
+            self._step_irm_schedule()
+            total_loss, _ = self._irm_loss(
+                logits=logits,
+                targets=labels,
+                env_ids=self._irm_env_ids.to(logits.device),
+                sample_weights=sample_weights,
+            )
+            grad_tensor = torch.autograd.grad(total_loss, logits, retain_graph=False)[0]
+            grad = grad_tensor.detach().numpy()
+            hess = np.ones_like(grad)
+            return grad, hess
+        except Exception as exc:
+            tprint_warning(f"⚠️ [IRM_XGB] IRM objective failed: {exc}")
+            return np.zeros_like(preds), np.ones_like(preds)
 
 @njit
 def vectorized_weight_assignment(n_samples: int, weight_value: float = 1.0) -> np.ndarray:

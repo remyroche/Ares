@@ -233,6 +233,17 @@ def iterative_lgbm_importance_selection(
             
             # Train LGBM
             params = _get_lgbm_params(random_state=42 + iteration * 100 + run_idx)
+            
+            # Guard: Check for multiclass / single class issues
+            unique_y = np.unique(y_sample.dropna() if hasattr(y_sample, 'dropna') else y_sample)
+            if len(unique_y) < 2:
+                tprint_warning(f"   ⚠️ LGBM run {run_idx + 1} skipped: Only {len(unique_y)} class(es) in sample.")
+                continue
+            elif len(unique_y) > 2:
+                # Binarize: convert to (y > 0) for compatibility with binary classification
+                tprint_info(f"   ℹ️ LGBM run {run_idx + 1}: Binarizing {len(unique_y)} classes to binary (y > 0)")
+                y_sample = (y_sample > 0).astype(int)
+            
             model = lgb.LGBMClassifier(**params)
             
             try:

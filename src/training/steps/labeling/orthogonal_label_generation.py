@@ -211,6 +211,8 @@ FAMILY_MIN_EVENT_RATE = {
 FIXED_GRID = [
     # --- 1.5-3% Target Range Specific Grid (de Prado Framework) ---
     # ADDED: TBM 32 and Trend Model 150
+    {'id': 'TBM_16', 'pt': 2.0, 'sl': 1.0, 'horizon': 16}, # 4h
+    {'id': 'TBM_24', 'pt': 2.0, 'sl': 1.0, 'horizon': 24}, # 6h
     {'id': 'TBM_32', 'pt': 2.0, 'sl': 1.0, 'horizon': 32},
     {'id': 'Trend_150', 'pt': 4.0, 'sl': 1.5, 'horizon': 150},
     
@@ -1131,7 +1133,7 @@ def engineer_regressor_targets(
     events: pd.DatetimeIndex,
     raw_returns: pd.Series,
     regressor_type: str = 'lgbm',
-    horizon: int = 48
+    horizon: int = 24
 ) -> pd.Series:
     """
     Create optimized targets for different regressor types.
@@ -1263,7 +1265,7 @@ def compute_dominance_labels(
     risk_budget: float = 1.0,
     pt_mult: float = 2.0,
     sl_mult: float = 1.0,
-    horizon: int = 120,
+    horizon: int = 24,
     transaction_cost: float = 0.003,
     high: Optional[pd.Series] = None,
     low: Optional[pd.Series] = None
@@ -1499,11 +1501,17 @@ def check_label_quality(
     failure_reason = "PASS"
     overall_pass = True
 
-    # 1. Sample Size Gate (relaxed from 0.5 to 0.1 events/day)
-    if rate < 0.1:
+    # 1. Sample Size Gate (family-aware minimums)
+    min_daily_rate = 0.1
+    if family == 'MOMENTUM_DECAY_SPECIALIST':
+        # Momentum decay specialists are sparse; allow lower rate to boost coverage
+        min_daily_rate = 0.05
+
+    if rate < min_daily_rate:
         gates_log.append(f"Sample: {n}/{rate:.2f}/d [FAIL]")
         overall_pass = False
-        if failure_reason == "PASS": failure_reason = "Sample Size (< 0.1/day)"
+        if failure_reason == "PASS":
+            failure_reason = f"Sample Size (< {min_daily_rate:.2f}/day)"
     else:
         gates_log.append(f"Sample: {n}/{rate:.2f}/d [OK]")
 
@@ -1800,6 +1808,29 @@ def calculate_multifactor_score(
         path_asymmetry = (mfe / vol) - (mae.abs() / vol)
         path_score = path_asymmetry.mean()
 
+        # --- Causal robustness extensions ---
+        # Interventional contrast: difference between strong positive and negative event returns
+        interventional_contrast = np.nan
+        returns_series = cand.get('returns')
+        if returns_series is not None and not returns_series.empty:
+            labels_series = cand.get('labels')
+            if labels_series is not None and not labels_series.empty:
+                aligned_idx = returns_series.index.intersection(labels_series.index)
+                if len(aligned_idx) >= 10:
+                    pos_mask = labels_series.loc[aligned_idx] > 0
+                    neg_mask = labels_series.loc[aligned_idx] < 0
+                    if pos_mask.sum() >= 5 and neg_mask.sum() >= 5:
+                        pos_mean = returns_series.loc[aligned_idx][pos_mask].mean()
+                        neg_mean = returns_series.loc[aligned_idx][neg_mask].mean()
+                        interventional_contrast = float(pos_mean - neg_mean)
+                    else:
+                        interventional_contrast = float(returns_series.loc[aligned_idx].mean())
+        # Overlap support: reuse density (average uniqueness) to quantify overlap coverage
+        overlap_support = float(np.clip(density, 0.0, 1.0))
+        # Path stability variance: variability of asymmetry metric
+        path_stability_series = path_asymmetry.replace([np.inf, -np.inf], np.nan).dropna()
+        path_stability_var = float(path_stability_series.var()) if not path_stability_series.empty else np.nan
+
         cand_raw_metrics = {
             'ic': ic_max,
             'f_stat': f_max,
@@ -1810,9 +1841,9 @@ def calculate_multifactor_score(
             'path_score': path_score,
             'lift': max(ic_max, f_max / (f_max + 10.0)), # Proxy for learnability
             # Causal/robustness extensions
-            'interventional_contrast': metrics.get('interventional_contrast', np.nan),
-            'overlap_support': metrics.get('overlap_support', np.nan),
-            'path_stability_var': metrics.get('path_stability_var', np.nan),
+            'interventional_contrast': interventional_contrast,
+            'overlap_support': overlap_support,
+            'path_stability_var': path_stability_var,
         }
         cand['metrics_raw'] = cand_raw_metrics
         raw_metric_log.append({
@@ -2646,41 +2677,41 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
     
     # Horizon options per family (Modern Causal defaults - EXPANDED for higher event density)
     horizon_options = {
-        'default': [24, 48],  # Added 24 for faster signals
-        'CAUSAL_SURPRISE': [12, 24, 48],  # Surprises: medium to slow (removed 6, 8 - too noisy)
-        'VOLUME_SPECIALIST': [12, 24, 48],       # Volume: medium to slow
-        'VOLATILITY_SPECIALIST': [12, 24],    # Volatility: fast-evolving
+        'default': [16, 24, 48],  # Adjusted for 4-6h target
+        'CAUSAL_SURPRISE': [16, 24, 48],  # Surprises: aligned to 4-6h
+        'VOLUME_SPECIALIST': [16, 24, 48],       # Volume: aligned
+        'VOLATILITY_SPECIALIST': [16, 24],    # Volatility: aligned
     }
     
     # Family-specific parameter grids for Causal Specialists - EXPANDED GRIDS
     family_grids = {
         'CAUSAL_SURPRISE': {
             'base_params': [(1.5, 'all'), (1.8, 'all'), (2.2, 'all')],  # Lower thresholds for more events
-            'horizons': [12, 24, 48],  # Multi-horizon (removed 6, 8 - too noisy)
+            'horizons': [16, 24, 48],  # Multi-horizon (aligned to 4-6h)
         },
         'VOLUME_SPECIALIST': {
             'base_params': [(1.8, 20), (2.0, 20), (2.5, 30)],  # Multiple sensitivity levels
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         },
         'VOLATILITY_SPECIALIST': {
             'base_params': [(1.8, 15), (2.0, 20), (2.5, 30)],  # Multiple sensitivity levels
-            'horizons': [12, 24],  # Removed 8 - too noisy
+            'horizons': [16, 24],  # Removed 8 - too noisy
         },
         'LIQUIDITY_SPECIALIST': {
             'base_params': [(1.8, 20), (2.0, 20)],
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         },
         'INFORMATION_SPECIALIST': {
             'base_params': [(1.8, 20), (2.0, 20)],
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         },
         'INVENTORY_SPECIALIST': {
             'base_params': [(2.0, 20), (2.5, 25)],  # Higher threshold since sparse
-            'horizons': [24, 48],
+            'horizons': [24, 48], # Keep longer horizons for inventory
         },
         'MOMENTUM_DECAY_SPECIALIST': {
             'base_params': [(1.5, 10, 50), (2.0, 10, 50), (2.5, 10, 50), (2.0, 5, 30), (2.0, 20, 100)],
-            'horizons': [12, 24, 48],
+            'horizons': [16, 24, 48],
         }
     }
     
@@ -3812,11 +3843,11 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
         # Fit on subsample, transform full dataset (with thread limiting)
         if use_threadpool:
             with threadpool_limits(limits=1, user_api='blas'):
-                svd.fit(df_fit.values)
-                components = svd.transform(df_z_denoised.values)
+                svd.fit(np.nan_to_num(df_fit.values, nan=0.0))
+                components = svd.transform(np.nan_to_num(df_z_denoised.values, nan=0.0))
         else:
-            svd.fit(df_fit.values)
-            components = svd.transform(df_z_denoised.values)
+            svd.fit(np.nan_to_num(df_fit.values, nan=0.0))
+            components = svd.transform(np.nan_to_num(df_z_denoised.values, nan=0.0))
         
         tprint_info(f"   ✅ TruncatedSVD complete: explained_variance_ratio={svd.explained_variance_ratio_.sum():.3f}")
 
@@ -4654,7 +4685,9 @@ def orthogonal_label_generation(
     causal_surprise_threshold: float = 1.8,
     # Pipeline logging parameters
     enable_pipeline_logging: bool = True,
-    tracker: Optional[Any] = None
+    tracker: Optional[Any] = None,
+    checkpoint_manager: Optional[Any] = None,
+    symbol: Optional[str] = None
 ) -> List[OutputGeometry]:
     """
     Enhanced Execution Pipeline for Orthogonal Label Generation.
@@ -5248,6 +5281,22 @@ def orthogonal_label_generation(
     # If requested, return ALL robust candidates for Layer 2 Selection
     if return_raw_candidates:
         tprint_info(f"Returning {len(scored_candidates)} raw candidates for advanced selection.")
+        
+        # CHECKPOINTING
+        if checkpoint_manager is not None and symbol is not None:
+             try:
+                 checkpoint_manager.save_checkpoint(
+                     "raw_candidates_selected",
+                     {
+                         "candidates": scored_candidates, 
+                         "count": len(scored_candidates)
+                     },
+                     symbol
+                 )
+                 tprint_success(f"💾 Checkpoint saved: raw_candidates_selected ({len(scored_candidates)} candidates)")
+             except Exception as e:
+                 tprint_warning(f"⚠️ Failed to save raw candidates checkpoint: {e}")
+
         raw_geoms = []
         for cand in scored_candidates:
             # We need to construct OutputGeometry but WITHOUT Probe Metrics (expensive?)
@@ -5902,6 +5951,15 @@ class CausalSurpriseEvents(BaseEventGenerator):
             for spec_name, predictions in specialist_predictions.items():
                 if 'close' in df.columns:
                     targets = df['close']
+                    
+                    # Handle dictionary checkpoints
+                    if isinstance(predictions, dict):
+                        try:
+                             predictions = pd.Series(predictions)
+                             predictions.index = pd.to_datetime(predictions.index)
+                        except Exception:
+                             continue
+
                     common_idx = predictions.index.intersection(targets.index)
                     if len(common_idx) > 10:
                         pred_aligned = predictions.loc[common_idx]

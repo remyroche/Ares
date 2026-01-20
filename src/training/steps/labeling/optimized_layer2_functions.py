@@ -132,7 +132,7 @@ def vectorized_feature_selection(
     X: pd.DataFrame, 
     y: pd.Series,
     method: str = 'correlation',
-    top_k: int = 20,
+    top_k: int = 50,
     min_variance: float = 1e-6,
     n_jobs: int = -1,
     verbose: bool = False

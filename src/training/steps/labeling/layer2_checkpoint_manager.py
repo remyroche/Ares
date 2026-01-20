@@ -27,15 +27,19 @@ LAYER2_SUBSTEPS = [
     'regime_generation',      # 1: Generate regimes via AdaptiveHunterRouter
     'causal_initialization',  # 2: Initialize components, precompute features
     'causal_discovery',       # 3: Build causal DAG
-    'causal_graph_saved',     # 3.5: Save completed causal graph ⭐ NEW
+    'causal_graph_saved',     # 3.5: Save completed causal graph
     'specialist_training',    # 4: Train AEDL/traditional specialists
     'event_generation',       # 5: Generate causal surprise events
     'feature_engineering',    # 6: Apply causal denoising
-    'causal_targets',         # 6.5: Compute causal targets ⭐ NEW
-    'dml_effects_computed',   # 6.6: DML causal effects computed ⭐ NEW
-    'cate_computed',          # 6.7: CATE estimates computed ⭐ NEW
-    'causal_model_training',  # 6.8: Train causal models ⭐ NEW
+    'causal_targets',         # 6.5: Compute causal targets
+    'dml_effects_computed',   # 6.6: DML causal effects computed
+    'cate_computed',          # 6.7: CATE estimates computed
+    'causal_model_training',  # 6.8: Train causal models
+    'raw_candidates_selected', # 6.9: Raw geometry candidates selected
+    'regime_optimization_progress', # 6.95: Partial regime progress
     'geometry_optimization',  # 7: De Prado protocol
+    'model_race_complete',    # 7.5: Model race + deduplication complete
+    'simulation_complete',    # 7.6: Simulations + Layer-12 complete
     'final_processing',       # 8: OOF analytics, reports
 ]
 

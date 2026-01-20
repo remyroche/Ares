@@ -778,16 +778,22 @@ class ArtifactManager:
 		if isinstance(data, dict):
 			processed = {}
 			for key, value in data.items():
-				if key in ['confidence_intervals', 'radar_plot_data', 'transitions', 'works_best_for', 'risk_caveats', 'score_distribution']:
-					# Handle problematic struct fields by converting to string or removing
+				if key in ['confidence_intervals', 'radar_plot_data', 'transitions', 
+			           'works_best_for', 'risk_caveats', 'score_distribution',
+			           'geometry_metrics', 'model_metrics', 'feature_metrics',
+			           'quality_metrics', 'performance_scores', 'stability_scores',
+			           'integrity_scores']:
+					# Handle problematic struct fields by converting to string or adding dummy content
 					if isinstance(value, dict) and not value:
-						# Empty struct - remove it
-						processed[key] = None
+						# Empty struct - add dummy field to satisfy PyArrow schema requirements
+						processed[key] = {'_dummy': 0}
 					elif isinstance(value, dict):
-						# Convert to string representation
-						processed[key] = str(value)
+						# Convert to string representation if deeply nested or use as is
+						# For now, let's keep non-empty dicts as is, or stringify if they cause issues
+						# But the error was specifically about "no child field", implying empty struct
+						processed[key] = value
 					elif isinstance(value, list):
-						# Convert list to string representation
+						# Convert list to string representation or use as is
 						processed[key] = str(value)
 					else:
 						processed[key] = value

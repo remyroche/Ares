@@ -1136,3 +1136,144 @@ def _numba_ewm_std(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndar
             out[i] = np.sqrt(v)
 
     return out
+@jit(nopython=True)
+def _numba_rolling_skew(x, window):
+    """
+    Calculate rolling skewness using Numba with online update algorithm (Sum of Powers).
+    Optimized for speed O(N) instead of O(N*W).
+    Assumes clean input (no NaNs), or NaNs will propagate.
+    """
+    n = len(x)
+    out = np.empty(n, dtype=np.float64)
+    out[:] = np.nan
+
+    if window < 3:
+        return out
+
+    s1 = 0.0
+    s2 = 0.0
+    s3 = 0.0
+
+    # Initialize first window
+    for i in range(window):
+        val = x[i]
+        s1 += val
+        s2 += val*val
+        s3 += val*val*val
+
+    w = float(window)
+    # Compute first output
+    mean = s1 / w
+    # Variance = E[x^2] - (E[x])^2
+    var = (s2 / w) - (mean * mean)
+
+    # m3 = E[x^3] - 3*E[x]*E[x^2] + 2*(E[x])^3
+    m3 = (s3 / w) - 3.0 * mean * (s2 / w) + 2.0 * (mean * mean * mean)
+
+    if var > 1e-12:
+        stdev = np.sqrt(var)
+        pop_skew = m3 / (stdev * stdev * stdev)
+        # Bias correction
+        adj = np.sqrt(w * (w - 1.0)) / (w - 2.0)
+        out[window-1] = adj * pop_skew
+    else:
+        out[window-1] = 0.0
+
+    # Rolling update
+    for i in range(window, n):
+        leaving = x[i-window]
+        entering = x[i]
+
+        s1 = s1 - leaving + entering
+        s2 = s2 - leaving*leaving + entering*entering
+        s3 = s3 - leaving*leaving*leaving + entering*entering*entering
+
+        mean = s1 / w
+        var = (s2 / w) - (mean * mean)
+
+        if var > 1e-12:
+            m3 = (s3 / w) - 3.0 * mean * (s2 / w) + 2.0 * (mean * mean * mean)
+            stdev = np.sqrt(var)
+            pop_skew = m3 / (stdev * stdev * stdev)
+
+            adj = np.sqrt(w * (w - 1.0)) / (w - 2.0)
+            out[i] = adj * pop_skew
+        else:
+            out[i] = 0.0
+
+    return out
+
+@jit(nopython=True)
+def _numba_rolling_kurt(x, window):
+    """
+    Calculate rolling kurtosis using Numba with online update algorithm (Sum of Powers).
+    Optimized for speed O(N) instead of O(N*W).
+    Assumes clean input (no NaNs), or NaNs will propagate.
+    """
+    n = len(x)
+    out = np.empty(n, dtype=np.float64)
+    out[:] = np.nan
+
+    if window < 4:
+        return out
+
+    s1 = 0.0
+    s2 = 0.0
+    s3 = 0.0
+    s4 = 0.0
+
+    for i in range(window):
+        val = x[i]
+        s1 += val
+        s2 += val*val
+        s3 += val*val*val
+        s4 += val*val*val*val
+
+    w = float(window)
+
+    # Constants for bias correction
+    term1 = (w * (w + 1.0)) / ((w - 1.0) * (w - 2.0) * (w - 3.0))
+    term2 = (3.0 * (w - 1.0)**2) / ((w - 2.0) * (w - 3.0))
+
+    # Helper logic inlined (Numba inlining is automatic usually)
+    mean = s1 / w
+    m2 = (s2 / w) - (mean * mean)
+
+    if m2 > 1e-12:
+        e4 = s4 / w
+        e3 = s3 / w
+        e2 = s2 / w
+        e1 = mean
+        m4 = e4 - 4.0*e1*e3 + 6.0*e1*e1*e2 - 3.0*e1*e1*e1*e1
+        kurt_pop = m4 / (m2 * m2)
+        val = ((w - 1.0)**2 / w) * kurt_pop
+        out[window-1] = term1 * val - term2
+    else:
+        out[window-1] = 0.0
+
+    for i in range(window, n):
+        leaving = x[i-window]
+        entering = x[i]
+
+        s1 = s1 - leaving + entering
+        s2 = s2 - leaving*leaving + entering*entering
+        s3 = s3 - leaving*leaving*leaving + entering*entering*entering
+        s4 = s4 - leaving*leaving*leaving*leaving + entering*entering*entering*entering
+
+        mean = s1 / w
+        m2 = (s2 / w) - (mean * mean)
+
+        if m2 > 1e-12:
+            e4 = s4 / w
+            e3 = s3 / w
+            e2 = s2 / w
+            e1 = mean
+            m4 = e4 - 4.0*e1*e3 + 6.0*e1*e1*e2 - 3.0*e1*e1*e1*e1
+            kurt_pop = m4 / (m2 * m2)
+            val = ((w - 1.0)**2 / w) * kurt_pop
+            out[i] = term1 * val - term2
+        else:
+            out[i] = 0.0
+
+    return out
+

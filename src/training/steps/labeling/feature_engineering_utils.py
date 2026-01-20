@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
 import logging
+from numba import jit
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
-from src.utils.orthogonal_numba import _numba_apply_fracdiff
-from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std
+from src.utils.orthogonal_numba import _numba_apply_fracdiff, _numba_rolling_hurst
+from src.utils.entropy_optimized import lempel_ziv_complexity_numba
+from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt
 
 def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:
     """
@@ -47,6 +49,33 @@ def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) 
     result = _numba_apply_fracdiff(series.values, w)
 
     return pd.Series(result, index=series.index)
+
+@jit(nopython=True)
+def _numba_efficiency_ratio(log_returns: np.ndarray, window: int) -> np.ndarray:
+    """
+    Calculate Kaufman Efficiency Ratio: Abs(Net Change) / Sum(Abs(Change))
+    """
+    n = len(log_returns)
+    out = np.full(n, np.nan)
+
+    # Needs absolute returns
+    abs_rets = np.abs(log_returns)
+
+    # We can use a sliding window sum approach for efficiency
+    # But simple loop is fine for Numba
+
+    for i in range(window, n + 1):
+        # Segment for net change: sum of log returns
+        net_change = np.abs(np.sum(log_returns[i-window:i]))
+        # Segment for volatility: sum of abs log returns
+        volatility = np.sum(abs_rets[i-window:i])
+
+        if volatility > 1e-12:
+            out[i-1] = net_change / volatility
+        else:
+            out[i-1] = 0.0 # No volatility = no trend or noise.
+
+    return out
 
 def apply_layer2_price_processing(df: pd.DataFrame,
                                    price_col: str = 'close',
@@ -151,12 +180,19 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     result['rolling_volatility_50'] = pd.Series(vol_50_vals, index=df.index).ffill()
 
     # Rolling Momentum (using sum of log returns)
+    # Optimized: sum(log_returns) over window w is equivalent to log_price.diff(w).
+    # This vectorizes the operation (O(1) overhead vs O(W) rolling).
     for w in [10, 20, 50]:
-        result[f'rolling_momentum_{w}'] = log_returns.rolling(w, min_periods=w).sum()
+        result[f'rolling_momentum_{w}'] = log_price.diff(w)
 
-    # Skew/Kurtosis (Keep rolling for now, expensive to implement robustly in Numba without effort)
-    result['rolling_skew_50'] = log_returns.rolling(50, min_periods=50).skew()
-    result['rolling_kurtosis_50'] = log_returns.rolling(50, min_periods=50).kurt()
+    # Skew/Kurtosis (Optimized with Numba)
+    # Use clean log_returns (0-filled) to prevent NaN propagation in online algorithm
+    clean_log_ret = result['log_returns'].fillna(0).values.astype(np.float64)
+    skew_vals = _numba_rolling_skew(clean_log_ret, 50)
+    kurt_vals = _numba_rolling_kurt(clean_log_ret, 50)
+
+    result['rolling_skew_50'] = pd.Series(skew_vals, index=df.index)
+    result['rolling_kurtosis_50'] = pd.Series(kurt_vals, index=df.index)
 
     # Drawdown
     rolling_max = price.rolling(100, min_periods=1).max()
@@ -175,5 +211,55 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     fd_mean = fd.rolling(50, min_periods=50).mean()
     fd_std = fd.rolling(50, min_periods=50).std()
     result['fracdiff_zscore_50'] = (fd - fd_mean) / (fd_std + 1e-9)
+
+    # --- New Features (Audit Request) ---
+
+    # 1. Hurst Exponent (Proxy or Rolling)
+    # Using Numba optimized rolling Hurst on log prices
+    try:
+        hurst_100 = _numba_rolling_hurst(log_price.ffill().values, window=100)
+        result['hurst_100'] = pd.Series(hurst_100, index=df.index).ffill()
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Hurst calculation failed: {e}")
+
+    # 2. LZ Complexity
+    try:
+        # On log returns (discretized implicitly by algo) or prices?
+        # LZ on raw prices captures structure.
+        # Normalize=True divides by n/log(n), making it comparable.
+        lz_vals = lempel_ziv_complexity_numba(log_price.ffill().values, normalize=True)
+        result['lz_complexity'] = pd.Series(lz_vals, index=df.index).ffill()
+    except Exception as e:
+        tprint_warning(f"   ⚠️ LZ Complexity failed: {e}")
+
+    # 3. Efficiency Ratio
+    try:
+        er_50 = _numba_efficiency_ratio(log_returns.fillna(0).values, window=50)
+        result['efficiency_ratio_50'] = pd.Series(er_50, index=df.index).ffill()
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Efficiency Ratio failed: {e}")
+
+    # 4. Bar Tightness
+    # (High - Low) / (High + Low) or similar.
+    # We check if High/Low exist
+    cols_map = {c.lower(): c for c in df.columns}
+    if 'high' in cols_map and 'low' in cols_map:
+        h = df[cols_map['high']]
+        l = df[cols_map['low']]
+        # Normalized Range: (H - L) / (H + L)
+        # Or relative to close: (H - L) / Close
+        # Using (H - L) / (H + L) is scale invariant
+        tightness = (h - l) / (h + l + 1e-9)
+        # Invert so higher = tighter?
+        # User said "Bar Tightness".
+        # Usually "Tightness" means small range.
+        # So maybe 1 - normalized_range?
+        # Or just the metric itself and let model decide.
+        # "Tightness" often refers to "Spread Tightness" (Bid-Ask).
+        # But for bars, it's range.
+        # I'll compute Range Ratio and let tree decide.
+        # Actually, let's call it 'bar_tightness' = 1 / (range_pct + epsilon) to match "tightness" (high = tight)
+        range_pct = (h - l) / (price + 1e-9)
+        result['bar_tightness'] = 1.0 / (range_pct + 1e-4) # Cap at 10000
 
     return result

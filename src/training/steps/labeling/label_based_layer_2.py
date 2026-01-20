@@ -8213,11 +8213,17 @@ class LabelBasedLayer2(BaseStep):
             # --- 5. XGBoost Stack (Huber-IRM + XGB) ---
             if XGBRegressor is not None:
                 xgb_params = {
-                    'num_parallel_tree': 200,
-                    'n_estimators': 5,
-                    'max_depth': 6,
+                    'num_parallel_tree': 250,
+                    'n_estimators': 4,
+                    'max_depth': 5,
                     'subsample': 0.8,
-                    'colsample_bynode': 0.8,
+                    'colsample_bynode': 0.65,
+                    'colsample_bytree': 0.8,
+                    'reg_lambda': 3,
+                    'reg_alpha': 0.5,
+                    'gamma': 0.2,
+                    'learning_rate': 0.2,
+                    'min_child_weight': 25,
                     # 'linear_tree': True, # XGBoost does not support linear_tree (LGBM feature). Removing to prevent errors.
                     'tree_method': 'hist',
                     'n_jobs': 2,

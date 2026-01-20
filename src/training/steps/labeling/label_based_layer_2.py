@@ -8179,7 +8179,7 @@ class LabelBasedLayer2(BaseStep):
             huber_params = {
                 'loss_type': 'huber',
                 'huber_epsilon': 1.10,
-                'alpha': 1.0,
+                'alpha': 3.0,
                 'irm_lambda': 10.0,
                 'max_iter': 2000
             }

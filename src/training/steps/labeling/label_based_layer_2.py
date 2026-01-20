@@ -75,7 +75,9 @@ from src.utils.numba_funcs import (
     _numba_rolling_slope,
     _numba_streak_persistence,
     _numba_rolling_entropy,
-    _numba_return_autocorrelation
+    _numba_return_autocorrelation,
+    _numba_rolling_mean,
+    _numba_rolling_std
 )
 try:
     from numba import jit
@@ -310,8 +312,10 @@ class ContinuousPredictorEvents:
     """
     Event generator for continuous predictor families.
     
-    Converts continuous predictor values (Z-scored) into discrete events
-    by thresholding. Supports both positive and negative activation events.
+    Converts continuous predictor values into discrete events.
+    Supports:
+    - Point-in-time Thresholding (Z-Score)
+    - Symmetric CUSUM Filter (De Prado)
     
     Families supported:
     - RELAXATION_GEOMETRY
@@ -326,21 +330,74 @@ class ContinuousPredictorEvents:
         
         Args:
             family: Base family name (e.g., 'RELAXATION_GEOMETRY')
-            z_threshold: Z-score threshold for event detection
+            z_threshold: Z-score threshold for event detection (or h for CUSUM)
         """
         self.family = family
         self.z_threshold = z_threshold
         self._generator = None
         self._cache = {}
     
+    def _get_rolling_z_score(self, series: pd.Series, window: int = 2000) -> pd.Series:
+        """
+        Compute rolling Z-score to prevent look-ahead bias.
+        Uses Numba optimized functions if available.
+        """
+        vals = series.values.astype(np.float64)
+
+        if NUMBA_AVAILABLE:
+            # Check for NaNs
+            if np.isnan(vals).any():
+                vals = np.nan_to_num(vals)
+
+            roll_mean = _numba_rolling_mean(vals, window)
+            roll_std = _numba_rolling_std(vals, window)
+
+            # Prevent division by zero
+            z = (vals - roll_mean) / (roll_std + 1e-9)
+            return pd.Series(z, index=series.index)
+        else:
+            roll = series.rolling(window=window, min_periods=window//10)
+            return (series - roll.mean()) / (roll.std() + 1e-9)
+
+    def _symmetric_cusum_filter(self, series: pd.Series, threshold: float) -> pd.DatetimeIndex:
+        """
+        Symmetric CUSUM Filter (De Prado, AFML Chapter 2).
+        Detects shifts in the mean value of a measured quantity.
+        """
+        t_events = []
+        s_pos = 0.0
+        s_neg = 0.0
+
+        # Optimized loop
+        vals = series.values
+        idx = series.index
+
+        for i in range(len(vals)):
+            y = vals[i]
+            s_pos = max(0.0, s_pos + y)
+            s_neg = min(0.0, s_neg + y)
+
+            if s_pos > threshold:
+                s_pos = 0
+                t_events.append(idx[i])
+            elif s_neg < -threshold:
+                s_neg = 0
+                t_events.append(idx[i])
+
+        return pd.DatetimeIndex(sorted(list(set(t_events))))
+
     def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> pd.DatetimeIndex:
         """Generate events from continuous predictor values.
         
         Args:
             df: OHLCV DataFrame
             tracker: Optional event generation tracker
-            **params: Additional parameters (e.g., 'side': 'positive' or 'negative')
-            
+            **params:
+                - side: 'positive', 'negative', or 'both'
+                - method: 'threshold' (default) or 'cusum'
+                - normalize: bool (default True) - apply rolling Z-score
+                - window: int (default 2000) - window for normalization
+
         Returns:
             DatetimeIndex of detected events
         """
@@ -368,23 +425,34 @@ class ContinuousPredictorEvents:
         
         # Aggregate events across all predictors of this family
         all_events = set()
-        side = params.get('side', 'both')  # 'positive', 'negative', or 'both'
+        side = params.get('side', 'both')
+        method = params.get('method', 'threshold')
+        normalize = params.get('normalize', True)
+        window = params.get('window', 2000)
         
         for pred in family_predictors:
-            vals = pred.values.fillna(0)
-            if vals.std() == 0:
-                continue
+            series = pred.values.fillna(0)
             
-            # Z-score normalization
-            z = (vals - vals.mean()) / (vals.std() + 1e-9)
+            # Apply Rolling Normalization (Look-ahead Safe)
+            if normalize:
+                z_series = self._get_rolling_z_score(series, window)
+            else:
+                z_series = series
             
-            if side in ['positive', 'both']:
-                pos_events = z[z > self.z_threshold].index
-                all_events.update(pos_events)
-            
-            if side in ['negative', 'both']:
-                neg_events = z[z < -self.z_threshold].index
-                all_events.update(neg_events)
+            # Event Logic
+            if method == 'cusum':
+                # De Prado CUSUM (on Z-scored series)
+                events = self._symmetric_cusum_filter(z_series, self.z_threshold)
+                all_events.update(events)
+
+            else: # 'threshold'
+                if side in ['positive', 'both']:
+                    pos_events = z_series[z_series > self.z_threshold].index
+                    all_events.update(pos_events)
+
+                if side in ['negative', 'both']:
+                    neg_events = z_series[z_series < -self.z_threshold].index
+                    all_events.update(neg_events)
         
         events = pd.DatetimeIndex(sorted(all_events))
         

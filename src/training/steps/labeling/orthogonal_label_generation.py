@@ -1263,8 +1263,8 @@ def compute_dominance_labels(
     events: pd.DatetimeIndex,
     volatility: pd.Series,
     risk_budget: float = 1.0,
-    pt_mult: float = 2.0,
-    sl_mult: float = 1.0,
+    pt_mult: Union[float, np.ndarray, pd.Series] = 2.0,
+    sl_mult: Union[float, np.ndarray, pd.Series] = 1.0,
     horizon: int = 24,
     transaction_cost: float = 0.003,
     high: Optional[pd.Series] = None,
@@ -1312,7 +1312,23 @@ def compute_dominance_labels(
     valid_idxs = event_idxs[valid_mask]
     valid_events = events[valid_mask]
 
-    valid_events = events[valid_mask]
+    # Handle array-like pt_mult/sl_mult
+    if isinstance(pt_mult, (np.ndarray, pd.Series, list)):
+        if len(pt_mult) == len(events):
+             # Filter to match valid events
+             pt_mult = np.array(pt_mult)[valid_mask]
+        elif len(pt_mult) != len(valid_idxs):
+             logger.warning(f"Length mismatch for pt_mult array ({len(pt_mult)}) vs valid events ({len(valid_idxs)}). Using scalar fallback.")
+             pt_mult = 2.0
+
+    if isinstance(sl_mult, (np.ndarray, pd.Series, list)):
+        if len(sl_mult) == len(events):
+             # Filter to match valid events
+             sl_mult = np.array(sl_mult)[valid_mask]
+        elif len(sl_mult) != len(valid_idxs):
+             logger.warning(f"Length mismatch for sl_mult array ({len(sl_mult)}) vs valid events ({len(valid_idxs)}). Using scalar fallback.")
+             sl_mult = 1.0
+
     
     # DEBUG: Check why empty
     if len(valid_idxs) == 0:
@@ -3448,53 +3464,11 @@ def generate_multi_horizon_candidates(df: pd.DataFrame) -> List[Dict]:
 def generate_regime_conditioned_candidates(df: pd.DataFrame, ohlcv_candidates: List[Dict], specialist_families: List[str]) -> List[Dict]:
     """
     Level 6: Regime-Conditioned Features.
-    Conditions OHLCV candidates on Specialist states (e.g. Return Shock when Inventory is High).
-    Uses implicit regimes defined by Specialist Weight > 0.5 (High) or < 0.2 (Low? or just 1-Weight).
-    Actually, just multiplying the weights (Soft Conditioning) is effective and simpler.
-    Condition = OHLCV_Weight * Specialist_Weight
-    """
-    candidates = []
     
-    # Pre-calculate specialist weights
-    spec_weights = {}
-    for fam in specialist_families:
-        spec_weights[fam] = get_specialist_event_matrix(df, fam)
-        
-    for cand in ohlcv_candidates:
-        w_ohlcv = cand['weight_vector']
-        if not isinstance(w_ohlcv, pd.Series): continue
-        
-        for fam, w_spec in spec_weights.items():
-            if not isinstance(w_spec, pd.Series): continue
-            
-            # Condition: OHLCV interaction with Specialist Regime
-            # We want to capture: "Shock occurring during High Specialist Activity"
-            # Simply multiplying the weights achieves this 'soft AND' logic.
-            # w_combined = w_ohlcv * w_spec
-            # But we might want to be more specific: "High Inventory" vs "Low Inventory"
-            # For now, let's stick to "Relevance" (High Weight)
-            
-            w_combined = w_ohlcv * w_spec
-            
-            # Filter: Check if we have enough mass
-            if w_combined.sum() > 5.0: # Arbitrary mass threshold, ensure some overlap exists
-                # Normalize?
-                # z_combined = (w_combined - w_combined.mean()) / (w_combined.std() + 1e-9) # No, keep as probability-like mass
-                
-                # We need to turn this into a weight vector acceptable by Layer 2
-                # It is already [0, 1] * [0, 1] -> [0, 1]
-                
-                 events_combined = w_combined[w_combined > 0.1].index # Lower threshold for combined
-                 
-                 if len(events_combined) > 50:
-                     candidates.append({
-                         'family': f'COND_{cand["family"]}_ON_{fam.replace("_SPECIALIST", "")}',
-                         'events': events_combined,
-                         'weight_vector': w_combined,
-                         'params': {'type': 'regime_conditioned', 'parent': cand['family'], 'condition': fam}
-                     })
-                     
-    return candidates
+    DEPRECATED: Replaced by interaction features in Layer 2 Training Pipeline.
+    Returning empty list to stop generating hard-coded COND families.
+    """
+    return []
 
 def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFrame, target_col: str = 'close', verbose: bool = True) -> List[Dict]:
     """
